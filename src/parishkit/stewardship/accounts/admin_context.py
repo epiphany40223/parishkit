@@ -458,9 +458,15 @@ def _find_family(actor, items, campaign):
 
 
 # Menu entries that show how many open items their queue holds (#585,
-# #1590; Limitations since R39 finding 10).
+# #1590; Limitations since R39 finding 10; Pledges since #2125).
 COUNTED = frozenset(
-    {"census_changes", "information_queue", "ministry_report", "limitations_report"}
+    {
+        "census_changes",
+        "information_queue",
+        "ministry_report",
+        "limitations_report",
+        "pledges_to_enter",
+    }
 )
 # The count of Ministry requests' To enter by hand Stage, by this key: Home's
 # Next steps show it (home_steps), the menu never does, since Ministry
@@ -522,6 +528,26 @@ UNREAD = object()
 # (stewardship_pledge_stages_v1, which places a pledge from its latest
 # refresh check, so a Conflict or Confirmed one is not To review) and the
 # response's cannot_give flag.
+# Pledges (#2125) counts the pledges its default To review stage lists,
+# through the same stage selection (stewardship_pledge_stages_v1). The page
+# lists the Financial stewardship selection's rows (every Family whose
+# current live response answers the financial section: the selection's
+# own set), so the count is that selection's To review total. When the
+# page would say Pledges are unavailable (stewardship_financial_report_v1:
+# the campaign's source snapshot, the current one or an archived
+# campaign's own, is not promoted and uncompacted) the count is NULL and no
+# number shows; a campaign without Financial stewardship has no Pledges
+# link, so it is never asked for. A current campaign's snapshot is the
+# current pointer's, which only ever names a promoted snapshot that
+# compaction never takes (compaction excludes the current one), so for it
+# the test is whether ParishSoft has been downloaded: the request's one
+# shared read (request_downloaded, passed as %(downloaded)s), which the
+# access gate and the menu's reasons already use (#1242), never a second
+# read of stewardship_source_current here.
+# Both Pledges' count and Limitations' Cannot contribute part come from
+# one read of stewardship_pledge_stages_v1 (the pl LATERAL), since the
+# stage selection is the costliest part of the statement and runs on
+# every Admin page.
 # The statement's columns, by name and in order (each aliased in the SQL).
 # Read the row through these names, never by position: a caller that adds
 # columns (My review work's counts, #1727, cross-joined after these) takes
@@ -534,6 +560,7 @@ MENU_COLUMNS = (
     "roster",
     "roster_ministries",
     "limitations",
+    "pledges",
 )
 OPEN_COUNTS = """
 SELECT
@@ -559,16 +586,26 @@ SELECT
             || coalesce(v->'families','[]'::jsonb)) a
         WHERE NOT coalesce((a->>'in_force')::boolean, false)
            OR coalesce(a->>'decision','none')='none')
-        + CASE WHEN %(pledges)s THEN (
-            SELECT count(*)
-            FROM stewardship_pledge_stages_v1(%(campaign)s, NULL::uuid) p
-            JOIN stewardship_submission ps ON ps.id=p.submission_id
-            WHERE p.stage='to_review'
-              AND coalesce(ps.answers->'financial'->'cannot_give'='true'::jsonb,
-                  false))
-        ELSE 0 END
-    END AS limitations
+        + coalesce(pl.cannot_give, 0)
+    END AS limitations,
+    CASE WHEN %(pledges)s AND EXISTS (
+        SELECT 1 FROM stewardship_campaign c
+        LEFT JOIN stewardship_campaign_credentials k ON k.campaign_id=c.id
+        LEFT JOIN stewardship_source_snapshot x ON x.id=k.source_snapshot_id
+        WHERE c.id=%(campaign)s AND CASE WHEN c.state='archived'
+            THEN x.state='promoted' AND x.compacted_at IS NULL
+            ELSE %(downloaded)s END)
+    THEN pl.to_review END AS pledges
 FROM (SELECT NULL) one
+LEFT JOIN LATERAL (
+    SELECT count(*) AS to_review,
+        count(*) FILTER (WHERE coalesce(
+            ps.answers->'financial'->'cannot_give'='true'::jsonb, false))
+            AS cannot_give
+    FROM stewardship_pledge_stages_v1(%(campaign)s, NULL::uuid) p
+    LEFT JOIN stewardship_submission ps ON ps.id=p.submission_id
+    WHERE %(pledges)s AND p.stage='to_review'
+) pl ON true
 LEFT JOIN LATERAL (
     SELECT CASE WHEN (v->>'authorized')::boolean THEN (v->>'total')::bigint END
             AS total,
@@ -651,13 +688,9 @@ def _open_counts(request, actor, items, campaign):
     cached = getattr(request, "_stewardship_open_counts", None)
     if cached is not None:
         return cached
-    # Pledges is not counted, but whether the menu offers it says whether
-    # the Limitations count includes its Cannot contribute answers.
-    offered = {
-        item.name
-        for item in items
-        if item.url and item.name in COUNTED | {"pledges_to_enter"}
-    }
+    # Whether the menu offers Pledges also says whether the Limitations
+    # count includes its Cannot contribute answers.
+    offered = {item.name for item in items if item.url and item.name in COUNTED}
     review = getattr(request, "_stewardship_review_flags", None) or {}
     if not any(review.values()):
         review = None
@@ -674,7 +707,12 @@ def _open_counts(request, actor, items, campaign):
         try:
             with isolate():
                 counts, reviewed = _read_open_counts(
-                    offered, actor, campaign, review, roster=known is UNREAD
+                    offered,
+                    actor,
+                    campaign,
+                    review,
+                    roster=known is UNREAD,
+                    downloaded=request_downloaded(request),
                 )
         except DatabaseError as error:
             _record_open_counts_failure(error)
@@ -688,7 +726,14 @@ def _open_counts(request, actor, items, campaign):
 
 
 def _read_open_counts(
-    offered, actor, campaign, review=None, *, followup=True, roster=True
+    offered,
+    actor,
+    campaign,
+    review=None,
+    *,
+    followup=True,
+    roster=True,
+    downloaded=None,
 ):
     """Run ``OPEN_COUNTS`` for the ``offered`` entries; see ``_open_counts``.
 
@@ -701,6 +746,9 @@ def _read_open_counts(
     ``review_work.COUNTS`` runs in the same statement, cross-joined to the
     menu's one row. Returns the menu's counts and the review counts (None
     without ``review``).
+
+    ``downloaded`` is the request's shared ParishSoft download check
+    (``request_downloaded``), asked only when the Pledges count is read.
     """
     from parishkit.stewardship.reports.census_changes import OPEN_GROUPS, open_count
     from parishkit.stewardship.reports.limitations import LimitationsQuery
@@ -723,6 +771,11 @@ def _read_open_counts(
         and can_tick(actor)
         and getattr(campaign, "state", None) in ROSTER_STATES
     )
+    # Pledges' own admission (FINANCIAL_DETAIL), checked again, for its own
+    # count and Limitations' Cannot contribute part.
+    pledges = "pledges_to_enter" in offered and allows(
+        actor, Capability.FINANCIAL_DETAIL
+    )
     sql = OPEN_COUNTS.replace("{census}", OPEN_GROUPS)
     if review:
         # Both statements are one row; their shared parameters (campaign,
@@ -741,9 +794,8 @@ def _read_open_counts(
                 "limitations": "limitations_report" in offered
                 and allows(actor, Capability.CAMPAIGN_REPORT),
                 "limitation_filters": json.dumps(LimitationsQuery().form_values()),
-                # Pledges' own admission (FINANCIAL_DETAIL), checked again.
-                "pledges": "pledges_to_enter" in offered
-                and allows(actor, Capability.FINANCIAL_DETAIL),
+                "pledges": pledges,
+                "downloaded": bool(pledges and downloaded and downloaded()),
                 "campaign": campaign.pk,
                 "filters": selection_filters(FollowupQuery()),
                 # The roster rows' own selection (read_rows for Staff).
@@ -789,6 +841,7 @@ def _read_open_counts(
             ("ministry_report", ministry),
             (ENTRY_COUNT, roster_count),
             ("limitations_report", limitations),
+            ("pledges_to_enter", row["pledges"]),
         )
         if count is not None
     }

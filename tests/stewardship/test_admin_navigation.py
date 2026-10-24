@@ -1234,6 +1234,7 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
                 6 if statements[-1]["roster"] else None,
                 [] if statements[-1]["roster"] else None,
                 4 if statements[-1]["limitations"] else None,
+                5 if statements[-1]["pledges"] else None,
             )
 
     monkeypatch.setattr(
@@ -1246,12 +1247,15 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
     draft = _campaign("draft")
     # Limitations (R39 finding 10) is counted for Administrators and Staff.
     queues = {"information_queue": 3, "ministry_report": 2, "limitations_report": 4}
+    # Pledges (#2125) is counted where the campaign runs Financial
+    # stewardship (not the census campaign below).
+    pledges = {**queues, "pledges_to_enter": 5}
     cases = (
         # Both queues and the To enter by hand count (ENTRY_COUNT, which
         # replaced Roster changes to enter's, R39) for Staff: every Ministry.
-        ("staff", active, {**queues, "ministry_entry": 6}),
+        ("staff", active, {**pledges, "ministry_entry": 6}),
         # A draft has nothing to enter yet, so its roster count is not read.
-        ("staff", draft, queues),
+        ("staff", draft, pledges),
         # With the census: Staff and an Administrator both count To review
         # and Conflict, never Ready to update.
         (
@@ -1325,6 +1329,13 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
         SimpleNamespace(), _principal(role), _menu(role, active, "production"), active
     )
     assert counts == {}
+
+
+def test_open_counts_read_pledge_stages_once():
+    """Pledges and Limitations share one costly pledge stage read (#2125)."""
+    from parishkit.stewardship.accounts import admin_context
+
+    assert admin_context.OPEN_COUNTS.count("stewardship_pledge_stages_v1(") == 1
 
 
 def test_open_counts_are_plain_numbers_with_screen_reader_words():

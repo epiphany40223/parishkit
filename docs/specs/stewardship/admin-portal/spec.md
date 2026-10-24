@@ -1118,9 +1118,10 @@ Notes on the groups:
   ([#1660](https://github.com/epiphany40223/parishkit/issues/1660)) was folded
   into it (the Administrator, R39 finding 2, 2026-10-19), and its address is
   gone, with no redirect. Census changes, Additional information, Ministry
-  requests and Limitations show their open counts
+  requests, Limitations and Pledges show their open counts
   ([#585](https://github.com/epiphany40223/parishkit/issues/585),
-  [#1590](https://github.com/epiphany40223/parishkit/issues/1590)): for
+  [#1590](https://github.com/epiphany40223/parishkit/issues/1590),
+  [#2125](https://github.com/epiphany40223/parishkit/issues/2125)): for
   Census changes, the rows at its To review and Conflict stages, the same
   for Administrators and Staff (Administrator decision, 2026-10-18; Ready
   to update is left to Update ParishSoft and the manual-entry report),
@@ -1132,13 +1133,18 @@ Notes on the groups:
   [existing state to stage](../review-pipeline/spec.md#existing-state-to-stage)),
   read through that page's own selection with every filter it applies (only
   the leader's own Ministries for a Ministry leader); where that page would
-  say the follow-up is unavailable, no number shows; for Limitations, the
+  say the follow-up is unavailable, no number shows. Ministry requests' menu
+  count stays its own: the roster changes still to enter are counted only
+  on Home's [Next steps](#home-page). For Limitations, the
   answers at the worklist's default To review stage, read through that
   page's own selection with its default filters, with the Cannot contribute
   financially answers the page lists at To review, read through Pledges' own
   stage selection, for a viewer who may open Pledges (R39 findings 10 and
-  11). The menu count stays Ministry requests' own; the roster changes still
-  to enter are counted only on Home's [Next steps](#home-page). All the counts ride on one statement. Each is a plain number after the entry's
+  11); for Pledges, the pledges at its default To review stage, read through
+  its own stage selection, for a viewer who may open Pledges; where that
+  page would say Pledges are unavailable, no number shows. All the counts
+  ride on one statement, which reads Pledges' stage selection once for both
+  its count and Limitations'. Each is a plain number after the entry's
   name that screen readers announce as "(N open)". No number shows at zero,
   nor on a greyed-out entry. The counts are read when a page loads, never
   updated in place, so a number never appears or disappears under the
@@ -1294,8 +1300,8 @@ state, modules and mode the chrome already reads, and from whether
 ParishSoft data has been downloaded yet (#1242): one small query, run once
 per request and only when an entry's condition needs it, for a viewer whose
 menu has Ministries, Additional information or the directory. The other
-exception is the open counts on Census changes, Additional information and
-Ministry requests ([Menu groups](#menu-groups)): one query reads them all, only when the
+exception is the open counts on Census changes, Additional information,
+Ministry requests, Limitations and Pledges ([Menu groups](#menu-groups)): one query reads them all, only when the
 viewer's menu offers one of those entries as a link, once per request.
 
 #### Home page
