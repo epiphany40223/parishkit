@@ -693,12 +693,22 @@ containing:
   pledge and contribution of each fund. Every one names its own organization,
   so a load must drop them all (see
   [ParishSoft organization scope](../data/spec.md#parishsoft-organization-scope)).
-  Rosters and Family groups are unchanged. A `families/search` scoped to one
-  other organization, as the setup wizard's
-  [organization lookup](../admin-portal/spec.md#parishsoft-organization-choice)
-  sends it, answers for odd-numbered other organizations with their one
-  Family and for even-numbered ones with an empty array, so
-  `organizations 2` offers one selectable and one greyed organization.
+  Rosters and Family groups are unchanged. Each other organization also
+  answers the requests scoped to it as a parish of its own, so whichever
+  organization the setup wizard's
+  [organization choice](../admin-portal/spec.md#parishsoft-organization-choice)
+  offers can be loaded (pk-local finding of 2026-10-24): the first is a
+  small generated parish ("Neighboring Parish 1", 12 Families and a
+  late-added one, served at once) whose every collection the loads read
+  (Families, Members, contact rows, Ministry types and rosters, Family and
+  Member WorkGroups and their rosters, funds, pledges and contributions) is
+  consistent with the others, every row naming that organization and every
+  record identity shifted far from the synthetic parish's, so the requests
+  that name no organization (rosters, `members/{id}`, the Family WorkGroup
+  list) find its records too. The second holds nothing at all: each of its
+  scoped requests answers an empty collection, so the lookup greys it and a
+  load of it is refused as empty. `organizations 2` thus offers one
+  selectable and one greyed organization.
 
 The fake reads the file once at start, so restarts and deploys keep the same
 data. `up` writes `release_at: null`, so the setup wizard's initial load does
@@ -754,7 +764,8 @@ Further rules:
   `organizationID`/`organizationId`. The generated parish itself does not
   carry them; the fake adds them when it answers.
 - Tenant parameters are validated: an organization ID in a search body or path
-  other than the synthetic organization's gets 404.
+  other than the synthetic organization's, or one of the
+  `other_organizations`, gets 404.
 - Malformed parameters get 400: a page size outside 1 to 500, a page position
   below the first page, a non-numeric paging field, or a POST body that is
   not a JSON object.

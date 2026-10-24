@@ -507,10 +507,13 @@ def contact_row(member, family):
 class _Generator:
     """One deterministic pass; every random draw comes from ``self.rng`` in order."""
 
-    def __init__(self, seed, families, anchor, organization_id):
+    def __init__(self, seed, families, anchor, organization_id, name, offset):
         self.rng = random.Random(seed)
         self.seed, self.count, self.anchor = seed, families, anchor
         self.organization_id = organization_id
+        self.name = name
+        # Added to every generated record identity (``generate``).
+        self.offset = offset
         self.counts = scaling(families)
         self.families, self.members, self.contacts = [], [], []
         self.heads = {}  # family DUID -> head Member rows
@@ -535,7 +538,7 @@ class _Generator:
 
     def _member(self, family_id, last, *, member_type, sex, age, married):
         """One Member search row plus its contact-list row, both appended."""
-        duid = MEMBER_BASE + len(self.members) + 1
+        duid = self.offset + MEMBER_BASE + len(self.members) + 1
         first = self.rng.choice(MALE_NAMES if sex == "Male" else FEMALE_NAMES)
         adult = member_type in ADULT_TYPES
         middle = (
@@ -595,7 +598,7 @@ class _Generator:
 
     def _family(self, index, size):
         """Build one Family with ``size`` Members: heads first, then dependants."""
-        duid = FAMILY_BASE + index + 1
+        duid = self.offset + FAMILY_BASE + index + 1
         last = self.rng.choice(LAST_NAMES)
         couple = size >= 2 and self.rng.random() < COUPLE_SHARE
         heads = []
@@ -790,7 +793,7 @@ class _Generator:
         adults = self._volunteers()
         self.family_workgroups, self.family_workgroup_rosters = [], {}
         for index in range(self.counts["family_workgroups"]):
-            duid = FAMILY_WORKGROUP_BASE + index
+            duid = self.offset + FAMILY_WORKGROUP_BASE + index
             name = (
                 FAMILY_WORKGROUP_NAMES[index]
                 if index < len(FAMILY_WORKGROUP_NAMES)
@@ -812,7 +815,7 @@ class _Generator:
             ]
         self.member_workgroups, self.member_workgroup_rosters = [], {}
         for index in range(self.counts["member_workgroups"]):
-            identifier = MEMBER_WORKGROUP_BASE + index
+            identifier = self.offset + MEMBER_WORKGROUP_BASE + index
             name = (
                 MEMBER_WORKGROUP_NAMES[index]
                 if index < len(MEMBER_WORKGROUP_NAMES)
@@ -871,7 +874,7 @@ class _Generator:
         """
         self.ministries = [
             {
-                "id": MINISTRY_BASE + index,
+                "id": self.offset + MINISTRY_BASE + index,
                 "name": (
                     MINISTRY_NAMES[index]
                     if index < len(MINISTRY_NAMES)
@@ -933,7 +936,7 @@ class _Generator:
         """Funds, pledges for the current and previous years, and 15 months of gifts."""
         self.funds = [
             {
-                "fundId": FUND_BASE + index,
+                "fundId": self.offset + FUND_BASE + index,
                 "name": FUNDS[index][0] if index < len(FUNDS) else f"Fund {index + 1}",
                 "active": True,
                 "fundStartDate": None,
@@ -956,7 +959,7 @@ class _Generator:
             fund = pledge_funds[index % len(pledge_funds)]
             year = self.anchor.year if self.rng.random() < 0.7 else self.anchor.year - 1
             start = date(year, 1, 1)
-            identifier = PLEDGE_BASE + index + 1
+            identifier = self.offset + PLEDGE_BASE + index + 1
             self.pledges.append(
                 {
                     "pledgeID": identifier,
@@ -995,7 +998,7 @@ class _Generator:
             family_id = 0 if family is None else family["familyDUID"]
             self.contributions.append(
                 {
-                    "contributionID": CONTRIBUTION_BASE + index + 1,
+                    "contributionID": self.offset + CONTRIBUTION_BASE + index + 1,
                     "organizationId": self.organization_id,
                     "fundId": fund["fundId"],
                     "familyId": family_id,
@@ -1020,7 +1023,7 @@ class _Generator:
             anchor_date=self.anchor.isoformat(),
             organization={
                 "organizationID": self.organization_id,
-                "organizationReportName": LOCAL_ORGANIZATION_NAME,
+                "organizationReportName": self.name,
             },
             families=self.families,
             members=self.members,
@@ -1048,13 +1051,20 @@ def generate(
     anchor_date=None,
     *,
     organization_id=LOCAL_ORGANIZATION_ID,
+    organization_name=LOCAL_ORGANIZATION_NAME,
+    identity_offset=0,
 ):
     """Generate the parish for ``seed``, ``families`` and the anchor date.
 
     ``anchor_date`` defaults to today only for ad hoc use; the fake always
     passes the date recorded in its configuration file, so that restarts keep
     the same ages, roster dates and giving history. ``organization_id`` is a
-    test hook; deployments use the LOCAL constant.
+    test hook; deployments use the LOCAL constant. The fake's other
+    organizations (#1554) are parishes of their own: ``organization_name``
+    names one, and ``identity_offset`` is added to every record identity
+    (Families, Members, WorkGroups, Ministries, funds, pledges and
+    contributions), so its records never share an identity with the
+    synthetic parish's, even in the requests that name no organization.
     """
     if type(seed) is not int or isinstance(seed, bool) or not 0 <= seed < 2**63:
         raise ValueError("The synthetic parish seed must be an integer.")
@@ -1065,7 +1075,11 @@ def generate(
         raise ValueError("The synthetic parish anchor must be a civil date.")
     if type(organization_id) is not int or not 1 <= organization_id < 2**31 - 1:
         raise ValueError("The synthetic organization identity is invalid.")
-    return _Generator(seed, families, anchor, organization_id).parish()
+    if type(identity_offset) is not int or not 0 <= identity_offset <= 10**9:
+        raise ValueError("The synthetic identity offset is invalid.")
+    return _Generator(
+        seed, families, anchor, organization_id, organization_name, identity_offset
+    ).parish()
 
 
 def digest(parish):
