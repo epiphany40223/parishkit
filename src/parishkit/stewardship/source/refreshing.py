@@ -18,8 +18,11 @@ from django.db import connection, connections
 from parishkit.parishsoft import ParishSoftConfig
 from parishkit.parishsoft_source import CoherentParishSoftClient
 from parishkit.stewardship.accounts.configuration_models import Parish
+from parishkit.stewardship.campaigns.campaign_families import KEY as FAMILIES
+from parishkit.stewardship.campaigns.campaign_families import digest as rule_digest
+from parishkit.stewardship.campaigns.campaign_families import recorded_digest
 from parishkit.stewardship.jobs.phases import TaskPhase
-from parishkit.stewardship.observability import Event, emit
+from parishkit.stewardship.observability import Event, FailureKind, emit
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .attempts import (
@@ -242,6 +245,46 @@ def _derived_baseline(trend, counted):
     return baseline
 
 
+# The derived counts a Families rule decides (#1393): which Families are
+# Portal-eligible, which can be emailed, and which have heads the rule
+# accepts. The record and contact counts do not depend on it.
+RULE_COUNTS = (
+    "portal_eligible_families",
+    "email_eligible_families",
+    "active_head_families",
+)
+
+
+def _rule_baseline(baseline, trend, counted, *, rule, counted_rule):
+    """``baseline`` with the rule-decided counts taken only under ``rule``.
+
+    ``rule`` is this load's Families rule digest and ``counted_rule`` the
+    current snapshot's (``None``: the legacy rule). When every snapshot
+    compared recorded the same rule, ``baseline`` is returned unchanged, as
+    it always was. Otherwise each rule count compares only with the
+    snapshots recorded under this load's rule, and with none (a new
+    campaign's first load, whose count the Administrator approved at
+    creation) it starts again from zero; the other counts keep their trend.
+    """
+    if baseline is None or (
+        counted_rule == rule
+        and all(recorded_digest(snapshot.cursor) == rule for snapshot in trend)
+    ):
+        return baseline
+    adjusted = dict(baseline)
+    for name in RULE_COUNTS:
+        values = [
+            recorded[name]
+            for snapshot in _within(trend, name)
+            if recorded_digest(snapshot.cursor) == rule
+            and (recorded := _recorded_derived(snapshot)) is not None
+        ]
+        if counted_rule == rule and valid_derived_counts(counted):
+            values.append(counted[name])
+        adjusted[name] = max(values, default=0)
+    return adjusted
+
+
 def _inputs(attempt_id, execution, claim):
     """Read the actual current base and the permanent full-refresh count trend.
 
@@ -267,6 +310,7 @@ def _inputs(attempt_id, execution, claim):
         counts = None
         counted = None
         trend = None
+        counted_rule = None
         base_workgroup = None
         contact_missing = None
         if current.snapshot_id is not None:
@@ -290,6 +334,7 @@ def _inputs(attempt_id, execution, claim):
             # manifest, so normally nothing is reconstructed for this.
             current_row = SourceSnapshot.objects.get(pk=current.snapshot_id)
             base_workgroup = recorded(current_row.cursor)
+            counted_rule = recorded_digest(current_row.cursor)
             counted = _recorded_derived(current_row)
         zone = (
             scope.campaign.active_configuration.timezone
@@ -317,7 +362,13 @@ def _inputs(attempt_id, execution, claim):
             counted = derived_counts(
                 reconstruct_snapshot(current.snapshot_id, kinds=("family", "contact"))
             )
-        derived = _derived_baseline(trend, counted)
+        derived = _rule_baseline(
+            _derived_baseline(trend, counted),
+            trend,
+            counted,
+            rule=rule_digest(window.families),
+            counted_rule=counted_rule,
+        )
     return RefreshInputs(
         window,
         as_of,
@@ -408,6 +459,13 @@ def load_and_stage_attempt(execution, claim, credential):
     # organizations' WorkGroups too (#1554); nothing for one organization.
     evidence = loaded.evidence | organization_evidence(client)
     log_organizations(evidence, task_id=execution.claim.run_id)
+    if (evidence.get(FAMILIES) or {}).get("missing_groups"):
+        emit(
+            Event.TASK_STARTED,
+            level=logging.WARNING,
+            task_id=execution.claim.run_id,
+            failure_kind=FailureKind.CAMPAIGN_FAMILY_GROUP_MISSING,
+        )
     if workgroup is not None:
         warn_if_missing(workgroup, task_id=execution.claim.run_id)
         evidence = {**evidence, EVIDENCE_KEY: workgroup}

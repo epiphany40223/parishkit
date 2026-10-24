@@ -1187,6 +1187,51 @@ BEGIN
     IF target IS NOT NULL THEN
         SELECT * INTO candidate FROM stewardship_campaign_configuration WHERE record_id=target AND configuration_id=NEW.active_configuration_id;
         IF NOT FOUND THEN RAISE EXCEPTION 'Current campaign cannot be removed' USING ERRCODE='23514'; END IF;
+        -- The Families rule (#1393) is fixed when the campaign is created:
+        -- every later configuration of an existing campaign carries exactly
+        -- the value its current one carries, in every state, and an absent
+        -- value (the legacy rule) stays absent.
+        IF EXISTS (SELECT 1 FROM stewardship_campaign c JOIN stewardship_campaign_configuration old_c ON old_c.id=c.active_configuration_id
+            WHERE c.id=target AND old_c.values->'campaign_families' IS DISTINCT FROM candidate.values->'campaign_families') THEN
+            RAISE EXCEPTION 'The campaign''s Families cannot be changed' USING ERRCODE='23514';
+        END IF;
+        -- A configuration that creates the campaign may carry a rule, which
+        -- must be one canonical shape (campaigns/campaign_families.py
+        -- validate): a preset, or Advanced with a registration flag, Family
+        -- groups by ascending id ({id, name}; id 0 only as the no-group
+        -- choice) and Member statuses in ParishSoft's order. Nested CASEs fix
+        -- the evaluation order, so a malformed value is refused, not miscast.
+        IF NOT EXISTS (SELECT 1 FROM stewardship_campaign WHERE id=target)
+            AND candidate.values ? 'campaign_families'
+            AND NOT coalesce(CASE WHEN jsonb_typeof(candidate.values->'campaign_families')<>'object' THEN false
+                WHEN candidate.values->'campaign_families'->>'rule' IN ('active_parishioners','active_parishioners_and_staff') THEN
+                    (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(candidate.values->'campaign_families') k)=ARRAY['rule']
+                WHEN candidate.values->'campaign_families'->>'rule'<>'advanced'
+                    OR (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(candidate.values->'campaign_families') k)
+                        IS DISTINCT FROM ARRAY['family_groups','member_statuses','registered','rule']
+                    OR jsonb_typeof(candidate.values->'campaign_families'->'registered')<>'boolean'
+                    OR jsonb_typeof(candidate.values->'campaign_families'->'family_groups')<>'array'
+                    OR jsonb_typeof(candidate.values->'campaign_families'->'member_statuses')<>'array' THEN false
+                WHEN jsonb_array_length(candidate.values->'campaign_families'->'family_groups')=0
+                    OR EXISTS (SELECT 1 FROM jsonb_array_elements(candidate.values->'campaign_families'->'family_groups') g(grp)
+                        WHERE CASE WHEN jsonb_typeof(g.grp)<>'object' THEN true
+                            WHEN (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(g.grp) k) IS DISTINCT FROM ARRAY['id','name']
+                                OR jsonb_typeof(g.grp->'id')<>'number' OR g.grp->>'id'!~'^(0|[1-9][0-9]{0,9})$'
+                                OR jsonb_typeof(g.grp->'name')<>'string' THEN true
+                            ELSE (g.grp->>'id')::bigint>=2147483648
+                                OR char_length(g.grp->>'name') NOT BETWEEN 1 AND 200
+                                OR (g.grp->>'id'='0' AND g.grp->>'name'<>'(No Family Group)') END) THEN false
+                ELSE coalesce((SELECT bool_and(x.id>x.previous) FROM (
+                        SELECT (e.grp->>'id')::bigint AS id, lag((e.grp->>'id')::bigint) OVER (ORDER BY e.position) AS previous
+                        FROM jsonb_array_elements(candidate.values->'campaign_families'->'family_groups') WITH ORDINALITY e(grp,position)) x
+                        WHERE x.previous IS NOT NULL),true)
+                    AND candidate.values->'campaign_families'->'member_statuses'=(
+                        SELECT jsonb_agg(to_jsonb(u.status) ORDER BY u.position)
+                        FROM unnest(ARRAY['Active','ActOther','Unknown']) WITH ORDINALITY u(status,position)
+                        WHERE candidate.values->'campaign_families'->'member_statuses' @> jsonb_build_array(u.status))
+                END,false) THEN
+            RAISE EXCEPTION 'Invalid campaign Families rule' USING ERRCODE='23514';
+        END IF;
         IF NEW.restore_review_required AND EXISTS (
             SELECT 1 FROM stewardship_campaign c JOIN stewardship_campaign_configuration old_c ON old_c.id=c.active_configuration_id
             WHERE c.id=target AND old_c.values IS DISTINCT FROM candidate.values
@@ -9215,6 +9260,7 @@ CREATE FUNCTION public.stewardship_source_current_window_v1(campaign_id uuid) RE
 DECLARE campaign stewardship_campaign%ROWTYPE;
         values jsonb;
         periods jsonb := '[]'::jsonb;
+        document jsonb;
 BEGIN
     IF campaign_id IS NOT NULL THEN
         SELECT * INTO campaign FROM stewardship_campaign WHERE id=campaign_id;
@@ -9235,8 +9281,17 @@ BEGIN
                     'funds',values#>'{financial,comparison_fund_duids}'));
         END IF;
     END IF;
-    RETURN stewardship_source_canonical(
-        jsonb_build_object('campaign_id',campaign_id,'periods',periods));
+    document := jsonb_build_object('campaign_id',campaign_id,'periods',periods);
+    -- The campaign's Families rule (#1393) decides the load's eligibility, so
+    -- it is part of the exact scope, as source/windows.py builds it. It joins
+    -- only when the campaign has one: a legacy campaign's window text, and
+    -- its digest, stay exactly what they were before rules existed.
+    IF values->'campaign_families' IS NOT NULL
+       AND values->'campaign_families' <> 'null'::jsonb THEN
+        document := document || jsonb_build_object(
+            'campaign_families', values->'campaign_families');
+    END IF;
+    RETURN stewardship_source_canonical(document);
 END;
 $$;
 
