@@ -7,6 +7,7 @@ from parishkit.stewardship.accounts.schedule_calendar_views import (
     WEEK,
     calendar_sends,
 )
+from parishkit.stewardship.accounts.schedule_table import ScheduleRow
 
 from .test_schedule_table import BEFORE, OWNER, VALUES, saved
 
@@ -104,3 +105,30 @@ def test_only_upcoming_family_sends_are_movable():
         True,
         False,
     )
+
+
+def test_every_family_email_holds_its_own_moment_but_no_report_does():
+    """The calendar's exposure of Edit's same-moment rule (PR #2095, R50).
+
+    Edit's review refuses two Family emails at one date and time, so each
+    initial invitation and reminder, sent or not, is a moment a moved send
+    can't take; a report email's send is not Family mail and never clashes.
+    """
+    rows = saved()
+    initial = next(row for row in rows if row["values"]["kind"] == "initial")
+    later = datetime(2054, 10, 5, tzinfo=UTC)
+    sends = calendar_sends(rows, VALUES, {initial["id"]: {"delivered": 3}}, later)
+    assert [(send.status, send.own_moment) for send in sends] == [
+        ("sent", True),
+        ("upcoming", True),
+        ("upcoming", True),
+    ]
+    report = ScheduleRow(
+        id="r",
+        label="Daily report",
+        kind="report",
+        subject="",
+        status="upcoming",
+        due=later,
+    )
+    assert report.own_moment is False

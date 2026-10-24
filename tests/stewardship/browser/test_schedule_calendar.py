@@ -1198,3 +1198,65 @@ def test_only_days_a_send_can_move_to_take_a_drag_or_a_move(page, component_orig
     assert not submit.is_disabled()
     assert refusal.inner_text() == ""
     assert date.get_attribute("aria-invalid") == "false"
+
+
+def test_a_day_another_family_email_holds_takes_no_drag_or_move(page, component_origin):
+    """A send can't move onto another Family email's moment (PR #2095, R50).
+
+    Every send is at 6:00 AM here, so Reminder 1 (October 10) dragged onto
+    October 20, where Reminder 2 sends at 6:00 AM, finds that day
+    unavailable, titled with why, never outlined, and a drop there opens
+    nothing; nothing moves. October 21 stays a target. Move… refuses
+    October 20 with the reason in its reserved line, in Month and in Week
+    (from Reminder 2, onto October 10), as it refuses a past day.
+    """
+    from datetime import UTC, datetime
+
+    page.set_viewport_size({"width": 1280, "height": 1600})
+    page.clock.install(time=datetime(2054, 10, 5, 14, tzinfo=UTC))
+    page.goto(component_origin + CALENDAR)
+    failures = watch(page)
+    page.locator("table.calendar-month").scroll_into_view_if_needed()
+    button = move_button(page, 10, "Reminder 1")
+    taken, free = cell(page, 20), cell(page, 21)
+    place = page_place(taken)
+    page.mouse.move(*centre(button))
+    page.mouse.down()
+    page.mouse.move(*centre(free), steps=8)
+    has_class(free, "calendar-drop-target")
+    assert free.get_attribute("title") is None
+    page.mouse.move(*centre(taken), steps=8)
+    has_class(taken, "calendar-drop-unavailable")
+    assert "calendar-drop-target" not in taken.get_attribute("class")
+    assert "Another email to Families already sends at 6:00" in taken.get_attribute(
+        "title"
+    )
+    assert same_place(page_place(taken), place)
+    page.mouse.up()
+    assert not is_open(page, MOVE_DIALOG)
+    assert taken.get_attribute("title") is None
+    assert page.evaluate("window.notReloaded === true")
+    for address, day, name, other in (
+        (CALENDAR, 10, "Reminder 1", "2054-10-20"),
+        (f"{CALENDAR}?view=week&week=2054-10-18", 20, "Reminder 2", "2054-10-10"),
+    ):
+        if address != CALENDAR:
+            page.goto(component_origin + address)
+            failures = watch(page)
+        move_button(page, day, name).click()
+        dialog = page.locator(MOVE_DIALOG)
+        visible(dialog)
+        date = dialog.locator('[name="schedule-date"]')
+        submit = dialog.get_by_role("button", name="Review the move")
+        refusal = dialog.locator("#calendar-move-refusal")
+        before = submit.bounding_box()["y"]
+        date.fill(other)
+        assert submit.is_disabled(), address
+        assert "two can’t send at the same date and time" in refusal.inner_text()
+        assert date.get_attribute("aria-invalid") == "true"
+        assert date.get_attribute("aria-describedby") == "calendar-move-refusal"
+        assert submit.bounding_box()["y"] == before
+        date.fill("2054-10-21")
+        assert not submit.is_disabled()
+        assert refusal.inner_text() == ""
+        assert not failures

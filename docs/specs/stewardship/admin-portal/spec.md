@@ -4001,14 +4001,17 @@ checks it exactly as that page does.
   **New send date**, filled in with the send's date. Its choices are only
   the days the send can move to (see **The moved send**): the field's
   earliest and latest dates are set, so the browser's date picker offers
-  no other day. **Review the move**
+  no other day; a day between them that is still refused (another Family
+  email's moment) can be picked but is refused as below. **Review the move**
   stays unavailable until the date differs from the send's
   ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)), with
-  its hint after it, and while the date is empty or outside those days,
-  with the reason in the dialog's reserved line ("On that day this send
-  time has already passed, so it would send at once. Choose October 6,
-  2054 or later.", "That day is after the campaign closes on October 31,
-  2054. Choose October 31, 2054 or earlier."), which marks and describes
+  its hint after it, and while the date is empty or not a day the send
+  can move to, with the reason in the dialog's reserved line ("On that day
+  this send time has already passed, so it would send at once. Choose
+  October 6, 2054 or later.", "That day is after the campaign closes on
+  October 31, 2054. Choose October 31, 2054 or earlier.", "Another email
+  to Families already sends at 9:00 AM on that day, and two can't send at
+  the same date and time. Choose another day."), which marks and describes
   the field. Review posts the move to the schedule's Edit scheduled
   email address (`move=yes` with the date, the browser's zone and the
   configuration version) and the server answers exactly the review Edit
@@ -4040,7 +4043,8 @@ checks it exactly as that page does.
   to is a target: while the drag lasts every other day of the grid looks
   unavailable, as an [unavailable
   control](../ui-conventions/spec.md#prerequisite-gates) does (greyed, with
-  the not-allowed pointer; only colours change, so nothing moves), is never
+  the not-allowed pointer; only colours change, so nothing moves), has a
+  tooltip with the same reason Move… gives for that day, is never
   outlined and takes no drop. Dropping it on another day it can move to
   opens the same Move dialog with that day filled in; dropping it
   on its own day, on a day it can't move to, outside the grid, or pressing
@@ -4061,12 +4065,19 @@ checks it exactly as that page does.
   kept time is still ahead (today while that time is to come, else
   tomorrow; never before the campaign's first day) through the campaign's
   last day, the bound Edit enforces for an invitation or reminder (report
-  email sends are not movable here). Drag and Move… offer only those days,
+  email sends are not movable here), less each day on which its kept time
+  is the moment of another Family email (the Initial invitation or a
+  reminder; report email sends never clash): Edit's review refuses two
+  Family emails at one date and time (`same_time`), so a reminder can still
+  move to a day with another reminder at a different time (Administrator,
+  R50 on PR #2095). The page marks each Family email among its sends and
+  the browser compares exact moments, the server's rule, never its own
+  per-day one. Drag and Move… offer only those days,
   in Month and Week alike, and the server refuses any other at the date
   ("This day's send time has already passed, so the email would send at
   once. Choose a later day."; a day outside the campaign keeps Edit's
-  refusal), changing nothing. Before this the server drew a past move's
-  review.
+  refusal; a shared moment keeps the review's refusal), changing nothing.
+  Before this the server drew a past move's review.
 - **A series reminder** moves as "This reminder only". On a day its rule does
   not give, it leaves the series, and the review says so in Edit's line
   ([New and Edit scheduled email](#new-and-edit-scheduled-email)). The series

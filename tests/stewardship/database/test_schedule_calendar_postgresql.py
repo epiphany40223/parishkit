@@ -594,6 +594,15 @@ def test_a_missed_send_or_a_digest_does_not_move(auth_service, google, monkeypat
     daily = f"/admin/mail/report-emails/{definition('report').pk}/"
     assert f'data-edit-url="{daily}?send=' in page
     assert f'data-move-url="{daily}' not in page
+    # Only Family emails are moments a move can't share (PR #2095): the
+    # missed invitation still is one, a report's send never is.
+    items = {
+        item: "data-own-moment" in item
+        for item in re.findall(r"<li data-calendar-send[^>]*>", page)
+        if first in item or daily in item
+    }
+    assert set(items.values()) == {False, True}
+    assert all(flag == (first in item) for item, flag in items.items())
     before = ConfigurationChangeRequest.objects.count()
     refused = post(browser, first, move(store, date="2054-10-20"))
     assert refused.status_code == 403

@@ -133,6 +133,19 @@ class ScheduleRow:
         return self.kind == "report"
 
     @property
+    def own_moment(self):
+        """Whether no other Family email may send at this send's moment.
+
+        Every initial invitation and reminder: Edit's review refuses two
+        Family emails at one date and time (``same_time``, as
+        ``validate_campaign_sections`` checks), and a report email is not
+        Family mail. The Campaign calendar marks these sends so Drag and
+        Move… refuse a day where the moved send's kept time is one of their
+        moments (PR #2095).
+        """
+        return not self.digest
+
+    @property
     def movable(self):
         """Whether the Campaign calendar offers Move… for this send (#1521).
 

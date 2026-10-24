@@ -1166,7 +1166,8 @@ td > :last-child { margin-bottom: 0; }
 .calendar-month td.calendar-drop-target { outline: 2px dashed var(--accent); outline-offset: -3px; }
 .calendar-drag-active, .calendar-drag-active * { cursor: grabbing; user-select: none; -webkit-user-select: none; }
 /* A day a dragged send can't move to (PR #2095: already past for its time
-   of day, or outside the campaign) looks unavailable, as every unavailable
+   of day, outside the campaign, or at another Family email's moment) looks
+   unavailable, titled with why, as every unavailable
    control does: greyed, with the not-allowed pointer. Only colours change,
    so nothing moves. */
 .calendar-month td.calendar-drop-unavailable { background: var(--paper-soft); color: var(--unavailable); }
