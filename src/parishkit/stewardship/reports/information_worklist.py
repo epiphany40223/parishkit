@@ -11,6 +11,7 @@ decides what is allowed: the service and its SQL guard (schema
 information_followup.sql, migration 0126) refuse what a reader may not do.
 """
 
+from collections import Counter
 from dataclasses import dataclass, replace
 from uuid import UUID
 
@@ -22,7 +23,7 @@ from django.utils.text import Truncator
 
 from parishkit.stewardship.accounts.models import PortalUser
 from parishkit.stewardship.observability import Event, emit_failure
-from parishkit.stewardship.pipeline import Stage, Stream
+from parishkit.stewardship.pipeline import Stage, Stream, information_placement
 from parishkit.stewardship.responses.information import (
     StaleItem,
     decide_information,
@@ -55,6 +56,52 @@ STAGES = (Stage.TO_REVIEW, Stage.TO_HANDLE, Stage.IGNORED, Stage.HANDLED)
 STAGE_CHOICES = frozenset(
     {*(stage.value for stage in STAGES), Stage.HISTORY.value, EVERY_STAGE}
 )
+# The menu's and My review work's read of the stream (#2101;
+# ``admin_context.OPEN_COUNTS`` embeds it): the campaign's current live
+# requests grouped by the state ``information_placement`` reads, as JSON
+# text. ``staff_ignored`` is ``responses.information.staff_ignored`` in SQL:
+# the latest Staff revision's review decision is Ignored, or (saved before
+# migration 0126) it has none. Superseded and withdrawn requests are
+# History, which no card or menu entry counts. ``group_stages`` places it.
+# Takes ``%(campaign)s``.
+OPEN_GROUPS = """
+SELECT coalesce(jsonb_agg(jsonb_build_array(
+        g.follow_up_needed, g.followed_up, g.staff_ignored, g.n)), '[]')::text
+FROM (
+    SELECT i.follow_up_needed, i.followed_up_at IS NOT NULL AS followed_up,
+        coalesce((SELECT coalesce(r.review_decision, 'ignored')='ignored'
+            FROM stewardship_information_revision r WHERE r.item_id=i.id
+            ORDER BY r.expected_version DESC LIMIT 1), false) AS staff_ignored,
+        count(*) AS n
+    FROM stewardship_additional_information i
+    JOIN stewardship_submission s ON s.id=i.submission_id
+    WHERE s.campaign_id=%(campaign)s AND s.mode='live'
+        AND i.disposition='current_actionable'
+    GROUP BY 1, 2, 3
+) g
+"""
+
+
+def group_stages(groups):
+    """``OPEN_GROUPS``' decoded groups counted by stage value (#2101).
+
+    Each ``[follow_up_needed, followed_up, staff_ignored, count]`` group is
+    placed by ``information_placement``, the mapping the worklist places
+    each request with (``requests``), so a count cannot drift from its
+    Stage choice. A state the mapping does not place raises ValueError.
+    """
+    counts = Counter()
+    for needed, done, ignored, count in groups:
+        placement = information_placement(
+            disposition="current_actionable",
+            follow_up_needed=needed,
+            followed_up=done,
+            staff_ignored=ignored,
+        )
+        counts[placement.stage.value] += count
+    return dict(counts)
+
+
 # The identity columns, in the shared column order (UX conventions, "Table
 # column order"), each sorted by ``SORTING``'s tokens.
 COLUMNS = (

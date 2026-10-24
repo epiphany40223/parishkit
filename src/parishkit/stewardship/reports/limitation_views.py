@@ -206,9 +206,14 @@ def _respond(request, campaign_id, *, export, render):
         principal = _principal(request, service.store, export=export)
         admit_report_read(campaign_id)
         try:
-            if request.GET:
+            # A page link may carry a Stage alone, a My review work card's
+            # ``?stage=`` (#2101), which WorklistQuery.parse checks; the
+            # search, Show and table choices stay private POST state.
+            if request.GET and (
+                export or request.method != "GET" or set(request.GET) != {"stage"}
+            ):
                 raise ValueError("Limitations filters require private POST state.")
-            parameters = request.POST.copy()
+            parameters = (request.GET if request.GET else request.POST).copy()
             parameters.pop("csrfmiddlewaretoken", None)
             extra = {}
             if export:

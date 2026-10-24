@@ -7,43 +7,42 @@ cards (ui-conventions "Overview pages") with the item count at each stage
 of their work. Administrators keep the full Home, which shows the same
 panels as its Review work, with Ready to update.
 
-Every count is read from the stream's own stored state and placed in a
-stage by ``parishkit.stewardship.pipeline``, the one shared mapping, so the
-landing and each stream's worklist agree on what "To review" means:
+Each card's count is the count its stream's worklist shows for that Stage
+choice (#2101), placed in its stage by ``parishkit.stewardship.pipeline``,
+the one shared mapping, from the stream's own stored state:
 
-- Census changes: every proposal of the campaign's live responses, grouped
-  by its stored decision, execution and handling, then
-  ``census_placement``. The census page's own selection (``ROWS`` in
-  ``reports.census_changes``) reads the same proposals.
-- Ministry requests: To review is the follow-up queue's own count
-  (``admin_context._open_counts``, the menu's number), whose default
-  Unresolved filter is exactly the open states ``ministry_placement`` puts
-  at To review; a Ministry leader gets one card per Ministry they lead
-  (``ministry_followup.my_ministries``), read by the same scoped selection.
-  To enter by hand reads the resolved requests through that selection, as
-  Roster changes to enter does, with each one's latest Entered tick.
-- Additional information: ``information_placement`` of each current item.
-- Financial and Cannot participate: every current answer is To review
-  until their slices store a decision (#1686, #1685).
+- The stages the menu counts too take the menu's own read
+  (``admin_context._open_counts``), whose statement places each stream by
+  stage and leaves those counts on each menu entry (``stages``): Census
+  changes before a change's step (To review, Conflict, Ready to update,
+  To enter by hand), Ministry requests To review (the follow-up queue's
+  own count; a Ministry leader gets one card per Ministry they lead,
+  ``ministry_followup.my_ministries``) and To enter by hand, Cannot
+  participate and Additional information To review and To handle. So a
+  card and its menu entry are one read and can never disagree.
+- The other counts are this module's own statement (``COUNTS``): the
+  census changes the parish added (To enter by hand), Financial's every
+  stage (Pledges' own stage selection), and the items Entered by hand
+  whose refresh checks (#1689) may make them Entered incorrectly or flag
+  them Not seen in ParishSoft, which each stream's check read then places
+  (``settle``) as its worklist does.
 
 The selection derives a leader's scope in SQL from the signed-in actor, so a
 leader is never shown another Ministry's count; the other streams are read
-only for roles that may open them. Every other count rides on one statement
-(``COUNTS``), run only when the viewer may see at least one of them; on
-Admin Home it runs inside the menu's own open-count statement
-(``with_counts``), so Home's panel adds no statement of its own.
+only for roles that may open them. ``COUNTS`` runs only when the viewer may
+see at least one of its parts; on Admin Home it runs inside the menu's own
+open-count statement (``with_counts``), so Home's panel adds no statement
+of its own beyond the refresh-check reads of items Entered by hand.
 
 Each card of a stream in ``STAGE_LINKED`` links that stream's review
-worklist at its stage (``?stage=<value>``, #1818), so the page opens on the
-items counted, except census Ready to update, which opens Publish to
-ParishSoft; Cannot participate, which has only To review, links its
-plain page.
+worklist at its stage (``?stage=<value>``, #1818, #2101), so the page opens
+on the items counted, except census Ready to update, which opens Update
+ParishSoft.
 """
 
 import contextlib
 import json
 import logging
-from collections import Counter
 from dataclasses import dataclass
 
 from django.db import DatabaseError, connection, transaction
@@ -51,112 +50,76 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.observability import Event, emit_failure
-from parishkit.stewardship.pipeline import (
-    Placement,
-    Stage,
-    Stream,
-    cannot_participate_placement,
-    census_placement,
-    information_placement,
-    ministry_placement,
-)
+from parishkit.stewardship.pipeline import TERMS, Stage, Stream
+from parishkit.stewardship.web.review_worklist import NOT_SEEN
 
+from .admin_navigation import MENU, PAGES
 from .policy import Capability, allows
 
 # Streams whose page reads ``?stage=<value>`` and filters by it, so each
-# card links its stage (Administrator decision, #1818). Financial's page is
-# Pledges (#1686).
+# card links its stage (Administrator decision, #1818; Cannot participate
+# since #2101). Financial's page is Pledges (#1686).
 STAGE_LINKED = frozenset(
     {
         Stream.CENSUS,
         Stream.MINISTRY,
+        Stream.CANNOT_PARTICIPATE,
         Stream.ADDITIONAL_INFORMATION,
         Stream.FINANCIAL,
     }
 )
 
-# One statement for every count the viewer may see; each part runs only when
-# its flag is set (NULL otherwise), as the menu's own OPEN_COUNTS does. Its
-# flags are named ``review_<flag>`` so that Admin Home can run it inside the
-# menu's statement (``admin_context._open_counts``), whose own flags share
-# the plain names; ``campaign``, ``viewer`` and ``roster_filters`` mean the
-# same in both.
-# Census: the census page's proposals (live responses, report-only rows
-# left to the financial and Ministry streams), grouped by the state
-# census_placement reads. Additional information: current items by the
-# follow-up state information_placement reads (superseded and withdrawn
-# items are history). Financial: the Families whose current live response
-# answers the financial questions, the rows of the Financial stewardship
-# report. Cannot participate: the Members and Families the Limitations
-# report lists, from its own selection. Roster: the resolved requests of the
-# Ministry follow-up selection, with every Member and every revision as
-# Roster changes to enter reads them, grouped by the state
-# ministry_placement reads and the latest Entered tick.
+# One statement for every count of this module's own the viewer may see;
+# each part runs only when its flag is set (NULL otherwise), as the menu's
+# own OPEN_COUNTS does. Its flags are named ``review_<flag>`` so that Admin
+# Home can run it inside the menu's statement (``admin_context.
+# _open_counts``), whose own flags share the plain names; ``campaign``,
+# ``viewer``, ``roster_filters`` and ``roster_outcomes`` mean the same in
+# both. ``statement`` fills in the census reads, whose module is imported
+# lazily.
+# Census: the parish's additions by their latest step
+# (census_changes.ADDITION_STEPS) and the entered changes no later
+# response replaced (census_changes.ENTERED). Financial: Pledges' own stage
+# selection (stewardship_pledge_stages_v1, which places each pledge from
+# its decision in force and latest counting refresh check, #1686, #1747),
+# by stage, with the decision rows of those Entered by hand. Roster: the
+# Ministry requests a person resolved as a roster change (the follow-up
+# selection with every Member and every revision, as Ministry requests
+# reads them for Staff, and workflows.roster.eligible) whose latest tick
+# is Entered, with their versions.
 COUNTS = """
 SELECT
-    CASE WHEN %(review_census)s THEN (
-        SELECT coalesce(jsonb_agg(jsonb_build_array(
-            g.decision, g.execution, g.handling, g.entity_kind,
-            g.admin_value_set, g.n)), '[]'::jsonb)
-        FROM (
-            SELECT p.decision, p.execution, p.handling, p.entity_kind,
-                p.admin_value_set, count(*) AS n
-            FROM stewardship_submission s
-            JOIN stewardship_proposed_change p ON p.submission_id=s.id
-            WHERE s.campaign_id=%(campaign)s AND s.mode='live'
-                AND p.handling<>'report-only'
-            GROUP BY 1, 2, 3, 4, 5) g)
-    END,
-    CASE WHEN %(review_information)s THEN (
-        SELECT coalesce(jsonb_agg(jsonb_build_array(
-            g.follow_up_needed, g.followed_up, g.n)), '[]'::jsonb)
-        FROM (
-            SELECT i.follow_up_needed, i.followed_up_at IS NOT NULL AS followed_up,
-                count(*) AS n
-            FROM stewardship_additional_information i
-            JOIN stewardship_submission s ON s.id=i.submission_id
-            WHERE s.campaign_id=%(campaign)s AND s.mode='live'
-                AND i.disposition='current_actionable'
-            GROUP BY 1, 2) g)
-    END,
+    CASE WHEN %(review_census)s THEN ({additions}) END,
+    CASE WHEN %(review_census)s THEN ({entered}) END,
     CASE WHEN %(review_financial)s THEN (
-        SELECT coalesce(jsonb_agg(jsonb_build_array(g.stage, g.n)), '[]'::jsonb)
+        SELECT coalesce(jsonb_agg(jsonb_build_array(g.stage, g.n, g.entered)),
+            '[]'::jsonb)
         FROM (
-            SELECT stage, count(*) AS n
-            FROM stewardship_pledge_review_states_v1(%(campaign)s, NULL::uuid)
+            SELECT stage, count(*) AS n,
+                coalesce(jsonb_agg(review_id::text)
+                    FILTER (WHERE stage='entered_by_hand'), '[]'::jsonb) AS entered
+            FROM stewardship_pledge_stages_v1(%(campaign)s, NULL::uuid)
             GROUP BY 1) g)
-    END,
-    CASE WHEN %(review_limitations)s THEN (
-        SELECT CASE WHEN v ? 'unavailable' THEN -1
-            ELSE jsonb_array_length(coalesce(v->'members', '[]'::jsonb))
-                + jsonb_array_length(coalesce(v->'families', '[]'::jsonb)) END
-        FROM stewardship_limitations_report_v1(
-            %(campaign)s, '{"search": "", "show": "any"}'::jsonb) v)
     END,
     CASE WHEN %(review_roster)s THEN (
         SELECT coalesce(jsonb_agg(jsonb_build_array(
-            g.state, g.outcome, g.source_resolved, g.entered, g.n)), '[]'::jsonb)
-        FROM (
-            SELECT r->>'state' AS state, r->>'outcome' AS outcome,
-                (r->>'source_resolved')::boolean AS source_resolved,
-                coalesce(e.entered, false) AS entered, count(*) AS n
-            FROM stewardship_ministry_followup_v2(
-                campaign_uuid => %(campaign)s, filters => %(roster_filters)s::jsonb,
-                actor_uuid => %(viewer)s, page_limit => NULL) v
-            CROSS JOIN LATERAL jsonb_array_elements(
-                CASE WHEN (v->>'authorized')::boolean THEN v->'rows'
-                    ELSE '[]'::jsonb END) r
-            LEFT JOIN LATERAL (
+            r->>'id', (r->>'version')::bigint)), '[]'::jsonb)
+        FROM stewardship_ministry_followup_v2(
+            campaign_uuid => %(campaign)s, filters => %(roster_filters)s::jsonb,
+            actor_uuid => %(viewer)s, page_limit => NULL) v
+        CROSS JOIN LATERAL jsonb_array_elements(
+            CASE WHEN (v->>'authorized')::boolean THEN v->'rows'
+                ELSE '[]'::jsonb END) r
+        WHERE r->>'state'='resolved' AND r->>'outcome'=ANY(%(roster_outcomes)s)
+            AND NOT (r->>'source_resolved')::boolean
+            AND coalesce((
                 SELECT x.entered FROM stewardship_ministry_roster_entry x
                 WHERE x.request_id=(r->>'id')::uuid
-                ORDER BY x.sequence DESC LIMIT 1) e ON true
-            -- Only roster outcomes become a roster change; the others
-            -- (declined, no response, ...) are never entered by hand.
-            WHERE r->>'outcome' IN ('joined', 'leave_confirmed')
-            GROUP BY 1, 2, 3, 4) g)
+                ORDER BY x.sequence DESC LIMIT 1), false))
     END
 """
-# Each COUNTS flag and the stream it counts.
+# Each flag (``read_flags``) and the stream it shows. Only ``COUNTED``'s
+# flags have a part in ``COUNTS``; the others' counts are all the menu's.
 FLAG_STREAMS = {
     "census": Stream.CENSUS,
     "information": Stream.ADDITIONAL_INFORMATION,
@@ -164,8 +127,17 @@ FLAG_STREAMS = {
     "limitations": Stream.CANNOT_PARTICIPATE,
     "roster": Stream.MINISTRY,
 }
-# The Limitations count when its report says its inputs are unavailable.
-UNAVAILABLE = -1
+COUNTED = ("census", "financial", "roster")
+# Where ``place`` leaves the items whose refresh checks ``settle`` reads,
+# by stream, until it has.
+CHECKS = "checks"
+
+
+def statement():
+    """``COUNTS`` with the census reads filled in."""
+    from parishkit.stewardship.reports.census_changes import ADDITION_STEPS, ENTERED
+
+    return COUNTS.replace("{additions}", ADDITION_STEPS).replace("{entered}", ENTERED)
 
 
 def lands_here(principal):
@@ -184,19 +156,21 @@ def home_label(principal):
 
 
 def read_counts(principal, campaign_id):
-    """Each stream's item count by stage value, for the streams this person reviews.
+    """This module's counts by stage value, for the streams this person reviews.
 
-    Returns ``{stream value: {stage value: count}}``, plus ``"leader"``: a
+    Returns ``{stream: {stage value: count}}`` (Not seen in ParishSoft under
+    ``NOT_SEEN``) for each stream the person may open, plus ``"leader"``: a
     Ministry leader's per-Ministry To review counts (``my_ministries``), or
-    None for everyone else. Ministry To review for Staff is not read here:
-    the menu already reads it (see the module docstring). A stream whose
-    count could not be read maps to None, and its cards show no number.
+    None for everyone else. A stream whose counts are all the menu's
+    (``FLAG_STREAMS`` outside ``COUNTED``) maps to an empty dict; ``panels``
+    adds the menu's (see the module docstring). A stream whose count could
+    not be read maps to None, and its cards show no number for it.
 
     The counts only decorate the landing, so a failure must never take the
     page (or Admin Home) down, as the menu's own counts never do: a database
     error, or a stored state the pipeline does not place, is logged and
-    every stream the person may open is shown without numbers. Inside the
-    view's read transaction the statement gets a savepoint, so only the
+    every stream the person may open is shown without these numbers. Inside
+    the view's read transaction the reads get a savepoint, so only the
     count is rolled back.
     """
     from .admin_dashboard import leads_ministries
@@ -204,15 +178,7 @@ def read_counts(principal, campaign_id):
     flags = read_flags(principal)
     counts = {}
     if any(flags.values()):
-        isolate = (
-            transaction.atomic if connection.in_atomic_block else contextlib.nullcontext
-        )
-        try:
-            with isolate():
-                counts = _read(flags, principal, campaign_id)
-        except (DatabaseError, ValueError) as error:
-            _record_failure(error)
-            counts = unread(flags)
+        counts = _guarded(flags, lambda: settle(_read(flags, principal, campaign_id)))
     leader = None
     if leads_ministries(principal):
         from parishkit.stewardship.reports.ministry_followup import my_ministries
@@ -222,7 +188,7 @@ def read_counts(principal, campaign_id):
 
 
 def read_flags(principal):
-    """Which ``COUNTS`` parts this person may see, by flag (``FLAG_STREAMS``)."""
+    """Which streams this person may see counted, by flag (``FLAG_STREAMS``)."""
     from parishkit.stewardship.workflows.roster import can_tick
 
     return {
@@ -251,13 +217,32 @@ def _record_failure(error):
     )
 
 
+def _guarded(flags, read):
+    """``read()``, or every flagged stream as not read when it fails.
+
+    Inside a view's transaction the reads get a savepoint, so a failure
+    rolls back only the count; outside one (autocommit) each statement is
+    its own transaction and the savepoint is skipped.
+    """
+    isolate = (
+        transaction.atomic if connection.in_atomic_block else contextlib.nullcontext
+    )
+    try:
+        with isolate():
+            return read()
+    except (DatabaseError, ValueError) as error:
+        _record_failure(error)
+        return unread(flags)
+
+
 def parameters(flags):
     """``COUNTS``' own flag parameters (``review_<flag>``) for ``flags``.
 
-    ``campaign``, ``viewer`` and ``roster_filters`` are the caller's: the
-    menu's statement passes the same values under those names.
+    ``campaign``, ``viewer``, ``roster_filters`` and ``roster_outcomes`` are
+    the caller's: the menu's statement passes the same values under those
+    names.
     """
-    return {f"review_{flag}": on for flag, on in flags.items()}
+    return {f"review_{flag}": bool(flags.get(flag)) for flag in COUNTED}
 
 
 def _read(flags, principal, campaign_id):
@@ -266,10 +251,11 @@ def _read(flags, principal, campaign_id):
         FollowupQuery,
         selection_filters,
     )
+    from parishkit.stewardship.workflows.roster import ROSTER_OUTCOMES
 
     with connection.cursor() as cursor:
         cursor.execute(
-            COUNTS,
+            statement(),
             parameters(flags)
             | {
                 "campaign": campaign_id,
@@ -277,16 +263,17 @@ def _read(flags, principal, campaign_id):
                 "roster_filters": selection_filters(
                     FollowupQuery(state="resolved", history="all"), every_member=True
                 ),
+                "roster_outcomes": sorted(ROSTER_OUTCOMES),
             },
         )
-        return place(cursor.fetchone())
+        return place(flags, cursor.fetchone())
 
 
 def placed(flags, row):
     """``place`` for the menu's statement: a state the pipeline does not place
     is logged and every flagged stream is shown without numbers."""
     try:
-        return place(row)
+        return place(flags, row)
     except ValueError as error:
         _record_failure(error)
         return unread(flags)
@@ -298,93 +285,90 @@ def with_counts(request, review):
     Home does not run ``COUNTS`` itself: the view asks for it with
     ``request._stewardship_review_flags`` and the menu's open counts
     (``admin_context._open_counts``) run it in their own statement, leaving
-    the placed counts on ``request._stewardship_review_counts``. A value
-    that already has its counts (My review work's ``observe``) is returned
-    as is; one whose counts were never read shows its cards without numbers.
+    the placed counts on ``request._stewardship_review_counts``; their
+    refresh checks are read here (``settle``). A value that already has its
+    counts (My review work's ``observe``) is returned as is; one whose
+    counts were never read shows its cards without these numbers.
     """
     if not review or "counts" in review:
         return review
+    flags = review["flags"]
     counts = getattr(request, "_stewardship_review_counts", None)
     if counts is None:
-        counts = unread(review["flags"])
+        counts = unread(flags)
+    elif CHECKS in counts:
+        counts = _guarded(flags, lambda: settle(counts))
+        # A second render of the panel in this request reads nothing again.
+        request._stewardship_review_counts = counts
     return review | {"counts": {**counts, "leader": review.get("leader")}}
 
 
-def place(row):
-    """``COUNTS``' row, each group placed in its stage; see ``read_counts``."""
-    census, information, financial, limitations, roster = (
-        _json(value) for value in row
-    )
-    counts = {}
-    if census is not None:
-        counts[Stream.CENSUS] = _tally(
-            (
-                census_placement(
-                    decision=decision,
-                    execution=execution,
-                    handling=handling,
-                    entity_kind=kind,
-                    admin_value_set=edited,
-                ),
-                n,
-            )
-            for decision, execution, handling, kind, edited, n in census
-        )
-    if information is not None:
-        counts[Stream.ADDITIONAL_INFORMATION] = _tally(
-            (
-                information_placement(
-                    disposition="current_actionable",
-                    follow_up_needed=needed,
-                    followed_up=done,
-                ),
-                n,
-            )
-            for needed, done, n in information
-        )
+def place(flags, row):
+    """``COUNTS``' row, each group placed in its stage; see ``read_counts``.
+
+    The items Entered by hand are left under ``CHECKS`` for ``settle``,
+    which reads their refresh checks.
+    """
+    from parishkit.stewardship.reports.census_changes import addition_stages
+
+    additions, entered, financial, roster = (_json(value) for value in row)
+    # Every stream the person may open; the menu's counts fill those whose
+    # counts are all its own.
+    counts = {FLAG_STREAMS[flag]: {} for flag, on in flags.items() if on}
+    checks = {}
+    if additions is not None:
+        counts[Stream.CENSUS] = addition_stages(additions)
+        checks[Stream.CENSUS] = entered or []
     if financial is not None:
-        # Pledges' own selection places each pledge item (#1686).
-        counts[Stream.FINANCIAL] = _tally(
-            (Placement(Stage(stage)), n) for stage, n in financial
-        )
-    if limitations == UNAVAILABLE:
-        counts[Stream.CANNOT_PARTICIPATE] = None
-    elif limitations is not None:
-        counts[Stream.CANNOT_PARTICIPATE] = _tally(
-            [(cannot_participate_placement(), limitations)]
-        )
+        # Pledges' own selection places each pledge item (#1686, #1747).
+        counts[Stream.FINANCIAL] = {
+            Stage(stage).value: count for stage, count, _ in financial
+        }
+        checks[Stream.FINANCIAL] = [
+            review for _, _, reviews in financial for review in reviews
+        ]
     if roster is not None:
-        counts[Stream.MINISTRY] = _tally(
-            (
-                ministry_placement(
-                    state=state,
-                    outcome=outcome,
-                    source_resolved=resolved,
-                    roster_entered=entered,
-                ),
-                n,
-            )
-            for state, outcome, resolved, entered, n in roster
-        )
-    return counts
+        counts[Stream.MINISTRY] = {}
+        checks[Stream.MINISTRY] = roster
+    return counts | {CHECKS: checks}
+
+
+def settle(counts):
+    """``place``'s counts with the refresh checks of its items Entered by hand.
+
+    Each stream's own check read places them as its worklist does: Census
+    changes' Entered incorrectly and Not seen in ParishSoft
+    (``census_changes.entered_stages``), and the Not seen flag of Ministry
+    requests and pledges (``ministry_worklist.not_seen_count``,
+    ``pledge_refresh.not_seen_count``). Each read runs only when its stream
+    has such an item.
+    """
+    from parishkit.stewardship.reports.census_changes import entered_stages
+    from parishkit.stewardship.reports.ministry_worklist import (
+        not_seen_count as requests_not_seen,
+    )
+    from parishkit.stewardship.reports.pledge_refresh import (
+        not_seen_count as pledges_not_seen,
+    )
+
+    checks = counts.get(CHECKS) or {}
+    found = {key: value for key, value in counts.items() if key != CHECKS}
+    for stream, items in checks.items():
+        if not items or found.get(stream) is None:
+            continue
+        if stream is Stream.CENSUS:
+            extra = entered_stages(items)
+        elif stream is Stream.MINISTRY:
+            extra = {NOT_SEEN: requests_not_seen(items)}
+        else:
+            extra = {NOT_SEEN: pledges_not_seen(items)}
+        found[stream] = found[stream] | extra
+    return found
 
 
 def _json(value):
     """A JSON column as Python: the driver may hand jsonb back as text."""
     return json.loads(value) if isinstance(value, str) else value
-
-
-def _tally(groups):
-    """Sum ``(placement, count)`` groups by stage value.
-
-    A census report-only change places as None (it belongs to another
-    stream) and is skipped, as is an empty group.
-    """
-    counts = Counter()
-    for placement, count in groups:
-        if placement is not None and count:
-            counts[placement.stage.value] += count
-    return dict(counts)
 
 
 def observe(principal, store):
@@ -443,67 +427,120 @@ class Panel:
 
 @dataclass(frozen=True, slots=True)
 class StreamView:
-    """How one stream is shown: its menu page, its words and its stages."""
+    """How one stream is shown: its menu page, its words and its stages.
+
+    Its title is its menu entry's label (``title``), so a panel is named as
+    the Review work menu names its page (Administrator, #2108).
+
+    ``stages`` are the cards' Stage choice values, in order (Not seen in
+    ParishSoft is ``NOT_SEEN``, a flag counted beside its stage). ``menu``
+    are those whose count is the menu entry's (``admin_context.
+    _open_counts``) and ``own`` those ``read_counts`` reads; a stage in
+    both adds the two (Census changes' To enter by hand: the Families'
+    changes and the parish's additions).
+    """
 
     stream: Stream
     entry: str
-    title: str
     # What one item is called after its count ("4 changes").
     items: str
     stages: tuple
+    menu: frozenset = frozenset()
+    own: frozenset = frozenset()
+
+    @property
+    def title(self):
+        """The panel's heading: the menu entry's own label."""
+        return PAGES[self.entry].label
 
 
-# The streams in the order the panels are shown, with the stages a Staff
-# member works on in each (review pipeline spec, "Role views"), plus Ready
-# to update, which only an Administrator acts on (``ADMIN_STAGES``). A stage a
-# stream never reaches is not shown: Ministry requests have no Conflict
-# (rosters are never written, so nothing changes under a request), and
-# Financial and Cannot participate have only To review until their slices
-# store decisions. Entered incorrectly and Not seen in ParishSoft are added
-# when the refresh re-evaluation (#1689) can place an item there.
-ADMIN_STAGES = frozenset({Stage.READY_TO_UPDATE})
-STREAMS = (
+def _values(*stages):
+    """The Stage choice values of ``stages`` (a Stage, or ``NOT_SEEN``)."""
+    return tuple(getattr(stage, "value", stage) for stage in stages)
+
+
+# The streams, with the stages a Staff member works on in each (review
+# pipeline spec, "Role views"), plus Ready to update, which only an
+# Administrator acts on (``ADMIN_STAGES``). A stage a stream never reaches is
+# not shown: Ministry requests have no Conflict and are never Entered
+# incorrectly (rosters are never written, so nothing changes under a
+# request), and Cannot participate and Additional information hold nothing
+# ParishSoft has. ``STREAMS`` puts them in the Review work menu's order
+# (``MENU``), so the panels and the menu never disagree (#2108).
+ADMIN_STAGES = frozenset({Stage.READY_TO_UPDATE.value})
+_STREAMS = (
     StreamView(
         Stream.CENSUS,
         "census_changes",
-        _("Census changes"),
         _("changes"),
-        (
+        _values(
             Stage.TO_REVIEW,
             Stage.CONFLICT,
             Stage.READY_TO_UPDATE,
             Stage.TO_ENTER_BY_HAND,
+            Stage.ENTERED_INCORRECTLY,
+            NOT_SEEN,
+        ),
+        menu=frozenset(
+            _values(
+                Stage.TO_REVIEW,
+                Stage.CONFLICT,
+                Stage.READY_TO_UPDATE,
+                Stage.TO_ENTER_BY_HAND,
+            )
+        ),
+        own=frozenset(
+            _values(Stage.TO_ENTER_BY_HAND, Stage.ENTERED_INCORRECTLY, NOT_SEEN)
         ),
     ),
     StreamView(
         Stream.MINISTRY,
         "ministry_report",
-        _("Ministry requests"),
         _("requests"),
-        (Stage.TO_REVIEW, Stage.TO_ENTER_BY_HAND),
+        _values(Stage.TO_REVIEW, Stage.TO_ENTER_BY_HAND, NOT_SEEN),
+        menu=frozenset(_values(Stage.TO_REVIEW, Stage.TO_ENTER_BY_HAND)),
+        own=frozenset({NOT_SEEN}),
     ),
     StreamView(
         Stream.CANNOT_PARTICIPATE,
         "limitations_report",
-        _("Cannot participate"),
         _("answers"),
-        (Stage.TO_REVIEW,),
+        _values(Stage.TO_REVIEW, Stage.TO_HANDLE),
+        menu=frozenset(_values(Stage.TO_REVIEW, Stage.TO_HANDLE)),
     ),
     StreamView(
         Stream.FINANCIAL,
         "pledges_to_enter",
-        _("Financial"),
         _("pledges"),
-        (Stage.TO_REVIEW, Stage.TO_ENTER_BY_HAND),
+        _values(
+            Stage.TO_REVIEW,
+            Stage.CONFLICT,
+            Stage.TO_ENTER_BY_HAND,
+            Stage.ENTERED_INCORRECTLY,
+            NOT_SEEN,
+        ),
+        # To review is the menu's Pledges count (#2125, #2101); the other
+        # stages are read here.
+        menu=frozenset(_values(Stage.TO_REVIEW)),
+        own=frozenset(
+            _values(
+                Stage.CONFLICT,
+                Stage.TO_ENTER_BY_HAND,
+                Stage.ENTERED_INCORRECTLY,
+                NOT_SEEN,
+            )
+        ),
     ),
     StreamView(
         Stream.ADDITIONAL_INFORMATION,
         "information_queue",
-        _("Additional information"),
         _("items"),
-        (Stage.TO_REVIEW, Stage.TO_HANDLE),
+        _values(Stage.TO_REVIEW, Stage.TO_HANDLE),
+        menu=frozenset(_values(Stage.TO_REVIEW, Stage.TO_HANDLE)),
     ),
 )
+_MENU_POSITION = {entry.name: position for position, entry in enumerate(MENU)}
+STREAMS = tuple(sorted(_STREAMS, key=lambda view: _MENU_POSITION[view.entry]))
 
 
 def panels(chrome, review):
@@ -516,12 +553,17 @@ def panels(chrome, review):
     value (or Admin Home's, which has the same shape). An Administrator
     (``chrome["admin"]``) also gets Ready to update. A Ministry leader's
     Ministry panel has one card per Ministry they lead, linking the queue
-    filtered to it, as My Ministries did.
+    filtered to it, as My Ministries did. Staff's Ministry To enter by hand
+    and Not seen in ParishSoft cards come only with their roster work
+    (``read_flags``' ``roster``). A Not seen in ParishSoft card is shown
+    only while some item carries the flag, as each worklist offers that
+    Stage choice.
     """
     entries = chrome.get("entries") or {}
-    # The menu's own open counts (#585), by entry name.
-    menu_counts = {
-        entry["name"]: entry.get("count")
+    # The menu's own read by stage (#2101), by entry name: None while the
+    # entry is greyed or its count could not be read.
+    menu_stages = {
+        entry["name"]: entry.get("stages")
         for section in chrome.get("sections") or ()
         for entry in section["items"]
     }
@@ -534,30 +576,44 @@ def panels(chrome, review):
             continue
         if view.stream is Stream.MINISTRY and counts.get("leader") is not None:
             cards = _leader_cards(item, counts["leader"])
-        elif view.stream is Stream.MINISTRY:
-            # To review is the menu's count (None if it could not be read);
-            # To enter by hand only when Staff's roster count was read.
-            stream_counts = {Stage.TO_REVIEW.value: menu_counts.get(view.entry)}
-            if view.stream in counts:
-                roster = Stage.TO_ENTER_BY_HAND.value
-                read = counts[view.stream]
-                stream_counts[roster] = None if read is None else read.get(roster, 0)
-            cards = _stage_cards(view, item, stream_counts)
-        elif view.stream in counts:
-            # A counted stream's stage with no items reads as zero; one that
-            # could not be read (None) has no number.
-            read = counts[view.stream]
+        elif view.stream in counts or view.stream is Stream.MINISTRY:
+            stages = [stage for stage in view.stages if stage not in hidden]
+            if view.stream not in counts:
+                # Ministry To review alone (no roster work to count).
+                stages = [Stage.TO_REVIEW.value]
             stream_counts = {
-                stage.value: None if read is None else read.get(stage.value, 0)
-                for stage in view.stages
-                if stage not in hidden
+                stage: _count(
+                    stage, view, menu_stages.get(view.entry), counts.get(view.stream)
+                )
+                for stage in stages
             }
+            # Not seen in ParishSoft is a Stage choice only while some item
+            # carries the flag, so its card is too (#2101).
+            if not stream_counts.get(NOT_SEEN):
+                stream_counts.pop(NOT_SEEN, None)
             cards = _stage_cards(view, item, stream_counts)
         else:
             continue
         if cards:
             shown.append(Panel(view.stream.value, view.title, tuple(cards)))
     return shown
+
+
+def _count(stage, view, menu, own):
+    """One card's count: the menu's read, this module's, or both added.
+
+    ``menu`` and ``own`` are the stream's counts by stage from each read
+    (None when not read). A stage either read holds that was not read has no
+    number (None); a stage with no items reads zero.
+    """
+    total = 0
+    for wanted, found in ((stage in view.menu, menu), (stage in view.own, own)):
+        if not wanted:
+            continue
+        if found is None or found.get(stage, 0) is None:
+            return None
+        total += found.get(stage, 0)
+    return total
 
 
 def _stage_cards(view, item, counts):
@@ -571,17 +627,20 @@ def _stage_cards(view, item, counts):
     """
     cards = []
     for stage in view.stages:
-        if stage.value not in counts:
+        if stage not in counts:
             continue
         url = item.url
-        if url and stage is Stage.READY_TO_UPDATE:
+        if url and stage == Stage.READY_TO_UPDATE.value:
             url = reverse("admin:update_parishsoft")
         elif url and view.stream in STAGE_LINKED:
-            url = f"{url}?stage={stage.value}"
-        cards.append(
-            Card(stage.label, url, item.reason, counts[stage.value], view.items)
-        )
+            url = f"{url}?stage={stage}"
+        cards.append(Card(_label(stage), url, item.reason, counts[stage], view.items))
     return cards
+
+
+def _label(stage):
+    """A card's label: the stage's shared word, or Not seen in ParishSoft's."""
+    return TERMS["not_seen"] if stage == NOT_SEEN else Stage(stage).label
 
 
 def _leader_cards(item, mine):

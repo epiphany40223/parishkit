@@ -246,7 +246,7 @@ def _unreachable_families(principal, campaign_id):
 def _census_changes(principal, campaign_id):
     """The Census changes rows at To review or Conflict, counted.
 
-    The same rule as the menu's count (``census_changes.open_count``) and
+    The same rule as the menu's count (``census_changes.OPEN_STAGES``) and
     the same for every role (Administrator decision, 2026-10-18): the rows
     waiting on a reviewer, never Ready to update or To enter by hand.
     """

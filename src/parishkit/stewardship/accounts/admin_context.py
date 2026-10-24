@@ -24,6 +24,7 @@ from parishkit.stewardship.observability import (
     debug_logging_enabled,
     emit_failure,
 )
+from parishkit.stewardship.pipeline import Stage
 from parishkit.stewardship.web.error_pages import ERROR_PAGE_ATTRIBUTE
 from parishkit.stewardship.web.refusals import mark_not_input, unavailable_response
 
@@ -115,7 +116,11 @@ def portal_chrome(request):
     back = admin_navigation.back(match, placed, items)
     if back and back["label"] == admin_navigation.PAGES["index"].label:
         back = back | {"label": home_label}
-    attach_counts(sections, _open_counts(request, actor, items, campaign))
+    # The open counts leave their counts by stage on the request too.
+    open_counts = _open_counts(request, actor, items, campaign)
+    attach_counts(
+        sections, open_counts, getattr(request, "_stewardship_open_stages", {})
+    )
     home_current = bool(breadcrumbs) and len(breadcrumbs) == 1
     home_in_review = review_work.lands_here(actor) and _home_in_review(
         sections, home_label, home_current
@@ -482,15 +487,16 @@ ROSTER_STATES = frozenset({"active", "closed", "archived"})
 UNREAD = object()
 # Every count in one statement, each only when asked for (NULL otherwise).
 # Census changes reads its rows grouped by the columns its status depends on
-# (census_changes.OPEN_GROUPS); Python then keeps the groups at To review
-# or Conflict (census_changes.open_count), so the stage rules live in one
-# place. ``{census}`` is that query, filled in when the
-# statement runs, since the report module is imported lazily.
-# Additional information counts the requests at its worklist's default To
-# review stage (#1685): current, follow-up neither needed nor completed, and
-# not ignored by the latest Staff revision (whose review decision says so,
-# or, saved before migration 0126, left follow-up not needed;
-# responses.information.staff_ignored). Ministry requests
+# (census_changes.OPEN_GROUPS); Python then places the groups
+# (census_changes.group_stages) and counts those at To review or Conflict
+# (census_changes.OPEN_STAGES), so the stage rules live in one place.
+# ``{census}`` is that query (and ``{information}`` and ``{limitations}``
+# theirs, below), filled in when the statement runs, since the report
+# modules are imported lazily.
+# Additional information reads its current requests grouped by the state
+# its stage depends on (information_worklist.OPEN_GROUPS, #1685, #2101);
+# Python places the groups (information_worklist.group_stages) and the menu
+# counts the To review stage, the worklist's default. Ministry requests
 # (the follow-up queue, #1133) runs the page's own selection with its
 # default filters (Stage To review: the open states; the stream has no
 # Conflict stage yet) and no rows, and takes its total, so the
@@ -517,17 +523,20 @@ UNREAD = object()
 # the count equal to the page's rows. Its Ministries get the same Python
 # cross-check as Ministry requests' count.
 # Limitations (R39 finding 10) runs its page's own selection with the page's
-# default filters (stewardship_limitations_report_v2, every answer) and
-# counts the answers its default To review stage lists: no decision in
-# force, or Back to review (pipeline.cannot_participate_placement). An
-# unavailable report (no Family record or source) lists no answer, so it
-# counts nothing and no number shows. The page also lists each Family's
-# Cannot contribute financially answer at its Pledges stage (R39 finding
-# 11), for a viewer Pledges admits, so the count adds those at To review,
-# read through Pledges' own stage selection
-# (stewardship_pledge_stages_v1, which places a pledge from its latest
-# refresh check, so a Conflict or Confirmed one is not To review) and the
-# response's cannot_give flag.
+# default filters (limitation_worklist.OPEN_GROUPS: every answer, grouped
+# by its decision and whether it is in force), which Python places
+# (limitation_worklist.group_stages, pipeline.cannot_participate_placement);
+# the menu counts the To review stage, the page's default. An unavailable
+# report (no Family record or source) reads NULL and no number shows. The
+# page also lists each Family's Cannot contribute financially answer at its
+# Pledges stage (R39 finding 11), for a viewer Pledges admits, so To review
+# adds those at To review (``contributions``), read through Pledges' own
+# stage selection (stewardship_pledge_stages_v1, which places a pledge from
+# its latest refresh check, so a Conflict or Confirmed one is not To
+# review) and the response's cannot_give flag.
+# Each stream's placed stages are kept beside the menu's counts (each
+# entry's ``stages``), and My review work's cards show them, so a card and
+# its menu entry are one read (#2101).
 # Pledges (#2125) counts the pledges its default To review stage lists,
 # through the same stage selection (stewardship_pledge_stages_v1). The page
 # lists the Financial stewardship selection's rows (every Family whose
@@ -543,7 +552,8 @@ UNREAD = object()
 # the test is whether ParishSoft has been downloaded: the request's one
 # shared read (request_downloaded, passed as %(downloaded)s), which the
 # access gate and the menu's reasons already use (#1242), never a second
-# read of stewardship_source_current here.
+# read of stewardship_source_current here. My review work's Pledges To
+# review card shows this same count (#2101).
 # Both Pledges' count and Limitations' Cannot contribute part come from
 # one read of stewardship_pledge_stages_v1 (the pl LATERAL), since the
 # stage selection is the costliest part of the statement and runs on
@@ -561,33 +571,17 @@ MENU_COLUMNS = (
     "roster_ministries",
     "limitations",
     "pledges",
+    "contributions",
 )
 OPEN_COUNTS = """
 SELECT
-    CASE WHEN %(information)s THEN (
-        SELECT count(*) FROM stewardship_additional_information i
-        JOIN stewardship_submission s ON s.id=i.submission_id
-        WHERE s.campaign_id=%(campaign)s AND s.mode='live'
-          AND i.disposition='current_actionable' AND i.followed_up_at IS NULL
-          AND NOT i.follow_up_needed
-          AND coalesce((SELECT coalesce(r.review_decision,'ignored')='none'
-              FROM stewardship_information_revision r WHERE r.item_id=i.id
-              ORDER BY r.expected_version DESC LIMIT 1),true))
-    END AS information,
+    CASE WHEN %(information)s THEN ({information}) END AS information,
     f.total AS ministry,
     f.ministries AS ministries,
     CASE WHEN %(census)s THEN ({census}) END AS census_groups,
     t.total AS roster,
     t.ministries AS roster_ministries,
-    CASE WHEN %(limitations)s THEN (
-        SELECT count(*) FROM stewardship_limitations_report_v2(
-            %(campaign)s, %(limitation_filters)s::jsonb) v,
-        jsonb_array_elements(coalesce(v->'members','[]'::jsonb)
-            || coalesce(v->'families','[]'::jsonb)) a
-        WHERE NOT coalesce((a->>'in_force')::boolean, false)
-           OR coalesce(a->>'decision','none')='none')
-        + coalesce(pl.cannot_give, 0)
-    END AS limitations,
+    CASE WHEN %(limitations)s THEN ({limitations}) END AS limitations,
     CASE WHEN %(pledges)s AND EXISTS (
         SELECT 1 FROM stewardship_campaign c
         LEFT JOIN stewardship_campaign_credentials k ON k.campaign_id=c.id
@@ -595,7 +589,11 @@ SELECT
         WHERE c.id=%(campaign)s AND CASE WHEN c.state='archived'
             THEN x.state='promoted' AND x.compacted_at IS NULL
             ELSE %(downloaded)s END)
-    THEN pl.to_review END AS pledges
+    THEN pl.to_review END AS pledges,
+    -- Limitations' To review adds the Cannot contribute financially answers
+    -- at Pledges' To review: the one stage read (``pl``) counts them too.
+    CASE WHEN %(limitations)s AND %(pledges)s THEN coalesce(pl.cannot_give, 0)
+    ELSE 0 END AS contributions
 FROM (SELECT NULL) one
 LEFT JOIN LATERAL (
     SELECT count(*) AS to_review,
@@ -642,17 +640,22 @@ LEFT JOIN LATERAL (
 """
 
 
-def attach_counts(sections, counts):
+def attach_counts(sections, counts, stages=None):
     """Give each menu entry its open count, in place, only while it is a link.
 
     Ministry requests also carries Home's To enter by hand count
     (``entry_count``, ``ENTRY_COUNT``), which the menu never shows (R39
-    finding 2). Test fixtures that draw the chrome call this too, so they
-    attach the counts exactly as the chrome does.
+    finding 2). ``stages`` are the same read's counts by stage, by entry
+    name (``_open_counts``), which My review work's cards show (#2101):
+    an entry gets its own, or None when they were not read. Test fixtures
+    that draw the chrome call this too, so they attach the counts exactly
+    as the chrome does.
     """
+    stages = stages or {}
     for section in sections:
         for entry in section["items"]:
             entry["count"] = counts.get(entry["name"]) if entry["url"] else None
+            entry["stages"] = stages.get(entry["name"]) if entry["url"] else None
             if entry["name"] == "ministry_report":
                 entry["entry_count"] = counts.get(ENTRY_COUNT) if entry["url"] else None
 
@@ -679,6 +682,11 @@ def _open_counts(request, actor, items, campaign):
     and an open view transaction stays usable because the statement runs
     in its own savepoint there.
 
+    The same read's counts by stage, by entry name, are left on
+    ``request._stewardship_open_stages`` for the menu's entries (each
+    entry's ``stages``, ``attach_counts``), which My review work's cards
+    show (#2101).
+
     Admin Home's Review work counts (#1690) ride on the same statement: the
     view names the parts it wants in ``request._stewardship_review_flags``
     (``review_work.read_flags``), and their placed counts are left on
@@ -695,7 +703,7 @@ def _open_counts(request, actor, items, campaign):
     if not any(review.values()):
         review = None
     known = getattr(request, "_stewardship_entry_count", UNREAD)
-    counts = {}
+    counts, stages = {}, {}
     if offered & COUNTED or review:
         # Inside a view's transaction the statement gets a savepoint, so a
         # failure rolls back only the count. Outside one (autocommit), the
@@ -706,7 +714,7 @@ def _open_counts(request, actor, items, campaign):
         )
         try:
             with isolate():
-                counts, reviewed = _read_open_counts(
+                counts, stages, reviewed = _read_open_counts(
                     offered,
                     actor,
                     campaign,
@@ -721,7 +729,14 @@ def _open_counts(request, actor, items, campaign):
             request._stewardship_review_counts = reviewed
     if known is not UNREAD and known is not None and "ministry_report" in offered:
         counts[ENTRY_COUNT] = known
+        # My review work's To enter by hand card shows the same number.
+        stages["ministry_report"] = (
+            {Stage.TO_REVIEW.value: None}
+            | stages.get("ministry_report", {})
+            | {Stage.TO_ENTER_BY_HAND.value: known}
+        )
     request._stewardship_open_counts = counts
+    request._stewardship_open_stages = stages
     return counts
 
 
@@ -744,13 +759,19 @@ def _read_open_counts(
 
     With ``review`` (``review_work.read_flags``), Admin Home's
     ``review_work.COUNTS`` runs in the same statement, cross-joined to the
-    menu's one row. Returns the menu's counts and the review counts (None
-    without ``review``).
+    menu's one row. Returns ``(counts, stages, review counts)``: the menu's
+    counts, the same read's counts by stage of each counted entry, by entry
+    name (see ``_open_counts``), and the review counts (None without
+    ``review``).
 
     ``downloaded`` is the request's shared ParishSoft download check
     (``request_downloaded``), asked only when the Pledges count is read.
     """
-    from parishkit.stewardship.reports.census_changes import OPEN_GROUPS, open_count
+    from parishkit.stewardship.reports import (
+        census_changes,
+        information_worklist,
+        limitation_worklist,
+    )
     from parishkit.stewardship.reports.limitations import LimitationsQuery
     from parishkit.stewardship.reports.ministry_followup import (
         FollowupQuery,
@@ -765,6 +786,7 @@ def _read_open_counts(
     census = "census_changes" in offered and allows(actor, Capability.VIEW_CENSUS)
     # Likewise the To enter by hand count, which only Administrators and
     # Staff see (can_tick), and only past go-live (ROSTER_STATES).
+    asked = roster
     roster = (
         roster
         and "ministry_report" in offered
@@ -776,11 +798,17 @@ def _read_open_counts(
     pledges = "pledges_to_enter" in offered and allows(
         actor, Capability.FINANCIAL_DETAIL
     )
-    sql = OPEN_COUNTS.replace("{census}", OPEN_GROUPS)
+    sql = (
+        OPEN_COUNTS.replace("{census}", census_changes.OPEN_GROUPS)
+        .replace("{information}", information_worklist.OPEN_GROUPS)
+        .replace("{limitations}", limitation_worklist.OPEN_GROUPS)
+    )
     if review:
         # Both statements are one row; their shared parameters (campaign,
         # viewer, roster_filters) carry the same values.
-        sql = f"SELECT * FROM ({sql}) menu CROSS JOIN ({review_work.COUNTS}) review"
+        sql = (
+            f"SELECT * FROM ({sql}) menu CROSS JOIN ({review_work.statement()}) review"
+        )
     with connection.cursor() as cursor:
         cursor.execute(
             sql,
@@ -811,13 +839,8 @@ def _read_open_counts(
     # The menu's columns by name (MENU_COLUMNS); My review work's own
     # (review_work.COUNTS, cross-joined after them) follow.
     row = dict(zip(MENU_COLUMNS, values[: len(MENU_COLUMNS)], strict=True))
-    information, ministry, ministries = (
-        row["information"],
-        row["ministry"],
-        row["ministries"],
-    )
-    groups, roster_count = row["census_groups"], row["roster"]
-    roster_ministries, limitations = row["roster_ministries"], row["limitations"]
+    ministry, ministries = row["ministry"], row["ministries"]
+    roster_count, roster_ministries = row["roster"], row["roster_ministries"]
     reviewed = (
         review_work.placed(review, values[len(MENU_COLUMNS) :]) if review else None
     )
@@ -827,25 +850,82 @@ def _read_open_counts(
         ministry = None
     if roster_count is not None and not in_scope(actor, True, roster_ministries):
         roster_count = None
-    # Census changes counts its To review and Conflict stages for everyone
-    # who may read it (census_changes.open_count; Administrator decision,
-    # 2026-10-18).
-    census_count = None if groups is None else open_count(json.loads(groups))
+    # Before go-live no request has been resolved live, so the To enter by
+    # hand count is not read and nothing is there (ROSTER_STATES). A caller
+    # that switched the selection off (``roster``) supplies its own count.
+    entry = roster_count
+    if entry is None and asked and not roster and "ministry_report" in offered:
+        entry = 0 if can_tick(actor) else None
+    # Each counted entry's stream by stage: each stream's stored state
+    # placed by the shared stage mapping, from the groups its statement
+    # read (NULL, and so None, when the entry was not asked for or its
+    # report is unavailable).
+    stages = {
+        "census_changes": _decoded(row["census_groups"], census_changes.group_stages),
+        "information_queue": _decoded(
+            row["information"], information_worklist.group_stages
+        ),
+        "limitations_report": _decoded(
+            row["limitations"],
+            lambda groups: limitation_worklist.group_stages(
+                groups, row["contributions"]
+            ),
+        ),
+    }
+    if ministry is not None or entry is not None:
+        stages["ministry_report"] = {
+            Stage.TO_REVIEW.value: ministry,
+            Stage.TO_ENTER_BY_HAND.value: entry,
+        }
+    # Pledges' To review card is the menu's Pledges count (#2125, #2101):
+    # one read of the pledge stages. The cards for its other stages come
+    # from review_work's own read; no number (NULL) means unavailable.
+    if row["pledges"] is not None:
+        stages["pledges_to_enter"] = {Stage.TO_REVIEW.value: row["pledges"]}
+    stages = {name: found for name, found in stages.items() if found is not None}
+    # The menu counts each stream's open stages: Census changes its To
+    # review and Conflict for everyone who may read it (Administrator
+    # decision, 2026-10-18), the others To review, each worklist's default.
+    census = stages.get("census_changes")
+    information = stages.get("information_queue")
+    limitations = stages.get("limitations_report")
     # An entry not asked for, or a Ministry follow-up the page would show as
     # off or unavailable, reads NULL and gets no count.
     menu = {
         name: count
         for name, count in (
-            ("census_changes", census_count),
-            ("information_queue", information),
+            ("census_changes", _open(census, census_changes.OPEN_STAGES)),
+            ("information_queue", _open(information, (Stage.TO_REVIEW,))),
             ("ministry_report", ministry),
             (ENTRY_COUNT, roster_count),
-            ("limitations_report", limitations),
+            ("limitations_report", _open(limitations, (Stage.TO_REVIEW,))),
             ("pledges_to_enter", row["pledges"]),
         )
         if count is not None
     }
-    return menu, reviewed
+    return menu, stages, reviewed
+
+
+def _decoded(value, group_stages):
+    """A JSON groups column (text or decoded) placed by stage, or None for NULL.
+
+    A stored state the stage mapping does not place is logged and reads as
+    not read (None), so it never takes an Admin page down.
+    """
+    if value is None:
+        return None
+    try:
+        return group_stages(json.loads(value) if isinstance(value, str) else value)
+    except ValueError as error:
+        _record_open_counts_failure(error)
+        return None
+
+
+def _open(stages, open_stages):
+    """The menu's count of a stream: its ``open_stages``' total, or None unread."""
+    if stages is None:
+        return None
+    return sum(stages.get(stage.value, 0) for stage in open_stages)
 
 
 def roster_entry_count(actor, campaign):

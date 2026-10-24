@@ -19,7 +19,7 @@ from django.db import DatabaseError, connection, transaction
 
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.deployment import ServiceRole
-from parishkit.stewardship.pipeline import Decision, Stage
+from parishkit.stewardship.pipeline import Decision, Stage, Stream
 from parishkit.stewardship.reports.census_changes import census_rows
 from parishkit.stewardship.reports.ministry_worklist import (
     WorklistQuery,
@@ -46,6 +46,7 @@ from .test_ministry_review_postgresql import decide as ministry_decide
 from .test_ministry_review_postgresql import requests, withdraw_leave
 from .test_policy_postgresql import user
 from .test_response_http_postgresql import answers_for, load_form
+from .test_review_work_postgresql import matches, principal_of
 from .test_runtime_auth_grants_postgresql import web_login
 from .test_source_families_postgresql import prepare, promote
 
@@ -187,6 +188,9 @@ def test_not_seen_after_two_full_refreshes_at_the_old_value(response_service, st
     refresh(harness)
     row = census_row(harness, rows["prefix"])
     assert row["not_seen"] and row["stage"] == Stage.ENTERED_BY_HAND
+    # My review work counts it with the worklist's Stage choice (#2101).
+    cards = matches(harness, principal_of(harness, staff))[Stream.CENSUS]
+    assert cards["Not seen in ParishSoft"] == 1
     refresh(harness)
     assert checks(proposal=rows["prefix"]) == ["unchanged", "unchanged"]
     RefreshCheckStart.objects.all().delete()
@@ -206,6 +210,9 @@ def test_a_third_value_is_entered_incorrectly_until_corrected(
     row = census_row(harness, rows["prefix"])
     assert row["stage"] == Stage.ENTERED_INCORRECTLY
     assert row["parishsoft_now"] == "Rev." and not row["not_seen"]
+    # My review work counts it with the worklist's Stage choice (#2101).
+    cards = matches(harness, principal_of(harness, staff))[Stream.CENSUS]
+    assert cards["Entered incorrectly"] == 1
     # The same wrong value again records nothing new.
     refresh(harness, member={"salutation": "Rev."})
     assert checks(proposal=rows["prefix"]) == ["entered_incorrectly"]
@@ -329,6 +336,8 @@ def test_a_ticked_request_not_in_the_roster_is_not_seen(response_service, starte
     assert rows[str(join.pk)]["placement"].stage is Stage.ENTERED_BY_HAND
     counts = stage_counts(rows.values())
     assert counts["not_seen"] == 1
+    # My review work counts it with the worklist's Stage choice (#2101).
+    assert matches(harness, staff)[Stream.MINISTRY]["Not seen in ParishSoft"] == 1
     assert ("not_seen", "Not seen in ParishSoft (1)") in stage_choices(counts, False)
     shown = chosen(list(view(harness, staff, "not_seen").values()), "not_seen")
     assert [row["id"] for row in shown] == [str(join.pk)]

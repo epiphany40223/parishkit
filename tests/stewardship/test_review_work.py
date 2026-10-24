@@ -2,7 +2,8 @@
 
 The panels follow the viewer's own menu: a stream is shown only when the
 menu has its page, linked while the entry is and greyed with the menu's
-reason while it is not. Counts are placed by the shared pipeline mapping.
+reason while it is not. Counts are placed by the shared pipeline mapping,
+and a stage the menu counts takes the menu entry's own read (#2101).
 """
 
 from types import SimpleNamespace
@@ -24,9 +25,14 @@ from parishkit.stewardship.pipeline import (
 STREAM_PAGES = [view.entry for view in review_work.STREAMS]
 
 
-def chrome(names=STREAM_PAGES, greyed=(), counts=None):
-    """The Admin chrome's ``entries`` and ``sections``, as ``admin_context`` has."""
+def chrome(names=STREAM_PAGES, greyed=(), counts=None, stages=None):
+    """The Admin chrome's ``entries`` and ``sections``, as ``admin_context`` has.
+
+    ``stages`` are the menu read's counts by stage, by entry name, which
+    ``admin_context.attach_counts`` leaves on each linked entry.
+    """
     counts = counts or {}
+    stages = stages or {}
     items = [
         navigation.MenuItem(
             "reports",
@@ -42,7 +48,12 @@ def chrome(names=STREAM_PAGES, greyed=(), counts=None):
         "sections": [
             {
                 "items": [
-                    {"name": item.name, "url": item.url, "count": counts.get(item.name)}
+                    {
+                        "name": item.name,
+                        "url": item.url,
+                        "count": counts.get(item.name),
+                        "stages": stages.get(item.name) if item.url else None,
+                    }
                     for item in items
                 ]
             }
@@ -93,35 +104,100 @@ def test_open_ministry_states_are_to_review():
         assert placement.stage is Stage.TO_REVIEW
 
 
-def test_tally_sums_groups_and_skips_report_only():
-    """Groups add up by stage; a report-only census change places nowhere."""
-    to_review = ministry_placement(
-        state="new", outcome=None, source_resolved=False, roster_entered=False
+def test_each_streams_groups_are_placed_by_the_shared_mapping():
+    """The menu's reads (#2101) count every group at the stage the shared
+    mapping, which each worklist places its rows with, gives it."""
+    from parishkit.stewardship.reports import (
+        census_changes,
+        information_worklist,
+        limitation_worklist,
     )
-    assert review_work._tally([(to_review, 2), (None, 5), (to_review, 3)]) == {
-        "to_review": 5
+
+    assert census_changes.group_stages(
+        [
+            ["api", "member", "unreviewed", "pending", 2],
+            ["api", "member", "approved", "conflict", 1],
+            ["api", "member", "approved", "pending", 3],
+            ["manual", "member", "approved", "pending", 4],
+            ["manual", "member", "approved", "resolved_external", 5],
+            ["api", "member", "ignored", "pending", 6],
+        ]
+    ) == {
+        "to_review": 2,
+        "conflict": 1,
+        "ready_to_update": 3,
+        "to_enter_by_hand": 4,
+        "entered_by_hand": 5,
+        "ignored": 6,
     }
+    # A To review request needs neither follow-up nor an Ignore saved.
+    assert information_worklist.group_stages(
+        [[False, False, False, 2], [False, False, True, 1], [True, False, False, 3]]
+        + [[True, True, False, 4]]
+    ) == {"to_review": 2, "ignored": 1, "to_handle": 3, "handled": 4}
+    # A decision no longer in force, or Back to review, is To review again;
+    # the Cannot contribute answers at Pledges' To review count there too.
+    assert limitation_worklist.group_stages(
+        [[None, False, 1], ["accepted", False, 2], ["none", True, 3]]
+        + [["accepted", True, 4], ["handled", True, 5], ["ignored", True, 6]],
+        contributions=7,
+    ) == {"to_review": 13, "to_handle": 4, "handled": 5, "ignored": 6}
+    for group_stages, unknown in (
+        (census_changes.group_stages, [["api", "member", "maybe", "pending", 1]]),
+        (limitation_worklist.group_stages, [["maybe", True, 1]]),
+    ):
+        with pytest.raises(ValueError):
+            group_stages(unknown)
+
+
+def test_a_count_adds_its_reads_and_has_no_number_when_one_is_unread():
+    """A stage the menu and this module both count (Census changes' To enter
+    by hand: the Families' changes and the parish's additions) adds the
+    two; either one unread leaves the card with no number."""
+    (census, *_) = review_work.STREAMS
+    stage = "to_enter_by_hand"
+    assert review_work._count(stage, census, {stage: 2}, {stage: 3}) == 5
+    assert review_work._count(stage, census, {}, {}) == 0
+    assert review_work._count(stage, census, None, {stage: 3}) is None
+    assert review_work._count(stage, census, {stage: 2}, None) is None
+    assert review_work._count("to_review", census, {"to_review": 4}, None) == 4
+
+
+MENU_STAGES = {
+    "census_changes": {
+        "to_review": 4,
+        "conflict": 1,
+        "ignored": 9,
+        "to_enter_by_hand": 2,
+    },
+    "ministry_report": {"to_review": 5, "to_enter_by_hand": 2},
+    "limitations_report": {"to_review": 3, "to_handle": 2},
+    "information_queue": {"to_handle": 6},
+    "pledges_to_enter": {"to_review": 3},
+}
 
 
 def test_staff_panels_in_order_with_every_stage_counted():
-    """Every stream Staff may open, in the spec's order, each stage counted
-    (a stage with no items reads 0); Ministry To review is the menu's count.
-    Every card opens its stream's page at its Stage (#1818); Cannot
-    participate, with only To review, opens its plain page."""
+    """Every stream Staff may open, in the Review work menu's order (#2108),
+    each stage counted (a stage with no items reads 0). A stage the menu
+    counts is the menu's read (#2101), the others this module's. Every card
+    opens its stream's page at its Stage (#1818; Limitations since #2101), Not seen in
+    ParishSoft at ``not_seen``, which is shown only while some item carries
+    the flag (none of Financial's here), as the worklists offer it."""
     review = staff_counts(
-        census={"to_review": 4, "conflict": 1, "ignored": 9},
-        ministry={"to_enter_by_hand": 2, "entered_by_hand": 7},
-        cannot_participate={"to_review": 3},
-        financial={"to_review": 3, "to_enter_by_hand": 1},
-        additional_information={"to_handle": 6},
+        census={"to_enter_by_hand": 1, "entered_incorrectly": 2, "not_seen": 3},
+        ministry={"not_seen": 1},
+        cannot_participate={},
+        financial={"to_review": 99, "conflict": 2, "to_enter_by_hand": 1},
+        additional_information={},
     )
-    panels = review_work.panels(chrome(counts={"ministry_report": 5}), review)
+    panels = review_work.panels(chrome(stages=MENU_STAGES), review)
     assert [panel.stream for panel in panels] == [
         "census",
         "ministry",
-        "cannot_participate",
         "financial",
         "additional_information",
+        "cannot_participate",
     ]
     by_stream = {panel.stream: panel for panel in panels}
     assert cards(by_stream["census"]) == [
@@ -131,7 +207,21 @@ def test_staff_panels_in_order_with_every_stage_counted():
             "To enter by hand",
             "/census_changes/?stage=to_enter_by_hand",
             None,
-            0,
+            3,
+            "changes",
+        ),
+        (
+            "Entered incorrectly",
+            "/census_changes/?stage=entered_incorrectly",
+            None,
+            2,
+            "changes",
+        ),
+        (
+            "Not seen in ParishSoft",
+            "/census_changes/?stage=not_seen",
+            None,
+            3,
             "changes",
         ),
     ]
@@ -144,15 +234,30 @@ def test_staff_panels_in_order_with_every_stage_counted():
             2,
             "requests",
         ),
+        (
+            "Not seen in ParishSoft",
+            "/ministry_report/?stage=not_seen",
+            None,
+            1,
+            "requests",
+        ),
     ]
     # Financial's cards open Pledges at their stage (#1686).
     assert cards(by_stream["financial"]) == [
         ("To review", "/pledges_to_enter/?stage=to_review", None, 3, "pledges"),
+        ("Conflict", "/pledges_to_enter/?stage=conflict", None, 2, "pledges"),
         (
             "To enter by hand",
             "/pledges_to_enter/?stage=to_enter_by_hand",
             None,
             1,
+            "pledges",
+        ),
+        (
+            "Entered incorrectly",
+            "/pledges_to_enter/?stage=entered_incorrectly",
+            None,
+            0,
             "pledges",
         ),
     ]
@@ -161,7 +266,8 @@ def test_staff_panels_in_order_with_every_stage_counted():
         ("To handle", "/information_queue/?stage=to_handle", None, 6, "items"),
     ]
     assert cards(by_stream["cannot_participate"]) == [
-        ("To review", "/limitations_report/", None, 3, "answers"),
+        ("To review", "/limitations_report/?stage=to_review", None, 3, "answers"),
+        ("To handle", "/limitations_report/?stage=to_handle", None, 2, "answers"),
     ]
 
 
@@ -179,7 +285,7 @@ def test_a_stream_outside_the_menu_is_left_out_and_greyed_follows_the_menu():
 
 
 def test_ministry_without_a_roster_count_shows_only_to_review():
-    """Without Staff's roster count (not read), only To review is shown, and
+    """Without Staff's roster work (not read), only To review is shown, and
     with no menu count it has no number rather than a wrong one."""
     review = staff_counts()
     (panel,) = review_work.panels(chrome(names=["ministry_report"]), review)
@@ -217,12 +323,13 @@ def test_a_leaders_ministry_panel_has_one_card_per_ministry():
     ]
 
 
-def test_every_stage_linked_stream_is_the_decisions_four():
-    """The Administrator's decision (#1818): Census changes, Ministry
-    requests, Additional information and Financial link each stage."""
+def test_every_stream_links_its_stages():
+    """The Administrator's decision (#1818): each stream's cards link its
+    stage; Limitations' page takes ``?stage=`` too since #2101."""
     linked = {
         Stream.CENSUS,
         Stream.MINISTRY,
+        Stream.CANNOT_PARTICIPATE,
         Stream.ADDITIONAL_INFORMATION,
         Stream.FINANCIAL,
     }
@@ -232,7 +339,7 @@ def test_every_stage_linked_stream_is_the_decisions_four():
 def test_a_stream_not_stage_linked_links_its_plain_page(monkeypatch):
     """A stream outside ``STAGE_LINKED`` links its page with no Stage."""
     monkeypatch.setattr(review_work, "STAGE_LINKED", frozenset())
-    review = staff_counts(census={"conflict": 1})
+    review = staff_counts(census={})
     (panel,) = review_work.panels(chrome(names=["census_changes"]), review)
     assert {card.url for card in panel.cards} == {"/census_changes/"}
 
@@ -240,8 +347,11 @@ def test_a_stream_not_stage_linked_links_its_plain_page(monkeypatch):
 def test_link_cards_read_label_count_then_note():
     """Each card is one link whose name reads the stage, its count and what
     is counted, in that order; a greyed card is muted text with the reason."""
-    review = staff_counts(census={"to_review": 1234})
-    (panel,) = review_work.panels(chrome(names=["census_changes"]), review)
+    review = staff_counts(census={})
+    stages = {"census_changes": {"to_review": 1234}}
+    (panel,) = review_work.panels(
+        chrome(names=["census_changes"], stages=stages), review
+    )
     html = render_to_string(
         "stewardship/components/link-cards.html",
         {"cards": panel.cards[:1], "cards_labelledby": "x"},
@@ -267,12 +377,13 @@ def test_an_administrator_also_gets_ready_to_update():
     starts an update run), and opens Update ParishSoft."""
     from django.urls import reverse
 
-    review = staff_counts(census={"ready_to_update": 3})
-    staff = review_work.panels(chrome(names=["census_changes"]), review)
-    assert "Ready to update" not in [card.label for card in staff[0].cards]
-    admin = review_work.panels(
-        chrome(names=["census_changes"]) | {"admin": True}, review
+    review = staff_counts(census={})
+    menu = chrome(
+        names=["census_changes"], stages={"census_changes": {"ready_to_update": 3}}
     )
+    staff = review_work.panels(menu, review)
+    assert "Ready to update" not in [card.label for card in staff[0].cards]
+    admin = review_work.panels(menu | {"admin": True}, review)
     assert cards(admin[0])[2] == (
         "Ready to update",
         reverse("admin:update_parishsoft"),
@@ -327,7 +438,8 @@ def test_my_review_work_is_the_first_entry_of_review_work():
 
 def test_an_unreadable_count_shows_its_cards_without_numbers(monkeypatch):
     """A failed count is logged and every stream the role may open is shown
-    with no number, rather than failing the page."""
+    with no number for it, rather than failing the page; the stages the
+    menu's own read counts still show its numbers."""
     from django.db import DatabaseError
 
     def fail(*_args):
@@ -345,13 +457,22 @@ def test_an_unreadable_count_shows_its_cards_without_numbers(monkeypatch):
         Stream.MINISTRY: None,
         "leader": None,
     }
+    stages = {
+        "ministry_report": {"to_review": 2, "to_enter_by_hand": 1},
+        "census_changes": {"to_review": 4, "to_enter_by_hand": 1},
+    }
     panels = review_work.panels(
-        chrome(counts={"ministry_report": 2}), {"campaign": object(), "counts": counts}
+        chrome(stages=stages), {"campaign": object(), "counts": counts}
     )
     by_stream = {panel.stream: cards(panel) for panel in panels}
-    assert [card[3] for card in by_stream["census"]] == [None, None, None]
-    # The menu's own Ministry count still shows; the roster count does not.
-    assert [card[3] for card in by_stream["ministry"]] == [2, None]
+    # To review and Conflict are the menu's; To enter by hand adds the
+    # unread additions, so it has no number, as the check counts do not.
+    # (Not seen in ParishSoft, a choice only while flagged, is left out.)
+    assert [card[3] for card in by_stream["census"]] == [4, 0, None, None]
+    assert [card[3] for card in by_stream["ministry"]] == [2, 1]
+    assert [card[3] for card in by_stream["financial"]] == [None] * 4
+    # Additional information's are all the menu's, which was not read here.
+    assert [card[3] for card in by_stream["additional_information"]] == [None, None]
 
 
 def test_home_takes_its_counts_from_the_menu_statement():
@@ -371,8 +492,21 @@ def test_home_takes_its_counts_from_the_menu_statement():
     # My review work's own value already has its counts.
     landing = {"campaign": None, "counts": {}}
     assert review_work.with_counts(request, landing) is landing
-    # The menu statement's parameters never collide with its own flags.
+    # The placed counts' refresh checks are read once, here (``settle``),
+    # and kept on the request.
+    pending = {Stream.CENSUS: {"to_enter_by_hand": 1}, review_work.CHECKS: {}}
+    request = SimpleNamespace(_stewardship_review_counts=pending)
+    assert review_work.with_counts(request, home)["counts"] == {
+        Stream.CENSUS: {"to_enter_by_hand": 1},
+        "leader": None,
+    }
+    assert request._stewardship_review_counts == {
+        Stream.CENSUS: {"to_enter_by_hand": 1}
+    }
+    # The menu statement's parameters never collide with its own flags, and
+    # only the streams with a part in COUNTS have one.
     assert review_work.parameters(flags) == {
         "review_census": True,
-        "review_information": False,
+        "review_financial": False,
+        "review_roster": False,
     }

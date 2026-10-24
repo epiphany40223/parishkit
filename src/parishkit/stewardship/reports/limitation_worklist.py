@@ -10,6 +10,7 @@ counts them by stage, turns one page of them into the review worklist's rows
 (migration 0126) refuse what a reader may not do.
 """
 
+from collections import Counter
 from dataclasses import dataclass, replace
 
 from django.db import IntegrityError
@@ -17,7 +18,11 @@ from django.utils.datastructures import MultiValueDict
 from django.utils.html import format_html
 
 from parishkit.stewardship.observability import Event, emit_failure
-from parishkit.stewardship.pipeline import Stage, Stream
+from parishkit.stewardship.pipeline import (
+    Stage,
+    Stream,
+    cannot_participate_placement,
+)
 from parishkit.stewardship.responses.information import StaleItem
 from parishkit.stewardship.responses.limitation_review import (
     answer_id,
@@ -33,12 +38,57 @@ from parishkit.stewardship.web.review_worklist import (
     Column,
     StaleDecision,
     build,
+    page_address,
 )
 from parishkit.stewardship.web.tables import Sorting
 
 from .limitations import ANSWERS, STAGES, LimitationsQuery
 
 STAGE_CHOICES = frozenset({*(stage.value for stage in STAGES), EVERY_STAGE})
+# The menu's and My review work's read of the stream (#2101;
+# ``admin_context.OPEN_COUNTS`` embeds it): the page's own selection with
+# its default filters (``stewardship_limitations_report_v2``, every
+# answer), each answer grouped by its latest decision and whether that is
+# in force, as JSON text; NULL when the report says its inputs are
+# unavailable. ``group_stages`` places it. Takes ``%(campaign)s`` and
+# ``%(limitation_filters)s`` (``LimitationsQuery().form_values()``).
+OPEN_GROUPS = """
+SELECT CASE WHEN v IS NULL OR v ? 'unavailable' THEN NULL ELSE (
+    SELECT coalesce(jsonb_agg(jsonb_build_array(g.decision, g.in_force, g.n)),
+        '[]')::text
+    FROM (
+        SELECT a->>'decision' AS decision,
+            coalesce((a->>'in_force')::boolean, false) AS in_force,
+            count(*) AS n
+        FROM jsonb_array_elements(coalesce(v->'members', '[]'::jsonb)
+            || coalesce(v->'families', '[]'::jsonb)) a
+        GROUP BY 1, 2
+    ) g) END
+FROM stewardship_limitations_report_v2(
+    %(campaign)s, %(limitation_filters)s::jsonb) v
+"""
+
+
+def group_stages(groups, contributions=0):
+    """``OPEN_GROUPS``' decoded groups counted by stage value (#2101).
+
+    Each ``[decision, in_force, count]`` group is placed by
+    ``cannot_participate_placement``, the mapping the page places each
+    answer with (``limitations.shape_result``). ``contributions`` is how
+    many Cannot contribute financially answers are at their Pledges To
+    review stage: the page lists them under that Stage choice too (R39
+    finding 11), and no other stage these counts serve can hold one. A
+    state the mapping does not place raises ValueError.
+    """
+    counts = Counter()
+    for decision, in_force, count in groups:
+        placement = cannot_participate_placement(decision=decision, in_force=in_force)
+        counts[placement.stage.value] += count
+    if contributions:
+        counts[Stage.TO_REVIEW.value] += contributions
+    return dict(counts)
+
+
 # The identity columns, in the shared column order (UX conventions, "Table
 # column order"): the Family, then the Member, each with its DUID.
 COLUMNS = (
@@ -243,6 +293,13 @@ def worklist_page(counts, query, table, action, *, mutable, prefix="limitations"
         fields=query.limitations.form_values(),
         filters_template="stewardship/limitations-worklist-filters.html",
         export_template="stewardship/limitations-worklist-export.html",
+        # The view's address carries its Stage alone (To review is the plain
+        # address), the one choice its GET takes (#2101), so a reload or a
+        # bookmark after an in-place Stage change draws the same Stage.
+        address=page_address(
+            action,
+            [("stage", "" if query.stage == Stage.TO_REVIEW.value else query.stage)],
+        ),
     )
     return worklist, table
 

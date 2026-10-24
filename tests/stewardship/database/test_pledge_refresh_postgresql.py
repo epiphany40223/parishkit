@@ -20,7 +20,7 @@ import pytest
 from django.db import DatabaseError, connection, transaction
 
 from parishkit.stewardship.deployment import ServiceRole
-from parishkit.stewardship.pipeline import Decision, Stage
+from parishkit.stewardship.pipeline import Decision, Stage, Stream
 from parishkit.stewardship.reports.pledge_models import (
     PledgeRefreshCheck,
     PledgeReview,
@@ -44,6 +44,7 @@ from .source_builders import running_source_task
 from .test_background_grants_postgresql import task_login
 from .test_pledge_review_postgresql import admin, again, decide, pledged
 from .test_refresh_checks_postgresql import started  # noqa: F401
+from .test_review_work_postgresql import matches, principal_of
 from .test_source_families_postgresql import promote
 from .test_source_snapshots_postgresql import permit
 
@@ -168,6 +169,9 @@ def test_not_seen_after_two_full_refreshes_at_the_mark(response_service, started
     refresh(harness)
     found = row(harness, submission)
     assert found["not_seen"] and found["placement"].stage is Stage.ENTERED_BY_HAND
+    # My review work counts it with Pledges' Stage choice (#2101).
+    cards = matches(harness, principal_of(harness, admin()))[Stream.FINANCIAL]
+    assert cards["Not seen in ParishSoft"] == 1
     refresh(harness)
     assert [outcome for outcome, _ in checks()] == ["unchanged", "unchanged"]
 
@@ -183,6 +187,8 @@ def test_a_third_amount_is_entered_incorrectly_until_corrected(
     assert checks() == [("entered_incorrectly", Decimal("1243.50"))]
     found = row(harness, submission)
     assert found["placement"].stage is Stage.ENTERED_INCORRECTLY
+    cards = matches(harness, principal_of(harness, admin()))[Stream.FINANCIAL]
+    assert cards["Entered incorrectly"] == 1
     refresh(harness, "1243.50")
     refresh(harness)  # back at the mark: no new evidence
     assert len(checks()) == 1
@@ -208,6 +214,9 @@ def test_an_accepted_pledge_parishsoft_holds_waits_for_its_mark(
     refresh(harness, "99.00")
     assert checks() == [("conflict", Decimal("99.00"))]
     assert row(harness, submission)["placement"].stage is Stage.CONFLICT
+    # My review work counts it as a Conflict, as Pledges does (#2101).
+    cards = matches(harness, principal_of(harness, admin()))[Stream.FINANCIAL]
+    assert (cards["Conflict"], cards["To enter by hand"]) == (1, 0)
     refresh(harness, ANSWER)
     assert checks()[-1] == ("confirmed", Decimal(ANSWER))
     found = row(harness, submission)

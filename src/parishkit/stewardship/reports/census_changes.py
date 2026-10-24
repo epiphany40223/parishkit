@@ -18,6 +18,7 @@ does, so they are plain functions a unit test can call.
 import csv
 import io
 import json
+from collections import Counter
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from types import SimpleNamespace
@@ -464,7 +465,7 @@ COLUMNS = (
 # ROWS's rows, by the four columns ``status`` reads, each group with its
 # size, as JSON text. Its FROM and WHERE are ROWS's without the joins that
 # only name a row (they are LEFT joins, so they never add or drop one), so
-# ``open_count`` places exactly the rows the page places.
+# ``group_stages`` places exactly the rows the page places.
 # Takes ``%(campaign)s``.
 OPEN_GROUPS = """
 SELECT coalesce(jsonb_agg(jsonb_build_array(
@@ -494,34 +495,112 @@ OPEN_CHANGE_STAGES = frozenset(
         Stage.TO_ENTER_BY_HAND,
     )
 )
-# The stages the menu and Home count (``open_count``).
+# The stages the menu and Home count (``group_stages`` places them).
 OPEN_STAGES = frozenset({Stage.TO_REVIEW, Stage.CONFLICT})
 
 
-def open_count(groups):
-    """The rows waiting on a reviewer, To review and Conflict, from ``OPEN_GROUPS``.
+def group_stages(groups):
+    """``OPEN_GROUPS``' decoded groups counted by stage value (#2101).
 
-    ``groups`` is the decoded JSON: ``[handling, entity_kind, decision,
-    execution, count]`` lists. The menu and Home count the groups
-    ``census_placement`` puts at To review or Conflict, for every role that
-    may read the page (Administrator decision, 2026-10-18). It is the
-    mapping the page itself places rows with, so the count cannot drift
-    from the page's stages. Ready to update is not counted: Update
-    ParishSoft and the manual-entry report own it. An edited value never
-    changes a stage, so the groups need not carry it.
+    ``groups`` are ``[handling, entity_kind, decision, execution, count]``
+    lists, each placed by ``census_placement``, the mapping the page itself
+    places rows with, so a count cannot drift from the page's stages. The
+    menu and Home count the groups at To review or Conflict
+    (``OPEN_STAGES``), for every role that may read the page
+    (Administrator decision, 2026-10-18); My review work's cards show each
+    stage before a change's step. Ready to update is not in the menu's
+    count: Update ParishSoft and the manual-entry report own it. An edited
+    value never changes a stage, so the groups need not carry it. The
+    groups hold no refresh check, so a final change is counted at its
+    execution's stage: the stages after a step are read from the checks
+    (``entered_stages``). A state the mapping does not place raises
+    ValueError.
     """
-    return sum(
-        count
-        for handling, entity_kind, decision, execution, count in groups
-        if census_placement(
+    counts = Counter()
+    for handling, entity_kind, decision, execution, count in groups:
+        placement = census_placement(
             decision=decision,
             execution=execution,
             handling=handling,
             entity_kind=entity_kind,
             admin_value_set=False,
-        ).stage
-        in OPEN_STAGES
-    )
+        )
+        counts[placement.stage.value] += count
+    return dict(counts)
+
+
+# My review work's read of the changes Entered by hand that may now be
+# Entered incorrectly or Not seen in ParishSoft (#2101; ``review_work.
+# COUNTS`` embeds it): each entered change no later response of its Family
+# replaced (``census_rows``' latest, ``refresh_checks.replaced``), with its
+# version, as ``[id, version]`` lists. ``entered_stages`` places them.
+# Takes ``%(campaign)s``.
+ENTERED = """
+SELECT coalesce(jsonb_agg(jsonb_build_array(p.id::text, p.version)), '[]')
+FROM stewardship_submission s
+JOIN stewardship_proposed_change p ON p.submission_id=s.id
+WHERE s.campaign_id=%(campaign)s AND s.mode='live'
+    AND p.handling<>'report-only' AND p.execution='resolved_external'
+    AND NOT EXISTS (
+        SELECT 1 FROM stewardship_submission ls
+        JOIN stewardship_proposed_change lp ON lp.submission_id=ls.id
+        WHERE ls.campaign_id=s.campaign_id AND ls.mode='live'
+            AND ls.family_id=s.family_id AND ls.family_version>s.family_version
+            AND lp.handling<>'report-only' AND lp.entity_kind=p.entity_kind
+            AND lp.entity_key IS NOT DISTINCT FROM p.entity_key
+            AND lp.field=p.field)
+"""
+# My review work's read of the parish's additions (#1710, #2101): how many
+# are at each latest step (None before any), as ``[step, count]`` lists,
+# which ``addition_state`` names. Takes ``%(campaign)s``.
+ADDITION_STEPS = """
+SELECT coalesce(jsonb_agg(jsonb_build_array(g.step, g.n)), '[]')
+FROM (
+    SELECT r.action AS step, count(*) AS n
+    FROM stewardship_census_addition a
+    JOIN stewardship_family_campaign f ON f.id=a.family_id
+    LEFT JOIN LATERAL (SELECT x.action FROM stewardship_census_addition_resolution x
+        WHERE x.addition_id=a.id ORDER BY x.sequence DESC LIMIT 1) r ON true
+    WHERE f.campaign_id=%(campaign)s
+    GROUP BY 1
+) g
+"""
+
+
+def addition_state(step):
+    """A parish-added change's state from its latest later step (None: none).
+
+    Back to review (``reopened``) leaves it open again (#1840).
+    """
+    return "open" if step in (None, "reopened") else step
+
+
+def addition_stages(steps):
+    """``ADDITION_STEPS``' decoded groups counted by stage value (#2101)."""
+    counts = Counter()
+    for step, count in steps:
+        counts[census_addition_placement(addition_state(step)).stage.value] += count
+    return dict(counts)
+
+
+def entered_stages(entered):
+    """Entered incorrectly and Not seen in ParishSoft counts (#2101).
+
+    ``entered`` are ``ENTERED``' ``[id, version]`` lists. Each change's
+    refresh checks at its version place it as ``census_rows`` places it: a
+    check that found a third value makes it Entered incorrectly, and an
+    Entered by hand one still unseen after enough full refreshes carries
+    the Not seen flag (``NOT_SEEN``, counted beside its stage, as the Stage
+    choice counts it). Two queries, none without an entered change.
+    """
+    versions = {key: version for key, version in entered}
+    counts = Counter()
+    for state in check_states(proposals=list(versions), versions=versions).values():
+        if state.outcome == "entered_incorrectly":
+            counts[Stage.ENTERED_INCORRECTLY.value] += 1
+        elif state.not_seen(True):
+            counts[NOT_SEEN] += 1
+    return dict(counts)
 
 
 # The Review buttons' form values and the decision each records, in order.
@@ -720,7 +799,7 @@ def shape_addition(raw):
     ParishSoft's value then, where the source could read it.
     """
     step = raw["step"]
-    state = "open" if step in (None, "reopened") else step
+    state = addition_state(step)
     value = json.loads(raw["value"])
     # ParishSoft's value when the change was added, where it could be read.
     baseline = json.loads(raw["baseline"]) if raw["baseline"] else {}
