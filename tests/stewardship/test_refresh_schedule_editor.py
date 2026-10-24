@@ -191,7 +191,8 @@ def test_rows_in_another_order_are_no_change():
 
 
 def test_a_request_without_the_rows_never_changes_the_schedule():
-    """A save that never drew the editor (a key paste) keeps the schedule."""
+    """A save that never drew the editor (a key paste) keeps the schedule,
+    and the stored organization (#1554), whatever is posted."""
     form = IntegrationForm(
         "parishsoft",
         {"base_digest": "a" * 64, "organization_id": "123"},
@@ -199,7 +200,7 @@ def test_a_request_without_the_rows_never_changes_the_schedule():
     )
     assert form.is_valid(), form.errors
     assert not form.schedule.posted and not form.schedule.changed
-    assert form.public_settings() == PRODUCTION | {"organization_id": "123"}
+    assert form.public_settings() == PRODUCTION
 
 
 def test_a_changed_schedule_is_derived_from_its_rules():

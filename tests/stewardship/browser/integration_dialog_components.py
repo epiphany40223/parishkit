@@ -185,8 +185,12 @@ def components(context, admin, now):
             page_url=path,
             complete_gate=False,
             refresh_key=uuid4(),
+            # The organization line, text above the key (#1554).
+            organization="St. Example Parish (12345)",
             credential=InlineCredentialForm(
-                "parishsoft", initial={"intent": "synthetic-intent"}
+                "parishsoft",
+                initial={"intent": "synthetic-intent"},
+                organization="St. Example Parish (12345)",
             )
             if key
             else None,
@@ -359,13 +363,9 @@ def components(context, admin, now):
             kind="key",
             target="parishsoft",
             label="ParishSoft",
-            changes=[
-                {
-                    "label": "Expected ParishSoft organization ID",
-                    "before": "12345",
-                    "after": "54321",
-                }
-            ],
+            # The organization has no field (#1554) and the schedule can't
+            # change with a key, so nothing else is saved with it.
+            changes=[],
         ),
         APPLIED: (
             "text/html",

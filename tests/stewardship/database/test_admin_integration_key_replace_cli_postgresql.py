@@ -172,34 +172,30 @@ def test_a_declined_prompt_stages_nothing(keys):  # noqa: F811
     assert trail() == (0, 0, 0, 0)
 
 
-def test_settings_are_saved_with_the_key(keys):  # noqa: F811
-    """--changes saves the page's settings with the key it is checked with."""
+def test_the_organization_may_come_back_unchanged_with_the_key(keys):  # noqa: F811
+    """--changes may carry ``integration show``'s organization back as it is
+    (#1554): it changes nothing, and the key is saved with the organization
+    it is checked with."""
     _, secret, _ = paired(keys.service)
-    changes = json.dumps({"settings": {"organization_id": "54321"}})
+    changes = json.dumps({"settings": {"organization_id": "12345"}})
     code, document, errors = replace(
         keys, secret, target=("parishsoft", "--changes", changes)
     )
     assert code == 0, document
-    assert document["result"]["changes"] == [
-        {"field": "organization_id", "before": "12345", "after": "54321"}
-    ]
-    assert "It also changes the ParishSoft settings: organization_id." in errors
-    assert "54321" not in errors
+    assert document["result"]["changes"] == []
+    assert "It also changes" not in errors
     staged = SecretReplacementRequest.objects.get()
     selection = ConfigurationChangeRequest.objects.get(
         request_key=selection_key(staged.pk)
     )
-    assert selection.patch[0]["values"]["settings"]["organization_id"] == "54321"
+    # The key alone changes: the settings, the organization's included, stay.
+    assert set(selection.patch[0]["values"]) == {"credential_fingerprint"}
 
 
 def test_refused_settings_and_keys_are_invalid_at_their_fields(keys, monkeypatch):  # noqa: F811
     """The page's form errors at settings.<name>; an empty, NUL-holding or
     too long key at ``key``, never quoting it; nothing is staged."""
     _, secret, _ = paired(keys.service)
-    monkeypatch.setattr(
-        "parishkit.stewardship.accounts.integration_views.loaded_organization",
-        lambda: 12345,
-    )
     changes = json.dumps({"settings": {"organization_id": "54321"}})
     code, document, _ = replace(
         keys, secret, target=("parishsoft", "--changes", changes)
@@ -208,6 +204,12 @@ def test_refused_settings_and_keys_are_invalid_at_their_fields(keys, monkeypatch
     refused(document, "invalid")
     [problem] = document["error"]["fields"]
     assert problem["field"] == "settings.organization_id"
+    # The organization is chosen once, in setup (#1554); no load recorded a
+    # name here, so it is named by its ID.
+    assert problem["message"] == (
+        "The ParishSoft organization is ParishSoft organization 12345 and "
+        "can't change after setup."
+    )
     for value, code_word in (
         (b"   \n", "required"),
         (b"bad\x00key", "invalid"),

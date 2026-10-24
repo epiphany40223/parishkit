@@ -1154,14 +1154,14 @@ def test_a_pointer_over_the_sidebar_keeps_the_focused_field_in_place(
         "/refresh-schedule",
         "/refresh-schedule-gated",
         "/refresh-schedule-basic",
-        "/refresh-schedule-loaded",
     ],
 )
 def test_pasting_a_key_posts_the_shown_schedule_unchanged(page, component_origin, path):
     """A new key pasted with the schedule untouched posts the schedule as the
     page showed it, so the key's review never reads as a key plus a schedule
     change (``key_with_schedule_change``, #1492). The review is posted
-    without the key (#1568). A locked organization ID is not sent at all."""
+    without the key (#1568). The organization, text with no field (#1554),
+    is never sent."""
     from django.http import QueryDict
 
     from parishkit.stewardship.accounts.refresh_schedule_forms import ScheduleEditor
@@ -1189,28 +1189,21 @@ def test_pasting_a_key_posts_the_shown_schedule_unchanged(page, component_origin
     recorded(page, posts, 1)
     data = QueryDict(posts[0])
     assert data["key_review"] == "yes" and "candidate" not in data
-    assert ("organization_id" in data) is not path.endswith("-loaded")
+    assert "organization_id" not in data
     editor = ScheduleEditor(data, stored=stored)
     assert editor.posted and not editor.changed, editor.document()
 
 
-def test_a_locked_organization_id_is_inactive_with_its_reason(page, component_origin):
-    """Once its data is loaded, the organization ID is a disabled field that
-    still shows the ID, with its one-line reason drawn by the server under
-    the label, so nothing moves when it is clicked (#1492; ui-conventions,
-    No layout shift)."""
-    from playwright.sync_api import expect
-
-    page.goto(component_origin + "/refresh-schedule-loaded")
-    field = page.locator("#id_organization_id")
-    expect(field).to_be_disabled()
-    expect(field).to_have_value("12345")
-    reason = page.get_by_text(
-        "Locked: ParishSoft data for this organization is loaded."
-    )
-    visible(reason)
-    painted(page)
-    before = field.bounding_box(), reason.bounding_box()
-    field.click(force=True)
-    assert page.evaluate("document.activeElement.id") != "id_organization_id"
-    assert (field.bounding_box(), reason.bounding_box()) == before
+def test_the_organization_is_text_above_the_key(page, component_origin):
+    """The organization, chosen once in setup, is a line of text naming it
+    "Name (ID)" above the new key, never a field (#1554), and the key's help
+    names the organization it must reach."""
+    page.goto(component_origin + "/refresh-schedule")
+    line = page.locator("[data-parishsoft-organization]")
+    visible(line)
+    assert line.inner_text() == "ParishSoft organization: St. Example Parish (12345)"
+    assert page.locator("#id_organization_id").count() == 0
+    key = page.locator("input[name=candidate]")
+    assert line.bounding_box()["y"] < key.bounding_box()["y"]
+    fields = page.locator("form#integration-form input:not([type=hidden])")
+    assert fields.first.get_attribute("name") == "candidate"

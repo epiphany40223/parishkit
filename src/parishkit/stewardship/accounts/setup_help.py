@@ -134,17 +134,6 @@ CREDENTIALS = {
             "organizations the key reaches, and you then choose your parish's "
             "organization; only that organization's data is ever loaded."
         ),
-        # The Integrations page's ParishSoft organization field; the setup
-        # wizard has none (#1554).
-        "organization_id": _(
-            "The number ParishSoft uses to identify your parish (its "
-            "organization ID), for example 1234; ParishSoft support can tell you "
-            "this number. The data load first checks that the API key reaches "
-            "this organization and stops if it does not. A key that also "
-            "reaches other organizations is accepted, but only this "
-            "organization's data is loaded, so another parish's data can "
-            "never be loaded."
-        ),
     },
     "google_workspace": {
         "candidate": _(
@@ -310,8 +299,6 @@ HINTS = {
     ),
     "logo": _("PNG, JPEG or WebP, up to 5 MB."),
     "candidate": _("Paste it exactly. It is never displayed again."),
-    # The Integrations page's ParishSoft organization field.
-    "organization_id": _("For example 1234."),
 }
 # The multi-select lists keep a short how-to visible; the tip has the full text.
 HINTS |= MULTI_SELECT_HINTS

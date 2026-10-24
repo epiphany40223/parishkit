@@ -159,6 +159,9 @@ def test_a_refused_key_is_shown_at_the_key_field(monkeypatch):
     """A refusal redraws the key field empty, marked and described by the
     message, with a fresh intent; a missing set-up key says what to paste."""
     monkeypatch.setattr(integration_views, "_handoff", lambda target: None)
+    monkeypatch.setattr(
+        integration_views, "_organization", lambda configuration, target: None
+    )
     configuration = Value(active_configuration=Value(digest="a" * 64))
     request = Value(portal_session=Value(principal_id="0" * 32))
     missing = integration_views._refused_key(configuration, request, "slack")

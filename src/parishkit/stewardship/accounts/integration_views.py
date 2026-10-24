@@ -46,7 +46,6 @@ from .integration_forms import (
     InlineCredentialForm,
     IntegrationForm,
 )
-from .integration_selection import loaded_organization
 from .limiting import LimiterUnavailable
 from .policy import Capability, allows
 from .refresh_schedule_forms import (
@@ -146,19 +145,42 @@ def integration_list(configuration):
 
 
 def _form(target, *args, stored=None, **kwargs):
-    """The settings form, with ParishSoft's organization ID fixed once loaded.
+    """The settings form for ``target``.
 
     ``stored`` is the integration's stored settings record, if any; the
-    ParishSoft refresh schedule editor (#632) compares against its schedule.
+    ParishSoft refresh schedule editor (#632) compares against its schedule,
+    and ParishSoft's organization ID is carried over from it (#1554).
     """
-    loaded = loaded_organization() if target == "parishsoft" else None
     return IntegrationForm(
         target,
         *args,
-        loaded_organization=loaded,
         stored=stored["values"]["settings"] if stored is not None else None,
         **kwargs,
     )
+
+
+_LOOKUP = object()  # `_page`: look the organization up itself
+
+
+def _organization(configuration, target):
+    """ParishSoft's organization named "Name (ID)" (#1554), else None.
+
+    The configured organization, with the name the current snapshot's load
+    recorded (``current_organization_label``): the page's organization
+    line and its key's help name it. None for another integration or a
+    ParishSoft record with no organization. One query for ParishSoft.
+    """
+    from parishkit.stewardship.source.organization_names import (
+        current_organization_label,
+    )
+
+    if target != "parishsoft":
+        return None
+    record = _optional(configuration, target)
+    settings = {} if record is None else record["values"]["settings"]
+    if "organization_id" not in settings:
+        return None
+    return current_organization_label(settings["organization_id"])
 
 
 def _schedule_zone(configuration):
@@ -220,8 +242,22 @@ def _summary(*forms):
     ]
 
 
-def _page(request, configuration, target, *, form=None, credential=None, status=200):
-    """Show editable settings, the optional new-key field and one status line."""
+def _page(
+    request,
+    configuration,
+    target,
+    *,
+    form=None,
+    credential=None,
+    status=200,
+    organization=_LOOKUP,
+):
+    """Show editable settings, the optional new-key field and one status line.
+
+    ``organization`` is ParishSoft's named organization when the caller has
+    already looked it up (a refused key does, #1554), so one request costs
+    one lookup; left out, the page looks it up itself.
+    """
     from parishkit.stewardship.source.loading import snapshot_organizations
 
     record = _optional(configuration, target)
@@ -253,10 +289,16 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
     latest = summary(target, record) if target in ROTATING_TARGETS else None
     pending = latest is not None and latest.kind == "pending"
     unavailable = False
+    if organization is _LOOKUP:
+        organization = _organization(configuration, target)
     if target in ROTATING_TARGETS and credential is None and not pending:
         try:
             credential = _inline_credential_form(
-                configuration, request, target, required=not configured
+                configuration,
+                request,
+                target,
+                required=not configured,
+                organization=organization,
             )
         except IntegrationUnavailable:
             # Settings stay editable while the key installer is unavailable.
@@ -278,6 +320,8 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
             "summary": latest,
             "pending": pending,
             "configured": configured,
+            # ParishSoft's organization line, text above the key (#1554).
+            "organization": organization,
             "errors": _summary(form, credential) if status == 400 else [],
             # Save waits for every required field (#563). ParishSoft's
             # refresh schedule editor gates Save itself (refresh-schedule-v1.js,
@@ -502,14 +546,23 @@ def queue_probe(configuration, actor, entered):
     )
 
 
-def _inline_credential_form(configuration, request, target, *, required=False):
+def _inline_credential_form(
+    configuration, request, target, *, required=False, organization=None
+):
     """Sign a fresh request identity for the page's new-key field.
 
     ``required`` is true for an optional integration that is not set up yet,
-    whose key is what sets it up (#563).
+    whose key is what sets it up (#563). ``organization`` is ParishSoft's
+    named organization (``_organization``), which its help names; it is
+    read here when not given.
     """
     intent = sign_key_intent(configuration, request.portal_session.principal_id, target)
-    return InlineCredentialForm(target, initial={"intent": intent}, required=required)
+    return InlineCredentialForm(
+        target,
+        initial={"intent": intent},
+        required=required,
+        organization=organization or _organization(configuration, target),
+    )
 
 
 def sign_key_intent(configuration, actor_id, target):
@@ -534,7 +587,9 @@ def sign_key_intent(configuration, actor_id, target):
     )
 
 
-def _refused_key(configuration, request, target, message=None, *, code=None):
+def _refused_key(
+    configuration, request, target, message=None, *, code=None, organization=_LOOKUP
+):
     """The new-key field redrawn with a refusal at the field (#563).
 
     The field is bound empty, with a freshly signed intent, so the page shows
@@ -547,17 +602,50 @@ def _refused_key(configuration, request, target, message=None, *, code=None):
     """
     if message is not None and not code:
         raise TypeError("A refused key's message needs its closed code.")
+    if organization is _LOOKUP:
+        organization = _organization(configuration, target)
     blank = _inline_credential_form(
-        configuration, request, target, required=message is None
+        configuration,
+        request,
+        target,
+        required=message is None,
+        organization=organization,
     )
     credential = InlineCredentialForm(
         target,
         {"intent": blank.initial["intent"], "candidate": ""},
         required=message is None,
+        organization=organization,
     )
     if credential.is_valid():
         credential.add_error("candidate", ValidationError(message, code=code))
     return credential
+
+
+def _refused_key_page(request, configuration, target, form, *args, **kwargs):
+    """A 400 page with the key field refused, looking the organization up once.
+
+    ``args`` and ``kwargs`` are ``_refused_key``'s message and code. The page
+    and the refused field both name the organization (#1554), so it is looked
+    up here and passed to both.
+    """
+    organization = _organization(configuration, target)
+    return _page(
+        request,
+        configuration,
+        target,
+        form=form,
+        credential=_refused_key(
+            configuration,
+            request,
+            target,
+            *args,
+            organization=organization,
+            **kwargs,
+        ),
+        status=400,
+        organization=organization,
+    )
 
 
 def _key_with_schedule(request, configuration, target, form):
@@ -568,23 +656,17 @@ def _key_with_schedule(request, configuration, target, form):
     redrawn page (#563); the key itself is never shown. The key's review
     (``_key_review``) and its save (``_save``) both refuse it.
     """
-    return _page(
+    return _refused_key_page(
         request,
         configuration,
         target,
-        form=form,
-        credential=_refused_key(
-            configuration,
-            request,
-            target,
-            _(
-                "Nothing was saved: a new key and a refresh schedule change "
-                "can't be saved together. Leave this empty and save the "
-                "schedule change first, then paste the new key again."
-            ),
-            code="key_with_schedule_change",
+        form,
+        _(
+            "Nothing was saved: a new key and a refresh schedule change "
+            "can't be saved together. Leave this empty and save the "
+            "schedule change first, then paste the new key again."
         ),
-        status=400,
+        code="key_with_schedule_change",
     )
 
 
@@ -599,6 +681,7 @@ def _refused_entries(request, configuration, target, form):
         target,
         initial={"intent": request.POST.get("intent", "")},
         required=_optional(configuration, target) is None,
+        organization=_organization(configuration, target),
     )
     return _page(
         request,
@@ -685,15 +768,8 @@ def _save(request, service, configuration, actor, target):
         # in the rule's words; the key is never drawn again. Any other
         # refusal of the key (a forged oversized post) is drawn as before.
         error = refused[0]
-        return _page(
-            request,
-            configuration,
-            target,
-            form=form,
-            credential=_refused_key(
-                configuration, request, target, error.message, code=error.code
-            ),
-            status=400,
+        return _refused_key_page(
+            request, configuration, target, form, error.message, code=error.code
         )
     if not (form.is_valid() and credential.is_valid()):
         return _refused_entries(request, configuration, target, form)
@@ -872,14 +948,7 @@ def _preview(request, service, actor, target):
         # requires it, and a request without one is redrawn with the
         # refusal at the key field and the other entries kept.
         form.is_valid()
-        return _page(
-            request,
-            configuration,
-            target,
-            form=form,
-            credential=_refused_key(configuration, request, target),
-            status=400,
-        )
+        return _refused_key_page(request, configuration, target, form)
     review = review_settings(service, actor, configuration, target, form)
     if review is None:
         if form.has_error(NON_FIELD_ERRORS, "unchanged"):
