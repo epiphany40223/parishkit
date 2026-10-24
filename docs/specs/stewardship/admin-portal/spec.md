@@ -609,29 +609,63 @@ integer `organizationID`, none repeated). Each record's name is its
 `organizationReportName`, cleaned as
 [ParishSoft organization name](../data/spec.md#parishsoft-organization-name)
 describes. This is the same list the load's organization check reads, so
-the organizations offered are exactly those the load would accept. While
-the lookup runs, the page updates itself in place
+the organizations offered are exactly those the load would accept. Every
+organization on the list is shown, but only one that holds Families can be
+chosen (Administrator decision of 2026-10-24), as the next paragraph
+describes. While the lookup runs, the page updates itself in place
 ([pages that update themselves](../ui-conventions/spec.md#pages-that-update-themselves))
 with the [working spinner](../ui-conventions/spec.md#working-spinner) and
 "Asking ParishSoft which organizations this key reaches…"; it usually takes
 a few seconds.
+
+**Which organizations hold Families.** A key can reach organizations that
+hold no Families (a diocesan or school record, say), and choosing one would
+only fail the first load's empty-data check. After the organization list,
+the same lookup asks ParishSoft once per listed organization for at most
+one Family: `POST families/search` with `organizationIDs` set to that one
+organization, `pageSize` 1 and `pageNumber` 1, the request and paging
+fields the load's Family search already uses
+([ParishSoft API analysis](../../../parishsoft-api-analysis.md#4-what-parishkit-uses-today-vs-what-is-available)).
+The answer is a bare array: an empty array means the organization holds no
+Families; one row whose `rowNumber` is 1 and whose `totalResults` is a
+positive integer means it holds some; the row's content is never read or
+kept. Anything else for that organization (an HTTP error other than a
+refused key, a timeout, a malformed answer) leaves its Families unknown.
+The checks run one at a time under the lookup's one overall time limit of
+two minutes; an organization not checked when the limit is reached is
+unknown too, and the stopped check is logged with what was stopped, the
+limit and the elapsed time. A refused key (HTTP 401 or 403) on any check
+ends the lookup with the refused-key error below. The result is shown per
+organization:
+
+- Holds Families: listed and selectable.
+- Holds no Families: listed, greyed and not selectable (a disabled radio
+  button), with "No Families in ParishSoft" beside its name.
+- Unknown: listed and selectable, with "ParishSoft did not say whether it
+  has Families" beside its name, and the page offers **Check again**, which
+  repeats the whole lookup with the staged key. Choosing it is allowed
+  because the first load's empty-data check still refuses an organization
+  with no Families.
 
 **One organization.** The page says "This key reaches one ParishSoft
 organization: St. Example Parish (1234). Is this your parish?" with **Yes,
 use this organization** (primary) and **No, enter a different key**
 (secondary) in the step's action row. Yes saves the choice and continues to
 Load parish data. No discards the staged key and the lookup and shows the
-key field again, empty, as on a first visit.
+key field again, empty, as on a first visit. If that one organization holds
+no Families, the lookup ends with the no-Families error below instead.
 
 **Several organizations.** The page says "This key reaches N ParishSoft
 organizations. Choose your parish's organization." and lists each as a
 radio button labelled "Name (ID)", sorted by name and then by ID, with none
-chosen. **Use this organization** (primary) is unavailable until one is
-chosen ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)),
-and **Cancel** (secondary) discards the staged key and the lookup and shows
-the key field again, empty. A list of more than 20 organizations adds a
+chosen, each marked as the paragraph above describes. **Use this
+organization** (primary) is unavailable until a selectable one is chosen
+([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)), and
+**Cancel** (secondary) discards the staged key and the lookup and shows the
+key field again, empty. A list of more than 20 organizations adds a
 type-to-filter box above it, matching the name or the ID; filtering never
-changes the choice already made.
+changes the choice already made. The server refuses a posted organization
+that is not on the list or holds no Families.
 
 **Errors.** Each is shown at the key field, with the key field ready for a
 different key, and carries its stable error code:
@@ -643,11 +677,15 @@ different key, and carries its stable error code:
   `parishsoft_no_organizations`: "ParishSoft accepted this key, but it does
   not reach any parish organization. Ask ParishSoft support for your
   parish's API key."
-- The answer is malformed or over the bound,
+- Every organization the key reaches holds no Families,
+  `parishsoft_no_family_organizations`: "ParishSoft accepted this key, but
+  none of the organizations it reaches has any Families. Ask ParishSoft
+  support for your parish's API key."
+- The organization list is malformed or over the bound,
   `parishsoft_organizations_unreadable`: "ParishSoft's answer could not be
   read. Try again in a few minutes; if it keeps happening, tell your IT
   contact."
-- ParishSoft cannot be reached or the lookup times out,
+- ParishSoft cannot be reached or the organization list times out,
   `parishsoft_unavailable`: "ParishSoft could not be reached. Try again in a
   few minutes." Here the key stays staged and **Try again** repeats the
   lookup with it, so the Administrator need not paste it again.
@@ -660,12 +698,14 @@ setting as today. The chosen organization's name is kept with the lookup
 for the wizard's own pages until the load records it in its snapshot
 ([ParishSoft organization name](../data/spec.md#parishsoft-organization-name)).
 The other organizations' IDs and names are the one place the system ever
-shows another organization: they are shown only on this page, to the setup
-attempt's own Administrator, and are scrubbed from the lookup as soon as an
-organization is chosen, the key is discarded or the attempt ends. They are
-never logged, audited, copied into a snapshot or shown on any other page.
-The audit entry `setup_parishsoft_organization_chosen` records the chosen ID
-and how many organizations the key reached, a count only, never the key.
+shows another organization (Administrator decision of 2026-10-24): they
+are shown only on this page, to the setup attempt's own Administrator, and
+are scrubbed from the lookup, with each organization's Families result, as
+soon as an organization is chosen, the key is discarded or the attempt
+ends. They are never logged, audited, copied into a snapshot or shown on
+any other page. The audit entry `setup_parishsoft_organization_chosen`
+records the chosen ID, how many organizations the key reached and how many
+of them hold no Families or are unknown, counts only, never the key.
 
 **Revisiting the step.** The saved-key notice names the choice: "A
 ParishSoft API key is saved for St. Example Parish (1234)." Leaving the key
@@ -695,8 +735,9 @@ pages name the organization by its ID alone
 the sealed setup credential guard today admits a staged ParishSoft key only
 with exactly an `organization_id` setting, so it must also admit a key
 staged with no organization while its lookup is pending; a new setup row
-holds the lookup (its state, its error code, the bounded list until it is
-scrubbed, and the chosen ID and name); and the setup load must refuse to
+holds the lookup (its state, its error code, the bounded list with each
+organization's Families result until it is scrubbed, and the chosen ID and
+name); and the setup load must refuse to
 start for a key with no chosen organization. The organization name
 recorded by loads needs no schema change.
 
@@ -704,7 +745,13 @@ recorded by loads needs no schema change.
 [multi-organization mode](../local-environment/spec.md#fake-configuration)
 (`fake-parishsoft organizations N`) gives the fixed key one, two or three
 organizations, so both the confirmation and the list can be walked in the
-local environment.
+local environment. Today the fake answers another organization's Family
+search with 404; the implementation changes it to answer the one-row Family
+search for odd-numbered other organizations with their one Family and for
+even-numbered ones with an empty array, so `organizations 2` shows one
+selectable and one greyed other organization, and the local-environment
+spec says so. Unit tests cover the unknown result (an error, a timeout, a
+malformed row) with a stubbed transport.
 
 **Wording to change.** Every place the organization ID is entered or named
 today, to change to the choice above or to the
@@ -727,7 +774,7 @@ today, to change to the choice above or to the
 | System health problem text (`system-health-problem.html`) | "The ParishSoft key reaches a different organization than before" | "The ParishSoft key no longer reaches Name (1234)" |
 | Admin automation (`admin_integration_keys.py`, `pk-admin integration`) | `ORGANIZATION_LOCKED`: "This key was saved with a different ParishSoft organization ID…" at `organization_id` | the settings it prints add `organization_name` beside `organization_id` (both read-only); a posted different `organization_id` is refused as "The ParishSoft organization is Name (1234) and can't change after setup." |
 | Page script (`ui-v1.js`) | the rule that requires the key again once the organization ID differs from the saved one | removed with the field |
-| Specs and guides | this spec's setup and Integrations text; [UX conventions](../ui-conventions/spec.md#conditional-fields) (the locked organization ID as a precedent); the credential installers, Admin automation and launch runbooks guides, where they say the organization ID is entered or cannot change | reworded to the choice and the name rule |
+| Specs and guides | this spec's setup and Integrations text; [UX conventions](../ui-conventions/spec.md#conditional-fields) (the locked organization ID as a precedent); the credential installers, Admin automation and launch runbooks guides, where they say the organization ID is entered or cannot change | reworded to the choice and the name rule; the guides change in the implementation PR, with the code (Administrator decision of 2026-10-24) |
 
 Unchanged: the host-only smoke check keeps its `--organization-id` option
 (an operator tool, not portal wording), structured log fields and audit
