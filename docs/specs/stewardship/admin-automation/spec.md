@@ -2604,7 +2604,7 @@ loads the campaign's Families, as the page's status offers. The command
 names and the document shape are defaults, pending Administrator
 confirmation. The
 [operator guide](../../../guides/stewardship-admin-automation.md#create-the-campaign)
-lists the fields.
+lists the fields. The document also takes the campaign's Families rule, `campaign_families`, and the preview prints its counts, as [Families in this campaign](../admin-portal/spec.md#families-in-this-campaign) says (#1393, not built); `campaign preview` refuses any change to it.
 
 `parish show`, `ministries list`, `branding show` and `campaign shares
 [--campaign ID]` are the reads of Parish settings, Ministries, Parish

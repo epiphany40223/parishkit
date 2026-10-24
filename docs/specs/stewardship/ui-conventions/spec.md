@@ -69,6 +69,7 @@ when it lands.
 - Admin page layout: [page help](#page-help),
   [button labels](#button-labels), [button emphasis](#button-emphasis),
   [review pipeline terms](#review-pipeline-terms),
+  [campaign Families wording](#campaign-families-wording),
   [shared visual style](#shared-visual-style),
   [colour scheme](#colour-scheme),
   [status indicators](#status-indicators), [stat tiles](#stat-tiles),
@@ -3168,6 +3169,55 @@ the stage each stream's stored state maps to). **Precedent.**
 move to the words as each stream moves to the shared review worklist; until
 then a page keeps its current words.
 
+### Campaign Families wording
+
+**Rule.** The Families a campaign is sent to are its **campaign Families**
+("Families in this campaign" in a sentence), the Families its [Families
+rule](../data/spec.md#campaign-families) selects. No page, download, email,
+CLI message or specification calls them "active parishioners", "active
+Families" or "active registered Families", and a Family that stops matching
+the rule has **left the campaign**, not "become inactive". "Active" stays for
+what ParishSoft itself marks: a Member's status, an active head, the Active
+Family group. The general word "parishioners" for the people a campaign
+reaches ("no campaign is open to parishioners") is unchanged. **Why.** A
+campaign's Families are whatever its rule chose, which may include Staff or
+Families registered elsewhere, so "active parishioner" stopped being true
+(Administrator, 2026-10-24,
+[#1393](https://github.com/epiphany40223/parishkit/issues/1393); the
+Administrator approved these words, including the Family badge, the same
+day). Status:
+specified, not built; the implementing PR changes the strings, their tests
+and the specification text together, and renames the reports
+specification's "Active parishioner family directory" heading (with its
+links and traceability entry).
+
+| Today | Becomes |
+| --- | --- |
+| Active parishioner family directory (menu, page title and heading, error page, Return link, table and navigator labels, links on Find a Family, Deliveries, Delivery refusals, Timeline, Choose Families to test and the Response dashboard, audit descriptions, CLI help) | Campaign Family directory |
+| Active Families (Home and Go live tiles, participation summary, Past campaigns column and review, confirmation progress) | Campaign Families |
+| Active Families with a response | Campaign Families with a response |
+| Percent of active Families (comparison metric and chart) | Percent of campaign Families |
+| Active Families counted from | Campaign Families counted from |
+| Active parishioner Families, the percentage denominator (archive workbook) | Campaign Families, the percentage denominator |
+| Active Families when their groups were prepared | Campaign Families when their groups were prepared |
+| Active registered Families from ParishSoft data as of | Campaign Families from ParishSoft data as of |
+| No active Families in the ParishSoft data yet. | No campaign Families in the ParishSoft data yet. |
+| Select Clear filters to list every active Family. / No active Family needs a postal invitation / Across all active Families, … | the same sentences with "campaign Family" / "campaign Families" |
+| None: every active Family can be reached by email or postal mail. | None: every campaign Family can be reached by email or postal mail. |
+| Not available: ParishSoft no longer lists this Family as active and registered, so it can't use the Family form. | Not available: in the latest ParishSoft data this Family is no longer in this campaign, so it can't use the Family form. |
+| Historical as of day counts … including Families that later became inactive. | … including Families that later left this campaign. |
+| Check that ParishSoft has active Parishioner Families, then load again. | Check that ParishSoft has Families that match this campaign's Families choice, then load again. |
+| Every eligible Family that has not responded gets the Reminders (Reminder WorkGroup page and review) | Every campaign Family that has not responded gets the Reminders |
+| an imported year counts the active Families its archive file names | an imported year counts the campaign Families its archive file names |
+| Active Family heads and emails (directory detail) | Active heads and emails |
+| Inactive in ParishSoft, for a Family ([badge](#members-and-families-no-longer-in-parishsoft)) | No longer in this campaign |
+| Create a mail-merge export of the active Families that get … (CLI help) | … of the campaign Families that get … |
+
+A Member's "Inactive in ParishSoft" badge, "No active Family head" and
+"no longer an active, living Member" are about ParishSoft's Member status
+and stay. The Family portal shows none of these words; a Family that is not
+in the campaign gets the same sign-in answer as an unknown code, as today.
+
 ### Shared visual style
 
 The portal and the emails share one visual style
@@ -4894,8 +4944,8 @@ Family, or marks one inactive or deceased:
 
 - **Not in ParishSoft**: the data has no such Member or Family (deleted or
   merged there), or the Member now belongs to another Family.
-- **Inactive in ParishSoft**: present, but marked inactive (for a Family:
-  no longer active and registered).
+- **Inactive in ParishSoft**: a Member present, but marked inactive. For a
+  Family the words are **No longer in this campaign**: present, but no longer matching the campaign's [Families rule](../data/spec.md#campaign-families) (until #1393 is built, "Inactive in ParishSoft": no longer active and registered).
 - **Deceased in ParishSoft**: present, but marked deceased.
 - **Name not recorded in ParishSoft**: present, but with no usable name. This
   is a gap in the data, not a removal, so it is worded as the name and has
