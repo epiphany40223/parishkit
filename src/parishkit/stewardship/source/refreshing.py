@@ -37,6 +37,7 @@ from .loading import (
     derived_baseline,
     derived_counts,
     load_full_source,
+    log_organizations,
     maximum_drop_percent,
     organization_evidence,
     recorded_contact_missing,
@@ -406,6 +407,7 @@ def load_and_stage_attempt(execution, claim, credential):
     # Again after the WorkGroup read, whose list may drop other
     # organizations' WorkGroups too (#1554); nothing for one organization.
     evidence = loaded.evidence | organization_evidence(client)
+    log_organizations(evidence, task_id=execution.claim.run_id)
     if workgroup is not None:
         warn_if_missing(workgroup, task_id=execution.claim.run_id)
         evidence = {**evidence, EVIDENCE_KEY: workgroup}

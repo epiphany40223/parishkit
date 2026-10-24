@@ -698,10 +698,13 @@ organizations and that ParishKit drops all but the configured one). The rules:
   should confirm it if one ever becomes available. A Family WorkGroup is kept
   only when its owner is the configured organization, so a shared diocesan
   WorkGroup another organization owns is not read.
-- **Member contact rows** are not filtered on their own owner field. A
-  dropped Member's contact row is dropped with it. Any other contact row must
-  name the configured organization as `ownerOrganizationID`, else the load
-  fails.
+- **Member contact rows** are not filtered on their own owner field. They
+  are kept only for the Members the search kept, so with such a key Members
+  must be read first, and a load that reads contact rows before them fails.
+  A kept contact row must name the configured organization as
+  `ownerOrganizationID`, else the load fails.
+- **No other organization's record is cached.** The shared tools' response
+  cache is written after the filter, never before it.
 - **Collections with no organization field rely on the request scope**, with
   cross-checks that fail the load on a dangling reference: Families
   (`families/search`; their `registeredOrganizationID` is where a Family is
@@ -721,11 +724,13 @@ organizations and that ParishKit drops all but the configured one). The rules:
   link, changes.
 - **Evidence and logs, counts only.** A load with such a key records, in its
   snapshot's load evidence under `other_organizations`, how many
-  organizations the key reaches and the records dropped per collection, and
-  logs the same counts with the number of Families left without Members. No
-  other organization's ID or name, and no parish data, is logged or stored.
-  A key that reaches one organization records nothing new. No schema change:
-  the evidence is part of the existing cursor.
+  organizations the key reaches, the records dropped per collection and the
+  number of Families left without Members, and logs exactly that, once, with
+  its task, after its last read (a refresh's WorkGroup list included), so the
+  log and the snapshot agree. No other organization's ID or name, and no
+  parish data, is logged or stored. A key that reaches one organization
+  records nothing new. No schema change: the evidence is part of the
+  existing cursor.
 
 ### Campaign daily report facts
 

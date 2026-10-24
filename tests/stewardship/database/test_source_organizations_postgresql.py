@@ -54,6 +54,7 @@ def test_a_refresh_stores_only_the_configured_organization(tmp_path, monkeypatch
     assert result.cursor["load"][ORGANIZATIONS_KEY] == {
         "reached": 2,
         "skipped": {"members": 1},
+        "families_without_members": 0,
     }
     assert snapshot_organizations(result.pk) == {"reached": 2, "skipped": 1}
 
@@ -81,5 +82,5 @@ def test_the_parishsoft_settings_page_shows_what_the_key_reaches(
         loading, "snapshot_organizations", lambda: {"reached": 3, "skipped": 5}
     )
     page = browser.get(URL).content.decode()
-    assert "This ParishSoft key reaches 3 ParishSoft organizations." in page
-    assert "Records of other organizations left out at the last load: 5." in page
+    assert "At the last load from ParishSoft, this key reached 3 organizations." in page
+    assert "Records of other organizations left out by that load: 5." in page

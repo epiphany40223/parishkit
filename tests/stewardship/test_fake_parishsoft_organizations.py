@@ -26,6 +26,7 @@ from parishkit.stewardship.source.canonical import SourceReferenceSkew
 from parishkit.stewardship.source.loading import (
     ORGANIZATIONS_KEY,
     load_full_source,
+    log_organizations,
     organization_evidence,
     recorded_organizations,
 )
@@ -91,8 +92,7 @@ def test_a_full_load_stores_only_the_configured_organization(servers, tmp_path, 
     fake = multi.fake
     one = load_full_source(client(single, tmp_path), window=window(fake), as_of=ANCHOR)
     several_client = client(multi, tmp_path)
-    with caplog.at_level(logging.INFO, logger="parishkit.stewardship"):
-        several = load_full_source(several_client, window=window(fake), as_of=ANCHOR)
+    several = load_full_source(several_client, window=window(fake), as_of=ANCHOR)
     assert several.corpus == one.corpus
     assert several.counts == one.counts
     assert ORGANIZATIONS_KEY not in one.evidence
@@ -103,19 +103,21 @@ def test_a_full_load_stores_only_the_configured_organization(servers, tmp_path, 
     assert skipped["member_contactinfos"] == 4
     assert skipped["ministry_types"] == 2
     assert skipped["pledges"] > 0 and skipped["contributions"] > 0
+    # The other Members' Family is not loaded, so none is left without Members.
+    assert recorded["families_without_members"] == 0
     assert recorded_organizations({"load": several.evidence}) == recorded
-    # One log line with counts only; the other Members' Family is not loaded,
-    # so no loaded Family is left without Members.
+    # The loader logs exactly what it records, per collection, with its task.
+    task = uuid4()
+    with caplog.at_level(logging.INFO, logger="parishkit.stewardship"):
+        log_organizations(several.evidence, task_id=task)
+        log_organizations(one.evidence, task_id=task)
     logged = [
         json.loads(SafeJsonFormatter().format(record))["extra"]
         for record in caplog.records
         if record.name == "parishkit.stewardship"
     ]
-    assert {
-        "reached": 3,
-        "skipped": sum(skipped.values()),
-        "families_without_members": 0,
-    } in [entry.get("source_organizations") for entry in logged]
+    assert [entry.get("source_organizations") for entry in logged] == [recorded]
+    assert logged[0]["task_id"] == str(task)
     # Every scoped request still names the synthetic organization alone.
     assert several_client.organizations_reached == 3
     others = {LOCAL_ORGANIZATION_ID + 1, LOCAL_ORGANIZATION_ID + 2}
@@ -151,6 +153,11 @@ def test_the_one_organization_mode_is_the_default(servers, tmp_path):
     coherent.validate_organization()
     assert coherent.organizations_reached == 1
     assert organization_evidence(coherent) == {}
+    # The WorkGroup cross-check is for a multi-organization key only: one
+    # organization's refresh is read exactly as before, whatever it holds.
+    fake = single.fake
+    ours = fake.parish.family_workgroups[1]["workgroupName"]
+    assert load_reminder_workgroup(coherent, ours, families=set())["found"] is True
 
 
 @pytest.mark.parametrize("value", [-1, 3, "2", True])

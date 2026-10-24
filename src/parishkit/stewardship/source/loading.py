@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from datetime import date
 
 from parishkit.config import ConfigError
-from parishkit.parishsoft import load_families_and_members, load_funds
+from parishkit.parishsoft import (
+    ORGANIZATION_FIELDS,
+    load_families_and_members,
+    load_funds,
+)
 from parishkit.parishsoft_pagination import (
     ShiftedSourceScan,
     SourceLoadBudgetExceeded,
@@ -38,20 +42,25 @@ DROP_OVERRIDE_VARIABLE = "PARISHKIT_SOURCE_MAX_DROP_PERCENT"
 # Where a full load's evidence records its Member contact list coverage.
 CONTACT_COVERAGE_KEY = "member_contacts"
 # Where a load's evidence records a ParishSoft key that reaches several
-# organizations (#1554): ``{"reached": N, "skipped": {collection: count}}``,
-# counts only. A key that reaches only the configured organization records
-# nothing here, so its evidence is exactly as before.
+# organizations (#1554): ``{"reached": N, "skipped": {collection: count},
+# "families_without_members": F}``, counts only. A key that reaches only the
+# configured organization records nothing here, so its evidence is exactly as
+# before.
 ORGANIZATIONS_KEY = "other_organizations"
-# The names of the counts a load logs for such a key, in the order
-# ``emit``'s ``source_organizations`` tuple holds them.
-ORGANIZATION_LOG_FIELDS = ("reached", "skipped", "families_without_members")
+# The closed collection names a skip count may name: the collections whose
+# records name their organization, and the contact rows dropped with them.
+ORGANIZATION_COLLECTIONS = frozenset(
+    {collection for _, collection in ORGANIZATION_FIELDS.values()}
+    | {"member_contactinfos"}
+)
 
 
 def organization_evidence(client):
     """The load evidence for a key that reaches several organizations, or {}.
 
     ``client`` has validated the organization and read the collections; its
-    skip counts are per collection (``parishsoft.ORGANIZATION_FIELDS``).
+    skip counts are per collection (``parishsoft.ORGANIZATION_FIELDS``), and
+    ``families_without_members`` is what ``load_full_source`` counted.
     Counts only: no other organization's ID or name, and no parish data. A
     refresh asks again after its WorkGroup read, so its evidence counts that
     list too.
@@ -59,24 +68,46 @@ def organization_evidence(client):
     reached = client.organizations_reached or 0
     if reached < 2:
         return {}
-    skipped = dict(sorted(client.other_organization_skipped.items()))
-    return {ORGANIZATIONS_KEY: {"reached": reached, "skipped": skipped}}
+    return {
+        ORGANIZATIONS_KEY: {
+            "reached": reached,
+            "skipped": dict(sorted(client.other_organization_skipped.items())),
+            "families_without_members": client.families_without_members,
+        }
+    }
 
 
-def _log_organizations(evidence, families_without_members):
-    """Log a load's other-organization counts once, as closed numbers only."""
+def log_organizations(evidence, *, task_id):
+    """Log a load's final other-organization counts once (#1554).
+
+    Called by each loader with the evidence it records, after every read
+    (a refresh's WorkGroup list included), so the log and the snapshot agree.
+    Nothing is logged for a key that reaches one organization.
+    """
     from parishkit.stewardship.observability import Event, emit
 
-    value = evidence.get(ORGANIZATIONS_KEY)
+    value = valid_organizations(evidence.get(ORGANIZATIONS_KEY))
     if value is not None:
-        emit(
-            Event.TASK_STARTED,
-            source_organizations=(
-                value["reached"],
-                sum(value["skipped"].values()),
-                families_without_members,
-            ),
+        emit(Event.TASK_STARTED, task_id=task_id, source_organizations=value)
+
+
+def valid_organizations(value):
+    """``value`` when it has the ``ORGANIZATIONS_KEY`` evidence's exact shape."""
+    if (
+        type(value) is dict
+        and set(value) == {"reached", "skipped", "families_without_members"}
+        and type(value["reached"]) is int
+        and value["reached"] >= 2
+        and type(value["families_without_members"]) is int
+        and value["families_without_members"] >= 0
+        and type(value["skipped"]) is dict
+        and all(
+            name in ORGANIZATION_COLLECTIONS and type(count) is int and count >= 0
+            for name, count in value["skipped"].items()
         )
+    ):
+        return value
+    return None
 
 
 def recorded_organizations(cursor):
@@ -86,20 +117,9 @@ def recorded_organizations(cursor):
     show it (``reached`` organizations and the ``skipped`` total).
     """
     load = cursor.get("load") if type(cursor) is dict else None
-    value = load.get(ORGANIZATIONS_KEY) if type(load) is dict else None
-    if (
-        type(value) is dict
-        and set(value) == {"reached", "skipped"}
-        and type(value["reached"]) is int
-        and value["reached"] >= 2
-        and type(value["skipped"]) is dict
-        and all(
-            type(name) is str and type(count) is int and count >= 0
-            for name, count in value["skipped"].items()
-        )
-    ):
-        return value
-    return None
+    return valid_organizations(
+        load.get(ORGANIZATIONS_KEY) if type(load) is dict else None
+    )
 
 
 def snapshot_organizations(snapshot_id=None):
@@ -560,7 +580,7 @@ def load_full_source(
             load_workgroups=False,
             progress=progress,
         )
-        families_left = _families_left_without_members(data, client)
+        client.families_without_members = _families_left_without_members(data, client)
         # Checked on the raw collections, before normalization merges each
         # Member's search-row contact fields in and hides who was left out.
         coverage = member_contact_coverage(data.members, data.member_contactinfos)
@@ -637,7 +657,6 @@ def load_full_source(
     }
     # Only for a key that reaches several organizations (#1554).
     evidence.update(organization_evidence(client))
-    _log_organizations(evidence, families_left)
     if accepted is not None:
         from .drop_acceptance import ACCEPTANCE_KEY
 

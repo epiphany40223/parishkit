@@ -407,5 +407,8 @@ def test_a_finished_load_counts_the_organizations_a_key_reaches(organizations):
     if organizations is None:
         assert "data-parishsoft-organizations" not in html
     else:
-        assert "This ParishSoft key reaches 3 ParishSoft organizations." in html
-        assert "left out at the last load: 9." in html
+        assert (
+            "At the last load from ParishSoft, this key reached 3 organizations."
+            in html
+        )
+        assert "left out by that load: 9." in html

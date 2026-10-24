@@ -409,7 +409,7 @@ def emit(
     source_drop_acceptance: UUID | None = None,
     source_acceptance_lapsed: UUID | None = None,
     source_contact_coverage: tuple | None = None,
-    source_organizations: tuple | None = None,
+    source_organizations: dict | None = None,
     drive_failure: str | None = None,
     timeout: str | None = None,
     limit_seconds: int | None = None,
@@ -440,9 +440,9 @@ def emit(
     refused as cut short (``source.loading.ShortContactList``), only with
     ``SOURCE_PROVIDER_FAILED``, which carries it for the same reason.
     ``source_organizations`` is a load's counts for a ParishSoft key that
-    reaches several organizations (#1554, ``source.loading
-    .ORGANIZATION_LOG_FIELDS``), only with ``TASK_STARTED``, for the same
-    reason.
+    reaches several organizations (#1554), exactly its evidence
+    (``source.loading.valid_organizations``: closed collection names and
+    counts), only with ``TASK_STARTED``, for the same reason.
 
     ``drive_failure`` is an off-site copy's Drive category; ``timeout`` names
     the limit that stopped work, with that limit and the elapsed time in
@@ -726,14 +726,10 @@ def _safe_coverage(value):
 
 
 def _safe_organizations(value):
-    """A load's other-organization counts: one non-negative int per name."""
-    from .source.loading import ORGANIZATION_LOG_FIELDS
+    """A load's other-organization counts, in their exact evidence shape."""
+    from .source.loading import valid_organizations
 
-    return (
-        type(value) is tuple
-        and len(value) == len(ORGANIZATION_LOG_FIELDS)
-        and all(type(item) is int and item >= 0 for item in value)
-    )
+    return valid_organizations(value) is not None
 
 
 def _safe_thresholds(value):
@@ -1009,15 +1005,12 @@ class SafeJsonFormatter(JsonLogFormatter):
             and isinstance(context, dict)
             and _safe_organizations(context.get("source_organizations"))
         ):
-            from .source.loading import ORGANIZATION_LOG_FIELDS
-
-            safe.extra["source_organizations"] = dict(
-                zip(
-                    ORGANIZATION_LOG_FIELDS,
-                    context["source_organizations"],
-                    strict=True,
-                )
-            )
+            value = context["source_organizations"]
+            safe.extra["source_organizations"] = {
+                "reached": value["reached"],
+                "skipped": dict(value["skipped"]),
+                "families_without_members": value["families_without_members"],
+            }
         if (
             record.msg is Event.SOURCE_MINISTRY_NAME_REPAIRED
             and isinstance(context, dict)

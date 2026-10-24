@@ -2009,11 +2009,11 @@ loaded ([ParishSoft organization scope](../data/spec.md#parishsoft-organization-
 Administrator always enters the organization ID: nothing picks one of the
 organizations a key reaches, so a key that reaches several cannot load the
 wrong parish by default. While the loaded data came through such a key, the
-ParishSoft settings page shows a static line above its form: "This ParishSoft
-key reaches N ParishSoft organizations. Only the configured organization's
-data is loaded; the other organizations' data is left out.", followed, when
-the last load left any out, by "Records of other organizations left out at
-the last load: M." The setup load's result notice and System health's
+ParishSoft settings page shows a static information notice above its form:
+"At the last load from ParishSoft, this key reached N organizations. Only the
+configured organization's data is loaded; the other organizations' data is
+left out.", followed, when that load left any out, by "Records of other
+organizations left out by that load: M." The setup load's result notice and System health's
 [ParishSoft refresh panel](#parishsoft-refresh-panel) show the same line.
 It names counts only, never another organization's ID or name, and a key that
 reaches only the configured organization shows nothing. The count is the

@@ -28,7 +28,7 @@ from .cursors import refresh_cursor
 from .errors import SourceCredentialChanged, local_read_admission
 from .leases import reserve_source_request, verify_source
 from .load_progress import DownloadProgress
-from .loading import load_full_source
+from .loading import load_full_source, log_organizations
 from .setup_admission import bound_attempt, require_live_setup
 from .setup_exchange import _live
 from .snapshot_models import SourceCurrent
@@ -145,6 +145,8 @@ def load_setup_source(execution, claim, *, exchange_id, credential):
         )
     finally:
         session.close()
+    # Counts only, for a key that reaches several organizations (#1554).
+    log_organizations(loaded.evidence, task_id=execution.claim.run_id)
     # Saved-record counts continue from the last download value because task
     # progress may never decrease; the page subtracts the same base.
     base = download.base

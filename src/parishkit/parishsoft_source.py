@@ -179,8 +179,9 @@ class CoherentParishSoftClient(ParishSoftClient):
         self._organization_id = None
         self.organizations_reached = None
         self.other_organization_skipped = {}
-        self.other_organization_members = set()
+        self.kept_members = None
         self.other_organization_families = set()
+        self.families_without_members = 0
         rows = super().post_uncached("organizations/search", {})
         if (
             type(rows) is not list

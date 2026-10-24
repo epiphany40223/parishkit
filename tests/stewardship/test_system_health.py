@@ -3323,11 +3323,11 @@ def test_the_source_panel_counts_the_organizations_a_key_reaches():
     """#1554: a key that reaches several organizations says how many, and how
     many records the last load left out, in counts only; one that reaches
     the configured organization alone adds nothing."""
-    line = "This ParishSoft key reaches 3 ParishSoft organizations."
+    line = "At the last load from ParishSoft, this key reached 3 organizations."
     drawn = whole({"health": health(), "organizations": {"reached": 3, "skipped": 12}})
     assert line in drawn
-    assert "Records of other organizations left out at the last load: 12." in drawn
+    assert "Records of other organizations left out by that load: 12." in drawn
     quiet = whole({"health": health(), "organizations": {"reached": 2, "skipped": 0}})
-    assert "reaches 2 ParishSoft organizations" in quiet
-    assert "left out at the last load" not in quiet
+    assert "this key reached 2 organizations" in quiet
+    assert "left out by that load" not in quiet
     assert "data-parishsoft-organizations" not in whole({"health": health()})

@@ -186,12 +186,15 @@ class ParishSoftClient:
         self._organization_id: int | None = None
         # Set by validate_organization (#1554): how many organizations the key
         # reaches, how many records of other organizations each collection
-        # dropped, and the Members dropped (so their contact rows are too)
-        # with the Families those Members named.
+        # dropped, the Members kept (None until Members are read; only their
+        # contact rows are kept) and the Families the dropped Members named.
         self.organizations_reached: int | None = None
         self.other_organization_skipped: dict[str, int] = {}
-        self.other_organization_members: set[int] = set()
+        self.kept_members: set[int] | None = None
         self.other_organization_families: set[int] = set()
+        # Loaded Families left with no Members of this organization; the
+        # Stewardship loader counts them for its evidence.
+        self.families_without_members = 0
         if self.config.cache_enabled:
             self.config.cache_dir.mkdir(parents=True, exist_ok=True)
             self.config.cache_dir.chmod(0o700)
@@ -239,8 +242,9 @@ class ParishSoftClient:
         self._organization_id = int(organization["organizationID"])
         self.organizations_reached = len(organizations)
         self.other_organization_skipped = {}
-        self.other_organization_members = set()
+        self.kept_members = None
         self.other_organization_families = set()
+        self.families_without_members = 0
         return self._organization_id
 
     def _own_organization(
@@ -253,19 +257,25 @@ class ParishSoftClient:
         as before. Otherwise each record of a collection in
         ``ORGANIZATION_FIELDS`` is kept only when its organization field is
         the loaded organization, and the others are counted per collection
-        in ``other_organization_skipped`` (counts only). A Member contact row
-        is dropped with its Member; any other contact row must name the
-        loaded organization as its owner. A record whose field is missing or
-        not a positive integer fails the load: it cannot be proved to belong
-        to the parish.
+        in ``other_organization_skipped`` (counts only). Member contact rows
+        are kept only for the Members kept (so Members must be read first);
+        a kept row must name the loaded organization as its owner. A record
+        whose field is missing or not a positive integer fails the load: it
+        cannot be proved to belong to the parish. The callers filter before
+        anything is cached, so no other organization's record is ever
+        written to the cache.
         """
         if (self.organizations_reached or 0) < 2:
             return rows
         organization = self._organization_id
         if endpoint == "members/contact/list":
+            if self.kept_members is None:
+                raise ConfigError(
+                    "ParishSoft Member contact rows must be read after the Members"
+                )
             kept = []
             for row in rows:
-                if row.get("memberDUID") in self.other_organization_members:
+                if row.get("memberDUID") not in self.kept_members:
                     self._skipped("member_contactinfos")
                     continue
                 # Real contact rows' owner is the loaded organization; one
@@ -287,8 +297,9 @@ class ParishSoftClient:
                 continue
             self._skipped(collection)
             if endpoint == "members/search":
-                self.other_organization_members.add(row.get("memberDUID"))
                 self.other_organization_families.add(row.get("familyDUID"))
+        if endpoint == "members/search":
+            self.kept_members = {row.get("memberDUID") for row in kept}
         return kept
 
     def _skipped(self, collection: str) -> None:
@@ -403,8 +414,9 @@ class ParishSoftClient:
             if done:
                 break
             page += 1
+        items = self._own_organization(endpoint, items)
         self._save_cache(endpoint, cache_params, items)
-        return self._own_organization(endpoint, items)
+        return items
 
     def post_paginated(
         self,
@@ -460,8 +472,9 @@ class ParishSoftClient:
             if done:
                 break
             page += 1
+        items = self._own_organization(endpoint, items)
         self._save_cache(endpoint, cache_payload, items)
-        return self._own_organization(endpoint, items)
+        return items
 
     def _request(self, func: Any) -> requests.Response:
         """Execute an HTTP call with retries and uniform error handling.

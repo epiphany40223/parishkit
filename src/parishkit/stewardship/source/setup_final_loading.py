@@ -21,7 +21,7 @@ from .credentials import SourceCredential
 from .cursors import refresh_cursor
 from .errors import SourceCredentialChanged, SourceScopeChanged, local_read_admission
 from .leases import reserve_source_request, verify_source
-from .loading import load_full_source
+from .loading import load_full_source, log_organizations
 from .setup_final_tasks import require_final_task
 from .snapshots import begin_snapshot, finish_snapshot, stage_entities
 from .transport import runtime_base_url, runtime_profile, source_timeout_recorder
@@ -117,6 +117,8 @@ def load_final_setup_source(execution, claim, *, store, credential_path):
         )
     finally:
         session.close()
+    # Counts only, for a key that reaches several organizations (#1554).
+    log_organizations(loaded.evidence, task_id=execution.claim.run_id)
     total, done = sum(loaded.counts.values()), 0
     execution.progress(done, total, phase=TaskPhase.STAGING)
     for kind, rows in loaded.corpus.items():

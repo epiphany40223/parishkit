@@ -293,3 +293,55 @@ def test_organization_id_setting_is_validated():
     for value in ("5", 0, True, 2**31):
         with pytest.raises(ConfigError):
             ParishSoftConfig(api_key="key", cache_dir=Path("."), organization_id=value)
+
+
+def test_contact_rows_are_kept_only_for_kept_members(tmp_path):
+    """A contact row for a Member the search did not keep is never loaded."""
+    ours = member(1) | {"organizationID": OURS}
+    client, members, contacts = members_and_contacts(
+        tmp_path,
+        REACHES_TWO,
+        [ours],
+        [
+            {"memberDUID": 1, "ownerOrganizationID": OURS},
+            {"memberDUID": 3, "ownerOrganizationID": OURS},
+        ],
+    )
+    assert contacts == [{"memberDUID": 1, "ownerOrganizationID": OURS}]
+    assert client.other_organization_skipped == {"member_contactinfos": 1}
+
+
+def test_contact_rows_before_members_fail_with_a_multi_organization_key(tmp_path):
+    """Without the kept Members, no contact row can be shown to be the parish's."""
+    client = coherent(tmp_path, [REACHES_TWO, [{"memberDUID": 1}], []])
+    client.validate_organization()
+    with pytest.raises(IncompleteSourceCollection, match="organization"):
+        client.post_paginated("members/contact/list")
+
+
+def test_the_tools_cache_never_holds_another_organizations_records(tmp_path):
+    """Records are filtered before the shared client writes its cache."""
+    ps = plain(
+        tmp_path,
+        [
+            Response(REACHES_TWO),
+            Response(
+                {
+                    "data": [
+                        {"id": 1, "organizationId": 5},
+                        {"id": 2, "organizationId": 6},
+                    ]
+                }
+            ),
+        ],
+        organization_id=OURS,
+    )
+    object.__setattr__(ps.config, "cache_limit", None)
+    ps.validate_organization()
+    assert ps.get_paginated("ministry/type/list") == [{"id": 1, "organizationId": 5}]
+    cached = "".join(path.read_text() for path in tmp_path.rglob("*.json"))
+    assert '"organizationId": 6' not in cached and '"organizationId":6' not in cached
+    assert "organizationId" in cached
+    # A cache hit answers the same, with no request.
+    assert ps.get_paginated("ministry/type/list") == [{"id": 1, "organizationId": 5}]
+    assert len(ps.session.calls) == 2
