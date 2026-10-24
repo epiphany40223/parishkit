@@ -393,9 +393,11 @@ type uses (initial invitation and reminder: date, time and email) and offer
 only emails of that type; the page script clears a field it hides. The send time is a [time
 entry](../ui-conventions/spec.md#time-entry) field. A saved schedule's mail type is shown but cannot
 change. The server reports a missing or inapplicable value on its own field (for
-example a weekday on an invitation, or a date outside the campaign with the
-campaign's dates); only rules between schedules, such as a second initial
-invitation or a reminder before it, are page-level errors. The page checks
+example a date outside the campaign, with the campaign's dates); only rules between schedules, such as a second initial
+invitation or a reminder before it, are page-level errors. The form has no day-of-week field: it served only
+the retired weekly digests and was removed in
+[#2102](https://github.com/epiphany40223/parishkit/issues/2102), though a
+saved schedule's record keeps a null `weekday`. The page checks
 an invitation's or reminder's send date and time against the campaign dates
 as they are typed, by the server's rule
 ([send dates inside the campaign](../ui-conventions/spec.md#schedules)):
@@ -3418,7 +3420,7 @@ compare the moments the Admin chose. A typed time follows
 the shared [daylight-saving rule](../ui-conventions/spec.md#schedules); a
 saved campaign-local time that the campaign's own change skips stays as saved
 and the scheduler resolves it. An
-Edit page posted with the date, time and weekday it showed keeps the saved
+Edit page posted with the date and time it showed keeps the saved
 values exactly, so saving it unchanged never moves the send, even when the two
 zones change their clocks at different instants. A page posted without a
 usable zone is refused with a hint to check the computer's time zone setting;
@@ -8181,12 +8183,18 @@ The ParishSoft API cannot change Ministry rosters, so a join or leave is
 always entered in ParishSoft by hand
 ([#528](https://github.com/epiphany40223/parishkit/issues/528), gap G28). A
 request resolved by a person as *joined* or *leave confirmed* carries an
-**Entered in ParishSoft** tick that Staff and Admin set or clear
+**Entered by hand** tick that Staff and Admin set or clear
 [in place](../ui-conventions/spec.md#in-place-controls), on the request's
 page and on Ministry requests at To enter by hand; who and when
-are kept as history. A request a refresh resolved before #1890 because the
+are kept as history. The request page words it in the
+[review pipeline terms](../ui-conventions/spec.md#review-pipeline-terms):
+To enter by hand, then **Mark Entered by hand**, then Entered by hand with
+who and when (until
+[#2102](https://github.com/epiphany40223/parishkit/issues/2102) it said
+Not yet entered in ParishSoft, Mark entered in ParishSoft and Entered in
+ParishSoft). A request a refresh resolved before #1890 because the
 ParishSoft roster already showed the change (it has a resolution source)
-needs no tick and shows *Already in ParishSoft* (the stage Confirmed); a
+needs no tick; a
 refresh no longer resolves requests, so every new request is decided and
 ticked first. For Staff and Admin, the
 worklist's Stage says To enter by hand or Entered by hand, its Entered by

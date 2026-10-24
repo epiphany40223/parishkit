@@ -18,8 +18,7 @@
 <p>{% translate "Stage:" %} <span class="stage-chip"><span class="status-word">{{ item.placement.stage.label }}</span></span></p>
 <div>{{ item.text|linebreaksbr }}</div>
 {% if item.replacement_id %}<p><a href="{% url 'admin:information_item' item.replacement_id %}">{% translate "Open the replacement request" %}</a></p>{% endif %}
-{% if item.previously_reported %}<p>{% translate "Included in a previously delivered weekly digest." %}</p>
-{% if item.disposition != 'current_actionable' %}<p>{% if item.correction_resolved %}{% translate "This correction is resolved in the weekly digest workflow. Resolution does not necessarily mean an email was delivered." %}{% else %}{% translate "This change is visible to the weekly digest correction workflow; the old request is no longer actionable." %}{% endif %}</p>{% endif %}{% endif %}
+{# A mark from before report emails replaced the weekly digest (#1786); the digest correction workflow it fed is gone (#2102). #}{% if item.previously_reported %}<p>{% translate "Included in a previously delivered weekly digest." %}</p>{% endif %}
 {# The Family's contact details (#1595), so Staff can reply without looking the Family up in ParishSoft: the Family record's, then each active head's, read from the ParishSoft data the page names the Family from. Operational contact: Staff and Administrators, the page's only readers, see every value whatever ParishSoft's publish flags say. #}
 {% if contacts %}<section id="information-contact" aria-labelledby="information-contact-heading"><h2 id="information-contact-heading">{% translate "Contact details" %}</h2>
 {% if contacts.state == 'shown' %}{% for owner in contacts.owners %}<h3>{{ owner.label }}</h3>

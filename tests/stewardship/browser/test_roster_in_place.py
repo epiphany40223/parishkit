@@ -140,9 +140,11 @@ def test_the_request_page_ticks_in_place(page, component_origin):
     where a mistaken mark is cleared."""
     page.goto(component_origin + TICK_ITEM)
     page.evaluate(MARK)
-    visible(page.get_by_text("Not yet entered in ParishSoft"))
-    page.get_by_role("button", name="Mark entered in ParishSoft").click()
-    visible(page.get_by_text("Entered in ParishSoft by staff@example.org"))
+    visible(
+        page.locator("#followup-roster").get_by_text("To enter by hand", exact=True)
+    )
+    page.get_by_role("button", name="Mark Entered by hand").click()
+    visible(page.get_by_text("Entered by hand by staff@example.org"))
     visible(page.get_by_role("button", name="Back to review", exact=True))
     assert page.evaluate(MARKED) == "kept"
 
@@ -195,7 +197,9 @@ def test_the_request_page_clear_asks_for_the_note(page, component_origin):
     available(record)
     record.click()
     hidden(dialog)
-    visible(page.get_by_text("Not yet entered in ParishSoft"))
+    visible(
+        page.locator("#followup-roster").get_by_text("To enter by hand", exact=True)
+    )
     body = sent[-1]
     assert "entered=no" in body and "sequence=2" in body
     assert "note=Marked+the+wrong+request" in body

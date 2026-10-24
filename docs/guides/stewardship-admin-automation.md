@@ -248,7 +248,7 @@ every kind, and the Family send in progress. It replaced `send progress`
 | `mode`, `paused`, `upcoming` | `mail queue` only: the operating mode, whether delivery is paused, and whether a Production send is about to start |
 | `counts` | `mail queue` only: the operating mode's queued emails as `queued`, `sending`, `retry_wait` and `paused` |
 | `other_mode_queued` | `mail queue` only: how many emails of the other mode are queued (never added to `counts`) |
-| `kinds` | `mail queue` only: one row per kind (`purpose`, as Sent mail's `--purpose` names it) with the same four counts |
+| `kinds` | `mail queue` only: one row per kind (`purpose`, as Sent mail's `--purpose` names it) with the same four counts; the retired `daily_digest` and `weekly_digest` have none |
 | `send` | `mail queue` only: the Family send in progress or the latest, or `null` |
 | `page`, `pages`, `count`, `size`, `sends` | `send history` only: one page of sends, newest first |
 
@@ -694,7 +694,7 @@ The document is JSON with two optional members:
 
 | Entry | Members |
 | --- | --- |
-| Change a saved schedule | `id` (from `schedule show`) and any of `date`, `time` and `weekday` (in the campaign's time zone, as for adding one) and `template_version`. Members you leave out keep their values. Its `kind` cannot change, so it may not be given. A report email's sends are skipped and changed with `report-email preview` instead ([#1786](https://github.com/epiphany40223/parishkit/issues/1786)). |
+| Change a saved schedule | `id` (from `schedule show`) and any of `date` and `time` (in the campaign's time zone, as for adding one) and `template_version`. `weekday` may be given only as `null`: no schedule has a day of the week since the weekly digests were retired, so any other value is exit 1 (`invalid`) naming that schedule's `weekday` ([#2102](https://github.com/epiphany40223/parishkit/issues/2102)). Members you leave out keep their values. Its `kind` cannot change, so it may not be given. A report email's sends are skipped and changed with `report-email preview` instead ([#1786](https://github.com/epiphany40223/parishkit/issues/1786)). |
 | Remove a saved schedule | `id` and `"delete": true`, nothing else. |
 | Add a schedule | `kind` (`initial` or `reminder`; report emails replaced the digests, so no `daily_digest` or `weekly_digest` can be added, [#1786](https://github.com/epiphany40223/parishkit/issues/1786)) and the members its kind needs: `date`, and `time` (in the campaign's time zone, or in the new one when `window` changes `timezone` in the same document; the Admin portal takes times in your computer's zone instead) and `template_version`. A `time` may be written in any form the page accepts, such as `09:00:00`, `9:00`, `9am` or `21:00`, and is stored as `HH:MM:SS`. |
 | Add repeating reminders | `repeat` (the rule below), `time` and `template_version`, as for one reminder, and nothing else. It adds one ordinary reminder per date the rule gives, as if you listed each one. Every date must fit: unlike the page, which leaves out a date that does not fit, the command refuses the whole change. A problem with one date alone, such as a date after the campaign closes, names that date; a conflict between schedules, such as a date at the same moment as a saved reminder or not after the initial invitation, comes back as a plain `schedules` error, as for reminders listed one by one. A rule that gives no dates or more than 30, or skips a month, is exit 1 (`invalid`). The rule itself is not saved unless you add `"remember": true`, which also saves it as a reminder series holding exactly the reminders this repeat adds, so later changes can treat them as one. The reminders are the same either way, and they send as ordinary reminders. |
@@ -1212,7 +1212,7 @@ keep typed text). With `clear` true, give no `subject`, `html`,
 | `version`, `campaign_id` | The configuration version the change was built against, and the current campaign |
 | `edit.kind`, `edit.slot`, `edit.revision_id`, `edit.name` | The page or email, and its name on the page |
 | `edit.before`, `edit.after` | The fictional sample of the current and the proposed content: `subject`, `html` and `text`, or null when empty |
-| `edit.schedules` | The schedules the new text switches at once, in sending order: `id`, `kind`, `name` (as Dates and mail schedules names it, such as Reminder 2), `subject`, `due_at` (null for a recurring digest) and `sent` (true when it already sent: it switches too, but Families who got it are not sent it again) |
+| `edit.schedules` | The schedules the new text switches at once, in sending order: `id`, `kind`, `name` (as Dates and mail schedules names it, such as Reminder 2), `subject`, `due_at` (its send time) and `sent` (true when it already sent: it switches too, but Families who got it are not sent it again) |
 | `preview.token` | What `content confirm --edit --token` takes, valid for fifteen minutes |
 | `created`, `request` (`content confirm`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
 
@@ -2520,7 +2520,7 @@ Ministry requests' Stage To enter by hand; the Roster changes to enter page
 was folded into it). Like the page,
 Administrators and Staff may run it, from a session of any scope; a
 Ministry leader is refused (`denied`). Its options are the page's:
-`--show todo` (the default: not yet marked Entered in ParishSoft) or
+`--show todo` (the default: To enter by hand, not yet marked) or
 `--show all` (marked ones too), and `--ministry DUID` for one Ministry. It
 prints `show`, `ministry` (null without `--ministry`), `matching` (the
 list's rows), `joins`, `leaves`, `entered` (already marked; 0 with `--show
@@ -2610,14 +2610,14 @@ the command's `admin_cmd_pledges_decide`.
 
 ### Recording a census change's outcome
 
-`census resolve` is a Census changes row's **Mark entered in ParishSoft**
-(`entered`), **Ignore** (`ignored`) or **Reopen** (`reopened`) icon. Like the
-page's buttons it needs a full-scope session; Administrators and Staff may
-record Entered and Ignore, and only an Administrator may reopen an ignored
-change (Staff get `denied`). Reopen of a change that is Entered by hand
-(also Entered incorrectly or Confirmed), Updated in ParishSoft or Already in
-ParishSoft is the page's **Back to review** of that step, which Staff may
-record too: the change goes back to the stage before it with its decision
+`census resolve` is a Census changes row's **Entered by hand**
+(`entered`), **Ignore** (`ignored`) or **Back to review** (`reopened`)
+icon. Like the page's buttons it needs a full-scope session;
+Administrators and Staff may record Entered by hand and Ignore, and only an
+Administrator may send an ignored change back to review (Staff get
+`denied`). `reopened` on a change that is Entered by hand (also Entered
+incorrectly or Confirmed) or Updated in ParishSoft is the page's **Back to
+review** of that step, which Staff may record too: the change goes back to the stage before it with its decision
 kept (To enter by hand or Ready to update; To review when nobody had
 decided it), and nothing is written to ParishSoft.
 Every outcome can be undone that way, so no action asks first, and there
@@ -2703,12 +2703,12 @@ database still stores `approved`. System logs show the page's
 ### Editing a value or resolving a conflict
 
 `census edit` is the same row's **Edit value** (`--value`) and **Clear
-edit** (`--clear`): the value publication writes instead of the Family's
+edit** (`--clear`): the value Update ParishSoft writes instead of the Family's
 answer, which never changes. `census resolve-conflict` is **Use the
 Family's value anyway** on a Conflict: it accepts the change over
 ParishSoft's current value, which publication then expects to find. Both
 are an Administrator's only, with a full-scope session, one change at a
-time, and ask nothing, as on the page; neither publishes anything.
+time, and ask nothing, as on the page; neither writes anything to ParishSoft.
 
 ```sh
 pk-admin census edit PROPOSAL_ID --expected-version 3 --value "Patricia"
@@ -3324,7 +3324,7 @@ Roster changes to enter page downloaded) to standard output, and its document (`
 standard error, as `export limitations` does. It needs a full-scope
 session, as every export does; Administrators and Staff may run it, and a
 Ministry leader is refused (`denied`). It takes `report roster`'s options,
-`--show todo` (the default: not yet marked Entered in ParishSoft) or
+`--show todo` (the default: To enter by hand, not yet marked) or
 `--show all`, and `--ministry DUID`, plus `--format` (`xlsx`, the default,
 `csv` or `pdf`) and `--timezone` (UTC, the default, or a time zone name,
 for the file's times). It records the page's "downloaded" event
@@ -3682,7 +3682,7 @@ the last page, as on the page.
 | `campaign_id` | The current campaign |
 | `filters` | The choices applied: `ministry`, `action`, `state`, `outcome`, `sort` |
 | `page`, `size`, `total` | The page shown, rows per page, and how many requests the filters keep |
-| `rows` | Each request: `id`, `version` (what `--expected-version` takes), `ministry` (DUID) and `ministry_name`, `in_campaign`, `kind` (`member` or `proposed_member`), `action`, `state`, `outcome`, `open`, `member_status` (`current`, or `missing`, `moved`, `inactive` or `deceased` in ParishSoft), `submitted_at`, `resolved_at`, `source_resolved`, `latest`, `last_contact_at` and `roster` (the Entered in ParishSoft tick: `eligible`, `entered`, `sequence`) |
+| `rows` | Each request: `id`, `version` (what `--expected-version` takes), `ministry` (DUID) and `ministry_name`, `in_campaign`, `kind` (`member` or `proposed_member`), `action`, `state`, `outcome`, `open`, `member_status` (`current`, or `missing`, `moved`, `inactive` or `deceased` in ParishSoft), `submitted_at`, `resolved_at`, `source_resolved`, `latest`, `last_contact_at` and `roster` (the Entered by hand mark: `eligible`, `entered`, `sequence`) |
 
 | `followup show` field | What it holds |
 | --- | --- |
@@ -3752,7 +3752,7 @@ The queue's **Export these requests** is `followup export`, see
 ## Roster tick and Additional information
 
 `followup roster-entered` sets or clears a resolved Ministry request's
-**Entered in ParishSoft** tick, as the tick on the request's page does, and
+**Entered by hand** mark, as the tick on the request's page does, and
 `followup roster-bulk` marks several at once, as **Roster changes to
 enter**'s bulk mark does. `followup information-show` reads one
 **Additional information** request's page with its follow-up history, and
@@ -4439,3 +4439,19 @@ Each change is recorded in System logs as on the page
   full refresh's start (`full_started_at`). `integration set
   --refresh-schedule` refuses a rule of `kind` `quick`, and
   `integration show` no longer prints one.
+- `pk-admin/1` (#2102): no output change. Help text uses the review
+  pipeline's words: `census resolve --action entered` is Entered by hand
+  and `reopened` Back to review, `census edit` writes rather than
+  publishes, `report roster --show todo` is To enter by hand, and the
+  `followup roster-entered` and `roster-bulk` help and prompt say
+  Entered by hand instead of Entered in ParishSoft. The census edit
+  refusal for a blank value says "Enter the value to use".
+- `pk-admin/1` (#2102): a correction, kept on version 1. `mail queue`
+  `kinds` no longer has `daily_digest` and `weekly_digest` rows, as the
+  Mail queue page never should have: report emails replaced the digests
+  (#1786), so nothing queues them and their rows were always zero. Sent
+  mail and `delivery list --purpose` still list their past emails.
+- `pk-admin/1` (#2102): no output change. The schedule pages' form lost
+  its hidden day-of-week field; `schedule preview` still accepts a null
+  `weekday` and refuses any other value as before (`invalid`, with
+  `error.fields` naming `schedules.<id>.weekday`), with a new message.

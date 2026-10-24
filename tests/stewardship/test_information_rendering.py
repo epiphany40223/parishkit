@@ -249,6 +249,13 @@ def test_xlsx_values_are_literal_complete_and_structured():
         sheet = book["Information"]
         # The same headings as the CSV, with no internal references.
         assert [cell.value for cell in sheet[1]] == list(HEADINGS)
+        # The weekly digest's columns left with it (#2102); the Timeline
+        # and the request's history keep the record.
+        assert HEADINGS[-2:] == ("Changed at", "Changed by")
+        for retired in ("Previously reported", "Correction resolved"):
+            assert retired not in HEADINGS
+        details = [row[0].value for row in book["Report information"].iter_rows()]
+        assert "Digest resolution" not in details
         assert "item" not in [cell.value for cell in sheet[2]]
         # The earlier workflow row (the one with a Changed at time) repeats
         # its item's identity.
@@ -261,7 +268,7 @@ def test_xlsx_values_are_literal_complete_and_structured():
         assert sheet["K3"].value == "@Older notes" and sheet["K3"].data_type == "s"
         # A Family-keyed sheet keeps its Family column in view too.
         assert sheet.freeze_panes == "B2" and sheet.print_title_rows == "$1:$1"
-        assert sheet.auto_filter.ref == "A1:O3"
+        assert sheet.auto_filter.ref == "A1:M3"
         # Native date-time cells in Excel's locale-aware built-in format 22.
         requested = book["Report information"]["B7"]
         assert requested.value == datetime(2026, 10, 2, 9, 0)

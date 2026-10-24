@@ -426,9 +426,9 @@ class ContentPreview(ReadModel):
     the fictional sample's ``before`` and ``after``, each ``subject``,
     ``html`` and ``text`` or None, and ``schedules``, the saved schedules
     the new text switches, in sending order: ``id``, ``kind``, ``name`` (as
-    Dates and mail schedules names it), ``subject``, ``due_at`` (None for a
-    recurring digest) and ``sent``, true for one that already sent, which
-    switches too but is not sent again); ``deleting`` each chosen
+    Dates and mail schedules names it), ``subject``, ``due_at`` (its send
+    time) and ``sent``, true for one that already sent, which switches too
+    but is not sent again); ``deleting`` each chosen
     email of a Delete (``id``, ``slot``, ``subject``). For ``plain_text``,
     only ``plain_text`` is set: ``html`` (the sanitized HTML), ``text`` (the
     plain text generated from it) and ``removed`` (the markup the sanitizer

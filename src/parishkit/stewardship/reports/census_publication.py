@@ -91,7 +91,8 @@ UPDATED, CONFIRMED, NOT_WRITTEN, FAILED, NOT_FINISHED = (
 OUTCOMES = {
     Outcome.WRITE.value: _("Will be written"),
     HELD: _("Held back"),
-    Outcome.ALREADY_IN_PARISHSOFT.value: _("Already in ParishSoft"),
+    # Not "Already in ParishSoft", which the review pipeline retired (#2102).
+    Outcome.ALREADY_IN_PARISHSOFT.value: _("ParishSoft already holds it"),
     Outcome.CONFLICT.value: _("Conflict"),
     Outcome.CANNOT_CHECK.value: _("Cannot check"),
     UPDATED: _("Updated in ParishSoft"),

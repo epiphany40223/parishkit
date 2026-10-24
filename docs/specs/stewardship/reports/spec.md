@@ -1553,7 +1553,12 @@ DUID, Submitted time, disposition and submitted text, which identify the item
 to a reader even after the sheet is sorted or filtered. A superseded item's
 "Replaced by request submitted" value is the Submitted time of the later
 request that replaced it, which finds that request's row, or "Not in this
-export" when the export's filters left that request out.
+export" when the export's filters left that request out. The weekly
+digest's columns (Previously reported, Correction resolved) and its "Digest
+resolution" report detail left with the digest
+([#2102](https://github.com/epiphany40223/parishkit/issues/2102)); the
+Timeline and the request's history keep the record, and the request page
+no longer names the digest's correction workflow.
 
 The selection itself keeps its submitted-date filters (from, through), which
 the host command line still takes (`--start`, `--end` and `--zone`, see
@@ -3111,7 +3116,10 @@ changed, **ParishSoft at the check**, **Will write**, and **Outcome**:
   compared with (the Family's baseline, or the accepted base after an
   Accept over a Conflict), so ParishSoft at the check shows that value and
   Will write shows the reviewer's value, else the Family's answer.
-- **Already in ParishSoft**: ParishSoft already holds the value to write,
+- **ParishSoft already holds it** (worded "Already in ParishSoft" until
+  [#2102](https://github.com/epiphany40223/parishkit/issues/2102), a
+  retired [review pipeline term](../review-pipeline/spec.md#pipeline-vocabulary)):
+  ParishSoft already holds the value to write,
   so ParishSoft at the check and Will write both show that value (the
   reviewer's value, else the Family's answer). Nothing is written, and the
   change is marked *Updated in ParishSoft* (`published`) at the check
@@ -3121,8 +3129,8 @@ changed, **ParishSoft at the check**, **Will write**, and **Outcome**:
   Census changes undoes the mark, with a required note, and returns the
   change to Ready to update
   ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)).
-  Nothing in ParishSoft changes, so the next run finds it Already in
-  ParishSoft again.
+  Nothing in ParishSoft changes, so the next run finds that ParishSoft
+  already holds it again.
 - **Conflict**: ParishSoft changed since the Family answered. Nothing for
   this Member is written until the change is decided again on Census
   changes (Accept against ParishSoft's value once the next refresh shows

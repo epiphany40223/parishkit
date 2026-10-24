@@ -1975,7 +1975,7 @@ renamed from Publish to ParishSoft, Administrator-only, still behind the
 turns it on). Its result stage is Updated in ParishSoft; the final refresh
 the run requests then moves each item to Confirmed by its
 [refresh check](#refresh-checks). A Ready item ParishSoft already holds
-(rule 1) is listed by the run's check as Already in ParishSoft, nothing to
+(rule 1) is listed by the run's check as ParishSoft already holds it, nothing to
 write, and marked Updated in ParishSoft there without a write
 ([#1890](https://github.com/epiphany40223/parishkit/issues/1890); before, it was marked Confirmed at once); the run's own
 refresh, or the next one, confirms it. It is marked at the check, as

@@ -472,8 +472,12 @@ def test_queue_table_draws_every_kind_and_links_only_kinds_with_mail():
     html = render(None, queued=queue(initial=(4, 1, 0, 0)))
     rows = re.findall(r'<tr data-kind="([a-z_]+)">', html)
     # Every kind Sent mail lists, in its order, the Ministry leader emails
-    # last (#1562).
-    assert tuple(rows) == QUEUE_PURPOSES == LISTED_PURPOSES
+    # last (#1562), but the retired digests, which draw no row (#2102).
+    assert tuple(rows) == QUEUE_PURPOSES
+    retired = {"daily_digest", "weekly_digest"}
+    expected = tuple(name for name in LISTED_PURPOSES if name not in retired)
+    assert expected == QUEUE_PURPOSES
+    assert "daily_digest" in LISTED_PURPOSES and "weekly_digest" in LISTED_PURPOSES
     assert rows[-1] == "leader_email"
     assert (
         '<a href="/admin/mail/sent/?purpose=initial&amp;state=still_sending'

@@ -1129,6 +1129,9 @@ def test_the_users_page_reviews_and_applies_the_emails(testing):
     with web():
         response = browser.get(USERS)
     assert response.status_code == 200
+    # The help names the page that lists these emails, Sent mail (#2102).
+    assert "Sent mail lists these emails too." in response.content.decode()
+    assert "Outgoing mail" not in response.content.decode()
     section = region(response.content.decode())
     assert "Email Ministry leaders" in section
     for email in ("ann@example.org", "both@example.org"):

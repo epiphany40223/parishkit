@@ -39,8 +39,6 @@ HEADINGS = (
     "Staff notes",
     "Changed at",
     "Changed by",
-    "Previously reported",
-    "Correction resolved",
 )
 
 
@@ -103,7 +101,6 @@ def information_document(payload, parameters, *, parish_name, requested_at, time
             "Privacy",
             "Sensitive parish information. Share only with authorized recipients.",
         ),
-        ("Digest resolution", "Resolution does not necessarily mean email delivery."),
     )
     # A replacement is always a later submission of the same Family, so its
     # submission time finds its row; the capture holds only matching items.
@@ -145,8 +142,6 @@ def information_document(payload, parameters, *, parish_name, requested_at, time
                 item["notes"],
                 "",
                 "",
-                "Yes" if item["previously_reported"] else "No",
-                "Yes" if item["correction_resolved"] else "No",
             )
         )
         if parameters["history"]:
@@ -160,8 +155,6 @@ def information_document(payload, parameters, *, parish_name, requested_at, time
                         revision["notes"],
                         instant(revision["created_at"]),
                         revision["actor_label"],
-                        "",
-                        "",
                     )
                 )
     return InformationDocument(metadata, tuple(rows), payload["total"], requested_at)

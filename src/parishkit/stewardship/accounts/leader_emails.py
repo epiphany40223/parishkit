@@ -93,7 +93,7 @@ def leader_rows(rows):
     ``rows`` are ``user_reads.user_list``'s. Each result adds
     ``last_emailed`` (when the latest request that emailed the address was
     applied, or None) and ``emailed_label``: that email's delivery state in
-    Outgoing mail's words, "Still sending (queued)" while the request is not
+    Sent mail's words, "Still sending (queued)" while the request is not
     prepared yet, ``SUPERSEDED`` when its preparation was cancelled because
     the mode or Testing recipient changed, or "Never". Two queries: every
     request's addresses, newest first (one row per Apply, so the table stays

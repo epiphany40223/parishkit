@@ -4506,7 +4506,7 @@ sessions of
 [Pages and emails](../admin-portal/spec.md#default-content) and the bulk
 decisions of the [Ministry requests](../admin-portal/spec.md#follow-up-workflows)
 review worklist (#1131, #1684) and the
-Entered in ParishSoft tick of
+Entered by hand tick of
 [Ministry requests](../admin-portal/spec.md#roster-entry-on-ministry-requests) and
 the row actions of
 [Census changes](../reports/spec.md#manual-census-resolution); the

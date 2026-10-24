@@ -149,14 +149,10 @@ def test_schedule_rows_follow_a_restored_mail_type(page, component_origin):
     """
     page.goto(component_origin + "/schedule-editor-mail")
     row = '[name="schedules-1-kind"]'
-    weekday = page.locator(
-        '[data-schedule-field="weekday"]:has([name="schedules-1-weekday"])'
-    )
     date = page.locator('[data-schedule-field="date"]:has([name="schedules-1-date"])')
-    assert not weekday.is_visible() and not date.is_visible()
+    assert not date.is_visible()
     restore(page, row, "select => { select.value = 'reminder'; }")
     visible(date)
-    assert not weekday.is_visible()
     offered = page.locator('[name="schedules-1-template_version"] option').evaluate_all(
         "options => options.map(option => option.dataset.kind || '')"
     )

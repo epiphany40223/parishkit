@@ -4723,7 +4723,7 @@ def _report_roster_options(parser):
         "--show",
         choices=("todo", "all"),
         default="todo",
-        help="todo: not yet entered in ParishSoft (default); all: entered too",
+        help="todo: To enter by hand (default); all: Entered by hand too",
     )
     parser.add_argument(
         "--ministry", type=_ministry_duid, help="one Ministry, by its DUID"
@@ -4838,9 +4838,9 @@ def _census_resolve_options(parser):
         "--action",
         required=True,
         choices=CENSUS_ACTIONS,
-        help="entered (Entered in ParishSoft), ignored (Ignore) or reopened "
-        "(Reopen an ignored change, Administrators only; or Back to review of "
-        "an entered, updated or confirmed change, which undoes that step)",
+        help="entered (Entered by hand), ignored (Ignore) or reopened (Back to "
+        "review of an ignored change, Administrators only; or of an entered, "
+        "updated or confirmed change, which undoes that step)",
     )
     parser.add_argument(
         "--expected-version",
@@ -4912,13 +4912,13 @@ def _census_edit_options(parser):
     edit = parser.add_mutually_exclusive_group(required=True)
     edit.add_argument(
         "--value",
-        help="the value to publish instead of the Family's answer, or - to "
+        help="the value to write instead of the Family's answer, or - to "
         "read it from standard input",
     )
     edit.add_argument(
         "--clear",
         action="store_true",
-        help="clear the edit, so publication writes the Family's answer",
+        help="clear the edit, so Update ParishSoft writes the Family's answer",
     )
 
 
@@ -7377,7 +7377,7 @@ def _report_specs():
             options=(_report_census_options,),
             audit_event="census_changes_viewed",
         ),
-        # A row's Entered in ParishSoft, Ignore and Reopen (#528): the
+        # A row's Entered by hand, Ignore and Back to review (#528): the
         # page's service, keyed by the page's request key.
         CommandSpec(
             "census resolve",
@@ -7410,7 +7410,7 @@ def _report_specs():
         # the page's service, keyed; reversible, so it asks nothing.
         CommandSpec(
             "census edit",
-            "Edit the value an automatic census change publishes, or clear it.",
+            "Edit the value an automatic census change writes, or clear it.",
             census_edit,
             "full",
             True,
@@ -8083,7 +8083,7 @@ def _yes_no(value):
 
 
 def followup_roster_entered(args, preamble, runtime, context):
-    """Set or clear one request's Entered in ParishSoft tick (#463, #528).
+    """Set or clear one request's Entered by hand mark (#463, #528).
 
     The request page's tick asks nothing, so neither does this. ``--clear``
     is Back to review of the mark (#1840) and needs ``--note``, as the
@@ -8110,7 +8110,7 @@ def followup_roster_entered(args, preamble, runtime, context):
 
 
 def followup_roster_bulk(args, preamble, runtime, context):
-    """Mark several requests Entered in ParishSoft at once (#463, #879).
+    """Mark several requests Entered by hand at once (#463, #879).
 
     Ministry requests' bulk Entered by hand asks in its dialog, so this asks
     first (or takes ``--yes``), after the list's own role check, which
@@ -8129,7 +8129,7 @@ def followup_roster_bulk(args, preamble, runtime, context):
     confirm(
         context,
         (
-            f"Mark {len(versions)} roster change(s) Entered in ParishSoft. "
+            f"Mark {len(versions)} roster change(s) Entered by hand. "
             "Each gets its own entry in the request's history.",
             "A mark can be cleared later, one request at a time.",
         ),
@@ -8183,7 +8183,7 @@ def _roster_entered_options(parser):
     choice.add_argument(
         "--set",
         action="store_true",
-        help="mark the change entered in ParishSoft",
+        help="mark the change Entered by hand",
     )
     choice.add_argument(
         "--clear",
@@ -8277,7 +8277,7 @@ def _followup_more_specs():
     return (
         CommandSpec(
             "followup roster-entered",
-            "Set or clear a Ministry request's Entered in ParishSoft tick.",
+            "Set or clear a Ministry request's Entered by hand mark.",
             followup_roster_entered,
             "full",
             True,
@@ -8289,7 +8289,7 @@ def _followup_more_specs():
         ),
         CommandSpec(
             "followup roster-bulk",
-            "Mark several Ministry requests Entered in ParishSoft.",
+            "Mark several Ministry requests Entered by hand.",
             followup_roster_bulk,
             "full",
             True,
