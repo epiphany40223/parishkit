@@ -65,6 +65,8 @@
 #                                    change the fake ParishSoft's data (the fake only;
 #                                    refused after deploy --parishsoft real), show it,
 #                                    or run the Admin's full refresh of it (#1780)
+#   fake-parishsoft organizations N  the fake's key also reaches N (0-2) other
+#                                    organizations, whose records a load drops (#1554)
 #   ca                               fetch Caddy's root certificate and say how to trust it
 #
 # Configuration (environment variables):
