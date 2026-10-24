@@ -162,6 +162,7 @@ from .publication_components import components as publication_components
 from .refresh_schedule_components import components as refresh_schedule_components
 from .reminder_workgroup_components import POSTS as WORKGROUP_POSTS
 from .reminder_workgroup_components import components as workgroup_components
+from .repeat_dates_components import repeat_dates_answer
 from .report_components import SLOW_GETS as REPORT_SLOW_GETS
 from .report_components import components as report_components
 from .report_email_copy_components import components as report_email_copy_components
@@ -2506,6 +2507,15 @@ def component_origin(component_responses):
                 self.send_header("Content-Security-Policy", CSP)
                 self.end_headers()
                 self.wfile.write(page.encode())
+                return
+            # The repeat rules' date list (#2092), drawn as the view draws it.
+            listed = repeat_dates_answer(self.path, body)
+            if listed is not None:
+                self.send_response(listed[0])
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Security-Policy", CSP)
+                self.end_headers()
+                self.wfile.write(listed[1].encode())
                 return
             if self.path == "/redirect-to-login":
                 self.send_response(303)
