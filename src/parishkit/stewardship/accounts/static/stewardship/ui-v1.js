@@ -7270,7 +7270,13 @@
       try {
         const response = await fetch(url, {
           method: "POST", credentials: "same-origin", cache: "no-store",
-          headers: {"X-CSRFToken": token, "X-Requested-With": "fetch", ...PASSIVE_READ},
+          // The body is the fields' text, so it must say it is a form:
+          // without this fetch sends text/plain, which Django does not read
+          // as fields, and every list was refused (pk-local, #2099).
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-CSRFToken": token, "X-Requested-With": "fetch", ...PASSIVE_READ,
+          },
           body: text, signal: request.signal,
         });
         if (response.ok) answer = await response.text();

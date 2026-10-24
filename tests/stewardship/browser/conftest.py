@@ -2509,7 +2509,9 @@ def component_origin(component_responses):
                 self.wfile.write(page.encode())
                 return
             # The repeat rules' date list (#2092), drawn as the view draws it.
-            listed = repeat_dates_answer(self.path, body)
+            listed = repeat_dates_answer(
+                self.path, body, self.headers.get("Content-Type") or ""
+            )
             if listed is not None:
                 self.send_response(listed[0])
                 self.send_header("Content-Type", "text/html; charset=utf-8")
