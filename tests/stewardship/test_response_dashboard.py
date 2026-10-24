@@ -200,7 +200,7 @@ def test_page_shows_one_summary_then_the_chart_and_export():
     assert re.findall(r'data-stat="(\w+)"', page) == SUMMARY_KEYS
     labels = re.findall(r'<span class="stat-label">([^<]+)</span>', summary)
     assert labels == [
-        "Active Families",
+        "Campaign Families",
         "Active Members",
         "Current annual pledges",
         "Last year&#x27;s pledges (all Families)",

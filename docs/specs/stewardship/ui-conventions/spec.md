@@ -2116,7 +2116,7 @@ Testing rehearsal.
 - **Where.** The Response dashboard's Responses shown (Production |
   Testing rehearsal) and Chart population (Historical as of day | Current
   population), the
-  [family directory](../reports/spec.md#active-parishioner-family-directory)'s Responses shown
+  [family directory](../reports/spec.md#campaign-family-directory)'s Responses shown
   (Production | Testing rehearsal), above its Filters panel, and the
   [Campaign calendar](../admin-portal/spec.md#campaign-calendar)'s
   Show (Upcoming emails | Include past emails), above Every email by date,
@@ -3235,11 +3235,10 @@ Families registered elsewhere, so "active parishioner" stopped being true
 (Administrator, 2026-10-24,
 [#1393](https://github.com/epiphany40223/parishkit/issues/1393); the
 Administrator approved these words, including the Family badge, the same
-day). Status:
-specified, not built; the implementing PR changes the strings, their tests
-and the specification text together, and renames the reports
-specification's "Active parishioner family directory" heading (with its
-links and traceability entry).
+day). Status: built (#1393): the strings, their tests and the
+specification text changed together, and the reports specification's
+heading is now "Campaign Family directory" (with its links and traceability
+entry). The table records what each string was.
 
 | Today | Becomes |
 | --- | --- |
@@ -5040,7 +5039,7 @@ Family, or marks one inactive or deceased:
 - **Not in ParishSoft**: the data has no such Member or Family (deleted or
   merged there), or the Member now belongs to another Family.
 - **Inactive in ParishSoft**: a Member present, but marked inactive. For a
-  Family the words are **No longer in this campaign**: present, but no longer matching the campaign's [Families rule](../data/spec.md#campaign-families) (until #1393 is built, "Inactive in ParishSoft": no longer active and registered).
+  Family the words are **No longer in this campaign**: present, but no longer matching the campaign's [Families rule](../data/spec.md#campaign-families) (its status key is `left`, #1393). Under the legacy rule (a campaign created before #1393) the test stays ParishSoft's active flag, exactly as before.
 - **Deceased in ParishSoft**: present, but marked deceased.
 - **Name not recorded in ParishSoft**: present, but with no usable name. This
   is a gap in the data, not a removal, so it is worded as the name and has

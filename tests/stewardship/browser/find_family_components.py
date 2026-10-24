@@ -65,8 +65,8 @@ POSTS = {
     DIRECTORY: (
         200,
         None,
-        "<!doctype html><title>Active parishioner family directory</title>"
-        "<h1>Active parishioner family directory</h1>",
+        "<!doctype html><title>Campaign Family directory</title>"
+        "<h1>Campaign Family directory</h1>",
     )
 }
 

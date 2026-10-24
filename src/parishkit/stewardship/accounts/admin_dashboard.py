@@ -348,10 +348,10 @@ def family_tiles(counts, *, recent=None, testing=False):
     24 hours (Testing responses while ``testing``, as its explanation says).
     """
     tiles = [
-        tile("active", _("Active Families"), counts["active"]),
+        tile("active", _("Campaign Families"), counts["active"]),
         tile(
             "responded",
-            _("Active Families with a response"),
+            _("Campaign Families with a response"),
             counts["active_responded"],
             details=(
                 _("out of %(total)s (%(share)s)")

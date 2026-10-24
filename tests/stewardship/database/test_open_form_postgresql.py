@@ -283,7 +283,7 @@ def test_a_family_no_longer_eligible_sees_open_form_unavailable(
     body = page()
     assert "data-open-form" not in body
     assert '<button type="button" disabled aria-describedby="open-form-reason">' in body
-    assert "no longer lists this Family as active and registered" in body
+    assert "this Family is no longer in this campaign" in body
     response, secret = open_form(admin, family.pk)
     assert response.status_code == 403 and secret is None
 

@@ -124,7 +124,7 @@ def test_response_filters_columns_and_inactive_families(page, component_origin):
     visible(gone.locator('[data-source-status="missing"]'))
     assert gone.locator('[data-source-status="inactive"]').count() == 0
     faded = page.get_by_role(
-        "rowheader", name="Faded, Old Head Inactive in ParishSoft", exact=True
+        "rowheader", name="Faded, Old Head No longer in this campaign", exact=True
     )
     visible(faded.locator('.status-badge[data-source-status="inactive"]'))
     assert page.locator("[data-open-form]").count() == 1

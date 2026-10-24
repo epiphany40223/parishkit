@@ -178,7 +178,7 @@ def test_code_directory_csv_has_exactly_six_plain_columns():
     assert rows[1][0] == "Williams, Aaron and Isabelle"
     # A Family no longer active keeps its name; the mark is its own cell.
     rows = csv_rows(document([item(family_name="Williams", active=False)]))
-    assert rows[1][:2] == ["Williams, Aaron and Isabelle", "Inactive in ParishSoft"]
+    assert rows[1][:2] == ["Williams, Aaron and Isabelle", "No longer in this campaign"]
 
 
 def test_unreachable_directory_adds_phone_numbers():

@@ -843,7 +843,7 @@ and the average of all imported years:
 | Figure | Current campaign | Imported year |
 | --- | --- | --- |
 | Families responded | Cumulative responses of the fact row for day N | `cumulative_families` of day N |
-| Percent of active Families | Cumulative responses ÷ the fact row's cohort denominator (the Families Portal-eligible at any time through that day, as on the participation graph) | `cumulative_families` ÷ `active_families` (as the archive's provenance defines it) |
+| Percent of campaign Families | Cumulative responses ÷ the fact row's cohort denominator (the Families Portal-eligible at any time through that day, as on the participation graph) | `cumulative_families` ÷ `active_families` (as the archive's provenance defines it) |
 | Annual pledges | Pledge total of the fact row | `cumulative_annual_pledged` of day N |
 | Average pledge | Annual pledges ÷ pledging Families as of day N's end, with the median beside it | `cumulative_annual_pledged` ÷ `cumulative_pledging_families`, with the final median beside it |
 | Renewal of last year's responders | Last year's responding Families (by ParishSoft DUID) counted among the fact row's cumulative responses for day N (so a Family must be in this campaign's cohort, as for the participation numerator), ÷ last year's responding Families | The same for that year against its previous year, when both kept Family rows in the same id system |

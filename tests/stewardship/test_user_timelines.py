@@ -412,7 +412,7 @@ def test_the_table_pages_and_filters():
     filtered = render(many, UserTimelineQuery("roles"), {})
     assert "Became a user" in filtered and "Signed in</th>" not in filtered
     # The page view is listed only under Pages viewed (#2006).
-    viewed = "Opened the active parishioner family directory."
+    viewed = "Opened the Campaign Family directory."
     assert viewed not in page
     views = render(many, UserTimelineQuery("views"), {})
     assert viewed in views and "Signed in</th>" not in views

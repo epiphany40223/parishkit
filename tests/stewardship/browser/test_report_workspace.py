@@ -75,7 +75,7 @@ def test_statistics_are_the_summary_first_row(page, component_origin, axe_source
     page.goto(component_origin + "/participation")
     row = page.get_by_role("list", name="Active population")
     assert row.locator(".stat-label").all_inner_texts() == [
-        "Active Families",
+        "Campaign Families",
         "Active Members",
         "Current annual pledges",
         "Last year's pledges (all Families)",
@@ -263,7 +263,7 @@ def test_unknown_statistics_read_a_dash_with_a_reason(
     page.goto(component_origin + "/participation-unknown")
     tiles = page.evaluate(TILES)
     assert [(label, text) for label, text, _height in tiles] == [
-        ("Active Families", "—"),
+        ("Campaign Families", "—"),
         ("Active Members", "—"),
         ("Current annual pledges", "—"),
         ("Last year's pledges (all Families)", "—"),

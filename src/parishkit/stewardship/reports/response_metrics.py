@@ -17,8 +17,8 @@ an earlier reading.
 
 One statement returns one row per Family of the campaign with each instant as
 it stood at ``as_of`` (``FamilyResponse``). It is the installed SQL function
-``stewardship_family_response_v1`` (migration 0050, #933), which the active
-parishioner family directory's Response filters also read, so the
+``stewardship_family_response_v1`` (migration 0050, #933), which the
+Campaign Family directory's Response filters also read, so the
 dashboard's counts and the directory's lists cannot drift apart. The stage
 totals, the separate
 figures ("skipped: already responded", "submitted without a delivered
@@ -91,7 +91,7 @@ lifetime AS (
 # skipped because the Family had already responded, the engagement record's
 # first instants, and the first submission with how many there were. The
 # statement is the installed ``stewardship_family_response_v1`` (migration
-# 0050), so the active parishioner family directory's Response filters
+# 0050), so the Campaign Family directory's Response filters
 # select from exactly these rows (#933). Each source is aggregated once per
 # campaign and joined to the Family rows (hash joins at launch scale, about
 # 1,100 Families), never per Family.

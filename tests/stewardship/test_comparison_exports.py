@@ -269,7 +269,7 @@ def test_the_capture_carries_no_note_and_no_distribution():
     # Only the three day-by-day charts leave the portal.
     assert [chart["title"] for chart in found["charts"]] == [
         "Families responded by campaign day",
-        "Percent of active Families by campaign day",
+        "Percent of campaign Families by campaign day",
         "Annual pledges by campaign day",
     ]
     assert found["compared_with"] == "2054 and the 2051–2054 average"
@@ -484,7 +484,7 @@ def test_without_financial_stewardship_no_pledge_figure_leaves():
     assert "Final pledges" not in found.headings
     assert [tile["label"] for tile in found.tiles] == [
         "Families responded",
-        "Percent of active Families",
+        "Percent of campaign Families",
         "Renewal of last year's responders",
     ]
     assert len(found.charts) == 2

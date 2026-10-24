@@ -52,7 +52,12 @@ def population_figures(statistics):
     active = statistics.active
     no_data = _("No ParishSoft data has been loaded for this campaign yet.")
     figures = [
-        ("active_families", _("Active Families"), active and active.families, no_data),
+        (
+            "active_families",
+            _("Campaign Families"),
+            active and active.families,
+            no_data,
+        ),
         (
             "active_members",
             _("Active Members"),

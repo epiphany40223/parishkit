@@ -28,7 +28,7 @@
 <dt>{% translate "Last response" %}</dt><dd>{{ card.last_day }}</dd>
 <dt>{% translate "Families responded" %}</dt><dd>{{ card.families }}</dd>
 <dt>{% translate "Annual pledges" %}</dt><dd>{{ card.pledged }}</dd>
-<dt>{% translate "Active Families" %}</dt><dd>{{ card.active }}</dd>
+<dt>{% translate "Campaign Families" %}</dt><dd>{{ card.active }}</dd>
 <dt>{% translate "Family rows kept" %}</dt><dd>{% if card.archive.family_rows_kept %}{% blocktranslate with count=card.family_rows %}Yes, {{ count }} Families{% endblocktranslate %}{% else %}{% translate "No" %}{% endif %}</dd>
 </dl>
 <h3>{% translate "Notes for Campaign comparison" %}</h3>

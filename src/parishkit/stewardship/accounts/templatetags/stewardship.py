@@ -264,7 +264,7 @@ def family_link(context, family_id, name, active=None):
     ``family_id`` None draws no link, for a page whose names must not open
     the Timeline (a Testing-only list, or a name already linking its row's
     own page). ``active`` False adds the
-    "Inactive in ParishSoft" badge after a known name, outside the link
+    "No longer in this campaign" badge after a known name (#1393), outside the link
     (ui-conventions, #1216). The name links only when
     ``family_timeline_url`` gives an address, so every table that names a
     Family links it the same way, for the same viewers.
@@ -274,7 +274,7 @@ def family_link(context, family_id, name, active=None):
     if href:
         shown = format_html('<a href="{}">{}</a>', href, shown)
     if name and active is False:
-        shown = format_html("{} {}", shown, source_status("inactive"))
+        shown = format_html("{} {}", shown, source_status("left"))
     return shown
 
 

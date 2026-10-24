@@ -426,7 +426,7 @@ METADATA_KEYS: tuple[MetadataKey, ...] = (
     MetadataKey(
         "active_families",
         _I,
-        "Active parishioner Families, the percentage denominator.",
+        "Campaign Families, the percentage denominator.",
         minimum=1,
         maximum=STORED_INTEGER_MAX,
     ),

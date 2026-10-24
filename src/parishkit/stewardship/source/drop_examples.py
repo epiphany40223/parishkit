@@ -10,8 +10,8 @@ contact count, the Family the lost record belonged to).
 
 Kept deliberately small, because these are parish data:
 
-- Only the Family's DUID and its name as the active parishioner family
-  directory shows it (``snapshot_family_names``), from the current promoted
+- Only the Family's DUID and its name as the Campaign Family directory
+  shows it (``snapshot_family_names``), from the current promoted
   data. Never an address, email, phone or Member identifier, nor which
   record was lost.
 - The refused load's identifiers (``counted_keys``) travel with the refusal

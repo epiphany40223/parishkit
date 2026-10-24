@@ -2106,7 +2106,7 @@ A permanent address refusal records that recipient/family, suppresses that
 normalized address until its source value changes or an Admin clears the
 refusal after verification, and continues. A Family whose every otherwise
 eligible address is suppressed is included in the
-[active parishioner family directory's mailing columns](../reports/spec.md#mailing-columns).
+[Campaign Family directory's mailing columns](../reports/spec.md#mailing-columns).
 A systemic provider, configuration or credential failure stops new sending in
 every mail consumer of the `mail-dispatch` container until it restarts, and
 three consecutive shared outages pause a consumer (ten minutes for Family
@@ -2498,9 +2498,9 @@ point-in-time: it can be downloaded for a short window, and when the export
 ends cleanup deletes it and the request's saved capture and pins, as
 [point-in-time exports](../operations/spec.md#point-in-time-exports) defines;
 nothing regenerates it. A render reads the request's capture, except that an
-active parishioner family directory file's head emails may come from the
+Campaign Family directory file's head emails may come from the
 current ParishSoft data, and the file says so (see the
-[active parishioner family directory](../reports/spec.md#active-parishioner-family-directory)).
+[Campaign Family directory](../reports/spec.md#campaign-family-directory)).
 Files are served only through an authorized application response. A short-lived
 single-use download grant authorizes that application response, never proxy
 file access or an internal-redirect handoff. Caddy has no export-storage mount.
