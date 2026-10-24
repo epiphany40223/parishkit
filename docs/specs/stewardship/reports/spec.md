@@ -811,8 +811,10 @@ Data comes first; the explanation sits in the
 [About this page](../ui-conventions/spec.md#page-help) panel after the
 heading, and the page sends `Cache-Control: no-store`. Top to bottom:
 
-1. The heading and a line of links to the other campaign reports (no
-   self-link).
+1. The heading. The other campaign reports are in the menu, so the page
+   does not repeat them in a line of links
+   ([navigation rule 11](../ui-conventions/spec.md#navigation-rules),
+   [#2143](https://github.com/epiphany40223/parishkit/issues/2143)).
 2. **Responses shown**, Production | Testing rehearsal, a
    [binary choice](../ui-conventions/spec.md#binary-choices) offered to
    Administrators only.
@@ -1046,8 +1048,9 @@ the campaign's name and Counted at, then, in the Timeline tab, a summary that bo
 - **Family code**, for roles that may see Family codes (`FAMILY_CODES`; the
   code is neither decrypted nor shown otherwise), as the directory shows it,
   with **Open form** (described below), as the directory has. Unlike the
-  directory, the page shows no notice beside it (the Administrator's choice
-  on #590). Open form is a
+  directory, which explains Open form in its About panel, the page says
+  nothing more about it (the Administrator's choice on #590; the directory's
+  banner moved to About in #2143). Open form is a
   disabled button with its reason beside it while the system is in Testing
   mode (the Family sign-in then accepts only rehearsal codes), when the
   Family has no code for the campaign, when the campaign is not the current
@@ -3573,13 +3576,11 @@ stages, decisions and resubmission rule are the
 [Financial stream](../review-pipeline/spec.md#financial-stream)'s; this
 section is the page.
 
-- **Heading row.** The heading, About this page and a link to
-  [Financial stewardship](#financial-stewardship-detail) share one row, as
-  [Ministry requests'](#ministry-change-summary) heading and its two
-  disclosures do, so the first pledge starts inside a laptop window
-  ([#1950](https://github.com/epiphany40223/parishkit/issues/1950)); About's
-  help opens below that row and never moves the link
-  ([No layout shift](../ui-conventions/spec.md#no-layout-shift)).
+- **Heading.** The heading and About this page, as on every page.
+  [Financial stewardship](#financial-stewardship-detail) is in the menu, so
+  the page does not repeat it in a link beside the heading, which #1950
+  added ([navigation rule 11](../ui-conventions/spec.md#navigation-rules),
+  [#2143](https://github.com/epiphany40223/parishkit/issues/2143)).
 - **Address.** The page's address carries its Stage alone (To review is
   the plain address; [#1820](https://github.com/epiphany40223/parishkit/issues/1820)),
   as [Additional information's](#additional-information) does, so a reload

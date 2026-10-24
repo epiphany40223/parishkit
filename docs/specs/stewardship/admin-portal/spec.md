@@ -5891,11 +5891,13 @@ Ministry leader emails, which belong to no campaign.
 **Why email waits.** Above the updated region, the
 [sending limit note](#sending-limit-note) is drawn by Sent mail's own
 template, once per page load, so it never appears or vanishes under the
-pointer. The page's link line above the heading (as the
-[page help convention](../ui-conventions/spec.md#page-help) allows) links
-Sent mail, Family email history, System health's
-[Why sends are waiting](#why-sends-are-waiting) panel and, in Production,
-Pause and resume mail.
+pointer. The one link above the heading (as the
+[page help convention](../ui-conventions/spec.md#page-help) allows) leads
+to System health's [Why sends are waiting](#why-sends-are-waiting) panel,
+a section the menu does not reach; Sent mail, Family email history and
+Pause and resume mail are in the menu, so the page does not repeat them
+([navigation rule 11](../ui-conventions/spec.md#navigation-rules),
+[#2143](https://github.com/epiphany40223/parishkit/issues/2143)).
 
 **Updates.** The tiles, the other-mode line, the table and the Family send
 panel are one status region, re-read from `/admin/mail/queue/status/`
@@ -6481,10 +6483,13 @@ accepted, so the email can be Delivered and still have missed one head of
 household; the mark makes that visible. It links to Refused addresses
 filtered to that Family's DUID. The counts come from one grouped query for
 the shown page (each refusal's outbox event names its email; the web login
-reads both columns, never the event's evidence). The page's link line
-(See the mail queue, See Family email history and Review refused
-addresses) sits above the page heading, as the
-[page help convention](../ui-conventions/spec.md#page-help) allows. It reads "Review refused addresses (N
+reads both columns, never the event's evidence). The page's one link
+above the heading, Review refused addresses, leads to a page the menu does
+not offer, so it sits there as the
+[page help convention](../ui-conventions/spec.md#page-help) allows; the
+Mail queue and Family email history are in the menu, so the page does not
+repeat them ([navigation rule 11](../ui-conventions/spec.md#navigation-rules),
+[#2143](https://github.com/epiphany40223/parishkit/issues/2143)). It reads "Review refused addresses (N
 unresolved)" while any refusal is unresolved, and "Review refused
 addresses" otherwise; it is drawn once per page load, outside the in-place
 regions.
