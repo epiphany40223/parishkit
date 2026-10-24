@@ -28,8 +28,10 @@ with ParishSoft. The non-negotiable design intents are:
    to other services (Google Workspace, Constant Contact, notifications).
    ParishKit reads ParishSoft and pushes derived changes outward. (Note: the
    ParishSoft API is no longer strictly read-only at the contact-field level;
-   see [`parishsoft-api-analysis.md`](../../parishsoft-api-analysis.md). ParishKit
-   today still only reads from ParishSoft.)
+   see [`parishsoft-api-analysis.md`](../../parishsoft-api-analysis.md). The
+   command-line tools here only read from ParishSoft. The one write is the
+   Stewardship portal's gated Member contact PUT, sent only by its census
+   publication gateway; see [Coherent source layer](#coherent-source-layer).)
 
 2. **Parish-neutral package code.** Nothing under `src/parishkit` may contain a
    parish's name, domain, ministry names, object IDs, credentials, or deployment
@@ -111,8 +113,14 @@ src/parishkit/            Reusable, parish-neutral package code
   retry.py                RetryPolicy + retry_call/retry decorator
   files.py                atomic_write_text (owner-only, crash-safe)
   auth.py                 Credential-loading philosophy (docstring-only package)
+  cli_arguments.py        Lightweight shared argument registration (no provider imports)
+  paths.py                runtime_root(): late-bound PARISHKIT_ROOT / /opt/parishkit default
   parishsoft.py           ParishSoft v2 client + data model loading/linking/filtering
   parishsoft_runtime.py   Build a ParishSoftClient from CommonOptions + YAML
+  parishsoft_source.py    Coherent-source client (see "Coherent source layer")
+  parishsoft_transport.py Bounded read transport (and the gated contact PUT session)
+  parishsoft_http_worker.py  Private helper process behind that transport
+  parishsoft_pagination.py   Strict bounded pagination for coherent loads
   constant_contact.py     Constant Contact v3 client, OAuth device/refresh, contact mapping
   google/                 Google API helpers
     auth.py               Service-account/user creds, build_service, execute_google_request
@@ -130,23 +138,30 @@ src/parishkit/            Reusable, parish-neutral package code
   pk_create_ps_ministry_rosters.py       Ministry rosters → Drive/Sheets
   pk_sync_ps_to_ggroup.py Google Group membership sync
   pk_sync_ps_to_cc.py     Constant Contact list sync
+  stewardship/            The Stewardship campaign portal (Django); see its own specs
 
 scripts/<tool-name>/      One folder per command:
   <tool-name>.py          Executable wrapper (delegates to package entry point)
   example-config.yaml     Documented, fake-data config template
   README.md               Operator-facing per-tool docs
 scripts/smoke-tests/      Human-run, credential-dependent checks (see testing section)
+deploy/stewardship/       Compose files for the Stewardship portal
 
 tests/                    pytest suite (mocked; no real credentials)
 tools/prepare-release.py  Release/version automation
+tools/stewardship-ops/    Host-side Stewardship operator scripts (release.sh,
+                          release_evidence.py, pk-admin, ...)
 install.py                Installs into a runtime tree
-.github/workflows/        ci.yml (lint+format+pytest+DCO), release.yml (tag→build→release)
+.github/workflows/        ci.yml (lint, format, docs, tests; main-tree evidence),
+                          release.yml (tag→evidence check→build→image→release)
 pyproject.toml            Package metadata, entry points, deps/extras, ruff/pytest config
-requirements.txt          `-e .[dev,google,slack]` for dev/CI convenience
+requirements.txt          `-e .[dev,google,slack,stewardship]` for dev/CI convenience,
+                          constrained by the pinned files under requirements/
 CLAUDE.md (== AGENTS.md)  Contributor/agent instructions
 docs/                     Documentation
   parishsoft-api-analysis.md  ParishSoft v1-vs-v2 API analysis
-  specs/                  These specifications (intro + one per tool)
+  specs/                  These specifications (intro, one per tool, and the
+                          Stewardship set under specs/stewardship/)
 ```
 
 Conventions enforced by this layout:
@@ -348,7 +363,8 @@ contains both the HTTP client and the parish data model.
     organization and, if `expected_organization` is configured, that its report
     name matches — guarding against pointing at the wrong tenant. Returns and
     caches the org id.
-  - `post_uncached` exists as the seam for future ParishSoft write calls (see
+  - `post_uncached` exists as a seam for ParishSoft POST calls that must not be
+    cached (see
     [`parishsoft-api-analysis.md`](../../parishsoft-api-analysis.md)).
 - **Data model**: `load_families_and_members(...)` is the central aggregation
   path. It validates the org, loads each entity type (families, members, family
@@ -376,6 +392,35 @@ from `CommonOptions` + YAML to a ready `ParishSoftClient`: it reads the API key
 from `common.ps_api_key_file` at call time, applies cache dir/limit, and wires
 `expected_organization`.
 
+#### Coherent source layer
+
+The Stewardship portal needs a ParishSoft load it can prove is complete, so it
+does not use `ParishSoftClient`'s legacy behavior. Four opt-in modules, which
+existing tools never touch, provide it:
+
+- **`parishsoft_source`**: a client that reuses the shared loaders and the
+  published v2 contracts, translates the loaders' pagination options to the
+  endpoint's real wire fields, and disables every disk-cache operation.
+- **`parishsoft_pagination`**: strict bounded pagination. A page that is
+  malformed, shifted or over budget fails the whole load
+  instead of returning a partial collection.
+- **`parishsoft_transport`**: a finite read transport for callers that own a
+  durable lease. Each session starts one persistent helper process and reuses
+  its keep-alive connections; the parent enforces every request's hard deadline
+  and kills the helper on timeout, lost ownership or failure.
+- **`parishsoft_http_worker`**: that helper. The API key reaches it once on
+  stdin (never argv, environment or a file); it admits only the allowlisted v2
+  read endpoints, never follows redirects, and keeps provider text out of its
+  diagnostics.
+
+The transport also contains the single ParishSoft write: a Member contact PUT
+that only `BoundedPublicationSession` can send. Only the Stewardship census
+publication gateway (`stewardship.responses.publication_gateway`) builds that
+session, and it works only when publication is switched on. Every other helper
+refuses a PUT. See the [Stewardship background-processing
+spec](../stewardship/background-processing/spec.md) for how the portal uses this
+layer.
+
 ### Google integration layer
 
 `parishkit.google` wraps Google APIs behind one auth/retry seam. All optional
@@ -392,7 +437,11 @@ extra.
   transient; else terminal `GoogleAPIError`).
 - **`google.calendar`**: `list_events` (paginated, single-events expansion,
   start-time order) and `patch_attendee_response` (set this account's RSVP
-  without disturbing other attendees). Writes use a one-shot retry policy.
+  without disturbing other attendees). The patch sends attendee notifications,
+  so ambiguous failures (transport errors, 5xx) are not retried; only a 429 or an
+  explicit rate-limit 403, which Google rejects before applying, is retried with
+  backoff (the `retryable_statuses`, `retryable_reasons` and
+  `retry_ambiguous_failures` parameters of `execute_google_request`).
 - **`google.drive`**: `get_file_metadata` and `update_file_with_xlsx`
   (shared-drive aware Drive metadata/file-replacement helpers).
 - **`google.groups`**: `build_admin_directory_service` /
@@ -491,16 +540,22 @@ from **smoke tests** (human-run, credential-dependent, never in CI).
   test suite — and so are intentionally **not** given their own spec; this
   philosophy is their specification. They cover ParishSoft connectivity, Google
   API access, Constant Contact list access + the device-OAuth bootstrap, Google
-  Workspace email, and Slack notification.
+  Workspace email, and Slack notification. Their operator instructions are in
+  `scripts/smoke-tests/README.md`.
 - **Lint/format**: `ruff` with rule sets `E,F,I,UP,B,SIM`, line length 88,
   double quotes, LF endings, target py312. Markdown is linted with
   `pymarkdown`; MD013 line length is disabled because this repo intentionally
   uses GitHub tables and one-line paragraphs in issue/PR-oriented prose.
-- **CI** (`.github/workflows/ci.yml`) on push-to-main and PRs runs, on
-  Python 3.12: `ruff check`, `ruff format --check`,
-  `pymarkdown --config .pymarkdown.json scan`, `pytest`. The CI jobs are
-  required status checks on `main`; protected auto-merge replaces the merge
-  queue. PRs also enforce **DCO sign-off** through the repository DCO app. See
+- **CI** (`.github/workflows/ci.yml`) runs `ruff check`,
+  `ruff format --check`, `pymarkdown --config .pymarkdown.json scan` and
+  `pytest`, plus the Stewardship Compose, browser and PostgreSQL job groups. A
+  draft PR gets fast feedback only; a full run comes from a non-draft PR or a
+  manual dispatch, and marking a draft ready starts none. A push to `main` does
+  not retest: its `main-tree-evidence` job checks that a successful full run
+  already tested the same tree (normally the release train's) and dispatches a
+  full run only when none did. The CI jobs are required status checks on
+  `main`; protected auto-merge replaces the merge queue. PRs also enforce
+  **DCO sign-off** through the repository DCO app. See
   the [execution policy](../../guides/stewardship-test-efficiency.md#execution-policy)
   for review gates, test reuse and the merged-result validation tradeoff.
 - **Local validation must match CI** exactly:
@@ -527,8 +582,14 @@ from **smoke tests** (human-run, credential-dependent, never in CI).
   and matches `pyproject.toml`, requires a successful full CI run on the tagged
   tree, apart from documentation
   ([release evidence](../../guides/stewardship-test-efficiency.md#release-evidence),
-  rather than re-running lint/format/tests), builds sdist+wheel,
-  produces release notes, and creates/updates the GitHub Release with artifacts.
+  rather than re-running lint/format/tests), builds sdist+wheel, publishes the
+  Stewardship image to GHCR with an attested build provenance, produces release
+  notes, and creates/updates the GitHub Release with artifacts.
+- **`tools/stewardship-ops/release.sh`** is the operator's way to cut a release
+  from `main`'s head: it checks the version and tag, finds the deciding full CI
+  run with `release_evidence.py` (the same rule `release.yml` applies), waits for
+  it, and only then tags. See the
+  [operator scripts guide](../../guides/stewardship-operator-scripts.md).
 - **A human must explicitly authorize any `git push origin vVERSION`.** Tags are
   never auto-pushed.
 
@@ -583,6 +644,7 @@ cases, and link back to the shared sections here.
 | `pk-validate-gcalendar-reservations` | [spec](../pk-validate-gcalendar-reservations/spec.md) | Audit | Google Calendar RSVPs |
 | `pk-query-ps-memfam` | [spec](../pk-query-ps-memfam/spec.md) | Lookup (read-only) | — |
 | `pk-print-ps-ministries` | [spec](../pk-print-ps-ministries/spec.md) | Lookup (read-only) | — |
+| `pk-stewardship` | [specs](../stewardship/spec.md) | Stewardship portal operations | Its own database, media and configuration; gated ParishSoft contact PUT |
 
 ## Recreating ParishKit from these specs
 
