@@ -621,7 +621,10 @@ never scrolls to show it (Administrator, pk-local review of
   control, the new view is announced, and the address's parameter for
   that view is replaced (never added to the history), so reload, bookmarks
   and returning to the page keep it. Its stepping controls (Previous, Next)
-  sit before the view's name, so a longer name moves neither, and at the end
+  never move with the view: a name shown beside them comes after them, so a
+  longer name moves neither, and none is shown there when the view's own
+  caption already names it (the calendar, Part K on PR #2095), as a label
+  never repeats what is on screen. At the end
   of the range the control stays in place, focusable but unavailable, with
   its reason in a reserved line ([prerequisite
   gates](#prerequisite-gates)).

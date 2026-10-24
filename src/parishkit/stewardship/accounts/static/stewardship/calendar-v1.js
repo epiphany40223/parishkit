@@ -16,10 +16,12 @@
 // Previous month and Next month redraw the grid in place, with no request
 // (UX conventions, "In-place controls", views the page script draws): focus
 // stays on the button, the month is announced, and the address's ?month= is
-// replaced, so Refresh and Back return to it. At an end the button stays in
-// place but is unavailable (aria-disabled, so it keeps focus), and the
-// reserved line after the buttons says why. Every month has six week rows,
-// so a month change never changes the grid's row count.
+// replaced, so Refresh and Back return to it. The grid's caption names the
+// month; nothing beside the buttons repeats it (PR #2095). At an end the
+// button stays in place but is unavailable (aria-disabled, so it keeps
+// focus), and the reserved line after the buttons says why. Every month
+// has six week rows, so a month change never changes the grid's row
+// count.
 //
 // Each day of the campaign's dates that is today or later (browser-local)
 // also gets a (+) Add link (#1521) that opens New scheduled email with that
@@ -61,11 +63,10 @@
   const DRAG_THRESHOLD = 5;
   const finePointer = window.matchMedia("(pointer: fine)");
   const dates = window.ParishDates;
-  const name = document.querySelector("[data-calendar-name]");
   const reason = document.querySelector("[data-calendar-reason]");
   const said = document.querySelector("[data-calendar-said]");
   const steps = Array.from(document.querySelectorAll("[data-calendar-step]"));
-  if (!root || !template || !dates || !name || !reason || !said) return;
+  if (!root || !template || !dates || !reason || !said) return;
 
   const SVG = "http://www.w3.org/2000/svg";
   // A year and month as the address names one (``2054-11``).
@@ -414,10 +415,10 @@
     shown = index;
     const week = kind === "week";
     root.replaceChildren(week ? weekGrid(index, days, today) : monthGrid(index, days, today));
+    // The name announced; the grid's caption shows the same words.
     const label = week
       ? fillIn(root.dataset.weekName, {date: dates.date(weekKey(index))})
       : dates.month(Math.floor(index / 12), (index % 12) + 1);
-    name.textContent = label;
     const [first, last] = ends[kind];
     steps.forEach((button) => {
       button.textContent = week ? button.dataset.weekLabel : button.dataset.monthLabel;

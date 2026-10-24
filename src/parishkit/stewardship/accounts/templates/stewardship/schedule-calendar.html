@@ -13,9 +13,9 @@ calendar-v1.js reads that list and draws one month of it into
 headings stay translated; the months run from the campaign's first day (or
 first send) to its last day (or last send). Previous month and Next month
 ([data-calendar-step]) redraw it in place and replace the address's ?month=;
-their month's name follows them, so a longer name moves neither, and at an
-end the unavailable one says why in the reserved line after them
-(data-first / data-last). The campaign's first and last days are calendar
+the grid's caption names the month (nothing beside the buttons repeats it,
+PR #2095), and at an end the unavailable one says why in the reserved line
+after them (data-first / data-last). The campaign's first and last days are calendar
 dates, never shifted into a time zone.
 Each day of the campaign's dates gets a (+) Add link (#1521, data-add-url
 with ?date=<that day>, named and titled by data-add-name with {date} filled
@@ -63,7 +63,7 @@ links).
 {% if sends %}
 <section class="panel" aria-labelledby="calendar-months-title">
 <h2 id="calendar-months-title">{% translate "By month or week" %}</h2>
-<div class="calendar-nav">{% include "stewardship/components/segmented-choice.html" with choice_id="calendar-view" region_id="calendar-source" label=_("View") first_key="view-month" first_label=_("Month") first_href=view_links.month second_key="view-week" second_label=_("Week") second_href=view_links.week chosen="view-"|add:view %}{% translate "Previous month" as previous_month %}{% translate "Next month" as next_month %}{% translate "Previous week" as previous_week %}{% translate "Next week" as next_week %}{% button type="button" variant="secondary" data-calendar-step="-1" data-month-label=previous_month data-week-label=previous_week %}{{ previous_month }}{% endbutton %}{% button type="button" variant="secondary" data-calendar-step="1" data-month-label=next_month data-week-label=next_week %}{{ next_month }}{% endbutton %}<span class="calendar-nav-month" data-calendar-name></span></div>
+<div class="calendar-nav">{% include "stewardship/components/segmented-choice.html" with choice_id="calendar-view" region_id="calendar-source" label=_("View") first_key="view-month" first_label=_("Month") first_href=view_links.month second_key="view-week" second_label=_("Week") second_href=view_links.week chosen="view-"|add:view %}{% translate "Previous month" as previous_month %}{% translate "Next month" as next_month %}{% translate "Previous week" as previous_week %}{% translate "Next week" as next_week %}{% button type="button" variant="secondary" data-calendar-step="-1" data-month-label=previous_month data-week-label=previous_week %}{{ previous_month }}{% endbutton %}{% button type="button" variant="secondary" data-calendar-step="1" data-month-label=next_month data-week-label=next_week %}{{ next_month }}{% endbutton %}</div>
 <p class="help calendar-nav-reason" id="calendar-nav-reason" data-calendar-reason data-first="{% translate "This is the campaign's first month." %}" data-last="{% translate "This is the campaign's last month." %}" data-first-week="{% translate "This is the campaign's first week." %}" data-last-week="{% translate "This is the campaign's last week." %}"></p>
 <p class="visually-hidden" role="status" data-calendar-said></p>
 <div class="calendar-months" id="calendar-months" data-calendar data-start="{{ values.start_date }}" data-end="{{ values.end_date }}" data-opens="{% translate 'Campaign opens' %}" data-closes="{% translate 'Campaign closes' %}" data-today="{% translate 'Today' %}" data-add-url="{{ add_url }}" data-add-name="{% translate 'Add a scheduled email on {date}' %}" data-move-name="{% translate 'Move {name}…' %}" data-week-name="{% translate 'Week of {date}' %}"></div>

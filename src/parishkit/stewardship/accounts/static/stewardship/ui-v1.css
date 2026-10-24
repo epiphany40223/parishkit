@@ -1111,14 +1111,13 @@ td > :last-child { margin-bottom: 0; }
 .schedule-table tr[data-schedule-choose] { cursor: pointer; }
 .schedule-table tr[data-schedule-choose]:hover { background: var(--accent-soft); }
 .schedule-table tr.schedule-past, .calendar-sends tr.schedule-past { color: var(--muted); }
-/* Campaign calendar's month navigation (#1656): Previous and Next, then the
-   month's name, so a longer name moves neither button. At an end the button
+/* Campaign calendar's month navigation (#1656): Previous and Next; the
+   grid's caption names the month (PR #2095). At an end the button
    stays in place, greyed but focusable (aria-disabled, the shared
    unavailable look above), and the reason line
    under them keeps one line's height while empty, so it moves nothing. */
 .calendar-nav { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; }
 .calendar-nav .button { margin: 0; }
-.calendar-nav-month { font-weight: var(--heading-weight); font-size: 1.125rem; }
 .calendar-nav-reason { min-height: 1.5em; margin-block: .25rem .5rem; }
 /* The View choice (#1808) sits in the row before Previous and Next, so its
    own bottom margin would push the reason line down; the week view's one

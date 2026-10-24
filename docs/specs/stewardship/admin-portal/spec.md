@@ -3841,8 +3841,9 @@ that has passed never shows a send computed from a schedule's rule
 
 - **By month or week** shows one month at a time (or one week, in the
   [week view](#week-view)), Sunday first (#1656), with
-  **Previous month** and **Next month** buttons above it and the month's name
-  after them, so a longer name never moves either button. The months run
+  **Previous month** and **Next month** buttons above it. The grid's caption
+  names the month ("October 2054"), and nothing beside the buttons repeats
+  it (Administrator, Part K on PR #2095). The months run
   from the campaign's first day (or its first send, if earlier) to its last
   day (or its last send). At either end the button there stays in place and
   focusable but is unavailable (greyed, with the not-allowed pointer, as

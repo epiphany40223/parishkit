@@ -363,7 +363,9 @@ def test_months_change_in_place_within_the_campaign(
     following = page.get_by_role("button", name="Next month")
     reason = page.locator("[data-calendar-reason]")
     assert month_shown(page) == "October 2054"
-    assert page.locator("[data-calendar-name]").inner_text() == "October 2054"
+    # The caption names the month; nothing beside the buttons repeats it
+    # (PR #2095).
+    assert page.locator(".calendar-nav").inner_text().count("October") == 0
     assert previous.get_attribute("aria-disabled") == "true"
     assert previous.get_attribute("aria-describedby") == "calendar-nav-reason"
     assert following.get_attribute("aria-disabled") is None
@@ -1027,9 +1029,6 @@ def test_the_week_view_is_drawn_in_place_and_steps_by_week(
     week.focus()
     page.keyboard.press("Enter")
     assert week_shown(page) == "Week of September 27, 2054"
-    assert page.locator("[data-calendar-name]").inner_text() == (
-        "Week of September 27, 2054"
-    )
     assert page.url.endswith(f"{CALENDAR}?view=week&week=2054-09-27")
     assert week.get_attribute("aria-current") == "page"
     assert month.get_attribute("aria-current") is None
