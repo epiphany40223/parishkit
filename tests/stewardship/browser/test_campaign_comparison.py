@@ -11,6 +11,8 @@ year at a time, chosen in place by its year selector (#1221), and the data
 notes start closed and open on request (#1161).
 """
 
+import re
+
 import pytest
 
 from parishkit.stewardship.web.design_tokens import DARK_COLORS
@@ -463,8 +465,11 @@ def test_tiles_carry_their_full_wording(page, component_origin, width):
     assert set(hidden.all_inner_texts()) <= {"↑", "↓", "→"}
     assert hidden.count() > 0
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-    # Money keeps its cents; the median sits beside the average.
-    expect(tiles.nth(2).locator(".stat-value")).to_have_text("$345,000.50")
+    # The Annual pledges tile is whole dollars, rounded half up (#2090);
+    # the median beside the average keeps its cents.
+    expect(tiles.nth(2).locator(".stat-value")).to_have_text("$345,001")
+    expect(tiles.nth(2)).to_contain_text("Last year on day 12: $")
+    assert not re.search(r"\$[\d,]+\.\d\d", tiles.nth(2).inner_text())
     expect(tiles.nth(3)).to_contain_text("Median so far: $1,000.00")
 
 

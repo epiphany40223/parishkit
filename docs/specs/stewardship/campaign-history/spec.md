@@ -866,10 +866,16 @@ and the average of all imported years:
   more"), always with an arrow and the words "more" or "fewer" ("less" for
   money), so color is never the only signal.
 - Every number follows [numbers and
-  money](../ui-conventions/spec.md#numbers-and-money) with no exception:
-  money in dollars and cents, percentages and percentage points with one
-  decimal unless exact integers, US grouping, and an em dash for a zero
-  denominator.
+  money](../ui-conventions/spec.md#numbers-and-money): money in dollars
+  and cents, percentages and percentage points with one decimal unless
+  exact integers, US grouping, and an em dash for a zero denominator. The
+  one exception is the Annual pledges headline tile, whose value and
+  comparison lines leave out the cents as
+  [stat tiles](../ui-conventions/spec.md#stat-tiles) set out, on the page,
+  the PDF summary and the report emails alike
+  ([#2090](https://github.com/epiphany40223/parishkit/issues/2090)); the
+  Every number table, the downloads and the charts' exact values keep the
+  cents.
 - The median beside the current campaign's average is as of day N's end;
   an imported year's median is its final one, labelled "final", since the
   archive stores quartiles only for its final result.
