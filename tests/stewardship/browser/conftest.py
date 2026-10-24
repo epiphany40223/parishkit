@@ -102,6 +102,7 @@ from .branding_components import POSTS as BRANDING_POSTS
 from .branding_components import components as branding_components
 from .campaign_create_components import POSTS as CAMPAIGN_CREATE_POSTS
 from .campaign_create_components import components as campaign_create_components
+from .campaign_create_components import families_page as campaign_families_page
 from .campaign_settings_components import POSTS as CAMPAIGN_SETTINGS_POSTS
 from .campaign_settings_components import components as campaign_settings_components
 from .campaign_test_components import components as campaign_test_components
@@ -2362,6 +2363,7 @@ def component_responses():
     responses.update(campaign_settings_components(context, admin))
     responses.update(campaign_work_components(context, admin))
     responses.update(campaign_create_components(context, admin))
+    responses.update(campaign_families_page(context, admin))
     responses.update(menu_components(context, admin))
     responses.update(review_work_components(context, admin))
     responses.update(home_steps_components(context, admin))
@@ -2436,6 +2438,7 @@ def component_responses():
         ("live-status-v1.js", "application/javascript"),
         ("system-health-v1.js", "application/javascript"),
         ("refresh-schedule-v1.js", "application/javascript"),
+        ("campaign-families-v1.js", "application/javascript"),
         ("calendar-v1.js", "application/javascript"),
         ("session-v1.js", "application/javascript"),
         ("local-sign-in-v1.js", "application/javascript"),
