@@ -75,6 +75,21 @@ def main():
         assert isinstance(profile, DeploymentProfile)
         return True
 
+    def lookup(value, *, check, profile, base_url=None):
+        """The key reaches one organization that holds Families (#1554).
+
+        The real lookup runs an isolated helper that talks to ParishSoft;
+        the finite fixture answers in its place, as it does for the load.
+        """
+        check()
+        assert value and profile
+        return {
+            "outcome": "ok",
+            "organizations": [{"id": 1, "name": "Example Parish", "families": True}],
+            "unchecked": 0,
+            "elapsed": 0.0,
+        }
+
     def send(value, settings, mail, *, seconds, check):
         """Provider acceptance is synthetic; persisted submission ownership is not."""
         check()
@@ -86,6 +101,7 @@ def main():
 
     parishsoft_transport._exchange = exchange
     provider_checks.check_candidate = validate
+    provider_checks.lookup_organizations = lookup
     readiness_delivery_process.submit_sample = send
     from parishkit.stewardship.cli import main as cli
 
