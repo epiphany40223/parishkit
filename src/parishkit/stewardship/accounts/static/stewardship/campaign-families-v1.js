@@ -14,10 +14,13 @@
 // place: how many Families match in the latest ParishSoft data and how many
 // can be emailed, or what the choice lacks. Only the latest answer is
 // shown. While no Family matches, the form's gate (data-require-complete)
-// holds Create the campaign with the section's reason (data-client-error on
-// the section's first choice of each panel). When a preview fails, the
-// earlier answer stays and nothing is held: the server checks the choice
-// again on Review.
+// holds Create the campaign with the status line's own words, so the hint
+// says what the line says: what an incomplete choice lacks, or that a
+// complete one matches nothing (#2135 review). The hold is a
+// data-client-error on the section's Basic/Advanced toggle, outside both
+// panels: the shared editor reads an error on an Advanced field as a choice
+// Basic cannot show, which a no-match hold is not. When a preview fails, the
+// earlier answer stays: the server checks the choice again on Review.
 (() => {
   const ROOT = "[data-campaign-families]";
   const json = (text) => {
@@ -71,13 +74,13 @@
     },
   });
 
-  // Hold (or release) the form's gate while nothing matches.
-  const hold = (root, held) => {
-    [inputs(root, "families_preset")[0], inputs(root, "families_groups")[0]]
-      .filter(Boolean).forEach((node) => {
-        if (held) node.dataset.clientError = root.dataset.noMatch || "";
-        else delete node.dataset.clientError;
-      });
+  // Hold the form's gate with reason (the status line's words), or release
+  // it when reason is empty.
+  const hold = (root, reason) => {
+    const node = root.querySelector("input[data-editor-mode-choice]");
+    if (!node) return;
+    if (reason) node.dataset.clientError = reason;
+    else delete node.dataset.clientError;
     root.closest("form")?.dispatchEvent(new Event("change"));
   };
   // Put one answer in the status line; the time shows with a count only.
@@ -91,7 +94,7 @@
     if (emailable.textContent !== answer.emailable) emailable.textContent = answer.emailable || "";
     if (time) time.hidden = !answer.emailable;
     line.dataset.matches = String(answer.matches || 0);
-    hold(root, !answer.matches);
+    hold(root, answer.matches ? "" : answer.count || root.dataset.noMatch || "");
   };
 
   const pending = new WeakMap(); // root → {timer, controller}
@@ -128,10 +131,13 @@
     const root = node.closest(ROOT);
     if (root) preview(root);
   }));
-  // The page as drawn: hold the gate when its own count found nothing.
+  // The page as drawn: hold the gate with its line's words when its own
+  // count found nothing.
   const start = () => document.querySelectorAll(ROOT).forEach((root) => {
     const line = root.querySelector("[data-families-preview]");
-    if (line) hold(root, line.dataset.matches === "0");
+    if (line?.dataset.matches !== "0") return;
+    hold(root, line.querySelector("[data-families-count]")?.textContent
+      || root.dataset.noMatch || "");
   });
   start();
   window.addEventListener("pageshow", (event) => {

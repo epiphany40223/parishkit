@@ -137,3 +137,52 @@ def test_advanced_without_a_basic_equivalent_asks_first(page, component_origin):
     hidden(dialog)
     assert page.locator("#families-mode-advanced").is_checked()
     assert page.get_by_label("Inactive (1 Family)").is_checked()
+
+
+def test_an_incomplete_choice_holds_create_with_what_it_lacks(page, component_origin):
+    """With no Family group ticked, the hint says what the status line says
+    (a group is missing), never that no Families match (#2135 review)."""
+    opened(page, component_origin)
+    fill(page)
+    create = page.get_by_role("button", name="Create the campaign")
+    available(create)
+    page.locator("#families-mode-advanced").check()
+    page.get_by_label("Active (3 Families)").uncheck()
+    eventually(
+        page,
+        "document.querySelector('[data-families-count]').textContent",
+        "Choose at least one Family group.",
+    )
+    greyed(create)
+    hint = page.locator("#settings-complete-hint")
+    visible(hint.get_by_text("Choose at least one Family group."))
+    assert "No Families" not in hint.inner_text()
+
+
+def test_a_no_match_hold_still_lets_a_preset_choice_go_back_to_basic(
+    page, component_origin
+):
+    """While a preset's own choice matches nothing (the preview says so),
+    Advanced → Basic still finds the preset: the hold is not an Advanced
+    field error, so no "no basic equivalent" dialog opens."""
+    nothing = "No Families in the latest ParishSoft data match this choice."
+    page.route(
+        f"**{FAMILIES_PREVIEW}",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"count": nothing, "emailable": "", "matches": 0}),
+        ),
+    )
+    page.goto(component_origin + FAMILIES)
+    fill(page)
+    page.locator("#families-mode-advanced").check()
+    eventually(
+        page, "document.querySelector('[data-families-count]').textContent", nothing
+    )
+    greyed(page.get_by_role("button", name="Create the campaign"))
+    page.locator("#families-mode-basic").check()
+    hidden(page.locator("#families-mode-no-basic"))
+    assert page.locator("#families-mode-basic").is_checked()
+    assert page.get_by_label("Active parishioners", exact=True).is_checked()
+    visible(page.get_by_label("Active parishioners and Staff"))

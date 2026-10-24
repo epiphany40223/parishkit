@@ -4873,10 +4873,15 @@ returns the two numbers (no names, no Family data). It shows only those two
 counts (Administrator decision, 2026-10-24), not a comparison with another
 choice. The time is browser-local.
 While the choice is incomplete the line says what is missing ("Choose at
-least one Family group."). When no Family matches, the line says so and
-**Create the campaign and continue** is unavailable with the reason "No
-Families in the latest ParishSoft data match this choice."
-([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)). The
+least one Family group."). When no Family matches, the line says so ("No
+Families in the latest ParishSoft data match this choice."). In both cases
+**Create the campaign and continue** is unavailable, its reason the line's
+own words, so the gate never says no Family matches while the choice is
+only incomplete
+([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)). This
+hold is not an error in the Advanced fields: a complete choice that matches
+nothing but equals a preset still switches back to Basic without the "no
+basic equivalent" question. The
 "Create the campaign?" confirmation repeats the choice in words and the count,
 and says "This can't be changed after the campaign is created." The count is
 a preview: the first load after creation counts the Families again from the
