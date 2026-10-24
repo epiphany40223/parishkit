@@ -816,7 +816,7 @@ def test_a_refused_move_is_said_in_the_dialog(page, component_origin, width):
     assert dialog.locator("h2").inner_text() == "Move Reminder 2…"
     date = dialog.locator('[name="schedule-date"]')
     assert date.input_value() == "2054-10-20"
-    date.fill("2054-11-15")
+    date.fill("2054-10-25")
     submit = dialog.get_by_role("button", name="Review the move")
     before = submit.bounding_box()["y"]
     submit.click()
@@ -1136,3 +1136,65 @@ def test_move_works_the_same_in_the_week_view(page, component_origin):
     assert dialog.locator('[name="schedule-date"]').input_value() == "2054-10-07"
     assert page.url.endswith(f"{CALENDAR}?view=week&week=2054-10-04")
     assert not failures
+
+
+def test_only_days_a_send_can_move_to_take_a_drag_or_a_move(page, component_origin):
+    """Drag and Move… offer only the days a send can move to (PR #2095).
+
+    The browser's clock is October 5 at 7:00 AM in Los Angeles, after
+    Reminder 1's 6:00 AM, so its first day is October 6 and its last the
+    campaign's October 31. In Month and Week alike, while it is dragged
+    every earlier day (today included) looks unavailable, never outlined,
+    and a drop there opens nothing; nothing moves. Move…'s date takes the
+    same range, and a date outside it holds Review the move with the reason
+    in the dialog's reserved line.
+    """
+    from datetime import UTC, datetime
+
+    page.set_viewport_size({"width": 1280, "height": 1600})
+    page.clock.install(time=datetime(2054, 10, 5, 14, tzinfo=UTC))
+    for address in (CALENDAR, f"{CALENDAR}?view=week&week=2054-10-04"):
+        page.goto(component_origin + address)
+        failures = watch(page)
+        page.locator("table.calendar-month").scroll_into_view_if_needed()
+        button = move_button(page, 10, "Reminder 1")
+        past, ahead = cell(page, 5), cell(page, 6)
+        place = page_place(past)
+        page.mouse.move(*centre(button))
+        page.mouse.down()
+        page.mouse.move(*centre(ahead), steps=8)
+        has_class(ahead, "calendar-drop-target")
+        assert "calendar-drop-unavailable" not in ahead.get_attribute("class")
+        page.mouse.move(*centre(past), steps=8)
+        has_class(past, "calendar-drop-unavailable")
+        assert "calendar-drop-target" not in past.get_attribute("class")
+        assert past.evaluate("node => getComputedStyle(node).cursor") == "not-allowed"
+        assert same_place(page_place(past), place)
+        page.mouse.up()
+        assert not is_open(page, MOVE_DIALOG)
+        assert page.locator(".calendar-drop-unavailable").count() == 0
+        assert page.evaluate("window.notReloaded === true")
+        assert not failures
+    button.click()
+    dialog = page.locator(MOVE_DIALOG)
+    visible(dialog)
+    date = dialog.locator('[name="schedule-date"]')
+    assert date.get_attribute("min") == "2054-10-06"
+    assert date.get_attribute("max") == "2054-10-31"
+    submit = dialog.get_by_role("button", name="Review the move")
+    refusal = dialog.locator("#calendar-move-refusal")
+    before = submit.bounding_box()["y"]
+    for day, words in (
+        ("2054-10-05", "this send time has already passed"),
+        ("2054-11-01", "after the campaign closes on October 31, 2054"),
+    ):
+        date.fill(day)
+        assert submit.is_disabled(), day
+        assert words in refusal.inner_text(), day
+        assert date.get_attribute("aria-invalid") == "true"
+        assert date.get_attribute("aria-describedby") == "calendar-move-refusal"
+        assert submit.bounding_box()["y"] == before
+    date.fill("2054-10-06")
+    assert not submit.is_disabled()
+    assert refusal.inner_text() == ""
+    assert date.get_attribute("aria-invalid") == "false"

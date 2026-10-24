@@ -3998,10 +3998,18 @@ checks it exactly as that page does.
   dialog over the calendar titled with the same words, which says the send's
   time (browser-local) and email, that only the date changes and the time
   stays the same in this computer's time zone, and holds one date field,
-  **New send date**, filled in with the send's date. **Review the move**
+  **New send date**, filled in with the send's date. Its choices are only
+  the days the send can move to (see **The moved send**): the field's
+  earliest and latest dates are set, so the browser's date picker offers
+  no other day. **Review the move**
   stays unavailable until the date differs from the send's
   ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)), with
-  its hint after it. Review posts the move to the schedule's Edit scheduled
+  its hint after it, and while the date is empty or outside those days,
+  with the reason in the dialog's reserved line ("On that day this send
+  time has already passed, so it would send at once. Choose October 6,
+  2054 or later.", "That day is after the campaign closes on October 31,
+  2054. Choose October 31, 2054 or earlier."), which marks and describes
+  the field. Review posts the move to the schedule's Edit scheduled
   email address (`move=yes` with the date, the browser's zone and the
   configuration version) and the server answers exactly the review Edit
   scheduled email draws for that schedule with the new date, the same
@@ -4028,9 +4036,15 @@ checks it exactly as that page does.
 - **Drag to move.** On a fine pointer (a mouse or trackpad), dragging a
   movable send's link or its Move… button by a few pixels starts a drag:
   the send is marked as being dragged and the day under the pointer is
-  outlined (outline only, so nothing moves). Dropping it on another day of
-  the grid opens the same Move dialog with that day filled in; dropping it
-  on its own day, outside the grid, or pressing Escape cancels the drag, and
+  outlined (outline only, so nothing moves). Only a day the send can move
+  to is a target: while the drag lasts every other day of the grid looks
+  unavailable, as an [unavailable
+  control](../ui-conventions/spec.md#prerequisite-gates) does (greyed, with
+  the not-allowed pointer; only colours change, so nothing moves), is never
+  outlined and takes no drop. Dropping it on another day it can move to
+  opens the same Move dialog with that day filled in; dropping it
+  on its own day, on a day it can't move to, outside the grid, or pressing
+  Escape cancels the drag, and
   the click that ends a drag neither follows the link nor opens Move…. A
   click without a drag still follows the link or opens Move…, and Enter or
   Space on Move… opens it as before.
@@ -4041,8 +4055,18 @@ checks it exactly as that page does.
   the new day as a typed date is, so 9:00 AM stays 9:00 AM across a
   daylight-saving change. Edit's rules refuse what Edit refuses: a day
   outside the campaign's dates, a reminder not after the Initial invitation,
-  two Family mailings at one moment, and the hour the clocks repeat. Only the
-  moved send may move into the past.
+  two Family mailings at one moment, and the hour the clocks repeat. Unlike
+  Edit, a move never goes into the past (Administrator, Part K
+  on PR #2095): the days a send can move to run from the first day on which its
+  kept time is still ahead (today while that time is to come, else
+  tomorrow; never before the campaign's first day) through the campaign's
+  last day, the bound Edit enforces for an invitation or reminder (report
+  email sends are not movable here). Drag and Move… offer only those days,
+  in Month and Week alike, and the server refuses any other at the date
+  ("This day's send time has already passed, so the email would send at
+  once. Choose a later day."; a day outside the campaign keeps Edit's
+  refusal), changing nothing. Before this the server drew a past move's
+  review.
 - **A series reminder** moves as "This reminder only". On a day its rule does
   not give, it leaves the series, and the review says so in Edit's line
   ([New and Edit scheduled email](#new-and-edit-scheduled-email)). The series

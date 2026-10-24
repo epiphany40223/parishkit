@@ -306,6 +306,14 @@ MOVE_REPEATED_HOUR = _(
     "back in the campaign's time zone, so it can't be saved exactly. Choose "
     "another day, or change the time on its Edit page."
 )
+# A calendar move to a day whose kept time is already past (Administrator,
+# PR #2095): the moved send would be due at once, so it would send right
+# after Apply. The calendar offers no such day; an old page or a crafted
+# request meets this. Unlike the ordinary Edit, a move never goes back.
+MOVE_PASSED = _(
+    "This day's send time has already passed, so the email would send at "
+    "once. Choose a later day."
+)
 # A year and month as the calendar's addresses name one (``?month=``).
 YEAR_MONTH = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
 # Edit's Delete (#1656): which reminders of a series' reminder it removes;
@@ -1686,6 +1694,14 @@ def _entry(request, campaign_id, schedule_id=None):
         if passed:
             repeat.add_error(
                 "sends", forms.ValidationError(passed, code="repeat_time_passed")
+            )
+            return _entry_page(request, context, status=400)
+        if (
+            moving
+            and schedule_local.instant(entries[0], values["timezone"], now) <= now
+        ):
+            entry.add_error(
+                "date", forms.ValidationError(MOVE_PASSED, code="move_time_passed")
             )
             return _entry_page(request, context, status=400)
         added = (

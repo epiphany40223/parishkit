@@ -1165,6 +1165,12 @@ td > :last-child { margin-bottom: 0; }
 .calendar-month li.calendar-dragging { opacity: .55; }
 .calendar-month td.calendar-drop-target { outline: 2px dashed var(--accent); outline-offset: -3px; }
 .calendar-drag-active, .calendar-drag-active * { cursor: grabbing; user-select: none; -webkit-user-select: none; }
+/* A day a dragged send can't move to (PR #2095: already past for its time
+   of day, or outside the campaign) looks unavailable, as every unavailable
+   control does: greyed, with the not-allowed pointer. Only colours change,
+   so nothing moves. */
+.calendar-month td.calendar-drop-unavailable { background: var(--paper-soft); color: var(--unavailable); }
+.calendar-drag-active td.calendar-drop-unavailable, .calendar-drag-active td.calendar-drop-unavailable * { cursor: not-allowed; }
 /* The Move dialog's refusal line, after its buttons (the dialog is anchored
    at the top), so a refusal of any length moves no control; one line is
    kept so a short one does not resize the dialog. */

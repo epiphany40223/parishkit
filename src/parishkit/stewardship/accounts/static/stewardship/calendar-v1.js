@@ -44,6 +44,13 @@
 // that day filled in; Escape cancels a drag, and the drop itself changes
 // nothing (UX conventions, dragging rule). Enter or Space on Move… is a
 // click, never a drag.
+// Only a day the send can move to is a target (PR #2095): from the first
+// day whose kept time of day is still ahead (and not before the campaign
+// opens) through the campaign's last day, as Edit allows no other. While a
+// drag is active every other day looks unavailable and takes no drop, and
+// Move…'s date field holds the same range (min and max), its Review held
+// with the reason in the dialog's reserved line while the date is outside
+// it. The server refuses such a day all the same.
 // Apply redraws the list of sends with the dialog (one region), so the grid
 // is drawn again from the new list on the same month.
 //
@@ -503,8 +510,68 @@
   let moveOpener = null;
   const moveDialog = () => document.getElementById("calendar-move");
 
+  // The days the send ``row`` (its item in the list) can move to (PR
+  // #2095), as ISO days that compare as text: ``first``, the first day on
+  // which its kept browser-local time of day is still ahead (today while
+  // that time is to come, else tomorrow), or the campaign's first day if
+  // later; and ``last``, the campaign's last day, the bound Edit enforces
+  // for an invitation or reminder. Read afresh each time, as the time
+  // passes while the page is open.
+  function moveRange(row) {
+    const when = new Date(row.querySelector("time[datetime]").dateTime);
+    const now = new Date();
+    const kept = new Date(now.getFullYear(), now.getMonth(), now.getDate(),
+      when.getHours(), when.getMinutes(), when.getSeconds());
+    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + (kept > now ? 0 : 1));
+    const start = root.dataset.start || "";
+    const ahead = localKey(day);
+    return {first: start > ahead ? start : ahead, last: root.dataset.end || ""};
+  }
+  const canMoveTo = (range, key) => range.first <= key && (!range.last || key <= range.last);
+
+  // Why the Move dialog's date can't be reviewed, or "" when it can: none
+  // chosen, before the range (the campaign not yet open, or the kept time
+  // already past that day) or after the campaign's last day.
+  function moveRefusal(field) {
+    const dialog = moveDialog();
+    const value = field.value;
+    if (!value) return dialog.dataset.moveEmpty;
+    const range = {first: field.min, last: field.max};
+    const words = {first: dates.date(range.first), last: dates.date(range.last)};
+    if (value < range.first) {
+      return fillIn(value < (root.dataset.start || "") ? dialog.dataset.moveBefore
+        : dialog.dataset.movePassed, words);
+    }
+    if (range.last && value > range.last) return fillIn(dialog.dataset.moveAfter, words);
+    return "";
+  }
+
+  // Check the Move dialog's date as it changes (capture phase, so its
+  // validity is set before ui-v1.js's complete gate reads it): a date
+  // outside the range holds Review the move, the reason said in the
+  // dialog's reserved line (which keeps its height, so nothing moves) and
+  // the field marked and described by it. A server refusal in that line
+  // (data-refusal) is left to ui-v1.js.
+  function checkMoveDate(event) {
+    const field = event.target;
+    if (!(field instanceof HTMLInputElement) || !field.matches("#calendar-move [name='schedule-date']")) return;
+    const message = moveRefusal(field);
+    field.setCustomValidity(message);
+    const line = document.getElementById(field.form.dataset.reviewRefused);
+    if (!line || line.hasAttribute("data-refusal")) return;
+    if (!message && !line.hasAttribute("data-client-refusal")) return;
+    line.textContent = message;
+    line.toggleAttribute("data-client-refusal", Boolean(message));
+    field.setAttribute("aria-invalid", String(Boolean(message)));
+    if (message) field.setAttribute("aria-describedby", line.id);
+    else field.removeAttribute("aria-describedby");
+  }
+  document.addEventListener("input", checkMoveDate, true);
+  document.addEventListener("change", checkMoveDate, true);
+
   // Open the Move dialog on the send ``row`` (its item in the list), its
-  // date ``day`` when a drop chose one, else the send's own local day.
+  // date ``day`` when a drop chose one, else the send's own local day. The
+  // date field takes the days it can move to (min and max, moveRange).
   function openMove(row, day, opener) {
     const dialog = moveDialog();
     const form = dialog?.querySelector("form");
@@ -523,6 +590,10 @@
     // field's default again.
     const own = localKey(when);
     field.defaultValue = own;
+    const range = moveRange(row);
+    field.min = range.first;
+    if (range.last) field.max = range.last;
+    else field.removeAttribute("max");
     field.value = day || own;
     version.value = `${form.elements.namedItem("base_digest").value} ${row.dataset.moveUrl}`;
     // A refusal from an earlier Move no longer applies.
@@ -531,6 +602,7 @@
       line.textContent = "";
       line.removeAttribute("title");
       line.removeAttribute("data-refusal");
+      line.removeAttribute("data-client-refusal");
     }
     field.removeAttribute("aria-describedby");
     field.removeAttribute("data-field-error");
@@ -572,6 +644,8 @@
     if (!drag) return;
     drag.item.classList.remove("calendar-dragging");
     drag.over?.classList.remove("calendar-drop-target");
+    root.querySelectorAll("td.calendar-drop-unavailable")
+      .forEach((cell) => cell.classList.remove("calendar-drop-unavailable"));
     document.documentElement.classList.remove("calendar-drag-active");
     if (drag.active) swallowClick = true;
     drag = null;
@@ -590,7 +664,7 @@
     const row = handle && sources.get(handle);
     if (!row) return;
     drag = {handle, row, item: handle.closest("li"), x: event.clientX, y: event.clientY,
-      id: event.pointerId, active: false, over: null};
+      id: event.pointerId, active: false, over: null, range: null};
   });
   document.addEventListener("pointermove", (event) => {
     if (!drag || event.pointerId !== drag.id) return;
@@ -601,11 +675,18 @@
       window.getSelection()?.removeAllRanges();
       drag.item.classList.add("calendar-dragging");
       document.documentElement.classList.add("calendar-drag-active");
+      // Every day the send can't move to looks unavailable (a background
+      // and the not-allowed pointer, so nothing moves) and takes no drop.
+      drag.range = moveRange(drag.row);
+      root.querySelectorAll("td[data-day]").forEach((cell) => {
+        if (!canMoveTo(drag.range, cell.dataset.day)) cell.classList.add("calendar-drop-unavailable");
+      });
     }
     event.preventDefault();
     const under = document.elementFromPoint(event.clientX, event.clientY);
     const cell = under instanceof Element ? under.closest("td[data-day]") : null;
-    const over = cell && root.contains(cell) ? cell : null;
+    const over = cell && root.contains(cell) && canMoveTo(drag.range, cell.dataset.day)
+      ? cell : null;
     if (over === drag.over) return;
     drag.over?.classList.remove("calendar-drop-target");
     over?.classList.add("calendar-drop-target");
