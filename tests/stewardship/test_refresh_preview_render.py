@@ -12,8 +12,11 @@ refresh script used to fill a ``<span data-browser-time>``.
 
 The expected values below were rendered from the code before the move
 (this branch's base) for each scenario: daylight-saving days going forward and back in
-New York, London and Lord Howe (whose clocks move by half an hour), joined,
-covered and skipped times, and the "cannot preview yet" line. Each test maps
+New York, London and Lord Howe (whose clocks move by half an hour), joined
+and skipped times, and the "cannot preview yet" line. The two New York
+daylight-saving scenarios had quick updates until those were removed
+(#1147); they now hold full refreshes only, and their pins and goldens were
+rendered again from the code after the removal. Each test maps
 the two intended markup changes back and compares the result: the readable
 goldens exactly, the pins (the list, and the seven-day grid above it, which
 reads the same days) as a hash of the markup with its whitespace collapsed,
@@ -36,13 +39,13 @@ from parishkit.stewardship.source.schedule_preview import durations, summarize
 from parishkit.stewardship.source.send_windows import Window
 
 
-def stored(*rules, switch=False):
+def stored(*rules, switch=False, skips=()):
     """Stored ParishSoft settings holding a ``refresh_rules`` document."""
     return {
         "organization_id": "1",
         "refresh_rules": {
             "rules": list(rules),
-            "skips": [],
+            "skips": list(skips),
             "skip_around_family_emails": switch,
         },
     }
@@ -83,7 +86,7 @@ SCENARIOS = {
     "ny-back": (
         "America/New_York",
         utc(2026, 10, 29, 14),
-        stored(full("01:30"), full("06:00"), every("quick", 60, "00:00", "23:00")),
+        stored(full("01:30"), full("06:00"), every("full", 60, "03:00", "23:00")),
         (),
     ),
     "ny-forward-joined": (
@@ -93,9 +96,9 @@ SCENARIOS = {
             full("02:00"),
             full("02:30"),
             full("03:00"),
-            quick("02:15"),
-            quick("05:00"),
-            every("quick", 30, "06:00", "08:00"),
+            full("02:15"),
+            full("05:00"),
+            every("full", 30, "06:00", "08:00"),
         ),
         (),
     ),
@@ -123,9 +126,9 @@ SCENARIOS = {
 # collapsed (``collapsed``), as the code before the move rendered them.
 BEFORE = {
     "ny-ordinary": "84164922c4229b9bc76de9f0acd39e319d46a7ca4c3f61be4543a1a0ee71f78e",
-    "ny-back": "86876626f4fa1fc9ef278cd450633d4003fa0eb9284b0a7007b49909de29beeb",
+    "ny-back": "e722f2e9722b71a0a85cdeb3ce33426024f04a01864d4a8e42d40533dc027906",
     "ny-forward-joined": (
-        "32833f37d69bc66de357523c6568f40e47800481208da51957a4f879afc7553e"
+        "a84be083f6d7011046dd9f6574166cb6bc266a71577e03e2f50646ad66d857f1"
     ),
     "london-forward": (
         "43d532fb5e70b7c56397156755fd414ad842169df26a3fcacc09b3e3deddf2f4"
@@ -135,9 +138,9 @@ BEFORE = {
 }
 GRID_BEFORE = {
     "ny-ordinary": "79c4bc7624c3a0ab20b80ecebb9f497c66f33ffaa7436c50990a11623c815ff6",
-    "ny-back": "7c62fcc3defd8905ee0e3d26a3bfdcadd5e8c2ce003c200470cd75df91d48f36",
+    "ny-back": "ef4667493b3e63944884b7eaac31f51fa4daffb45f8a012f4d1b14008f0caa0f",
     "ny-forward-joined": (
-        "6169649f38f02986208805afc04a4c0610dfd08c1d6aaff29088a7f0cf327976"
+        "6bff2076acc7f40002c9834c3f510b6293e84f617caf7409943e292db2edbea0"
     ),
     "london-forward": (
         "2ce29ee19bbac581233df83284227b5ee1b1867e8eb72c782b75289029872351"
@@ -161,7 +164,7 @@ def rendered(zone, now, settings, windows):
             timezone=timezone,
             today=now.astimezone(ZoneInfo(timezone)).date(),
             windows=windows,
-            measured=durations({}),
+            measured=durations([]),
             margin=timedelta(minutes=30),
         )
 
@@ -239,7 +242,17 @@ def test_the_seven_day_grid_draws_exactly_as_before(name):
 def test_the_cannot_preview_line_is_unchanged():
     """A schedule with no full refresh shows the unavailable state's line."""
     zone, now, _, _ = SCENARIOS["ny-ordinary"]
-    assert rendered(zone, now, stored(quick("05:00")), ()) == UNAVAILABLE
+    settings = stored(full("05:00"), skips=[{"at": "05:00"}])
+    assert rendered(zone, now, settings, ()) == UNAVAILABLE
+
+
+def test_a_stored_quick_rule_draws_nothing():
+    """A quick rule a schedule stored before #1147 is neither listed nor drawn."""
+    zone, now, settings, windows = SCENARIOS["ny-ordinary"]
+    with_quick = stored(*settings["refresh_rules"]["rules"], quick("05:00"))
+    assert rendered(zone, now, with_quick, windows) == rendered(
+        zone, now, settings, windows
+    )
 
 
 def test_the_clocks_go_forward_day_with_joined_times():
@@ -248,17 +261,17 @@ def test_the_clocks_go_forward_day_with_joined_times():
     section = day_section(html, "Sunday, March 14, 2027 (clocks go forward)")
     assert section == (
         '<details class="schedule-day"><summary>Sunday, March 14, 2027 (clocks go '
-        "forward): 1 full refresh, 6 quick updates, about 20 min of ParishSoft "
+        "forward): 7 full refreshes, about 51 min of ParishSoft "
         'time</summary>\n<ul class="schedule-day-times"><li class="schedule-time-full">'
         "02:00 nightly full refresh: runs at 03:00, clocks go forward"
         '<span class="help" data-browser-time="2027-03-14T07:00:00+00:00"></span></li>'
-        '<li class="schedule-time-quick"><s>02:15 quick update runs with the 02:00 '
-        'one: clocks go forward</s></li><li class="schedule-time-full"><s>02:30 full '
-        "refresh runs with the 02:00 one: clocks go forward</s></li>"
-        '<li class="schedule-time-full"><s>03:00 full refresh runs with the 02:00 '
-        "one: clocks go forward</s></li>"
         + "".join(
-            f'<li class="schedule-time-quick">{wall} quick update<span class="help" '
+            f'<li class="schedule-time-full"><s>{wall} full refresh runs with the '
+            "02:00 one: clocks go forward</s></li>"
+            for wall in ("02:15", "02:30", "03:00")
+        )
+        + "".join(
+            f'<li class="schedule-time-full">{wall} full refresh<span class="help" '
             f'data-browser-time="2027-03-14T{instant}:00+00:00"></span></li>'
             for wall, instant in (
                 ("05:00", "09:00"),
@@ -305,7 +318,8 @@ def test_today_is_listed_whole_and_open():
     assert html.count("<details ") == 7 and html.count(" open>") == 1
     today = day_section(as_before(html), "Today, Thursday, October 29, 2026")
     assert today.startswith('<details class="schedule-day" open>')
-    assert '<li class="schedule-time-quick">00:00 quick update<span' in today
+    assert '<li class="schedule-time-full">03:00 full refresh<span' in today
+    assert "quick" not in html
     assert '<li class="schedule-time-full">01:30 nightly full refresh<span' in today
     assert 'data-day="2026-10-29" data-today open>' in html
     assert html.count(" data-today") == 1

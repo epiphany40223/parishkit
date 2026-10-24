@@ -104,15 +104,12 @@ def test_banner_absent_without_a_failure():
     assert "notice-error" not in html
 
 
-DELTA_OK = datetime(2026, 9, 28, 15, 0, tzinfo=UTC)
-DELTA_BAD = datetime(2026, 9, 28, 15, 15, tzinfo=UTC)
 NOW = datetime(2026, 9, 28, 16, 5, tzinfo=UTC)
 SCHEDULE = {
     "timezone": "America/New_York",
     "nightly_time": "02:00",
     "frequency": "daily",
     "full_refresh_times": ("02:00",),
-    "delta_refresh": "quarter_hour",
 }
 
 # A page-issued manual refresh request key.
@@ -120,11 +117,11 @@ KEY = uuid4()
 
 
 def test_a_failed_full_reload_never_mentions_incremental_updates(monkeypatch):
-    """A failed nightly reload is reported alone: the page says nothing of
-    incremental updates (#1122), whose health the status still records."""
-    status = status_from(monkeypatch, (EARLY, LATE, False, uuid4(), DELTA_OK, None))
+    """A failed nightly reload is reported alone: there are no incremental
+    updates to mention (#1122, removed by #1147)."""
+    status = status_from(monkeypatch, (EARLY, LATE, False, uuid4()))
     assert status.failed_at == LATE
-    assert status.deltas_healthy is True
+    assert not hasattr(status, "delta_succeeded_at")
     html = render_to_string(
         "stewardship/full-refresh-status.html",
         {
@@ -141,20 +138,6 @@ def test_a_failed_full_reload_never_mentions_incremental_updates(monkeypatch):
     assert f'name="request_key" value="{KEY}"' in html
 
 
-def test_failed_deltas_after_the_last_success_are_unhealthy(monkeypatch):
-    """An incremental failure newer than every success marks updates failing."""
-    status = status_from(
-        monkeypatch, (EARLY, LATE, False, uuid4(), DELTA_OK, DELTA_BAD)
-    )
-    assert status.deltas_healthy is False
-
-
-def test_a_later_success_clears_an_incremental_failure(monkeypatch):
-    """A newer incremental or full success supersedes an older delta failure."""
-    status = status_from(monkeypatch, (EARLY, None, False, None, DELTA_BAD, DELTA_OK))
-    assert status.delta_failed_at is None and status.deltas_healthy is True
-
-
 def test_next_scheduled_full_reload_uses_the_parish_time(monkeypatch):
     """Daily reloads fall at the next local nightly time, DST-resolved."""
     from parishkit.stewardship.source import refresh_status as module
@@ -164,7 +147,7 @@ def test_next_scheduled_full_reload_uses_the_parish_time(monkeypatch):
             pass
 
         def fetchone(self):
-            return (EARLY, LATE, False, None, DELTA_OK, None)
+            return (EARLY, LATE, False, None)
 
     class Connection:
         @contextmanager
@@ -176,7 +159,7 @@ def test_next_scheduled_full_reload_uses_the_parish_time(monkeypatch):
     # 02:00 EDT on 9/29 is 06:00 UTC.
     assert status.next_full_at == datetime(2026, 9, 29, 6, 0, tzinfo=UTC)
     assert status.frequency == "daily"
-    assert status.nightly_only and status.has_deltas
+    assert status.nightly_only
     # With several times a day the next one is the next listed time (#465).
     several = SCHEDULE | {"full_refresh_times": ("02:00", "14:00")}
     status = module.full_refresh_status(several, NOW)
@@ -199,12 +182,9 @@ def test_next_full_for_hourly_and_quarter_hour():
     ) == datetime(2026, 9, 28, 16, 15, tzinfo=UTC)
 
 
-def test_quarter_hour_schedule_has_no_separate_incremental_status():
-    """When every run is full, no incremental line is shown."""
-    status = FullRefreshStatus(
-        EARLY, LATE, False, None, DELTA_OK, None, "quarter_hour", NOW
-    )
-    assert status.deltas_healthy is None
+def test_quarter_hour_schedule_names_the_most_recent_reload():
+    """A full refresh every quarter hour names no incremental update."""
+    status = FullRefreshStatus(EARLY, LATE, False, None, "quarter_hour", NOW)
     html = render_to_string(
         "stewardship/full-refresh-status.html",
         {"status": status, "can_refresh": True},
@@ -218,7 +198,7 @@ def test_refresh_page_does_not_link_to_itself():
     html = render_to_string(
         "stewardship/full-refresh-status.html",
         {
-            "status": FullRefreshStatus(EARLY, LATE, False, None, DELTA_OK),
+            "status": FullRefreshStatus(EARLY, LATE, False, None),
             "can_refresh": True,
             "refresh_key": KEY,
             "on_refresh_page": True,
@@ -231,7 +211,7 @@ def test_staff_without_refresh_capability_get_no_run_link():
     """Only Administrators are offered the manual full refresh."""
     html = render_to_string(
         "stewardship/full-refresh-status.html",
-        {"status": FullRefreshStatus(EARLY, LATE, False, None, DELTA_OK)},
+        {"status": FullRefreshStatus(EARLY, LATE, False, None)},
     )
     assert "Run a full refresh now" not in html
 
@@ -241,7 +221,7 @@ def test_a_healthy_status_still_offers_the_run_button():
     html = render_to_string(
         "stewardship/full-refresh-status.html",
         {
-            "status": FullRefreshStatus(LATE, None, False, None, DELTA_OK),
+            "status": FullRefreshStatus(LATE, None, False, None),
             "can_refresh": True,
             "refresh_key": KEY,
             "idle_action": True,
@@ -256,7 +236,7 @@ def test_home_page_offers_the_button_only_beside_a_failure():
     html = render_to_string(
         "stewardship/full-refresh-status.html",
         {
-            "status": FullRefreshStatus(LATE, None, False, None, DELTA_OK),
+            "status": FullRefreshStatus(LATE, None, False, None),
             "can_refresh": True,
             "refresh_key": KEY,
         },
@@ -267,34 +247,13 @@ def test_home_page_offers_the_button_only_beside_a_failure():
 def test_several_daily_times_name_the_most_recent_reload():
     """With more than one full refresh a day the notice is not "the nightly" one."""
     status = FullRefreshStatus(
-        EARLY, LATE, False, None, DELTA_OK, None, "daily", NOW, ("02:00", "14:00")
+        EARLY, LATE, False, None, "daily", NOW, ("02:00", "14:00")
     )
     html = render_to_string(
         "stewardship/full-refresh-status.html", {"status": status, "can_refresh": True}
     )
     assert "The most recent full ParishSoft reload" in html
     assert "The nightly full ParishSoft reload" not in html
-
-
-def test_hourly_deltas_are_recorded_but_not_shown():
-    """The status keeps the delta cadence (#465) for the command line, but
-    the page names no incremental update (#1122)."""
-    hourly = FullRefreshStatus(
-        EARLY, LATE, False, None, DELTA_OK, None, "daily", NOW, ("02:00",), "hourly"
-    )
-    assert hourly.deltas_healthy is True
-    html = render_to_string(
-        "stewardship/full-refresh-status.html", {"status": hourly, "can_refresh": True}
-    )
-    assert "hourly" not in html and "15-minute" not in html
-    off = FullRefreshStatus(
-        EARLY, LATE, False, None, DELTA_OK, None, "daily", NOW, ("02:00",), "off"
-    )
-    assert off.deltas_healthy is None and not off.has_deltas
-    html = render_to_string(
-        "stewardship/full-refresh-status.html", {"status": off, "can_refresh": True}
-    )
-    assert "update" not in html.split("notice-error")[0]
 
 
 def page(status, **context):
@@ -304,29 +263,17 @@ def page(status, **context):
     )
 
 
-def test_data_as_of_moves_with_a_changed_quick_update_and_names_the_full(monkeypatch):
-    """A quick update that changed records moves "data as of" (#510).
-
-    The last full refresh is named beside it, and both are browser-local
-    instants, never labeled UTC.
-    """
-    facts = SourceFacts(full_started_at=EARLY, changed_delta_at=LATE)
-    monkeypatch.setattr(refresh_status, "_facts", lambda row: facts)
-    status = status_from(monkeypatch, (EARLY, None, False, None, LATE, None))
-    assert status.data_as_of == LATE and status.full_started_at == EARLY
-    html = page(status)
-    assert "ParishSoft data as of" in html and "last full refresh" in html
-    assert html.count("data-local-instant") >= 2
-    assert "UTC" not in html
-
-
-def test_data_as_of_without_a_changed_quick_update_is_the_full_refresh(monkeypatch):
-    """An empty quick update proves only the connection."""
+def test_data_as_of_is_the_full_refresh(monkeypatch):
+    """Only a full refresh moves "data as of" (#1147); a later successful
+    read proves only the connection. The time is a browser-local instant,
+    never labeled UTC."""
     facts = SourceFacts(full_started_at=EARLY, success_at=LATE, answered_at=LATE)
     monkeypatch.setattr(refresh_status, "_facts", lambda row: facts)
-    status = status_from(monkeypatch, (EARLY, None, False, None, LATE, None))
-    assert status.data_as_of == EARLY and not status.shows_full_separately
-    assert "last full refresh" not in page(status)
+    status = status_from(monkeypatch, (EARLY, None, False, None))
+    assert status.data_as_of == EARLY
+    html = page(status)
+    assert "ParishSoft data as of" in html and "last full refresh" not in html
+    assert "data-local-instant" in html and "UTC" not in html
 
 
 @pytest.mark.parametrize(
@@ -474,11 +421,11 @@ def select_columns(sql):
 def test_the_status_row_halves_keep_their_column_counts():
     """The facts are read from the row's end, so both halves must agree (#659).
 
-    ``full_refresh_status`` reads six outcome columns from the front and
+    ``full_refresh_status`` reads four outcome columns from the front and
     ``_facts`` the last ``FACTS_COLUMNS``; a column added to either statement
     without updating its reader fails here instead of showing wrong data.
     """
-    assert select_columns(OUTCOMES_SQL) == 6
+    assert select_columns(OUTCOMES_SQL) == 4
     assert select_columns(FACTS_SQL) == FACTS_COLUMNS
     assert len(fields(SourceFacts)) == FACTS_COLUMNS
     # System health's derived row (ADM-13), joined between the halves for
@@ -495,20 +442,6 @@ def test_the_status_row_halves_keep_their_column_counts():
 
 def test_facts_come_from_the_end_of_the_combined_row():
     """The data-age facts are the last columns, after the outcome half."""
-    outcomes = (LATE, None, False, None, DELTA_OK, None)
-    facts = (EARLY, DELTA_OK, LATE, LATE, True, EARLY, NOW)
+    outcomes = (LATE, None, False, None)
+    facts = (EARLY, LATE, LATE, True, EARLY, NOW)
     assert real_facts(outcomes + facts) == SourceFacts(*facts)
-
-
-def test_listed_quick_times_are_not_shown():
-    """A schedule with listed quick times (#632) still records them, but the
-    page says nothing of quick updates (#1122)."""
-    listed = FullRefreshStatus(
-        EARLY, LATE, False, None, DELTA_OK, None, "daily", NOW, ("02:00",), "times"
-    )
-    assert listed.has_deltas and listed.deltas_healthy is True
-    html = render_to_string(
-        "stewardship/full-refresh-status.html", {"status": listed, "can_refresh": True}
-    )
-    assert "quick" not in html.lower()
-    assert "15-minute" not in html and "hourly" not in html

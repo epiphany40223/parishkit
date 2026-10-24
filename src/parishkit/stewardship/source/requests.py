@@ -19,6 +19,10 @@ from .refresh_models import REFRESH_CAUSES, SourceRefreshCommand, SourceRefreshR
 from .windows import refresh_window
 
 TASK_TYPE = "source_refresh"
+# The causes a new refresh may have. Quick updates (delta refreshes) were
+# removed (#1147), so ``delta`` is refused, though the database still holds
+# and accepts it for older requests (``REFRESH_CAUSES``).
+NEW_CAUSES = frozenset(REFRESH_CAUSES) - {"delta"}
 
 
 @dataclass(frozen=True)
@@ -123,7 +127,8 @@ def _pending(*, organization_id, digest, kind):
     )
     if kind == "full":
         candidates = candidates.filter(kind="full")
-    # A waiting full load satisfies a delta request, never the other way round.
+    # A waiting full load satisfies a delta request (only an older one, from
+    # before #1147, or a test's), never the other way round.
     return candidates.order_by("created_at", "id").first()
 
 
@@ -139,7 +144,12 @@ def request_refresh(*, command_id, cause, actor_id, correlation_id, authorize):
     accepting the locked WorkScope and returning True. It runs even on replay;
     callers cannot treat a known command UUID as authority. Browser endpoints
     must authorize Admin here, not merely before entering this transaction.
+
+    Only ``NEW_CAUSES`` are accepted: a ``delta`` cause (quick updates were
+    removed, #1147) is refused.
     """
+    if type(cause) is str and cause in REFRESH_CAUSES and cause not in NEW_CAUSES:
+        raise ValueError("Quick updates (delta refreshes) were removed.")
     if (
         not isinstance(command_id, UUID)
         or not isinstance(correlation_id, UUID)

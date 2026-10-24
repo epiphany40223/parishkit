@@ -29,7 +29,11 @@ CREDENTIAL_SCHEMA = "integration-credential-cadence-v8"
 # schedule (#632), which also lifted the cap of eight full times;
 # ``refresh_schedule_mode`` with the editor's Basic and Advanced modes
 # (#1122): presentation only, the mode the schedule was last saved in, so
-# the editor reopens in it. Nothing that runs refreshes reads it.
+# the editor reopens in it. Nothing that runs refreshes reads it. Quick
+# updates were removed (#1147): ``delta_refresh`` and ``quick_refresh_times``
+# stay valid in a stored document, so every version accepted before still
+# loads, but nothing schedules them, and a new or changed schedule saved
+# with its rules lists no quick time.
 CADENCE_SETTINGS = (
     "nightly_time",
     "full_refresh",
@@ -89,22 +93,25 @@ def _validate_cadence(settings):
 def _validate_rules_schedule(settings):
     """Check the shape of a schedule saved with its rules (#632).
 
-    Only the shape: the rules' closed fields; daily full times with listed
-    quick times (``delta_refresh`` "times") or none ("off"); no time in both
-    lists; at most ``MAX_DAILY_TIMES`` in all; and every two times at least
-    15 minutes apart around the clock. A new or changed schedule meets the
-    editor's row caps; a stored or carried one keeps the older bound
-    (``is_carried_schedule``, #936). Whether the lists are what the rules
-    produce, and the quarter-hour rule for new times, are the settings form's
-    and the command line's shared check (``refresh_rules.check_schedule``);
-    a stored document is never re-derived.
+    Only the shape: the rules' closed fields; daily full times with listed quick
+    times (``delta_refresh`` "times") or none ("off"); no time in both lists; at
+    most ``MAX_DAILY_TIMES`` in all; and every two times at least 15 minutes
+    apart around the clock. A new or changed schedule meets the editor's row
+    caps and has no quick rule or quick time (#1147); a stored or carried one
+    keeps the older bound and may keep its quick rules and times
+    (``is_carried_schedule``, #936), which nothing schedules. Whether the lists
+    are what the rules produce, and the quarter-hour rule for new times, are the
+    settings form's and the command line's shared check
+    (``refresh_rules.check_schedule``); a stored document is never re-derived.
     """
     rules = settings["refresh_rules"]
     full = settings.get("full_refresh_times")
     quick = settings.get("quick_refresh_times", [])
     delta = settings.get("delta_refresh")
+    carried = is_carried_schedule(rules)
     if (
-        not valid_shape(rules, stored=is_carried_schedule(rules))
+        not valid_shape(rules, stored=carried)
+        or (not carried and delta != "off")
         or settings.get("full_refresh", "daily") != "daily"
         or full is None
         or "nightly_time" not in settings

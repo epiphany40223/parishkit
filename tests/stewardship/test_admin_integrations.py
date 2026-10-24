@@ -98,11 +98,8 @@ def refresh():
         failed_at=None,
         failed_task_id=None,
         running=False,
-        delta_succeeded_at=None,
-        delta_failed_at=None,
         frequency="nightly",
         next_full_at=None,
-        delta_refresh="off",
         full_started_at=AT,
         data_as_of=AT,
         connection=None,
@@ -172,12 +169,10 @@ def test_parishsoft_prints_the_refresh_facts_of_refresh_status():
     )
     assert model.source == refresh_fields(status)
     assert document(model)["settings"] == {"organization_id": "12"}
-    # An existing schedule (the defaults) as the editor shows it (#632).
+    # An existing schedule (the defaults) as the editor shows it (#632),
+    # with no quick rule (#1147).
     assert document(model)["refresh_schedule"] == {
-        "rules": [
-            {"kind": "full", "at": "02:00"},
-            {"kind": "quick", "every": 15, "from": "00:00", "to": "23:45"},
-        ],
+        "rules": [{"kind": "full", "at": "02:00"}],
         "skips": [],
         "skip_around_family_emails": False,
     }
@@ -548,9 +543,9 @@ def stand_ins(monkeypatch, calls, stored=STORED):
     return SimpleNamespace(store=None)
 
 
-def test_an_added_quick_rule_is_refused_after_the_recheck(monkeypatch):
-    """The page cannot add a quick update, so neither can the preview: the
-    refusal of 5b's ``integration preview``, after the session recheck."""
+def test_a_quick_rule_is_refused_before_any_read(monkeypatch):
+    """Quick updates were removed (#1147): a quick rule is not the stored
+    shape, refused at its row without reading or echoing the document."""
     from parishkit.stewardship.admin_changes import InvalidChange
 
     calls = []
@@ -558,7 +553,7 @@ def test_an_added_quick_rule_is_refused_after_the_recheck(monkeypatch):
     text = json.dumps({"rules": [{"kind": "quick", "at": "05:00"}]})
     with pytest.raises(InvalidChange) as refused:
         admin_integrations.read_schedule_preview(None, service, text)
-    assert calls == ["admit", "recheck"]
+    assert calls == []
     assert [p["field"] for p in refused.value.fields] == ["refresh_schedule.rules[0]"]
 
 

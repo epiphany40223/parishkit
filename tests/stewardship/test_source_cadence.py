@@ -8,8 +8,11 @@ from parishkit.stewardship.campaigns.intervals import resolve_local
 from parishkit.stewardship.source.cadence import (
     catch_up_slot,
     due_slots,
+    listed_due_slots,
     longest_gap,
     next_full_at,
+    refresh_settings,
+    schedule_identity,
 )
 
 
@@ -26,42 +29,40 @@ def slots(instant, **overrides):
     )
 
 
-def test_latest_due_slots_are_bounded_and_full_precedes_delta():
-    """Downtime selects one latest full refresh, not all historical read slots."""
-    full, delta = slots("2026-09-11T17:23:42+00:00")
-    assert full.cause == "nightly" and delta.cause == "delta"
+def test_latest_due_slot_is_bounded_and_only_full():
+    """Downtime selects one latest full refresh, not all historical read slots.
+
+    Quick updates were removed (#1147): no quick slot is ever created.
+    """
+    (full,) = slots("2026-09-11T17:23:42+00:00")
+    assert full.cause == "nightly"
     assert full.due_at == datetime(2026, 9, 11, 6, tzinfo=UTC)
-    assert delta.due_at == datetime(2026, 9, 11, 17, 15, tzinfo=UTC)
-    assert (full, delta) == slots("2026-09-11T17:29:59+00:00")
-    assert len(slots("2028-01-01T17:23:42+00:00")) == 2
+    assert (full,) == slots("2026-09-11T17:29:59+00:00")
+    assert len(slots("2028-01-01T17:23:42+00:00")) == 1
 
 
 def test_before_nightly_time_selects_previous_local_day():
     """A restart does not produce a future nightly observation early."""
-    full, _ = slots("2026-09-11T05:59:59+00:00")
+    (full,) = slots("2026-09-11T05:59:59+00:00")
     assert full.due_at == datetime(2026, 9, 10, 6, tzinfo=UTC)
 
 
 def test_gap_uses_first_real_instant_and_fold_has_one_nightly_identity():
     """The shared resolver supplies exact gap/fold behavior, not arithmetic guesses."""
-    full, _ = slots("2026-03-08T07:00:00+00:00")
+    (full,) = slots("2026-03-08T07:00:00+00:00")
     assert full.due_at == datetime(2026, 3, 8, 7, tzinfo=UTC)
     first = slots("2026-11-01T05:30:00+00:00", nightly_time="01:30")
     second = slots("2026-11-01T06:30:00+00:00", nightly_time="01:30")
-    assert first[0] == second[0]
+    assert first == second
     assert first[0].due_at == datetime(2026, 11, 1, 5, 30, tzinfo=UTC)
-    assert first[1].slot_key != second[1].slot_key
 
 
-def test_new_scope_or_schedule_gets_new_slot_but_not_a_new_delta_for_time_edit():
-    """Cadence identity changes only when that cadence's actual meaning changes."""
+def test_new_scope_or_schedule_gets_a_new_slot():
+    """Slot identity changes only when the slot's actual meaning changes."""
     instant = "2026-09-11T17:23:42+00:00"
     original = slots(instant)
-    different_scope = slots(instant, scope_fingerprint="b" * 64)
-    different_time = slots(instant, nightly_time="03:00")
-    assert all(a != b for a, b in zip(original, different_scope, strict=True))
-    assert original[0] != different_time[0]
-    assert original[1] == different_time[1]
+    assert original != slots(instant, scope_fingerprint="b" * 64)
+    assert original != slots(instant, nightly_time="03:00")
 
 
 @pytest.mark.parametrize("value", ["2:00", "24:00", "02:60", "02:00:00", None, True])
@@ -79,20 +80,19 @@ def test_naive_now_and_noncanonical_scope_are_rejected():
         slots("2026-09-11T17:23:42+00:00", scope_fingerprint="PRIVATE")
 
 
-def test_hourly_full_refresh_uses_the_latest_utc_hour_and_keeps_deltas():
-    """An hourly full load is due on the hour; quarter-hour deltas continue."""
-    full, delta = slots("2026-09-11T17:23:42+00:00", frequency="hourly")
-    assert full.cause == "nightly" and delta.cause == "delta"
+def test_hourly_full_refresh_uses_the_latest_utc_hour():
+    """An hourly full load is due on the hour."""
+    (full,) = slots("2026-09-11T17:23:42+00:00", frequency="hourly")
+    assert full.cause == "nightly"
     assert full.due_at == datetime(2026, 9, 11, 17, tzinfo=UTC)
-    assert delta.due_at == datetime(2026, 9, 11, 17, 15, tzinfo=UTC)
     assert (
         full.slot_key
         != slots("2026-09-11T18:00:00+00:00", frequency="hourly")[0].slot_key
     )
 
 
-def test_quarter_hour_full_refresh_replaces_the_delta_slot():
-    """A full load every 15 minutes already covers each delta slot."""
+def test_quarter_hour_full_refresh_uses_the_latest_utc_quarter_hour():
+    """A full load every 15 minutes is due on each UTC quarter hour."""
     (full,) = slots("2026-09-11T17:23:42+00:00", frequency="quarter_hour")
     assert full.cause == "nightly"
     assert full.due_at == datetime(2026, 9, 11, 17, 15, tzinfo=UTC)
@@ -108,11 +108,11 @@ def test_unknown_frequency_is_refused(frequency):
 def test_latest_configured_time_is_chosen_and_recorded():
     """Several daily times: the latest one due wins, and the slot names it (#465)."""
     times = ["02:00", "08:00", "14:00", "20:00"]
-    full, delta = slots("2026-09-11T17:23:42+00:00", full_refresh_times=times)
+    (full,) = slots("2026-09-11T17:23:42+00:00", full_refresh_times=times)
     # 13:23 EDT: the 08:00 refresh is the latest due (12:00 UTC).
     assert full.due_at == datetime(2026, 9, 11, 12, tzinfo=UTC)
-    assert full.nightly_time == "08:00" and delta.nightly_time is None
-    later, _ = slots("2026-09-11T18:00:00+00:00", full_refresh_times=times)
+    assert full.nightly_time == "08:00"
+    (later,) = slots("2026-09-11T18:00:00+00:00", full_refresh_times=times)
     assert later.due_at == datetime(2026, 9, 11, 18, tzinfo=UTC)
     assert later.nightly_time == "14:00" and later.slot_key != full.slot_key
     # The time is part of the identity: the nightly slot of the same day differs.
@@ -121,7 +121,7 @@ def test_latest_configured_time_is_chosen_and_recorded():
 
 def test_before_the_first_time_selects_the_previous_days_last_time():
     """Just after midnight the latest due refresh is yesterday's evening one."""
-    full, _ = slots("2026-09-11T05:00:00+00:00", full_refresh_times=["02:00", "20:00"])
+    (full,) = slots("2026-09-11T05:00:00+00:00", full_refresh_times=["02:00", "20:00"])
     # 01:00 EDT on 9/11: 20:00 EDT on 9/10 is 00:00 UTC on 9/11.
     assert full.due_at == datetime(2026, 9, 11, 0, tzinfo=UTC)
     assert full.nightly_time == "20:00"
@@ -135,18 +135,18 @@ def test_times_inside_a_dst_gap_share_one_instant_and_the_nightly_wins():
     later wall time wins, so the choice stays deterministic.
     """
     times = ["02:00", "02:30"]
-    full, _ = slots("2026-03-08T07:00:00+00:00", full_refresh_times=times)
+    (full,) = slots("2026-03-08T07:00:00+00:00", full_refresh_times=times)
     assert full.due_at == datetime(2026, 3, 8, 7, tzinfo=UTC)
     assert full.nightly_time == "02:00"
     # 2027 springs forward on March 14; the same rule holds.
-    later, _ = slots("2027-03-14T07:00:00+00:00", full_refresh_times=times)
+    (later,) = slots("2027-03-14T07:00:00+00:00", full_refresh_times=times)
     assert later.due_at == datetime(2027, 3, 14, 7, tzinfo=UTC)
     assert later.nightly_time == "02:00"
-    earlier, _ = slots("2026-03-08T06:59:59+00:00", full_refresh_times=times)
+    (earlier,) = slots("2026-03-08T06:59:59+00:00", full_refresh_times=times)
     # The day before, 02:30 EST is 07:30 UTC.
     assert earlier.due_at == datetime(2026, 3, 7, 7, 30, tzinfo=UTC)
     assert earlier.nightly_time == "02:30"
-    other, _ = slots(
+    (other,) = slots(
         "2026-03-08T07:00:00+00:00",
         nightly_time="01:00",
         full_refresh_times=["01:00", "02:00", "02:30"],
@@ -174,18 +174,50 @@ def test_single_time_list_matches_the_legacy_nightly_schedule():
     assert slots(instant, full_refresh_times=("02:00",)) == slots(instant)
 
 
-def test_delta_cadence_chooses_the_hour_or_turns_deltas_off():
-    """Hourly deltas fall on the UTC hour; "off" leaves only the full slot."""
-    full, delta = slots("2026-09-11T17:23:42+00:00", delta_refresh="hourly")
-    assert delta.due_at == datetime(2026, 9, 11, 17, tzinfo=UTC)
-    assert delta.slot_key != slots("2026-09-11T17:23:42+00:00")[1].slot_key
-    (only,) = slots("2026-09-11T17:23:42+00:00", delta_refresh="off")
-    assert only == full
-    # An hourly full refresh already covers hourly deltas.
-    (hourly,) = slots(
-        "2026-09-11T17:23:42+00:00", frequency="hourly", delta_refresh="hourly"
+def test_a_stored_quick_setting_creates_no_quick_slot():
+    """Quick updates were removed (#1147): a stored quick setting is ignored.
+
+    ``refresh_settings`` drops it, so the scheduler, which passes on only
+    what it returns, creates the full slot alone.
+    """
+    instant = "2026-09-11T17:23:42+00:00"
+    for stored in (
+        {},
+        {"delta_refresh": "quarter_hour"},
+        {"delta_refresh": "hourly"},
+        {
+            "delta_refresh": "times",
+            "quick_refresh_times": ["06:00", "13:00"],
+            "full_refresh_times": ["02:00"],
+            "refresh_rules": {},
+        },
+    ):
+        schedule = refresh_settings({"nightly_time": "02:00", **stored})
+        assert "delta_refresh" not in schedule
+        assert "quick_refresh_times" not in schedule
+        (only,) = slots(instant, **schedule)
+        assert only.cause == "nightly"
+
+
+def test_schedule_identity_keeps_the_tick_guards_quick_defaults():
+    """The catch-up's schedule identity matches the SQL normalization.
+
+    The tick guard (``stewardship_refresh_schedule_v1``) still compares the
+    removed quick settings, with the old quarter-hour default, so a change of
+    only those settings is a new schedule there and must be here too.
+    """
+    absent = schedule_identity({"nightly_time": "02:00"})
+    assert absent["delta_refresh"] == "quarter_hour"
+    assert absent["quick_refresh_times"] == ()
+    assert absent == schedule_identity(
+        {"nightly_time": "02:00", "delta_refresh": "quarter_hour"}
     )
-    assert hourly.cause == "nightly" and hourly.nightly_time == "02:00"
+    assert absent != schedule_identity(
+        {"nightly_time": "02:00", "delta_refresh": "off"}
+    )
+    assert refresh_settings({"nightly_time": "02:00"}) == refresh_settings(
+        {"nightly_time": "02:00", "delta_refresh": "off"}
+    )
 
 
 @pytest.mark.parametrize(
@@ -210,13 +242,6 @@ def test_noncanonical_time_lists_are_rejected(times):
         slots("2026-09-11T17:23:42+00:00", full_refresh_times=times)
 
 
-@pytest.mark.parametrize("delta_refresh", ["weekly", "", None, "daily"])
-def test_unknown_delta_cadence_is_refused(delta_refresh):
-    """Only the three stored delta cadences are accepted."""
-    with pytest.raises(ValueError):
-        slots("2026-09-11T17:23:42+00:00", delta_refresh=delta_refresh)
-
-
 def test_next_full_uses_the_earliest_upcoming_configured_time():
     """The Admin banner's next full refresh is the next listed local time."""
     times = ["02:00", "14:00"]
@@ -236,153 +261,56 @@ def test_next_full_uses_the_earliest_upcoming_configured_time():
 
 
 @pytest.mark.parametrize(
-    "frequency,times,delta_refresh,minutes",
+    "frequency,times,minutes",
     [
-        ("daily", ["02:00"], "quarter_hour", 15),
-        ("daily", ["02:00"], "hourly", 60),
-        ("daily", ["02:00"], "off", 24 * 60),
-        ("daily", ["02:00", "14:00"], "off", 12 * 60),
-        ("daily", ["02:00", "08:00", "20:00"], "off", 12 * 60),
-        ("hourly", ["02:00"], "off", 60),
-        ("quarter_hour", ["02:00"], "off", 15),
+        ("daily", ["02:00"], 24 * 60),
+        ("daily", ["02:00", "14:00"], 12 * 60),
+        ("daily", ["02:00", "08:00", "20:00"], 12 * 60),
+        ("hourly", ["02:00"], 60),
+        ("quarter_hour", ["02:00"], 15),
     ],
 )
-def test_longest_gap_between_refreshes(frequency, times, delta_refresh, minutes):
+def test_longest_gap_between_refreshes(frequency, times, minutes):
     """The staleness check sees the longest wait any schedule leaves."""
-    assert longest_gap(
-        frequency=frequency, full_refresh_times=times, delta_refresh=delta_refresh
-    ) == timedelta(minutes=minutes)
-
-
-def test_longest_gap_counts_listed_quick_times():
-    """With listed quick times the gap is the longest between any two times."""
-    assert longest_gap(
-        frequency="daily",
-        full_refresh_times=["02:00"],
-        delta_refresh="times",
-        quick_refresh_times=["06:00", "18:00"],
-    ) == timedelta(hours=12)
-    # Quick times listed beside "off" would be a malformed document; they are
-    # not counted.
-    assert longest_gap(
-        frequency="daily",
-        full_refresh_times=["02:00"],
-        delta_refresh="off",
-        quick_refresh_times=["06:00"],
-    ) == timedelta(hours=24)
+    assert longest_gap(frequency=frequency, full_refresh_times=times) == timedelta(
+        minutes=minutes
+    )
 
 
 QUARTER = timedelta(minutes=15)
-HOURLY_QUICK = [f"{hour:02d}:00" for hour in range(24) if hour != 2]
 
 
-def test_listed_quick_times_choose_the_latest_local_time():
-    """The quick slot is the latest listed local time due, resolved like full ones."""
-    full, quick = slots(
-        "2026-09-11T17:23:42+00:00",
-        delta_refresh="times",
-        rules=True,
-        quick_refresh_times=HOURLY_QUICK,
+def test_listed_due_slots_are_every_full_time_of_today_and_yesterday():
+    """Each listed full time due today or yesterday, oldest first, once each."""
+    found = listed_due_slots(
+        now=datetime.fromisoformat("2026-09-11T17:23:42+00:00"),
+        timezone="America/New_York",
+        nightly_time="02:00",
+        scope_fingerprint="a" * 64,
+        full_refresh_times=["02:00", "08:00", "20:00"],
     )
-    assert full == slots("2026-09-11T17:23:42+00:00")[0]
-    assert quick.cause == "delta" and quick.nightly_time is None
-    # 13:23 EDT: the 13:00 quick time, 17:00 UTC.
-    assert quick.due_at == datetime(2026, 9, 11, 17, tzinfo=UTC)
-    # Just after midnight local time, yesterday's 23:00 is the latest.
-    _, early = slots(
-        "2026-09-11T04:30:00+00:00",
-        delta_refresh="times",
-        rules=True,
-        quick_refresh_times=["08:00", "23:00"],
-    )
-    assert early.due_at == datetime(2026, 9, 11, 3, tzinfo=UTC)
-
-
-def test_a_listed_quick_slot_keeps_the_old_quarter_hour_identity():
-    """At a local quarter hour the quick slot is the old quarter-hour delta slot.
-
-    In a zone whose offset is a whole number of quarter hours, so the
-    stored schedule can switch without running one slot twice (#632).
-    """
-    every_quarter = [
-        f"{minute // 60:02d}:{minute % 60:02d}"
-        for minute in range(0, 24 * 60, 15)
-        if minute != 120
+    assert [(slot.nightly_time, slot.due_at) for slot in found] == [
+        ("02:00", datetime(2026, 9, 10, 6, tzinfo=UTC)),
+        ("08:00", datetime(2026, 9, 10, 12, tzinfo=UTC)),
+        ("20:00", datetime(2026, 9, 11, 0, tzinfo=UTC)),
+        ("02:00", datetime(2026, 9, 11, 6, tzinfo=UTC)),
+        ("08:00", datetime(2026, 9, 11, 12, tzinfo=UTC)),
     ]
-    for instant in (
-        "2026-09-11T17:23:42+00:00",
-        "2026-09-11T17:30:00+00:00",
-        "2026-12-24T23:59:59+00:00",
-    ):
-        listed = slots(
-            instant,
-            delta_refresh="times",
-            rules=True,
-            quick_refresh_times=every_quarter,
-        )[1]
-        assert listed == slots(instant)[1]
-    # Kolkata is UTC+05:30: still whole quarter hours.
-    listed = slots(
-        "2026-09-11T17:23:42+00:00",
-        timezone="Asia/Kolkata",
-        delta_refresh="times",
-        rules=True,
-        quick_refresh_times=every_quarter,
-    )[1]
-    assert listed == slots("2026-09-11T17:23:42+00:00", timezone="Asia/Kolkata")[1]
-
-
-def test_listed_quick_times_follow_daylight_saving_days():
-    """A repeated quick time runs once; times in the missing hour coincide."""
-    quick = ["00:00", "01:00", "01:30", "02:15", "02:30", "03:00"]
-    common = {"nightly_time": "12:00", "delta_refresh": "times", "rules": True}
-    # Fall back (2026-11-01): 01:30 EDT is 05:30 UTC; the repeated 01:30
-    # EST (06:30 UTC) is not a new slot: 01:30 keeps its earlier instant.
-    first = slots("2026-11-01T05:45:00+00:00", quick_refresh_times=quick, **common)[1]
-    second = slots("2026-11-01T06:45:00+00:00", quick_refresh_times=quick, **common)[1]
-    assert first.due_at == datetime(2026, 11, 1, 5, 30, tzinfo=UTC)
-    assert second == first
-    # Spring forward (2026-03-08): 02:15 and 02:30 do not exist and resolve to
-    # 03:00 EDT (07:00 UTC), where 03:00 also falls: one slot.
-    gap = slots("2026-03-08T07:05:00+00:00", quick_refresh_times=quick, **common)[1]
-    assert gap.due_at == datetime(2026, 3, 8, 7, tzinfo=UTC)
-
-
-@pytest.mark.parametrize(
-    "settings",
-    [
-        {"delta_refresh": "times"},
-        {"delta_refresh": "times", "quick_refresh_times": []},
-        {"delta_refresh": "off", "quick_refresh_times": ["06:00"]},
-        {"delta_refresh": "times", "quick_refresh_times": ["02:00"]},
-        {"delta_refresh": "times", "quick_refresh_times": ["07:00", "06:00"]},
-        {
-            "frequency": "hourly",
-            "delta_refresh": "times",
-            "quick_refresh_times": ["06:00"],
-        },
-    ],
-)
-def test_malformed_listed_quick_times_are_refused(settings):
-    """Listed quick times need "times", daily full times and no full time among them."""
-    with pytest.raises(ValueError):
-        slots("2026-09-11T17:23:42+00:00", rules=True, **settings)
-
-
-def test_listed_quick_times_need_a_schedule_saved_with_its_rules():
-    """Without its rules a schedule behaves as before #632: no listed quick times."""
-    with pytest.raises(ValueError):
-        slots(
+    assert {slot.cause for slot in found} == {"nightly"}
+    assert (
+        found[-1]
+        == slots(
             "2026-09-11T17:23:42+00:00",
-            delta_refresh="times",
-            quick_refresh_times=["06:00"],
-        )
+            full_refresh_times=["02:00", "08:00", "20:00"],
+            rules=True,
+        )[0]
+    )
 
 
 def test_more_than_eight_full_times_are_scheduled():
     """The cap of eight is gone (#632); every quarter hour is the limit."""
     times = [f"{hour:02d}:00" for hour in range(24)]
-    full, _ = slots(
+    (full,) = slots(
         "2026-09-11T17:23:42+00:00",
         nightly_time="00:00",
         full_refresh_times=times,
@@ -429,9 +357,10 @@ def legacy_due_slots(
     """The scheduler's slot choice before #632, frozen here as the parity reference.
 
     A copy of ``cadence.due_slots`` as released in v1.4.0, reduced to valid
-    inputs: an existing stored schedule must keep exactly these slots. It
-    imports the live ``resolve_local``, the shared daylight-saving resolver,
-    which this change does not touch.
+    inputs: an existing stored schedule must keep exactly these full slots
+    (its quick slots are gone since #1147). It imports the live
+    ``resolve_local``, the shared daylight-saving resolver, which this
+    change does not touch.
     """
     from uuid import uuid5
     from zoneinfo import ZoneInfo
@@ -506,8 +435,13 @@ LEGACY_SCHEDULES = [
 ]
 
 
+def full_only(slots):
+    """The reference's slots less its quick ("delta") ones (#1147)."""
+    return [slot for slot in slots if slot[0] != "delta"]
+
+
 def assert_parity(now, timezone, frequency, times, delta_refresh):
-    """The live scheduler and the frozen reference agree at ``now``."""
+    """The live scheduler and the frozen reference's full slot agree at ``now``."""
     new = due_slots(
         now=now,
         timezone=timezone,
@@ -515,7 +449,6 @@ def assert_parity(now, timezone, frequency, times, delta_refresh):
         scope_fingerprint="c" * 64,
         frequency=frequency,
         full_refresh_times=times,
-        delta_refresh=delta_refresh,
     )
     old = legacy_due_slots(
         now=now,
@@ -528,7 +461,7 @@ def assert_parity(now, timezone, frequency, times, delta_refresh):
     )
     assert [
         (s.cause, s.due_at, s.slot_key, s.command_id, s.nightly_time) for s in new
-    ] == old, now
+    ] == full_only(old), now
 
 
 DST_DAYS = (date(2026, 3, 8), date(2026, 11, 1), date(2025, 11, 2))
@@ -571,7 +504,7 @@ def test_existing_schedules_keep_identical_slots_at_every_boundary(
 def test_existing_schedules_keep_identical_slots(
     frequency, times, delta_refresh, timezone
 ):
-    """A parity sweep: every existing schedule gets the slots it got before #632.
+    """A parity sweep: every existing schedule gets the full slots it got before #632.
 
     Every 37 minutes over the weeks around both 2026 daylight-saving changes
     and an ordinary week: same causes, due times, slot keys, command
@@ -593,7 +526,6 @@ def test_existing_schedules_keep_identical_slots(
                 scope_fingerprint="c" * 64,
                 frequency=frequency,
                 full_refresh_times=times,
-                delta_refresh=delta_refresh,
             )
             old = legacy_due_slots(
                 now=now,
@@ -607,4 +539,4 @@ def test_existing_schedules_keep_identical_slots(
             assert [
                 (s.cause, s.due_at, s.slot_key, s.command_id, s.nightly_time)
                 for s in new
-            ] == old, now
+            ] == full_only(old), now

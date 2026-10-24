@@ -9,10 +9,8 @@
   Without a failure the button shows only with ``idle_action`` (the ParishSoft
   page).
   With several full-refresh times a day (#465) a failed reload's notice
-  names the most recent reload rather than "the nightly" one. The page says
-  nothing of the incremental updates between full refreshes: ParishSoft's
-  change list returns nothing, so they are not offered (#1122), and the
-  command line's refresh status keeps their fields until #1147.
+  names the most recent reload rather than "the nightly" one. Quick updates
+  (incremental refreshes) were removed (#1147); every refresh is full.
   The first two lines state the data age and the connection (#510): "data as
   of" is when the newest data was read (source.data_age); the connection
   line says whether ParishSoft answers. A scheduled full
@@ -25,7 +23,7 @@
   listed, not while a failing connection is listed instead) likewise
   shortens a failure to when changes appear and its "See what went wrong"
   link, as a plain line.
-{% endcomment %}<p>{% if status.data_as_of %}{% translate "ParishSoft data as of" %} <time datetime="{{ status.data_as_of|instant }}" data-local-instant>{{ status.data_as_of|instant }}</time>{% if status.shows_full_separately %}, {% translate "last full refresh" %} <time datetime="{{ status.full_started_at|instant }}" data-local-instant>{{ status.full_started_at|instant }}</time>{% endif %}.{% else %}{% translate "ParishSoft data: not yet loaded." %}{% endif %}</p>
+{% endcomment %}<p>{% if status.data_as_of %}{% translate "ParishSoft data as of" %} <time datetime="{{ status.data_as_of|instant }}" data-local-instant>{{ status.data_as_of|instant }}</time>.{% else %}{% translate "ParishSoft data: not yet loaded." %}{% endif %}</p>
 {% if status.connection %}<p>{% translate "Connection:" %}
   {% if status.connection.state == "failing" %}{% translate "failing since" %} <time datetime="{{ status.connection.at|instant }}" data-local-instant>{{ status.connection.at|instant }}</time>.{% elif status.connection.state == "not_checked" %}{% translate "not checked since" %} <time datetime="{{ status.connection.at|instant }}" data-local-instant>{{ status.connection.at|instant }}</time>.{% elif status.connection.state == "working" %}{% translate "working" %} ({% translate "last answered" %} <time datetime="{{ status.connection.at|instant }}" data-local-instant>{{ status.connection.at|instant }}</time>).{% else %}{% translate "not checked yet." %}{% endif %}
 </p>{% endif %}

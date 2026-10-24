@@ -1939,38 +1939,37 @@ staleness clock, while ParishSoft's change list returned nothing for every
 query ([#510](https://github.com/epiphany40223/parishkit/issues/510)). Three
 facts replace it, everywhere the system describes or alarms on ParishSoft
 data. The facts come from records already kept: each snapshot's kind, start
-and promotion, a quick update's change count, each refresh run's outcome,
-and the slot decision records (skipped and held).
+and promotion, each refresh run's outcome, and the slot decision records
+(skipped and held). Quick updates (delta refreshes) were removed in
+[#1147](https://github.com/epiphany40223/parishkit/issues/1147) (see
+[quick updates removed](../background-processing/spec.md#quick-updates-removed)),
+and a stored schedule's quick settings play no part in any of these facts.
 
 - **Last full refresh.** The start time of the newest promoted full
   refresh. Only this drives the alarm below, because only a full refresh
   re-reads everything.
 - **Data as of.** What pages, report emails and the command line show: the
-  start time of the newest promoted snapshot that could have brought in
-  ParishSoft changes, that is the last full refresh, or a later quick update
-  that changed at least one record. The change count is the snapshot
-  cursor's `changes` (the changed-record counts against its base, #242). It
-  is absent when counting failed, since it is display-only; a quick update
-  without it, like one whose counts are all zero, does not move "data as
-  of". Where the two differ, the page shows
-  both ("ParishSoft data as of 11:00, last full refresh 08:00").
+  start time of the last full refresh. Until #1147 a later quick update
+  that changed at least one record also moved it, and the page could show
+  both times.
 - **Connection.** Whether ParishSoft answers. Only refresh runs that
-  actually called ParishSoft count, scheduled or manual, full or quick; a
+  actually called ParishSoft count, scheduled or manual; a
   refresh cancelled because a newer one superseded it, a held or skipped
-  slot, and a run refused before calling ParishSoft are not attempts. One
+  slot, a run refused before calling ParishSoft, and a quick update
+  retired without calling it (#1147) are not attempts. One
   line is shown, the first that applies:
   1. "Failing since 09:15" when the newest attempt failed; the time is the
      start of the earliest failed attempt after the newest successful one.
   2. "Not checked since 02:00" when no attempt has succeeded within the
-     schedule's longest gap between any two scheduled refreshes plus the
-     lateness margin; the time is the newest success. Time during which
+     schedule's longest gap between two full times plus the lateness
+     margin; the time is the newest success. Time during which
      scheduled refreshes were held for a send or skipped around a Family
      email does not count toward that gap, so a send alone never makes the
      line read "not checked".
-  3. "Working" with the time ParishSoft last answered. A quick update that
-     found nothing new and so was recorded
-     [unchanged](../data/spec.md#source-snapshot) instead of promoted counts
-     as an answer.
+  3. "Working" with the time ParishSoft last answered. A past quick update
+     that found nothing new and so was recorded
+     [unchanged](../data/spec.md#source-snapshot) instead of promoted
+     counted as an answer.
 
   Connection problems keep their existing alarms (repeated refresh failure,
   a refused organization or a refused large change); the connection line
@@ -2009,7 +2008,7 @@ With the nightly refresh alone at 02:00, the data is out of date at 02:30 if
 that refresh has not promoted. With full refreshes at 00:00 and every two
 hours from 08:00 to 20:00, a missed 10:00 refresh is reported at 10:30. The
 source-staleness alarm (`source_stale`) sounds on exactly this condition,
-and the [bulk-send hold](../background-processing/spec.md#deltas-wait-for-a-bulk-family-send)
+and the [bulk-send hold](../background-processing/spec.md#daytime-refreshes-wait-for-a-bulk-family-send)
 measures its allowance from the same point. Its recovery requires a
 promoted **full** refresh with no newer failure; before #510 any promoted
 snapshot, including an empty quick update, recovered it.
@@ -2027,7 +2026,7 @@ it. Instead, the first scheduler loop under the new schedule requests a
 the instant the new schedule took effect, its slot key derived from the
 scope, time zone, cause and that instant, with no configured time. Its tick
 stores the nightly time in the required `nightly_time` column, as a quick
-update's does. The tick guard admits at most one, at exactly that instant,
+update's did. The tick guard admits at most one, at exactly that instant,
 which it finds in SQL by walking the configuration activations, as
 `initial_source_at` does. It is treated as a daytime full refresh: a send in
 progress holds it by its cause, recorded as held, and then it runs as the
@@ -2046,12 +2045,12 @@ beside that notice.
 For example, the old schedule has full refreshes at 00:00 and every two
 hours from 08:00 to 20:00, and a send that started at 09:30 is holding the
 10:00 full refresh. At 10:05 the Administrator switches to the new default
-(the nightly refresh at 02:00 and hourly quick updates). The 10:00 slot is
+(the nightly refresh at 02:00). The 10:00 slot is
 already overdue and stays the overdue slot. The first loop under the new
 schedule requests the catch-up due at 10:05; the send holds it, so it is
 recorded as held and the hold's allowance continues (the alarm waits until
-12:30). When the send ends at 11:00, the catch-up runs with the 11:00 quick
-update and promotes at about 11:07, and the alarm never sounds. The next
+12:30). When the send ends at 11:00, the catch-up runs and promotes at
+about 11:07, and the alarm never sounds. The next
 scheduled full refresh is 02:00 tomorrow.
 
 **What uses which fact.**
@@ -2388,7 +2387,7 @@ At minimum, end-to-end tests demonstrate:
    Production readiness locks the Campaign timezone snapshot; later Parish
    timezone changes do not alter its boundaries, schedules, report emails, or
    historical report buckets.
-4. Full/delta refresh success, interrupted/invalid load retaining prior truth,
+4. Full refresh success, interrupted/invalid load retaining prior truth,
    new/inactive/reactivated Family behavior, and non-overlap/manual coalescing;
    compaction at every retention boundary preserves every protected reference,
    retains deterministic anchors, remains idempotent after interruption, and

@@ -212,7 +212,7 @@ def test_a_key_bound_to_another_refresh_is_invalid(admin, google):
     key = uuid4()
     request_refresh(
         command_id=key,
-        cause="delta",
+        cause="nightly",
         actor_id=None,
         correlation_id=uuid4(),
         authorize=lambda scope: True,

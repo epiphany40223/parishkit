@@ -395,12 +395,12 @@ def test_the_resume_point_does_not_depend_on_quick_updates(day, monkeypatch, qui
     monkeypatch.setattr(data_age, "last_full_started_at", lambda: at(8) + READ)
     monkeypatch.setattr(send_hold, "family_send_active", lambda: True)
     with transaction.atomic():
-        assert send_hold.delta_held(at(9, 45))
-        assert send_hold.delta_held(at(11, 59, 59))
-        assert not send_hold.delta_held(at(12))
+        assert send_hold.daytime_held(at(9, 45))
+        assert send_hold.daytime_held(at(11, 59, 59))
+        assert not send_hold.daytime_held(at(12))
     monkeypatch.setattr(send_hold, "family_send_active", lambda: False)
     with transaction.atomic():
-        assert not send_hold.delta_held(at(9, 45))
+        assert not send_hold.daytime_held(at(9, 45))
 
 
 def test_the_worker_reads_the_catch_up_evidence_and_the_digest_facts(day):
@@ -484,15 +484,18 @@ def test_a_refusal_before_calling_parishsoft_is_not_an_attempt(tmp_path):
     assert status().connection == working
 
 
-def test_a_quick_update_that_changed_records_moves_data_as_of(tmp_path, monkeypatch):
-    """Data as of follows a quick update whose cursor counted a change."""
+def test_an_older_quick_update_that_changed_records_leaves_data_as_of(
+    tmp_path, monkeypatch
+):
+    """Only a full refresh moves data as of (#1147), even past an older quick
+    update (a delta from before the removal) whose cursor counted a change."""
     credential, *_ = configured(tmp_path)
     full = publish(credential)
     monkeypatch.setattr(snapshots, "_changes", lambda snapshot, manifest: {"family": 2})
     quick = publish(credential, kind="delta")
+    assert quick.started_at > full.started_at
     found = status()
-    assert found.data_as_of == quick.started_at
-    assert found.full_started_at == full.started_at and found.shows_full_separately
+    assert found.data_as_of == found.full_started_at == full.started_at
 
 
 def test_the_digest_reads_data_age_as_known_at_its_observation(tmp_path):
@@ -535,7 +538,7 @@ def test_a_catch_up_request_counts_as_a_scheduled_full_refresh(day, scheduled):
     """The schedule-change catch-up (#632) is a scheduled full refresh.
 
     Requested on time after the overdue slot, it means refreshes are not
-    being held (``deltas_skipped``), and like a full slot that ran it voids a
+    being held (``refreshes_skipped``), and like a full slot that ran it voids a
     later hold entry as evidence for that slot (``catch_up_held``). Before
     the overdue slot it changes nothing.
     """
@@ -543,11 +546,11 @@ def test_a_catch_up_request_counts_as_a_scheduled_full_refresh(day, scheduled):
     morning(at, scheduled, quick=False)
     held_entry(at(10, 30))
     with transaction.atomic():
-        assert send_hold.deltas_skipped(at(10), at(10, 31))
+        assert send_hold.refreshes_skipped(at(10), at(10, 31))
         assert send_hold.catch_up_held(at(10))
     scheduled("catch_up", at(10, 5))
     with transaction.atomic():
-        assert not send_hold.deltas_skipped(at(10), at(10, 31))
+        assert not send_hold.refreshes_skipped(at(10), at(10, 31))
         assert not send_hold.catch_up_held(at(10))
         # Measured from 10:10, the 10:05 catch-up is before the span.
         assert send_hold.catch_up_held(at(10, 10))

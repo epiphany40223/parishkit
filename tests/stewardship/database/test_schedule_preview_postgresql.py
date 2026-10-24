@@ -87,7 +87,6 @@ def test_the_real_scheduler_creates_the_ticks_the_preview_says_run(
         nightly_time=settings["nightly_time"],
         scope_fingerprint="0" * 64,
         full_refresh_times=settings["full_refresh_times"],
-        quick_refresh_times=settings.get("quick_refresh_times", ()),
     )
     instants = sorted(
         {s.due_at for s in slots if preview.start <= s.due_at < preview.end}
@@ -124,19 +123,22 @@ def test_the_window_reader_looks_ahead_for_the_preview(invited):  # noqa: F811
 
 
 def test_durations_are_the_medians_of_recent_successful_runs(tmp_path):
-    """Three quick updates are measured; one full refresh is not yet enough."""
+    """Three full refreshes are measured; two are not yet enough."""
     credential, *_ = configured(tmp_path)
-    publish(credential)
-    quick = [publish(credential, kind="delta") for _ in range(MINIMUM_RUNS)]
+    runs = [publish(credential) for _ in range(MINIMUM_RUNS - 1)]
     now = datetime.now(UTC) + timedelta(minutes=1)
     with task_login(ServiceRole.WEB), transaction.atomic():
         found = measured_durations(now)
-    lengths = sorted(snapshot.completed_at - snapshot.started_at for snapshot in quick)
-    assert (found.quick, found.quick_measured) == (lengths[1], True)
-    assert (found.full, found.full_measured) == (TYPICAL["full"], False)
+    assert (found.full, found.full_measured) == (TYPICAL, False)
+    runs.append(publish(credential))
+    now = datetime.now(UTC) + timedelta(minutes=1)
+    with task_login(ServiceRole.WEB), transaction.atomic():
+        found = measured_durations(now)
+    lengths = sorted(snapshot.completed_at - snapshot.started_at for snapshot in runs)
+    assert (found.full, found.full_measured) == (lengths[1], True)
     # Runs older than the last seven days are not measured.
     with transaction.atomic():
-        assert not measured_durations(now + timedelta(days=8)).quick_measured
+        assert not measured_durations(now + timedelta(days=8)).full_measured
 
 
 def test_the_settings_page_login_reads_the_whole_preview(tmp_path):
@@ -153,4 +155,4 @@ def test_the_settings_page_login_reads_the_whole_preview(tmp_path):
     # Testing mode: the scheduler applies no windows, so neither does the preview.
     assert found.windows == ()
     assert found.freshness.margin > timedelta()
-    assert found.cost.durations.full == TYPICAL["full"]
+    assert found.cost.durations.full == TYPICAL

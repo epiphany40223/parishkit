@@ -8,11 +8,10 @@ freshness summary"):
 - every daily time of each day at the instant it runs, resolved through the
   scheduler's own daylight-saving resolver (``cadence.local_instant``) and
   tie rule (``cadence.precedence``);
-- every time that will not run, with its reason: covered by a full refresh
-  (``refresh_rules.daily_times``: coverage, or precedence at the same
-  time), skipped inside a Family email's window (``send_windows.window_cause``,
-  only when the schedule skips around Family emails), or joined to another
-  time at the same instant on the day clocks go forward;
+- every time that will not run, with its reason: skipped inside a Family
+  email's window (``send_windows.window_cause``, only when the schedule
+  skips around Family emails), or joined to another time at the same
+  instant on the day clocks go forward;
 - the estimated daily ParishSoft time, from the medians of recent successful
   runs, or typical values until there are enough;
 - the longest wait for a new full refresh, and the alarm's margin.
@@ -38,9 +37,9 @@ from .send_windows import window_cause
 
 # How many days the preview shows, today first.
 DAYS = 7
-# Typical durations until there are ``MINIMUM_RUNS`` measured runs of a
-# kind: Production's medians in October 2026 (7.3 and 2.2 minutes).
-TYPICAL = {"full": timedelta(minutes=7.3), "quick": timedelta(minutes=2.2)}
+# The typical full refresh until there are ``MINIMUM_RUNS`` measured runs:
+# Production's median in October 2026.
+TYPICAL = timedelta(minutes=7.3)
 MINIMUM_RUNS = 3
 # How far back measured runs count.
 MEASURED_DAYS = timedelta(days=7)
@@ -52,12 +51,11 @@ WARNING_SHARE = 0.25
 class PreviewTime:
     """One daily time on one day of the preview.
 
-    ``status`` is "runs", "covered" (a quick time a full refresh covers,
-    ``by``), "skipped" (inside the Family email window ``window``) or
+    ``kind`` is always "full": quick updates were removed (#1147). ``status``
+    is "runs", "skipped" (inside the Family email window ``window``) or
     "joined" (on the day clocks go forward, it resolves to the same instant
-    as the time ``by`` and runs as part of it, or not at all for a full time
-    the tie rule passes over). ``due_at`` is the UTC instant it falls due at,
-    None when covered. ``shift`` is "forward" when it runs later than its
+    as the time ``by`` and the tie rule passes over it). ``due_at`` is the
+    UTC instant it falls due at. ``shift`` is "forward" when it runs later than its
     wall time because clocks go forward, "back" when its wall time repeats
     because clocks go back (it runs once, at the earlier instant). A nightly
     refresh is never skipped; ``window`` then names the window it runs in.
@@ -78,7 +76,7 @@ class PreviewDay:
     """One local day: its bounds (UTC), its clock change, and its times.
 
     ``change`` is "forward" or "back" on a daylight-saving day, else None.
-    ``times`` are in wall-time order, a full time before a quick one.
+    ``times`` are in wall-time order.
     """
 
     day: object
@@ -94,12 +92,10 @@ class PreviewDay:
 
 @dataclass(frozen=True)
 class Durations:
-    """How long a full refresh and a quick update take, and whether measured."""
+    """How long a full refresh takes, and whether that is measured."""
 
     full: timedelta
-    quick: timedelta
     full_measured: bool = False
-    quick_measured: bool = False
 
 
 @dataclass(frozen=True)
@@ -153,11 +149,9 @@ def _join(times, nightly):
     """Mark the times that resolve to one instant as joined, as the scheduler runs them.
 
     Only on the day clocks go forward can two daily times share an instant.
-    The scheduler creates one slot per kind for it: among full times the
-    latest by ``cadence.precedence`` (the nightly, then the later wall
-    time); the others never run. A quick time due with a running full one
-    joins it (its request coalesces into the full one); quick times due
-    together share one slot identity, so they run once.
+    The scheduler creates one slot for it: the latest by
+    ``cadence.precedence`` (the nightly, then the later wall time); the
+    others never run.
     """
     groups = {}
     for entry in times:
@@ -165,11 +159,7 @@ def _join(times, nightly):
             groups.setdefault(entry.due_at, []).append(entry)
     joined = {}
     for due, group in groups.items():
-        full = [entry for entry in group if entry.kind == "full"]
-        if full:
-            winner = max(full, key=lambda e: precedence(due, e.time, nightly))
-        else:
-            winner = max(group, key=lambda e: e.time)
+        winner = max(group, key=lambda e: precedence(due, e.time, nightly))
         for entry in group:
             if entry is not winner:
                 joined[id(entry)] = winner.time
@@ -207,31 +197,22 @@ def preview_days(refresh_rules, *, timezone, first, days=DAYS, windows=()):
         day = first + timedelta(days=offset)
         start, end = _day_bounds(day, timezone)
         times = []
-        for kind, values in (("full", result.full), ("quick", result.quick)):
-            for value in values:
-                due = local_instant(day, value, timezone)
-                is_nightly = kind == "full" and value == nightly
-                cause = window_cause(windows, due) if skipping else None
-                times.append(
-                    PreviewTime(
-                        kind,
-                        value,
-                        "skipped" if cause and not is_nightly else "runs",
-                        due,
-                        window=cause,
-                        nightly=is_nightly,
-                        shift=wall_shift(day, value, due, timezone),
-                    )
+        for value in result.full:
+            due = local_instant(day, value, timezone)
+            is_nightly = value == nightly
+            cause = window_cause(windows, due) if skipping else None
+            times.append(
+                PreviewTime(
+                    "full",
+                    value,
+                    "skipped" if cause and not is_nightly else "runs",
+                    due,
+                    window=cause,
+                    nightly=is_nightly,
+                    shift=wall_shift(day, value, due, timezone),
                 )
-        times = _join(times, nightly)
-        times.extend(
-            PreviewTime("quick", value, "covered", by=by)
-            for value, by in (
-                *result.covered,
-                *((value, value) for value in result.replaced),
             )
-        )
-        times.sort(key=lambda t: (t.time, t.kind != "full"))
+        times = _join(times, nightly)
         found.append(
             PreviewDay(day, start, end, _change(start, end, timezone), tuple(times))
         )
@@ -239,33 +220,24 @@ def preview_days(refresh_rules, *, timezone, first, days=DAYS, windows=()):
 
 
 def durations(samples):
-    """``Durations`` from measured run lengths: ``{"full": [...], "quick": [...]}``.
+    """``Durations`` from measured full refresh lengths (a list of timedeltas).
 
-    Each kind's median once it has ``MINIMUM_RUNS`` runs, else its typical
-    value (``TYPICAL``), which the page labels as such.
+    Their median once there are ``MINIMUM_RUNS``, else the typical value
+    (``TYPICAL``), which the page labels as such.
     """
-    found = {}
-    for kind in ("full", "quick"):
-        values = samples.get(kind, ())
-        measured = len(values) >= MINIMUM_RUNS
-        found[kind] = (median(values) if measured else TYPICAL[kind], measured)
-    return Durations(
-        found["full"][0], found["quick"][0], found["full"][1], found["quick"][1]
-    )
+    measured = len(samples) >= MINIMUM_RUNS
+    return Durations(median(samples) if measured else TYPICAL, measured)
 
 
 def cost(days, measured):
     """The estimated ParishSoft time of each day and on average (``Cost``).
 
-    Each day's runs (joined, covered and skipped times cost nothing) times
+    Each day's runs (joined and skipped times cost nothing) times
     the ``measured`` durations, and its share of that day's length.
     """
     per_day = []
     for day in days:
-        spent = (
-            len(day.runs("full")) * measured.full
-            + len(day.runs("quick")) * measured.quick
-        )
+        spent = len(day.runs("full")) * measured.full
         per_day.append((spent, spent / (day.end - day.start)))
     average = sum((spent for spent, _ in per_day), timedelta()) / len(per_day)
     share = sum(part for _, part in per_day) / len(per_day)
@@ -276,8 +248,6 @@ def freshness(days, margin, *, since=None):
     """The longest wait between full refreshes that run over ``days``.
 
     Counts the excluded windows: a skipped full refresh brings no new data.
-    Quick updates do not count; they check the connection and catch the
-    Family contact changes ParishSoft reports, but do not re-read the data.
     Only waits that end after ``since`` count, so the caller can pass the
     day before the preview as the first of ``days`` and still measure the
     wait into the preview's first morning. The earliest of equal waits wins.
@@ -340,11 +310,10 @@ def summarize(refresh_rules, *, timezone, today, windows, measured, margin):
 
 
 def measured_durations(now):
-    """``Durations`` from the last seven days' successful runs of each kind.
+    """``Durations`` from the last seven days' successful full refreshes.
 
-    A run is a snapshot whose read completed (ready, promoted, or a quick
-    update recorded as unchanged, as ``data_age.FACTS_SQL`` counts a
-    success), from its start to its completion. Manual refreshes count too,
+    A run is a full snapshot whose read completed (ready or promoted), from
+    its start to its completion. Manual refreshes count too,
     as the spec says: the settings page's web login may read only the
     snapshot's public columns (``runtime_grants``), not the attempt that
     links it to its request's cause, and granting more would be a schema
@@ -353,17 +322,14 @@ def measured_durations(now):
     """
     from .snapshot_models import SourceSnapshot
 
-    samples = {}
-    for kind, name in (("full", "full"), ("quick", "delta")):
-        rows = SourceSnapshot.objects.filter(
-            kind=name,
-            state__in=("ready", "promoted", "unchanged"),
-            started_at__gte=now - MEASURED_DAYS,
-            started_at__lte=now,
-            completed_at__isnull=False,
-        ).values_list("started_at", "completed_at")
-        samples[kind] = [completed - started for started, completed in rows]
-    return durations(samples)
+    rows = SourceSnapshot.objects.filter(
+        kind="full",
+        state__in=("ready", "promoted"),
+        started_at__gte=now - MEASURED_DAYS,
+        started_at__lte=now,
+        completed_at__isnull=False,
+    ).values_list("started_at", "completed_at")
+    return durations([completed - started for started, completed in rows])
 
 
 def schedule_preview(refresh_rules, *, now, timezone):

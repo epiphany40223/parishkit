@@ -48,16 +48,23 @@ ZONE = "America/New_York"
 
 def at(hour, minute=0, day=11):
     """``hour:minute`` EDT on 2026-09-``day`` (UTC-4)."""
-    return datetime(2026, 9, day, hour + 4, minute, tzinfo=UTC)
+    return datetime(2026, 9, day, tzinfo=UTC) + timedelta(
+        hours=hour + 4, minutes=minute
+    )
 
 
-def schedule(full=("00:00", "12:00"), *, skip=True):
-    """Full refreshes at ``full``, quick updates hourly; skip around emails."""
+# Every hour on the hour: the nightly refresh at 00:00 (never held or
+# skipped) and a daytime full refresh at each other hour.
+HOURLY = [f"{hour:02d}:00" for hour in range(24)]
+
+
+def schedule(*, skip=True):
+    """Full refreshes every hour from 00:00; skip around emails."""
     return stored_settings(
         {
             "rules": [
-                *({"kind": "full", "at": value} for value in full),
-                {"kind": "quick", "every": 60, "from": "01:00", "to": "23:00"},
+                {"kind": "full", "at": "00:00"},
+                {"kind": "full", "every": 60, "from": "01:00", "to": "23:00"},
             ],
             "skips": [],
             "skip_around_family_emails": skip,
@@ -83,7 +90,7 @@ def loop(monkeypatch, instant, *, windows=(), held=False, login=None, since=SINC
     default): the real activations are on today's clock, not the test's.
     """
     monkeypatch.setattr(production, "database_now", lambda: instant)
-    monkeypatch.setattr(production, "delta_held", lambda now: held)
+    monkeypatch.setattr(production, "daytime_held", lambda now: held)
     monkeypatch.setattr(send_windows, "current_windows", lambda now: list(windows))
     monkeypatch.setattr(data_age, "skip_setting_since", lambda: since)
     if login is None:
@@ -112,40 +119,41 @@ def sending(start, end, cause="reminder_sending"):
 
 
 def test_a_skipped_latest_slot_creates_nothing(tmp_path, monkeypatch):
-    """The 13:00 quick update falls in a reminder's send and is skipped.
+    """The 13:00 full refresh falls in a reminder's send and is skipped.
 
-    The 12:00 full refresh is outside the window and runs. A later loop with
-    the window gone (the reminder moved) keeps the skip: the slot never runs.
+    The 12:00 refresh ran before the window. A later loop with the window
+    gone (the reminder moved) keeps the skip: the slot never runs.
     """
     with_schedule(tmp_path, **schedule())
+    loop(monkeypatch, at(12, 23))
+    assert ticked() == {("nightly", at(12))}
     window = sending(at(12, 30), at(13, 30))
     loop(monkeypatch, at(13, 23), windows=window)
-    assert decided() == {("delta", at(13)): "skipped"}
+    assert decided() == {("nightly", at(13)): "skipped"}
     assert ticked() == {("nightly", at(12))}
     row = SourceSlotDecision.objects.get()
-    assert row.window_cause == "reminder_sending" and row.nightly_time == "00:00"
+    assert row.window_cause == "reminder_sending" and row.nightly_time == "13:00"
     loop(monkeypatch, at(13, 40))
     assert ticked() == {("nightly", at(12))}
-    assert decided() == {("delta", at(13)): "skipped"}
+    assert decided() == {("nightly", at(13)): "skipped"}
 
 
 def test_downtime_inside_a_window_skips_every_slot_it_covers(tmp_path, monkeypatch):
     """Back at 13:23 after downtime, every due slot in the window is skipped.
 
-    The latest full slot (12:00) is skipped too, so no full refresh runs,
-    and the scheduler does not fall back to the 00:00 refresh; the
-    data-age alarm does not count the skipped 12:00 refresh.
+    The latest slot (13:00) is skipped too, so no full refresh runs, and
+    the scheduler does not fall back to an older one; the data-age alarm
+    does not count the skipped refreshes.
     """
     with_schedule(tmp_path, **schedule())
     loop(monkeypatch, at(13, 23), windows=sending(at(8), at(13, 30)))
-    skipped = decided("skipped")
-    assert ("nightly", at(12)) in skipped
-    assert {("delta", at(hour)) for hour in (8, 9, 10, 11, 13)} <= set(skipped)
-    # Quick updates before the window stay undecided: no row, no refresh.
-    assert ("delta", at(7)) not in decided()
+    assert decided() == {
+        ("nightly", at(hour)): "skipped" for hour in (8, 9, 10, 11, 12, 13)
+    }
+    # Slots before the window stay undecided: no row, no refresh.
     assert ticked() == set()
     with transaction.atomic():
-        overdue = data_age.overdue_full_slot(at(13, 23), after=at(0, 5), timezone=ZONE)
+        overdue = data_age.overdue_full_slot(at(13, 23), after=at(7, 5), timezone=ZONE)
     assert overdue is None
 
 
@@ -153,46 +161,45 @@ def test_a_held_slot_stays_held_when_a_moved_window_covers_it(tmp_path, monkeypa
     """A send holds 12:00 and 13:00; a reminder then moves over them.
 
     They were decided held, so they stay due: once the hold ends the latest
-    of each kind runs, window or not.
+    slot runs, window or not.
     """
     with_schedule(tmp_path, **schedule())
     loop(monkeypatch, at(13, 23), held=True)
     rows = decided()
-    assert rows[("nightly", at(12))] == rows[("delta", at(13))] == "held"
+    assert rows[("nightly", at(12))] == rows[("nightly", at(13))] == "held"
     # Every older undecided slot is held as well, none skipped.
     assert set(rows.values()) == {"held"}
     assert ticked() == set()
-    # One durable hold entry per held full slot, none for quick ones.
+    # One durable hold entry per held slot.
     assert (
         OperationalLog.objects.filter(
             event="source_refresh_held", schema="schedule"
         ).count()
-        == SourceSlotDecision.objects.filter(decision="held", cause="nightly").count()
+        == SourceSlotDecision.objects.filter(decision="held").count()
     )
     loop(monkeypatch, at(13, 40), windows=sending(at(11), at(14)))
-    assert ticked() == {("nightly", at(12)), ("delta", at(13))}
+    assert ticked() == {("nightly", at(13))}
     assert decided("skipped") == {}
 
 
 def test_the_newest_held_slot_runs_when_the_latest_is_skipped(tmp_path, monkeypatch):
     """Held at 12:00, then the 13:00 full refresh is skipped: 12:00 catches up."""
-    with_schedule(tmp_path, **schedule(("00:00", "12:00", "13:00")))
+    with_schedule(tmp_path, **schedule())
     loop(monkeypatch, at(12, 23), held=True)
     assert decided("held")[("nightly", at(12))] == "held"
     loop(monkeypatch, at(13, 23), windows=sending(at(13), at(13, 30)))
-    # 13:00 is a full time, so it has no quick update.
     assert decided("skipped") == {("nightly", at(13)): "skipped"}
-    assert ("nightly", at(12)) in ticked()
-    assert ("nightly", at(13)) not in ticked()
+    assert ticked() == {("nightly", at(12))}
 
 
 def test_a_schedule_that_does_not_skip_records_nothing(tmp_path, monkeypatch):
     """Without the skip setting a window changes nothing, and nothing is recorded."""
     with_schedule(tmp_path, **schedule(skip=False))
     loop(monkeypatch, at(13, 23), windows=sending(at(8), at(14)), held=True)
+    assert ticked() == set()
     loop(monkeypatch, at(13, 40), windows=sending(at(8), at(14)))
     assert decided() == {}
-    assert ticked() == {("nightly", at(12)), ("delta", at(13))}
+    assert ticked() == {("nightly", at(13))}
 
 
 def counted_locks(monkeypatch):
@@ -218,24 +225,30 @@ def test_an_idle_loop_still_records_older_decisions(
 ):
     """Every current slot has its refresh, yet an older slot must be decided.
 
-    The 13:23 loop runs 12:00 and 13:00 and leaves the older quick updates
-    undecided (no window, no hold). At 13:40 a window now covers 08:00 to
-    11:00, or a send holds them: the idle shortcut must not return early,
-    so the locked pass records the decisions (#715). Once nothing is left
-    to decide, the next loop takes no work-order lock.
+    The 13:23 loop runs 13:00 and leaves the older daytime slots undecided
+    (no window, no hold). At 13:40 a window now covers 08:00 to 11:00, or a
+    send holds them: the idle shortcut must not return early, so the
+    locked pass records the decisions (#715). Once nothing is left to
+    decide, the next loop takes no work-order lock.
     """
     with_schedule(tmp_path, **schedule())
     first = loop(monkeypatch, at(13, 23))
     assert decided() == {}
-    assert ticked() == {("nightly", at(12)), ("delta", at(13))}
+    assert ticked() == {("nightly", at(13))}
     taken = counted_locks(monkeypatch)
     assert loop(monkeypatch, at(13, 40), windows=windows, held=held) == first
     assert taken
     recorded = decided(decision)
     if decision == "skipped":
-        assert set(recorded) == {("delta", at(hour)) for hour in (8, 9, 10, 11)}
+        assert set(recorded) == {("nightly", at(hour)) for hour in (8, 9, 10, 11)}
     else:
-        assert {("delta", at(hour)) for hour in range(1, 12)} <= set(recorded)
+        # Every older daytime slot of today and yesterday, never the
+        # nightly 00:00 one.
+        assert set(recorded) == {
+            ("nightly", at(hour, day=day))
+            for day, hours in ((10, range(1, 24)), (11, range(1, 13)))
+            for hour in hours
+        }
     taken.clear()
     assert loop(monkeypatch, at(13, 45), windows=windows, held=held) == first
     assert taken == []
@@ -253,7 +266,7 @@ def test_an_idle_loop_with_nothing_to_decide_takes_no_lock(tmp_path, monkeypatch
     taken = counted_locks(monkeypatch)
     assert loop(monkeypatch, at(13, 40), windows=sending(at(2, 30), at(3, 30))) == first
     assert taken == []
-    assert decided() == {("delta", at(3)): "skipped"}
+    assert decided() == {("nightly", at(3)): "skipped"}
 
 
 def test_the_scheduler_login_records_and_reads_decisions(tmp_path, monkeypatch):
@@ -267,27 +280,29 @@ def test_the_scheduler_login_records_and_reads_decisions(tmp_path, monkeypatch):
         login=ServiceRole.SCHEDULER,
     )
     rows = decided()
-    # At 12:23 the send held the 12:00 full refresh and the 11:00 quick
-    # update (and every older undecided slot); at 13:23 the 13:00 quick
-    # update fell in the window, and the held 12:00 refresh ran.
+    # At 12:23 the send held the 12:00 and 11:00 full refreshes (and every
+    # older undecided daytime slot); at 13:23 the 13:00 refresh fell in the
+    # window, and the held 12:00 refresh ran in its place.
     assert rows[("nightly", at(12))] == "held"
-    assert rows[("delta", at(11))] == "held"
-    assert rows[("delta", at(13))] == "skipped"
-    assert ("nightly", at(12)) in ticked()
+    assert rows[("nightly", at(11))] == "held"
+    assert rows[("nightly", at(13))] == "skipped"
+    assert ticked() == {("nightly", at(12))}
 
 
-def forge_decision(instant, slot_index=-1, **overrides):
-    """Insert a decision row for a listed slot, as a defect or attacker might."""
-    tick = SourceRefreshTick.objects.select_related("command__request").first()
-    slots = listed_due_slots(
-        now=instant,
+def listed(now):
+    """The schedule's listed due slots at ``now`` under the first tick's scope."""
+    return listed_due_slots(
+        now=now,
         timezone=ZONE,
         nightly_time="00:00",
-        scope_fingerprint=scope_of(tick),
-        full_refresh_times=["00:00", "12:00"],
-        quick_refresh_times=[f"{hour:02d}:00" for hour in range(1, 24) if hour != 12],
+        scope_fingerprint=scope_of(SourceRefreshTick.objects.first()),
+        full_refresh_times=HOURLY,
     )
-    slot = overrides.pop("slot", None) or slots[slot_index]
+
+
+def forge_decision(instant, *, slot, **overrides):
+    """Insert a decision row for a listed slot, as a defect or attacker might."""
+    tick = SourceRefreshTick.objects.first()
     values = {
         "configuration_id": tick.configuration_id,
         "cause": slot.cause,
@@ -307,55 +322,47 @@ def test_the_guard_refuses_skips_the_schedule_does_not_allow(tmp_path, monkeypat
     """No skip of the nightly refresh, of a slot that ran, or off its cadence."""
     with_schedule(tmp_path, **schedule())
     loop(monkeypatch, at(13, 23))
-    slots = listed_due_slots(
-        now=at(13, 23),
-        timezone=ZONE,
-        nightly_time="00:00",
-        scope_fingerprint=scope_of(SourceRefreshTick.objects.first()),
-        full_refresh_times=["00:00", "12:00"],
-        quick_refresh_times=[f"{hour:02d}:00" for hour in range(1, 24) if hour != 12],
-    )
-    by = {(slot.cause, slot.due_at): slot for slot in slots}
+    by = {(slot.cause, slot.due_at): slot for slot in listed(at(13, 23))}
     # The nightly refresh is never skipped.
     with pytest.raises(IntegrityError, match="may not skip this slot"):
         forge_decision(at(13, 23), slot=by[("nightly", at(0))])
     # A slot that already ran is never skipped later.
     with pytest.raises(IntegrityError, match="may not skip this slot"):
-        forge_decision(at(13, 23), slot=by[("delta", at(13))])
+        forge_decision(at(13, 23), slot=by[("nightly", at(13))])
     # A wrong key is refused.
     with pytest.raises(IntegrityError, match="identity does not match"):
-        forge_decision(at(13, 23), slot=by[("delta", at(11))], slot_key="0" * 64)
+        forge_decision(at(13, 23), slot=by[("nightly", at(11))], slot_key="0" * 64)
     # A skip may be recorded for an undecided slot, and then its tick is
     # refused.
-    slot = forge_decision(at(13, 23), slot=by[("delta", at(11))])
+    slot = forge_decision(at(13, 23), slot=by[("nightly", at(11))])
     with (
         pytest.raises(IntegrityError, match="recorded as skipped"),
         scheduler_session(),
         work_transaction(),
     ):
-        receipt = command(cause="delta", actor_id=None)
+        receipt = command(cause="nightly", actor_id=None)
         SourceRefreshTick.objects.create(
             command_id=receipt.command_id,
             **forged_tick(
                 SourceRefreshTick.objects.first(),
                 due_at=slot.due_at,
                 slot_key=slot.slot_key,
-                nightly_time="00:00",
+                nightly_time="11:00",
             ),
         )
-    # A held decision's slot may still get its tick: the 10:00 quick slot.
+    # A held decision's slot may still get its tick: the 10:00 slot.
     held = forge_decision(
-        at(13, 23), slot=by[("delta", at(10))], decision="held", window_cause=None
+        at(13, 23), slot=by[("nightly", at(10))], decision="held", window_cause=None
     )
     with scheduler_session(), work_transaction():
-        receipt = command(cause="delta", actor_id=None)
+        receipt = command(cause="nightly", actor_id=None)
         SourceRefreshTick.objects.create(
             command_id=receipt.command_id,
             **forged_tick(
                 SourceRefreshTick.objects.first(),
                 due_at=held.due_at,
                 slot_key=held.slot_key,
-                nightly_time="00:00",
+                nightly_time="10:00",
             ),
         )
 
@@ -364,36 +371,29 @@ def test_no_skip_without_the_setting(tmp_path, monkeypatch):
     """A schedule that does not skip around Family emails refuses a skip row."""
     with_schedule(tmp_path, **schedule(skip=False))
     loop(monkeypatch, at(13, 23))
+    slot = {(slot.cause, slot.due_at): slot for slot in listed(at(13, 23))}[
+        ("nightly", at(12))
+    ]
     with pytest.raises(IntegrityError, match="may not skip this slot"):
-        forge_decision(at(13, 23), slot_index=0)
+        forge_decision(at(13, 23), slot=slot)
 
 
 def test_decisions_are_kept_eight_days_and_then_removed(tmp_path, monkeypatch):
     """Retention removes decisions due more than eight days ago, nothing younger.
 
-    Measured on the real database clock: one quick slot due a day ago and
+    Measured on the real database clock: one daytime slot due a day ago and
     one nine days ago.
     """
     with_schedule(tmp_path, **schedule())
     loop(monkeypatch, at(13, 23))
-    tick = SourceRefreshTick.objects.first()
 
-    def quick_slot(days):
-        """A listed quick slot due about ``days`` days before now."""
-        slots = listed_due_slots(
-            now=datetime.now(UTC) - timedelta(days=days),
-            timezone=ZONE,
-            nightly_time="00:00",
-            scope_fingerprint=scope_of(tick),
-            full_refresh_times=["00:00", "12:00"],
-            quick_refresh_times=[
-                f"{hour:02d}:00" for hour in range(1, 24) if hour != 12
-            ],
-        )
-        return [slot for slot in slots if slot.cause == "delta"][0]
+    def daytime_slot(days):
+        """A listed daytime slot due about ``days`` days before now."""
+        slots = listed(datetime.now(UTC) - timedelta(days=days))
+        return [slot for slot in slots if slot.nightly_time != "00:00"][0]
 
-    young = forge_decision(at(13, 23), slot=quick_slot(1))
-    old = forge_decision(at(13, 23), slot=quick_slot(9))
+    young = forge_decision(at(13, 23), slot=daytime_slot(1))
+    old = forge_decision(at(13, 23), slot=daytime_slot(9))
     with connection.cursor() as cursor:
         for statement, values in (
             (
@@ -450,19 +450,24 @@ def test_turning_the_setting_off_never_runs_a_skipped_slot(tmp_path, monkeypatch
     """
     configured = with_schedule(tmp_path, **schedule())
     loop(monkeypatch, at(13, 23), windows=sending(at(12, 30), at(13, 30)))
-    assert decided() == {("delta", at(13)): "skipped"}
+    assert decided() == {("nightly", at(13)): "skipped"}
     turn_skip(configured, False)
     loop(monkeypatch, at(13, 40))
-    assert ("delta", at(13)) not in ticked()
+    assert ticked() == set()
     loop(monkeypatch, at(14, 5))
-    assert ("delta", at(14)) in ticked()
-    assert decided() == {("delta", at(13)): "skipped"}
+    assert ticked() == {("nightly", at(14))}
+    assert decided() == {("nightly", at(13)): "skipped"}
 
 
 def test_slots_due_before_the_setting_took_effect_are_not_decided(
     tmp_path, monkeypatch
 ):
-    """Turned on at 12:30, the setting does not skip the overdue 12:00 refresh."""
+    """Turned on at 12:30, the setting does not skip the overdue 12:00 refresh.
+
+    The 13:00 refresh is skipped; the 12:00 and 11:00 ones, inside the
+    window but due before the setting took effect, stay undecided, so the
+    data-age alarm still counts them.
+    """
     with_schedule(tmp_path, **schedule())
     loop(
         monkeypatch,
@@ -470,8 +475,8 @@ def test_slots_due_before_the_setting_took_effect_are_not_decided(
         windows=sending(at(11), at(13, 30)),
         since=at(12, 30),
     )
-    assert decided() == {("delta", at(13)): "skipped"}
-    assert ("nightly", at(12)) in ticked()
+    assert decided() == {("nightly", at(13)): "skipped"}
+    assert ticked() == set()
 
 
 def test_the_skip_setting_takes_effect_at_its_activation(tmp_path):
@@ -598,7 +603,7 @@ def test_a_delivery_change_between_reading_and_deciding_decides_nothing(
     """Windows read before the lock are not used if the delivery state moved.
 
     Here the pause looks different under the lock than before it, so the
-    loop records nothing and the latest slots run as for a schedule that
+    loop records nothing and the latest slot runs as for a schedule that
     does not skip.
     """
     with_schedule(tmp_path, **schedule())
@@ -615,7 +620,7 @@ def test_a_delivery_change_between_reading_and_deciding_decides_nothing(
     loop(monkeypatch, at(13, 23), windows=sending(at(12, 30), at(13, 30)))
     assert len(calls) == 2
     assert decided() == {}
-    assert ticked() == {("nightly", at(12)), ("delta", at(13))}
+    assert ticked() == {("nightly", at(13))}
 
 
 def test_a_closed_campaign_has_no_windows(invited):  # noqa: F811

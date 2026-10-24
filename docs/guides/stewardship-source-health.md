@@ -24,12 +24,13 @@ Since [#510](https://github.com/epiphany40223/parishkit/issues/510) the
 [data age](../specs/stewardship/operations/spec.md#parishsoft-data-age-and-connection):
 it sounds when the first scheduled full refresh after the newest promoted full
 refresh started is more than `source_stale_seconds` (thirty minutes by
-default) late. Quick updates no longer reset it, because they re-read only
-what ParishSoft's change list reports. Intentional restore or purge holds
-produce neither failure nor recovery. Recovery of `source_stale` requires a
-promoted current-scope full refresh with no later failure of any level,
-including a WARNING such as a retried provider error; a quick update never
-recovers it, so after a failure recovery can take until the next full
+default) late. Quick updates, which re-read only what ParishSoft's change
+list reported, never reset it, and were removed in
+[#1147](https://github.com/epiphany40223/parishkit/issues/1147).
+Intentional restore or purge holds produce neither failure nor recovery.
+Recovery of `source_stale` requires a promoted current-scope full refresh
+with no later failure of any level, including a WARNING such as a retried
+provider error, so after a failure recovery can take until the next full
 refresh that succeeds. The other source incidents still recover on any
 successful current-scope snapshot. Task
 completion, old-window snapshots, elapsed cooldowns and unobserved state cannot
@@ -44,10 +45,10 @@ effective; before the first full refresh, the earliest non-bootstrap
 activation of the configured organization anchors the initial grace;
 unrelated configuration edits cannot restart it.
 Changing the threshold does not rewrite existing suppression/escalation policy.
-Delta ambiguity still requests its existing full fallback; definitive full-load
-loss and actual tenant mismatch produce the specific critical classification.
-Destructive-loss recovery additionally requires a successful full refresh begun
-after the failure; a later delta may retain that exact full-refresh anchor.
+A quick update queued before #1147 is retired through its full fallback;
+definitive full-load loss and actual tenant mismatch produce the specific
+critical classification. Destructive-loss recovery additionally requires a
+successful full refresh begun after the failure.
 Source sampling runs in a savepoint: failure rolls back its partial effects and
 leaves a safe critical diagnostic, without discarding unrelated intake receipts.
 The outer Task transaction still owns successful sample and intake completion.

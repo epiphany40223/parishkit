@@ -276,8 +276,9 @@ SITES = {
     ),
     "source/requests.py::request_refresh": site(
         # The refresh page and command line (web), the refresh and go-live
-        # producers (scheduler), the source handler's full fallback after a
-        # rejected delta and an update run's final refresh (#1688, worker).
+        # producers (scheduler), the source handler's full fallback for a
+        # delta left from before #1147 and an update run's final refresh
+        # (#1688, worker).
         "source_refresh",
         {WEB, SCHEDULER, WORKER},
         {

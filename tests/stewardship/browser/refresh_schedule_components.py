@@ -28,7 +28,8 @@ from parishkit.stewardship.source.schedule_preview import durations, summarize
 ZONE = "America/New_York"
 CHECK = "/admin/system/integrations/parishsoft/schedule-check/"
 # Production's schedule before the editor: listed full times and quarter-hour
-# quick updates, which the editor shows read-only, in Advanced (#1122).
+# quick updates, which no longer run and are not shown (#1147). It opens in
+# Advanced: no Basic choice gives its full times.
 PRODUCTION = {
     "organization_id": "12345",
     "full_refresh": "daily",
@@ -36,12 +37,14 @@ PRODUCTION = {
     "full_refresh_times": ["00:00", "08:00", "12:00", "16:00", "20:00"],
     "delta_refresh": "quarter_hour",
 }
-# A kept full time at 23:50 runs too close to its neighbours: its problems
-# are shown but Save stays available until the schedule itself changes.
+# A kept full time at 23:50 (rule 4) runs too close to 00:00 (rule 1): its
+# problems are shown but Save stays available until the schedule itself
+# changes. Rules 2 and 3 sit between them, so the pointer tests have rows
+# below rule 1's long message.
 CLOSE = {
     "organization_id": "12345",
     "nightly_time": "00:00",
-    "full_refresh_times": ["00:00", "23:50"],
+    "full_refresh_times": ["00:00", "06:00", "12:00", "23:50"],
     "delta_refresh": "hourly",
 }
 # A schedule saved from Basic (#1122): "Nightly only", so it opens in Basic.
@@ -72,7 +75,7 @@ def _reader(now):
             timezone=timezone,
             today=now.date(),
             windows=(),
-            measured=durations({}),
+            measured=durations([]),
             margin=timedelta(minutes=30),
         )
 

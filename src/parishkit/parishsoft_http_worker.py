@@ -111,8 +111,7 @@ READ_POSTS = frozenset(
     }
 )
 READ_GETS = re.compile(
-    r"(?:families/(?:change/list|group/lookup/list|workgroup/list|"
-    r"workgroup/[1-9][0-9]*/list|[1-9][0-9]*(?:/member/list)?)|"
+    r"(?:families/(?:group/lookup/list|workgroup/list|workgroup/[1-9][0-9]*/list)|"
     r"members/(?:workgroup/(?:lookup/list|[1-9][0-9]*/list)|[1-9][0-9]*)|"
     r"ministry/(?:type/list|[1-9][0-9]*/minister/list)|"
     r"offering/(?:[1-9][0-9]*/funds|pledge/list|contributiondetail/list))"

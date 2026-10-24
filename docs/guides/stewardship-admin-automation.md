@@ -214,7 +214,7 @@ your roles would not show on the page is `null`.
 | --- | --- |
 | `as_of`, `mode` | When it was read; `testing` or `production` |
 | `campaign` | The current campaign's `id`, `name`, `state`, `version`, `starts_at`, `ends_at` and `delivery_paused`, or `null` |
-| `source` | The last ParishSoft refresh: `refreshed_at` (when the current snapshot was promoted), the last full refresh's success, failure (with `full_failed_task_id`) and `full_running`, incremental success and failure, `frequency`, `next_full_at`, `delta_refresh` (`quarter_hour`, `hourly`, `off`, or `times` for a schedule with listed quick times); the [data age and connection](../specs/stewardship/operations/spec.md#parishsoft-data-age-and-connection): `full_started_at`, `data_as_of`, `connection` (`failing`, `not_checked`, `working` or `unknown`) with `connection_at`; `overdue_full_at`, the due time of the first scheduled full refresh since the last one started that has not yet run (`null` when none is due), `out_of_date` when it is more than `source_stale_seconds` late with `late_minutes`, and `held_for_send` when a bulk Family send is holding it within the send's allowance, with `resume_at` (when it runs at the latest) or `catching_up` (the send ended or the resume point passed) |
+| `source` | The last ParishSoft refresh: `refreshed_at` (when the current snapshot was promoted), the last full refresh's success, failure (with `full_failed_task_id`) and `full_running`, `frequency`, `next_full_at`; the [data age and connection](../specs/stewardship/operations/spec.md#parishsoft-data-age-and-connection): `full_started_at`, `data_as_of`, `connection` (`failing`, `not_checked`, `working` or `unknown`) with `connection_at`; `overdue_full_at`, the due time of the first scheduled full refresh since the last one started that has not yet run (`null` when none is due), `out_of_date` when it is more than `source_stale_seconds` late with `late_minutes`, and `held_for_send` when a bulk Family send is holding it within the send's allowance, with `resume_at` (when it runs at the latest) or `catching_up` (the send ended or the resume point passed) |
 | `next_mail` | The next Family mail's `kind` and `due_at` |
 | `families` | Counts: `active`, `eligible`, `responded`, `eligible_responded` |
 | `unreachable_families` | Families no mail can reach (a count) |
@@ -805,7 +805,7 @@ version 4 UUID (`uuidgen` makes one).
 | `refresh` | `refresh start`: `command_id` (the key), `request_id` and `task_root_id` (follow it with `task show`) |
 | `running`, `waiting` | `refresh status`: whether a refresh is running, and whether a full refresh waits that a new request would join |
 | `lateness_minutes` | `refresh status`: how late a scheduled full refresh may be before it counts as overdue |
-| `source` | `refresh status`: the latest full and quick update facts, as in `status`'s `source` without `refreshed_at` |
+| `source` | `refresh status`: the latest full refresh facts, as in `status`'s `source` without `refreshed_at` |
 
 A key used for another refresh is exit 1 (`invalid`). If ParishSoft is not
 configured, or the configured organization changed, it is exit 3
@@ -1760,7 +1760,7 @@ The document is YAML or JSON, the rules the page's Advanced mode shows:
 
 | Member | What it holds |
 | --- | --- |
-| `rules` | Required. Each rule is `{"kind": "full", "at": "HH:MM"}`, or `{"kind": "full", "every": MINUTES, "from": "HH:MM", "to": "HH:MM"}` with `every` one of 15, 30, 60, 120, 180, 240, 360, 480 or 720. A `"quick"` rule is accepted only exactly as `integration show` printed it, so an older schedule's quick updates can be kept; new quick updates can't be added, as on the page |
+| `rules` | Required. Each rule is `{"kind": "full", "at": "HH:MM"}`, or `{"kind": "full", "every": MINUTES, "from": "HH:MM", "to": "HH:MM"}` with `every` one of 15, 30, 60, 120, 180, 240, 360, 480 or 720. Quick updates were removed (#1147): a `"quick"` rule is refused |
 | `skips` | Optional (none when left out). Each skip is `{"at": "HH:MM"}` or `{"from": "HH:MM", "to": "HH:MM"}` (`to` itself is not skipped) |
 | `skip_around_family_emails` | Optional: `true` or `false` (not null), the page's "Skip refreshes around Family emails". Left out, it keeps its current value |
 
@@ -1802,7 +1802,7 @@ pk-admin integration schedule-preview --refresh-schedule - < schedule.json
 
 It needs an Administrator, in a session of any scope, and records nothing
 in System logs, as the page's check records nothing. A document of another
-shape, or one that adds a quick update, is exit 1 (`invalid`) as for
+shape, or one with a quick rule, is exit 1 (`invalid`) as for
 `integration preview`. The page's own problems are not refused: they are
 listed, and the command exits 0, so you can fix them and check again.
 
@@ -2332,7 +2332,7 @@ The filters are the page's: `--show` (`debug`, `info`, `warning`, `error`,
 plus audit records, as the page first shows), `--activity` (the page's
 Activity choice: `family_mail` lists outgoing email steps, resolutions,
 pauses, tests and mail provider failures, and `parishsoft` ParishSoft
-refreshes, quick updates, failures, holds and Ministry leader changes,
+refreshes (and past quick updates), failures, holds and Ministry leader changes,
 both with operational entries too; the rest are audit records only, so keep
 `audit` among the `--show` kinds: `sign_in` lists every Admin portal sign-in
 event, `configuration` every settings, schedule, user, file and key change,
@@ -4431,3 +4431,11 @@ Each change is recorded in System logs as on the page
 - `pk-admin/1` (#2036, delivery plan item 7): `report-email send-test`, the
   row's Send a test to me; `delivery list --purpose` takes
   `admin_report_test`.
+- `pk-admin/1` (#1147): breaking. Quick updates (delta refreshes) are
+  removed, so `status` `source` and `refresh status` no longer have
+  `delta_succeeded_at`, `delta_failed_at` or `delta_refresh`, and
+  `system health`'s `source` no longer has `delta_succeeded_at`. Every
+  scheduled refresh is a full refresh; `data_as_of` is always the last
+  full refresh's start (`full_started_at`). `integration set
+  --refresh-schedule` refuses a rule of `kind` `quick`, and
+  `integration show` no longer prints one.

@@ -1389,9 +1389,10 @@ only when a value was recorded and ParishSoft holds another one.
   the Family's same answer can carry it back into force over the undo in
   ParishSoft (its row's Last decision still shows it). The census guard
   admits a change leaving Updated in ParishSoft only this way, from the
-  source worker at fenced, pinned data, with that check. A quick update
-  records nothing for such a change, since its change list could lag the
-  write. The row says "ParishSoft no longer holds the update." under its
+  source worker at fenced, pinned data, with that check; only a full
+  refresh makes it (quick updates, which recorded nothing for such a
+  change, were removed in #1147). The row says "ParishSoft no longer holds the
+  update." under its
   stage until a review decides it again. A change a refresh already
   confirmed is not checked again, so a write undone after that is not
   caught.
@@ -2077,9 +2078,9 @@ schemas (read 2026-10-18; no ParishSoft data was read):
   The home, mailing and other blocks appear only in the write models (v2
   `FamilyContactUpdateRequestModel`, v1 `FamilyContactInfoModel`, used only
   by `POST Families/UpdateFamilyContactInfo`). ParishKit already reads the
-  primary address (`families/search` in `source/corpus.py`, `GET
-  families/{familyId}` in `parishsoft_households.py`), so there is no
-  further read to add.
+  primary address (`families/search` in `source/corpus.py`; `GET
+  families/{familyId}` in `parishsoft_households.py` until #1147 removed
+  it), so there is no further read to add.
 - **Which block is primary is not documented.** The schemas describe the
   read fields only as "the family primary street address", and the write's
   `primaryAddress` only as "Specify the family primary address" (a free

@@ -660,11 +660,13 @@ def test_refusals_never_echo_the_input(mail):
 
 def test_an_unchanged_refresh_schedule_is_no_change(admin):
     """``integration show``'s schedule posted back, in any row order, is the
-    page's "No settings have changed."; the stored keys stay exactly."""
+    page's "No settings have changed."; the stored keys stay exactly. A
+    stored quick rule is not shown (#1147), so it is not posted back."""
     apply_rules_schedule(admin.service.store)
     before = stored_schedule(admin.service.store)
     _, secret, _ = paired(admin.service)
     shown = show_schedule(admin, secret)
+    assert [rule["kind"] for rule in shown["rules"]] == ["full"]
     shown["rules"].reverse()
     code, document, _ = schedule_preview(admin, secret, shown)
     assert code == 1 and refused(document, "invalid") == ["settings"]

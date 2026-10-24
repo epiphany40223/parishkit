@@ -8,8 +8,8 @@ beside Save is the only live region and never moves Save, Save is
 unavailable only while a changed schedule has problems, a failed check
 leaves Save available, and rows, the Basic choices and "Edit as text" act
 in place. The Basic and Advanced modes (#1122) follow the ui-conventions
-spec's "Basic and Advanced modes"; a stored quick rule is shown read-only
-with one action that removes it.
+spec's "Basic and Advanced modes"; stored quick updates, removed by #1147,
+are not shown.
 """
 
 import pytest
@@ -82,7 +82,7 @@ def test_an_existing_schedule_shows_as_rules_with_its_problems(
         page.locator("#rules-0-messages"),
         "00:00 is only 10 minutes after the 23:50 full refresh",
     )
-    contains(page.locator("#rules-1-messages"), "Kept from the earlier schedule")
+    contains(page.locator("#rules-3-messages"), "Kept from the earlier schedule")
     contains(page.locator(STATUS), "Your current schedule has")
     assert page.locator(SAVE).is_enabled()
     # The page's browser (Los Angeles) is not in the parish's zone.
@@ -358,56 +358,23 @@ def test_a_custom_schedule_asks_before_switching_to_basic(page, component_origin
     assert page.locator('[name="rules-0-at"]').input_value() == "02:00"
 
 
-def test_a_stored_quick_schedule_opens_in_advanced_with_remove(
-    page, component_origin, axe_source
-):
-    """Quick rules are shown without controls; Remove quick updates takes
-    them all out in place, a change reviewed like any other (#1122)."""
-    requests = answering(page, PRODUCTION)
+def test_stored_quick_updates_are_not_shown(page, component_origin, axe_source):
+    """Production's stored quarter-hour quick updates no longer run (#1147):
+    the editor shows its full times alone, in Advanced, with no quick rule,
+    note or action, and the grid and summary name none."""
+    from playwright.sync_api import expect
+
+    answering(page, PRODUCTION)
     page.goto(component_origin + "/refresh-schedule")
     visible(page.locator(ADVANCED_PANEL))
     assert page.locator(f"{MODE}-advanced").is_checked()
-    quick = page.locator("[data-quick-rule]")
-    assert quick.count() == 1
-    contains(quick, "Quick update every 15 minutes from 00:00 to 23:45")
-    assert quick.locator("select, input:not([type=hidden]), button").count() == 0
-    assert axe_violations(page, axe_source) == []
-    count = rule_rows(page).count()
-    page.get_by_role("button", name="Remove quick updates").click()
-    assert rule_rows(page).count() == count - 1
-    assert page.locator("[data-quick-notice]").count() == 0
-    assert page.evaluate("document.activeElement.dataset.rowAdd") == "rules"
-    recorded(page, requests, 1)
-    assert "kind=quick" not in requests[0]
-    contains(page.locator(STATUS), "of ParishSoft time a day")
-    from playwright.sync_api import expect
-
+    assert rule_rows(page).count() == len(PRODUCTION["full_refresh_times"])
+    for selector in ("[data-quick-rule]", "[data-quick-notice]", ".grid-quick"):
+        assert page.locator(selector).count() == 0
+    assert page.get_by_role("button", name="Remove quick updates").count() == 0
     expect(page.locator(".schedule-grid-legend")).not_to_contain_text("Quick")
     expect(page.locator('[data-schedule-part="summary"]')).not_to_contain_text("quick")
-
-
-def test_a_basic_choice_replacing_quick_rules_takes_their_note_away(
-    page, component_origin
-):
-    """Advanced → Basic → a choice → Advanced: the choice replaced the
-    stored quick rule, so its note and Remove quick updates go too."""
-    requests = answering(page, PRODUCTION)
-    page.goto(component_origin + "/refresh-schedule")
-    visible(page.locator("[data-quick-notice]"))
-    mode(page, "basic")
-    page.locator("dialog[open]").get_by_role("button", name="Switch to Basic").click()
-    # The radio's accessible name says the whole choice (once the modal
-    # dialog, which makes the page inert, has closed).
-    hidden(page.locator("dialog[open]"))
-    assert page.get_by_role("radio", name="Every few hours").count() == 1
-    page.locator("#refresh-basic-nightly").check()
-    recorded(page, requests, 1)
-    mode(page, "advanced")
-    visible(page.locator(ADVANCED_PANEL))
-    assert rule_rows(page).count() == 1
-    assert page.locator("[data-quick-rule]").count() == 0
-    assert page.locator("[data-quick-notice]").count() == 0
-    assert page.get_by_role("button", name="Remove quick updates").count() == 0
+    assert axe_violations(page, axe_source) == []
 
 
 @pytest.mark.parametrize("width", [320, 1280])
@@ -437,10 +404,8 @@ def test_edit_as_text_replaces_the_rules_with_single_times(page, component_origi
     assert full.input_value() == "00:00, 08:00, 12:00, 16:00, 20:00"
     full.fill("2am, 14:00")
     page.get_by_role("button", name="Use this list").click()
-    # The list replaces every rule, the stored quick rule included.
+    # The list replaces every rule.
     assert rule_rows(page).count() == 2
-    assert page.locator("[data-quick-rule]").count() == 0
-    assert page.locator("[data-quick-notice]").count() == 0
     assert page.locator('[name="rules-1-at"]').input_value() == "14:00"
     assert page.locator('[name="skips-TOTAL_FORMS"]').input_value() == "0"
     contains(page.locator(STATUS), "of ParishSoft time a day")
@@ -522,14 +487,14 @@ def test_the_edited_control_stays_put_and_is_tied_to_its_row_problems(
 
 
 def test_messages_above_the_edited_control_do_not_move_it(page, component_origin):
-    """Fixing the kept 23:50 (rule 2) clears the spacing problem drawn at
+    """Fixing the kept 23:50 (rule 4) clears the spacing problem drawn at
     rule 1, above it: the page scrolls by the same amount, so the edited
     field stays where it was on the screen."""
     requests = answering(page, CLOSE)
     page.goto(component_origin + "/refresh-schedule-close")
     message = page.locator("#rules-0-messages")
     contains(message, "00:00 is only 10 minutes after the 23:50 full refresh")
-    field = page.locator('[name="rules-1-at"]')
+    field = page.locator('[name="rules-3-at"]')
     assert field.input_value() == "23:50"
     page.evaluate(
         "y => window.scrollTo(0, y)",
@@ -549,6 +514,12 @@ def test_messages_above_the_edited_control_do_not_move_it(page, component_origin
     has_text(message, "")
     # Scrolling moves by whole pixels.
     assert abs(top(field) - before) < 1
+
+
+def bottom(locator):
+    """Where ``locator``'s bottom edge sits on the screen (its viewport y)."""
+    box = locator.bounding_box()
+    return box["y"] + box["height"]
 
 
 def tops(page, *locators):
@@ -607,7 +578,7 @@ def test_a_longer_message_keeps_the_control_under_the_pointer(page, component_or
     assert message.bounding_box()["height"] > 60
     add = page.locator('[data-row-add="rules"]')
     # The field and Add both on the screen, so neither action scrolls.
-    field = page.locator('[name="rules-1-at"]')
+    field = page.locator('[name="rules-3-at"]')
     scroll_to(page, field, 100)
     add.hover()
     before = top(add)
@@ -651,16 +622,16 @@ def test_edit_as_text_moves_nothing_under_the_pointer(page, component_origin):
 
 
 def close_page_with_field_at(page, component_origin, y):
-    """Open the too-close schedule on a tall screen, with rule 2's time
-    field ``y`` pixels from the top; return the requests, rule 1's long
-    message and the field."""
+    """Open the too-close schedule on a tall screen, with rule 4's time
+    field (the kept 23:50) ``y`` pixels from the top; return the requests,
+    rule 1's long message and the field."""
     page.set_viewport_size({"width": 480, "height": 1200})
     requests = answering(page, CLOSE)
     page.goto(component_origin + "/refresh-schedule-close")
     message = page.locator("#rules-0-messages")
     contains(message, "00:00 is only 10 minutes after the 23:50 full refresh")
     assert message.bounding_box()["height"] > 60
-    field = page.locator('[name="rules-1-at"]')
+    field = page.locator('[name="rules-3-at"]')
     scroll_to(page, field, y)
     return requests, message, field
 
@@ -675,10 +646,12 @@ def test_a_pointer_in_a_gap_between_rows_keeps_the_rows_in_place(
 ):
     """Over the blank space between two rows the pointer points at the rows'
     container, whose top never moves: the next row below the pointer is
-    kept in place instead, and with it the focused control below."""
+    kept in place instead, not the focused control below it. That row is
+    rule 4, the one edited: its kept-time note goes too, so the focused
+    control moves up by exactly that row's own shrink and no more."""
     requests, message, field = close_page_with_field_at(page, component_origin, 300)
     rows = rule_rows(page)
-    above, below = rows.nth(1).bounding_box(), rows.nth(2).bounding_box()
+    above, below = rows.nth(2).bounding_box(), rows.nth(3).bounding_box()
     gap = below["y"] - (above["y"] + above["height"])
     assert gap > 4
     page.mouse.move(above["x"] + above["width"] / 2, below["y"] - gap / 2)
@@ -687,14 +660,14 @@ def test_a_pointer_in_a_gap_between_rows_keeps_the_rows_in_place(
         [above["x"] + above["width"] / 2, below["y"] - gap / 2],
     )
     field.fill("23:30")
-    # Rules 3 and 4 are stored quick rules, without controls (#1122).
     focused = page.locator('[data-row-add="rules"]')
     focused.focus()
-    watched = ('[data-row-add="rules"]', "#rules-2")
-    before = tops(page, *watched)
+    row = page.locator("#rules-3")
+    before = (top(row), top(focused) - bottom(row))
     recorded(page, requests, 1)
     has_text(message, "")
-    assert within_half_a_pixel(before, tops(page, *watched))
+    has_text(page.locator("#rules-3-messages"), "")
+    assert within_half_a_pixel(before, (top(row), top(focused) - bottom(row)))
 
 
 def test_a_cancelled_touch_leaves_no_stale_pointer(page, component_origin):
@@ -719,21 +692,21 @@ def test_a_cancelled_touch_leaves_no_stale_pointer(page, component_origin):
 
 
 def test_a_pointer_on_a_replaced_message_keeps_its_row_in_place(page, component_origin):
-    """The message under the pointer is replaced by the redraw (rule 2's
+    """The message under the pointer is replaced by the redraw (rule 4's
     kept-time note goes once its time is on the quarter hour): its row is
     kept in place instead, also with nothing focused."""
     requests, message, field = close_page_with_field_at(page, component_origin, 300)
-    note = page.locator("#rules-1-messages > *").first
+    note = page.locator("#rules-3-messages > *").first
     contains(note, "Kept from the earlier schedule")
     box = note.bounding_box()
     page.mouse.move(box["x"] + 5, box["y"] + box["height"] / 2)
     field.fill("23:30")
     page.evaluate("document.activeElement.blur()")
-    before = tops(page, "#rules-1")
+    before = tops(page, "#rules-3")
     recorded(page, requests, 1)
     has_text(message, "")
-    has_text(page.locator("#rules-1-messages"), "")
-    assert within_half_a_pixel(before, tops(page, "#rules-1"))
+    has_text(page.locator("#rules-3-messages"), "")
+    assert within_half_a_pixel(before, tops(page, "#rules-3"))
 
 
 @pytest.mark.parametrize("focused", [False, True], ids=["unfocused", "focused"])
@@ -754,7 +727,7 @@ def test_a_pointer_above_the_switch_keeps_the_switch_in_place(
     pointed = "([x, y]) => document.elementFromPoint(x, y)"
     assert page.evaluate(f"{pointed}.matches('[data-refresh-schedule]')", [x, y])
     field.fill("23:30")
-    # Firefox scrolls rule 2's caret into view a frame after the fill.
+    # Firefox scrolls rule 4's caret into view a frame after the fill.
     painted(page)
     if not focused:
         page.evaluate("document.activeElement.blur()")
@@ -775,7 +748,7 @@ def test_a_pointer_outside_the_form_keeps_what_it_points_at_in_place(
     recorded(page, requests, 1)
     has_text(message, "")
     field.fill("23:50")
-    # Firefox scrolls rule 2's caret into view a frame after the fill, which
+    # Firefox scrolls rule 4's caret into view a frame after the fill, which
     # would undo the scroll to the top below.
     painted(page)
     # Add a rule is focused without scrolling it into view, with the
@@ -894,7 +867,7 @@ def test_a_pointer_beside_the_main_column_keeps_its_height_in_place(
     under = page.evaluate_handle(f"document.elementFromPoint({x}, 310)")
     held = under.bounding_box()["y"]
     before = tops(page, "#rules-2")
-    type_quietly(page, "rules-1-at", "23:30")
+    type_quietly(page, "rules-3-at", "23:30")
     recorded(page, requests, 1)
     has_text(message, "")
     assert height - message.bounding_box()["height"] > 10
@@ -1017,7 +990,7 @@ def test_keyboard_remove_keeps_the_row_under_the_pointer(page, component_origin,
         watched = page.locator("#rules-3").element_handle()
     before = handle_top(watched)
     press_without_scrolling(page, "#rules-0 [data-row-remove]")
-    assert rule_rows(page).count() == 5
+    assert rule_rows(page).count() == 4
     assert abs(handle_top(watched) - before) <= 0.5
     assert page.evaluate("document.activeElement.dataset.rowAdd") == "rules"
     recorded(page, requests, 1)
@@ -1087,7 +1060,7 @@ def test_the_redrawn_regions_keep_the_spacing_of_plain_blocks(
     page.goto(component_origin + "/refresh-schedule")
     watched = (
         "#rules-0",
-        "#rules-5",
+        "#rules-4",
         '[data-row-add="rules"]',
         SAVE,
         "#refresh-schedule-outlook > h2:nth-of-type(2)",
@@ -1160,7 +1133,6 @@ def test_a_pointer_over_the_sidebar_keeps_the_focused_field_in_place(
     contains(message, "00:00 is only 10 minutes after the 23:50 full refresh")
     height = message.bounding_box()["height"]
     scroll_to(page, page.locator("#rules-2"), 300)
-    # Rules 3 and 4 are stored quick rules, without controls (#1122).
     page.locator('[data-row-add="rules"]').evaluate(
         "node => node.focus({preventScroll: true})"
     )
@@ -1169,7 +1141,7 @@ def test_a_pointer_over_the_sidebar_keeps_the_focused_field_in_place(
         page, sidebar["x"] + sidebar["width"] / 2, 310
     )
     before = tops(page, '[data-row-add="rules"]')
-    type_quietly(page, "rules-1-at", "23:30")
+    type_quietly(page, "rules-3-at", "23:30")
     recorded(page, requests, 1)
     has_text(message, "")
     assert height - message.bounding_box()["height"] > 10

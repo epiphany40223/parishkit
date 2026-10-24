@@ -1,15 +1,15 @@
 """ParishSoft data age, the out-of-date rule and the connection line (#510).
 
 "Fresh ParishSoft data" used to mean only that ParishSoft had answered within
-``source_stale_seconds``: an empty quick update promoted a snapshot and reset
-the clock, while ParishSoft's change list returned nothing. Three facts replace
-it (see the operations spec, "ParishSoft data age and connection"):
+``source_stale_seconds``: an empty quick update (delta refresh, removed by
+#1147) promoted a snapshot and reset the clock, while ParishSoft's change list
+returned nothing. Two facts replace it (see the operations spec, "ParishSoft
+data age and connection"):
 
-- **Last full refresh:** the start of the newest promoted full refresh. Only
-  this drives the ``source_stale`` alarm and the bulk-send hold, because only
-  a full refresh re-reads everything.
-- **Data as of:** what pages and the digest show: the last full refresh, or a
-  later quick update whose snapshot cursor counted at least one change.
+- **Last full refresh:** the start of the newest promoted full refresh. It
+  drives the ``source_stale`` alarm and the bulk-send hold, and it is the
+  "data as of" time pages and the digest show, because only a full refresh
+  re-reads everything.
 - **Connection:** whether ParishSoft answers, from refresh attempts only.
 
 The data is **out of date** when the **overdue full slot** (the first counted
@@ -38,6 +38,7 @@ from .cadence import (
     QUARTER_HOUR,
     longest_gap,
     refresh_settings,
+    schedule_identity,
     skips_around_emails,
 )
 
@@ -72,7 +73,6 @@ class SourceFacts:
     """
 
     full_started_at: datetime | None = None
-    changed_delta_at: datetime | None = None
     success_at: datetime | None = None
     answered_at: datetime | None = None
     newest_failed: bool = False
@@ -81,9 +81,12 @@ class SourceFacts:
 
     @property
     def data_as_of(self):
-        """The last full refresh, or a later quick update that changed data."""
-        times = [t for t in (self.full_started_at, self.changed_delta_at) if t]
-        return max(times, default=None)
+        """The last full refresh: only a full refresh re-reads every record.
+
+        A quick update that changed data used to count too; quick updates
+        were removed (#1147), and every one in Production came back empty.
+        """
+        return self.full_started_at
 
 
 def full_due_after(settings, timezone, after, until):
@@ -156,30 +159,16 @@ def is_out_of_date(overdue, now, margin):
     return overdue is not None and now - overdue >= margin
 
 
-def changed(cursor):
-    """Whether a snapshot cursor's ``changes`` counted at least one change.
-
-    The counts are display-only and absent when counting failed; absent,
-    malformed or all-zero counts are "no change".
-    """
-    changes = cursor.get("changes") if type(cursor) is dict else None
-    return type(changes) is dict and any(
-        type(value) is int and value > 0 for value in changes.values()
-    )
-
-
 def connection_threshold(settings, margin):
     """How long without a successful attempt reads as "not checked".
 
-    The schedule's longest gap between any two scheduled refreshes, listed
-    quick times included (#632), plus the lateness margin.
+    The schedule's longest gap between any two scheduled refreshes, plus
+    the lateness margin.
     """
     return (
         longest_gap(
             frequency=settings["frequency"],
             full_refresh_times=settings["full_refresh_times"],
-            delta_refresh=settings["delta_refresh"],
-            quick_refresh_times=settings.get("quick_refresh_times", ()),
         )
         + margin
     )
@@ -215,23 +204,22 @@ def connection_state(
 
 
 # One statement for every snapshot fact, so a page adds a single query. A
-# success is a snapshot whose read completed (ready, promoted, or a quick
-# update recorded as unchanged, #630); a failed attempt is one rejected after
-# it called ParishSoft. An unchanged quick update never moves "data as of".
+# success is a snapshot whose read completed (ready, promoted, or an older
+# quick update recorded as unchanged, #630); a failed attempt is one rejected
+# after it called ParishSoft. A delta retired without reading ParishSoft
+# (#1147, ``snapshots.mark_retired``) is neither: it is left out by its
+# cursor, so historic rejected deltas, which did read, still count.
 # ``%(as_of)s`` limits the facts to what was known at a past instant (the
 # digest's observation).
 FACTS_SQL = (
     "WITH s AS (SELECT kind, state, started_at, completed_at, cursor "
     "FROM stewardship_source_snapshot "
     "WHERE state IN ('ready','promoted','unchanged','rejected') "
+    "AND (cursor->>'schema') IS DISTINCT FROM 'source-retired-v1' "
     "AND (%(as_of)s::timestamptz IS NULL OR started_at<=%(as_of)s)), "
     "ok AS (SELECT started_at, completed_at FROM s WHERE state<>'rejected' "
     "ORDER BY started_at DESC LIMIT 1) "
     "SELECT (SELECT max(started_at) FROM s WHERE kind='full' AND state='promoted'), "
-    "(SELECT max(started_at) FROM s WHERE kind='delta' AND state='promoted' "
-    "AND jsonb_typeof(cursor->'changes')='object' AND EXISTS ("
-    "SELECT 1 FROM jsonb_each(cursor->'changes') c "
-    "WHERE jsonb_typeof(c.value)='number' AND (c.value)::numeric>0)), "
     "(SELECT started_at FROM ok), (SELECT completed_at FROM ok), "
     "(SELECT state FROM s ORDER BY started_at DESC LIMIT 1)='rejected', "
     "(SELECT min(started_at) FROM s WHERE state='rejected' "
@@ -244,19 +232,18 @@ FACTS_SQL = (
 # How many columns ``FACTS_SQL`` selects, one per ``SourceFacts`` field. The
 # Admin refresh status appends them to its own outcome columns and reads them
 # from the end of the combined row by this count (#659).
-FACTS_COLUMNS = 7
+FACTS_COLUMNS = 6
 
 
 def facts_from_row(row):
     """Build ``SourceFacts`` from the ``FACTS_COLUMNS`` ``FACTS_SQL`` selects."""
     return SourceFacts(
         full_started_at=row[0],
-        changed_delta_at=row[1],
-        success_at=row[2],
-        answered_at=row[3],
-        newest_failed=bool(row[4]),
-        failing_since=row[5],
-        held_at=row[6],
+        success_at=row[1],
+        answered_at=row[2],
+        newest_failed=bool(row[3]),
+        failing_since=row[4],
+        held_at=row[5],
     )
 
 
@@ -288,12 +275,14 @@ def schedule_runs(after):
     """The schedules in effect from ``after`` on, oldest first.
 
     Each run is ``(start, settings)``: the activation of the earliest
-    configuration in an unbroken run of activations whose refresh schedule
-    settings are equal, found the way ``health.initial_source_at`` finds a
-    tenant's first activation (bootstrap configurations are ignored). Other
-    configuration changes do not start a new run. The first run is the one in
-    effect at ``after``; its start may be earlier, which ``first_overdue``
-    clamps to ``after`` anyway, so no older activation is read. Three queries.
+    configuration in an unbroken run of activations whose refresh schedules are
+    the same (``cadence.schedule_identity``, as the tick guard decides it), with
+    that schedule's ``refresh_settings``, found the way
+    ``health.initial_source_at`` finds a tenant's first activation (bootstrap
+    configurations are ignored). Other configuration changes do not start a new
+    run. The first run is the one in effect at ``after``; its start may be
+    earlier, which ``first_overdue`` clamps to ``after`` anyway, so no older
+    activation is read. Three queries.
     """
     from parishkit.stewardship.accounts.configuration_models import (
         AppliedIntegration,
@@ -314,13 +303,14 @@ def schedule_runs(after):
             configuration_id__in=[value for _, value in rows], kind="parishsoft"
         ).values_list("configuration_id", "settings")
     )
-    runs = []
+    runs, identity = [], object()
     for created_at, configuration_id in rows:
         value = stored.get(configuration_id)
-        value = None if value is None else refresh_settings(value)
-        if runs and runs[-1][1] == value:
+        same = None if value is None else schedule_identity(value)
+        if runs and same == identity:
             continue
-        runs.append((created_at, value))
+        identity = same
+        runs.append((created_at, None if value is None else refresh_settings(value)))
     return runs
 
 

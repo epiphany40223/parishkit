@@ -42,7 +42,7 @@ from .data_age import catch_up_at, source_timezone
 from .outcomes import scope_fingerprint
 from .refresh_models import SourceRefreshTick, SourceSlotDecision
 from .requests import TASK_TYPE, _organization, _receipt, _window, request_refresh
-from .send_hold import delta_held
+from .send_hold import daytime_held
 from .superseding import cancel_superseded_refresh
 
 
@@ -156,7 +156,6 @@ def _listed(cadence):
         nightly_time=schedule["nightly_time"],
         scope_fingerprint=cadence.fingerprint,
         full_refresh_times=schedule["full_refresh_times"],
-        quick_refresh_times=schedule["quick_refresh_times"],
     )
 
 
@@ -239,7 +238,7 @@ def _may_decide(cadence):
     )
     if not undecided:
         return False
-    if delta_held(cadence.now):
+    if daytime_held(cadence.now):
         return True
     windows = current_windows(cadence.now)
     return any(window_cause(windows, slot.due_at) is not None for slot in undecided)
@@ -264,7 +263,7 @@ def _undecided(candidates, *, ticked, decisions, nightly_time, skip_since):
 
 
 def produce_refreshes(guard, *, skipped=None, refused=None, settings=None):
-    """Create at most three current slots, without network or a new SQL connection.
+    """Create at most two current slots, without network or a new SQL connection.
 
     The scheduler retains its pinned session throughout. Restore/purge and absent
     configuration are holds, not consumed slots. Each cadence command and its
@@ -272,15 +271,15 @@ def produce_refreshes(guard, *, skipped=None, refused=None, settings=None):
     ordinary Task scanner. Existing slots never retry terminal work implicitly.
 
     While a go-live attempt holds refreshes (#462), every not yet created
-    slot, full or quick, is held the same way and logs
+    slot is held the same way and logs
     ``go_live_refresh_held`` once (``_log_go_live_hold``).
 
-    While a bulk Family send is in progress a not yet created delta slot, or a
-    daytime full slot (a configured time other than the nightly one, #465), is
-    held (``send_hold``): it creates no command, task or failure, and every
+    While a bulk Family send is in progress a not yet created daytime full
+    slot (a configured time other than the nightly one, #465) is held
+    (``send_hold``): it creates no command, task or failure, and every
     later loop decides again. The first loop after the send creates the
     current slot's refresh, which catches up. When the schedule changed while
-    a full slot of the previous one was already overdue, a third slot, the
+    a full slot of the previous one was already overdue, a second slot, the
     schedule-change catch-up (#632), is requested once and held like a
     daytime full slot. ``refused`` holds the catch-up slot keys already
     logged as refused by the tick guard, apart from the held ones, so a
@@ -317,8 +316,8 @@ def produce_refreshes(guard, *, skipped=None, refused=None, settings=None):
     # Family email windows of a schedule that skips around them (#632).
     with transaction.atomic():
         instant = database_now()
-        held = delta_held(instant)
-        # A go-live attempt holds every scheduled slot, full or quick (#462).
+        held = daytime_held(instant)
+        # A go-live attempt holds every scheduled slot (#462).
         go_live = refreshes_held(instant)
         effective_at = _catch_up_at()
         planning = _skip_planning(instant)
@@ -445,8 +444,7 @@ def produce_refreshes(guard, *, skipped=None, refused=None, settings=None):
                     timezone=timezone,
                     # A full tick records the configured time it fell due
                     # at, which the SQL guard checks against the applied
-                    # list; a delta or catch-up tick records the nightly
-                    # time, as a delta tick always has.
+                    # list; a catch-up tick records the nightly time.
                     nightly_time=slot.nightly_time or nightly_time,
                     slot_key=slot.slot_key,
                     correlation_id=slot.command_id,
@@ -685,7 +683,7 @@ def _request_catch_up(create, slot, refused):
     activations, which may have moved since it was decided before the lock
     (or which a defect may read differently). A refusal (a check violation)
     rolls back only the catch-up's request and tick, so the same loop's full
-    and quick slots still commit; it is logged at WARNING once per scheduler
+    slot still commits; it is logged at WARNING once per scheduler
     process (``refused`` holds the slot keys already logged), as the
     ``refresh_catch_up_refused`` category on the reviewed
     ``startup_validated`` event, so it reads as a scheduling problem rather
@@ -716,16 +714,16 @@ def _request_catch_up(create, slot, refused):
 def _waits_for_send(slot, nightly_time):
     """Whether a slot waits for an in-progress bulk Family send.
 
-    Deltas wait (#440). So does a full refresh at any configured time other
-    than the nightly one (#465): a daytime full refresh competes for the
-    work-order lock just as a delta does, and the nightly refresh at
+    A full refresh at any configured time other than the nightly one waits
+    (#465): a daytime full refresh competes for the work-order lock, as the
+    quick updates removed by #1147 did (#440), and the nightly refresh at
     ``nightly_time`` is the one the parish relies on to run regardless. An
     hourly or quarter-hour full refresh records the nightly time, so it is
     never held, as before. The schedule-change catch-up (#632) is a daytime
     full refresh: it is held by its cause, since its slot has no configured
     time and its tick records the nightly time like the nightly refresh's.
     """
-    if slot.cause in ("delta", "catch_up"):
+    if slot.cause == "catch_up":
         return True
     return slot.nightly_time != nightly_time
 
@@ -737,23 +735,19 @@ def _log_skip(slot):
     ``source_refresh_held`` correlated to the slot's would-be command; with
     debug logging on, a DEBUG line says why and when the slot fell due.
 
-    A held **full** slot also writes a durable ``source_refresh_held`` INFO
-    entry with the task-free ``schedule`` context schema (#510): the health
+    A held slot also writes a durable ``source_refresh_held`` INFO entry
+    with the task-free ``schedule`` context schema (#510): the health
     check's evidence that the next full refresh is the catch-up, which keeps
-    the send's allowance until it promotes or fails. A quick slot writes
-    none: quick updates no longer decide whether the data is current. The
-    entry commits with the scheduler loop's transaction; after a restart the
-    same held slot may be recorded again, which is harmless.
+    the send's allowance until it promotes or fails. The entry commits with
+    the scheduler loop's transaction; after a restart the same held slot
+    may be recorded again, which is harmless.
     """
     with correlation(slot.command_id):
         emit(Event.SOURCE_HELD, level=logging.INFO)
-        if slot.cause != "delta":
-            operational(Event.SOURCE_HELD, level="INFO", schema=ContextKind.SCHEDULE)
+        operational(Event.SOURCE_HELD, level="INFO", schema=ContextKind.SCHEDULE)
         logging.getLogger("parishkit.stewardship.debug").debug(
             "%s due %s held: a Family send is in progress",
-            "Incremental ParishSoft update"
-            if slot.cause == "delta"
-            else "Schedule-change catch-up full ParishSoft refresh"
+            "Schedule-change catch-up full ParishSoft refresh"
             if slot.cause == "catch_up"
             else f"Full ParishSoft refresh at {slot.nightly_time}",
             slot.due_at.isoformat(),

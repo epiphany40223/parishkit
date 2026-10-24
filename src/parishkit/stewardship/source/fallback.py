@@ -1,4 +1,10 @@
-"""Durable full-refresh dependencies for incomplete or unseeded delta requests."""
+"""Durable full-refresh dependencies for delta requests left from before #1147.
+
+Quick updates (delta refreshes) were removed (#1147), so nothing creates a
+delta request now. One queued before the upgrade is retired through the
+fallback edge the database already guards: its attempt is rejected without
+reading ParishSoft and it waits for one full refresh (``execution``).
+"""
 
 from uuid import UUID, uuid5
 

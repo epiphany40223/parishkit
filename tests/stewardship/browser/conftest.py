@@ -1706,9 +1706,9 @@ def component_responses():
             },
         ),
         (
-            # Data age and connection (#510): a quick update brought changes
-            # after the last full refresh, the 10:00-style full refresh is
-            # late, and ParishSoft is failing.
+            # Data age and connection (#510): the data is as of the last full
+            # refresh (every refresh is full since #1147), the 10:00-style
+            # full refresh is late, and ParishSoft is failing.
             "/source-refresh-late",
             "source-refresh",
             {
@@ -1717,7 +1717,7 @@ def component_responses():
                     None,
                     False,
                     full_started_at=NOW - timedelta(hours=3, minutes=7),
-                    data_as_of=NOW - timedelta(hours=1),
+                    data_as_of=NOW - timedelta(hours=3, minutes=7),
                     connection=Connection("failing", NOW - timedelta(minutes=30)),
                     overdue_at=NOW - timedelta(minutes=45),
                     out_of_date=True,

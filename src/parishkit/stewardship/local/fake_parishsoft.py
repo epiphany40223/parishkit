@@ -1,7 +1,7 @@
 """Stand-in for ParishSoft's v2 API, serving the synthetic parish.
 
 The fake lets the unmodified source loaders run in the LOCAL environment:
-setup loading, full and delta refreshes, giving and household reads all go
+setup loading, full refreshes and giving reads all go
 through their real code against this server. It is a standard-library HTTP
 server with no dependency beyond the package, implements only the read
 endpoints the application uses plus the one Member contact PUT census
@@ -48,12 +48,6 @@ DEFAULT_BIND = "0.0.0.0"
 MAXIMUM_PAGE_SIZE = 500
 MAXIMUM_BODY_BYTES = 65536
 CONFIGURATION_FIELDS = frozenset({"seed", "families", "anchor_date", "release_at"})
-# The real FamilyChangeList has returned an empty array for every Production
-# query so far (#465; see docs/parishsoft-api-analysis.md), so the fake's
-# change feed matches reality by default. ``synthetic`` serves the late-added
-# Family's release as its one indication, for exercising the delta path.
-CHANGE_FEED_MODES = frozenset({"empty", "synthetic"})
-DEFAULT_CHANGE_FEED = "empty"
 _IDENTIFIER = r"([1-9][0-9]*)"
 
 
@@ -77,7 +71,6 @@ class FakeConfiguration:
     families: int
     anchor_date: date
     release_at: datetime | None
-    change_feed: str = DEFAULT_CHANGE_FEED
     edits: tuple = ()
 
     @classmethod
@@ -86,12 +79,9 @@ class FakeConfiguration:
         if (
             type(document) is not dict
             or not set(document) >= CONFIGURATION_FIELDS
-            or not set(document) <= CONFIGURATION_FIELDS | {"change_feed", "edits"}
+            or not set(document) <= CONFIGURATION_FIELDS | {"edits"}
         ):
             raise ValueError("The fake ParishSoft configuration has unexpected fields.")
-        change_feed = document.get("change_feed", DEFAULT_CHANGE_FEED)
-        if change_feed not in CHANGE_FEED_MODES:
-            raise ValueError("The fake ParishSoft change-feed mode is unknown.")
         seed, families = document["seed"], document["families"]
         if (
             type(seed) is not int
@@ -118,7 +108,6 @@ class FakeConfiguration:
             families,
             date.fromisoformat(anchor),
             release,
-            change_feed,
             tuple(edits),
         )
 
@@ -199,34 +188,13 @@ def _date_parameter(parameters, name, *, required):
 class _View:
     """The collections visible before or after the late-added Family's release."""
 
-    def __init__(self, parish, released, release_at, change_feed):
+    def __init__(self, parish, released):
         hidden = () if released else (parish.late_family_id,)
         self.families = [f for f in parish.families if f["familyDUID"] not in hidden]
         self.members = [m for m in parish.members if m["familyDUID"] not in hidden]
         self.contacts = [c for c in parish.contacts if c["familyDUID"] not in hidden]
         self.family_by_id = {row["familyDUID"]: row for row in self.families}
         self.member_by_id = {row["memberDUID"]: row for row in self.members}
-        # A Family's member list is in Member-object spelling (``birthdate``,
-        # ``sex``) plus the contact fields the household reader copies, as the
-        # real endpoint returns; the contact list uses its own spelling.
-        self.household = {}
-        for row in self.members:
-            self.household.setdefault(row["familyDUID"], []).append(
-                {**row, "cellPhone": row["mobilePhone"]}
-            )
-        # The feed is empty by default, as the real one has been (#465). In
-        # ``synthetic`` mode the release is the late Family's one change-feed
-        # event, so a delta refresh whose window covers it picks it up.
-        self.changes = []
-        if released and change_feed == "synthetic":
-            self.changes.append(
-                {
-                    "family_DUID": parish.late_family_id,
-                    "currentParishID": parish.organization_id,
-                    "previousParishID": None,
-                    "logDate": release_at.astimezone(UTC).isoformat(),
-                }
-            )
 
 
 class FakeParishSoft:
@@ -271,11 +239,9 @@ class FakeParishSoft:
     def _views(self, parish):
         """Both release views of ``parish``; one only with ``release_at: null``."""
         configuration = self.configuration
-        views = {False: _View(parish, False, None, configuration.change_feed)}
+        views = {False: _View(parish, False)}
         if configuration.release_at is not None:
-            views[True] = _View(
-                parish, True, configuration.release_at, configuration.change_feed
-            )
+            views[True] = _View(parish, True)
         return views
 
     def released(self):
@@ -335,9 +301,6 @@ class FakeParishSoft:
             (f"offering/{_IDENTIFIER}/funds", {"GET": self._funds}),
             ("offering/pledge/list", {"GET": self._pledges}),
             ("offering/contributiondetail/list", {"GET": self._contributions}),
-            ("families/change/list", {"GET": self._changes}),
-            (f"families/{_IDENTIFIER}", {"GET": self._family}),
-            (f"families/{_IDENTIFIER}/member/list", {"GET": self._household}),
             (f"members/{_IDENTIFIER}", {"GET": self._member}),
             (f"members/{_IDENTIFIER}/contact", {"PUT": self._contact_put}),
         ]
@@ -448,35 +411,6 @@ class FakeParishSoft:
                 )
             ]
         return _envelope(rows, *_paging(query, "PageSize", "PageNumber"))
-
-    def _changes(self, query):
-        """Rows whose ``logDate`` day lies in the request's window; no clock.
-
-        Both dates are required and an inverted window is a 400; no other
-        server-side window limit is enforced, since the real API documents
-        none.
-        """
-        start = _date_parameter(query, "StartDate", required=True)
-        end = _date_parameter(query, "EndDate", required=True)
-        if start > end:
-            raise _Reply(400)
-        return [
-            row
-            for row in self.view().changes
-            if start <= datetime.fromisoformat(row["logDate"]).date() <= end
-        ]
-
-    def _family(self, query, identifier):
-        row = self.view().family_by_id.get(identifier)
-        if row is None:
-            raise _Reply(404)
-        return row
-
-    def _household(self, query, identifier):
-        view = self.view()
-        if identifier not in view.family_by_id:
-            raise _Reply(404)
-        return view.household.get(identifier, [])
 
     def _member(self, query, identifier):
         row = self.view().member_by_id.get(identifier)

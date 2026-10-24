@@ -33,6 +33,7 @@ from parishkit.stewardship.system_health import read_health
 
 from .auth_builders import unguarded
 from .campaign_builders import campaign_clock, change
+from .refresh_harness import Refreshes
 from .test_family_mail_bulk_postgresql import (  # noqa: F401
     families,
     plan,
@@ -53,7 +54,6 @@ from .test_family_mail_prepare_ahead_postgresql import (  # noqa: F401
 )
 from .test_family_mail_worker_postgresql import dispatch_worker  # noqa: F401
 from .test_source_families_postgresql import source_singletons  # noqa: F401
-from .test_source_unchanged_postgresql import Refreshes
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -224,8 +224,8 @@ def test_an_unknown_workgroup_shows_on_system_health_and_excludes_nobody(invited
 
 
 def test_refreshes_record_the_workgroup_and_a_change_is_promoted(tmp_path, monkeypatch):
-    """Full and quick refreshes record the read; a quick update whose corpus
-    is unchanged still promotes when the WorkGroup's members changed."""
+    """Every refresh records the read, and promotion records a change of the
+    WorkGroup's members."""
     members = {"value": [1]}
     reads = []
 
@@ -238,10 +238,11 @@ def test_refreshes_record_the_workgroup_and_a_change_is_promoted(tmp_path, monke
     monkeypatch.setattr(refreshing, "configured_name", lambda values: NAME)
     refreshes = Refreshes(tmp_path, monkeypatch)
     assert refreshes.full.cursor["load"][EVIDENCE_KEY]["family_duids"] == [1]
-    same, *_ = refreshes.quick()
-    assert same.state == "unchanged"
+    same = refreshes.again()
+    assert same.state == "promoted"
+    assert same.cursor["load"][EVIDENCE_KEY]["family_duids"] == [1]
     members["value"] = [1, 2]
-    changed, *_ = refreshes.quick()
+    changed = refreshes.again()
     assert changed.state == "promoted"
     assert changed.cursor["load"][EVIDENCE_KEY]["family_duids"] == [1, 2]
     assert SourceCurrent.objects.get().snapshot_id == changed.pk
@@ -274,7 +275,7 @@ def test_a_misspelled_rename_keeps_the_old_set_until_a_refresh_finds_it(
     assert excluded_duids(setting()) == {1}
     # The misspelled name: the refresh records it as not found, keeping {1}.
     name["value"] = "Activ: Stewardship 2027"
-    missing, *_ = refreshes.quick()
+    missing = refreshes.again()
     assert missing.state == "promoted"
     assert missing.cursor["load"][EVIDENCE_KEY] == {
         "name": "Activ: Stewardship 2027",
@@ -284,21 +285,21 @@ def test_a_misspelled_rename_keeps_the_old_set_until_a_refresh_finds_it(
     assert excluded_duids(setting()) == {1}
     assert current_evidence(setting())[1]["found"] is False
     # Still misspelled: the next refresh changes nothing and keeps {1}.
-    again, *_ = refreshes.quick()
-    assert again.state == "unchanged"
+    again = refreshes.again()
+    assert again.cursor["load"][EVIDENCE_KEY]["found"] is False
     assert excluded_duids(setting()) == {1}
     # Corrected: the found WorkGroup's members replace the kept set.
     name["value"] = "Corrected"
-    corrected, *_ = refreshes.quick()
+    corrected = refreshes.again()
     assert corrected.cursor["load"][EVIDENCE_KEY]["found"] is True
     assert excluded_duids(setting()) == {2}
     # A found WorkGroup with no members excludes nobody, and a later
     # missing name has nothing to keep.
     name["value"] = "Empty"
-    refreshes.quick()
+    refreshes.again()
     assert excluded_duids(setting()) == frozenset()
     name["value"] = "Gone"
-    refreshes.quick()
+    refreshes.again()
     assert excluded_duids(setting()) == frozenset()
 
 

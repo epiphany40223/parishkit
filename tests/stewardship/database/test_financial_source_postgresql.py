@@ -112,7 +112,6 @@ def financial_source(
         expected_counts={kind: len(rows) for kind, rows in corpus.items()},
         cursor=refresh_cursor(
             snapshot_id=snapshot.pk,
-            kind="full",
             started_at=snapshot.started_at,
             window_digest=definition.window.digest,
             evidence={

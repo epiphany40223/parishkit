@@ -9,7 +9,7 @@ Family send's backlog (#634). A send enqueues every delivery task at its due
 time and the mail consumers work through them over tens of minutes, so most
 of them start long after the 90-second limit by design. While that send is
 in progress (``source.send_hold.family_send_active``: at least 10 pieces of
-its work remain, the definition the delta wait uses), its waiting delivery
+its work remain, the definition the send hold uses), its waiting delivery
 tasks are judged by the send's own progress instead: it is late only once
 nothing has settled or been prepared for ``SEND_STALL``, or it is still
 going ``SEND_BOUND`` after it fell due. Every other task, and a send's last
@@ -57,7 +57,7 @@ FAMILY_PURPOSES = ("initial", "reminder")
 # no progress at all.
 SEND_STALL = timedelta(minutes=10)
 # A send still in progress this long after it fell due is late however it
-# progresses: the source-staleness allowance a send may hold deltas for
+# progresses: the source-staleness allowance a send may hold refreshes for
 # (send_hold.SEND_ALLOWANCE). A launch-size send takes 30 to 75 minutes.
 SEND_BOUND = timedelta(hours=2)
 # The least a late entry says when nothing more could be recorded (#633):
@@ -176,7 +176,7 @@ def send_evidence(definition_id, revision_id, mode, cycle):
 
 
 def send_in_progress():
-    """Whether a bulk Family send is in progress, as the delta wait decides it."""
+    """Whether a bulk Family send is in progress, as the send hold decides it."""
     from parishkit.stewardship.source import send_hold
 
     return send_hold.family_send_active()

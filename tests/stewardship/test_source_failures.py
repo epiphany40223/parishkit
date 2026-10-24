@@ -7,7 +7,6 @@ import pytest
 
 from parishkit.config import ConfigError
 from parishkit.parishsoft import ParishSoftAPIError
-from parishkit.parishsoft_changes import ChangeFeedIncomplete
 from parishkit.parishsoft_pagination import (
     IncompleteSourceCollection,
     ShiftedSourceScan,
@@ -284,7 +283,6 @@ def test_credential_intake_and_later_inventory_rotation_have_distinct_retry_poli
         SourceTransportDrainFailure("PRIVATE"),
         SourceFenceLost("PRIVATE"),
         ExecutionInterrupted("PRIVATE"),
-        ChangeFeedIncomplete("PRIVATE"),
         RuntimeError("PRIVATE"),
         PermissionError("PRIVATE"),
         ValueError("PRIVATE"),

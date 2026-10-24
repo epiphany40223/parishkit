@@ -1,13 +1,16 @@
 """Full ParishSoft refresh frequency and the last-full-refresh status line."""
 
+from contextlib import contextmanager
 from datetime import UTC, datetime
+from unittest.mock import patch
 
 import pytest
 from django.db import IntegrityError
 
+from parishkit.stewardship.accounts import source_cadence_schema
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.scheduler import scheduler_session
-from parishkit.stewardship.source import production
+from parishkit.stewardship.source import cadence, production
 from parishkit.stewardship.source.attempts import begin_refresh_attempt
 from parishkit.stewardship.source.cadence import due_slots
 from parishkit.stewardship.source.leases import release_source
@@ -55,6 +58,27 @@ def with_schedule(tmp_path, **settings):
     return credential, store, version, actor
 
 
+@contextmanager
+def stored_before_1147():
+    """Accept quick rules and times as a schedule stored before #1147 has them.
+
+    A new or changed schedule may not hold them; one carried unchanged may
+    (``content_trust.is_carried_schedule``), but the change path decides
+    what is carried from its own base, so an outer ``trusted_content()``
+    does not reach it. Inside this block every schedule counts as carried,
+    so a test can apply one, as such a version came to be stored. Later
+    changes carry it unchanged through the real rule.
+    """
+    with patch.object(source_cadence_schema, "is_carried_schedule", lambda rules: True):
+        yield
+
+
+def with_stored_schedule(tmp_path, **settings):
+    """``with_schedule`` for settings only a version stored before #1147 holds."""
+    with stored_before_1147():
+        return with_schedule(tmp_path, **settings)
+
+
 def with_frequency(tmp_path, frequency, nightly_time="02:00"):
     """Apply a full-refresh frequency through an ordinary configuration change."""
     return with_schedule(tmp_path, full_refresh=frequency, nightly_time=nightly_time)
@@ -80,7 +104,7 @@ def scope_of(tick):
 @pytest.mark.parametrize(
     "frequency,due,count",
     [
-        ("hourly", datetime(2026, 9, 11, 17, tzinfo=UTC), 2),
+        ("hourly", datetime(2026, 9, 11, 17, tzinfo=UTC), 1),
         ("quarter_hour", datetime(2026, 9, 11, 17, 15, tzinfo=UTC), 1),
     ],
 )
@@ -146,17 +170,15 @@ def test_full_refresh_status_reports_success_then_a_later_failure(tmp_path):
 def test_daytime_full_refresh_tick_records_its_listed_time(tmp_path, monkeypatch):
     """At 13:23 parish time the 12:00 refresh is due, and SQL accepts its time (#465).
 
-    The full tick names the listed time it fell due at; the delta tick keeps
-    the nightly time, as before.
+    The full tick names the listed time it fell due at.
     """
     with_schedule(tmp_path, full_refresh_times=["02:00", "12:00", "20:00"])
     monkeypatch.setattr(production, "database_now", lambda: NOW)
     with scheduler_session() as guard:
-        assert len(produce_refreshes(guard)) == 2
-    tick = SourceRefreshTick.objects.get(command__cause="nightly")
-    assert tick.nightly_time == "12:00"
+        assert len(produce_refreshes(guard)) == 1
+    (tick,) = SourceRefreshTick.objects.all()
+    assert tick.command.cause == "nightly" and tick.nightly_time == "12:00"
     assert tick.due_at == datetime(2026, 9, 11, 16, tzinfo=UTC)
-    assert SourceRefreshTick.objects.get(command__cause="delta").nightly_time == "02:00"
 
 
 def test_sql_refuses_a_full_tick_at_an_unlisted_time(tmp_path, monkeypatch):
@@ -192,52 +214,41 @@ def test_sql_refuses_a_full_tick_at_an_unlisted_time(tmp_path, monkeypatch):
             )
 
 
-def test_sql_refuses_delta_ticks_the_applied_delta_cadence_does_not_schedule(
-    tmp_path, monkeypatch
+@pytest.mark.parametrize("delta_refresh", [None, "quarter_hour", "hourly"])
+def test_no_stored_delta_cadence_creates_a_delta_tick(
+    tmp_path, monkeypatch, delta_refresh
 ):
-    """With deltas off no delta tick is valid; with hourly deltas no quarter hour is."""
-    with_schedule(tmp_path, delta_refresh="off")
+    """Quick updates were removed (#1147): whatever delta cadence a stored
+    schedule names, or the old quarter-hour default, only the full slot runs."""
+    with_schedule(
+        tmp_path, **({} if delta_refresh is None else {"delta_refresh": delta_refresh})
+    )
     monkeypatch.setattr(production, "database_now", lambda: NOW)
     with scheduler_session() as guard:
         assert len(produce_refreshes(guard)) == 1
+    (tick,) = SourceRefreshTick.objects.all()
+    assert tick.command.cause == "nightly"
+
+
+def test_sql_still_refuses_a_delta_tick_its_cadence_does_not_schedule(
+    tmp_path, monkeypatch
+):
+    """The guard is unchanged (no migration, #1147): with deltas off no delta
+    tick is valid, so an older row's rules still hold."""
+    with_schedule(tmp_path, delta_refresh="off")
+    monkeypatch.setattr(production, "database_now", lambda: NOW)
+    with scheduler_session() as guard:
+        produce_refreshes(guard)
         tick = SourceRefreshTick.objects.select_related("command__request").get(
             command__cause="nightly"
         )
-        quarter = due_slots(
-            now=NOW,
+        quarter = cadence._slot(
+            "delta",
+            datetime(2026, 9, 11, 17, 15, tzinfo=UTC),
+            None,
             timezone=tick.timezone,
-            nightly_time="02:00",
             scope_fingerprint=scope_of(tick),
-        )[1]
-        with (
-            pytest.raises(IntegrityError, match="applied delta cadence"),
-            work_transaction(),
-        ):
-            receipt = command(cause="delta", actor_id=None)
-            SourceRefreshTick.objects.create(
-                command_id=receipt.command_id,
-                **forged_tick(tick, due_at=quarter.due_at, slot_key=quarter.slot_key),
-            )
-
-
-def test_hourly_deltas_pass_the_sql_guard_and_quarter_hours_do_not(
-    tmp_path, monkeypatch
-):
-    """An hourly delta cadence schedules the hour and SQL refuses the quarter hour."""
-    with_schedule(tmp_path, delta_refresh="hourly")
-    monkeypatch.setattr(production, "database_now", lambda: NOW)
-    with scheduler_session() as guard:
-        assert len(produce_refreshes(guard)) == 2
-        tick = SourceRefreshTick.objects.select_related("command__request").get(
-            command__cause="delta"
         )
-        assert tick.due_at == datetime(2026, 9, 11, 17, tzinfo=UTC)
-        quarter = due_slots(
-            now=NOW,
-            timezone=tick.timezone,
-            nightly_time="02:00",
-            scope_fingerprint=scope_of(tick),
-        )[1]
         with (
             pytest.raises(IntegrityError, match="applied delta cadence"),
             work_transaction(),

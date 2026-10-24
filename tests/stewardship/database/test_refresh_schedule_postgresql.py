@@ -1,10 +1,11 @@
 """The integrated refresh schedule under the real scheduler and tick guard (#632).
 
-Listed quick times, more than eight full times and daylight-saving days pass
-the database's refresh-tick guard exactly where the scheduler puts them, and
-nowhere else; the schedule-change catch-up is admitted only at the instant
-the current schedule took effect; and the guard's schedule normalization
-agrees with ``cadence.refresh_settings``.
+More than eight full times and daylight-saving days pass the database's
+refresh-tick guard exactly where the scheduler puts them, and nowhere else;
+the schedule-change catch-up is admitted only at the instant the current
+schedule took effect; and the guard's schedule normalization agrees with
+``cadence.schedule_identity``. Quick updates were removed (#1147): a stored
+schedule's quick times create no tick.
 """
 
 from dataclasses import replace
@@ -21,11 +22,7 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.jobs.scheduler import scheduler_session
 from parishkit.stewardship.source import data_age, production
-from parishkit.stewardship.source.cadence import (
-    catch_up_slot,
-    due_slots,
-    refresh_settings,
-)
+from parishkit.stewardship.source.cadence import catch_up_slot, schedule_identity
 from parishkit.stewardship.source.models import SourceCurrent, SourceMutationLease
 from parishkit.stewardship.source.production import produce_refreshes
 from parishkit.stewardship.source.refresh_models import (
@@ -35,20 +32,22 @@ from parishkit.stewardship.source.refresh_models import (
 from parishkit.stewardship.source.refresh_rules import stored_settings
 
 from .campaign_builders import change
-from .test_refresh_frequency_postgresql import forged_tick, scope_of, with_schedule
+from .test_refresh_frequency_postgresql import (
+    forged_tick,
+    scope_of,
+    with_schedule,
+    with_stored_schedule,
+)
 from .test_source_requests_postgresql import command
 
 pytestmark = pytest.mark.django_db(transaction=True)
 NOW = datetime(2026, 9, 11, 17, 23, 42, tzinfo=UTC)
-# Thirteen full refreshes (00:00 and every hour from 08:00 to 20:00) and
-# quick updates every 15 minutes before them.
+# Thirteen full refreshes (00:00 and every hour from 08:00 to 20:00).
 BUSY = stored_settings(
     {
         "rules": [
             {"kind": "full", "at": "00:00"},
             {"kind": "full", "every": 60, "from": "08:00", "to": "20:00"},
-            {"kind": "quick", "every": 15, "from": "06:00", "to": "07:45"},
-            {"kind": "quick", "every": 60, "from": "21:00", "to": "23:00"},
         ],
         "skips": [],
         "skip_around_family_emails": False,
@@ -91,86 +90,67 @@ def forge(tick, cause, slot):
         )
 
 
-def test_more_than_eight_full_times_and_listed_quick_times_pass_the_guard(
-    tmp_path, monkeypatch
-):
-    """At 13:23 EDT the 13:00 full refresh is due; at 07:40 the 07:30 quick update."""
+def test_more_than_eight_full_times_pass_the_guard(tmp_path, monkeypatch):
+    """At 13:23 EDT the 13:00 full refresh is due, and it alone runs."""
     with_schedule(tmp_path, **BUSY)
-    assert len(produce(monkeypatch, NOW)) == 2
-    full = SourceRefreshTick.objects.get(command__cause="nightly")
+    assert len(produce(monkeypatch, NOW)) == 1
+    (full,) = SourceRefreshTick.objects.all()
+    assert full.command.cause == "nightly"
     assert (full.nightly_time, local(full)) == ("13:00", "13:00")
-    quick = SourceRefreshTick.objects.get(command__cause="delta")
-    # 07:45 is the latest quick time due (yesterday's 23:00 is earlier).
-    assert local(quick) == "07:45"
-    assert quick.nightly_time == "00:00"
+
+
+def test_a_stored_schedules_quick_times_create_no_tick(tmp_path, monkeypatch):
+    """A schedule stored before #1147 with listed quick times runs only full.
+
+    Such a version is carried unchanged (a new one may not list quick
+    times), so it is applied as a stored one (``with_stored_schedule``).
+    """
+    rules = BUSY["refresh_rules"]
+    stored = BUSY | {
+        "refresh_rules": rules
+        | {
+            "rules": [
+                *rules["rules"],
+                {"kind": "quick", "every": 15, "from": "06:00", "to": "07:45"},
+            ]
+        },
+        "delta_refresh": "times",
+        "quick_refresh_times": ["06:00", "06:15", "06:30", "06:45", "07:00"],
+    }
+    with_stored_schedule(tmp_path, **stored)
     morning = datetime(2026, 9, 11, 11, 40, tzinfo=UTC)
-    assert len(produce(monkeypatch, morning)) == 2
-    assert {
-        local(tick) for tick in SourceRefreshTick.objects.filter(command__cause="delta")
-    } == {"07:30", "07:45"}
-
-
-def test_the_guard_refuses_a_quick_tick_at_an_unlisted_time(tmp_path, monkeypatch):
-    """Quick ticks must fall at a listed quick time, not any UTC quarter hour."""
-    with_schedule(tmp_path, **BUSY)
-    produce(monkeypatch, NOW)
-    tick = SourceRefreshTick.objects.select_related("command__request").get(
-        command__cause="delta"
-    )
-    # 13:15 EDT is a UTC quarter hour the old guard admitted; it is not listed.
-    unlisted = due_slots(
-        now=NOW,
-        timezone=tick.timezone,
-        nightly_time="00:00",
-        scope_fingerprint=scope_of(tick),
-    )[1]
-    with pytest.raises(IntegrityError, match="applied delta cadence"):
-        forge(tick, "delta", unlisted)
-    # A listed time on a forged list is still refused.
-    other = due_slots(
-        now=NOW,
-        timezone=tick.timezone,
-        nightly_time="00:00",
-        scope_fingerprint=scope_of(tick),
-        delta_refresh="times",
-        quick_refresh_times=["13:15"],
-        rules=True,
-    )[1]
-    with pytest.raises(IntegrityError, match="applied delta cadence"):
-        forge(tick, "delta", other)
+    assert len(produce(monkeypatch, morning)) == 1
+    assert set(SourceRefreshTick.objects.values_list("command__cause", flat=True)) == {
+        "nightly"
+    }
 
 
 @pytest.mark.parametrize(
-    "instant,full,quick",
+    "instant,full",
     [
-        # Spring forward, 2026-03-08: 02:00–02:59 EST do not exist. 02:15 and
-        # 02:30 resolve to 03:00 EDT (07:00 UTC) with the 03:00 time.
-        (datetime(2026, 3, 8, 7, 5, tzinfo=UTC), "00:00", "07:00"),
-        # Fall back, 2025-11-02: the repeated times run once, at their EDT
-        # instants, so at 06:40 UTC (01:40 EST, the second pass) the latest
-        # quick slot is still 01:45 EDT (05:45 UTC).
-        (datetime(2025, 11, 2, 6, 40, tzinfo=UTC), "00:00", "05:45"),
+        # Spring forward, 2026-03-08: 02:00–02:59 EST do not exist.
+        (datetime(2026, 3, 8, 7, 5, tzinfo=UTC), "00:00"),
+        # Fall back, 2025-11-02: the repeated hour runs once.
+        (datetime(2025, 11, 2, 6, 40, tzinfo=UTC), "00:00"),
     ],
 )
-def test_daylight_saving_days_pass_the_guard(
-    tmp_path, monkeypatch, instant, full, quick
-):
-    """Quick times in the missing or repeated hour resolve as the scheduler says."""
+def test_daylight_saving_days_pass_the_guard(tmp_path, monkeypatch, instant, full):
+    """Full times around the missing or repeated hour resolve as the scheduler says."""
     settings = stored_settings(
         {
             "rules": [
                 {"kind": "full", "at": "00:00"},
-                {"kind": "quick", "every": 15, "from": "01:00", "to": "03:00"},
+                {"kind": "full", "every": 15, "from": "01:00", "to": "03:00"},
             ],
             "skips": [],
             "skip_around_family_emails": False,
         }
     )
     with_schedule(tmp_path, **settings)
-    assert len(produce(monkeypatch, instant)) == 2
-    tick = SourceRefreshTick.objects.get(command__cause="delta")
-    assert tick.due_at.astimezone(UTC).strftime("%H:%M") == quick
-    assert SourceRefreshTick.objects.get(command__cause="nightly").nightly_time == full
+    assert len(produce(monkeypatch, instant)) == 1
+    (tick,) = SourceRefreshTick.objects.all()
+    assert tick.command.cause == "nightly"
+    assert settings["nightly_time"] == full
 
 
 def schedule_change(tmp_path, monkeypatch, *, new):
@@ -218,10 +198,7 @@ def schedule_change(tmp_path, monkeypatch, *, new):
 
 NEW_DEFAULT = stored_settings(
     {
-        "rules": [
-            {"kind": "full", "at": "02:00"},
-            {"kind": "quick", "every": 60, "from": "00:00", "to": "23:00"},
-        ],
+        "rules": [{"kind": "full", "at": "02:00"}],
         "skips": [],
         "skip_around_family_emails": False,
     }
@@ -241,13 +218,13 @@ def test_a_schedule_change_requests_one_catch_up_when_a_slot_was_overdue(
     effective = schedule_change(tmp_path, monkeypatch, new=NEW_DEFAULT)
     with transaction.atomic():
         now = database_now()
-    monkeypatch.setattr(production, "delta_held", lambda instant: True)
+    monkeypatch.setattr(production, "daytime_held", lambda instant: True)
     produce(monkeypatch, now)
     assert not SourceRefreshCommand.objects.filter(cause="catch_up").exists()
     assert OperationalLog.objects.filter(
         event="source_refresh_held", schema="schedule"
     ).exists()
-    monkeypatch.setattr(production, "delta_held", lambda instant: False)
+    monkeypatch.setattr(production, "daytime_held", lambda instant: False)
     receipts = produce(monkeypatch, now)
     tick = SourceRefreshTick.objects.select_related("command").get(
         command__cause="catch_up"
@@ -368,11 +345,17 @@ def test_a_schedule_that_never_changed_has_no_catch_up(tmp_path, monkeypatch):
         (NEW_DEFAULT, NEW_DEFAULT | {"refresh_rules": BUSY["refresh_rules"]}),
         (NEW_DEFAULT, BUSY),
         ({"delta_refresh": "off"}, NEW_DEFAULT | {"quick_refresh_times": []}),
+        ({}, {"delta_refresh": "off"}),
+        ({"quick_refresh_times": ["06:00"]}, {}),
         ({"organization_id": "1"}, {"organization_id": "2"}),
     ],
 )
 def test_the_guard_normalizes_a_schedule_as_the_scheduler_does(first, second):
-    """The SQL normalization and ``refresh_settings`` agree on equality."""
+    """The SQL normalization and ``schedule_identity`` agree on equality.
+
+    The guard still compares the removed quick settings (#1147, no
+    migration), so ``schedule_identity`` does too.
+    """
     import json
 
     with connection.cursor() as cursor:
@@ -382,7 +365,7 @@ def test_the_guard_normalizes_a_schedule_as_the_scheduler_does(first, second):
             [json.dumps(first), json.dumps(second)],
         )
         (equal,) = cursor.fetchone()
-    assert equal == (refresh_settings(first) == refresh_settings(second))
+    assert equal == (schedule_identity(first) == schedule_identity(second))
 
 
 def test_the_scheduler_login_requests_and_inserts_the_catch_up(tmp_path, monkeypatch):
@@ -424,13 +407,12 @@ def test_a_refused_catch_up_keeps_the_loops_other_slots(tmp_path, monkeypatch, c
     producer = production.SourceProducer(uuid4())
     caplog.set_level(logging.WARNING)
     for held in (False, False, True, False):
-        monkeypatch.setattr(production, "delta_held", lambda instant, h=held: h)
+        monkeypatch.setattr(production, "daytime_held", lambda instant, h=held: h)
         with scheduler_session() as guard:
             produce_refreshes(guard, skipped=producer.skipped, refused=producer.refused)
     assert not SourceRefreshCommand.objects.filter(cause="catch_up").exists()
     assert set(SourceRefreshTick.objects.values_list("command__cause", flat=True)) == {
-        "nightly",
-        "delta",
+        "nightly"
     }
     refusals = [
         record

@@ -399,7 +399,7 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
         from .reports.report_email_test import report_email_test_handler
         from .reports.verification_production import TASK_TYPE as VERIFY_FACTS
         from .reports.verification_tasks import verification_handler
-        from .source.effects import refresh_reconciler, refresh_unchanged
+        from .source.effects import refresh_reconciler
         from .source.execution import refresh_handler
         from .source.requests import TASK_TYPE
         from .source.setup_admission import TASK_TYPE as SETUP_LOAD
@@ -456,7 +456,6 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
                     public=rings["token_public"],
                     suppressions=source_refusal_suppressions,
                 ),
-                unchanged=refresh_unchanged(suppressions=source_refusal_suppressions),
             )
             from .responses.publication_tasks import (
                 PREFLIGHT_TASK_TYPE,

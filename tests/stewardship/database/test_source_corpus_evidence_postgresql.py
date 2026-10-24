@@ -27,10 +27,10 @@ from parishkit.stewardship.source.snapshot_models import SourceSnapshot
 from parishkit.stewardship.source.snapshots import begin_snapshot, stage_entities
 from parishkit.stewardship.source.version_models import ENTITY_MODELS
 
+from .refresh_harness import force_unchanged, promoted_full
 from .source_builders import running_source_task, source_corpus
 from .test_source_families_postgresql import source_singletons  # noqa: F401
 from .test_source_snapshots_postgresql import permit
-from .test_source_unchanged_postgresql import force_unchanged, promoted_full
 
 pytestmark = pytest.mark.django_db(transaction=True)
 

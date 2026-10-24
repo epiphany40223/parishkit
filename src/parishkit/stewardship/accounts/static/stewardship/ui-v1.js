@@ -2877,8 +2877,8 @@
   // counts as disabled.
   //
   // A hidden field counts only when it is marked data-change-setting: it
-  // carries a saved setting the page shows only as words (ParishSoft's
-  // stored quick updates, #1122) or a saved row's identity, so removing it,
+  // carries a saved setting the page does not show as a control
+  // or a saved row's identity, so removing it,
   // or a script rewriting it, is a change (#1334 review). Every other hidden
   // field carries none and stays out: the CSRF token, the version field the
   // gate keys by, a formset's row counts, a one-time request key or signed
@@ -3138,7 +3138,7 @@
     if (event.target instanceof HTMLFormElement) gateChange(event.target);
   }, true);
   // A page script that adds or removes a gated form's rows fires no input
-  // event (ParishSoft's Remove quick updates and a rule's Remove, #1334
+  // event (a refresh schedule rule's Remove, #1334
   // review), so the gate also runs, once per form, after the nodes inside
   // a gated form change. The gate itself only sets attributes, which this
   // does not watch, so it never wakes itself.

@@ -86,7 +86,6 @@ def giving(harness, *amounts, covered=True, family="1"):
     as_of = snapshot.started_at.date().isoformat()
     cursor = refresh_cursor(
         snapshot_id=snapshot.pk,
-        kind="full",
         started_at=snapshot.started_at,
         window_digest=definition.window.digest,
         evidence={

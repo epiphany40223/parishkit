@@ -1027,6 +1027,20 @@ success or failure, to standard error:
 - A documented exception: the `content` commands' state value `custom`
   was renamed `edited` (#1404) and stayed on `pk-admin/1`, with a guide
   changelog entry, for the same reasons as the #931 exception above.
+- A documented exception: removing quick updates
+  ([#1147](https://github.com/epiphany40223/parishkit/issues/1147)) removed
+  the fields `delta_succeeded_at`, `delta_failed_at` and `delta_refresh`
+  from the refresh status in `pk-admin status`'s `source` member and in
+  `pk-admin refresh status`, and `delta_succeeded_at` from
+  `pk-admin system health`'s `source` member; `integration set
+  --refresh-schedule` (and `integration preview` and `integration
+  schedule-preview`) now refuse a rule of `kind` `quick`, which they
+  accepted when it repeated one `integration show` printed, and
+  `integration show` no longer prints a stored schedule's quick rules (or a
+  skip that matched only their times). These stayed on `pk-admin/1`, with a
+  guide changelog entry, at the Administrator's explicit request (an
+  acceptance criterion of #1147), for the same reasons as the #931
+  exception above.
 - Output never contains credentials, session secrets or digests, Family
   access tokens, cipher material or exception text. Family-level personal data
   follows [personal data on the command line](#personal-data-on-the-command-line).
@@ -4292,15 +4306,14 @@ required (each `{"kind", "at"}` or `{"kind", "every", "from", "to"}`),
 the schedule's current value as the page shows it (an explicit null is
 refused). Times are wall-clock `HH:MM` in the zone the schedule runs in,
 as on the page. Another member, a row of another shape, a `kind` other
-than `full` or `quick`, a time that is not exactly `HH:MM` or an `every`
-that is not one of the editor's intervals is `invalid` at
-`refresh_schedule`, `refresh_schedule.rules[N]` or
-`refresh_schedule.skips[N]` in fixed words, before the page's form could
+than `full` (quick rules were removed in
+[#1147](https://github.com/epiphany40223/parishkit/issues/1147)), a time
+that is not exactly `HH:MM` or an `every` that is not one of the editor's
+intervals is `invalid` at `refresh_schedule`, `refresh_schedule.rules[N]`
+or `refresh_schedule.skips[N]` in fixed words, before the page's form could
 quote it back, so no refusal echoes the input; any other target is
-`invalid` at `refresh_schedule`. A quick rule is accepted only as the
-shown schedule has it, since the page no longer offers adding one
-([#1122](https://github.com/epiphany40223/parishkit/issues/1122)); the
-mode posted is the one the page opens in. The command posts
+`invalid` at `refresh_schedule`. The mode posted is the one the page opens
+in. The command posts
 the document as the [schedule editor](../admin-portal/spec.md#schedule-editor)'s
 own rows to the page's form, so the page's editor reads it: the same row
 checks, kept off-quarter-hour times, validator, derived lists and mode, and
@@ -4315,15 +4328,16 @@ Its preview adds `schedule` (null unless the schedule changes):
 `differences`, the page review's list in words. `integration show
 parishsoft` prints the schedule as the page shows it as
 `refresh_schedule`, the document this option takes (an existing schedule
-converted to rules). `integration schedule-preview`
-takes the same option for a proposed schedule, or reads the applied one
+converted to rules, with any stored quick rows left out).
+`integration schedule-preview` takes the same option for a proposed schedule,
+or reads the applied one
 without it, and its JSON document carries the page's seven days, cost and
 freshness. Both follow the ParishSoft page's
 [live checks and saving](../admin-portal/spec.md#live-checks-and-saving).
 
 `integration schedule-preview` is the page's live check: the document is
 parsed and refused exactly as for `integration preview` (another shape, or
-an added quick rule, is `invalid` without echoing it), posted as the
+a quick rule, is `invalid` without echoing it), posted as the
 editor's rows and read by the page's editor, and previewed by the page's
 own preview. As on the page, the editor's problems are answered, not
 refused: `problems` lists each at its row with the page's words, `blocking`
