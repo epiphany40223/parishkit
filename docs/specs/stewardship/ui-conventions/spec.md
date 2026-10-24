@@ -83,6 +83,7 @@ when it lands.
   [row actions](#row-actions-and-confirmation),
   [new pages and in-page panes](#new-pages-and-in-page-panes),
   [column order](#table-column-order),
+  [default row order](#default-row-order),
   [Family and Member names](#family-and-member-names),
   [Members and Families no longer in ParishSoft](#members-and-families-no-longer-in-parishsoft),
   [table fit and row height](#table-fit-and-row-height).
@@ -4439,8 +4440,10 @@ orders. In v1 that covers:
   Family code would need every code decrypted per view);
 - Financial stewardship detail (Family, Family DUID, Annual pledge and
   latest response);
-- the Ministry requests review worklist (Member and Ministry; newest first
-  by default, #1064, #1684).
+- the Ministry requests follow-up selection (Member and Ministry; newest
+  first by default, #1064), which the command line's follow-up list and
+  export still read in its order; its review worklist reads every row and
+  orders them in memory ([default row order](#default-row-order), #2124).
 
 Extending those vocabularies is a schema change; the DUID sorts of the
 financial, Additional information and Ministry tables came with one
@@ -4911,6 +4914,42 @@ report (Member DUID in one Ministry's view)
 ([#960](https://github.com/epiphany40223/parishkit/issues/960)); the
 Additional information worklist, which did too, sorts its whole list in
 memory since [#1685](https://github.com/epiphany40223/parishkit/issues/1685).
+
+### Default row order
+
+**Rule.** Every review work table (the
+[review worklist](../review-pipeline/spec.md#review-worklist) of Census
+changes, Ministry requests, Pledges, Additional information and
+Limitations, and the same rows on the Family hub's Census, Additional
+information and Limitations tabs) lists its rows by default in name order: the name shown in
+its first identity column (accents dropped and casefolded, so "Étienne"
+sorts beside "Etienne"; a row with no name last), then that name's DUID (so every
+row of one Family or Member stays together, even beside another with the
+same name), then the table's finer parts, ending with the row's own unique
+id (compared as a number when it is one). Rows with the same names therefore always come out in the same order,
+on every page and refresh of the same view (and in Ministry requests' Export these requests, which lists the
+table's rows). Downloads keep their own documented orders. Per stream:
+
+| Table | Default order |
+| --- | --- |
+| Census changes | Family name, Family DUID, Who (the Member, "Family" or "New Member: …"), What changed, the change's id |
+| Ministry requests | Member name, Member DUID, Ministry name, the request's id |
+| Pledges | Family name, Family DUID, the response's id |
+| Additional information | Family name, Family DUID, the request's id |
+| Limitations | Family name, Family DUID, Member name (none for the Family's own answer, which comes first), the answer's id |
+
+A row with no DUID (a New Member, a proposed Member) follows those with one.
+A column the reader chooses sorts first, as its
+[heading](#admin-tables) says, and the rows it leaves equal keep this
+default order (ascending, whichever direction the column sorts), so a
+chosen sort is just as stable. **Why.** The Administrator works through
+a table by name; with equal names in an unspecified order (the Smith
+Families, say) a row could move between pages or after a refresh, and a
+row reviewed on one page could reappear on the next (Administrator,
+2026-10-24, [#2124](https://github.com/epiphany40223/parishkit/issues/2124)).
+**Shared code.** `name_order` and `Sorting`'s `then` key in
+`web/tables.py`; each stream's `SORTING` (`WORKLIST_SORTING` for
+Ministry requests). **Precedent.** #2124.
 
 ### Family and Member names
 

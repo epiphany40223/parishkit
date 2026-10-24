@@ -1907,7 +1907,9 @@ export below it. Its parts:
    the shared [column order](../ui-conventions/spec.md#table-column-order),
    Baseline (where a stream has one), Family's answer, Reviewer's value
    (where a stream has Edit), ParishSoft now (on Conflict, Entered incorrectly and Not seen rows),
-   Stage, Submitted, Last decision (who, when, note), Actions.
+   Stage, Submitted, Last decision (who, when, note), Actions. Rows are in
+   the shared [default row order](../ui-conventions/spec.md#default-row-order)
+   (by name) until the reader sorts a column, and keep it for ties after.
 3. The shared export pane below the table, as on every report
    ([#1679](https://github.com/epiphany40223/parishkit/issues/1679)).
 

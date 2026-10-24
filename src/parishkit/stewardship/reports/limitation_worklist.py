@@ -40,7 +40,7 @@ from parishkit.stewardship.web.review_worklist import (
     build,
     page_address,
 )
-from parishkit.stewardship.web.tables import Sorting
+from parishkit.stewardship.web.tables import Sorting, fold, name_order
 
 from .limitations import ANSWERS, STAGES, LimitationsQuery
 
@@ -107,11 +107,14 @@ def _text(value):
     return (value or "").casefold()
 
 
-# The list is complete in memory, so every column sorts here; the selection's
-# order (Family, then its Members, then its own answer) stays the tiebreak.
+# The list is complete in memory, so every column sorts here. Rows equal in
+# the chosen column keep the default order (UX conventions, "Default row
+# order", #2124): the Family's name, its DUID (so a Family's rows stay together), the
+# Member's name and the answer's own id (a Family's own answer names no
+# Member, so it comes before its Members').
 SORTING = Sorting.by_column(
     {
-        "family": lambda row: (_text(row["family_name"]), row["family_duid"]),
+        "family": lambda row: fold(row["family_name"]) or None,
         "duid": lambda row: row["family_duid"],
         "member": lambda row: _text(row.get("member_name")),
         # Members by DUID; proposed Members and the Family's own answer,
@@ -124,6 +127,12 @@ SORTING = Sorting.by_column(
     },
     default="family",
     descending_first={"submitted"},
+    then=lambda row: name_order(
+        row["family_name"],
+        row["family_duid"],
+        _text(row.get("member_name")),
+        str(row["id"]),
+    ),
 )
 
 

@@ -82,10 +82,16 @@ def page(rows, *, stage="all", roles=STAFF, mutable=True, replacements=None, **e
 
 
 def icons(worklist, index=0):
-    """(action, selected) of one row's icons, in order."""
-    return [
-        (icon["action"], icon["selected"]) for icon in worklist.rows[index]["icons"]
-    ]
+    """(action, selected) of one row's icons, in order.
+
+    ``index`` is the row's position, or its id (a string), for a test whose
+    rows the default name order (#2124) lists in another order.
+    """
+    if isinstance(index, str):
+        (shown,) = [row for row in worklist.rows if row["id"] == index]
+    else:
+        shown = worklist.rows[index]
+    return [(icon["action"], icon["selected"]) for icon in shown["icons"]]
 
 
 @pytest.mark.parametrize(
@@ -158,21 +164,29 @@ def test_staff_review_by_hand_and_automatic_rows():
         shaped(id="4", handling="manual", field="suffix", decision="approved"),
     ]
     worklist, html = page(rows, stage="all")
-    assert icons(worklist, 0) == [("accept", False), ("edit", False), ("ignore", False)]
-    assert icons(worklist, 1) == [("accept", False), ("edit", False), ("ignore", False)]
+    assert icons(worklist, "1") == [
+        ("accept", False),
+        ("edit", False),
+        ("ignore", False),
+    ]
+    assert icons(worklist, "2") == [
+        ("accept", False),
+        ("edit", False),
+        ("ignore", False),
+    ]
     # The email opt-out takes no Edit.
-    assert icons(worklist, 2) == [("accept", False), ("ignore", False)]
-    assert icons(worklist, 3) == [
+    assert icons(worklist, "3") == [("accept", False), ("ignore", False)]
+    assert icons(worklist, "4") == [
         ("accept", True),
         ("back_to_review", False),
         ("entered_by_hand", False),
     ]
-    assert [row["kinds"] for row in worklist.rows] == [
-        "accept ignore",
-        "accept ignore",
-        "accept ignore",
-        "back_to_review entered_by_hand",
-    ]
+    assert {row["id"]: row["kinds"] for row in worklist.rows} == {
+        "1": "accept ignore",
+        "2": "accept ignore",
+        "3": "accept ignore",
+        "4": "back_to_review entered_by_hand",
+    }
     assert html.count("data-select-row") == 4
     assert [button["value"] for button in worklist.bulk] == [
         "accept",

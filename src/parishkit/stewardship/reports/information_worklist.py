@@ -45,7 +45,7 @@ from parishkit.stewardship.web.review_worklist import (
     build,
     page_address,
 )
-from parishkit.stewardship.web.tables import Sorting
+from parishkit.stewardship.web.tables import Sorting, fold, name_order
 
 from .information import InformationQuery, information_page
 
@@ -120,17 +120,20 @@ def _text(value):
     return (value or "").casefold()
 
 
-# The list is complete in memory, so every column sorts here; the selection's
-# order stays the tiebreak, since the sort is stable. Families sort by the
-# shown name (surname first, then heads), as the directory does.
+# The list is complete in memory, so every column sorts here. Families sort
+# by the shown name (surname first, then heads), as the directory does; rows
+# equal in the chosen column keep the default order (UX conventions,
+# "Default row order", #2124): the name, the Family DUID, then the request's
+# own id (a request names no Member).
 SORTING = Sorting.by_column(
     {
-        "family": lambda row: (_text(row["family_name"]), row["family_duid"]),
+        "family": lambda row: fold(row["family_name"]) or None,
         "duid": lambda row: row["family_duid"],
         "submitted": lambda row: row["submitted_at"],
     },
     default="family",
     descending_first={"submitted"},
+    then=lambda row: name_order(row["family_name"], row["family_duid"], str(row["id"])),
 )
 # The queued complete export's own sort for each table sort, so the file
 # lists the requests in the table's order.

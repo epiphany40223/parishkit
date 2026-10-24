@@ -18,15 +18,18 @@ from django.urls import reverse
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.web.tables import ALL, PAGE_SIZES, paginate
 
+from .census_change_views import SORTING
 from .census_changes import EVERY_STAGE, CensusQuery, census_changes
 from .census_worklist import worklist_page
 from .export_services import admit_campaign
 from .hub_streams import frequency_words
 from .information_worklist import EVERY_STAGE as INFORMATION_EVERY
+from .information_worklist import SORTING as INFORMATION_SORTING
 from .information_worklist import WorklistQuery as InformationWorklist
 from .information_worklist import requests as information_requests
 from .information_worklist import worklist_page as information_page
 from .limitation_worklist import EVERY_STAGE as LIMITATIONS_EVERY
+from .limitation_worklist import SORTING as LIMITATION_SORTING
 from .limitation_worklist import WorklistQuery as LimitationWorklist
 from .limitation_worklist import answer_rows
 from .limitation_worklist import at_stage as limitations_at_stage
@@ -72,7 +75,7 @@ def census_worklist(campaign_id, family_id, principal, *, prefix, writable):
     worklist, _table = worklist_page(
         result,
         query,
-        paginate(result["rows"], ALL_ROWS),
+        paginate(SORTING.sort_rows(result["rows"], SORTING.default), ALL_ROWS),
         reverse("admin:census_changes"),
         mutable=writable,
         prefix=prefix,
@@ -286,7 +289,9 @@ def limitations_worklist(campaign_id, family_duid, principal, *, writable):
     worklist, _table = limitations_page(
         counts,
         query,
-        paginate(rows, ALL_ROWS),
+        paginate(
+            LIMITATION_SORTING.sort_rows(rows, LIMITATION_SORTING.default), ALL_ROWS
+        ),
         reverse("admin:limitations_report"),
         mutable=writable,
         prefix="hub-other-limitations",
@@ -311,7 +316,9 @@ def information_worklist(campaign_id, family_duid, item, *, writable):
     worklist, _table = information_page(
         counts,
         query,
-        paginate(rows, ALL_ROWS),
+        paginate(
+            INFORMATION_SORTING.sort_rows(rows, INFORMATION_SORTING.default), ALL_ROWS
+        ),
         reverse("admin:information_queue"),
         mutable=writable,
         prefix="hub-other-information",
