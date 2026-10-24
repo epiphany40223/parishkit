@@ -233,6 +233,21 @@ def preset_rule(preset, groups):
     }
 
 
+class DescribedRadioSelect(forms.RadioSelect):
+    """Radios each described by the help line drawn after it.
+
+    The section draws a preset's description as ``<radio id>-help`` under
+    its label, so a screen reader reads the definition with the choice.
+    """
+
+    def create_option(self, *args, **kwargs):
+        """Name the option's own help line in its ``aria-describedby``."""
+        option = super().create_option(*args, **kwargs)
+        if option["attrs"].get("id"):
+            option["attrs"]["aria-describedby"] = f"{option['attrs']['id']}-help"
+        return option
+
+
 def add_fields(form, data):
     """Add the section's fields to a creation form, over ``data``'s groups.
 
@@ -252,7 +267,7 @@ def add_fields(form, data):
         choices=list(PRESET_LABELS.items()),
         initial="active_parishioners",
         required=False,
-        widget=forms.RadioSelect,
+        widget=DescribedRadioSelect,
     )
     form.fields[REGISTERED] = forms.ChoiceField(
         label=_("Registered to this parish"),

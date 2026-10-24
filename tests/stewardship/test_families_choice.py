@@ -137,3 +137,11 @@ def test_the_command_line_posts_a_rule_as_the_page_does():
         if "families_groups" in data:
             data["families_groups"] = [int(item) for item in data["families_groups"]]
         assert posted(**data)[0] == rule
+
+
+def test_each_preset_radio_is_described_by_its_help_line():
+    """A screen reader reads a preset's definition with its radio."""
+    radios = choice.DescribedRadioSelect(choices=list(choice.PRESET_LABELS.items()))
+    html = radios.render(choice.PRESET, "active_parishioners", {"id": "id_preset"})
+    assert 'aria-describedby="id_preset_0-help"' in html
+    assert 'aria-describedby="id_preset_1-help"' in html
