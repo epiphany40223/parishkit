@@ -269,12 +269,14 @@ def test_a_second_initial_invitation_waits_and_its_refusal_stays_put(
     assert summary.locator("li").all_inner_texts() == [message]
     assert "{'message'" not in page.locator("main").inner_text()
     # Said where the reader is: under Review changes, with focus, so the
-    # page does not jump to its top (data-review-summary-after).
+    # page does not jump to its top (data-review-summary-after). Focus
+    # scrolls it just into view, so its bottom may sit a fraction of a
+    # pixel past the edge (WebKit rounds that way at 1280).
     eventually(page, "document.activeElement?.matches('[data-error-summary]')")
     assert page.evaluate(
         "(() => { const box = document.querySelector('[data-error-summary]')"
         ".getBoundingClientRect();"
-        " return box.top >= 0 && box.bottom <= innerHeight; })()"
+        " return box.top >= 0 && box.bottom <= innerHeight + 1; })()"
     )
     assert page.evaluate("window.scrollY > 0")
     assert not page.locator("dialog[data-review-dialog][open]").count()
