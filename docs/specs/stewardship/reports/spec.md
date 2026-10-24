@@ -1294,14 +1294,14 @@ In this release the lines cover the decisions stored today:
 - Limitations: each Accept, Ignore, Back to review and Handled
   (`stewardship_limitation_review`).
 
-Staff's Add, Update ParishSoft and the refresh checks
-(Confirmed, Entered incorrectly, Not seen in ParishSoft, attributed to the
-system) join when the review-pipeline slices that store them land
-([#1734](https://github.com/epiphany40223/parishkit/pull/1734),
-[#1736](https://github.com/epiphany40223/parishkit/pull/1736),
-[#1758](https://github.com/epiphany40223/parishkit/pull/1758),
-[#1741](https://github.com/epiphany40223/parishkit/pull/1741)), each
-reading its own history the same way. Lines are read from the Family's live
+Those are every stream's stored decisions, Staff's Add included (above).
+Two kinds of step are not Timeline lines: Update ParishSoft's writes
+([#1758](https://github.com/epiphany40223/parishkit/pull/1758)) and the
+refresh checks (Confirmed, Entered incorrectly, Not seen in ParishSoft,
+attributed to the system,
+[#1741](https://github.com/epiphany40223/parishkit/pull/1741)); Census
+changes and the other review pages show them. Adding them would read
+their own records the same way. Lines are read from the Family's live
 responses in this campaign (Production), so Testing rehearsal decisions are
 never listed, and only while the Timeline tab is chosen; the
 [timeline export](#timeline-export) always includes them.
