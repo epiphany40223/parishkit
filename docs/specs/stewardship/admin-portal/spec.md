@@ -8186,12 +8186,18 @@ The ParishSoft API cannot change Ministry rosters, so a join or leave is
 always entered in ParishSoft by hand
 ([#528](https://github.com/epiphany40223/parishkit/issues/528), gap G28). A
 request resolved by a person as *joined* or *leave confirmed* carries an
-**Entered in ParishSoft** tick that Staff and Admin set or clear
+**Entered by hand** tick that Staff and Admin set or clear
 [in place](../ui-conventions/spec.md#in-place-controls), on the request's
 page and on Ministry requests at To enter by hand; who and when
-are kept as history. A request a refresh resolved before #1890 because the
+are kept as history. The request page words it in the
+[review pipeline terms](../ui-conventions/spec.md#review-pipeline-terms):
+To enter by hand, then **Mark Entered by hand**, then Entered by hand with
+who and when (until
+[#2102](https://github.com/epiphany40223/parishkit/issues/2102) it said
+Not yet entered in ParishSoft, Mark entered in ParishSoft and Entered in
+ParishSoft). A request a refresh resolved before #1890 because the
 ParishSoft roster already showed the change (it has a resolution source)
-needs no tick and shows *Already in ParishSoft* (the stage Confirmed); a
+needs no tick and shows *Confirmed* (until #2102, *Already in ParishSoft*); a
 refresh no longer resolves requests, so every new request is decided and
 ticked first. For Staff and Admin, the
 worklist's Stage says To enter by hand or Entered by hand, its Entered by

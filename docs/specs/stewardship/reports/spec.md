@@ -3111,7 +3111,10 @@ changed, **ParishSoft at the check**, **Will write**, and **Outcome**:
   compared with (the Family's baseline, or the accepted base after an
   Accept over a Conflict), so ParishSoft at the check shows that value and
   Will write shows the reviewer's value, else the Family's answer.
-- **Already in ParishSoft**: ParishSoft already holds the value to write,
+- **ParishSoft already holds it** (worded "Already in ParishSoft" until
+  [#2102](https://github.com/epiphany40223/parishkit/issues/2102), a
+  retired [review pipeline term](../review-pipeline/spec.md#pipeline-vocabulary)):
+  ParishSoft already holds the value to write,
   so ParishSoft at the check and Will write both show that value (the
   reviewer's value, else the Family's answer). Nothing is written, and the
   change is marked *Updated in ParishSoft* (`published`) at the check
@@ -3121,8 +3124,8 @@ changed, **ParishSoft at the check**, **Will write**, and **Outcome**:
   Census changes undoes the mark, with a required note, and returns the
   change to Ready to update
   ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)).
-  Nothing in ParishSoft changes, so the next run finds it Already in
-  ParishSoft again.
+  Nothing in ParishSoft changes, so the next run finds that ParishSoft
+  already holds it again.
 - **Conflict**: ParishSoft changed since the Family answered. Nothing for
   this Member is written until the change is decided again on Census
   changes (Accept against ParishSoft's value once the next refresh shows

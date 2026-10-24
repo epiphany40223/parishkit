@@ -32,6 +32,14 @@ def field(outcome):
     return SimpleNamespace(outcome=outcome)
 
 
+def test_outcomes_use_the_review_pipeline_words():
+    """No outcome uses a retired review pipeline word (#2102): a value
+    ParishSoft already holds is not "Already in ParishSoft"."""
+    words = {key: str(label) for key, label in publication.OUTCOMES.items()}
+    assert words["already_in_parishsoft"] == "ParishSoft already holds it"
+    assert not any("Already in ParishSoft" in label for label in words.values())
+
+
 @pytest.mark.parametrize(
     ("outcome", "blocked", "accepted", "edited", "expected"),
     [

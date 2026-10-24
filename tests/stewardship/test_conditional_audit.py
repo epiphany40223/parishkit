@@ -128,14 +128,14 @@ def test_locked_report_actions_name_the_notice_that_says_why(
 @pytest.mark.parametrize("entered", [False, True])
 def test_a_held_roster_tick_is_shown_unavailable_with_why(entered):
     """While other campaign work holds follow-up, the request page's Mark
-    entered in ParishSoft or Back to review is drawn disabled, named by the
+    Entered by hand or Back to review is drawn disabled, named by the
     locked notice; otherwise it is the plain enabled button. (Back to review
     opens its dialog, so it is no submit button and has no
     data-server-disabled; since #1893 it carries the worklist's undo icon.)"""
     label = (
         r'<svg class="action-icon"[^>]*>.*?</svg>\s+Back to review'
         if entered
-        else "Mark entered in ParishSoft"
+        else "Mark Entered by hand"
     )
     row = {
         "id": uuid4(),

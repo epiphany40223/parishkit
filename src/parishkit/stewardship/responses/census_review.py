@@ -177,7 +177,7 @@ def editable(proposal):
 
 
 ISO_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
-BLANK_EDIT = "Enter the value to publish. To leave ParishSoft as it is, choose Ignore."
+BLANK_EDIT = "Enter the value to use. To leave ParishSoft as it is, choose Ignore."
 # The review guard keeps at most this many bytes of an edit, measured as
 # PostgreSQL prints its JSON (``octet_length(admin_value::text)``, 0128).
 EDIT_BYTES = 1024

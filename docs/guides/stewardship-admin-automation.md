@@ -2520,7 +2520,7 @@ Ministry requests' Stage To enter by hand; the Roster changes to enter page
 was folded into it). Like the page,
 Administrators and Staff may run it, from a session of any scope; a
 Ministry leader is refused (`denied`). Its options are the page's:
-`--show todo` (the default: not yet marked Entered in ParishSoft) or
+`--show todo` (the default: To enter by hand, not yet marked) or
 `--show all` (marked ones too), and `--ministry DUID` for one Ministry. It
 prints `show`, `ministry` (null without `--ministry`), `matching` (the
 list's rows), `joins`, `leaves`, `entered` (already marked; 0 with `--show
@@ -2610,14 +2610,14 @@ the command's `admin_cmd_pledges_decide`.
 
 ### Recording a census change's outcome
 
-`census resolve` is a Census changes row's **Mark entered in ParishSoft**
-(`entered`), **Ignore** (`ignored`) or **Reopen** (`reopened`) icon. Like the
-page's buttons it needs a full-scope session; Administrators and Staff may
-record Entered and Ignore, and only an Administrator may reopen an ignored
-change (Staff get `denied`). Reopen of a change that is Entered by hand
-(also Entered incorrectly or Confirmed), Updated in ParishSoft or Already in
-ParishSoft is the page's **Back to review** of that step, which Staff may
-record too: the change goes back to the stage before it with its decision
+`census resolve` is a Census changes row's **Entered by hand**
+(`entered`), **Ignore** (`ignored`) or **Back to review** (`reopened`)
+icon. Like the page's buttons it needs a full-scope session;
+Administrators and Staff may record Entered by hand and Ignore, and only an
+Administrator may send an ignored change back to review (Staff get
+`denied`). `reopened` on a change that is Entered by hand (also Entered
+incorrectly or Confirmed) or Updated in ParishSoft is the page's **Back to
+review** of that step, which Staff may record too: the change goes back to the stage before it with its decision
 kept (To enter by hand or Ready to update; To review when nobody had
 decided it), and nothing is written to ParishSoft.
 Every outcome can be undone that way, so no action asks first, and there
@@ -2703,12 +2703,12 @@ database still stores `approved`. System logs show the page's
 ### Editing a value or resolving a conflict
 
 `census edit` is the same row's **Edit value** (`--value`) and **Clear
-edit** (`--clear`): the value publication writes instead of the Family's
+edit** (`--clear`): the value Update ParishSoft writes instead of the Family's
 answer, which never changes. `census resolve-conflict` is **Use the
 Family's value anyway** on a Conflict: it accepts the change over
 ParishSoft's current value, which publication then expects to find. Both
 are an Administrator's only, with a full-scope session, one change at a
-time, and ask nothing, as on the page; neither publishes anything.
+time, and ask nothing, as on the page; neither writes anything to ParishSoft.
 
 ```sh
 pk-admin census edit PROPOSAL_ID --expected-version 3 --value "Patricia"
@@ -3324,7 +3324,7 @@ Roster changes to enter page downloaded) to standard output, and its document (`
 standard error, as `export limitations` does. It needs a full-scope
 session, as every export does; Administrators and Staff may run it, and a
 Ministry leader is refused (`denied`). It takes `report roster`'s options,
-`--show todo` (the default: not yet marked Entered in ParishSoft) or
+`--show todo` (the default: To enter by hand, not yet marked) or
 `--show all`, and `--ministry DUID`, plus `--format` (`xlsx`, the default,
 `csv` or `pdf`) and `--timezone` (UTC, the default, or a time zone name,
 for the file's times). It records the page's "downloaded" event
@@ -3682,7 +3682,7 @@ the last page, as on the page.
 | `campaign_id` | The current campaign |
 | `filters` | The choices applied: `ministry`, `action`, `state`, `outcome`, `sort` |
 | `page`, `size`, `total` | The page shown, rows per page, and how many requests the filters keep |
-| `rows` | Each request: `id`, `version` (what `--expected-version` takes), `ministry` (DUID) and `ministry_name`, `in_campaign`, `kind` (`member` or `proposed_member`), `action`, `state`, `outcome`, `open`, `member_status` (`current`, or `missing`, `moved`, `inactive` or `deceased` in ParishSoft), `submitted_at`, `resolved_at`, `source_resolved`, `latest`, `last_contact_at` and `roster` (the Entered in ParishSoft tick: `eligible`, `entered`, `sequence`) |
+| `rows` | Each request: `id`, `version` (what `--expected-version` takes), `ministry` (DUID) and `ministry_name`, `in_campaign`, `kind` (`member` or `proposed_member`), `action`, `state`, `outcome`, `open`, `member_status` (`current`, or `missing`, `moved`, `inactive` or `deceased` in ParishSoft), `submitted_at`, `resolved_at`, `source_resolved`, `latest`, `last_contact_at` and `roster` (the Entered by hand mark: `eligible`, `entered`, `sequence`) |
 
 | `followup show` field | What it holds |
 | --- | --- |
@@ -3752,7 +3752,7 @@ The queue's **Export these requests** is `followup export`, see
 ## Roster tick and Additional information
 
 `followup roster-entered` sets or clears a resolved Ministry request's
-**Entered in ParishSoft** tick, as the tick on the request's page does, and
+**Entered by hand** mark, as the tick on the request's page does, and
 `followup roster-bulk` marks several at once, as **Roster changes to
 enter**'s bulk mark does. `followup information-show` reads one
 **Additional information** request's page with its follow-up history, and
@@ -4431,3 +4431,10 @@ Each change is recorded in System logs as on the page
 - `pk-admin/1` (#2036, delivery plan item 7): `report-email send-test`, the
   row's Send a test to me; `delivery list --purpose` takes
   `admin_report_test`.
+- `pk-admin/1` (#2102): no output change. Help text uses the review
+  pipeline's words: `census resolve --action entered` is Entered by hand
+  and `reopened` Back to review, `census edit` writes rather than
+  publishes, `report roster --show todo` is To enter by hand, and the
+  `followup roster-entered` and `roster-bulk` help and prompt say
+  Entered by hand instead of Entered in ParishSoft. The census edit
+  refusal for a blank value says "Enter the value to use".

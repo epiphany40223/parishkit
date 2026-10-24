@@ -334,9 +334,9 @@ def test_a_leader_never_sees_the_tick_nor_the_list(response_service, google):
         response, body = get(browser, item)
         assert response.status_code == 200 and b"Asked to join" in body
         for words in (
-            b"Entered in ParishSoft",
-            b"Not yet entered",
-            b"Mark entered",
+            b"Entered by hand",
+            b"To enter by hand",
+            b"Mark Entered",
             f"{join.pk}/roster/".encode(),
             b"followup-roster",
             b"update ParishSoft yourself",
@@ -378,7 +378,7 @@ def test_a_leader_never_sees_the_tick_nor_the_list(response_service, google):
     staff, login = signed_in()
     assert login.status_code == 302
     _, body = get(staff, item)
-    assert b"Entered in ParishSoft by admin@example.org" in body
+    assert b"Entered by hand by admin@example.org" in body
     assert b'data-confirm-open="followup-roster-clear-dialog"' in body
     assert b"update ParishSoft yourself" in body
     assert b"Staff enter roster changes" not in body

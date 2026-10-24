@@ -210,8 +210,8 @@ def test_queue_status_cell_says_one_short_line():
         row = roster_row(roster_eligible=True, source_resolved=False) | values
         return tick_html(row, can_tick=True, compact=True, mutable=True)
 
-    assert cell() == "<br>Entered"
-    assert cell(roster_entered=False) == "<br>Not yet entered"
+    assert cell() == "<br>Entered by hand"
+    assert cell(roster_entered=False) == "<br>To enter by hand"
     assert "staff@example.org" not in cell()
 
 

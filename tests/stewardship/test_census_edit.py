@@ -42,9 +42,9 @@ def test_an_edit_is_read_as_the_family_form_reads_its_answer(field, raw, expecte
 @pytest.mark.parametrize(
     ("field", "raw", "message"),
     [
-        ("first_name", "", "Enter the value to publish"),
+        ("first_name", "", "Enter the value to use"),
         ("email", "not-an-address", "separated by commas or semicolons"),
-        ("middle_name", "  ", "Enter the value to publish"),
+        ("middle_name", "  ", "Enter the value to use"),
         ("first_name", "x" * 31, "at most 30 characters"),
         ("email", f"{'a' * 70}@example.org; {'b' * 70}@example.org", "at most 150"),
         ("birth_date", "2054-10-07", "no later than today"),
