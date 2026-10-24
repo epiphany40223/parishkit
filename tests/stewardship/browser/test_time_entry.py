@@ -7,12 +7,14 @@ unavailable while an entry cannot be read.
 """
 
 import json
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 
 from .test_components import axe_violations
-from .waits import available, has_attribute, has_text, hidden, visible
+from .waits import available, has_attribute, has_text, hidden, reads, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -84,7 +86,7 @@ def test_refresh_times_read_live_refuse_at_the_field_and_gate_save(
     line = reading(page, TIMES)
     save = page.locator("form.panel button[type=submit]")
     # The saved default reads back on both clocks.
-    has_text(line, "Reads as 02:00 (2:00 AM)")
+    has_text(line, reads("Reads as 2:00 AM"))
     assert line.get_attribute("id") in field.get_attribute("aria-describedby")
     # The live region is always rendered but says nothing at load; it
     # speaks only for this field's typing, after a pause.
@@ -94,17 +96,19 @@ def test_refresh_times_read_live_refuse_at_the_field_and_gate_save(
     height = save.bounding_box()["height"]
     reading_height = line.bounding_box()["height"]
     field.fill("")
-    has_text(line, "Blank reads as 02:00 (2:00 AM)")
-    has_text(live(page, TIMES), "Blank reads as 02:00 (2:00 AM)")
+    has_text(line, reads("Blank reads as 2:00 AM"))
+    has_text(live(page, TIMES), reads("Blank reads as 2:00 AM"))
     # Only separators is blank too, never an empty reading with Save open.
     field.fill(" , ; ")
-    has_text(line, "Blank reads as 02:00 (2:00 AM)")
+    has_text(line, reads("Blank reads as 2:00 AM"))
     assert save.is_enabled()
     field.fill("2pm, 2 am\n0800; 14:00")
     has_text(
         line,
-        "Reads as 14:00 (2:00 PM), 02:00 (2:00 AM), 08:00 (8:00 AM), "
-        "14:00 (2:00 PM); 14:00 is listed more than once and saved once",
+        reads(
+            "Reads as 2:00 PM, 2:00 AM, 8:00 AM, 2:00 PM",
+            "; 2:00 PM is listed more than once and saved once",
+        ),
     )
     assert save.is_enabled()
     # A half-typed entry is not flashed red: Save waits at once, the refusal
@@ -139,7 +143,7 @@ def test_refresh_times_read_live_refuse_at_the_field_and_gate_save(
     assert axe_violations(page, axe_source) == []
     # Fixing it clears the refusal and Save at once; blur normalises.
     field.fill("2pm, 2:30 a.m.")
-    has_text(line, "Reads as 14:00 (2:00 PM), 02:30 (2:30 AM)")
+    has_text(line, reads("Reads as 2:00 PM, 2:30 AM"))
     assert field.get_attribute("aria-invalid") == "false"
     assert save.is_enabled()
     hidden(hint)
@@ -164,7 +168,7 @@ def test_a_server_refusal_is_cleared_by_the_first_edit(page, component_origin):
     assert page.locator("form.panel button[type=submit]").is_disabled()
     field.fill("02:00, 2:20")
     hidden(server)
-    has_text(reading(page, TIMES), "Reads as 02:00 (2:00 AM), 02:20 (2:20 AM)")
+    has_text(reading(page, TIMES), reads("Reads as 2:00 AM, 2:20 AM"))
     assert "id_times_error" not in (field.get_attribute("aria-describedby") or "")
     assert field.get_attribute("aria-invalid") == "false"
     assert page.locator("form.panel button[type=submit]").is_enabled()
@@ -204,13 +208,13 @@ def test_schedule_send_times_read_live_normalise_and_gate_save(
     # Los Angeles browser's zone (9:00 AM in the campaign's New York, #558).
     saved = '[name="schedules-0-time"]'
     assert page.locator(saved).input_value() == "06:00"
-    has_text(reading(page, saved), "Reads as 06:00 (6:00 AM)")
+    has_text(reading(page, saved), "Reads as 6:00 AM PDT")
     page.locator(f'[name="{NEW}kind"]').select_option("reminder")
     page.locator(f'[name="{NEW}date"]').fill("2054-10-05")
     page.locator(f'[name="{NEW}template_version"]').select_option(index=1)
     time = f'[name="{NEW}time"]'
     page.locator(time).fill("9p")
-    has_text(reading(page, time), "Reads as 21:00 (9:00 PM)")
+    has_text(reading(page, time), "Reads as 9:00 PM PDT")
     page.locator(time).fill("21:60")
     has_text(
         reading(page, time),
@@ -220,7 +224,13 @@ def test_schedule_send_times_read_live_normalise_and_gate_save(
     assert save.get_attribute("data-pane-gated") == ""
     assert axe_violations(page, axe_source) == []
     page.locator(time).fill("7")
-    has_text(reading(page, time), "Reads as 07:00 (7:00 AM)")
+    has_text(reading(page, time), "Reads as 7:00 AM PDT")
+    # The zone's name is the one on the send date: a December send reads
+    # PST, even while Los Angeles is on PDT (#2129).
+    page.locator(f'[name="{NEW}date"]').fill("2054-12-07")
+    has_text(reading(page, time), "Reads as 7:00 AM PST")
+    page.locator(f'[name="{NEW}date"]').fill("2054-10-05")
+    has_text(reading(page, time), "Reads as 7:00 AM PDT")
     # The pane now holds a whole schedule, which Review covers.
     available(save)
     assert save.get_attribute("data-pane-gated") is None
@@ -271,7 +281,7 @@ def test_a_schedule_time_refused_by_the_server_clears_on_edit(page, component_or
     assert save.is_disabled()
     page.locator(time).fill("9:15 am")
     hidden(server)
-    has_text(reading(page, time), "Reads as 09:15 (9:15 AM)")
+    has_text(reading(page, time), reads("Reads as 9:15 AM"))
     assert save.is_enabled()
 
 
@@ -287,7 +297,7 @@ def test_a_saved_time_with_seconds_reads_and_saves_unchanged(page, component_ori
     change_the_window(page)
     open_saved(page)
     assert page.locator(time).input_value() == "06:00:37"
-    has_text(reading(page, time), "Reads as 06:00:37 (6:00:37 AM)")
+    has_text(reading(page, time), reads("Reads as 6:00:37 AM"))
     assert save.is_enabled()
     page.locator(time).fill("06:00:38")
     has_text(
@@ -306,7 +316,7 @@ def test_another_controls_change_announces_no_time_field(page, component_origin)
     """Choosing a mail type re-checks the time fields silently."""
     page.goto(component_origin + "/schedule-editor-mail")
     saved = '[name="schedules-0-time"]'
-    has_text(reading(page, saved), "Reads as 06:00 (6:00 AM)")
+    has_text(reading(page, saved), reads("Reads as 6:00 AM"))
     page.locator(f'[name="{NEW}kind"]').select_option("reminder")
     page.locator(f'[name="{NEW}kind"]').select_option("initial")
     page.wait_for_timeout(700)
@@ -317,9 +327,9 @@ def test_another_controls_change_announces_no_time_field(page, component_origin)
     ) == ["", ""]
     # This field's own typing is announced after the pause, once.
     page.locator(f'[name="{NEW}time"]').fill("7pm")
-    has_text(live(page, f'[name="{NEW}time"]'), "Reads as 19:00 (7:00 PM)")
+    has_text(live(page, f'[name="{NEW}time"]'), reads("Reads as 7:00 PM"))
     page.locator(f'[name="{NEW}time"]').blur()
-    has_text(live(page, f'[name="{NEW}time"]'), "Reads as 19:00 (7:00 PM)")
+    has_text(live(page, f'[name="{NEW}time"]'), reads("Reads as 7:00 PM"))
 
 
 def test_edit_as_text_lists_read_live_one_per_line_and_follow_the_rows(
@@ -331,7 +341,7 @@ def test_edit_as_text_lists_read_live_one_per_line_and_follow_the_rows(
     at the field and holds Save while open; a closed panel holds nothing. A
     list refilled from the rows by the live check reads again.
     """
-    from .refresh_schedule_components import CHECK, PRODUCTION
+    from .refresh_schedule_components import CHECK, PRODUCTION, ZONE
     from .test_refresh_schedule_editor import answering
 
     failures = []
@@ -342,11 +352,10 @@ def test_edit_as_text_lists_read_live_one_per_line_and_follow_the_rows(
     full = "#refresh-text-full"
     save = page.locator("form.panel button[type=submit]")
     line = reading(page, full)
-    has_text(
-        line,
-        "Reads as 00:00 (12:00 AM), 08:00 (8:00 AM), 12:00 (12:00 PM), "
-        "16:00 (4:00 PM), 20:00 (8:00 PM)",
-    )
+    # The refresh times are in the refresh schedule's zone, New York, not
+    # this Los Angeles browser's, and the reading names it for today.
+    zone = datetime.now(ZoneInfo(ZONE)).tzname()
+    has_text(line, f"Reads as 12:00 AM, 8:00 AM, 12:00 PM, 4:00 PM, 8:00 PM {zone}")
     described = page.locator(full).get_attribute("aria-describedby").split()
     assert described == [
         "refresh-text-help",
@@ -358,12 +367,13 @@ def test_edit_as_text_lists_read_live_one_per_line_and_follow_the_rows(
     page.locator(full).fill("1am\n" * 9)
     has_text(
         line,
-        "Reads as "
-        + ", ".join(["01:00 (1:00 AM)"] * 9)
-        + "; 01:00 is listed more than once and saved once",
+        reads(
+            "Reads as " + ", ".join(["1:00 AM"] * 9),
+            "; 1:00 AM is listed more than once and saved once",
+        ),
     )
     page.locator(full).fill("\n".join(f"{hour}:00" for hour in range(1, 10)))
-    has_text(line, "Reads as 9 times, from 01:00 (1:00 AM) to 09:00 (9:00 AM)")
+    has_text(line, reads("Reads as 9 times, from 1:00 AM to 9:00 AM"))
     # Refilling the lists re-reads only them: a rule time still being typed
     # elsewhere is not flashed red before its pause.
     rule = '[name="rules-0-at"]'
@@ -391,7 +401,7 @@ def test_edit_as_text_lists_read_live_one_per_line_and_follow_the_rows(
     page.get_by_text("Edit as text").click()
     expect(save).to_be_disabled()
     page.locator(full).fill("2am\n2 pm")
-    has_text(line, "Reads as 02:00 (2:00 AM), 14:00 (2:00 PM)")
+    has_text(line, reads("Reads as 2:00 AM, 2:00 PM"))
     assert line.bounding_box()["height"] == pytest.approx(height, abs=1)
     assert save.is_enabled()
     # Typed one per line, it stays one per line when focus leaves.
@@ -401,7 +411,7 @@ def test_edit_as_text_lists_read_live_one_per_line_and_follow_the_rows(
     # A row change refills the list from the check; its reading follows.
     page.locator('[name="rules-1-at"]').fill("15:00")
     expect(page.locator(full)).to_have_value("02:00, 15:00")
-    has_text(line, "Reads as 02:00 (2:00 AM), 15:00 (3:00 PM)")
+    has_text(line, reads("Reads as 2:00 AM, 3:00 PM"))
     # A bad entry in a closed panel neither holds Save nor makes the browser
     # refuse the submit ("not focusable"): the form really posts.
     page.locator(full).fill("2am\n25:00")

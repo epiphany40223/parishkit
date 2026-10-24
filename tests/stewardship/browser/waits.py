@@ -5,6 +5,8 @@ imports it) still collects where Playwright is not installed, such as the
 non-database suite that skips browser tests.
 """
 
+import re
+
 
 def visible(locator):
     """Assert that ``locator`` becomes visible, waiting like Playwright's expect.
@@ -71,6 +73,21 @@ def has_text(locator, text):
     from playwright.sync_api import expect
 
     expect(locator).to_have_text(text)
+
+
+# A time zone's short name as Intl.DateTimeFormat gives it: "EDT", or
+# "GMT+2" where the locale has no name for the zone.
+ZONE_NAME = r"(?:[A-Z]{2,5}|GMT[+-][0-9:]+)"
+
+
+def reads(text, after=""):
+    """A time field's reading, ``text`` then the zone's short name (#2129).
+
+    The zone name depends on the day the test runs (EDT or EST), so the
+    pattern takes any short zone name there; ``after`` is what follows it,
+    such as a list's repeats.
+    """
+    return re.compile(f"^{re.escape(text)} {ZONE_NAME}{re.escape(after)}$")
 
 
 def has_value(locator, value):

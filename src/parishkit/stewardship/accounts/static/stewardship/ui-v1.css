@@ -1482,7 +1482,7 @@ section.filter-panel > h2 { margin: 0; padding-block: .6rem; font-size: 1rem; li
 .field-row { display: flex; flex-wrap: wrap; align-items: start; gap: .5rem 1rem; margin-block: .75rem; }
 .field-row > div { position: relative; flex: 0 1 16rem; min-width: 12rem; }
 .field-row > div.short { flex-basis: 12rem; }
-/* Wide enough for a time's reading ("Reads as 09:30 (9:30 AM)") on one line. */
+/* Wide enough for a time's reading ("Reads as 9:30 AM EDT") on one line. */
 .field-row > div.field-time { flex-basis: 14rem; }
 .field-row > div > label, .field-row > div > .label-row { display: flex; align-items: center; min-height: 1.75rem; margin: 0 0 .25rem; }
 @media (max-width: 40rem) { .field-row > div { flex-basis: 100%; } }

@@ -942,3 +942,18 @@ def test_a_refused_add_asks_before_start_from(page, component_origin):
     assert checked(page, "start_from") is None
     assert page.evaluate("document.activeElement.value") == "daily"
     assert page.get_by_label("Report name").input_value() == "Staff requests"
+
+
+def test_a_one_time_report_time_reads_the_zone_on_its_send_date(page, component_origin):
+    """The Time reading names the zone on the one-time send date: a December
+    send reads PST in this Los Angeles browser while it is on PDT (#2129)."""
+    from playwright.sync_api import expect
+
+    page.goto(component_origin + NEW)
+    page.get_by_role("radio", name="Once").check()
+    page.get_by_label("Time", exact=True).fill("7")
+    note = page.locator("#report-time_reading")
+    page.get_by_label("Date", exact=True).fill("2054-10-05")
+    expect(note).to_have_text("Reads as 7:00 AM PDT")
+    page.get_by_label("Date", exact=True).fill("2054-12-07")
+    expect(note).to_have_text("Reads as 7:00 AM PST")

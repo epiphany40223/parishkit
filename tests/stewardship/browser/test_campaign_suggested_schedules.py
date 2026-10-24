@@ -31,7 +31,7 @@ from .stepper_components import (
 )
 from .test_campaign_subpage_direct_save import applied_line
 from .test_components import axe_violations
-from .waits import has_text, same_place, visible
+from .waits import has_text, reads, same_place, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -306,7 +306,7 @@ def test_typing_a_report_time_moves_nothing(page, component_origin, width):
     before = placed(daily, weekly, weekly_row, add, keep)
     reading = page.locator("#suggested-report_daily_time_reading")
     daily.press_sequentially("7")
-    has_text(reading, "Reads as 07:00 (7:00 AM)")
+    has_text(reading, reads("Reads as 7:00 AM"))
     assert same_place(placed(daily, weekly, weekly_row, add, keep), before, tolerance=1)
     # A refusal, shown once typing pauses, keeps the same reserved space:
     # the seconds one and a 32-character entry's (the field's limit) are

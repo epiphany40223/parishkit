@@ -3765,14 +3765,26 @@ Refused, with a plain message at the field: an hour above 23 (`24:00`), a
 minute above 59 (`7:60`), an hour outside 1–12 with AM or PM (`13pm`,
 `0am`), seconds other than `00`, and anything else, including digits from
 other scripts. Nothing is guessed: a bare `7` is 07:00, never 7 PM, and the
-reading shows both clocks so the Admin can see which. One exception keeps
+reading spells it out on the 12-hour clock ("7:00 AM") so the Admin can see
+which. One exception keeps
 saved work saving: a mail schedule saved before this change with seconds in
 its time keeps that time when it is posted back unchanged.
 
 **On the page** (`ui-v1.js`, fields marked `data-time-entry`):
 
-- A readable entry's reading shows under the field at once, as the Admin
-  types, on both clocks: "Reads as 07:00 (7:00 AM)".
+- Each time field shows one help line under it
+  ([#2129](https://github.com/epiphany40223/parishkit/issues/2129)). A
+  readable entry's reading shows there at once, as the Admin types: the time
+  on the 12-hour clock with AM or PM, then the short name of the zone it is
+  in for that date, from the browser's `Intl.DateTimeFormat`
+  (`timeZoneName: 'short'`): "Reads as 10:00 AM EDT". The date is the
+  field's own send or contact date when it has one (so a December send reads
+  EST in October), else today; the zone is the page's (see **Time zones**,
+  below). While the field is blank the line gives a short example, "For
+  example 9am or 21:00". Any longer explanation (the zone, the forms
+  accepted) is in the field's "i" [toggletip](#page-help), or is left
+  out: the field shows no other help line of its own (a form's zone note,
+  under [Schedules](#schedules), is the form's).
 - An entry that cannot be read shows its refusal there once typing pauses
   (about half a second) or focus leaves, so a half-typed `2:` is not flashed
   red; the field is marked invalid only once the refusal shows. Save is
@@ -3810,16 +3822,17 @@ its time keeps that time when it is posted back unchanged.
   text). A suffix standing alone after a space (`2 pm`) belongs to the entry
   before it, but not across a comma, semicolon or new line (`2, pm` is
   refused). A time listed twice is reported in the reading and saved once.
-  The reading names each time for a list of up to eight; a longer list reads
-  as its count and range ("Reads as 91 times, from 00:15 (12:15 AM) to 23:45
-  (11:45 PM)"), so the line stays short as the Admin types. A list typed one
+  The reading names each time for a list of up to eight, and the zone once
+  at the end; a longer list reads as its count and range ("Reads as 91
+  times, from 12:15 AM to 11:45 PM EDT"), so the line stays short as the
+  Admin types. A list typed one
   time per line keeps one time per line when focus leaves it.
 - A field out of view does not hold Save: one hidden by another choice, or
   inside a closed `details` panel (Edit as text).
 - A list field whose blank stands for a value says so: a blank entry, or
-  one of only separators such as `,`, reads "Blank reads as 02:00 (2:00 AM)"
-  and saves that value. A blank single time has no reading; whether it is
-  required is the form's rule.
+  one of only separators such as `,`, reads "Blank reads as 2:00 AM EDT"
+  and saves that value. A blank single time shows only the example line;
+  whether it is required is the form's rule.
 
 The Admin portal [requires JavaScript](#javascript-requirement), so there is
 no no-script fallback. The server stays the authority: one parser
@@ -3837,7 +3850,8 @@ New and Edit scheduled email and the date-change review take send times in
 the browser's zone (see [New and Edit scheduled
 email](../admin-portal/spec.md#new-and-edit-scheduled-email)). The ParishSoft refresh times
 are in the refresh schedule's time zone (the current campaign's, else the
-parish's), the recorded exception to the browser-local rule that those rules
+parish's), and their reading names that zone, not the browser's
+(`data-schedule-zone`): the recorded exception to the browser-local rule that those rules
 describe (see also
 [ParishSoft refresh schedule settings](../admin-portal/spec.md#parishsoft-refresh-schedule-settings)).
 

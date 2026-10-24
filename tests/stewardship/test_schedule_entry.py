@@ -152,9 +152,10 @@ def test_entry_form_fixes_a_saved_mail_type_and_never_reads_a_posted_id():
     assert form["date"].value() == "2054-10-10"
     blank = entry_form(None, templates, rows)
     assert not blank.fields["kind"].disabled and blank.schedule_label is None
-    # The page's help names no campaign zone: times are this computer's.
-    assert "this computer's time zone" in str(form.fields["time"].help_text)
-    assert "campaign" not in str(form.fields["time"].help_text)
+    # The page's help (in the send time's tip, #2129) names no campaign
+    # zone: times are this computer's.
+    assert "this computer's time zone" in str(form.fields["time"].tip)
+    assert "campaign" not in str(form.fields["time"].tip)
 
 
 def test_entry_form_names_each_missing_field_for_the_complete_gate():

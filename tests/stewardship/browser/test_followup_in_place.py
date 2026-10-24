@@ -17,7 +17,7 @@ from .followup_components import ITEM as FOLLOWUP_ITEM
 from .followup_components import SAVED as FOLLOWUP_SAVED
 from .followup_components import UPDATE as FOLLOWUP_UPDATE
 from .test_in_place import MARK, MARKED, VIEWPORT, count_requests, scroll_below
-from .waits import available, greyed, has_text, hidden, visible
+from .waits import available, greyed, has_text, hidden, reads, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -256,7 +256,7 @@ def test_contact_time_takes_any_common_form(page, component_origin):
     assert time.get_attribute("type") == "text"
     date.fill(page.evaluate(LOCAL_TODAY))
     time.fill("11:59 pm")
-    has_text(reading, "Reads as 23:59 (11:59 PM)")
+    has_text(reading, reads("Reads as 11:59 PM"))
     contact_marked(page, True)
     assert save.is_disabled()
     # Leaving Time rewrites the entry and keeps the future mark.
@@ -265,7 +265,7 @@ def test_contact_time_takes_any_common_form(page, component_origin):
     contact_marked(page, True)
     # Half past midnight is past in every zone NOON allows for (see above).
     time.fill("12:30am")
-    has_text(reading, "Reads as 00:30 (12:30 AM)")
+    has_text(reading, reads("Reads as 12:30 AM"))
     contact_marked(page, False)
     assert save.is_enabled()
     page.locator("#contact-notes").focus()
