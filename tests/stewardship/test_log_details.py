@@ -241,6 +241,25 @@ def test_a_refused_input_names_the_page_fields_reason_and_values():
     )
 
 
+def test_a_refused_image_reads_its_limit_and_size_in_megabytes():
+    """An image refused for its size reads its stored byte counts as
+    megabytes, not raw bytes after "expected ... got" (#2114)."""
+    context = {
+        "route": "admin:branding",
+        "fields": ["logo"],
+        "reason": "image_too_large",
+        "expected": str(5 * 1024 * 1024),
+        "actual": str(8 * 1024 * 1024 + 512 * 1024),
+    }
+    text = explain("refusal", context)
+    assert text.endswith(
+        "Logo refused (the file is larger than the limit; limit 5 MB, file 8.5 MB)."
+    )
+    # A value that is not a byte count keeps the general form.
+    text = explain("refusal", context | {"actual": "large"})
+    assert text.endswith("expected 5242880, got large).")
+
+
 def test_a_refused_command_unclassified_and_capped_entry_reads_plainly():
     """A command names itself; an entry with no reason says its error codes
     or exception kind; a capped one says later refusals were not kept."""
@@ -265,7 +284,10 @@ def test_a_refused_command_unclassified_and_capped_entry_reads_plainly():
             "capped": True,
         },
     )
-    assert text.startswith("An Admin page: Refused (value error).")
+    assert text.startswith(
+        "An Admin page: Refused (something unexpected went wrong while checking it)."
+    )
+    assert "value" not in text
     assert "not kept here for the rest of the ten-minute window" in text
     assert explain(
         "refusal",

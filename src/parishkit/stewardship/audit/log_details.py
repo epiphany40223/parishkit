@@ -161,7 +161,9 @@ REASON_TEXT = {
 # Why an Admin input was refused, for each closed reason code
 # (``audit.refusal_context.REASONS``, pinned by a test): a lowercase clause,
 # read in parentheses after what was refused (#2114). ``unclassified`` has
-# none; its entry says its error codes or its exception's kind instead.
+# none; its entry says its error codes instead, or, when an exception
+# refused it, UNEXPECTED_REFUSAL (never the exception's Python name).
+UNEXPECTED_REFUSAL = gettext_lazy("something unexpected went wrong while checking it")
 REFUSAL_TEXT = {
     "stale_page": gettext_lazy(
         "the page was out of date; something changed since it was opened"
@@ -468,16 +470,47 @@ def _place(context):
 
 
 def _why(context):
-    """The refusal's reason in words, or its error codes or exception kind
-    when it has no reason of its own (``unclassified``); None if neither."""
+    """The refusal's reason in words, or its error codes, or a plain sentence
+    when an exception refused it with no reason of its own (``unclassified``);
+    None if none of these. The exception's class is a programmer's name, so
+    it stays in the download's details and is not read out here."""
     text = REFUSAL_TEXT.get(context.get("reason"))
     if text is not None:
         return str(text)
     codes = _listed(context, "codes")
     if codes:
         return ", ".join(codes)
-    kind = context.get("exception_class")
-    return _words(kind) if type(kind) is str else None
+    if type(context.get("exception_class")) is str:
+        return str(UNEXPECTED_REFUSAL)
+    return None
+
+
+def _megabytes(value):
+    """A byte count as stored (digits), in megabytes for reading: "5 MB",
+    "2.5 MB"; None for anything that is not a byte count."""
+    if type(value) is not str or not value.isdigit():
+        return None
+    number = f"{int(value) / (1024 * 1024):.1f}".removesuffix(".0")
+    return _("%(number)s MB") % {"number": number}
+
+
+def _setting(context):
+    """The entry's expected and actual setting values in words, or None.
+
+    An image's limit and size are stored in bytes and read as "limit 5 MB,
+    file 8 MB"; any other setting (a time zone) as "expected …, got …".
+    """
+    expected, actual = context.get("expected"), context.get("actual")
+    if type(expected) is not str or type(actual) is not str:
+        return None
+    if context.get("reason") == "image_too_large":
+        limit, size = _megabytes(expected), _megabytes(actual)
+        if limit and size:
+            return _("limit %(limit)s, file %(size)s") % {"limit": limit, "size": size}
+    return _("expected %(expected)s, got %(actual)s") % {
+        "expected": expected,
+        "actual": actual,
+    }
 
 
 def _refused(context):
@@ -500,12 +533,9 @@ def _refused(context):
             ngettext("%(count)d unexpected field", "%(count)d unexpected fields", count)
             % {"count": count}
         )
-    expected, actual = context.get("expected"), context.get("actual")
-    if type(expected) is str and type(actual) is str:
-        facts.append(
-            _("expected %(expected)s, got %(actual)s")
-            % {"expected": expected, "actual": actual}
-        )
+    setting = _setting(context)
+    if setting:
+        facts.append(setting)
     text = _place(context) + ": " + what
     if facts:
         text += " (" + "; ".join(facts) + ")"

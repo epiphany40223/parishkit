@@ -420,9 +420,7 @@ def test_activity_groups_grey_the_levels_only_when_audit_only(page, component_or
     )
 
 
-def test_refused_input_greys_audit_record_and_waits_for_a_level(
-    page, component_origin
-):
+def test_refused_input_greys_audit_record_and_waits_for_a_level(page, component_origin):
     """Refused input is operational entries only (#2114): while it is
     chosen Audit record is greyed and unsent, the levels stay enabled, and
     Apply waits until a level is ticked. Choosing it moves nothing."""
