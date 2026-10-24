@@ -3,8 +3,9 @@
 The page (admin-portal spec, "Data to fix in ParishSoft") shows, for
 Administrators and Staff, one block per kind of problem, most blocking
 first: Families the form cannot open, refused email addresses, Families no
-mail can reach, and census changes to enter. Each block is a count and a
-link to the existing page that lists and fixes those problems.
+mail can reach, census changes to enter, and roster changes to enter by
+hand (#2113). Each block is a count and a link to the existing page that
+lists and fixes those problems.
 
 Nothing here is a new query of its own: each count calls the read its
 detail page (or Home) already uses, with that page's own default filters,
@@ -68,6 +69,10 @@ NO_SOURCE = _("ParishSoft data has not been read yet, so there is nothing to cou
 FAILED = _(
     "These could not be counted just now. They will be counted again in about a minute."
 )
+# The roster read answers no number when Ministry requests itself would
+# refuse its list (follow-up unavailable, or the reader's scope drifted);
+# that page says why, so this sends the reader there.
+ROSTER_UNCOUNTED = _("These cannot be counted right now. Ministry requests says why.")
 
 
 @dataclass(frozen=True)
@@ -127,6 +132,19 @@ SECTIONS = (
         Capability.VIEW_CENSUS,
         "census_changes",
         reason=admin_navigation.MENU_REASONS["census_changes"],
+    ),
+    # Roster changes to enter by hand (#2113): Ministry requests at its
+    # To enter by hand Stage, shown only to those who may enter roster
+    # changes (MINISTRY_FOLLOWUP without a Ministry, workflows.roster's
+    # can_tick: Administrators and Staff), as My review work's card is;
+    # greyed out, as Ministry requests' menu entry is, for a campaign
+    # without Ministries.
+    Section(
+        "roster_changes",
+        Capability.MINISTRY_FOLLOWUP,
+        "ministry_report",
+        query="?stage=to_enter_by_hand",
+        reason=admin_navigation.MENU_REASONS["ministry_report"],
     ),
 )
 
@@ -243,11 +261,37 @@ def _census_changes(principal, campaign_id):
     return {"count": sum(row["stage"] in stages for row in result["rows"])}
 
 
+def _roster_changes(principal, campaign_id):
+    """Ministry requests' To enter by hand count: the menu's own roster read.
+
+    ``admin_context.roster_entry_count`` is the count Home's Next steps and
+    My review work's Ministry card show, held equal to the Stage's rows by
+    their database tests, so this block, those cards and the list agree.
+    Before go-live (a draft or scheduled campaign) no request is resolved
+    yet, so nothing is to enter and the read is skipped, as the menu skips
+    it. A count the read cannot give (None) sends the reader to the list,
+    which says why.
+    """
+    from parishkit.stewardship.campaigns.models import Campaign
+    from parishkit.stewardship.reports.read_admission import admit_report_read
+
+    def read():
+        """The count, read with the campaign's state inside the guard."""
+        campaign = Campaign.objects.only("state").get(pk=campaign_id)
+        if campaign.state not in admin_context.ROSTER_STATES:
+            return 0
+        return admin_context.roster_entry_count(principal, campaign)
+
+    count = _guarded(campaign_id, read, admit=admit_report_read)
+    return {"reason": ROSTER_UNCOUNTED} if count is None else {"count": count}
+
+
 READS = {
     "form_cannot_open": _form_cannot_open,
     "refused_addresses": _refused_addresses,
     "unreachable_families": _unreachable_families,
     "census_changes": _census_changes,
+    "roster_changes": _roster_changes,
 }
 
 

@@ -44,7 +44,7 @@ def _boxes(page):
 
 
 def test_an_administrator_sees_every_section_in_order(page, component_origin):
-    """Four sections, most blocking first; the page is the group's last entry,
+    """Five sections, most blocking first; the page is the group's last entry,
     marked current."""
     page.goto(component_origin + PATH)
     assert page.locator(SECTIONS).all_inner_texts() == [
@@ -52,6 +52,7 @@ def test_an_administrator_sees_every_section_in_order(page, component_origin):
         "Refused email addresses",
         "Families no mail can reach",
         "Census changes to enter",
+        "Roster changes to enter",
     ]
     assert _parish_group(page)[-1] == "Data to fix in ParishSoft"
     current = page.locator('details[data-menu-group="parish"] [aria-current="page"]')
@@ -61,12 +62,13 @@ def test_an_administrator_sees_every_section_in_order(page, component_origin):
 
 
 def test_staff_see_only_their_sections(page, component_origin):
-    """Staff: Families no mail can reach and census changes, and a Parish
+    """Staff: Families no mail can reach, census and roster changes, and a Parish
     data group holding only this page; never a refused-address count."""
     page.goto(component_origin + STAFF_PATH)
     assert page.locator(SECTIONS).all_inner_texts() == [
         "Families no mail can reach",
         "Census changes to enter",
+        "Roster changes to enter",
     ]
     assert _parish_group(page) == ["Data to fix in ParishSoft"]
     assert page.locator("main").get_by_text("refused", exact=False).count() == 0

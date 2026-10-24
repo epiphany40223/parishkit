@@ -56,12 +56,13 @@ def _downloaded(monkeypatch):
 
 
 def test_the_sections_run_in_the_decided_order():
-    """Form cannot open, refused addresses, no mail can reach, census."""
+    """Form cannot open, refused addresses, no mail can reach, census, roster."""
     assert ALL == [
         "form_cannot_open",
         "refused_addresses",
         "unreachable_families",
         "census_changes",
+        "roster_changes",
     ]
 
 
@@ -69,12 +70,12 @@ def test_the_sections_run_in_the_decided_order():
     ("role", "keys"),
     [
         ("administrator", ALL),
-        ("staff", ["unreachable_families", "census_changes"]),
+        ("staff", ["unreachable_families", "census_changes", "roster_changes"]),
         ("ministry_leader", []),
     ],
 )
 def test_each_role_sees_the_sections_it_may_open(role, keys):
-    """Staff see sections 3 and 4; a Ministry leader sees none."""
+    """Staff see sections 3 to 5; a Ministry leader sees none."""
     principal = ROLES[role]
     shown = [section.key for section in data_to_fix_views.visible_sections(principal)]
     assert shown == keys
@@ -218,6 +219,68 @@ def test_a_failed_read_says_so_and_is_logged(monkeypatch, caplog):
     assert "private detail" not in caplog.text
 
 
+def test_the_roster_section_links_ministry_requests_at_its_stage(monkeypatch):
+    """Ministry requests filtered to To enter by hand, counted; greyed out
+    with the menu's reason for a campaign without Ministries (never read)."""
+    _counted(monkeypatch, roster_changes={"count": 4})
+    row = _rows(principal=STAFF, current=campaign())["roster_changes"]
+    assert row == {
+        "key": "roster_changes",
+        "label": "Ministry requests",
+        "url": "/admin/reports/ministries/?stage=to_enter_by_hand",
+        "count": 4,
+    }
+    _counted(monkeypatch, roster_changes=AssertionError("must not be read"))
+    row = _rows(current=campaign(modules=("census",)))["roster_changes"]
+    assert row["url"] is None and "count" not in row
+
+
+class _Campaigns:
+    """``Campaign.objects`` returning one campaign in ``state``."""
+
+    def __init__(self, state):
+        """Remember the state the stand-in campaign has."""
+        self.state = state
+
+    def only(self, *fields):
+        """Any column choice reads the same stand-in."""
+        return self
+
+    def get(self, pk):
+        """The stand-in campaign."""
+        return SimpleNamespace(pk=pk, state=self.state)
+
+
+@pytest.mark.parametrize(
+    ("state", "count", "expected"),
+    [
+        ("active", 3, {"count": 3}),
+        ("closed", 0, {"count": 0}),
+        ("active", None, {"reason": data_to_fix_views.ROSTER_UNCOUNTED}),
+        # Before go-live nothing is resolved: zero, and the read is skipped.
+        ("draft", AssertionError("must not be read"), {"count": 0}),
+    ],
+)
+def test_the_roster_count_is_the_menus_own_read(monkeypatch, state, count, expected):
+    """The section answers ``admin_context.roster_entry_count``'s number."""
+    from parishkit.stewardship.accounts import admin_context
+    from parishkit.stewardship.campaigns.models import Campaign
+
+    def entry_count(principal, current):
+        """The menu's count, or the failure it stands for."""
+        assert principal is STAFF and current.pk == CAMPAIGN
+        if isinstance(count, Exception):
+            raise count
+        return count
+
+    monkeypatch.setattr(
+        data_to_fix_views, "_guarded", lambda campaign_id, read, **k: read()
+    )
+    monkeypatch.setattr(Campaign, "objects", _Campaigns(state))
+    monkeypatch.setattr(admin_context, "roster_entry_count", entry_count)
+    assert data_to_fix_views._roster_changes(STAFF, CAMPAIGN) == expected
+
+
 def test_no_promoted_source_is_said_for_the_unreachable_count(monkeypatch):
     """Home's read answers None before any ParishSoft data: say so."""
     from parishkit.stewardship.accounts import admin_dashboard
@@ -257,13 +320,16 @@ def _row(key, **values):
 def test_zero_sections_keep_their_blocks_and_say_what_zero_means():
     """Every block stays at zero, with its link; the data line says so."""
     html = render([_row(key, count=0) for key in ALL])
-    assert html.count('class="panel data-to-fix-section"') == 4
+    assert html.count('class="panel data-to-fix-section"') == 5
     assert "None: every Family that can use the portal can open the form." in html
     assert "No refused addresses: campaign email reaches every address" in html
     assert "None: every active Family can be reached by email or postal mail." in html
     assert "None: every census change Families reported has been handled." in html
+    assert "None: every accepted Ministry request has been entered in ParishSoft." in (
+        html
+    )
     assert "Nothing to fix right now." in html
-    assert html.count('<a href="/x/">Open ') == 4
+    assert html.count('<a href="/x/">Open ') == 5
     assert "Stewardship 2027." in html and "ParishSoft data: not yet loaded." in html
 
 
@@ -276,11 +342,17 @@ def test_counts_and_unavailable_sections_are_worded():
             _row("refused_addresses", count=3, families=2),
             _row("unreachable_families", url=None, reason="No current campaign"),
             _row("census_changes", count=12),
+            _row("roster_changes", count=1),
         ]
     )
     assert "1 Family cannot open the Family form" in html
     assert "3 refused email addresses are not cleared yet, from 2 Families." in html
     assert "12 census changes that Families reported are still to be handled." in html
+    assert (
+        "1 accepted Ministry request is still to be entered in its ParishSoft "
+        "roster by hand." in html
+    )
+    assert "Open Ministry requests" in html
     assert 'aria-disabled="true"' in html and "Open Active parishioner family" in html
     assert 'id="data-to-fix-open-unreachable_families-tip"' in html
     assert "Nothing to fix right now." not in html
@@ -453,7 +525,7 @@ def test_the_counts_region_polls_the_passive_fragment():
     ) in html
     region = html[html.index('data-live-status="data-to-fix"') :]
     assert 'id="data-to-fix-data"' in region
-    assert region.count('class="panel data-to-fix-section"') == 4
+    assert region.count('class="panel data-to-fix-section"') == 5
     # The page's own content, without the Admin layout's JavaScript-off
     # notice (which must ask for a reload once JavaScript is on).
     content = html[html.index("<h1>") : html.index("</section></div>")]

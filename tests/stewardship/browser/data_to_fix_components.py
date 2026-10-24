@@ -37,13 +37,14 @@ CAMPAIGN = SimpleNamespace(
         values={"modules": ["financial", "ministry"]}, name="Stewardship 2027"
     ),
 )
-# What each section shows: two counted, one at zero, and census greyed out
+# What each section shows: two counted, two at zero, and census greyed out
 # because this campaign does not include it (its menu entry's reason).
 ANSWERS = {
     "form_cannot_open": {"count": 2},
     "refused_addresses": {"count": 3, "families": 2},
     "unreachable_families": {"count": 0},
     "census_changes": {"reason": "This campaign does not include the census."},
+    "roster_changes": {"count": 0},
 }
 
 

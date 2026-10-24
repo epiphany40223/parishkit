@@ -772,6 +772,19 @@ def _read_open_counts(offered, actor, campaign, review=None):
     return menu, reviewed
 
 
+def roster_entry_count(actor, campaign):
+    """Ministry requests' To enter by hand count (``ENTRY_COUNT``), or None.
+
+    The same ``OPEN_COUNTS`` read the menu runs for Home's Next steps and My
+    review work, asked for Ministry requests alone, so Data to fix in
+    ParishSoft (#2113) shows the number those cards show. None when the
+    actor may not enter roster changes, the campaign is not past go-live,
+    or the selection refuses (see ``_read_open_counts``).
+    """
+    counts = _read_open_counts({"ministry_report"}, actor, campaign)[0]
+    return counts.get(ENTRY_COUNT)
+
+
 def _record_open_counts_failure(error):
     """Log that the menu's open counts could not be read (#585).
 
