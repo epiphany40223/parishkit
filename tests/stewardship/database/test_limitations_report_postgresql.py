@@ -350,6 +350,7 @@ def test_the_worklist_sorts_every_column_in_memory():
     def row(name, duid, day, member=None):
         """One answer row as the selection shapes it."""
         return {
+            "id": f"answer-{duid}",
             "member_name": name,
             "family_name": name,
             "family_duid": duid,
