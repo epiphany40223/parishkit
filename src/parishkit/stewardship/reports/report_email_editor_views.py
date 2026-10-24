@@ -86,7 +86,7 @@ from .report_email_changes import (
     report_sent,
     send_worked,
 )
-from .report_email_list import report_records, report_sends
+from .report_email_list import paged_sends, report_records, sends_prefix
 
 ERRORS = (
     ConfigError,
@@ -305,9 +305,20 @@ def _page(request, *, state, campaign, report_id, saved, form, status=200):
     if saved is not None and not form.is_bound:
         moment = editor.moment(saved, values, now)
         context["drawn_at"] = moment.isoformat() if moment else None
-        context["sends"] = report_sends(campaign.pk, mode, [str(report_id)]).get(
-            str(report_id), []
-        )
+        # Past sends page with the shared navigator (spec, "Past sends"),
+        # which keeps the calendar's ``send`` and ``calendar`` choices.
+        paged = paged_sends(
+            campaign.pk,
+            mode,
+            request.GET,
+            [str(report_id)],
+            carry=[
+                (name, request.GET[name])
+                for name in ("send", CALENDAR)
+                if name in request.GET
+            ],
+        ).get(str(report_id))
+        context["past"] = paged["table"] if paged else None
     if status == 400:
         context["errors"] = [
             {
@@ -524,7 +535,13 @@ def _editor(request, campaign_id, report_id=None):
     else:
         # The Campaign calendar names a send (``send``) and the month it
         # showed (``calendar``, added to every Edit link it draws, #1656).
-        filters(request.GET, allowed={"send", CALENDAR})
+        # Its Past sends navigator adds its page and size.
+        paging = (
+            {f"{sends_prefix(report_id)}{key}" for key in ("page", "size")}
+            if report_id is not None
+            else set()
+        )
+        filters(request.GET, allowed={"send", CALENDAR} | paging)
         _calendar_month(request)
     with read_transaction() if request.method == "GET" else work_transaction():
         state, campaign = change_state(service, campaign_id)

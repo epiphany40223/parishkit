@@ -98,7 +98,7 @@ def test_each_dialog_names_its_report(page, component_origin):
 
 
 def test_past_sends_open_in_place(page, component_origin):
-    """A report's past sends are a disclosure under its row."""
+    """A report's past sends are a disclosure under its row, with a navigator."""
     page.goto(component_origin + PAGE)
     summary = page.get_by_text("Past sends of Weekly report (3)")
     visible(summary)
@@ -106,6 +106,41 @@ def test_past_sends_open_in_place(page, component_origin):
     sends = page.locator(f"#report-sends-{'00000000-0000-0000-0000-000000000065'}")
     visible(sends.get_by_text("12 open requests"))
     assert sends.get_by_role("link", name="Saved copy").count() == 3
+    # The shared row navigator pages them, above and below (#2112).
+    pages = sends.get_by_role("navigation", name="Past sends pages of Weekly report")
+    assert pages.count() == 2
+    visible(pages.first.get_by_text("Page 1 of 1"))
+
+
+def test_past_sends_page_in_place(page, component_origin):
+    """A Past sends Rows per page choice re-pages the list in place (#2112):
+    no reload, the disclosure stays open, focus stays on the choice and
+    the address names the report's own size and page."""
+    from parishkit.stewardship.reports.report_email_list import sends_prefix
+
+    from .report_emails_components import WEEKLY
+    from .test_in_place import MARK, MARKED
+    from .waits import eventually
+
+    page.goto(component_origin + PAGE)
+    page.evaluate(MARK)
+    sends = page.locator(f"#report-sends-{WEEKLY}")
+    sends.locator("summary").click()
+    size = sends.locator("[data-page-size]").first
+    visible(size)
+    size.select_option("50")
+    prefix = sends_prefix(WEEKLY)
+    eventually(
+        page,
+        "() => !document.querySelector('[aria-busy=true]')"
+        f" && document.activeElement.matches('#report-sends-{WEEKLY} [data-page-size]')"
+        " && document.activeElement.value === '50'",
+    )
+    assert page.evaluate(MARKED) == "kept"
+    assert sends.evaluate("node => node.open")
+    assert f"{prefix}size=50" in page.url and f"{prefix}page=1" in page.url
+    region = page.locator("#report-emails-table")
+    assert f"{prefix}size=50" in region.get_attribute("data-refresh-url")
 
 
 def test_staff_see_no_actions(page, component_origin):

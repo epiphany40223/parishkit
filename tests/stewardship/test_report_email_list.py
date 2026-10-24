@@ -330,3 +330,81 @@ def test_the_after_campaign_question_names_only_a_send_still_ahead():
     # November 7, 2026, 7:00 AM in New York.
     assert late.due_at == datetime(2026, 11, 7, 12, 0, tzinfo=UTC)
     assert after_campaign(values, NEW_YORK, late.due_at) is None
+
+
+A = "00000000-0000-4000-8000-00000000000a"
+B = "00000000-0000-4000-8000-00000000000b"
+
+
+def light(index, name=None):
+    """One listed send (``_listed``), as plain data the stub hydrates."""
+    return {"id": index, "name": name}
+
+
+@pytest.fixture
+def listed(monkeypatch):
+    """Report A with 30 sends, B with 2; records which sends were read whole."""
+    read = []
+    sends = {
+        A: [
+            light(index, "Weekly report" if index > 0 else None) for index in range(30)
+        ],
+        B: [light(100), light(101, "Old report")],
+    }
+    monkeypatch.setattr(rows, "_listed", lambda *_args: sends)
+
+    def hydrated(chosen):
+        """Mark each chosen send read whole, as ``_hydrated`` reads it."""
+        read.append({key: [row["id"] for row in kept] for key, kept in chosen.items()})
+        return {
+            key: [row | {"whole": True} for row in kept] for key, kept in chosen.items()
+        }
+
+    monkeypatch.setattr(rows, "_hydrated", hydrated)
+    return read
+
+
+def test_past_sends_page_on_their_own_with_the_newest_kept(listed):
+    """Each report pages by its own prefix; the newest send always comes too."""
+    a, b = rows.sends_prefix(A), rows.sends_prefix(B)
+    assert a == "s0000000000004000800000000000000a_"
+    first = rows.paged_sends(1, "production", {})
+    table = first[A]["table"]
+    assert (table.count, table.pages, table.size) == (30, 2, rows.SENDS_PAGE)
+    assert [row["id"] for row in table.rows] == list(range(25))
+    assert first[A]["newest"] == {"id": 0, "name": None, "whole": True}
+    # A deleted report is named by its newest named send.
+    assert (first[A]["name"], first[B]["name"]) == ("Weekly report", "Old report")
+    second = rows.paged_sends(
+        1, "production", {f"{a}page": "2", "requested": "x"}, carry=[("send", "k")]
+    )
+    table = second[A]["table"]
+    assert [row["id"] for row in table.rows] == list(range(25, 30))
+    assert all(row["whole"] for row in table.rows)
+    assert second[A]["newest"]["id"] == 0
+    # Only the newest and the sends shown are read whole.
+    assert listed[-1] == {A: [0, *range(25, 30)], B: [100, 100, 101]}
+    # Each navigator keeps the others' choices and the carried ones, never
+    # its own page or a one-time notice.
+    assert table.carried == (("send", "k"),)
+    assert second[B]["table"].carried == (("send", "k"), (f"{a}page", "2"))
+    assert f"{b}page=1" in second[B]["table"].query(1)
+
+
+def test_past_sends_refuse_a_malformed_choice_and_clamp_a_far_page(listed):
+    """A size the navigator does not offer is refused; page 9 shows the last."""
+    a = rows.sends_prefix(A)
+    with pytest.raises(ValueError):
+        rows.paged_sends(1, "production", {f"{a}size": "7"})
+    with pytest.raises(ValueError):
+        rows.paged_sends(1, "production", {f"{a}page": "-1"})
+    assert rows.paged_sends(1, "production", {f"{a}page": "9"})[A]["table"].number == 2
+    every = rows.paged_sends(1, "production", {f"{a}size": "all"})[A]["table"]
+    assert len(every.rows) == 30
+
+
+def test_only_past_sends_keys_are_navigator_choices():
+    """The page and size keys of any report's navigator, and nothing else."""
+    a = rows.sends_prefix(A)
+    keys = {f"{a}page", f"{a}size", f"{a}sort", "requested", "sx_page", f"{a}page2"}
+    assert rows.sends_parameters(keys) == {f"{a}page", f"{a}size"}

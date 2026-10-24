@@ -27,6 +27,7 @@ the table, opens New (``report_email_editor_views``); New is unavailable at
 the limit of 20, with its reason.
 """
 
+from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
 from django.core import signing
@@ -74,7 +75,7 @@ from .report_email_changes import (
     preview_salt,
     refuse_archived,
 )
-from .report_email_list import listing, report_records
+from .report_email_list import listing, report_records, sends_parameters
 from .report_email_manual import request_send_now
 from .report_email_models import ReportEmailManualRequest, ReportEmailSnapshot
 
@@ -128,18 +129,36 @@ def _requested(value, campaign_id):
     }
 
 
-def _context(system, *, administrator, requested):
-    """The page's template context for the current campaign (or none)."""
+def _paging_query(paging):
+    """The Past sends navigators' choices as a query string (``?…``, or "")."""
+    query = urlencode(sorted(paging.items()))
+    return f"?{query}" if query else ""
+
+
+def _context(system, *, administrator, requested, paging):
+    """The page's template context for the current campaign (or none).
+
+    ``paging`` holds the Past sends navigators' choices (``paged_sends``).
+    The refresh address keeps them, so a row action's redraw shows the
+    pages the reader had open; the quiet re-read reads the page's own
+    address, which the navigators keep current.
+    """
     campaign = system.current_campaign
+    query = _paging_query(paging)
     context = {
         "campaign": campaign,
         "administrator": administrator,
-        "refresh_url": reverse("admin:report_emails"),
+        "refresh_url": reverse("admin:report_emails") + query,
     }
     if campaign is None:
         return context
     view = listing(
-        system, campaign, system.mode, timezone.now(), administrator=administrator
+        system,
+        campaign,
+        system.mode,
+        timezone.now(),
+        administrator=administrator,
+        parameters=paging,
     )
     names = {row["id"]: row["name"] for row in view["rows"]}
     if requested is not None:
@@ -160,7 +179,9 @@ def _context(system, *, administrator, requested):
             # A fresh key per drawing: a replayed Send now returns the same send.
             "command_id": uuid4(),
             "change_url": reverse("admin:report_email_changes"),
-            "send_now_url": reverse("admin:report_email_send_now"),
+            # Send now's answer redraws the page (``answer_page``), so its
+            # address carries the navigators' choices into the redirect.
+            "send_now_url": reverse("admin:report_email_send_now") + query,
             "render_url": reverse("admin:report_email_render"),
             "test_url": reverse("admin:report_email_test"),
         }
@@ -189,7 +210,10 @@ def report_emails(request):
         actor = report_principal(
             request, service.store, read_only=passive_read(request)
         )
-        selected = filters(request.GET, allowed={"requested"})
+        # Each report's Past sends navigator adds its own page and size.
+        selected = filters(
+            request.GET, allowed={"requested"} | sends_parameters(request.GET)
+        )
         administrator = allows(actor, Capability.CONFIGURE)
         # The rows are read in one snapshot; the page is drawn after it, as
         # its chrome reads its own state.
@@ -202,6 +226,9 @@ def report_emails(request):
                 administrator=administrator,
                 # Only an Administrator's page names a Send now request.
                 requested=selected.get("requested") if administrator else None,
+                paging={
+                    key: value for key, value in selected.items() if key != "requested"
+                },
             )
         response = render(request, "stewardship/report-emails.html", context)
         _recheck(request, service)
@@ -303,7 +330,9 @@ def report_email_send_now(request, campaign_id):
     try:
         service = runtime()
         actor = admin_principal(request, service.store, activity=True)
-        filters(request.GET, allowed=set())
+        # Only the Past sends navigators' choices ride on the address; the
+        # answer keeps them, so every report stays on the page it showed.
+        paging = filters(request.GET, allowed=sends_parameters(request.GET))
         if request.FILES:
             raise unexpected_fields(request.FILES, allowed=())
         posted = _posted(request.POST, SEND_NOW_FIELDS)
@@ -331,9 +360,8 @@ def report_email_send_now(request, campaign_id):
             if _guard_refused(error):
                 raise UserFacingStale(SEND_REFUSED, fix=SEND_REFUSED_FIX) from None
             raise
-        return HttpResponseRedirect(
-            reverse("admin:report_emails") + f"?requested={command_id}"
-        )
+        query = urlencode([("requested", command_id), *sorted(paging.items())])
+        return HttpResponseRedirect(reverse("admin:report_emails") + f"?{query}")
     except ObjectDoesNotExist:
         return error_response(PermissionError("No configuration."))
     except ERRORS as error:

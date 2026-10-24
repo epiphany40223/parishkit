@@ -7,7 +7,7 @@ whose database guard checks the report's current revision and that no
 other send of it is still being prepared or delivered.
 """
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from django.db import DatabaseError, connection
@@ -287,3 +287,47 @@ def test_send_now_of_an_unknown_report_is_refused(response_service, google):
             )
         assert response.status_code == 400
         assert not ReportEmailManualRequest.objects.exists()
+
+
+def test_send_now_keeps_every_reports_past_sends_page(response_service, google):
+    """Send now's answer keeps the Past sends navigators' choices.
+
+    Its dialog redraws the page from the answer (``answer_page``), so the
+    form's address carries each report's page and size into the redirect
+    beside ``requested``; any other address key is refused (400).
+    """
+    from parishkit.stewardship.reports.report_email_list import sends_prefix
+
+    harness = response_service
+    with campaign_clock(INSTANT):
+        weekly(harness)
+        configuration = SystemConfiguration.objects.get().active_configuration_id
+        definition = _weekly_definition(harness)
+        prefix = sends_prefix(definition.pk)
+        # The highest id, so its keys sort after the report's own.
+        other = sends_prefix(UUID(int=2**128 - 1))
+        paging = f"{prefix}page=2&{prefix}size=50&{other}page=3"
+        browser, _ = signed_in()
+        token = {"HTTP_X_CSRFTOKEN": browser.cookies["pk_admin_csrf"].value}
+        path = reverse("admin:report_email_send_now")
+        values = _send_now_values(definition, configuration)
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            page = browser.get(f"{reverse('admin:report_emails')}?{paging}")
+            assert page.status_code == 200
+            ordered = f"{prefix}page=2&amp;{prefix}size=50&amp;{other}page=3"
+            assert f'action="{path}?{ordered}" id="report-send-now"' in (
+                page.content.decode()
+            )
+            assert browser.post(f"{path}?extra=1", values, **token).status_code == 400
+            response = browser.post(f"{path}?{paging}", values, **token)
+            assert response.status_code == 302
+            assert response["Location"] == (
+                f"{reverse('admin:report_emails')}?requested={values['command_id']}"
+                f"&{prefix}page=2&{prefix}size=50&{other}page=3"
+            )
+            answer = browser.get(response["Location"]).content.decode()
+        assert "was requested." in answer
+        assert f'data-refresh-url="{reverse("admin:report_emails")}?{ordered}"' in (
+            answer
+        )
+        assert ReportEmailManualRequest.objects.count() == 1

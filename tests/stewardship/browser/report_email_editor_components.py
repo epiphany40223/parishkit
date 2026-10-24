@@ -204,7 +204,7 @@ def _page(context, admin, saved, data=None, campaign=CAMPAIGN):
             "sent": False,
             "busy": False,
             "editor_mode": form["editor_mode"].value() or "basic",
-            "sends": [],
+            "past": None,
             # The view's error summary for a refused Review, linking each
             # refusal to its field.
             "errors": [

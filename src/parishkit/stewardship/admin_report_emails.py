@@ -289,7 +289,7 @@ def read_list(caller, service, *, campaign_id):
     """``report-email list``: the page's table, as the page reads it."""
     from django.utils import timezone
 
-    from .reports.report_email_list import listing, schedule_text
+    from .reports.report_email_list import SENDS_SHOWN, listing, schedule_text
 
     def step():
         """Admit, read the page's listing and recheck."""
@@ -327,7 +327,9 @@ def read_list(caller, service, *, campaign_id):
                 {
                     "id": row["id"],
                     "name": row["name"],
-                    "sends": [_send(send) for send in row["sends"]],
+                    # The page's first Past sends page holds more; the
+                    # command keeps its newest SENDS_SHOWN, as ``sends`` does.
+                    "sends": [_send(send) for send in row["sends"][:SENDS_SHOWN]],
                 }
                 for row in view["deleted"]
             ],
