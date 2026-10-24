@@ -30,6 +30,7 @@ from parishkit.stewardship.reports.timeline_views import (
     timeline_url,
 )
 from parishkit.stewardship.reports.timelines import (
+    KINDS,
     Email,
     Engagement,
     Submitted,
@@ -514,6 +515,36 @@ def test_review_lines_join_the_timeline_after_same_instant_steps():
     ]
     page = render(Timeline(TIMELINE.summary, lines))
     assert '<th scope="row">Accepted</th><td>Email address for Smith, Anne; ' in page
+
+
+def test_request_lines_follow_their_response_and_have_their_own_kind():
+    """A request line (#2023) is Kind Census and Ministry requests, under
+    All by default, built right after the response that asked for it (so
+    before a session end at the same instant) and never a portal action."""
+    at = SECOND.at
+    asked = "Email address for Smith, Anne"
+    lines = events(
+        [],
+        [SECOND],
+        session_ends=[(at, "family_session_ended")],
+        reviews=[(at, "Accepted", "Email address for Smith, Anne; by a@example.org")],
+        requests=[(at, "Asked for a census change", asked)],
+    )
+    assert [(str(line.what), line.kind) for line in lines] == [
+        ("Submitted a response", "form"),
+        ("Asked for a census change", "requests"),
+        ("Session ended", "sessions"),
+        ("Accepted", "reviews"),
+    ]
+    assert KINDS["requests"] == "Census and Ministry requests"
+    assert not any(line.portal for line in lines if line.kind == "requests")
+    assert len(narrow(lines)) == 4
+    assert [str(line.what) for line in narrow(lines, "requests")] == [
+        "Asked for a census change"
+    ]
+    page = render(Timeline(TIMELINE.summary, lines))
+    assert f'<th scope="row">Asked for a census change</th><td>{asked}</td>' in page
+    assert '<option value="requests">Census and Ministry requests</option>' in page
 
 
 def test_open_form_is_unavailable_with_its_reason():

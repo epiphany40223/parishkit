@@ -14,6 +14,7 @@ import pytest
 
 from parishkit.stewardship.reports import pdf_design, timeline_pdf
 from parishkit.stewardship.reports.timeline_documents import timeline_document
+from parishkit.stewardship.reports.timeline_reviews import ASKED
 from parishkit.stewardship.reports.timeline_reviews import WORDS as review_words
 from parishkit.stewardship.reports.timelines import (
     Email,
@@ -223,6 +224,8 @@ def test_every_line_the_page_builds_has_a_known_marker():
         engagement=Engagement(START, "census", START + minute, START + minute),
         # Every word a review line can carry (#1774).
         reviews=[(START, word, "") for word in sorted(review_words)],
+        # And every request line's (#2023).
+        requests=[(START, word, "") for word in ASKED.values()],
     )
     kinds = {str(line.what): timeline_pdf.kind_of(line.what) for line in lines}
     assert "other" not in kinds.values(), kinds
@@ -313,3 +316,8 @@ def test_the_subject_heading_moves_the_body_down():
     bare = pdf_design.PdfFrame.for_document(report, details=frame.details)
     assert frame.subject_lines == ["Example"]
     assert frame.body_top == bare.body_top + pdf_design.SUBJECT_PITCH
+
+
+def test_the_request_kind_knows_every_request_word():
+    """The PDF's Requests words are the request lines' own (#2023)."""
+    assert {str(word) for word in ASKED.values()} == timeline_pdf.REQUESTS

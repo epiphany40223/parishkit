@@ -37,6 +37,7 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.observability import bound_correlation, correlation
 from parishkit.stewardship.pipeline import NoteRequired
 from parishkit.stewardship.reports.export_services import admit_campaign
 
@@ -553,18 +554,22 @@ def resolve_census_additions(
                 # slips in between.
                 raise ReopenOverOpen("Another open change covers this field.")
             sequence = addition_version(latest)
-            for offset, (step_key, step) in enumerate(
-                zip(_step_keys(key, addition.pk, len(steps)), steps, strict=True)
-            ):
-                resolution = _record_step(
-                    addition,
-                    actor_id,
-                    step_key,
-                    sequence + offset,
-                    step,
-                    note,
-                    campaign_id,
-                    parish,
-                )
+            # One decision's steps share one correlation id (the request's,
+            # when bound), so the Timeline reads a Withdraw of an entered
+            # addition, stored as two steps, as one line (#2023).
+            with correlation(bound_correlation()):
+                for offset, (step_key, step) in enumerate(
+                    zip(_step_keys(key, addition.pk, len(steps)), steps, strict=True)
+                ):
+                    resolution = _record_step(
+                        addition,
+                        actor_id,
+                        step_key,
+                        sequence + offset,
+                        step,
+                        note,
+                        campaign_id,
+                        parish,
+                    )
             recorded.append(resolution)
         return recorded
