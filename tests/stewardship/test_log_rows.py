@@ -22,6 +22,7 @@ from parishkit.stewardship.audit.log_rows import (
     EVENTS,
     LEVELS,
     OPERATIONAL_ACTIVITIES,
+    OPERATIONAL_ONLY_ACTIVITIES,
     UNGROUPED,
     UNGROUPED_REASONS,
     LogQuery,
@@ -473,7 +474,13 @@ def test_every_activity_member_is_written_and_explained():
                 event.startswith(prefix) for prefix, _ in PREFIXES
             ), event
         assert (key in OPERATIONAL_ACTIVITIES) is bool(set(types) & operational), key
-    assert sorted(OPERATIONAL_ACTIVITIES) == ["family_mail", "parishsoft"]
+        assert (key in OPERATIONAL_ONLY_ACTIVITIES) is (set(types) <= operational), key
+    assert sorted(OPERATIONAL_ACTIVITIES) == [
+        "family_mail",
+        "parishsoft",
+        "refused_input",
+    ]
+    assert sorted(OPERATIONAL_ONLY_ACTIVITIES) == ["refused_input"]
     # The manifest scan cannot pass vacuously.
     assert {"mail_provider_failed", "source_refresh_held"} <= operational
 
@@ -620,6 +627,21 @@ def test_activity_groups_are_closed_link_filters(key, members, outsiders, audit_
     assert query.form_values() == {"activity": key}
     assert not LogQuery().activity_audit_only
     assert LogQuery.parse({"activity": "sign_in"}).activity_audit_only
+
+
+def test_refused_input_is_the_refusal_entries_only():
+    """Refused input (#2114) lists exactly the refusal entries, is not
+    audit-only but operational-only, and travels in a link and an export."""
+    query = LogQuery.parse({"activity": "refused_input"})
+    assert query.activity_types == ("admin_input_refused",)
+    assert query.activity_operational_only
+    assert not query.activity_audit_only
+    assert query.link_values() == {"activity": "refused_input"}
+    assert query.form_values() == {"activity": "refused_input"}
+    assert not LogQuery().activity_operational_only
+    assert not LogQuery.parse({"activity": "family_mail"}).activity_operational_only
+    # Only Audit record ticked is answered (an empty table), not refused.
+    LogQuery.parse({"applied": "yes", "audit": "yes", "activity": "refused_input"})
 
 
 def test_built_types_refuse_a_value_the_database_does_not_allow():

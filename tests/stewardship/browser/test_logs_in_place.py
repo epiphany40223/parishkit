@@ -418,3 +418,31 @@ def test_activity_groups_grey_the_levels_only_when_audit_only(page, component_or
         "() => window.location.search",
         "?activity=parishsoft&applied=yes&info=yes&warning=yes&error=yes",
     )
+
+
+def test_refused_input_greys_audit_record_and_waits_for_a_level(page, component_origin):
+    """Refused input is operational entries only (#2114): while it is
+    chosen Audit record is greyed and unsent, the levels stay enabled, and
+    Apply waits until a level is ticked. Choosing it moves nothing."""
+    page.set_viewport_size(VIEWPORT)
+    page.goto(component_origin + LIVE)
+    levels = ("debug", "info", "warning", "error", "critical")
+    activity = page.get_by_label("Activity", exact=True)
+    audit = page.get_by_label("Audit record", exact=True)
+    apply = page.get_by_role("button", name="Apply filters")
+    before = page.evaluate(BOXES)
+    top = page.evaluate(TABLE_TOP)
+    activity.select_option("refused_input")
+    assert audit.is_disabled()
+    for level in levels:
+        assert page.locator(f"#table-filters input[name={level}]").is_enabled()
+    for level in levels:
+        page.locator(f"#table-filters input[name={level}]").uncheck()
+    # Audit record is still ticked, but greyed and unsent, so it counts for
+    # nothing.
+    assert audit.is_checked() and apply.is_disabled()
+    page.locator("#table-filters input[name=info]").check()
+    assert apply.is_enabled()
+    assert page.evaluate(BOXES) == before and page.evaluate(TABLE_TOP) == top
+    activity.select_option("")
+    assert audit.is_enabled()

@@ -1458,6 +1458,53 @@ def test_reports_security_and_family_portal_groups_list_their_own_types(
         assert newest("downloads", 1) == ["system_logs_exported"]
 
 
+def test_refused_input_lists_only_the_refusal_entries(auth_service, google):
+    """Refused input (#2114) lists exactly the refused Admin inputs, at the
+    levels ticked, never an audit record, each with its sentence; with only
+    Audit record ticked the empty table says to tick a level, and both
+    downloads hold exactly the page's entries."""
+    browser, _ = signed_in()
+    AuditEvent.objects.create(event_type="admin_login")
+    with schema_owner():
+        OperationalLog.objects.create(
+            level="ERROR", event=Event.TASK_FAILED.value, schema="failure", context={}
+        )
+        for level, reason in (("INFO", "stale_page"), ("WARNING", "denied")):
+            OperationalLog.objects.create(
+                level=level,
+                event=Event.ADMIN_INPUT_REFUSED.value,
+                schema="refusal",
+                context={"route": "admin:campaign_create", "reason": reason},
+            )
+    every = {key: "yes" for key in ("applied", "info", "warning", "error", "audit")}
+    expected = ["admin_input_refused", "admin_input_refused"]
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        page = post(browser, every | {"activity": "refused_input"})
+        assert listed_types(page) == expected
+        assert levels(page) == ["warning", "info"]
+        assert (
+            b"Create the campaign: Refused (the person&#x27;s role does not "
+            b"allow it)." in page.content
+        )
+        warnings = post(
+            browser, {"applied": "yes", "warning": "yes", "activity": "refused_input"}
+        )
+        assert listed_types(warnings) == ["admin_input_refused"]
+        alone = post(
+            browser, {"applied": "yes", "audit": "yes", "activity": "refused_input"}
+        )
+        assert listed_types(alone) == []
+        assert b"This activity is made of operational entries only" in alone.content
+        csv_file = export(browser, every | {"activity": "refused_input"})
+        rows = list(csv.DictReader(io.StringIO(csv_file.content.decode())))
+        assert [row["Type"] for row in rows] == expected
+        lines = export(
+            browser, every | {"activity": "refused_input", "format": "jsonl"}
+        )
+        records = [json.loads(line) for line in lines.content.decode().splitlines()]
+        assert [record["type"] for record in records] == expected
+
+
 def test_the_related_icon_shows_only_when_another_entry_would_be_listed():
     """An entry's related icon (#1065) appears only when the related view,
     which lists the default kinds (every level but DEBUG, and audit records),

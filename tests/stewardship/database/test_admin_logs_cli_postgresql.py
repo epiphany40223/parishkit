@@ -402,3 +402,38 @@ def test_logs_list_activity_lists_the_pages_sign_in_activity(admin, google):
     # A group the page does not list is a usage error, before any read.
     code, document, _ = admin("logs", "list", "--activity", "everything", secret=secret)
     assert code == 2 and document["error"]["code"] == "usage"
+
+
+def test_logs_list_activity_refused_input_lists_only_refusals(admin, google):
+    """``--activity refused_input`` (#2114) lists the refused Admin inputs at
+    the levels asked for, never another operational entry or an audit
+    record, even with ``--show audit``."""
+    from parishkit.stewardship.audit.models import OperationalLog
+    from parishkit.stewardship.observability import Event
+
+    from .role_grants import schema_owner
+
+    _, secret, _ = paired(admin.service, scope="read-only")
+    AuditEvent.objects.create(event_type="admin_login")
+    diagnostics(("WARNING", "ERROR"))
+    with schema_owner():
+        OperationalLog.objects.create(
+            level="WARNING",
+            event=Event.ADMIN_INPUT_REFUSED.value,
+            schema="refusal",
+            context={"route": "admin:campaign_create", "reason": "denied"},
+        )
+    code, document, _ = admin(
+        "logs",
+        "list",
+        "--activity",
+        "refused_input",
+        *("--show", "warning", "--show", "error", "--show", "audit"),
+        secret=secret,
+    )
+    assert code == 0, document
+    entries = document["result"]["entries"]
+    assert [(entry["type"], entry["level"]) for entry in entries] == [
+        ("admin_input_refused", "WARNING")
+    ]
+    assert entries[0]["details"]["reason"] == "denied"

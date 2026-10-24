@@ -4324,6 +4324,7 @@ LOG_ACTIVITIES = (
     "family_mail",
     "family_portal",
     "parishsoft",
+    "refused_input",
     "security",
     "sign_in",
 )
@@ -4344,7 +4345,8 @@ def _log_filter_options(parser):
         help="a fixed group of types listed together, as the page's Activity "
         "choice: family_mail (outgoing email steps, resolutions, pauses, tests "
         "and provider failures) or parishsoft (refreshes, quick updates, "
-        "failures and holds), with operational entries; or, audit records "
+        "failures and holds), with operational entries; refused_input (refused "
+        "Admin pages and commands), operational entries only; or, audit records "
         "only, sign_in (every Admin portal sign-in event), configuration "
         "(settings, schedule, user, file and key changes), downloads (report "
         "and export requests and downloads), security (widened access, "

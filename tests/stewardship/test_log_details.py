@@ -216,3 +216,97 @@ def test_the_page_row_carries_the_sentence():
     assert row["summary"].startswith("ParishSoft answered with an error.")
     assert ("Status", "503") in row["detail_rows"]
     assert ContextKind.FAILURE.value == schema
+
+
+def test_a_refused_input_names_the_page_fields_reason_and_values():
+    """A refused Admin input (#2114) reads from its closed values only: the
+    page's title, the fields in words and the reason, with the expected and
+    actual settings when it has them."""
+    text = explain(
+        "refusal",
+        {
+            "route": "admin:campaign_create",
+            "fields": ["time_zone"],
+            "reason": "campaign_zone_not_parish",
+            "expected": "Africa/Abidjan",
+            "actual": "America/New_York",
+        },
+    )
+    assert text == (
+        "Create the campaign: Time zone refused (the campaign must use the "
+        "parish's time zone; expected Africa/Abidjan, got America/New_York)."
+    )
+    assert explain(*stored(Event.ADMIN_INPUT_REFUSED)) == (
+        "Create the campaign: Refused (the person's role does not allow it)."
+    )
+
+
+def test_a_refused_image_reads_its_limit_and_size_in_megabytes():
+    """An image refused for its size reads its stored byte counts as
+    megabytes, not raw bytes after "expected ... got" (#2114)."""
+    context = {
+        "route": "admin:branding",
+        "fields": ["logo"],
+        "reason": "image_too_large",
+        "expected": str(5 * 1024 * 1024),
+        "actual": str(8 * 1024 * 1024 + 512 * 1024),
+    }
+    text = explain("refusal", context)
+    assert text.endswith(
+        "Logo refused (the file is larger than the limit; limit 5 MB, file 8.5 MB)."
+    )
+    # A value that is not a byte count keeps the general form.
+    text = explain("refusal", context | {"actual": "large"})
+    assert text.endswith("expected 5242880, got large).")
+
+
+def test_a_refused_command_unclassified_and_capped_entry_reads_plainly():
+    """A command names itself; an entry with no reason says its error codes
+    or exception kind; a capped one says later refusals were not kept."""
+    assert (
+        explain(
+            "refusal",
+            {
+                "command": "export create",
+                "fields": ["kind"],
+                "reason": "unclassified",
+                "codes": ["invalid_choice"],
+            },
+        )
+        == "pk-admin export create: Kind refused (invalid choice)."
+    )
+    text = explain(
+        "refusal",
+        {
+            "route": "admin:not_a_page",
+            "reason": "unclassified",
+            "exception_class": "value_error",
+            "capped": True,
+        },
+    )
+    assert text.startswith(
+        "An Admin page: Refused (something unexpected went wrong while checking it)."
+    )
+    assert "value" not in text
+    assert "not kept here for the rest of the ten-minute window" in text
+    assert explain(
+        "refusal",
+        {
+            "route": "admin:campaign_create",
+            "reason": "unexpected_fields",
+            "unexpected_count": 2,
+        },
+    ) == (
+        "Create the campaign: Refused (the form sent fields the page does not "
+        "have; 2 unexpected fields)."
+    )
+    # Neither a page nor a command (never stored): no sentence.
+    assert explain("refusal", {"reason": "denied", "fields": "time_zone"}) is None
+
+
+def test_every_refusal_reason_has_words():
+    """Each closed refusal reason but ``unclassified`` has its clause."""
+    from parishkit.stewardship.audit.log_details import REFUSAL_TEXT
+    from parishkit.stewardship.audit.refusal_context import REASONS
+
+    assert set(REFUSAL_TEXT) == REASONS - {"unclassified"}

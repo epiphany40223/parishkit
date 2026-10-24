@@ -499,6 +499,7 @@ def test_the_activity_choice_offers_sign_in_activity_in_plain_words():
         "downloads",
         "security",
         "family_portal",
+        "refused_input",
     ]
     assert '<option value="" selected>All activity</option>' in plain
     chosen = _render(LogQuery.parse({"activity": "sign_in"}))
@@ -532,6 +533,7 @@ def test_same_actor_keeps_the_sign_in_activity_choice():
         ({"applied": "yes", "info": "yes", "activity": "family_portal"}, True),
         # A group with operational entries can list them without audits.
         ({"applied": "yes", "info": "yes", "activity": "parishsoft"}, False),
+        ({"applied": "yes", "info": "yes", "activity": "refused_input"}, False),
     ],
 )
 def test_audit_only_activity_without_audit_says_why(values, activity_note):
@@ -542,6 +544,23 @@ def test_audit_only_activity_without_audit_says_why(values, activity_note):
     empty = re.search(r'<td colspan="6">(.*?)</td>', html).group(1)
     assert (note in empty) is activity_note
     assert ("clearing the activity, type" in html) is not activity_note
+
+
+@pytest.mark.parametrize(
+    ("values", "activity_note"),
+    [
+        ({"applied": "yes", "audit": "yes", "activity": "refused_input"}, True),
+        ({"applied": "yes", "info": "yes", "activity": "refused_input"}, False),
+        ({"applied": "yes", "audit": "yes", "activity": "family_mail"}, False),
+    ],
+)
+def test_operational_only_activity_without_a_level_says_why(values, activity_note):
+    """Refused input is operational entries only (#2114), so with no level
+    ticked the empty table says to tick one."""
+    html = _render(LogQuery.parse(values), rows=[])
+    note = "This activity is made of operational entries only; tick a level."
+    empty = re.search(r'<td colspan="6">(.*?)</td>', html).group(1)
+    assert (note in empty) is activity_note
 
 
 def test_the_link_and_download_carry_the_activity_choice():
@@ -564,14 +583,17 @@ def test_audit_only_activity_greys_the_levels_and_waits_for_audit():
     labels = _choices(_render())
     marks = {re.search(r'name="(\w+)"', label).group(1): label for label in labels}
     for level in ("debug", "info", "warning", "error", "critical"):
-        assert 'data-enabled-when="activity=|family_mail|parishsoft"' in marks[level]
+        assert (
+            'data-enabled-when="activity=|family_mail|parishsoft|refused_input"'
+            in marks[level]
+        )
         assert "data-required-when" not in marks[level]
     audit = marks["audit"]
     assert (
         'data-required-when="activity='
         'configuration|downloads|family_portal|security|sign_in"'
     ) in audit
-    assert "data-enabled-when" not in audit
+    assert 'data-enabled-when="activity!=refused_input"' in audit
     html = _render()
     label = re.search(
         r'<label data-missing-hint="([^"]*)"><input[^>]*name="audit"', html
