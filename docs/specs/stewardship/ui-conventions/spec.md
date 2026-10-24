@@ -122,9 +122,11 @@ claim a translated Spanish UI in the first release.
 ### Numbers and money
 
 Displayed ordinary numbers use US grouping separators. Money is USD with two
-fractional digits. Counts written as "X out of Y" also show a percentage;
-percentages use one fractional digit unless they are exact integers. A zero
-denominator displays an em dash rather than a misleading percentage.
+fractional digits, except a headline money total a
+[stat tile](#stat-tiles) shows without cents. Counts written as "X out of
+Y" also show a percentage; percentages use one fractional digit unless they
+are exact integers. A zero denominator displays an em dash rather than a
+misleading percentage.
 
 ### Dates and times
 
@@ -3445,7 +3447,16 @@ two ways of reading to a screen reader. **Precedent.**
   [numbers and money](#numbers-and-money): a count is grouped, money is
   USD with cents and a share is a percentage. Templates never format a
   tile's value. A tile that states a share prints the count and what it
-  is compared with as well as the percentage.
+  is compared with as well as the percentage. A page whose exact amounts
+  are printed elsewhere on it or in its download may show a money total
+  without cents, so a large total is not drawn smaller than its row's other
+  values: under $1,000,000 (after rounding to the dollar) in whole dollars
+  ("$987,655"), and from $1,000,000 in millions or billions with two
+  decimal places ("$1.23M", "$123.46M", "$1.23B"; a total that rounds to
+  1,000.00 millions reads "$1.00B"), each rounded half up. The amounts in
+  that tile's explanation lines are whole dollars (Campaign comparison's
+  Annual pledges,
+  [#2090](https://github.com/epiphany40223/parishkit/issues/2090)).
 - **Unknown values.** A value that is not known reads "—" with a
   [toggletip](#page-help) saying why, in plain language. The toggletip's
   button is described by its reason, so a screen reader announces it when

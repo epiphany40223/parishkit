@@ -637,3 +637,76 @@ def test_headline_tiles_never_raise_for_any_missing_or_zero_figure():
                     )
                     for figure in comparison_views.headline_tiles(tiles(found)):
                         assert (figure.text == "—") == bool(figure.unknown_reason)
+
+
+def test_pledge_tiles_show_whole_dollars_at_the_other_tiles_size():
+    """The Annual pledges tile and its comparison lines are whole dollars,
+    rounded half up, so a large total keeps the row's full size (#2090);
+    the Every number table keeps the exact cents."""
+    found = comparison(
+        [
+            year(2054, day(3, 30, pledging=380, pledged="876543.49")),
+            year(2053, day(3, 20, pledging=360, pledged="800000.51")),
+        ]
+    )
+    at = day(3, 40, pledging=400, pledged="987654.50")
+    found = replace(found, current=replace(found.current, at_day=at, end=at))
+    for outside in (False, True):  # the page, and the PDF summary and emails
+        pledged = {tile["key"]: tile for tile in tiles(found, outside=outside)}[
+            "pledged"
+        ]
+        assert pledged["value"] == "$987,655"
+        assert pledged["lines"] == [
+            "Last year on day 3: $876,543 (↑ 12.7% more)",
+            "2053–2054 average: $838,272 (↑ 17.8% more)",
+        ]
+    drawn = comparison_views.headline_tiles(tiles(found))
+    assert [tile.key for tile in drawn] == [metric.key for metric in METRICS]
+    assert [tile.fit for tile in drawn] == [""] * 5
+    assert "$987,654.50" in str(table_rows(found)[0])
+
+
+def test_a_pledge_comparison_line_rounds_half_up_to_the_dollar():
+    """A comparison line's amount at exactly 50 cents rounds up (#2090)."""
+    found = comparison([year(2054, day(3, 30, pledging=380, pledged="800000.50"))])
+    pledged = {tile["key"]: tile for tile in tiles(found)}["pledged"]
+    assert pledged["lines"][0].startswith("Last year on day 3: $800,001 (")
+
+
+@pytest.mark.parametrize(
+    "pledged, shown",
+    [
+        ("987654.50", "$987,655"),
+        ("999999.49", "$999,999"),
+        ("999999.50", "$1.00M"),
+        ("1000000", "$1.00M"),
+        ("1234567.89", "$1.23M"),
+        ("1235000", "$1.24M"),
+        ("9995000", "$10.00M"),
+        ("12345678", "$12.35M"),
+        ("123456789", "$123.46M"),
+        ("999990000", "$999.99M"),  # the longest likely form, still full size
+        ("999994999.99", "$999.99M"),
+        ("999995000", "$1.00B"),
+        ("999999999.50", "$1.00B"),
+        ("1234567890", "$1.23B"),
+        ("12345678901", "$12.35B"),
+    ],
+)
+def test_a_pledge_total_of_a_million_or_more_has_two_decimal_places(pledged, shown):
+    """From $1,000,000 (rounded to the dollar) the Annual pledges tile's
+    value is in millions, then billions, with two decimal places, half up,
+    so it keeps the row's full size; its comparison lines keep whole
+    dollars and the Every number table the cents (#2090)."""
+    found = comparison([year(2054, day(3, 30, pledging=380, pledged="876543.49"))])
+    # Many pledging Families keep the Average pledge tile short, so every
+    # tile's size is decided by its own value.
+    at = day(3, 40, pledging=10**8, pledged=pledged)
+    found = replace(found, current=replace(found.current, at_day=at, end=at))
+    for outside in (False, True):  # the page, and the PDF summary and emails
+        pledged_tile = {t["key"]: t for t in tiles(found, outside=outside)}["pledged"]
+        assert pledged_tile["value"] == shown
+        assert pledged_tile["lines"][0].startswith("Last year on day 3: $876,543 (")
+    drawn = comparison_views.headline_tiles(tiles(found))
+    assert [tile.fit for tile in drawn] == [""] * 5
+    assert f"${Decimal(pledged):,.2f}" in str(table_rows(found)[0])

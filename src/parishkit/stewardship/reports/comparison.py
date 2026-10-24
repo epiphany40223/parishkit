@@ -206,6 +206,10 @@ class Metric:
     label: str
     kind: str  # "count", "percent" or "money"
     financial: bool = False
+    # A headline tile shows this money figure without cents (#2090): its
+    # value in whole dollars or millions, its comparison lines in whole
+    # dollars.
+    whole: bool = False
 
     def value(self, year):
         """This figure for ``year`` at the comparison day, or None."""
@@ -225,7 +229,7 @@ class Metric:
 METRICS = (
     Metric("families", "Families responded", "count"),
     Metric("percent", "Percent of active Families", "percent"),
-    Metric("pledged", "Annual pledges", "money", financial=True),
+    Metric("pledged", "Annual pledges", "money", financial=True, whole=True),
     Metric("average", "Average pledge", "money", financial=True),
     Metric("renewal", "Renewal of last year's responders", "percent"),
 )
@@ -292,6 +296,53 @@ def money_text(value):
     """US dollars and cents, US grouping ("$1,234.50")."""
     cents = Decimal(value).quantize(CENT, ROUND_HALF_UP)
     return ("-" if cents < 0 else "") + "$" + number(abs(cents))
+
+
+MILLION = Decimal(1_000_000)
+
+
+def dollars_text(value):
+    """US dollars rounded to the nearest dollar, half up ("$1,234,568").
+
+    A headline tile's money amounts (ui-conventions "Stat tiles", #2090):
+    the Every number table and the downloads keep the exact amount.
+    """
+    dollars = Decimal(value).quantize(Decimal(1), ROUND_HALF_UP)
+    return ("-" if dollars < 0 else "") + "$" + number(abs(dollars))
+
+
+def headline_dollars_text(value):
+    """A tile's own money value: "$987,655" under a million, else "$1.23M".
+
+    Whole dollars of a million or more are ten characters or more, which
+    ``StatTile.fit`` draws smaller than the row's other values, so from a
+    million (after rounding to the dollar, so $999,999.50 reads "$1.00M")
+    the value is in millions, or billions, always with two decimal places,
+    half up: "$1.23M", "$12.35M", "$123.46M", "$1.23B" (#2090). A figure
+    that rounds to 1,000.00 millions ($999,995,000) reads "$1.00B". The
+    longest likely form, "$999.99M", is 8 characters, still full size.
+    """
+    dollars = Decimal(value).quantize(Decimal(1), ROUND_HALF_UP)
+    if abs(dollars) < MILLION:
+        return dollars_text(value)
+    amount = abs(Decimal(value))
+    figure = (amount / MILLION).quantize(CENT, ROUND_HALF_UP)
+    suffix = "M"
+    if figure >= 1000:
+        figure = (amount / (MILLION * 1000)).quantize(CENT, ROUND_HALF_UP)
+        suffix = "B"
+    return ("-" if dollars < 0 else "") + "$" + number(figure) + suffix
+
+
+def tile_text(metric, value, *, headline=False):
+    """``metric``'s ``value`` as a headline tile shows it; "—" when unknown.
+
+    ``headline`` is the tile's own value, as opposed to a comparison line's
+    amount: only it may take the short millions or billions form.
+    """
+    if metric.whole and value is not None:
+        return headline_dollars_text(value) if headline else dollars_text(value)
+    return value_text(metric.kind, value)
 
 
 def value_text(kind, value):
@@ -387,7 +438,7 @@ def tiles(comparison, *, outside=False):
             continue
         value = metric.value(current)
         lines = []
-        shown = value_text(metric.kind, value)
+        shown = tile_text(metric, value, headline=True)
         references = []
         if comparison.last_year is not None:
             last = comparison.last_year
@@ -409,7 +460,7 @@ def tiles(comparison, *, outside=False):
             if isinstance(reference, str):  # WITHHELD
                 lines.append(f"{label}: {WITHHELD}")
                 continue
-            text = value_text(metric.kind, reference)
+            text = tile_text(metric, reference)
             difference = change_text(metric.kind, value, reference)
             lines.append(
                 f"{label}: {text}" + (f" ({difference})" if difference else "")
