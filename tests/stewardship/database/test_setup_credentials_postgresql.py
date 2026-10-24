@@ -77,13 +77,15 @@ def publish(target, *, material=b"s" * 32):
     return private
 
 
-def staged(service, target="parishsoft", *, age_minutes=0, choose=True):
+def staged(
+    service, target="parishsoft", *, age_minutes=0, choose=True, organization_id=1
+):
     """Use real owner services and exact grants for the entire collecting path.
 
     ``age_minutes`` models a Google sign-in that long ago. A ParishSoft key's
-    organization lookup is then answered and organization 1 chosen (#1554),
-    unless ``choose`` is false; the attempt and receipt returned are the
-    latest.
+    organization lookup is then answered and ``organization_id`` chosen
+    (#1554), unless ``choose`` is false; the attempt and receipt returned are
+    the latest.
     """
     private = publish(target)
     with web_login():
@@ -120,7 +122,9 @@ def staged(service, target="parishsoft", *, age_minutes=0, choose=True):
             expected_version=attempt.version,
         )
     if target == "parishsoft" and choose:
-        attempt = answered_and_chosen(request, service, attempt.attempt_id, private)
+        attempt = answered_and_chosen(
+            request, service, attempt.attempt_id, private, organization_id
+        )
         with web_login():
             (receipt,) = credential_status(request, service, attempt.attempt_id)
     return request, attempt, receipt, private
