@@ -132,8 +132,9 @@ def _candidates(campaign, definition, cutoff, bind):
         definition.current_revision.values, campaign.active_configuration.values
     )
     common = {"definition": definition, "mode": "production", "target": "admins"}
-    # A recovery aggregate is not an original civil-date slot. Never omit its
-    # pending authority merely because date pagination cannot encounter its key.
+    # A catch-up recovery send (slot ``recovery:...``) is not an original
+    # civil-date slot. Never omit its pending authority merely because date
+    # pagination cannot encounter its key.
     blocked = False
     for row in (
         ScheduleOccurrence.objects.filter(

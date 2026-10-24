@@ -55,6 +55,33 @@ def test_next_slot_matches_complete_evaluation_at_the_due_boundary(kind):
     assert rule.next_slot(after=slot.due_at) is None
 
 
+@pytest.mark.parametrize("limit", [1, 3, 10, 100])
+def test_stable_cursor_partitions_equal_whole_result_and_replay_is_pure(limit):
+    """Changing batch sizes does not duplicate or lose any report send.
+
+    A daily report email with a skipped send, so a page's cursor also
+    passes a slot that is not a send.
+    """
+    owner = campaign()
+    rule = SchedulePlan.from_values(
+        report(campaign_id=owner["id"], skip_dates=["2054-10-02"]), owner["values"]
+    )
+    expected = rule.page(through=FUTURE, limit=1000).slots
+    assert len(expected) == 30 and "2054-10-02" not in {s.key for s in expected}
+    cursor, collected = None, []
+    for _ in range(33):
+        page = rule.page(through=FUTURE, after=cursor, limit=limit)
+        assert page == rule.page(through=FUTURE, after=cursor, limit=limit)
+        assert len(page.slots) <= limit
+        collected.extend(page.slots)
+        cursor = page.cursor
+        if page.exhausted:
+            break
+    else:
+        pytest.fail("The bounded schedule did not terminate.")
+    assert tuple(collected) == expected
+
+
 @pytest.mark.parametrize("clock", [None, date(2054, 10, 1), datetime(2054, 10, 1)])
 def test_next_slot_rejects_ambiguous_clock(clock):
     """No browser timezone or naive clock may select a different next occurrence."""

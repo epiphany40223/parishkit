@@ -528,9 +528,9 @@ Report sends use the shared machinery unchanged:
   report, however many of its sends are overdue. A send's messages are the
   addresses of the report's cohort now, or none when it would be skipped as
   empty ([Sending only when there is content](#sending-only-when-there-is-content)).
-  A report whose `as_of` is the end of the previous day counts as a "Daily
-  report email due at once" (`daily_messages`), one as of when it is made
-  as a "Weekly report email due at once" (`weekly_messages`); the keys keep
+  A report whose `as_of` is the end of the previous day counts under "Daily
+  report emails due at once" (`daily_messages`), one as of when it is made
+  under "Weekly report emails due at once" (`weekly_messages`); the keys keep
   the names of the digests these reports replaced, since the confirmation's
   recorded outcomes and the `go-live` command's output name them. The
   overdue sends folded into one are `coalesced_slots`, a report whose send
