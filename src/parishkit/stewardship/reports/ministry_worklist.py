@@ -42,6 +42,7 @@ from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.review_worklist import (
     ALREADY_HELD,
+    KEPT_REASON,
     NOT_SEEN,
     NOW_MATCHES,
     WORDS,
@@ -819,7 +820,12 @@ def _withhold(row, actionable):
         for icon in row["icons"]:
             if icon["undo"]:
                 icon.update(active=False, undo=False, decide=None)
-                icon["label"] = icon["title"] = WORDS[Action.ENTERED_BY_HAND].selected
+                # A greyed icon says why (UX conventions, "Decision
+                # toggles"): the Member left ParishSoft or a later
+                # response replaced the request.
+                icon["label"] = icon["title"] = (
+                    f"{WORDS[Action.ENTERED_BY_HAND].selected}; {KEPT_REASON}"
+                )
         offered = any(icon["active"] for icon in row["icons"])
         row["kinds"] = entered if offered else ""
         row["offers_edit"] = False

@@ -34,6 +34,11 @@ BULKED = "/review-worklist-bulked"
 REOPENED = "/review-worklist-reopened"
 # The page after row 6's pressed Entered by hand was chosen again (#2131).
 UNDONE = "/review-worklist-undone"
+# The Staff rows and a change ParishSoft already held (Confirmed, no
+# decision behind it), and the page after its pressed Accept sends that one
+# back to review (#2131).
+CONFIRMED = "/review-worklist-confirmed"
+CONFIRMED_UNDONE = "/review-worklist-confirmed-undone"
 # A decision another reader overtook, with a long item name: the longest
 # notice the line must hold (R38 finding 10).
 STALED = "/review-worklist-staled"
@@ -45,6 +50,7 @@ ACCEPTED_NOTICE = "Mobile phone for Member 00 accepted."
 BULK_NOTICE = "2 changes accepted."
 REOPENED_NOTICE = "Mobile phone for Member 04 sent back to review."
 UNDONE_NOTICE = "Mobile phone for Member 06 sent back to review."
+CONFIRMED_NOTICE = "Mobile phone for Member 08 sent back to review."
 STALE_NOTICE = STALE.format(name="Home address for Martin, Luke and Emily")
 
 # The host page: the stream's heading, then the shared component.
@@ -214,6 +220,16 @@ def components(context, admin):
             context, admin, staff_rows(reopened), staff, notice=REOPENED_NOTICE
         ),
         UNDONE: _page(context, admin, staff_rows(undone), staff, notice=UNDONE_NOTICE),
+        CONFIRMED: _page(
+            context, admin, [*staff_rows(), _row(8, Stage.CONFIRMED)], staff
+        ),
+        CONFIRMED_UNDONE: _page(
+            context,
+            admin,
+            [*staff_rows(), _row(8, Stage.TO_REVIEW)],
+            staff,
+            notice=CONFIRMED_NOTICE,
+        ),
         STALED: _page(context, admin, staff_rows(), staff, notice=STALE_NOTICE),
         FILTERED: _page(context, admin, ignored, staff, stage="ignored"),
         FILTERED_ADDRESS: _page(context, admin, ignored, staff, stage="ignored"),

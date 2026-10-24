@@ -147,9 +147,10 @@ def test_the_request_page_ticks_in_place(page, component_origin):
     visible(
         page.locator("#followup-roster").get_by_text("To enter by hand", exact=True)
     )
-    tick = page.locator("#followup-roster").get_by_role(
-        "button", name="Entered by hand", exact=True
-    )
+    # Its accessible name says what choosing it does, so it changes with
+    # the press (#2131); the button itself stays put.
+    tick = page.locator("#followup-roster button.toggle-button")
+    assert tick.get_attribute("aria-label") == "Mark this request entered by hand"
     assert tick.get_attribute("aria-pressed") == "false"
     left = tick.evaluate("node => Math.round(node.getBoundingClientRect().left)")
     tick.click()
@@ -186,13 +187,13 @@ def test_the_request_page_clear_asks_for_the_note(page, component_origin):
             route.continue_()
 
     page.route(lambda url: TICK_ITEM in url, answer)
-    undo = page.locator("#followup-roster").get_by_role(
-        "button", name="Entered by hand", exact=True
-    )
-    # The tooltip says choosing it again undoes the mark.
+    # Its accessible name and tooltip say choosing it again undoes the mark.
     title = (
         "Entered by hand; select to undo Entered by hand for Example <Member> — "
         "Example <Ministry>"
+    )
+    undo = page.locator("#followup-roster").get_by_role(
+        "button", name=title, exact=True
     )
     assert undo.get_attribute("title") == title
     assert undo.get_attribute("aria-pressed") == "true"

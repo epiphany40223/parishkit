@@ -14,6 +14,9 @@ from .review_worklist_components import (
     ACCEPTED_NOTICE,
     BULK_NOTICE,
     BULKED,
+    CONFIRMED,
+    CONFIRMED_NOTICE,
+    CONFIRMED_UNDONE,
     FILTERED,
     FILTERED_ADDRESS,
     HUB,
@@ -310,6 +313,36 @@ def test_a_pressed_mark_undoes_with_its_note_in_place(page, component_origin):
     assert page.evaluate("document.activeElement.dataset.rowAction") == (
         "entered_by_hand"
     )
+    assert boxes(actions) == before
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_a_confirmed_rows_pressed_accept_undoes_in_place(page, component_origin):
+    """A change ParishSoft already held has no decision behind it, so its
+    Accept is drawn pressed as its undo, with no Back to review button of
+    its own (#2131). Choosing it opens Back to review's dialog, which needs
+    a note on a terminal stage; the row is redrawn To review with every
+    button in its place and Accept unpressed and focused."""
+    page.goto(component_origin + CONFIRMED)
+    page.evaluate(MARK)
+    sent = posts_to(page, component_origin, CONFIRMED_UNDONE)
+    actions = row(page, 8).locator(".table-actions")
+    assert actions.locator('[data-row-action="back_to_review"]').count() == 0
+    accept = icon(page, 8, "Accept")
+    assert accept.get_attribute("aria-pressed") == "true"
+    undo = f"Already in ParishSoft; select to send {name(8)} back to review"
+    visible(row(page, 8).get_by_role("button", name=undo, exact=True))
+    before = boxes(actions)
+    accept.click()
+    dialog = page.locator("#worklist-decide-dialog")
+    has_text(dialog.locator("h2"), f"Send {name(8)} back to review?")
+    dialog.get_by_label("Note (required)").fill("ParishSoft was wrong")
+    dialog.get_by_role("button", name="Record").click()
+    has_text(page.locator("#worklist-notice"), CONFIRMED_NOTICE)
+    hidden(dialog)
+    assert "decide=back_to_review" in sent[-1] and "item=8" in sent[-1]
+    assert icon(page, 8, "Accept").get_attribute("aria-pressed") == "false"
+    assert page.evaluate("document.activeElement.dataset.rowAction") == "accept"
     assert boxes(actions) == before
     assert page.evaluate(MARKED) == "kept"
 
