@@ -75,11 +75,10 @@ def test_a_production_email_says_how_to_sign_in_and_what_waits():
     assert "Your sign-in address is ann@example.org" in text
     for line in (
         google_account_help.WHICH_ADDRESS,
-        google_account_help.NO_ACCOUNT,
         google_account_help.STILL_STUCK,
     ):
         assert str(line) in text
-    assert google_account_help.HELP_URL in text and google_account_help.HELP_URL in html
+    assert "support.google.com" not in text + html
     assert "- Choir & <Bells>: 2 asking to join · 1 asking to leave" in text
     assert "- Food pantry: No open requests" in text
     assert (

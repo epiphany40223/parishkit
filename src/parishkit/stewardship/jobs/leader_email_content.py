@@ -21,9 +21,6 @@ from dataclasses import dataclass
 from types import MappingProxyType
 
 from parishkit.stewardship.accounts.google_account_help import (
-    HELP_URL,
-    LINK_LABEL,
-    NO_ACCOUNT,
     STILL_STUCK,
     WHICH_ADDRESS,
 )
@@ -176,15 +173,13 @@ def render_leader_email(facts, address):
         "Requests from Families to join or leave your Ministries that are "
         "still open (New or In progress) in the current campaign:"
     )
-    guidance = (str(WHICH_ADDRESS), str(NO_ACCOUNT))
     html = [
         "<p>Hello,</p>",
         _paragraph(intro),
         button(sign_in, "Sign in"),
         _heading("How to sign in"),
         _paragraph(address_line),
-        *(_paragraph(line) for line in guidance),
-        f"<p>{_link(HELP_URL, str(LINK_LABEL))}</p>",
+        _paragraph(str(WHICH_ADDRESS)),
         _heading("Waiting in your Ministries"),
         _paragraph(open_line),
         "<ul>"
@@ -203,8 +198,7 @@ def render_leader_email(facts, address):
         f"Sign in: {sign_in}",
         "How to sign in",
         address_line,
-        *guidance,
-        f"{LINK_LABEL}: {HELP_URL}",
+        str(WHICH_ADDRESS),
         "Waiting in your Ministries",
         open_line
         + "".join(f"\n- {item.name}: {counts_text(item)}" for item in ministries),

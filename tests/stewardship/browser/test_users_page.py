@@ -509,25 +509,18 @@ def test_edit_review_waits_for_a_change(page, component_origin):
 def test_google_account_guidance_shows_where_sign_in_fails(page, component_origin):
     """The one Google Account guidance reaches a stuck leader and the Admin (#1593).
 
-    The Admin sign-in page and the generic Admin refusal show it with
-    Google's help link opening in a new tab; a Family refusal does not. On
+    The generic Admin refusal shows it, with no Google help link since
+    #2115; the Admin sign-in page (#2115) and a Family refusal do not. On
     Users, the line under the table counts the Ministry leader who never
     signed in, and the About panel repeats the guidance for the
     Administrator to pass on.
     """
-    from parishkit.stewardship.accounts.google_account_help import (
-        HELP_URL,
-        LINK_LABEL,
-    )
-
-    for path in ("/login", "/denied-admin"):
-        page.goto(component_origin + path)
-        guidance = page.locator("[data-google-account-help]")
-        visible(guidance.get_by_text("It doesn't have to be a Gmail address"))
-        link = guidance.get_by_role("link", name=str(LINK_LABEL))
-        assert link.get_attribute("href") == HELP_URL, path
-        assert link.get_attribute("target") == "_blank", path
-    for path in ("/denied", "/denied-admin-signed-in"):
+    page.goto(component_origin + "/denied-admin")
+    guidance = page.locator("[data-google-account-help]")
+    visible(guidance.get_by_text("It doesn't have to be a Gmail address"))
+    visible(guidance.get_by_text("Still can't sign in?"))
+    assert guidance.locator("a").count() == 0
+    for path in ("/login", "/denied", "/denied-admin-signed-in"):
         page.goto(component_origin + path)
         assert page.locator("[data-google-account-help]").count() == 0, path
     page.set_viewport_size({"width": 320, "height": 900})

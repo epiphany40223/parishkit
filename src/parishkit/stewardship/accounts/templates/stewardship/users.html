@@ -31,8 +31,7 @@ The line under the table counts Ministry leader users who never signed in,
 across every page (#1593), and is always shown so a redraw moves nothing;
 the About panel repeats the shared Google Account guidance
 (google_account_help tag) for the Administrator to pass on; the local
-laptop environment shows it only when it offers Google sign-in, as the
-sign-in page does.
+laptop environment shows it only when it offers Google sign-in.
 Last successful sign-in uses the compact parish date format in the browser's
 time zone (data-compact, date-format-v1.js), as other dense tables do
 (Administrator, 2026-10-11); the server sorts by the timestamp itself.
@@ -44,7 +43,7 @@ time zone (data-compact, date-format-v1.js), as other dense tables do
 <p>{% translate "A successful sign-in is one that was allowed and opened a session; a refused attempt is not counted. Times are shown in your computer's time zone." %}</p>
 <p>{% translate "Below the users, ParishSoft Ministry leaders without a user lists the people who lead one of this campaign's Ministries in ParishSoft but can't sign in yet. Import selected or Import all shows them as new Ministry leader users before anything is saved; anyone who became a user meanwhile is skipped. Import never changes an existing user." %}</p>
 <p>{% translate "Email Ministry leaders, at the foot of the page, sends each chosen Ministry leader user one email saying they can sign in, which address to sign in with, and how many requests are open in each Ministry they lead. It names no parishioner. Nothing is sent until you apply its review, and nothing is ever sent automatically, on import or on a schedule. Last emailed says when a leader was last emailed here and how that email has ended so far; Sent mail lists these emails too." %}</p>
-{% if google_sign_in or not local_environment %}<p>{% translate "Users sign in with a Google Account for their own address. It need not be a Gmail address, but many Ministry leaders' addresses have no Google Account yet, and Import doesn't tell them anything, so let them know. The sign-in page and the refusal page show them this:" %}</p>
+{% if google_sign_in or not local_environment %}<p>{% translate "Users sign in with a Google Account for their own address. It need not be a Gmail address, but many Ministry leaders' addresses have no Google Account yet, and Import doesn't tell them anything, so let them know. The refusal page shows them this:" %}</p>
 {% google_account_help %}{% endif %}
 <p>{% translate "The line under the users table counts the Ministry leaders who have never signed in; their Last successful sign-in reads Never." %}</p>{% endaboutpage %}
 <p id="users-sign-in-activity"><a href="{% url 'admin:logs' %}?applied=yes&amp;audit=yes&amp;activity=sign_in">{% translate "See sign-in activity in System logs" %}</a></p>

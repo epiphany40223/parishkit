@@ -73,18 +73,26 @@ Account, and many volunteer Ministry leaders' addresses have none
 ([#1593](https://github.com/epiphany40223/parishkit/issues/1593)). Google
 itself refuses such an address before it ever reaches the callback, so the
 portal says how to fix it where the person meets the problem. The Admin
-login page (below Sign in with Google) and the Admin generic not-authorized
-page both show the same short **Google Account guidance**: sign in with the
-address the parish gave access to; an address with no Google Account needs
-one created for it first, keeping the existing address (Google's sign-up
-offers to use an existing email address instead of a new Gmail address),
-with a link to Google's own "Create a Google Account" help; and whom to ask
-when it still fails. The not-authorized page shows it for every sign-in
+generic not-authorized page, where a refused leader lands, shows a short
+**Google Account guidance**: sign in with the
+address the parish gave access to (it need not be a Gmail address, but it
+needs a Google Account), then whom to ask when it still fails. It has no
+"create a Google Account first" paragraph or Google help link (the
+Administrator removed them in
+[#2115](https://github.com/epiphany40223/parishkit/issues/2115)); the
+[leader sign-in guide](../../../guides/stewardship-leader-sign-in.md) keeps
+that fuller help. The not-authorized page shows it for every sign-in
 refusal alike (a refusal of a signed-in person, such as a report view
 they may not read, does not), so it still reveals nothing about which check failed. The
 temporary-unavailability page and the Family portal's pages do not show it.
 The local laptop environment's test sign-in branch does not either,
-nor do its refused test sign-in links. The
+nor do its refused test sign-in links. The Admin login page does not show it
+either ([#2115](https://github.com/epiphany40223/parishkit/issues/2115)): it
+has only its heading, the Sign in with Google button and the Family campaign
+portal link, plus the ended-session notice when one applies and, in the
+local laptop environment, the test sign-in link steps. Rejected there: a
+collapsed "Having trouble signing in?" disclosure, which is still extra text
+when the not-authorized page already reaches anyone who fails to sign in. The
 guidance's wording is kept in one place in code
 (`accounts/google_account_help.py`), so the [Users page](#users-table) and a
 later leader email ([#1592](https://github.com/epiphany40223/parishkit/issues/1592))
@@ -7388,10 +7396,8 @@ to see and follow up the requests parishioners made in the campaign to join
 or leave the Ministries they lead, and links the Admin portal's sign-in
 page at the deployment's public address. It names the address the leader
 signs in with, the one the email was sent to, followed by the shared
-[Google Account guidance](#login-and-denial-behavior) for an address that
-is not a Gmail address
-([#1593](https://github.com/epiphany40223/parishkit/issues/1593)), with
-Google's help link. It lists each of the leader's Ministries with its open
+[Google Account guidance](#login-and-denial-behavior)'s which-address line
+([#1593](https://github.com/epiphany40223/parishkit/issues/1593)). It lists each of the leader's Ministries with its open
 requests to join and to leave, or "No open requests", counted as the
 leader's [My review work](../review-pipeline/spec.md#role-views) counts
 them, then links

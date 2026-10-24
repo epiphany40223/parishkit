@@ -3,21 +3,18 @@
 {% block content %}<section class="flow panel">
   <h1>{% translate "Administration sign-in" %}</h1>
   {% if ended %}<p class="notice notice-info" role="status">{% translate "You were signed out, for example after an hour without activity or after signing out in another tab. Sign in to continue." %}</p>{% endif %}
-  {% if local_environment %}
-  {% if google_sign_in %}<p>{% translate "Use your authorized Google account, or a test sign-in link." %}</p>
-  <form method="post" action="{% url 'admin:login' %}">
+  {% comment %}
+  Only the button and the Family portal link (#2115): the Google Account
+  guidance is on the not-authorized page, where a refused leader lands, and
+  in the Users page About panel.
+  {% endcomment %}
+  {% if not local_environment or google_sign_in %}<form method="post" action="{% url 'admin:login' %}">
     {% csrf_token %}{% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}{% button type="submit" %}{% translate "Sign in with Google" %}{% endbutton %}
-  </form>
-  {% google_account_help %}
-  <p>{% translate "Or, for a test sign-in link:" %}</p>{% else %}<p>{% translate "Google sign-in is not available in the local laptop environment." %}</p>{% endif %}
+  </form>{% endif %}
+  {% if local_environment %}
+  {% if google_sign_in %}<p>{% translate "Or, for a test sign-in link:" %}</p>{% else %}<p>{% translate "Google sign-in is not available in the local laptop environment." %}</p>{% endif %}
   <ol><li>{% translate "On the laptop, run" %} <code>tools/stewardship-local.sh sign-in --email you@example.org</code></li>
   <li>{% translate "Open the printed link in this browser. The link works once, within 15 minutes of being printed." %}</li></ol>
-  {% else %}
-  <p>{% translate "Use your authorized Google account to continue." %}</p>
-  <form method="post" action="{% url 'admin:login' %}">
-    {% csrf_token %}{% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}{% button type="submit" %}{% translate "Sign in with Google" %}{% endbutton %}
-  </form>
-  {% google_account_help %}
   {% endif %}
   <p><a href="/">{% translate "Family campaign portal" %}</a></p>
 </section>{% endblock %}

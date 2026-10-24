@@ -1,6 +1,6 @@
 # Signing in as a Ministry leader
 
-This guide is for Administrators to pass on to Ministry leaders (and Staff) who will use the Stewardship Admin portal, and for operators answering "I can't sign in" ([#1593](https://github.com/epiphany40223/parishkit/issues/1593)). The portal itself shows the same advice on its sign-in page, on its refusal page and in the Users page's About panel; the [login and denial behavior](../specs/stewardship/admin-portal/spec.md#login-and-denial-behavior) specification says where and controls the behavior.
+This guide is for Administrators to pass on to Ministry leaders (and Staff) who will use the Stewardship Admin portal, and for operators answering "I can't sign in" ([#1593](https://github.com/epiphany40223/parishkit/issues/1593)). The portal itself shows the same advice on its refusal page (where a leader lands when sign-in fails) and in the Users page's About panel; the [login and denial behavior](../specs/stewardship/admin-portal/spec.md#login-and-denial-behavior) specification says where and controls the behavior.
 
 ## For the Administrator
 
