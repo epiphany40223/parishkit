@@ -3505,7 +3505,12 @@ On the page the same marker is the Latest response cell's Staff chip.
 A file captured before frozen migration 0066 added the marker to
 the projection leaves the column blank, never No (#794).
 
-Filters include active/inactive, first/latest submission dates, pledge range,
+Filters include Family status (In this campaign, No longer in this campaign
+or Status unavailable, the same test as the Family's
+[badge](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft):
+under a [Families rule](../data/spec.md#campaign-families) whether the
+Family still matches it, and for the legacy rule whether ParishSoft lists it
+as active, #1393), first/latest submission dates, pledge range,
 zero/nonzero/cannot contribute, frequency, and share method (its choices,
 like the "Share methods chosen" bars below, name each method by its short
 label where one is set, else its full label). The first and
