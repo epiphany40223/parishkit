@@ -26,7 +26,7 @@ view. ``report_table`` describes a page an installed SQL selection already
 cut, with the total that selection returned.
 """
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from math import ceil
 from urllib.parse import urlencode
@@ -92,6 +92,25 @@ def _present_first(rows, key, descending):
     return sorted(present, key=key, reverse=descending) + missing
 
 
+def name_order(name, secondary, duid, *rest):
+    """The default order key of a review work table's row (#2124).
+
+    UX conventions, "Default row order": the shown name (casefolded), then
+    the secondary name (the Member on a Family's row, or the item), then
+    the DUID (rows with none after those with one), then ``rest``: any
+    further parts the table orders by, ending with the row's own unique,
+    stable id. The id is unique, so equal names always come out in the same
+    order, across pages and refreshes.
+    """
+    return (
+        (name or "").casefold(),
+        (secondary or "").casefold(),
+        duid is None,
+        duid or 0,
+        *rest,
+    )
+
+
 @dataclass(frozen=True)
 class Sorting:
     """The sort orders one table offers, keyed by the token a URL or form carries.
@@ -104,20 +123,25 @@ class Sorting:
     orders its own rows leaves ``orders`` empty and passes the token on.
     ``tiebreak`` holds unique ORM fields appended to every database order,
     in the chosen direction, so rows with equal values never swap places
-    between two page reads.
+    between two page reads. ``then`` is the in-memory counterpart: a key
+    function (such as one built on ``name_order``) giving the table's
+    default order, which rows equal in the chosen column keep.
     """
 
     tokens: Mapping
     default: str
     orders: Mapping = field(default_factory=dict)
     tiebreak: tuple = ("pk",)
+    then: Callable | None = None
 
     def __post_init__(self):
         if self.default not in self.tokens:
             raise ValueError("A table's default sort must be one of its tokens.")
 
     @classmethod
-    def by_column(cls, orders, *, default, descending_first=(), tiebreak=("pk",)):
+    def by_column(
+        cls, orders, *, default, descending_first=(), tiebreak=("pk",), then=None
+    ):
         """Offer both directions of every column: ``key`` and ``-key``.
 
         ``default`` is a token, such as ``"-created"`` for newest first. A
@@ -131,7 +155,7 @@ class Sorting:
             if key in descending_first:
                 pair.reverse()
             tokens.update(pair)
-        return cls(tokens, default, orders, tiebreak)
+        return cls(tokens, default, orders, tiebreak, then)
 
     def parse(self, parameters, prefix=""):
         """The requested token, or the default; anything else is refused."""
@@ -155,9 +179,14 @@ class Sorting:
         """Order in-memory rows by the token's column, missing values last.
 
         Python's sort is stable in both directions, so rows with equal values
-        keep the source order the caller read them in, itself deterministic.
+        keep the order they had: the table's ``then`` order when it has one
+        (ascending whatever the chosen direction, so a reversed column still
+        lists its ties in the default order), else the source order the
+        caller read them in, itself deterministic.
         """
         column, descending = self.tokens[token]
+        if self.then is not None:
+            rows = sorted(rows, key=self.then)
         return _present_first(rows, self.orders[column], descending)
 
     def columns(self):

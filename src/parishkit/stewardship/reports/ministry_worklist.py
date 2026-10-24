@@ -47,7 +47,12 @@ from parishkit.stewardship.web.review_worklist import (
     Column,
     build,
 )
-from parishkit.stewardship.web.tables import PAGE_SIZES, report_table
+from parishkit.stewardship.web.tables import (
+    PAGE_SIZES,
+    Sorting,
+    name_order,
+    report_table,
+)
 from parishkit.stewardship.workflows.models import MinistryRequest
 from parishkit.stewardship.workflows.review import (
     SILENT,
@@ -117,6 +122,31 @@ ADD_BODY = (
 NOT_CURRENT = frozenset({"cancelled", "superseded"})
 
 
+def _text(value):
+    """Case-insensitive text sort key; a missing value sorts as empty."""
+    return (value or "").casefold()
+
+
+# The worklist reads every row whole and orders it here, with the follow-up
+# selection's sort tokens, so its headings and its download keep their
+# vocabulary. Rows equal in the chosen column keep the default order (UX
+# conventions, "Default row order", #2124): the Member's name, then the
+# Ministry's, the Member DUID and the request's own id. The Member column
+# heading's token is ``name``, the default.
+WORKLIST_SORTING = Sorting(
+    SORTING.tokens,
+    "name",
+    {
+        "submitted": lambda row: row["submitted_at"],
+        "member": lambda row: _text(row["member_label"]),
+        "ministry": lambda row: _text(row["ministry_name"]),
+    },
+    then=lambda row: name_order(
+        row["member_label"], row["ministry_name"], row["member_duid"], str(row["id"])
+    ),
+)
+
+
 @dataclass(frozen=True, repr=False)
 class WorklistQuery:
     """The worklist's view: private POST state, never a URL or audit value.
@@ -133,7 +163,7 @@ class WorklistQuery:
     # field of that name hides the form's own action in the browser.
     kind: str = "any"
     members: str = "current"
-    sort: str = "newest"
+    sort: str = WORKLIST_SORTING.default
     page: int = 1
     size: str = str(PAGE_SIZE)
 
@@ -150,7 +180,7 @@ class WorklistQuery:
             query.stage not in STAGE_VALUES
             or query.kind not in {"any", "join", "leave"}
             or query.members not in MEMBERS
-            or query.sort not in SORTING.tokens
+            or query.sort not in WORKLIST_SORTING.tokens
             or query.size not in {str(size) for size in PAGE_SIZES}
             or (query.ministry and not valid_ministry(query.ministry))
         ):
@@ -228,7 +258,9 @@ def read_rows(campaign_id, query, principal, *, empty=False):
     One whole read of the follow-up selection (its scope and cross-check)
     and one of the shown requests' roster ticks; a Ministry leader's Members
     choice is always current (the selection refuses the other). Returns the
-    selection's result, whose ``rows`` each carry ``placement`` and ``stage``.
+    selection's result, whose ``rows`` each carry ``placement`` and ``stage``,
+    in the view's sort (``WORKLIST_SORTING``), so the table, its pages and its
+    download list them alike.
     """
     # Only Staff and Administrators may list the requests for Members no
     # longer in ParishSoft (#1217); a leader asking is a malformed form.
@@ -239,7 +271,7 @@ def read_rows(campaign_id, query, principal, *, empty=False):
         result = followup_page(
             campaign_id, query.selection(), principal, whole=True, empty=empty
         )
-        return place(result, principal)
+        return _ordered(place(result, principal), query.sort)
     # Staff and Administrators read every revision of every Member's
     # requests, as Roster changes to enter did, and keep the view's own
     # rows plus the roster rows it would otherwise leave out (``listed``),
@@ -253,7 +285,13 @@ def read_rows(campaign_id, query, principal, *, empty=False):
         every_member=True,
     )
     result["rows"] = [row for row in result["rows"] if listed(row, query.members)]
-    return place(result, principal)
+    return _ordered(place(result, principal), query.sort)
+
+
+def _ordered(result, sort):
+    """Put a read's rows in the view's sort, in place; returns ``result``."""
+    result["rows"] = WORKLIST_SORTING.sort_rows(result["rows"], sort)
+    return result
 
 
 def roster_only(row):
@@ -892,7 +930,7 @@ def worklist_context(
         carry=[
             (key, value) for key, value in query.form_values().items() if key != "sort"
         ],
-        sorting=SORTING,
+        sorting=WORKLIST_SORTING,
         sort=query.sort,
         action=action,
     )

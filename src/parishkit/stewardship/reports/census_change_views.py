@@ -64,7 +64,12 @@ from parishkit.stewardship.web.review_worklist import (
     read_decision,
     record,
 )
-from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
+from parishkit.stewardship.web.tables import (
+    Sorting,
+    name_order,
+    paginate,
+    table_parameters,
+)
 
 from . import census_publication
 from .census_changes import (
@@ -114,11 +119,13 @@ def _text(value):
     return (value or "").casefold()
 
 
-# The list is complete in memory, so every column sorts here; the SQL order
-# (Family DUID, then submission time) stays the tiebreak; the sort is stable.
+# The list is complete in memory, so every column sorts here. Rows equal in
+# the chosen column keep the default order (UX conventions, "Default row
+# order", #2124): the Family's name, then Who, the Family DUID, What
+# changed and the change's own id.
 SORTING = Sorting.by_column(
     {
-        "family": lambda row: (_text(row["family_name"]), row["family_duid"]),
+        "family": lambda row: _text(row["family_name"]),
         "duid": lambda row: row["family_duid"],
         "who": lambda row: _text(row["who"]),
         # Members by DUID; New Members and household (Family) rows, which
@@ -133,6 +140,13 @@ SORTING = Sorting.by_column(
     },
     default="family",
     descending_first={"submitted"},
+    then=lambda row: name_order(
+        row["family_name"],
+        row["who"],
+        row["family_duid"],
+        _text(row["label"]),
+        str(row["id"]),
+    ),
 )
 
 

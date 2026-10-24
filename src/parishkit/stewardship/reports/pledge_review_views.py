@@ -82,7 +82,12 @@ from parishkit.stewardship.web.review_worklist import (
     read_decision,
     record,
 )
-from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
+from parishkit.stewardship.web.tables import (
+    Sorting,
+    name_order,
+    paginate,
+    table_parameters,
+)
 
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
@@ -222,14 +227,20 @@ def _text(value):
     return (value or "").casefold()
 
 
+# Rows equal in the chosen column keep the default order (UX conventions,
+# "Default row order", #2124): the Family's name, its DUID, then the
+# response's own id (a pledge names no Member).
 SORTING = Sorting.by_column(
     {
-        "family": lambda row: (_text(row["family_name"]), row["family_duid"]),
+        "family": lambda row: _text(row["family_name"]),
         "duid": lambda row: row["family_duid"],
         "submitted": lambda row: row["submitted_at"],
     },
     default="family",
     descending_first={"submitted"},
+    then=lambda row: name_order(
+        row["family_name"], "", row["family_duid"], str(row["id"])
+    ),
 )
 
 
