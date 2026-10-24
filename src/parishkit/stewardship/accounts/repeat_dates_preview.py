@@ -18,6 +18,7 @@ saved, and no request or audit entry is recorded. The server still checks
 every posted reminder on Review, as it checks any reminder.
 """
 
+import re
 from datetime import date
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -59,6 +60,10 @@ MOST_MONTHS = 24
 FIELDS = {"csrfmiddlewaretoken", "zone", "campaign_zone", "time", "date", "reason"}
 FIELDS |= {"skipped", "day", "limit"}
 MULTIPLE = {"date", "reason", "skipped"}
+# The page script's own forms of a day and a month (ISO, nothing else:
+# date.fromisoformat alone also takes "20261019" and week dates).
+DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
+MONTH = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
 
 
 def preview(dates, *, zone, campaign_zone, clock, now, limit=SCHEDULE_LIMIT):
@@ -118,7 +123,8 @@ def skipped_months(months, day):
     found = []
     for month in months:
         year, number = (int(part) for part in month.split("-"))
-        date(year, number, 1)  # Refuses a month that is not one.
+        if not 1 <= number <= 12:
+            raise ValueError("The skipped month could not be read.")
         found.append(str(SKIPPED % {"month": MONTHS[number], "year": year, "day": day}))
     return found
 
@@ -140,6 +146,8 @@ def _read(post):
         or len(days) > MOST_DATES
         or len(months) > MOST_MONTHS
         or not set(codes) <= {"", *REASONS}
+        or not all(DAY.fullmatch(text) for text in days)
+        or not all(MONTH.fullmatch(text) for text in months)
     ):
         raise ValueError("The repeat dates could not be read.")
     # browser_instant refuses a time in any other form than the time
@@ -174,11 +182,13 @@ def fragment(post, *, now):
 
     The view's whole answer once it has admitted the request; the browser
     tests' fixture server answers with it too, so they draw the list the
-    view draws.
+    view draws. A rule whose every date falls in a skipped month gives no
+    dates, so the preview is left out (None) and only the months are drawn.
     """
     posted = _read(post)
     return {
-        "preview": preview(
+        "preview": posted["dates"]
+        and preview(
             posted["dates"],
             zone=posted["zone"],
             campaign_zone=posted["campaign_zone"],

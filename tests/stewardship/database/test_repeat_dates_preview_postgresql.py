@@ -9,7 +9,9 @@ Configure capability, and refuses fields the page script never posts.
 import pytest
 from django.urls import reverse
 
+from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
 
 from .auth_builders import signed_in
@@ -28,21 +30,32 @@ FIELDS = {
 }
 
 
-def post(browser, data):
-    """POST ``data`` to the list's address, as the page script does."""
+def post(browser, data, *, csrf=True):
+    """POST ``data`` to the list's address, as the page script does
+    (without its CSRF header when ``csrf`` is false)."""
+    header = (
+        {"HTTP_X_CSRFTOKEN": browser.cookies["pk_admin_csrf"].value} if csrf else {}
+    )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        return browser.post(
-            reverse("admin:schedule_repeat_dates"),
-            data,
-            HTTP_X_CSRFTOKEN=browser.cookies["pk_admin_csrf"].value,
-        )
+        return browser.post(reverse("admin:schedule_repeat_dates"), data, **header)
+
+
+def recorded():
+    """What the list must never change: the configuration, change requests
+    and audit entries."""
+    return (
+        SystemConfiguration.objects.get().active_configuration.digest,
+        ConfigurationChangeRequest.objects.count(),
+        AuditEvent.objects.count(),
+    )
 
 
 def test_the_list_is_drawn_by_the_shared_preview(live_response_service, google):
-    """An Administrator gets the fragment, uncached; nothing is saved, and a
-    field the page never posts is refused (400)."""
+    """An Administrator gets the fragment, uncached; nothing is saved or
+    audited, a field or date form the page never posts is refused (400),
+    and a post without the CSRF header is refused (403)."""
     browser, _ = signed_in()
-    before = SystemConfiguration.objects.get().active_configuration.digest
+    before = recorded()
     answer = post(browser, FIELDS)
     assert answer.status_code == 200, answer.content
     assert answer["Cache-Control"] == "no-store"
@@ -52,7 +65,10 @@ def test_the_list_is_drawn_by_the_shared_preview(live_response_service, google):
     assert "not added: another email is already scheduled then" in text
     assert post(browser, FIELDS | {"other": "x"}).status_code == 400
     assert post(browser, FIELDS | {"reason": [""]}).status_code == 400
-    assert SystemConfiguration.objects.get().active_configuration.digest == before
+    unusual = FIELDS | {"date": ["20541019", "2054-10-26"]}
+    assert post(browser, unusual).status_code == 400
+    assert post(browser, FIELDS, csrf=False).status_code == 403
+    assert recorded() == before
 
 
 def test_staff_may_not_read_the_list(live_response_service, google):

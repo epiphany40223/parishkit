@@ -1890,6 +1890,9 @@ th[aria-sort] .sort-link { color: var(--ink); }
 th:not([aria-sort]) .sort-indicator { opacity: .45; }
 /* While ui-v1.js re-sorts or re-pages a table in place (#478), the rows dim but stay readable. */
 [data-table-region][aria-busy="true"], [data-in-place-region][aria-busy="true"] { cursor: progress; }
+/* A repeat rule's date list awaiting a newer answer (#2092): muted in place,
+   in the help text's color, which keeps its contrast (no opacity). */
+[data-repeat-preview][aria-busy="true"], [data-repeat-preview][aria-busy="true"] * { color: var(--muted); cursor: progress; }
 [data-table-region][aria-busy="true"] table { opacity: .55; }
 /* A review withdrawn by a later edit stays in place (#532, #736), greyed
    out through a colour that still meets contrast (never opacity), except

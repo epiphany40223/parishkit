@@ -136,6 +136,21 @@ def posted(**fields):
     return data
 
 
+def test_only_skipped_months_draw_only_their_lines():
+    """A rule whose every date is in a skipped month gives no dates: no
+    preview (never its empty state's words), only the months' lines."""
+    context = module.fragment(
+        posted(zone=NY, campaign_zone=NY, time="09:00", skipped=["2026-11"], day="31"),
+        now=NOW,
+    )
+    html = render_to_string(module.TEMPLATE, context)
+    assert (
+        html.strip()
+        == '<p class="help">November 2026 is skipped: it has no day 31.</p>'
+    )
+    assert "None" not in html
+
+
 def test_read_takes_the_page_scripts_fields():
     """The dates pair with their reasons; the campaign zone must be real."""
     read = module._read(
@@ -161,6 +176,10 @@ def test_read_takes_the_page_scripts_fields():
         {"date": ["2026-10-19"], "reason": ["unknown"]},
         {"date": ["2026-10-19"] * 401, "reason": [""] * 401},
         {"skipped": ["2026-11"], "day": "32"},
+        {"skipped": ["2026-13"], "day": "31"},
+        {"skipped": ["2026-1"], "day": "31"},
+        {"date": ["20261019"], "reason": [""]},
+        {"date": ["2026-W43-1"], "reason": [""]},
         {"campaign_zone": "Nowhere/City"},
         {"zone": [NY, LA]},
     ],

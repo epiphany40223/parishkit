@@ -3599,9 +3599,12 @@ day whose clocks change says so, with the shared daylight-saving sentence
 under the list. A month the rule skips (below) is a line after the list,
 since it is no send. The list is redrawn in place a moment after the rule
 stops changing
-([#2092](https://github.com/epiphany40223/parishkit/issues/2092)); a rule
-that gives no dates lists nothing, since the summary says so and is the
-line a screen reader hears. A short summary above **Review changes**
+([#2092](https://github.com/epiphany40223/parishkit/issues/2092)); while a
+newer list is awaited the drawn lines stay in place, muted and marked
+busy, and if the list can't be read they are replaced by "These dates
+couldn't be listed right now. Review changes still checks every date."
+A rule that gives no dates lists nothing, since the summary says so and is
+the line a screen reader hears. A short summary above **Review changes**
 says how many reminders the rule adds, or what is still missing:
 "Enter a send time to check these dates" until the time reads, since the timed
 checks cannot run without it, and "Choose the email to send" without an email.

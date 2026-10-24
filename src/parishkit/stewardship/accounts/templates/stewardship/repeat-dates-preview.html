@@ -4,6 +4,7 @@ rule gives, drawn by the one schedule preview (components/occurrences.html,
 UX conventions "Schedule previews"), then one line per month a monthly
 rule skips, which is no send and so not one of the preview's lines. The
 page script draws the list's heading ("2 reminders to add:") above it, as
-the include draws no title.
-{% endcomment %}{% include 'stewardship/components/occurrences.html' with preview=preview %}{% for line in skipped %}<p class="help">{{ line }}</p>
+the include draws no title. With no dates (every month skipped) preview is
+empty and only the skipped months are drawn.
+{% endcomment %}{% if preview %}{% include 'stewardship/components/occurrences.html' with preview=preview %}{% endif %}{% for line in skipped %}<p class="help">{{ line }}</p>
 {% endfor %}
