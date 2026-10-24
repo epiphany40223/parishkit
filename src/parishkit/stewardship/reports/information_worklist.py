@@ -45,7 +45,7 @@ from parishkit.stewardship.web.review_worklist import (
     build,
     page_address,
 )
-from parishkit.stewardship.web.tables import Sorting, name_order
+from parishkit.stewardship.web.tables import Sorting, fold, name_order
 
 from .information import InformationQuery, information_page
 
@@ -127,7 +127,7 @@ def _text(value):
 # own id (a request names no Member).
 SORTING = Sorting.by_column(
     {
-        "family": lambda row: _text(row["family_name"]),
+        "family": lambda row: fold(row["family_name"]) or None,
         "duid": lambda row: row["family_duid"],
         "submitted": lambda row: row["submitted_at"],
     },

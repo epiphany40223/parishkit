@@ -50,6 +50,7 @@ from parishkit.stewardship.web.review_worklist import (
 from parishkit.stewardship.web.tables import (
     PAGE_SIZES,
     Sorting,
+    fold,
     name_order,
     report_table,
 )
@@ -139,7 +140,7 @@ WORKLIST_SORTING = Sorting(
     "name",
     {
         "submitted": lambda row: row["submitted_at"],
-        "member": lambda row: _text(row["member_label"]),
+        "member": lambda row: fold(row["member_label"]) or None,
         "ministry": lambda row: _text(row["ministry_name"]),
     },
     then=lambda row: name_order(

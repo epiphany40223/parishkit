@@ -84,6 +84,7 @@ from parishkit.stewardship.web.review_worklist import (
 )
 from parishkit.stewardship.web.tables import (
     Sorting,
+    fold,
     name_order,
     paginate,
     table_parameters,
@@ -232,7 +233,7 @@ def _text(value):
 # response's own id (a pledge names no Member).
 SORTING = Sorting.by_column(
     {
-        "family": lambda row: _text(row["family_name"]),
+        "family": lambda row: fold(row["family_name"]) or None,
         "duid": lambda row: row["family_duid"],
         "submitted": lambda row: row["submitted_at"],
     },

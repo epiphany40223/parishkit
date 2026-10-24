@@ -40,7 +40,7 @@ from parishkit.stewardship.web.review_worklist import (
     build,
     page_address,
 )
-from parishkit.stewardship.web.tables import Sorting, name_order
+from parishkit.stewardship.web.tables import Sorting, fold, name_order
 
 from .limitations import ANSWERS, STAGES, LimitationsQuery
 
@@ -114,7 +114,7 @@ def _text(value):
 # Member, so it comes before its Members').
 SORTING = Sorting.by_column(
     {
-        "family": lambda row: _text(row["family_name"]),
+        "family": lambda row: fold(row["family_name"]) or None,
         "duid": lambda row: row["family_duid"],
         "member": lambda row: _text(row.get("member_name")),
         # Members by DUID; proposed Members and the Family's own answer,

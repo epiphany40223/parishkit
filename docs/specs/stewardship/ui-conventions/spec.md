@@ -4920,11 +4920,13 @@ memory since [#1685](https://github.com/epiphany40223/parishkit/issues/1685).
 **Rule.** Every review work table (the
 [review worklist](../review-pipeline/spec.md#review-worklist) of Census
 changes, Ministry requests, Pledges, Additional information and
-Limitations) lists its rows by default in name order: the name shown in
-its first identity column, casefolded, then that name's DUID (so every
+Limitations, and the same rows on the Family hub's Census, Additional
+information and Limitations tabs) lists its rows by default in name order: the name shown in
+its first identity column (accents dropped and casefolded, so "Étienne"
+sorts beside "Etienne"; a row with no name last), then that name's DUID (so every
 row of one Family or Member stays together, even beside another with the
 same name), then the table's finer parts, ending with the row's own unique
-id. Rows with the same names therefore always come out in the same order,
+id (compared as a number when it is one). Rows with the same names therefore always come out in the same order,
 on every page and refresh of the same view (and in Ministry requests' Export these requests, which lists the
 table's rows). Downloads keep their own documented orders. Per stream:
 

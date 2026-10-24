@@ -26,6 +26,7 @@ view. ``report_table`` describes a page an installed SQL selection already
 cut, with the total that selection returned.
 """
 
+import unicodedata
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from math import ceil
@@ -92,18 +93,43 @@ def _present_first(rows, key, descending):
     return sorted(present, key=key, reverse=descending) + missing
 
 
+def fold(text):
+    """Text as a sort key: accents dropped, then casefolded.
+
+    "Étienne" sorts beside "Etienne", not after "Z"; NFKD splits a letter
+    from its accent marks, which are then removed.
+    """
+    split = unicodedata.normalize("NFKD", text or "")
+    return "".join(c for c in split if not unicodedata.combining(c)).casefold()
+
+
+def _id_key(value):
+    """A row id as a sort key: integers (or digit strings) compare by value.
+
+    So "9" comes before "10"; any other id compares as text, after the
+    numbers, and the whole key stays comparable between any two ids.
+    """
+    text = str(value)
+    if text.isascii() and text.isdigit():
+        return (0, int(text), "")
+    return (1, 0, text)
+
+
 def name_order(name, duid, *rest):
     """The default order key of a review work table's row (#2124).
 
-    UX conventions, "Default row order": the shown name (casefolded), then
-    that name's DUID (rows with none after those with one), so every row of
-    one Family (or Member) stays together even when another has the same
-    name, then ``rest``: any further parts the table orders by (casefolded
-    by the caller), ending with the row's own unique, stable id. The id is
-    unique, so equal names always come out in the same order, across pages
-    and refreshes.
+    UX conventions, "Default row order": the shown name (accents dropped,
+    casefolded; rows with no name last), then that name's DUID (rows with
+    none after those with one), so every row of one Family (or Member)
+    stays together even when another has the same name, then ``rest``: any
+    further parts the table orders by (text is folded here), ending with the
+    row's own unique, stable id, compared numerically when it is a number.
+    The id is unique, so equal names always come out in the same order,
+    across pages and refreshes.
     """
-    return ((name or "").casefold(), duid is None, duid or 0, *rest)
+    *parts, row_id = rest or (None,)
+    parts = [fold(part) if isinstance(part, str) else part for part in parts]
+    return (not name, fold(name), duid is None, duid or 0, *parts, _id_key(row_id))
 
 
 @dataclass(frozen=True)

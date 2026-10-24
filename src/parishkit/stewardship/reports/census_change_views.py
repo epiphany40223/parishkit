@@ -66,6 +66,7 @@ from parishkit.stewardship.web.review_worklist import (
 )
 from parishkit.stewardship.web.tables import (
     Sorting,
+    fold,
     name_order,
     paginate,
     table_parameters,
@@ -125,7 +126,7 @@ def _text(value):
 # Who, What changed and the change's own id.
 SORTING = Sorting.by_column(
     {
-        "family": lambda row: _text(row["family_name"]),
+        "family": lambda row: fold(row["family_name"]) or None,
         "duid": lambda row: row["family_duid"],
         "who": lambda row: _text(row["who"]),
         # Members by DUID; New Members and household (Family) rows, which

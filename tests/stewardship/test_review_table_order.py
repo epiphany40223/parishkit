@@ -55,12 +55,12 @@ def family_rows(**extra):
         {"id": "b3", "family_name": "Smith, Ann", "family_duid": 30} | extra,
         {"id": "b4", "family_name": "Smith, Ann", "family_duid": 41} | extra,
         {"id": "c1", "family_name": "smith, Bob", "family_duid": 5} | extra,
-        # A Family the current data no longer names sorts as an empty name.
+        # A Family the current data no longer names sorts last.
         {"id": "a0", "family_name": None, "family_duid": 70} | extra,
     ]
 
 
-FAMILY_ORDER = ["a0", "a1", "b1", "b2", "b3", "b4", "c1"]
+FAMILY_ORDER = ["a1", "b1", "b2", "b3", "b4", "c1", "a0"]
 
 
 def assert_stable(sorting, rows, expected, sort=None):
@@ -91,10 +91,35 @@ def test_name_order_casefolds_and_puts_a_missing_duid_last():
     """The shared key: names casefolded, a row without a DUID after those with one."""
     assert name_order("SMITH, Ann", 3, "x") == name_order("smith, ann", 3, "x")
     assert name_order("Smith", None, "a") > name_order("Smith", 9, "z")
-    assert name_order(None, None, "a") == ("", True, 0, "a")
     # The DUID comes before the finer parts, so two same-named Families'
     # rows never interleave.
     assert name_order("Smith", 1, "z") < name_order("Smith", 2, "a")
+
+
+def test_name_order_puts_a_row_with_no_name_last():
+    """A row with no name follows every named row, as a missing DUID does."""
+    assert name_order("Zed", 1, "1") < name_order(None, 1, "1")
+    assert name_order("Zed", 1, "1") < name_order("", None, "1")
+
+
+def test_name_order_sorts_an_accented_name_with_its_base_letter():
+    """ "Étienne" sorts beside "Etienne", not after Z; the finer parts fold too."""
+    names = ["Zed", "Étienne", "Eve", "Adam"]
+    ordered = sorted(names, key=lambda name: name_order(name, 1, "1"))
+    assert ordered == ["Adam", "Étienne", "Eve", "Zed"]
+    assert name_order("Étienne", 1, "1") == name_order("etienne", 1, "1")
+    assert name_order("A", 1, "Éa", "1") < name_order("A", 1, "Eb", "1")
+
+
+def test_name_order_compares_ids_numerically_and_deterministically():
+    """Row ids that are numbers (or digit strings) sort by value, not text."""
+    keys = [name_order("A", 1, row_id) for row_id in ("10", "9", 2, "added-1")]
+    assert sorted(keys) == [
+        name_order("A", 1, 2),
+        name_order("A", 1, "9"),
+        name_order("A", 1, "10"),
+        name_order("A", 1, "added-1"),
+    ]
 
 
 def test_sorting_then_keeps_the_default_order_for_ties_in_either_direction():
@@ -144,7 +169,7 @@ def test_census_changes_order_by_family_who_duid_what_and_id():
     ]
     # The DUID comes before Who, so the Family 12's rows ("Ann", then
     # "Family", then "Smith, Zoe") stay together ahead of the Family 30's.
-    expected = ["a0", "a1", "b1", "d2", "d4", "d3", "d1", "b2", "b3", "b4", "c1"]
+    expected = ["a1", "b1", "d2", "d4", "d3", "d1", "b2", "b3", "b4", "c1", "a0"]
     sorting = census_change_views.SORTING
     assert sorting.default == "family"
     assert_stable(sorting, rows, expected)
@@ -174,7 +199,7 @@ def test_limitations_order_by_family_member_duid_and_id():
         }
         for key, member in ((1, "Smith, Zoe"), (2, "smith, al"), (3, "Smith, Zoe"))
     ]
-    expected = ["a0", "a1", "b1", "m2", "m1", "m3", "b2", "b3", "b4", "c1"]
+    expected = ["a1", "b1", "m2", "m1", "m3", "b2", "b3", "b4", "c1", "a0"]
     sorting = limitation_worklist.SORTING
     assert sorting.default == "family"
     assert_stable(sorting, rows, expected)
@@ -247,3 +272,39 @@ def test_ministry_reads_come_back_in_the_view_sort():
         "r1",
         "r4",
     ]
+
+
+def test_the_hub_tabs_list_their_rows_in_the_default_order(monkeypatch):
+    """The Family hub's Census and Additional information tabs sort as the pages do."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.reports import hub_actions
+
+    def row(row_id, name):
+        return {
+            "id": row_id,
+            "family_name": name,
+            "family_duid": 1,
+            "who": "",
+            "label": "",
+        }
+
+    rows = [row("10", "Smith"), row("9", "Smith"), row("2", "Étienne"), row("1", "Zed")]
+    seen = []
+
+    def page(*args, **kwargs):
+        seen.append(args[2].rows)
+        return SimpleNamespace(), None
+
+    monkeypatch.setattr(hub_actions, "allows", lambda *args: True)
+    monkeypatch.setattr(hub_actions, "census_changes", lambda *a, **k: {"rows": rows})
+    monkeypatch.setattr(hub_actions, "worklist_page", page)
+    hub_actions.census_worklist(1, 1, None, prefix="p", writable=False)
+    monkeypatch.setattr(
+        hub_actions, "information_requests", lambda *a: (None, rows, None)
+    )
+    monkeypatch.setattr(hub_actions, "information_page", page)
+    for item in ("10", "9", "2", "1"):
+        hub_actions.information_worklist(1, 1, item, writable=False)
+    assert ids(seen[0]) == ["2", "9", "10", "1"]
+    assert [ids(shown) for shown in seen[1:]] == [["10"], ["9"], ["2"], ["1"]]
