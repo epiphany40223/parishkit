@@ -24,6 +24,7 @@ stewardship is on, the leader roles wait for one ticked (data-require-one,
 {% else %}<div>{{ field.as_field_group }}</div>{% endif %}{% endfor %}
 <div data-require-one data-missing-hint="{% translate 'Choose at least one: Census, Ministry stewardship or Financial stewardship.' %}">{% for field in form.module_fields %}<div>{{ field.as_field_group }}</div>{% endfor %}</div>
 <div>{{ form.additional_information.as_field_group }}</div>
+{% if families %}{% include "stewardship/campaign-families-section.html" %}{% elif families_rule %}{% include "stewardship/campaign-families-locked.html" %}{% endif %}
 <fieldset id="ministry-selections" data-campaign-module="id_ministry"><legend>{% translate "Ministry selections" %}</legend>
 {{ form.ministry_duids.as_field_group }}
 {% if live_ministries %}<p class="help">{% translate "This campaign is live: Families see an added Ministry at their next visit; those who already submitted are not asked again and get no email. Removing a Ministry deletes none of their answers." %}</p>{% endif %}

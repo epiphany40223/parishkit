@@ -2490,3 +2490,9 @@ fieldset.choice-pair:has(input[aria-invalid=true]) > .choice-pair-options { bord
    two: on a phone each takes narrower side padding, so "Weekly report"
    wraps between its words inside its frame rather than overflowing it. */
 @media (max-width: 40rem) { .report-start .choice-pair-options > label:has(> input[type=radio]) { padding-inline: .5rem; } }
+
+/* Create the campaign's Families in this campaign (#1393): each preset's
+   description sits under its radio, and the count preview keeps room for
+   three lines, so its answer changing never moves what follows. */
+.choice-with-help .help { margin: 0 0 0.5rem 1.75rem; }
+.families-preview { min-height: calc(3 * 1.5em); }
