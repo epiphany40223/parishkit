@@ -134,7 +134,7 @@ def sign_in(request):
     if request.method != "POST":
         return render(request, "stewardship/local-sign-in.html")
     if request.get_host() != urlsplit(LOCAL_PUBLIC_ORIGIN).netloc:
-        return denial()
+        return denial(sign_in=True)
     try:
         limiter = runtime().limiter
         delay = limiter.bucket("admin", request.client_address)
@@ -154,12 +154,12 @@ def sign_in(request):
                 ) from None
         if stored is None:
             delay = record_failure(request)
-            return denial(status=429 if delay else 403, retry=delay)
+            return denial(status=429 if delay else 403, retry=delay, sign_in=True)
         try:
             email = normalized_email(stored["email"])
         except ConfigError:
             delay = record_failure(request)
-            return denial(status=429 if delay else 403, retry=delay)
+            return denial(status=429 if delay else 403, retry=delay, sign_in=True)
         # Presence was just proved with the link, so the sign-in instant is
         # now; the core decides authorization from the login rules, as for
         # Google.
