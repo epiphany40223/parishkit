@@ -1120,6 +1120,11 @@ td > :last-child { margin-bottom: 0; }
 .calendar-nav .button { margin: 0; }
 .calendar-nav-month { font-weight: var(--heading-weight); font-size: 1.125rem; }
 .calendar-nav-reason { min-height: 1.5em; margin-block: .25rem .5rem; }
+/* The View choice (#1808) sits in the row before Previous and Next, so its
+   own bottom margin would push the reason line down; the week view's one
+   row of days is taller, since it has room for a week's sends. */
+.calendar-nav .segmented-choice { margin: 0; }
+.calendar-month.calendar-week td { height: 9rem; }
 /* Campaign calendar (#469): month grids drawn by calendar-v1.js. Each grid
    keeps a readable width and scrolls inside its .table-scroll region on a
    phone; days hold short lines (time and schedule name) that wrap between

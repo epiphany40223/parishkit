@@ -274,6 +274,18 @@ def test_edit_from_the_calendar_returns_to_its_month(auth_service, google, monke
     # New from a day's Add returns to that day's month.
     added = unescape(browser.get(f"{NEW}?date=2054-10-12").content.decode())
     assert f'<a href="{CALENDAR}?month=2054-10">Cancel</a>' in added
+    # From the week view (#1808), Edit and New's Add name the week's Sunday
+    # and return to that week.
+    week = f"{CALENDAR}?view=week&week=2054-10-11"
+    edited = unescape(browser.get(f"{path}?calendar=2054-10-11").content.decode())
+    assert f'<a href="{week}">Cancel</a>' in edited
+    assert f'data-review-return="{week}"' in edited
+    added = unescape(
+        browser.get(f"{NEW}?date=2054-10-12&calendar=2054-10-11").content.decode()
+    )
+    assert f'<a href="{week}">Cancel</a>' in added
+    for refused in (f"{path}?calendar=2054-10-32", f"{NEW}?date=2054-10-12&calendar=x"):
+        assert browser.get(refused).status_code == 400, refused
 
 
 def test_the_calendar_takes_only_a_well_formed_month(auth_service, google):
@@ -290,6 +302,21 @@ def test_the_calendar_takes_only_a_well_formed_month(auth_service, google):
     for month in ("2054-13", "2054-1", "november", ""):
         assert browser.get(f"{CALENDAR}?month={month}").status_code == 400, month
     assert browser.get(f"{CALENDAR}?month=2054-10&month=2054-11").status_code == 400
+    # The View (#1808): Month or Week, the week named by one of its days.
+    week = browser.get(f"{CALENDAR}?view=week&week=2054-10-14")
+    assert week.status_code == 200
+    page = unescape(week.content.decode())
+    assert 'id="calendar-view"' in page
+    assert f'href="{CALENDAR}?view=week#calendar-source"' in page
+    assert browser.get(f"{CALENDAR}?view=month").status_code == 200
+    for query in (
+        "view=day",
+        "view=",
+        "view=week&week=2054-10-32",
+        "view=week&week=20541014",
+        "view=week&week=2054-10-11&week=2054-10-18",
+    ):
+        assert browser.get(f"{CALENDAR}?{query}").status_code == 400, query
 
 
 def test_every_email_by_date_shows_upcoming_and_sorts(

@@ -986,3 +986,154 @@ def test_dragging_move_onto_a_day_opens_move_with_that_day(page, component_origi
     assert page.evaluate("window.notReloaded === true")
     assert page.url.endswith(CALENDAR)
     assert not failures
+
+
+def week_shown(page):
+    """The caption of the week grid shown (#1808)."""
+    return page.locator("table.calendar-week caption").inner_text()
+
+
+def view_segment(page, name):
+    """The View choice's ``name`` segment (Month or Week, #1808)."""
+    return page.get_by_role("group", name="View").get_by_role("link", name=name)
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_the_week_view_is_drawn_in_place_and_steps_by_week(
+    page, component_origin, axe_source, width
+):
+    """View's Week (#1808) draws one row of seven days with no request.
+
+    Without a clock, today is outside the campaign, so Week opens on the
+    week of October's first day (September 27). The segment keeps its place
+    and focus, the view is announced with the segment's word, the address
+    names the week's Sunday, and the buttons step a week, unavailable at
+    either end with the week's reason. Month goes back to the month of the
+    week's Sunday, still with no request.
+    """
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + CALENDAR)
+    failures = watch(page)
+    month, week = view_segment(page, "Month"), view_segment(page, "Week")
+    assert month.get_attribute("aria-current") == "page"
+    assert week.get_attribute("aria-current") is None
+    assert (
+        week.get_attribute("href")
+        == f"{CALENDAR}?view=week&week=2054-09-27#calendar-source"
+    )
+    requests = []
+    page.on("request", lambda request: requests.append(request.url))
+    places = [page_place(month), page_place(week)]
+    week.focus()
+    page.keyboard.press("Enter")
+    assert week_shown(page) == "Week of September 27, 2054"
+    assert page.locator("[data-calendar-name]").inner_text() == (
+        "Week of September 27, 2054"
+    )
+    assert page.url.endswith(f"{CALENDAR}?view=week&week=2054-09-27")
+    assert week.get_attribute("aria-current") == "page"
+    assert month.get_attribute("aria-current") is None
+    assert page.evaluate("document.activeElement.textContent.trim()") == "Week"
+    assert page.locator("[data-calendar-said]").inner_text() == (
+        "Week: Week of September 27, 2054"
+    )
+    assert same_place([page_place(month), page_place(week)], places)
+    rows = page.locator("table.calendar-week tbody tr")
+    assert rows.count() == 1
+    assert rows.locator(".calendar-day").all_inner_texts() == [
+        "27", "28", "29", "30", "1", "2", "3"
+    ]  # fmt: skip
+    previous = page.get_by_role("button", name="Previous week")
+    following = page.get_by_role("button", name="Next week")
+    reason = page.locator("[data-calendar-reason]")
+    assert previous.get_attribute("aria-disabled") == "true"
+    assert reason.inner_text() == "This is the campaign's first week."
+    following.click()
+    assert week_shown(page) == "Week of October 4, 2054"
+    assert page.url.endswith(f"{CALENDAR}?view=week&week=2054-10-04")
+    assert reason.inner_text() == ""
+    # Monday, October 5: the weekly report; Saturday the 10th: Reminder 1,
+    # with its Move….
+    assert "Weekly report" in cell(page, 5).inner_text()
+    assert move_button(page, 10, "Reminder 1").count() == 1
+    for _ in range(4):
+        following.click()
+    assert week_shown(page) == "Week of November 1, 2054"
+    assert following.get_attribute("aria-disabled") == "true"
+    assert reason.inner_text() == "This is the campaign's last week."
+    month.click()
+    assert month_shown(page) == "November 2054"
+    assert page.url.endswith(f"{CALENDAR}?month=2054-11")
+    assert (
+        page.get_by_role("button", name="Next month").get_attribute("aria-disabled")
+        == "true"
+    )
+    assert page.locator("table.calendar-month tbody tr").count() == 6
+    assert requests == []
+    assert page.evaluate("window.notReloaded === true")
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
+    assert not failures
+
+
+def test_the_address_keeps_the_week_and_its_links_return_to_it(page, component_origin):
+    """The week view's address (#1808) survives a reload; any day names its
+    week, which the address then names by its Sunday; a week outside the
+    campaign opens the nearer end. Its Edit links, Add links and table links
+    carry the week, and with "now" in the campaign Week opens on this week.
+    """
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + f"{CALENDAR}?view=week&week=2054-10-14")
+    assert week_shown(page) == "Week of October 11, 2054"
+    assert page.url.endswith(f"{CALENDAR}?view=week&week=2054-10-11")
+    page.reload()
+    assert week_shown(page) == "Week of October 11, 2054"
+    # Monday the 12th's weekly report, a send still to come, names the week.
+    report = cell(page, 12).get_by_role("link", name="6:00 AM Weekly report")
+    assert report.get_attribute("href").endswith("&calendar=2054-10-11")
+    table = page.get_by_role("link", name="Edit Reminder 1")
+    assert table.get_attribute("href").endswith("/?calendar=2054-10-11")
+    add = add_link(page, 12).get_attribute("href")
+    assert add == f"{NEW}?date=2054-10-12&calendar=2054-10-11"
+    show = page.get_by_role("group", name="Show").get_by_role(
+        "link", name="Include past emails"
+    )
+    assert "view=week&week=2054-10-11" in show.get_attribute("href")
+    assert "month=" not in show.get_attribute("href")
+    page.goto(component_origin + f"{CALENDAR}?view=week&week=2054-01-04")
+    assert week_shown(page) == "Week of September 27, 2054"
+    assert page.url.endswith(f"{CALENDAR}?view=week&week=2054-09-27")
+    # With "now" (October 5) inside the campaign: this week, and Month
+    # opens on today's month.
+    at_now(page)
+    page.goto(component_origin + f"{CALENDAR}?view=week")
+    assert week_shown(page) == "Week of October 4, 2054"
+    view_segment(page, "Month").click()
+    assert month_shown(page) == "October 2054"
+    view_segment(page, "Week").click()
+    assert week_shown(page) == "Week of October 4, 2054"
+
+
+def test_move_works_the_same_in_the_week_view(page, component_origin):
+    """Move… and a drag (#1808) open the Move dialog from the week view."""
+    page.set_viewport_size({"width": 1280, "height": 1600})
+    at_now(page)
+    page.goto(component_origin + f"{CALENDAR}?view=week&week=2054-10-04")
+    failures = watch(page)
+    button = move_button(page, 10, "Reminder 1")
+    button.click()
+    dialog = page.locator(MOVE_DIALOG)
+    visible(dialog)
+    assert dialog.locator('[name="schedule-date"]').input_value() == "2054-10-10"
+    dialog.get_by_role("button", name="Cancel").click()
+    assert not is_open(page, MOVE_DIALOG)
+    page.locator("table.calendar-week").scroll_into_view_if_needed()
+    page.mouse.move(*centre(button))
+    page.mouse.down()
+    page.mouse.move(*centre(cell(page, 7)), steps=8)
+    has_class(cell(page, 7), "calendar-drop-target")
+    page.mouse.up()
+    visible(dialog)
+    assert dialog.locator('[name="schedule-date"]').input_value() == "2054-10-07"
+    assert page.url.endswith(f"{CALENDAR}?view=week&week=2054-10-04")
+    assert not failures

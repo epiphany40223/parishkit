@@ -741,9 +741,14 @@ def test_the_calendar_month_is_accepted_and_cancel_returns_to_it(
             page = admin.get(f"{path}?send={slot}&calendar=2054-10")
             bad = admin.get(f"{path}?send={slot}&calendar=October")
             head = admin.head(f"{path}?send={slot}&calendar=October")
+            # From the calendar's week view (#1808): back to that week.
+            week = admin.get(f"{path}?send={slot}&calendar=2054-10-11")
         assert page.status_code == 200
         calendar = reverse("admin:schedule_calendar")
         assert f'<a href="{calendar}?month=2054-10">Cancel</a>' in page.content.decode()
+        assert week.status_code == 200
+        back = f"{calendar}?view=week&amp;week=2054-10-11"
+        assert f'<a href="{back}">Cancel</a>' in week.content.decode()
         assert bad.status_code == 400 and head.status_code == 400
 
 

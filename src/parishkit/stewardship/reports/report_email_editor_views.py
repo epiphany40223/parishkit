@@ -371,29 +371,33 @@ def _date_time_error(form):
 CALENDAR = "calendar"
 
 
-def _calendar_month(request):
-    """The Campaign calendar month an Edit link came from (``2054-11``), or None.
+def _calendar_place(request):
+    """The Campaign calendar place an Edit link came from, or None.
 
-    Only a GET (or HEAD) carries it; anything but a year and month is refused as an
-    unknown address (a ``ValueError``), as Family mail's Edit refuses it.
+    A month (``2054-11``) or, from the week view (#1808), the week's Sunday
+    (``2054-10-11``). Only a GET (or HEAD) carries it; anything else is
+    refused as an unknown address (a ``ValueError``), as Family mail's Edit
+    refuses it.
     """
-    from parishkit.stewardship.accounts.schedule_entry_views import year_month
+    from parishkit.stewardship.accounts.schedule_entry_views import calendar_place
 
     if request.method not in ("GET", "HEAD"):
         return None
-    return year_month(request.GET, CALENDAR)
+    return calendar_place(request.GET, CALENDAR)
 
 
 def _cancel_url(request):
-    """Where Cancel goes: the calendar month the page was opened from, if any.
+    """Where Cancel goes: the calendar month or week it was opened from, if any.
 
     Apply and Delete still return to Report emails, whose status line says
     what was applied.
     """
-    month = _calendar_month(request)
-    if month is None:
+    from parishkit.stewardship.accounts.schedule_entry_views import calendar_url
+
+    place = _calendar_place(request)
+    if place is None:
         return reverse("admin:report_emails")
-    return f"{reverse('admin:schedule_calendar')}?month={month}"
+    return calendar_url(place)
 
 
 def _form(request, state, campaign, saved, others, report_id):
@@ -533,16 +537,16 @@ def _editor(request, campaign_id, report_id=None):
                 request.POST, allowed=FIELDS | MULTIPLE, multiple=MULTIPLE
             )
     else:
-        # The Campaign calendar names a send (``send``) and the month it
-        # showed (``calendar``, added to every Edit link it draws, #1656).
-        # Its Past sends navigator adds its page and size.
+        # The Campaign calendar names a send (``send``) and the month or
+        # week it showed (``calendar``, added to every Edit link it draws,
+        # #1656, #1808). Its Past sends navigator adds its page and size.
         paging = (
             {f"{sends_prefix(report_id)}{key}" for key in ("page", "size")}
             if report_id is not None
             else set()
         )
         filters(request.GET, allowed={"send", CALENDAR} | paging)
-        _calendar_month(request)
+        _calendar_place(request)
     with read_transaction() if request.method == "GET" else work_transaction():
         state, campaign = change_state(service, campaign_id)
         saved, others = _saved(state, campaign, report_id)

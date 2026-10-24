@@ -35,6 +35,7 @@ from parishkit.stewardship.accounts.schedule_entry_views import (
     _series_edit,
     _summary,
     _targets,
+    calendar_place,
     entry_form,
     entry_times,
     initial_taken,
@@ -735,6 +736,20 @@ def test_return_url_goes_back_to_the_calendar_month_or_the_list():
     calendar = "/admin/campaign/schedules/calendar/"
     assert return_url("2054-10-12", None) == f"{calendar}?month=2054-10"
     assert return_url(None, "2054-11") == f"{calendar}?month=2054-11"
+    # From the week view (#1808), to that week; New's Add there names it too.
+    week = f"{calendar}?view=week&week=2054-10-11"
+    assert return_url(None, "2054-10-11") == week
+    assert return_url("2054-10-12", "2054-10-11") == week
+
+
+def test_calendar_place_takes_a_month_or_one_iso_day():
+    """Edit's ?calendar= (#1808): the month shown, or a day of the week shown."""
+    assert calendar_place({}, "calendar") is None
+    assert calendar_place({"calendar": "2054-11"}, "calendar") == "2054-11"
+    assert calendar_place({"calendar": "2054-10-11"}, "calendar") == "2054-10-11"
+    for text in ("2054-13", "2054-1", "20541011", "2054-10-32", "", "week"):
+        with pytest.raises(ValueError, match="Unknown filter input"):
+            calendar_place({"calendar": text}, "calendar")
 
 
 def series_of(rows):
