@@ -768,6 +768,9 @@ NON_PAGES = frozenset(
         # The campaign work status Campaign settings and Home poll while
         # campaign work holds their controls (#1619), a fragment.
         "campaign_work_status",
+        # Create the campaign's Families count preview (#1393), a POST the
+        # page script makes.
+        "campaign_create_families",
         # New and Edit scheduled email's test of an unsaved edit (#446), a
         # POST the page script makes.
         "schedule_email_test",

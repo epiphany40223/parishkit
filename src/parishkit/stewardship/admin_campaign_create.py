@@ -31,10 +31,12 @@ from uuid import UUID
 
 from django.db import DatabaseError
 
-from .admin_campaign import field_errors, form_data, parse_settings
+from .accounts.families_choice import families_post
+from .admin_campaign import FAMILIES, field_errors, form_data, parse_settings
 from .admin_campaign import saved_settings as form_settings
 from .admin_changes import _admit_change, _ended_or_raise
 from .admin_reads import NotAvailable, ReadModel, _held, _recheck, config_request
+from .campaigns.campaign_families import DEFAULT as DEFAULT_FAMILIES
 
 
 @dataclass(frozen=True)
@@ -43,13 +45,16 @@ class CampaignCreatePreview(ReadModel):
 
     ``settings`` is every form field as posted (the document over the form's
     starting values), in ``campaign show``'s shape. ``content`` is how many
-    default pages and emails the campaign starts with. ``preview.token`` is
+    default pages and emails the campaign starts with. ``families`` is the
+    Families rule reviewed (#1393), its ``description`` and the two counts
+    of the page's preview (``matching``, ``emailable``). ``preview.token`` is
     the signed binding ``campaign create`` takes, valid for fifteen minutes.
     """
 
     version: str
     settings: dict
     content: int
+    families: dict
     preview: dict
 
 
@@ -113,7 +118,9 @@ def preview_create(caller, service, *, expected_version, changes):
     from .campaigns.work_locks import work_transaction
 
     actor = _admit_change(caller, service)
-    fields = parse_settings(changes)
+    fields = parse_settings(changes, families=True)
+    # The page's default when the document leaves the rule out (#1393).
+    rule = fields.pop(FAMILIES, DEFAULT_FAMILIES)
 
     def step():
         """Admit, bind, review and sign in one work transaction, as the page."""
@@ -126,6 +133,7 @@ def preview_create(caller, service, *, expected_version, changes):
             # Every field is open on a new campaign, so the post is the
             # form's starting values with the document over them.
             post = form_data(start, set(start.fields), fields, expected_version)
+            post.update(families_post(rule))
             form = creation_form(configuration, source, post)
             review = creation_review(service, actor, state, form)
             if review is None:
@@ -134,6 +142,12 @@ def preview_create(caller, service, *, expected_version, changes):
             version=expected_version,
             settings=form_settings(start) | fields,
             content=review["content"],
+            families={
+                "rule": rule,
+                "description": review["families"]["words"],
+                "matching": review["families"]["matches"],
+                "emailable": review["families"]["emailable"],
+            },
             preview={"token": review["preview"]},
         )
 

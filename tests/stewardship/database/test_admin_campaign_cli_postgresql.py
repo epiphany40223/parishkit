@@ -535,3 +535,22 @@ def test_refused_sessions(admin, draft, monkeypatch):
         refused(document, "denied")
     assert ConfigurationChangeRequest.objects.count() == requests
     assert events() == 0
+
+
+def test_show_prints_the_families_rule_and_preview_refuses_a_change(admin, draft):
+    """``campaign show`` names the legacy rule of a campaign created without
+    one; ``campaign preview`` refuses any change of it (#1393)."""
+    _, secret, _ = paired(admin.service)
+    code, shown, _ = show(admin, secret)
+    assert code == 0, shown
+    families = shown["result"]["families"]
+    assert families["rule"] is None
+    assert families["description"].startswith("Chosen before this choice existed")
+    code, document, _ = preview(
+        admin, secret, {"campaign_families": {"rule": "active_parishioners"}}
+    )
+    assert code == 1
+    assert document["error"]["code"] == "invalid"
+    [problem] = document["error"]["fields"]
+    assert problem["field"] == "campaign.campaign_families"
+    assert problem["message"] == "The campaign's Families can't be changed."

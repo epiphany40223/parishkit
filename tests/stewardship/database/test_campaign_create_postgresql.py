@@ -41,9 +41,16 @@ def new_fields(store):
     """Create the campaign's form posts: Campaign settings' own (#1404 PR 3).
 
     Step 1 is the Campaign settings form, so it posts the Ministry leader
-    roles too, the default ones ticked (#922).
+    roles too, the default ones ticked (#922), and its Families in this
+    campaign section (#1393) as it opens: Basic, Active parishioners, with
+    the Advanced fields holding that preset.
     """
-    return fields(store)
+    return fields(store) | {
+        "families_mode": "basic",
+        "families_preset": "active_parishioners",
+        "families_registered": "required",
+        "families_statuses": ["Active"],
+    }
 
 
 def test_first_campaign_is_created_with_default_content(auth_service, google):
@@ -706,3 +713,141 @@ def test_the_default_leader_roles_save_none_of_the_campaigns_own(auth_service, g
     values = Campaign.objects.get().active_configuration.values
     assert "ministry" in values["modules"]
     assert "ministry_leader_roles" not in values
+
+
+ADVANCED_FIELDS = {
+    "families_mode": "advanced",
+    "families_registered": "not_required",
+    "families_groups": ["7"],
+    "families_statuses": ["Active", "Unknown"],
+}
+
+
+def test_the_families_choice_is_stored_and_confirmed(auth_service, google):
+    """Families in this campaign (#1393): the page offers the snapshot's
+    groups and counts; the confirmation repeats the choice, its counts and
+    the lock; the campaign stores the preset or the Advanced rule."""
+    publish(source())
+    browser, _ = signed_in()
+    store = auth_service.store
+    page = browser.get(CREATE).content.decode()
+    assert "Families in this campaign" in page
+    assert 'data-editor-modes="campaign-families"' in page
+    assert "Active (1 Family)" in page and "(No Family Group) (1 Family)" in page
+    assert "1 Family matches in the ParishSoft data as of" in page
+    assert "data-local-instant" in page
+    preview = post(browser, CREATE, new_fields(store)).content.decode()
+    assert "Families in this campaign: Active parishioners:" in preview
+    assert "1 Family matches now; 1 of them can be emailed." in preview
+    assert "This can't be changed after the campaign is created." in preview
+    apply(
+        store,
+        post(
+            browser,
+            CREATE,
+            {
+                "action": "confirm",
+                "preview": token(post(browser, CREATE, new_fields(store))),
+            },
+        ),
+    )
+    values = Campaign.objects.get().active_configuration.values
+    assert values["campaign_families"] == {"rule": "active_parishioners"}
+    # Campaign settings shows it in words, locked, with the reason.
+    settings = browser.get(reverse("admin:campaign_settings")).content.decode()
+    assert "Active parishioners: Families registered to this parish" in settings
+    assert "Chosen when the campaign was created; it can't be changed." in settings
+    assert 'name="families_mode"' not in settings
+
+
+def test_an_advanced_choice_is_stored_canonically(auth_service, google):
+    """Advanced posts its three conditions; the rule is stored in order."""
+    publish(source())
+    browser, _ = signed_in()
+    store = auth_service.store
+    fields_ = new_fields(store) | ADVANCED_FIELDS
+    del fields_["families_preset"]
+    preview = post(browser, CREATE, fields_)
+    assert preview.status_code == 200, preview.content
+    apply(
+        store, post(browser, CREATE, {"action": "confirm", "preview": token(preview)})
+    )
+    assert Campaign.objects.get().active_configuration.values["campaign_families"] == {
+        "rule": "advanced",
+        "registered": False,
+        "family_groups": [{"id": 7, "name": "Active"}],
+        "member_statuses": ["Active", "Unknown"],
+    }
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"families_preset": ""},
+        {"families_mode": "advanced", "families_groups": [], "families_preset": ""},
+        # Matches nothing: the source's one Family has no Unknown Member.
+        {
+            "families_mode": "advanced",
+            "families_groups": ["7"],
+            "families_statuses": ["Unknown"],
+        },
+    ],
+)
+def test_an_incomplete_or_empty_choice_is_refused(auth_service, google, change):
+    """Review is refused at the section, and nothing is recorded."""
+    publish(source())
+    browser, _ = signed_in()
+    response = post(browser, CREATE, new_fields(auth_service.store) | change)
+    assert response.status_code == 400
+    text = response.content.decode()
+    assert (
+        "Choose which Families this campaign is sent to." in text
+        or "Choose at least one Family group." in text
+        or "No Families in the latest ParishSoft data match this choice." in text
+    )
+    assert not ConfigurationChangeRequest.objects.exists()
+
+
+def test_the_count_preview_answers_two_numbers(auth_service, google):
+    """The passive preview counts the posted choice and returns no names."""
+    publish(source())
+    browser, _ = signed_in()
+    url = reverse("admin:campaign_create_families")
+    answer = post(browser, url, new_fields(auth_service.store))
+    assert answer.status_code == 200 and answer["Cache-Control"] == "no-store"
+    assert answer.json() == {
+        "count": "1 Family matches in the ParishSoft data as of",
+        "emailable": "; 1 of them can be emailed.",
+        "matches": 1,
+    }
+    staff = post(
+        browser,
+        url,
+        {
+            "families_mode": "advanced",
+            "families_statuses": ["Unknown"],
+            "families_groups": ["7"],
+        },
+    )
+    assert staff.json()["matches"] == 0
+    incomplete = post(
+        browser, url, {"families_mode": "advanced", "families_statuses": ["Active"]}
+    )
+    assert incomplete.json()["count"] == "Choose at least one Family group."
+    assert post(browser, url, {"unexpected": "1"}).status_code == 400
+    assert not ConfigurationChangeRequest.objects.exists()
+
+
+def test_a_campaign_without_a_rule_shows_the_legacy_words(
+    tmp_path, auth_service, google
+):
+    """The existing campaign's settings name today's rule, locked."""
+    publish(source())
+    store = auth_service.store
+    add_draft(store, store.active(), uuid4())
+    browser, _ = signed_in()
+    settings = browser.get(reverse("admin:campaign_settings")).content.decode()
+    assert (
+        "Chosen before this choice existed: Families registered to this parish"
+        in settings
+    )

@@ -1,0 +1,28 @@
+{% load i18n stewardship %}{% comment %}
+Create the campaign's "Families in this campaign" section (#1393;
+admin-portal spec, "Families in this campaign"; families_choice). It follows
+the shared Basic and Advanced modes (components/editor-mode.html,
+ParishEditorMode), its toggle at the top of the section: Basic offers the
+two presets, Advanced the three conditions, whose fields always hold the
+rule (campaign-families-v1.js rewrites them from the Basic choice). Under
+it a reserved status line counts the choice in the latest promoted
+ParishSoft data, updated in place as the choice changes (the page script
+posts the form to data-preview-url); while nothing matches, the form's
+gate holds Create the campaign with the section's reason. The time is
+browser-local (data-local-instant).
+{% endcomment %}<fieldset id="campaign-families" class="campaign-families" data-campaign-families data-preview-url="{% url 'admin:campaign_create_families' %}" data-groups="{{ families.groups }}" data-presets="{{ families.presets }}" data-no-match="{% translate 'No Families in the latest ParishSoft data match this choice.' %}"><legend>{% translate "Families in this campaign" %}</legend>
+<p class="help" id="campaign-families-help">{% translate "Choose which ParishSoft Families this campaign is sent to. They get a Family code and link, the Family form and the campaign's emails. You can't change this after the campaign is created." %}</p>
+<div data-editor-modes="campaign-families">
+{% translate "Your custom Families choice has no basic equivalent." as no_basic_title %}{% translate "Basic can't show your custom Families choice. If you switch, no basic choice is chosen: choose one to create the campaign. Nothing changes until you create it." as no_basic_body %}{% include "stewardship/components/editor-mode.html" with mode_id="families-mode" mode=families.mode name="families_mode" no_basic_title=no_basic_title no_basic_body=no_basic_body %}
+<fieldset class="editor-mode-panel" data-editor-mode-panel="basic" data-not-a-change data-missing-hint="{% translate 'Choose which Families this campaign is sent to.' %}"{% if families.mode != "basic" %} hidden disabled{% endif %}><legend class="visually-hidden">{% translate "Families in this campaign" %}</legend>
+{% for radio in form.families_preset %}<div class="choice-with-help">{{ radio.tag }} <label for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label><p class="help">{% if radio.data.value == "active_parishioners" %}{{ families.help.active_parishioners }}{% else %}{{ families.help.active_parishioners_and_staff }}{% endif %}</p></div>{% endfor %}{{ form.families_preset.errors }}
+</fieldset>
+<div class="editor-mode-panel" data-editor-mode-panel="advanced"{% if families.mode != "advanced" %} hidden{% endif %}>
+{% include "stewardship/components/choice-pair.html" with pair_id="families-registered" name="families_registered" legend=_("Registered to this parish") first_value="required" first_label=_("Required") second_value="not_required" second_label=_("Not required") chosen=form.families_registered.value help_id="families-registered-help" errors=form.families_registered.errors %}
+<p class="help" id="families-registered-help">{{ form.families_registered.field.tip }}</p>
+<div data-require-one data-missing-hint="{% translate 'Choose at least one Family group.' %}">{{ form.families_groups.as_field_group }}</div>
+<div data-require-one data-missing-hint="{% translate 'Choose at least one Member status.' %}">{{ form.families_statuses.as_field_group }}<p class="help">{{ form.families_statuses.field.tip }}</p></div>
+</div>
+</div>
+<p class="help families-preview" role="status" data-families-preview data-matches="{{ families.line.matches }}"><span data-families-count>{{ families.line.count }}</span>{% if families.as_of %} <time data-local-instant datetime="{{ families.as_of|instant }}" data-families-as-of{% if not families.line.emailable %} hidden{% endif %}>{{ families.as_of|instant }}</time>{% endif %}<span data-families-emailable>{{ families.line.emailable }}</span></p>
+</fieldset>

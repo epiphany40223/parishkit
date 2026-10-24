@@ -351,3 +351,50 @@ def test_no_parishsoft_data_is_not_available(auth_service, google, monkeypatch):
     assert code == 1
     refused(result, "not_available")
     assert ConfigurationChangeRequest.objects.count() == 0 and events() == 0
+
+
+def test_the_families_rule_is_previewed_and_stored(admin):
+    """``campaign_families`` (#1393) takes the stored shapes; left out it is
+    Active parishioners; the preview prints the two counts; a malformed or
+    unmatched rule is ``invalid`` at its member."""
+    _, secret, _ = paired(admin.service)
+    default = reviewed(admin, secret, document())
+    assert default["families"] == {
+        "rule": {"rule": "active_parishioners"},
+        "description": default["families"]["description"],
+        "matching": 1,
+        "emailable": 1,
+    }
+    rule = {
+        "rule": "advanced",
+        "registered": False,
+        "family_groups": [{"id": 7, "name": "Active"}],
+        "member_statuses": ["Active"],
+    }
+    result = reviewed(admin, secret, document(campaign_families=rule))
+    assert result["families"]["rule"] == rule and result["families"]["matching"] == 1
+    install(admin, create(admin, secret, result["preview"]["token"])[1])
+    assert (
+        Campaign.objects.get().active_configuration.values["campaign_families"] == rule
+    )
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        {"rule": "legacy"},
+        {
+            "rule": "advanced",
+            "registered": True,
+            "family_groups": [{"id": 7, "name": "Active"}],
+            "member_statuses": ["Unknown"],
+        },
+    ],
+)
+def test_a_bad_families_rule_is_invalid(admin, rule):
+    """Refused at campaign.campaign_families or the section's field."""
+    _, secret, _ = paired(admin.service)
+    code, result, _ = preview(admin, secret, document(campaign_families=rule))
+    assert code == 1
+    refused(result, "invalid")
+    assert not Campaign.objects.exists()

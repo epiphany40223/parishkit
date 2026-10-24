@@ -73,6 +73,9 @@ class CampaignShow(ReadModel):
     """The current campaign's settings, as Campaign settings draws them.
 
     ``version`` is what ``campaign preview --expected-version`` takes.
+    ``families`` is the campaign's Families rule (#1393): the stored ``rule``
+    (null: the legacy rule of a campaign created before the choice existed)
+    and its ``description``; it never changes.
     ``editable`` says the whole Testing-mode draft can change; ``open``
     lists the fields that can change now (a live campaign's end date,
     leader roles and Ministries, while no background work holds them), in
@@ -86,6 +89,7 @@ class CampaignShow(ReadModel):
     editable: bool
     open: list
     settings: dict
+    families: dict
 
 
 @dataclass(frozen=True)
@@ -148,13 +152,22 @@ def _fields():
     return list(fields), booleans, MULTIPLE_FIELDS
 
 
-def parse_settings(text):
+# The change document member that holds a campaign's Families rule (#1393),
+# in the data specification's stored shapes.
+FAMILIES = "campaign_families"
+FAMILIES_FIXED = "The campaign's Families can't be changed."
+
+
+def parse_settings(text, *, families=False):
     """Parse a change document's shape; the values are the page form's job.
 
     Refuses (``ValueError``, ``invalid``) anything but an object whose only
     member is a non-empty ``campaign`` object. A member that is not a form
     field, or whose JSON type the field cannot take, is ``InvalidChange`` at
-    ``campaign.<name>``.
+    ``campaign.<name>``. ``campaign_families`` (#1393) is taken only when
+    ``families`` (a new campaign, ``campaign create-preview``), in one of its
+    stored shapes; a change of an existing campaign's is refused, as the
+    rule is fixed when the campaign is created.
     """
     if len(text) > CHANGES_LIMIT:
         raise ValueError("The change document is too long.")
@@ -170,6 +183,9 @@ def parse_settings(text):
     names, booleans, multiples = _fields()
     problems = []
     for name, item in fields.items():
+        if name == FAMILIES:
+            problems.extend(_families_problem(item, families))
+            continue
         if name not in names:
             message = "This is not a Campaign settings field."
         elif name in booleans:
@@ -201,6 +217,28 @@ def parse_settings(text):
     if problems:
         raise InvalidChange(problems)
     return fields
+
+
+def _families_problem(value, allowed):
+    """The problem with a document's Families rule, if any (``parse_settings``)."""
+    from parishkit.config import ConfigError
+
+    from .campaigns.campaign_families import validate
+
+    message = None if allowed else FAMILIES_FIXED
+    if message is None:
+        try:
+            validate(value)
+        except ConfigError:
+            message = "Give a Families rule in one of its shapes."
+    if message is None:
+        return []
+    return [
+        FieldProblem(
+            {"field": f"campaign.{FAMILIES}", "code": "invalid", "message": message},
+            logged=f"campaign-{FAMILIES}",
+        )
+    ]
 
 
 def _plain(value):
@@ -357,9 +395,19 @@ def read_campaign(caller, service):
             editable=editable,
             open=[name for name in names if name in opened[0]],
             settings=saved_settings(form()),
+            families=_families(campaign),
         )
 
     return _read(caller, service, read)
+
+
+def _families(campaign):
+    """``campaign show``'s Families rule: the stored value and its words."""
+    from .accounts.families_choice import locked_words
+    from .campaigns.campaign_families import stored_rule
+
+    values = campaign.active_configuration.values
+    return {"rule": stored_rule(values), "description": locked_words(values)}
 
 
 def preview_campaign(caller, service, *, expected_version, changes):

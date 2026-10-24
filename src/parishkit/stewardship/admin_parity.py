@@ -176,6 +176,9 @@ LEDGER = {
     # (``single_campaign.first_campaign_admitted``) and confirmed with
     # ``first_campaign=True``, as the page does.
     "campaign_create": command("campaign create-preview", "campaign create"),
+    # Its Families count preview (#1393): ``campaign create-preview`` prints
+    # the same two counts.
+    "campaign_create_families": command("campaign create-preview"),
     # Copy campaign refuses every request before reading anything until
     # #145 (navigation rule 10), so a command could only repeat that
     # refusal; #145 decides whether copying comes back.

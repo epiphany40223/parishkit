@@ -1,0 +1,10 @@
+{% load i18n %}{% comment %}
+Campaign settings' "Families in this campaign" (#1393): the rule chosen when
+the campaign was created, in words (families_choice.describe; the legacy
+rule's words for a campaign created before the choice existed). It can never
+change, so it is drawn as text in the section's place, with the reason in
+its tip; there is no field to post, and the server keeps the saved rule
+whatever is posted.
+{% endcomment %}<fieldset id="campaign-families" class="campaign-families" aria-describedby="campaign-families-rule"><legend id="campaign-families-legend">{% translate "Families in this campaign" %}</legend>{% translate "Chosen when the campaign was created; it can't be changed." as locked %}{% include "stewardship/components/toggletip.html" with tip_id="campaign-families-tip" tip_label_id="campaign-families-legend" tip_text=locked %}
+<p id="campaign-families-rule">{{ families_rule }}</p>
+</fieldset>
