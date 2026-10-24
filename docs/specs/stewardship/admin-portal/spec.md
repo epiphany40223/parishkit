@@ -1133,15 +1133,18 @@ Notes on the groups:
   [existing state to stage](../review-pipeline/spec.md#existing-state-to-stage)),
   read through that page's own selection with every filter it applies (only
   the leader's own Ministries for a Ministry leader); where that page would
-  say the follow-up is unavailable, no number shows; for Limitations, the
+  say the follow-up is unavailable, no number shows. Ministry requests' menu
+  count stays its own: the roster changes still to enter are counted only
+  on Home's [Next steps](#home-page). For Limitations, the
   answers at the worklist's default To review stage, read through that
   page's own selection with its default filters, with the Cannot contribute
   financially answers the page lists at To review, read through Pledges' own
   stage selection, for a viewer who may open Pledges (R39 findings 10 and
   11); for Pledges, the pledges at its default To review stage, read through
   its own stage selection, for a viewer who may open Pledges; where that
-  page would say Pledges are unavailable, no number shows. The menu count stays Ministry requests' own; the roster changes still
-  to enter are counted only on Home's [Next steps](#home-page). All the counts ride on one statement. Each is a plain number after the entry's
+  page would say Pledges are unavailable, no number shows. All the counts
+  ride on one statement, which reads Pledges' stage selection once for both
+  its count and Limitations'. Each is a plain number after the entry's
   name that screen readers announce as "(N open)". No number shows at zero,
   nor on a greyed-out entry. The counts are read when a page loads, never
   updated in place, so a number never appears or disappears under the

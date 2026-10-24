@@ -1331,6 +1331,13 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
     assert counts == {}
 
 
+def test_open_counts_read_pledge_stages_once():
+    """Pledges and Limitations share one costly pledge stage read (#2125)."""
+    from parishkit.stewardship.accounts import admin_context
+
+    assert admin_context.OPEN_COUNTS.count("stewardship_pledge_stages_v1(") == 1
+
+
 def test_open_counts_are_plain_numbers_with_screen_reader_words():
     """A count shows after the name, read as "(N open)"; zero shows none (#585)."""
     campaign = _campaign("active")

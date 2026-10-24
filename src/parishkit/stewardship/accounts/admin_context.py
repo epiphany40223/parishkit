@@ -538,6 +538,10 @@ UNREAD = object()
 # campaign's own, is not promoted and uncompacted) the count is NULL and no
 # number shows; a campaign without Financial stewardship has no Pledges
 # link, so it is never asked for.
+# Both Pledges' count and Limitations' Cannot contribute part come from
+# one read of stewardship_pledge_stages_v1 (the pl LATERAL), since the
+# stage selection is the costliest part of the statement and runs on
+# every Admin page.
 # The statement's columns, by name and in order (each aliased in the SQL).
 # Read the row through these names, never by position: a caller that adds
 # columns (My review work's counts, #1727, cross-joined after these) takes
@@ -576,14 +580,7 @@ SELECT
             || coalesce(v->'families','[]'::jsonb)) a
         WHERE NOT coalesce((a->>'in_force')::boolean, false)
            OR coalesce(a->>'decision','none')='none')
-        + CASE WHEN %(pledges)s THEN (
-            SELECT count(*)
-            FROM stewardship_pledge_stages_v1(%(campaign)s, NULL::uuid) p
-            JOIN stewardship_submission ps ON ps.id=p.submission_id
-            WHERE p.stage='to_review'
-              AND coalesce(ps.answers->'financial'->'cannot_give'='true'::jsonb,
-                  false))
-        ELSE 0 END
+        + coalesce(pl.cannot_give, 0)
     END AS limitations,
     CASE WHEN %(pledges)s AND EXISTS (
         SELECT 1 FROM stewardship_campaign c
@@ -592,12 +589,17 @@ SELECT
         JOIN stewardship_source_snapshot x ON x.id=CASE WHEN c.state='archived'
             THEN k.source_snapshot_id ELSE sc.snapshot_id END
         WHERE c.id=%(campaign)s AND x.state='promoted' AND x.compacted_at IS NULL)
-    THEN (
-        SELECT count(*)
-        FROM stewardship_pledge_stages_v1(%(campaign)s, NULL::uuid) p
-        WHERE p.stage='to_review')
-    END AS pledges
+    THEN pl.to_review END AS pledges
 FROM (SELECT NULL) one
+LEFT JOIN LATERAL (
+    SELECT count(*) AS to_review,
+        count(*) FILTER (WHERE coalesce(
+            ps.answers->'financial'->'cannot_give'='true'::jsonb, false))
+            AS cannot_give
+    FROM stewardship_pledge_stages_v1(%(campaign)s, NULL::uuid) p
+    LEFT JOIN stewardship_submission ps ON ps.id=p.submission_id
+    WHERE %(pledges)s AND p.stage='to_review'
+) pl ON true
 LEFT JOIN LATERAL (
     SELECT CASE WHEN (v->>'authorized')::boolean THEN (v->>'total')::bigint END
             AS total,
