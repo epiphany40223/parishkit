@@ -537,7 +537,13 @@ UNREAD = object()
 # the campaign's source snapshot, the current one or an archived
 # campaign's own, is not promoted and uncompacted) the count is NULL and no
 # number shows; a campaign without Financial stewardship has no Pledges
-# link, so it is never asked for.
+# link, so it is never asked for. A current campaign's snapshot is the
+# current pointer's, which only ever names a promoted snapshot that
+# compaction never takes (compaction excludes the current one), so for it
+# the test is whether ParishSoft has been downloaded: the request's one
+# shared read (request_downloaded, passed as %(downloaded)s), which the
+# access gate and the menu's reasons already use (#1242), never a second
+# read of stewardship_source_current here.
 # Both Pledges' count and Limitations' Cannot contribute part come from
 # one read of stewardship_pledge_stages_v1 (the pl LATERAL), since the
 # stage selection is the costliest part of the statement and runs on
@@ -585,10 +591,10 @@ SELECT
     CASE WHEN %(pledges)s AND EXISTS (
         SELECT 1 FROM stewardship_campaign c
         LEFT JOIN stewardship_campaign_credentials k ON k.campaign_id=c.id
-        LEFT JOIN stewardship_source_current sc ON sc.singleton
-        JOIN stewardship_source_snapshot x ON x.id=CASE WHEN c.state='archived'
-            THEN k.source_snapshot_id ELSE sc.snapshot_id END
-        WHERE c.id=%(campaign)s AND x.state='promoted' AND x.compacted_at IS NULL)
+        LEFT JOIN stewardship_source_snapshot x ON x.id=k.source_snapshot_id
+        WHERE c.id=%(campaign)s AND CASE WHEN c.state='archived'
+            THEN x.state='promoted' AND x.compacted_at IS NULL
+            ELSE %(downloaded)s END)
     THEN pl.to_review END AS pledges
 FROM (SELECT NULL) one
 LEFT JOIN LATERAL (
@@ -701,7 +707,12 @@ def _open_counts(request, actor, items, campaign):
         try:
             with isolate():
                 counts, reviewed = _read_open_counts(
-                    offered, actor, campaign, review, roster=known is UNREAD
+                    offered,
+                    actor,
+                    campaign,
+                    review,
+                    roster=known is UNREAD,
+                    downloaded=request_downloaded(request),
                 )
         except DatabaseError as error:
             _record_open_counts_failure(error)
@@ -715,7 +726,14 @@ def _open_counts(request, actor, items, campaign):
 
 
 def _read_open_counts(
-    offered, actor, campaign, review=None, *, followup=True, roster=True
+    offered,
+    actor,
+    campaign,
+    review=None,
+    *,
+    followup=True,
+    roster=True,
+    downloaded=None,
 ):
     """Run ``OPEN_COUNTS`` for the ``offered`` entries; see ``_open_counts``.
 
@@ -728,6 +746,9 @@ def _read_open_counts(
     ``review_work.COUNTS`` runs in the same statement, cross-joined to the
     menu's one row. Returns the menu's counts and the review counts (None
     without ``review``).
+
+    ``downloaded`` is the request's shared ParishSoft download check
+    (``request_downloaded``), asked only when the Pledges count is read.
     """
     from parishkit.stewardship.reports.census_changes import OPEN_GROUPS, open_count
     from parishkit.stewardship.reports.limitations import LimitationsQuery
@@ -750,6 +771,11 @@ def _read_open_counts(
         and can_tick(actor)
         and getattr(campaign, "state", None) in ROSTER_STATES
     )
+    # Pledges' own admission (FINANCIAL_DETAIL), checked again, for its own
+    # count and Limitations' Cannot contribute part.
+    pledges = "pledges_to_enter" in offered and allows(
+        actor, Capability.FINANCIAL_DETAIL
+    )
     sql = OPEN_COUNTS.replace("{census}", OPEN_GROUPS)
     if review:
         # Both statements are one row; their shared parameters (campaign,
@@ -768,10 +794,8 @@ def _read_open_counts(
                 "limitations": "limitations_report" in offered
                 and allows(actor, Capability.CAMPAIGN_REPORT),
                 "limitation_filters": json.dumps(LimitationsQuery().form_values()),
-                # Pledges' own admission (FINANCIAL_DETAIL), checked again,
-                # for its own count and Limitations' Cannot contribute part.
-                "pledges": "pledges_to_enter" in offered
-                and allows(actor, Capability.FINANCIAL_DETAIL),
+                "pledges": pledges,
+                "downloaded": bool(pledges and downloaded and downloaded()),
                 "campaign": campaign.pk,
                 "filters": selection_filters(FollowupQuery()),
                 # The roster rows' own selection (read_rows for Staff).

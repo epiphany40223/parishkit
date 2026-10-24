@@ -659,7 +659,7 @@ def test_the_menu_counts_the_pledges_to_review(response_service, google):
     """The menu's Pledges count is the page's To review rows (#2125): a
     decision moves the pledge out of it, Back to review brings it back, a
     viewer Pledges does not admit gets no count, and an unavailable page
-    (its source snapshot compacted) shows no number."""
+    (no ParishSoft download) shows no number."""
     import re
     from types import SimpleNamespace
 
@@ -718,15 +718,16 @@ def test_the_menu_counts_the_pledges_to_review(response_service, google):
             is None
         )
     # The page says Pledges are unavailable without a usable source
-    # snapshot, so the menu shows no number either. The guard protects the
-    # current snapshot from compaction, so the test sets it compacted with
-    # the session's triggers off (the test login owns the database).
+    # snapshot, so the menu shows no number either. For a current campaign
+    # that is the current pointer naming no download (it only ever names a
+    # promoted snapshot that compaction never takes), so the test clears
+    # it with the session's triggers off (the test login owns the database).
     with connection.cursor() as cursor:
         cursor.execute("SET session_replication_role = replica")
         try:
             cursor.execute(
-                "UPDATE stewardship_source_snapshot SET compacted_at=now() "
-                "WHERE id=(SELECT snapshot_id FROM stewardship_source_current)"
+                "UPDATE stewardship_source_current SET snapshot_id=NULL,"
+                "generation=0,organization_id=NULL"
             )
         finally:
             cursor.execute("RESET session_replication_role")
