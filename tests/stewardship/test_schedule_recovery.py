@@ -20,10 +20,9 @@ NOW = datetime(2026, 10, 10, tzinfo=UTC)
 @pytest.mark.parametrize(
     "kind,count,result",
     [
-        ("daily_digest", 0, "empty"),
-        ("daily_digest", 1, "latest"),
-        ("daily_digest", 10001, "aggregate"),
-        ("weekly_digest", 9000, "latest"),
+        ("report", 0, "empty"),
+        ("report", 1, "latest"),
+        ("report", 10001, "latest"),
     ],
 )
 def test_streamed_complete_digest_summary_matches_selection_policy(kind, count, result):
@@ -33,7 +32,15 @@ def test_streamed_complete_digest_summary_matches_selection_policy(kind, count, 
 
 @pytest.mark.parametrize(
     "kind,count",
-    [([], 1), ("initial", 1), ("daily_digest", True), ("weekly_digest", -1)],
+    [
+        ([], 1),
+        ("initial", 1),
+        ("report", True),
+        ("report", -1),
+        # The retired digests (#1834) have no recovery left (#2107).
+        ("daily_digest", 1),
+        ("weekly_digest", 1),
+    ],
 )
 def test_digest_summary_rejects_invalid_input(kind, count):
     """Counts and kinds cannot be silently coerced into a recovery decision."""
@@ -164,13 +171,13 @@ def test_missing_cancellation_proof_defaults_to_held_not_permission():
     assert plan_recovery((row,), cutoff=NOW).blocked
 
 
-def test_daily_backlog_requires_new_recovery_with_every_original_date():
-    definition = UUID(int=100)
+def test_report_backlog_uses_its_latest_send():
+    """A report's overdue sends coalesce into the latest (#1786)."""
     rows = tuple(
         slot(
             number,
-            kind="daily_digest",
-            definition_id=definition,
+            kind="report",
+            definition_id=UUID(int=100),
             slot=f"2026-10-{number:02}",
             target="admins",
         )
@@ -179,33 +186,12 @@ def test_daily_backlog_requires_new_recovery_with_every_original_date():
     plan = plan_recovery(
         rows, cutoff=NOW, closed=True, eligible=False, responded=True, deliverable=False
     )
-    assert plan.selected is None and plan.reason == "missed_daily_recovery"
-    assert plan.coalesced == tuple(row.occurrence_id for row in rows)
-    assert tuple(day.isoformat() for day in plan.daily_dates) == tuple(
-        row.slot for row in rows
-    )
-    assert plan_recovery(tuple(reversed(rows)), cutoff=NOW) == plan
-
-
-def test_one_daily_slot_remains_an_ordinary_digest():
-    row = slot(1, kind="daily_digest", slot="2026-10-01", target="admins")
-    assert plan_recovery((row,), cutoff=NOW) == RecoveryPlan(selected=row.occurrence_id)
-
-
-def test_weekly_backlog_uses_latest_interval_without_new_recipient_identity():
-    rows = tuple(
-        slot(
-            number,
-            kind="weekly_digest",
-            definition_id=UUID(int=100),
-            slot=f"2026-10-{number:02}",
-            target="admins",
-        )
-        for number in range(1, 4)
-    )
-    plan = plan_recovery(rows, cutoff=NOW)
     assert plan.selected == rows[-1].occurrence_id
-    assert plan.reason == "missed_weekly_recovery" and not plan.daily_dates
+    assert plan.coalesced == tuple(row.occurrence_id for row in rows[:-1])
+    assert plan.reason == "missed_report_recovery"
+    assert plan_recovery(rows[:1], cutoff=NOW) == RecoveryPlan(
+        selected=rows[0].occurrence_id
+    )
 
 
 def test_empty_future_and_held_groups_have_no_mutations():
@@ -225,7 +211,7 @@ def test_empty_future_and_held_groups_have_no_mutations():
     [
         {"mode": "testing"},
         {"target": "family:another"},
-        {"kind": "weekly_digest"},
+        {"kind": "report"},
         {"occurrence_id": UUID(int=1)},
         {"definition_id": UUID(int=101)},
     ],
@@ -240,12 +226,6 @@ def test_two_initials_and_fulfilled_initial_are_not_recovery_candidates():
         plan_recovery((slot(1, kind="initial"), slot(2, kind="initial")), cutoff=NOW)
     with pytest.raises(ValueError, match="Fulfilled initial"):
         plan_recovery((slot(1, kind="initial"),), cutoff=NOW, initial_delivered=True)
-
-
-@pytest.mark.parametrize("value", ["yesterday", "20261001", "2026-02-30"])
-def test_daily_slots_require_canonical_dates(value):
-    with pytest.raises(ValueError):
-        plan_recovery((slot(1, kind="daily_digest", slot=value),), cutoff=NOW)
 
 
 @pytest.mark.parametrize(

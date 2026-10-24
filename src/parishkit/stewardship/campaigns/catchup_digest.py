@@ -207,7 +207,10 @@ def prepare_digest(demand, claim, scope, definition, cursor):
         production_cycle=scope.campaign.production_cycle,
     ).first()
     created = 0
-    if selected is None and (choice == "aggregate" or previous):
+    # A report recovers into its latest pending send (digest_recovery_kind).
+    # A new recovery send is made only to carry the coverage of earlier
+    # revisions' replaced sends (``previous``) forward.
+    if selected is None and previous:
         latest = pending.order_by("-due_at", "-id").first()
         lock_task_claim(claim)
         selected = _new_occurrence(
@@ -241,10 +244,7 @@ def prepare_digest(demand, claim, scope, definition, cursor):
         ScheduleOccurrence.objects.filter(pk=row.pk, version=row.version).update(
             state="coalesced",
             replacement=selected,
-            reason={
-                "daily_digest": "missed_daily_recovery",
-                "weekly_digest": "missed_weekly_recovery",
-            }.get(definition.kind, "missed_report_recovery"),
+            reason="missed_report_recovery",
             version=row.version + 1,
             actor_id=claim.worker_id,
             correlation_id=correlation,

@@ -7,7 +7,7 @@ next sends are the same instants and slot keys as before, and the report
 pipeline then sends only what was still owed.
 """
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 
 import pytest
 from django.db import connection
@@ -15,6 +15,7 @@ from django.db import connection
 from parishkit.stewardship.accounts.reports_conversion import converted_values
 from parishkit.stewardship.accounts.reports_upgrade import digests_remain
 from parishkit.stewardship.audit.models import AuditEvent
+from parishkit.stewardship.campaigns.intervals import local_day, resolve_local
 from parishkit.stewardship.campaigns.schedule_evaluation import SchedulePlan
 from parishkit.stewardship.campaigns.schedule_models import (
     ScheduleDefinition,
@@ -50,6 +51,7 @@ from .test_family_mail_worker_postgresql import (  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
 NOW = datetime(2054, 10, 9, 15, tzinfo=UTC)
+THROUGH = datetime(2055, 1, 1, tzinfo=UTC)
 
 
 @pytest.fixture(autouse=True)
@@ -59,23 +61,56 @@ def digest_kinds(transactional_db):
         yield
 
 
-def plan_slots(definition, campaign, *, after=None):
+def plan_slots(definition, campaign):
     """The (slot, due) pairs the definition's current values give to the end.
 
-    A Weekly digest's post-close send is included: today it is considered
-    only while something is owed, and the converted Weekly makes it as an
-    ordinary send (spec, "Conversion", "It sends every week").
+    A converted report's come from the scheduler; a digest's from
+    ``digest_slots``, since the scheduler no longer evaluates digests.
     """
-    plan = SchedulePlan.from_values(
-        definition.current_revision.values, campaign.active_configuration.values
-    )
-    page = plan.page(
-        through=datetime(2055, 1, 1, tzinfo=UTC),
-        after=after,
-        limit=100,
-        include_final_weekly=True,
-    )
+    values = definition.current_revision.values
+    if values["kind"] != "report":
+        return digest_slots(values, campaign.active_configuration.values)
+    plan = SchedulePlan.from_values(values, campaign.active_configuration.values)
+    page = plan.page(through=THROUGH, limit=100)
     return [(slot.key, slot.due_at) for slot in page.slots]
+
+
+def digest_slots(values, campaign):
+    """The retired digests' sends (#1834), kept as this suite's parity oracle.
+
+    The scheduler's Daily and Weekly rules were removed with the digests
+    (#2107); the conversion must still give each converted report the same
+    sends. A Daily's slot is each campaign day that has moments, sent the
+    next day at its time; a Weekly's is each of its weekdays in the
+    campaign plus the first one after close (today considered only while
+    something is owed; the converted Weekly makes it as an ordinary send,
+    spec "Conversion", "It sends every week"). A skip date is no send.
+    """
+    zone = campaign["timezone"]
+    start = date.fromisoformat(campaign["start_date"])
+    end = date.fromisoformat(campaign["end_date"])
+    daily = values["kind"] == "daily_digest"
+    if daily:
+        days = [start + timedelta(days=n) for n in range((end - start).days + 1)]
+    else:
+        first = start + timedelta(days=(values["weekday"] - start.weekday()) % 7)
+        final = end + timedelta(days=(values["weekday"] - end.weekday()) % 7 or 7)
+        days = [
+            first + timedelta(weeks=n) for n in range((final - first).days // 7 + 1)
+        ]
+    skipped = set(values.get("skip_dates", ()))
+    slots = []
+    for day in days:
+        interval = local_day(day, zone).interval
+        if day.isoformat() in skipped or (daily and interval.start >= interval.end):
+            continue
+        send = day + timedelta(days=1) if daily else day
+        due = resolve_local(
+            datetime.combine(send, time.fromisoformat(values["time"])), zone
+        )
+        if due <= THROUGH:
+            slots.append((day.isoformat(), due))
+    return slots
 
 
 def test_conversion_keeps_every_definition_its_history_and_its_sends(

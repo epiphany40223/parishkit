@@ -8,10 +8,11 @@ No function here renders content, retries terminal failure, or calls a provider.
 """
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta
 from uuid import UUID
 
-KINDS = frozenset({"initial", "reminder", "daily_digest", "weekly_digest", "report"})
+# The retired Daily and Weekly digests (#1834) have no schedule left.
+KINDS = frozenset({"initial", "reminder", "report"})
 STATES = frozenset(
     {
         "pending",
@@ -32,20 +33,12 @@ def digest_recovery_kind(kind, candidate_count):
     in bounded coverage batches. A count is selection metadata, not proof that
     enumeration, coverage or provider delivery has completed. A report email
     (#1786) coalesces into its latest send, which reports the whole covered
-    range (report-emails spec, "Catch-up, recovery and holds").
+    range (report-emails spec, "Catch-up, recovery and holds"); report emails
+    are the only Admin mail left since the digests retired (#1834).
     """
-    if (
-        type(kind) is not str
-        or kind not in {"daily_digest", "weekly_digest", "report"}
-        or type(candidate_count) is not int
-        or candidate_count < 0
-    ):
+    if kind != "report" or type(candidate_count) is not int or candidate_count < 0:
         raise ValueError("Digest recovery requires a complete candidate count.")
-    if candidate_count == 0:
-        return "empty"
-    if kind == "daily_digest" and candidate_count > 1:
-        return "aggregate"
-    return "latest"
+    return "empty" if candidate_count == 0 else "latest"
 
 
 @dataclass(frozen=True)
@@ -90,9 +83,6 @@ class RecoverySlot:
 class RecoveryPlan:
     """One group outcome; unchanged/held/terminal slots are deliberately omitted.
 
-    Daily recovery requires a new aggregate occurrence, so ``selected`` is None
-    and ``daily_dates`` names its exact source slots. The durable owner must bind
-    every coalesced row to that aggregate and pin its inputs before dispatch.
     A blocked plan makes no mutations, even if some siblings are cancellable.
     """
 
@@ -100,7 +90,6 @@ class RecoveryPlan:
     coalesced: tuple[UUID, ...] = ()
     skipped: tuple[UUID, ...] = ()
     reason: str = ""
-    daily_dates: tuple[date, ...] = ()
     blocked: bool = False
 
 
@@ -120,7 +109,7 @@ def plan_recovery(
     initial_delivered=False,
     excluded=False,
 ):
-    """Choose at most one due Family/weekly message or one daily recovery digest.
+    """Choose at most one due Family message or report email send.
 
     Stable UUID tie-breaking makes equal-due reminders deterministic. Future,
     restore-held and terminal work cannot be consumed by an overdue group.
@@ -198,13 +187,6 @@ def plan_recovery(
         if initial_delivered and initials:
             raise ValueError("Fulfilled initial slots must be excluded by their owner.")
         selected = initials[0] if initials else candidates[-1]
-    elif digest_recovery_kind(kind, len(candidates)) == "aggregate":
-        dates = tuple(date.fromisoformat(row.slot) for row in candidates)
-        return RecoveryPlan(
-            coalesced=tuple(row.occurrence_id for row in candidates),
-            reason="missed_daily_recovery",
-            daily_dates=dates,
-        )
     else:
         selected = candidates[-1]
     return RecoveryPlan(
@@ -214,8 +196,6 @@ def plan_recovery(
             "missed_family_recovery"
             if kind in {"initial", "reminder"}
             else "missed_report_recovery"
-            if kind == "report"
-            else "missed_weekly_recovery"
         )
         if len(candidates) > 1
         else "",
@@ -246,7 +226,3 @@ def _validate_group(slots):
         or sum(row.kind == "initial" for row in slots) > 1
     ):
         raise ValueError("Recovery slots must form one distinct semantic group.")
-    if first.kind == "daily_digest":
-        for row in slots:
-            if date.fromisoformat(row.slot).isoformat() != row.slot:
-                raise ValueError("Daily recovery needs canonical local-date slots.")
