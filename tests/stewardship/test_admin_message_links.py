@@ -161,7 +161,8 @@ def _choices(**choices):
                 "resolve_available": True,
                 "resolution": _choices(cancel=True, uncancellable=["Receipts"]),
             },
-            f"not sure it arrived, on the {OUTGOING} page.",
+            f"email on the {OUTGOING} page: messages still sending or not "
+            "confirmed as delivered.",
         ),
         (
             {

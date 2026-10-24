@@ -98,12 +98,11 @@ def test_setup_and_copy_show_at_most_one_line_under_the_list(
 ):
     """Setup and Copy show at most the links line under the list (#2130).
 
-    A saved row still knows its own name, says nothing about who sends its
-    email, and the list is described by its line too.
+    A saved row says nothing about who sends its email, and the list is
+    described by its line too.
     """
     page.goto(component_origin + path)
     saved = page.locator("fieldset[data-schedule-row]").first
-    assert saved.get_attribute("data-schedule-label") == "Initial invitation"
     assert summary(saved).locator("p").count() <= 1
     assert "Sent by" not in summary(saved).inner_text()
     described = saved.locator('[name="schedules-0-template_version"]')

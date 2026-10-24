@@ -217,16 +217,3 @@ def test_email_usage_names_senders_in_sending_order():
     assert usage[initial["id"]] == ["Initial invitation"]
     assert usage[first["id"]] == ["Reminder 1", "Reminder 2"]
     assert second["id"] not in usage
-
-
-def test_every_saved_form_knows_its_schedule_name():
-    """Setup and copy pages build the formset without the table (#446)."""
-    rows = emails()
-    schedules = formset(rows, saved(rows))
-    assert [form.schedule_label for form in schedules.forms] == [
-        "Initial invitation",
-        "Reminder 1",
-        "Reminder 2",
-        None,
-    ]
-    assert schedules.empty_form.schedule_label is None

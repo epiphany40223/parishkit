@@ -513,7 +513,6 @@ class ScheduleForm(AdminForm):
         usage=None,
         links=False,
         test_mail=True,
-        label=None,
         browser_times=False,
         **kwargs,
     ):
@@ -526,12 +525,10 @@ class ScheduleForm(AdminForm):
         send it, for labels that tell emails apart; ``links`` adds each email's
         preview, test and edit addresses for the page script (#446), and
         ``test_mail`` false replaces the test address with why there is none
-        (#923). ``label`` names a saved schedule (Reminder 2), so the page can tell
-        whether other schedules send the same email. ``browser_times`` is
+        (#923). ``browser_times`` is
         for a page that shows and takes send times in the browser's time
         zone (#558): only the send time's help differs.
         """
-        self.schedule_label = label
         self.templates = templates
         super().__init__(*args, **kwargs)
         # A saved time with seconds (set before #631) still saves unchanged.
@@ -652,7 +649,6 @@ class ScheduleSet(AdminFormSet):
         self.browser_times, self.zone, self.now = browser_times, zone, now
         self.saved_timezone = campaign["timezone"]
         self.previous = sorted(previous, key=schedule_order)
-        self.labels = schedule_labels(self.previous)
         self.usage = email_usage(self.previous)
         self.email_links = email_links
         self.test_mail = test_mail
@@ -682,10 +678,6 @@ class ScheduleSet(AdminFormSet):
             "links": self.email_links,
             "test_mail": self.test_mail,
             "browser_times": self.browser_times,
-            # Saved forms come first, in the same order as self.previous.
-            "label": self.labels[index]
-            if index is not None and index < len(self.labels)
-            else None,
         }
 
     def _construct_form(self, i, **kwargs):
