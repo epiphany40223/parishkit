@@ -1851,14 +1851,15 @@ changes what each role lands on:
     empty list. A stage the menu's statement also reads (Census changes To
     review, Conflict, Ready to update and To enter by hand, Ministry
     requests To review and To enter by hand, Cannot participate To review
-    and To handle, Additional information To review and To handle) takes
+    and To handle, Additional information To review and To handle,
+    Financial To review) takes
     the menu's own read: that statement places each of those streams'
     stored state by stage with the shared stage mapping, and the cards show
     each stage of the same read. The menu shows one number per list, its
     open stages' total (To review; Census changes To review and Conflict
-    together), so that number always equals those cards'; Financial has no
-    menu number. The other counts (a
-    Census change the parish added, Financial, and the refresh checks
+    together), so that number always equals those cards'. The other counts
+    (a Census change the parish added, Financial's other stages, and the
+    refresh checks
     behind Entered incorrectly and Not seen in ParishSoft) are one more
     statement, run only for the streams the viewer's role may open, plus
     each stream's refresh-check read when it has an item Entered by hand;
