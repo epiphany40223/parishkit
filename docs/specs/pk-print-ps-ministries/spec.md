@@ -94,8 +94,9 @@ template is `scripts/pk-print-ps-ministries/example-config.yaml`.
 - **`slack`** — `token_file`, `channel`, `level` (logging/alert sink).
 - **`parishsoft`** — the section that actually drives the run:
   `api_key_file`, `cache_dir`, `cache_limit` (a duration matching
-  `^[1-9][0-9]*[smhd]$`, e.g. `14m`), and `expected_organization` (tenant
-  guard). The API key is read from `api_key_file` at call time. Each of these is
+  `^[1-9][0-9]*[smhd]$`, e.g. `14m`), `expected_organization` (tenant
+  guard) and `organization_id` (which organization to load when the key
+  reaches several, #1554). The API key is read from `api_key_file` at call time. Each of these is
   also overridable by the corresponding `--ps-*` flag. See
   [`#parishsoft-data-layer`](../intro/spec.md#parishsoft-data-layer).
 

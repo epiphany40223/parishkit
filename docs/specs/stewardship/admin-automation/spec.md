@@ -4630,7 +4630,10 @@ as the host operator (`actor_kind` `operator`), not as a portal user:
   (ADM-13), run offline from the admin-recovery profile; it records
   `debug_logging_allowed` with `actor_kind` `operator`, naming the cleared
   switch, in the clear's transaction;
-- smoke tests: `smoke`;
+- smoke tests: `smoke` (its `parishsoft` check is the installer's own
+  classification: `valid` for a key that reaches the configured
+  organization, even when it reaches others too, and `mismatch` for one that
+  does not, [#1554](https://github.com/epiphany40223/parishkit/issues/1554));
 - LOCAL and development only: `prepare-development`, `local-sign-in`,
   `local-seed`, `local-spike`, `local-spike-report`,
   `local-rehearsal-report`, `fake-parishsoft`.

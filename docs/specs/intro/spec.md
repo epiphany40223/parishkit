@@ -274,7 +274,7 @@ Config sections are namespaced. Shared sections (validated centrally): `common`
 (`debug`, `verbose`, `dry_run`, `timezone`), `logging` (`log_file`, `log_dir`),
 `slack` (`token_file`, `channel`, `level`, `notify_success`, `context`,
 `include_output`), `parishsoft` (`api_key_file`, `cache_dir`, `cache_limit`,
-`expected_organization`). Tool-specific sections (`google`, `email`,
+`expected_organization`, `organization_id`). Tool-specific sections (`google`, `email`,
 `constant_contact`, and per-tool sections) are validated by the owning module.
 
 ### Logging and notifications
@@ -359,10 +359,18 @@ contains both the HTTP client and the parish data model.
     conventions (index-style running offset vs. 1-based page number) with
     configurable parameter names, and handle both response shapes (a bare list,
     or an envelope `{data, pagingInfo}`) via `_extract_page`.
-  - **`validate_organization()`** confirms the API key maps to exactly one
-    organization and, if `expected_organization` is configured, that its report
-    name matches — guarding against pointing at the wrong tenant. Returns and
-    caches the org id.
+  - **`validate_organization()`** confirms which organization the API key
+    loads and, if `expected_organization` is configured, that its report name
+    matches — guarding against pointing at the wrong tenant. Returns and
+    caches the org id. A key that reaches exactly one organization loads it;
+    one that reaches several
+    ([#1554](https://github.com/epiphany40223/parishkit/issues/1554)) is
+    refused unless `organization_id` (`--ps-organization-id`) or a unique
+    `expected_organization` name selects one, and then the paginated reads
+    drop the other organizations' records by their organization fields, as
+    the Stewardship
+    [organization scope](../stewardship/data/spec.md#parishsoft-organization-scope)
+    describes.
   - `post_uncached` exists as a seam for ParishSoft POST calls that must not be
     cached (see
     [`parishsoft-api-analysis.md`](../../parishsoft-api-analysis.md)).
@@ -390,7 +398,7 @@ read-only question are covered in
 `parishsoft_runtime.parishsoft_client_from_config(common, config)` is the bridge
 from `CommonOptions` + YAML to a ready `ParishSoftClient`: it reads the API key
 from `common.ps_api_key_file` at call time, applies cache dir/limit, and wires
-`expected_organization`.
+`expected_organization` and `common.ps_organization_id`.
 
 #### Coherent source layer
 

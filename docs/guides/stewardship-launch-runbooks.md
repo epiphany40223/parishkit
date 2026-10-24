@@ -412,8 +412,10 @@ Family form, reports and staff pages keep working on that data; it retries on
 its scheduled full and fifteen-minute cadence and resolves the incident by itself
 after a successful refresh of the current scope, as the
 [source health guide](stewardship-source-health.md) explains. Two other source
-incidents are refusals, not outages: `source_tenant_mismatch` (the key now
-sees another organization) and `source_destructive_change` (a load lost an
+incidents are refusals, not outages: `source_tenant_mismatch` (the key no
+longer reaches the configured organization; a key that also reaches other
+organizations is fine, and only the configured one's data is loaded) and
+`source_destructive_change` (a load lost an
 unexpected share of records or of eligible Families). The application holds
 those refreshes and does not overwrite the snapshot; stop and investigate
 before touching the credential or the source. For a destructive change, see

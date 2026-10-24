@@ -651,6 +651,82 @@ protection reference wins over cleanup under row locks. Cleanup is idempotent,
 bounded, audited by counts/cutoffs rather than values, and cannot run while a
 source promotion owns the mutation lease.
 
+#### ParishSoft organization scope
+
+A deployment loads exactly one ParishSoft organization, the configured
+organization ID, and never stores another organization's data
+([#1554](https://github.com/epiphany40223/parishkit/issues/1554); the
+Administrator decided on 2026-10-23 that a key may return data for several
+organizations and that ParishKit drops all but the configured one). The rules:
+
+- **The organization check.** Before any other read, an uncached
+  `organizations/search` must answer with a bounded list (at most 10,000) of
+  well-formed organization records, a positive integer `organizationID`
+  each and none repeated, exactly one of which is the configured
+  organization. A key that also reaches other organizations is accepted; a
+  key that does not reach the configured one is the permanent tenant
+  mismatch. A configured expected organization name is compared with the
+  configured organization's record only.
+- **Requests stay scoped.** Every request that takes an organization still
+  carries only the configured one, and a caller cannot replace or add to it.
+- **Records are filtered by their own organization field**, but only when
+  the key reaches more than one organization. A key that reaches only the
+  configured organization is answered for that organization alone, so its
+  collections are read exactly as before, with no new requirement on their
+  fields. With a key that reaches several, each record of these collections
+  is kept only when its field names the configured organization; the others
+  are dropped and counted per collection, and a record whose field is
+  missing, null or not a positive integer fails the load as incomplete
+  data, since it cannot be shown to belong to the parish:
+
+  | Collection | Field |
+  | --- | --- |
+  | Members (`members/search`) | `organizationID` |
+  | Ministry types (`ministry/type/list`) | `organizationId` |
+  | Member WorkGroups (`members/workgroup/lookup/list`) | `ownerOrganizationId` |
+  | Family WorkGroups (`families/workgroup/list`) | `ownerOrganizationID` |
+  | Pledges (`offering/pledge/list`) | `organizationID` |
+  | Contributions (`offering/contributiondetail/list`) | `organizationId` |
+
+  Members are kept on `organizationID`, never `ownerOrganizationID` or
+  `registeredOrganizationID`: on a real key `organizationID` matched the
+  requested organization on every Member, while the other two name other
+  parishes for some of the parish's own Members (the issue's real-key probe).
+  That `organizationID` names the organization a Member was returned for under
+  a key that reaches several organizations is an assumption a
+  single-organization key cannot confirm; a human-run check with such a key
+  should confirm it if one ever becomes available. A Family WorkGroup is kept
+  only when its owner is the configured organization, so a shared diocesan
+  WorkGroup another organization owns is not read.
+- **Member contact rows** are not filtered on their own owner field. A
+  dropped Member's contact row is dropped with it. Any other contact row must
+  name the configured organization as `ownerOrganizationID`, else the load
+  fails.
+- **Collections with no organization field rely on the request scope**, with
+  cross-checks that fail the load on a dangling reference: Families
+  (`families/search`; their `registeredOrganizationID` is where a Family is
+  registered, not whose record it is, and must not be used to filter), Family
+  groups (used only through IDs loaded Families reference), Ministry rosters
+  (read only for kept Ministry types; every roster Member must be loaded),
+  WorkGroup memberships (read only for kept WorkGroups; with a key that
+  reaches several organizations every No-reminders WorkGroup Family must be
+  in the full load's Families), and giving (every giving Family must be
+  loaded, as before). Every kept Member's Family must be loaded. A loaded
+  Family whose Members were all another organization's is kept, as the
+  request returned it, and only counted in the log.
+- **People in more than one parish** appear only through the configured
+  organization's own records; another organization's copy is never merged
+  or looked up. Family and Member identities do not depend on the
+  organization, so nothing already loaded, and no emailed Family code or
+  link, changes.
+- **Evidence and logs, counts only.** A load with such a key records, in its
+  snapshot's load evidence under `other_organizations`, how many
+  organizations the key reaches and the records dropped per collection, and
+  logs the same counts with the number of Families left without Members. No
+  other organization's ID or name, and no parish data, is logged or stored.
+  A key that reaches one organization records nothing new. No schema change:
+  the evidence is part of the existing cursor.
+
 ### Campaign daily report facts
 
 `CampaignFactRebuildDemand` has a unique `(campaign, population scope)` key and

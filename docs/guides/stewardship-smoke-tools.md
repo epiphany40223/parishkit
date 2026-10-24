@@ -69,9 +69,12 @@ endpoint-restricted session: exact-tenant organization validation for
 ParishSoft, a token refresh and an SMTP `AUTH XOAUTH2` for Google Workspace,
 and `auth.test` for Slack, and one classification turns each check's result
 or exception into `valid`, `invalid`, `mismatch` or `unavailable` (a
-rejected key or a malformed credential file is invalid; a ParishSoft key for
-another organization is a mismatch, refused for good like an invalid key,
-[#1492](https://github.com/epiphany40223/parishkit/issues/1492); an outage or
+rejected key or a malformed credential file is invalid; a ParishSoft key that
+does not reach the configured organization is a mismatch, refused for good
+like an invalid key,
+[#1492](https://github.com/epiphany40223/parishkit/issues/1492), while one
+that reaches it and other organizations too is valid,
+[#1554](https://github.com/epiphany40223/parishkit/issues/1554); an outage or
 an unexplained failure is unavailable, never a rejection). The smoke command runs that same
 classification on the mounted credential file, so a passing smoke check
 means what a passing installation means, and no second validation code path

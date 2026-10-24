@@ -371,7 +371,11 @@ keeps its line, invisible, so nothing moves
 [no layout shift](../ui-conventions/spec.md#no-layout-shift)). The row is
 re-read in place with the step bar when the status settles. The result notice
 ("Parish data is loaded") offers no second Continue
-([#1968](https://github.com/epiphany40223/parishkit/issues/1968)).
+([#1968](https://github.com/epiphany40223/parishkit/issues/1968)). When the
+key reaches several ParishSoft organizations, the notice adds the
+[reachable-organizations line](#parish-and-integration-configuration) from the
+load's own evidence
+([#1554](https://github.com/epiphany40223/parishkit/issues/1554)).
 
 Acknowledgment checkboxes and incomplete forms hold their submit buttons as the
 [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates) describe.
@@ -1997,23 +2001,40 @@ sends no disabled field, so the server uses the loaded ID, and it refuses a
 request that posts a different value, with or without a new key, in plain
 language: every refresh must read the organization whose data is loaded, and a
 refresh for another organization is refused as a tenant mismatch.
-A new ParishSoft key that authenticates but sees a different organization than
-the one configured is refused at once by its check, as a rejected key is
+A ParishSoft key may reach several organizations (a key issued above the
+parish, or for several parishes one office serves); it is accepted when it
+reaches the configured organization, and only that organization's data is
+loaded ([ParishSoft organization scope](../data/spec.md#parishsoft-organization-scope),
+[#1554](https://github.com/epiphany40223/parishkit/issues/1554)). The
+Administrator always enters the organization ID: nothing picks one of the
+organizations a key reaches, so a key that reaches several cannot load the
+wrong parish by default. While the loaded data came through such a key, the
+ParishSoft settings page shows a static line above its form: "This ParishSoft
+key reaches N ParishSoft organizations. Only the configured organization's
+data is loaded; the other organizations' data is left out.", followed, when
+the last load left any out, by "Records of other organizations left out at
+the last load: M." The setup load's result notice and System health's
+[ParishSoft refresh panel](#parishsoft-refresh-panel) show the same line.
+It names counts only, never another organization's ID or name, and a key that
+reaches only the configured organization shows nothing. The count is the
+load's: a newly pasted key is not counted until data is loaded with it.
+A new ParishSoft key that authenticates but does not reach the configured
+organization is refused at once by its check, as a rejected key is
 (the check's `mismatch` outcome, never the temporary `unavailable` that waits
 and tries again): nothing is installed and the current key stays in use. The
 installer records that cause with the request's failure, as one value-free
 audit event about the request (the request itself stays `failed`), so the
 page's failed line names exactly one cause
-([#1495](https://github.com/epiphany40223/parishkit/issues/1495)). For a key
-for another organization it says "This key belongs to a different ParishSoft
-organization than the data already loaded. Paste the key for the loaded
-organization." (before the first load, when the organization ID may still be
-the wrong one: "This key belongs to a different ParishSoft organization than
-the configured organization ID. Check the key and the organization ID, then
-try again."); for a key ParishSoft rejects it keeps the general line that
-ParishSoft did not accept the key. System health names a refresh refused
-because the key sees another organization as "ParishSoft organization does
-not match", never "ParishSoft could not be reached".
+([#1495](https://github.com/epiphany40223/parishkit/issues/1495)). For such a
+key it says "This key does not reach the ParishSoft organization whose data
+is already loaded. Paste a key that reaches the loaded organization." (before
+the first load, when the organization ID may still be the wrong one: "This
+key does not reach the configured ParishSoft organization ID. Check the key
+and the organization ID, then try again."); for a key ParishSoft rejects it
+keeps the general line that ParishSoft did not accept the key. System health
+names a refresh refused because the key does not reach the configured
+organization as "ParishSoft organization does not match", never "ParishSoft
+could not be reached".
 
 An integration's settings are saved through the
 [review dialog](../ui-conventions/spec.md#review-dialog) (#750). An ordinary edit
@@ -9742,6 +9763,11 @@ might be held back:
   own problem item, after its sentence, and that item ends the tile's
   problems; on the page the sentence drops its "See the counts" link,
   which Home keeps.
+- **A key that reaches several organizations**: the
+  [reachable-organizations line](#parish-and-integration-configuration)
+  from the current data's load, counts only
+  ([#1554](https://github.com/epiphany40223/parishkit/issues/1554)). It is
+  information, not a problem: the other organizations' data is left out.
 - **A refused organization** (`source_tenant_mismatch`): no button. The
   tile's problem says to stop and check with the parish before changing
   anything, and the panel links the
@@ -10801,7 +10827,7 @@ or cannot do them at all:
 - **Diagnosing a backup or a service that keeps failing:** file ownership,
   mounts, disk space, the database's own state. The page names the category
   and links the checklist.
-- **A ParishSoft key that reaches another organization**
+- **A ParishSoft key that does not reach the configured organization**
   (`source_tenant_mismatch`), which needs the parish and the key's owner.
 - **Offline Admin-access recovery**, when no Administrator can sign in
   ([offline Admin-access recovery](../operations/spec.md#offline-admin-access-recovery)).
