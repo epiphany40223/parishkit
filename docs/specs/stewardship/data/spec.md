@@ -396,12 +396,12 @@ retain all relationships. Exceptional purge is defined by the
 
 ### Campaign Families
 
-Status: the rule's storage, its configuration guard (frozen migration 0175)
-and refreshes that apply it are built; choosing it on Create the campaign is
-not yet
+Status: built
 ([#1393](https://github.com/epiphany40223/parishkit/issues/1393),
-Administrator redesign 2026-10-24). Until the page offers it, every campaign
-uses the [legacy rule](#the-existing-campaigns-rule).
+Administrator redesign 2026-10-24): the rule's storage, its configuration
+guard (frozen migration 0175), refreshes that apply it and the choice on
+Create the campaign. Every campaign created before it keeps the
+[legacy rule](#the-existing-campaigns-rule).
 
 A campaign is sent to its **campaign Families** ("Families in this
 campaign"): the Families its **Families rule** selects from the promoted
