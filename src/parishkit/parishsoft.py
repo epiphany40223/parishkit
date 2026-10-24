@@ -36,6 +36,27 @@ LOGGER = logging.getLogger(__name__)
 # after each collection finishes, and once per ministry roster with that
 # roster's row count. Callers that pass nothing see no behavior change.
 ProgressCallback = Callable[[str, int], None]
+# The collections whose records name the ParishSoft organization they belong
+# to (#1554), by endpoint: the field and the collection name a load reports.
+# A key that reaches several organizations may return other organizations'
+# records; those are dropped and counted (``_own_organization``). Members are
+# kept on ``organizationID``, never ``ownerOrganizationID`` or
+# ``registeredOrganizationID``: on a real key ``organizationID`` matched the
+# requested organization on every Member, while the other two legitimately
+# name other parishes for some of the parish's own Members (#1554, probe of
+# 2026-10-17). That ``organizationID`` names the organization a Member was
+# returned for under a key that reaches several is an assumption a
+# single-organization key cannot confirm. Families carry no such field (their
+# ``registeredOrganizationID`` is where they are registered, not whose records
+# they are) and rely on the request's organization scope alone.
+ORGANIZATION_FIELDS = {
+    "members/search": ("organizationID", "members"),
+    "ministry/type/list": ("organizationId", "ministry_types"),
+    "members/workgroup/lookup/list": ("ownerOrganizationId", "member_workgroups"),
+    "families/workgroup/list": ("ownerOrganizationID", "family_workgroups"),
+    "offering/pledge/list": ("organizationID", "pledges"),
+    "offering/contributiondetail/list": ("organizationId", "contributions"),
+}
 
 
 class ParishSoftAPIError(RuntimeError):
@@ -104,6 +125,9 @@ class ParishSoftConfig:
     cache_dir: Path
     expected_organization: str | None = None
     cache_limit: float | None = None
+    # The organization to load when the key reaches several (#1554); None
+    # keeps the historical rule that the key must reach exactly one.
+    organization_id: int | None = None
     api_base_url: str = DEFAULT_API_BASE_URL
     timeout: float = 30.0
     cache_enabled: bool = True
@@ -118,6 +142,11 @@ class ParishSoftConfig:
             self.expected_organization, str
         ):
             raise ConfigError("ParishSoft expected_organization must be a string")
+        if self.organization_id is not None and (
+            type(self.organization_id) is not int
+            or not 1 <= self.organization_id < 2**31
+        ):
+            raise ConfigError("ParishSoft organization_id must be a positive integer")
         if not isinstance(self.api_base_url, str):
             raise ConfigError("ParishSoft api_base_url must be a string")
         if not isinstance(self.timeout, int | float) or isinstance(self.timeout, bool):
@@ -155,25 +184,38 @@ class ParishSoftClient:
         self.session.headers.update({"x-api-key": config.api_key})
         self.retry_policy = retry_policy or RetryPolicy(attempts=3, initial_delay=0.2)
         self._organization_id: int | None = None
+        # Set by validate_organization (#1554): how many organizations the key
+        # reaches, how many records of other organizations each collection
+        # dropped, and the Members dropped (so their contact rows are too)
+        # with the Families those Members named.
+        self.organizations_reached: int | None = None
+        self.other_organization_skipped: dict[str, int] = {}
+        self.other_organization_members: set[int] = set()
+        self.other_organization_families: set[int] = set()
         if self.config.cache_enabled:
             self.config.cache_dir.mkdir(parents=True, exist_ok=True)
             self.config.cache_dir.chmod(0o700)
 
     def validate_organization(self) -> int:
-        """Confirm the API key maps to exactly one organization and return its ID.
+        """Confirm which organization the API key loads and return its ID.
 
-        Raises ConfigError if the key resolves to zero or multiple
-        organizations, or if ``expected_organization`` is configured and does
-        not match the organization's report name. This guards against
-        accidentally operating on the wrong ParishSoft tenant.
+        A key that reaches exactly one organization loads it, as before. A
+        key that reaches several (#1554) loads only the one selected by
+        ``organization_id`` or, without it, by a unique
+        ``expected_organization`` report-name match; with neither, it is
+        refused with a message saying how to select one. Raises ConfigError
+        when the key reaches no organization, does not reach the selected
+        one, or ``expected_organization`` does not match the loaded
+        organization's report name. This guards against accidentally
+        operating on the wrong ParishSoft tenant.
         """
         LOGGER.info("Validating ParishSoft organization")
         organizations = self.post_uncached("organizations/search", {})
-        if len(organizations) != 1:
-            raise ConfigError(
-                f"expected one ParishSoft organization, got {len(organizations)}"
-            )
-        organization = organizations[0]
+        organization = select_organization(
+            organizations,
+            organization_id=self.config.organization_id,
+            report_name=self.config.expected_organization,
+        )
         name = organization.get("organizationReportName")
         if (
             self.config.expected_organization
@@ -188,8 +230,71 @@ class ParishSoftClient:
             name,
             organization["organizationID"],
         )
+        if len(organizations) > 1:
+            # A count only: other organizations' IDs and names are not logged.
+            LOGGER.info(
+                "The ParishSoft key reaches %s organizations; loading only this one",
+                len(organizations),
+            )
         self._organization_id = int(organization["organizationID"])
+        self.organizations_reached = len(organizations)
+        self.other_organization_skipped = {}
+        self.other_organization_members = set()
+        self.other_organization_families = set()
         return self._organization_id
+
+    def _own_organization(
+        self, endpoint: str, rows: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Drop other organizations' records when the key reaches several (#1554).
+
+        A key that reaches only the loaded organization is answered for that
+        organization alone, so its collections are returned unchanged, exactly
+        as before. Otherwise each record of a collection in
+        ``ORGANIZATION_FIELDS`` is kept only when its organization field is
+        the loaded organization, and the others are counted per collection
+        in ``other_organization_skipped`` (counts only). A Member contact row
+        is dropped with its Member; any other contact row must name the
+        loaded organization as its owner. A record whose field is missing or
+        not a positive integer fails the load: it cannot be proved to belong
+        to the parish.
+        """
+        if (self.organizations_reached or 0) < 2:
+            return rows
+        organization = self._organization_id
+        if endpoint == "members/contact/list":
+            kept = []
+            for row in rows:
+                if row.get("memberDUID") in self.other_organization_members:
+                    self._skipped("member_contactinfos")
+                    continue
+                # Real contact rows' owner is the loaded organization; one
+                # naming another is unexpected, so it fails the load.
+                if _record_organization(row, "ownerOrganizationID") != organization:
+                    raise ConfigError(
+                        "a ParishSoft Member contact row belongs to another "
+                        "organization"
+                    )
+                kept.append(row)
+            return kept
+        if endpoint not in ORGANIZATION_FIELDS:
+            return rows
+        field, collection = ORGANIZATION_FIELDS[endpoint]
+        kept = []
+        for row in rows:
+            if _record_organization(row, field) == organization:
+                kept.append(row)
+                continue
+            self._skipped(collection)
+            if endpoint == "members/search":
+                self.other_organization_members.add(row.get("memberDUID"))
+                self.other_organization_families.add(row.get("familyDUID"))
+        return kept
+
+    def _skipped(self, collection: str) -> None:
+        """Count one record of another organization dropped from ``collection``."""
+        counts = self.other_organization_skipped
+        counts[collection] = counts.get(collection, 0) + 1
 
     def get(self, endpoint: str, params: dict[str, Any] | None = None) -> Any:
         """Send a GET request, returning cached data when a fresh copy exists.
@@ -268,7 +373,7 @@ class ParishSoftClient:
         cache_params.update({limit_name: limit, offset_name: offset_type})
         cached = self._load_cache(endpoint, cache_params)
         if cached is not None:
-            return cached
+            return self._own_organization(endpoint, cached)
         items: list[dict[str, Any]] = []
         page = 1
         while True:
@@ -299,7 +404,7 @@ class ParishSoftClient:
                 break
             page += 1
         self._save_cache(endpoint, cache_params, items)
-        return items
+        return self._own_organization(endpoint, items)
 
     def post_paginated(
         self,
@@ -325,7 +430,7 @@ class ParishSoftClient:
         cache_payload.update({limit_name: limit, offset_name: offset_type})
         cached = self._load_cache(endpoint, cache_payload)
         if cached is not None:
-            return cached
+            return self._own_organization(endpoint, cached)
         items: list[dict[str, Any]] = []
         page = 1
         while True:
@@ -356,7 +461,7 @@ class ParishSoftClient:
                 break
             page += 1
         self._save_cache(endpoint, cache_payload, items)
-        return items
+        return self._own_organization(endpoint, items)
 
     def _request(self, func: Any) -> requests.Response:
         """Execute an HTTP call with retries and uniform error handling.
@@ -491,6 +596,60 @@ class ParishSoftClient:
             cache_path,
             json.dumps(data, sort_keys=True, indent=2),
         )
+
+
+def _record_organization(row: Any, field: str) -> int:
+    """A record's organization ID, refusing a missing or malformed one (#1554)."""
+    value = row.get(field) if isinstance(row, dict) else None
+    if type(value) is not int or not 1 <= value < 2**31:
+        raise ConfigError("a ParishSoft record has no valid organization ID")
+    return value
+
+
+def select_organization(
+    organizations: Any,
+    *,
+    organization_id: int | None = None,
+    report_name: str | None = None,
+) -> dict[str, Any]:
+    """Pick the organization a non-Stewardship load reads from ``organizations``.
+
+    ``organizations`` is the ``organizations/search`` answer. With
+    ``organization_id`` it is the one record with that ID; otherwise a lone
+    record, or among several the one record whose report name is
+    ``report_name`` (#1554). Anything else raises ConfigError, never a
+    guess: a key that reaches several organizations with no selection names
+    how many it reaches (a count only) and the setting that selects one.
+    """
+    if not isinstance(organizations, list) or not all(
+        isinstance(row, dict) for row in organizations
+    ):
+        raise ConfigError("the ParishSoft organization response is invalid")
+    if organization_id is not None:
+        matches = [
+            row for row in organizations if row.get("organizationID") == organization_id
+        ]
+        if len(matches) != 1:
+            raise ConfigError(
+                f"the ParishSoft key does not reach organization {organization_id}"
+            )
+        return matches[0]
+    if len(organizations) == 1:
+        return organizations[0]
+    if not organizations:
+        raise ConfigError("expected one ParishSoft organization, got 0")
+    if report_name:
+        matches = [
+            row
+            for row in organizations
+            if row.get("organizationReportName") == report_name
+        ]
+        if len(matches) == 1:
+            return matches[0]
+    raise ConfigError(
+        f"the ParishSoft key reaches {len(organizations)} organizations; set "
+        "parishsoft.organization_id (or --ps-organization-id) to the one to load"
+    )
 
 
 class _TransientParishSoftAPIError(TransientRetryError):

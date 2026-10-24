@@ -30,6 +30,15 @@ scripts/smoke-tests/parishsoft-connectivity.py \
 Add `--send --deep` to run representative read-only probes across the family,
 member, contact, workgroup, ministry, and offering endpoints.
 
+A key that reaches several ParishSoft organizations needs
+`--organization-id N` to say which one to check; the script prints how many
+organizations the key reaches. With such a key, add `--organization-fields`
+to count, on one page of Members and Member contact rows, how many rows'
+`organizationID`, `ownerOrganizationID` and `registeredOrganizationID` equal
+that organization (counts only, no record values). That confirms which field
+ParishKit should keep Members on
+([#1554](https://github.com/epiphany40223/parishkit/issues/1554)).
+
 ## Google (read-only)
 
 Use `google-api.py` for a read-only service-account or user-OAuth check, and

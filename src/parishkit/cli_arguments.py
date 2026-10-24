@@ -74,3 +74,9 @@ def add_common_arguments(
         default=None,
         help=f"ParishSoft cache age limit (default: {DEFAULT_PS_CACHE_LIMIT})",
     )
+    parser.add_argument(
+        "--ps-organization-id",
+        type=int,
+        default=None,
+        help="ParishSoft organization to load when the API key reaches several",
+    )

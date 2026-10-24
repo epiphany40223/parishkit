@@ -123,6 +123,9 @@ def _context(health, extra, *, loaded):
         "refused_attempt": extra["refused_attempt"],
         # Clear the halt (ADM-13 PR 4b): None unless a mail sender is halted.
         "clear_halt": extra.get("clear_halt"),
+        # The ParishSoft panel's line for a key that reaches several
+        # organizations (#1554); None otherwise.
+        "organizations": extra.get("organizations"),
         "poll_interval": POLL_MILLISECONDS,
         "recheck_interval": RECHECK_MILLISECONDS,
     }

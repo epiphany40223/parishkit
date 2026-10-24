@@ -66,6 +66,9 @@ class CommonOptions:
     ps_api_key_file: Path | None
     ps_cache_dir: Path | None
     ps_cache_limit: str
+    # The ParishSoft organization to load when the key reaches several
+    # (#1554); None requires a key that reaches exactly one.
+    ps_organization_id: int | None = None
 
 
 def _optional_path(value: str | None, *, base_dir: Path | None = None) -> Path | None:
@@ -141,6 +144,13 @@ def _validate_cache_limit(value: str) -> str:
         raise ConfigError(
             "parishsoft.cache_limit must be a duration like 30s, 14m, 12h, or 7d"
         )
+    return value
+
+
+def _validate_organization_id(value: object) -> int:
+    """Validate a configured ParishSoft organization ID (#1554)."""
+    if type(value) is not int or not 1 <= value < 2**31:
+        raise ConfigError("parishsoft.organization_id must be a positive integer")
     return value
 
 
@@ -245,9 +255,18 @@ def resolve_common_options(args: argparse.Namespace) -> CommonOptions:
     )
     reject_unknown_keys(
         ps_config,
-        {"api_key_file", "cache_dir", "cache_limit", "expected_organization"},
+        {
+            "api_key_file",
+            "cache_dir",
+            "cache_limit",
+            "expected_organization",
+            "organization_id",
+        },
         "parishsoft",
     )
+    config_ps_organization_id = ps_config.get("organization_id")
+    if config_ps_organization_id is not None:
+        _validate_organization_id(config_ps_organization_id)
 
     config_debug = _config_bool(common, "debug", "common")
     config_verbose = _config_bool(common, "verbose", "common")
@@ -344,6 +363,11 @@ def resolve_common_options(args: argparse.Namespace) -> CommonOptions:
             _validate_cache_limit(getattr(args, "ps_cache_limit", None))
             if getattr(args, "ps_cache_limit", None)
             else config_ps_cache_limit or DEFAULT_PS_CACHE_LIMIT
+        ),
+        ps_organization_id=(
+            _validate_organization_id(getattr(args, "ps_organization_id", None))
+            if getattr(args, "ps_organization_id", None) is not None
+            else config_ps_organization_id
         ),
     )
 

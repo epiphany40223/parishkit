@@ -2239,6 +2239,7 @@ def read_health(store):
         daily_sends,
     )
     from .jobs.send_reads import read_progress
+    from .source.loading import snapshot_organizations
     from .source.refresh_status import full_refresh_status, refresh_schedule
 
     with read_transaction():
@@ -2280,6 +2281,9 @@ def read_health(store):
             # Clear the halt (ADM-13 PR 4b): read only while a running mail
             # consumer reports Halted, so every other read adds no query.
             "clear_halt": _clear_state(processes, now),
+            # A key that reaches several ParishSoft organizations (#1554):
+            # the current snapshot's counts, for the ParishSoft panel only.
+            "organizations": snapshot_organizations(),
         }
     model = SystemHealth(
         checked_at=now,

@@ -135,9 +135,11 @@ CREDENTIALS = {
         "organization_id": _(
             "The number ParishSoft uses to identify your parish (its "
             "organization ID), for example 1234; ParishSoft support can tell you "
-            "this number. The data load first checks that the API key belongs "
-            "to exactly this organization and stops if it does not, so another "
-            "parish's data can never be loaded."
+            "this number. The data load first checks that the API key reaches "
+            "this organization and stops if it does not. A key that also "
+            "reaches other organizations is accepted, but only this "
+            "organization's data is loaded, so another parish's data can "
+            "never be loaded."
         ),
     },
     "google_workspace": {

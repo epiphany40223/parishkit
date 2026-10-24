@@ -10,6 +10,7 @@ import re
 import time
 from dataclasses import replace
 
+from parishkit.config import ConfigError
 from parishkit.parishsoft import ParishSoftClient
 from parishkit.parishsoft_pagination import (
     IncompleteSourceCollection,
@@ -19,6 +20,9 @@ from parishkit.parishsoft_pagination import (
 )
 
 PAGE = PageContract("PageSize", "PageNumber", envelope=True)
+# The most organization records one key may reach (#1554): far above any
+# diocese, and a bound on a malformed or hostile answer.
+MAXIMUM_ORGANIZATIONS = 10000
 
 
 class SourceOrganizationMismatch(IncompleteSourceCollection):
@@ -159,32 +163,58 @@ class CoherentParishSoftClient(ParishSoftClient):
         return self.validate_organization_uncached()
 
     def validate_organization_uncached(self):
-        """Require one exact numeric organization before any scoped collection read."""
+        """Prove the key reaches the configured organization before any scoped read.
+
+        The answer must be a bounded list of well-formed organization records
+        (a positive integer ``organizationID`` each, none repeated). A key may
+        reach several organizations (#1554): it is accepted when exactly one
+        record is the configured organization, and ``expected_organization``,
+        when configured, is checked against that record only. A key that does
+        not reach the configured organization is ``SourceOrganizationMismatch``,
+        which no retry can pass. ``organizations_reached`` records how many
+        organizations the key reaches, so the load drops other organizations'
+        records (``_own_organization``) and its evidence can say so; with one,
+        every collection is read exactly as before.
+        """
         self._organization_id = None
+        self.organizations_reached = None
+        self.other_organization_skipped = {}
+        self.other_organization_members = set()
+        self.other_organization_families = set()
         rows = super().post_uncached("organizations/search", {})
-        if type(rows) is not list or len(rows) != 1 or type(rows[0]) is not dict:
+        if (
+            type(rows) is not list
+            or not 1 <= len(rows) <= MAXIMUM_ORGANIZATIONS
+            or any(type(row) is not dict for row in rows)
+        ):
             raise IncompleteSourceCollection(
                 "Source organization response is incomplete."
             )
-        if _identifier(rows[0], "organizationID") != self.expected_organization_id:
+        identities = [_identifier(row, "organizationID") for row in rows]
+        if len(set(identities)) != len(identities):
+            raise IncompleteSourceCollection(
+                "Source organization response is incomplete."
+            )
+        if self.expected_organization_id not in identities:
             raise SourceOrganizationMismatch(
                 "Source organization is not the expected tenant."
             )
+        row = rows[identities.index(self.expected_organization_id)]
         if self.config.expected_organization is not None and (
-            type(rows[0].get("organizationReportName")) is not str
-            or not rows[0]["organizationReportName"].strip()
+            type(row.get("organizationReportName")) is not str
+            or not row["organizationReportName"].strip()
         ):
             raise IncompleteSourceCollection(
                 "Source organization response is incomplete."
             )
         if (
             self.config.expected_organization is not None
-            and rows[0].get("organizationReportName")
-            != self.config.expected_organization
+            and row.get("organizationReportName") != self.config.expected_organization
         ):
             raise SourceOrganizationMismatch(
                 "Source organization is not the expected tenant."
             )
+        self.organizations_reached = len(rows)
         self._organization_id = self.expected_organization_id
         return self._organization_id
 
@@ -340,4 +370,12 @@ class CoherentParishSoftClient(ParishSoftClient):
             for row in rows
         ):
             raise IncompleteSourceCollection("Source email DTO field is not text.")
-        return rows
+        # The request was scoped to the configured organization above; a key
+        # that reaches several may still answer with other organizations'
+        # records, which are dropped and counted here (#1554).
+        try:
+            return self._own_organization(endpoint, rows)
+        except ConfigError:
+            raise IncompleteSourceCollection(
+                "Source record organization is unavailable."
+            ) from None

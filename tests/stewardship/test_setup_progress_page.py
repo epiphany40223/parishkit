@@ -381,3 +381,31 @@ def test_continue_sits_in_the_bottom_action_row_from_the_start(key):
         waiting = "Continue becomes available once the parish data is loaded."
         assert (waiting in row) is (key == "fetching")
         assert ("The notice above says what to do." in row) is (key != "fetching")
+
+
+@pytest.mark.parametrize("organizations", [None, {"reached": 3, "skipped": 9}])
+def test_a_finished_load_counts_the_organizations_a_key_reaches(organizations):
+    """#1554: the result notice says how many organizations the key reaches,
+    from the load's own evidence, and nothing for a one-organization key."""
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.accounts.setup_progress_views import _status_context
+
+    progress = observation("validating", active=False) | {
+        "task_state": "succeeded",
+        "setup_state": "collecting",
+        "bound": True,
+        "loaded": True,
+        "organizations": organizations,
+        "started_at": "2026-09-10T11:58:30+00:00",
+        "heartbeat_at": "2026-09-10T11:59:57+00:00",
+    }
+    context = _status_context(progress)
+    assert context["status_key"] == "done"
+    html = render_to_string("stewardship/setup-source-progress-status.html", context)
+    assert "Parish data is loaded" in html
+    if organizations is None:
+        assert "data-parishsoft-organizations" not in html
+    else:
+        assert "This ParishSoft key reaches 3 ParishSoft organizations." in html
+        assert "left out at the last load: 9." in html

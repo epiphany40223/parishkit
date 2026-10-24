@@ -9,8 +9,11 @@
   details (system-health-tile-problems.html): the refused large change's
   counts and the unknown No-reminders WorkGroup are there, and the shared
   refresh status leaves out the late notice (``problems_listed``) and, while
-  ``source_failed`` is listed, the failed one (``failed_listed``). While a refused organization or old copies not
+  ``source_failed`` is listed, the failed one (``failed_listed``). A key
+  that reaches several ParishSoft organizations adds how many, and the
+  records the last load left out (``organizations``, #1554). While a refused organization or old copies not
   being removed is listed, the runbook both sentences name is linked here.
 {% endcomment %}{% include "stewardship/full-refresh-status.html" with status=health.refresh can_view_task=True can_refresh=False problems_listed=True failed_listed=health.failed_listed %}
+{% if organizations %}{% include 'stewardship/parishsoft-organizations.html' %}{% endif %}
 {% if health.incidents.source_tenant_mismatch or health.incidents.source_retention_failing %}<p><a href="{{ health.runbooks.source_outage }}">{% translate "“ParishSoft outage” in the launch runbooks" %}</a></p>{% endif %}
 <p><a href="{% url 'admin:source_refresh' %}">{% translate "Refresh from ParishSoft" %}</a></p>

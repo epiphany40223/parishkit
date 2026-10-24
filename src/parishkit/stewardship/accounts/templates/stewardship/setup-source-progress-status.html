@@ -30,6 +30,7 @@
 {% if status_key == 'done' %}<div class="setup-load-result" data-progress-done>
 <h2>{% translate "Parish data is loaded" %}</h2>
 <p>{% translate "The load finished successfully." %}</p>
+{% if progress.organizations %}{% include 'stewardship/parishsoft-organizations.html' with organizations=progress.organizations %}{% endif %}
 </div>{% elif status_key == 'failed' %}<div class="notice notice-error" data-progress-failed>
 <p>{% translate "The load did not finish. A wrong ParishSoft API key or organization ID is the most common cause." %}</p>
 <p>{% translate "What to do: check the ParishSoft connection and correct it if it is wrong, then load the parish data again. If the load keeps failing, ask the operator to check the service logs for the task reference under Technical details." %}</p>

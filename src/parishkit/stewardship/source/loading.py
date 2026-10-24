@@ -37,6 +37,109 @@ DEFAULT_MAXIMUM_DROP_PERCENT = 25
 DROP_OVERRIDE_VARIABLE = "PARISHKIT_SOURCE_MAX_DROP_PERCENT"
 # Where a full load's evidence records its Member contact list coverage.
 CONTACT_COVERAGE_KEY = "member_contacts"
+# Where a load's evidence records a ParishSoft key that reaches several
+# organizations (#1554): ``{"reached": N, "skipped": {collection: count}}``,
+# counts only. A key that reaches only the configured organization records
+# nothing here, so its evidence is exactly as before.
+ORGANIZATIONS_KEY = "other_organizations"
+# The names of the counts a load logs for such a key, in the order
+# ``emit``'s ``source_organizations`` tuple holds them.
+ORGANIZATION_LOG_FIELDS = ("reached", "skipped", "families_without_members")
+
+
+def organization_evidence(client):
+    """The load evidence for a key that reaches several organizations, or {}.
+
+    ``client`` has validated the organization and read the collections; its
+    skip counts are per collection (``parishsoft.ORGANIZATION_FIELDS``).
+    Counts only: no other organization's ID or name, and no parish data. A
+    refresh asks again after its WorkGroup read, so its evidence counts that
+    list too.
+    """
+    reached = client.organizations_reached or 0
+    if reached < 2:
+        return {}
+    skipped = dict(sorted(client.other_organization_skipped.items()))
+    return {ORGANIZATIONS_KEY: {"reached": reached, "skipped": skipped}}
+
+
+def _log_organizations(evidence, families_without_members):
+    """Log a load's other-organization counts once, as closed numbers only."""
+    from parishkit.stewardship.observability import Event, emit
+
+    value = evidence.get(ORGANIZATIONS_KEY)
+    if value is not None:
+        emit(
+            Event.TASK_STARTED,
+            source_organizations=(
+                value["reached"],
+                sum(value["skipped"].values()),
+                families_without_members,
+            ),
+        )
+
+
+def recorded_organizations(cursor):
+    """The ``ORGANIZATIONS_KEY`` evidence a snapshot cursor recorded, or None.
+
+    Checked for its exact shape, as System health and the Integrations page
+    show it (``reached`` organizations and the ``skipped`` total).
+    """
+    load = cursor.get("load") if type(cursor) is dict else None
+    value = load.get(ORGANIZATIONS_KEY) if type(load) is dict else None
+    if (
+        type(value) is dict
+        and set(value) == {"reached", "skipped"}
+        and type(value["reached"]) is int
+        and value["reached"] >= 2
+        and type(value["skipped"]) is dict
+        and all(
+            type(name) is str and type(count) is int and count >= 0
+            for name, count in value["skipped"].items()
+        )
+    ):
+        return value
+    return None
+
+
+def snapshot_organizations(snapshot_id=None):
+    """What a snapshot's load recorded about other organizations, or None.
+
+    ``snapshot_id`` names the snapshot (a setup load's); None reads the
+    current one. Returns ``{"reached": N, "skipped": total}``, the counts the
+    Integrations page, the setup load's result and System health show
+    (#1554), or None for a key that reaches only the configured
+    organization, a snapshot recorded before this, or no snapshot. One query.
+    """
+    from .snapshot_models import SourceCurrent, SourceSnapshot
+
+    field = f"cursor__load__{ORGANIZATIONS_KEY}"
+    if snapshot_id is None:
+        rows = SourceCurrent.objects.values_list(f"snapshot__{field}", flat=True)
+    else:
+        rows = SourceSnapshot.objects.filter(pk=snapshot_id).values_list(
+            field, flat=True
+        )
+    value = recorded_organizations({"load": {ORGANIZATIONS_KEY: rows.first()}})
+    if value is None:
+        return None
+    return {"reached": value["reached"], "skipped": sum(value["skipped"].values())}
+
+
+def _families_left_without_members(data, client):
+    """How many loaded Families kept none of their Members (#1554).
+
+    Such a Family's Members were all another organization's. It is kept, as
+    the request scope returned it; only the count is logged.
+    """
+    with_members = {member.get("familyDUID") for member in data.members.values()}
+    return len(
+        {
+            duid
+            for duid in client.other_organization_families
+            if duid in data.families and duid not in with_members
+        }
+    )
 
 
 def maximum_drop_percent():
@@ -457,6 +560,7 @@ def load_full_source(
             load_workgroups=False,
             progress=progress,
         )
+        families_left = _families_left_without_members(data, client)
         # Checked on the raw collections, before normalization merges each
         # Member's search-row contact fields in and hides who was left out.
         coverage = member_contact_coverage(data.members, data.member_contactinfos)
@@ -531,6 +635,9 @@ def load_full_source(
         # The next full refresh's contact list baseline (#387 M4).
         CONTACT_COVERAGE_KEY: coverage,
     }
+    # Only for a key that reaches several organizations (#1554).
+    evidence.update(organization_evidence(client))
+    _log_organizations(evidence, families_left)
     if accepted is not None:
         from .drop_acceptance import ACCEPTANCE_KEY
 

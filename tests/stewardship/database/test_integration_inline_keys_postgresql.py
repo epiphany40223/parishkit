@@ -510,7 +510,7 @@ def test_rejected_key_keeps_the_old_one_and_says_so(working):
     assert b"ParishSoft did not accept the new API key" in page
     assert b"The previous key is still in use." in page
     # A rejected key names only that cause (#1495).
-    assert b"different ParishSoft organization" not in page
+    assert b"does not reach the" not in page
     assert not AuditEvent.objects.filter(
         event_type="credential_key_organization_mismatch"
     ).exists()
@@ -518,7 +518,7 @@ def test_rejected_key_keeps_the_old_one_and_says_so(working):
 
 @pytest.mark.parametrize("loaded", [12345, None])
 def test_key_for_another_organization_says_exactly_that(working, monkeypatch, loaded):
-    """A key that sees another organization fails with its own line (#1495).
+    """A key that does not reach the organization fails with its own line (#1495).
 
     The real installer role records the cause as one audit event about the
     request, committed with the failure; the request itself stays failed,
@@ -554,14 +554,13 @@ def test_key_for_another_organization_says_exactly_that(working, monkeypatch, lo
     page = working["browser"].get(URL).content.decode()
     if loaded is None:
         expected = (
-            "This key belongs to a different ParishSoft organization than the "
-            "configured organization ID. Check the key and the organization ID, "
-            "then try again."
+            "This key does not reach the configured ParishSoft organization ID. "
+            "Check the key and the organization ID, then try again."
         )
     else:
         expected = (
-            "This key belongs to a different ParishSoft organization than the "
-            "data already loaded. Paste the key for the loaded organization."
+            "This key does not reach the ParishSoft organization whose data is "
+            "already loaded. Paste a key that reaches the loaded organization."
         )
     assert expected in page
     assert "ParishSoft did not accept" not in page
@@ -595,7 +594,7 @@ def test_later_rejected_key_does_not_inherit_an_earlier_mismatch(working):
     assert later.state == "failed"
     page = working["browser"].get(URL).content
     assert b"ParishSoft did not accept the new API key" in page
-    assert b"different ParishSoft organization" not in page
+    assert b"does not reach the" not in page
 
 
 def test_key_change_in_progress_is_announced_on_admin_pages(working):

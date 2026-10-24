@@ -38,6 +38,7 @@ from .loading import (
     derived_counts,
     load_full_source,
     maximum_drop_percent,
+    organization_evidence,
     recorded_contact_missing,
     valid_derived_counts,
 )
@@ -392,12 +393,19 @@ def load_and_stage_attempt(execution, claim, credential):
         # (#1305), so a misspelled rename skips the same Families until a
         # refresh finds the WorkGroup.
         workgroup = keep_when_missing(
-            load_reminder_workgroup(client, inputs.workgroup_name),
+            load_reminder_workgroup(
+                client,
+                inputs.workgroup_name,
+                # The load's Families, for the multi-organization cross-check.
+                families=loaded.corpus["family"],
+            ),
             inputs.base_workgroup,
         )
     finally:
         session.close()
-    evidence = loaded.evidence
+    # Again after the WorkGroup read, whose list may drop other
+    # organizations' WorkGroups too (#1554); nothing for one organization.
+    evidence = loaded.evidence | organization_evidence(client)
     if workgroup is not None:
         warn_if_missing(workgroup, task_id=execution.claim.run_id)
         evidence = {**evidence, EVIDENCE_KEY: workgroup}

@@ -238,7 +238,11 @@ def test_nonstring_query_keys_are_rejected_before_transport(tmp_path):
     [
         [],
         [{"organizationID": 6}],
-        [{"organizationID": 5}, {"organizationID": 6}],
+        # A key may reach several organizations (#1554), but never the
+        # configured one twice, nor one malformed record among them.
+        [{"organizationID": 5}, {"organizationID": 5}],
+        [{"organizationID": 5}, {"organizationID": "6"}],
+        [{"organizationID": 6}, {"organizationID": 7}],
         [{"organizationID": True}],
     ],
 )

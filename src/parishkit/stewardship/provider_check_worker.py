@@ -48,9 +48,14 @@ from .source.credentials import SourceCredential
 
 MAX_INPUT = MAX_FILE_BYTES * 2 + 4096
 MAX_RESPONSE = 65536
-# "mismatch" (#1492): a ParishSoft key that authenticates but sees another
-# organization than the one configured. Like "invalid" it is permanent, so it
-# is never retried, but it has its own word so the smoke check names it.
+# The ParishSoft organization search may list every organization a key
+# reaches (#1554), so a diocesan key's answer is not refused as oversized; the
+# client also caps the record count (parishsoft_source.MAXIMUM_ORGANIZATIONS).
+MAX_ORGANIZATION_RESPONSE = 1024 * 1024
+# "mismatch" (#1492): a ParishSoft key that authenticates but does not reach
+# the organization configured (it may reach others, #1554). Like "invalid" it
+# is permanent, so it is never retried, but it has its own word so the smoke
+# check names it.
 OUTCOMES = frozenset({"valid", "invalid", "mismatch", "unavailable"})
 REQUEST_FIELDS = frozenset({"target", "settings", "candidate", "profile", "base_url"})
 FIXED_ENDPOINTS = frozenset(
@@ -117,9 +122,14 @@ class CheckSession(requests.Session):
                 raise CredentialValidationUnavailable()
             if 300 <= upstream.status_code < 400:
                 raise ValueError("Provider check redirect is forbidden.")
+            limit = (
+                MAX_ORGANIZATION_RESPONSE
+                if url.endswith("/organizations/search")
+                else MAX_RESPONSE
+            )
             content = bytearray()
             for chunk in upstream.iter_content(chunk_size=8192):
-                if len(content) + len(chunk) > MAX_RESPONSE:
+                if len(content) + len(chunk) > limit:
                     raise ValueError("Provider check response exceeds its bound.")
                 content.extend(chunk)
             result = ExactSourceResponse()
@@ -131,7 +141,11 @@ class CheckSession(requests.Session):
 
 
 def _parishsoft(value, settings, session):
-    """Reuse ParishKit's uncached exact-tenant validation, with no disk cache."""
+    """Reuse ParishKit's uncached exact-tenant validation, with no disk cache.
+
+    A key that reaches the configured organization is valid even when it
+    also reaches others (#1554); one that does not reach it is "mismatch".
+    """
     if session.profile is None:
         raise ValueError("A ParishSoft check requires a deployment profile.")
     credential = SourceCredential(value)
@@ -147,7 +161,7 @@ def _parishsoft(value, settings, session):
         session=session,
         retry_policy=RetryPolicy(attempts=1),
         maximum_requests=1,
-        maximum_bytes=MAX_RESPONSE,
+        maximum_bytes=MAX_ORGANIZATION_RESPONSE,
         maximum_seconds=30,
     )
     return client.validate_organization_uncached() == settings["organization_id"]
@@ -306,8 +320,8 @@ def classify(target, value, settings, *, profile, base_url=None, redirect=None):
     choice; None is the profile's default) select the endpoints the check
     may reach, and ``redirect`` (the deployment's mail redirect, #1399)
     whether a real Workspace key may be checked from LOCAL. "mismatch" is a
-    ParishSoft key whose organization is not the configured one: permanent,
-    never a temporary outage (#1492).
+    ParishSoft key that does not reach the configured organization (#1554:
+    reaching others too is fine): permanent, never a temporary outage (#1492).
     """
     try:
         with CheckSession(profile, base_url, redirect) as session:

@@ -119,6 +119,9 @@ def source_progress(request, service, task_id, *, renew=False):
                 heartbeat_at__gt=now - timedelta(seconds=90),
             ).exists()
         )
+        from parishkit.stewardship.source.loading import snapshot_organizations
+
+        staged = staged_load(attempt) if bound and task.state == "succeeded" else None
         renewed = False
         if renew and window.may_renew(
             now,
@@ -158,9 +161,12 @@ def source_progress(request, service, task_id, *, renew=False):
             # data is still the valid one review uses (#1353): a discarded or
             # stale load is shown as no longer used, never as loaded.
             "bound": bound,
-            "loaded": bound
-            and task.state == "succeeded"
-            and staged_load(attempt) is not None,
+            "loaded": staged is not None,
+            # A key that reaches several ParishSoft organizations (#1554):
+            # the loaded snapshot's counts, else None.
+            "organizations": (
+                None if staged is None else snapshot_organizations(staged.snapshot_id)
+            ),
             "phase": task.phase,
             **_load_detail(task),
             "worker_live": bool(worker_live),

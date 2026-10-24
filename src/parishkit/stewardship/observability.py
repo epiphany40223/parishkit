@@ -409,6 +409,7 @@ def emit(
     source_drop_acceptance: UUID | None = None,
     source_acceptance_lapsed: UUID | None = None,
     source_contact_coverage: tuple | None = None,
+    source_organizations: tuple | None = None,
     drive_failure: str | None = None,
     timeout: str | None = None,
     limit_seconds: int | None = None,
@@ -438,6 +439,10 @@ def emit(
     ``source_contact_coverage`` is a full refresh's contact list counts
     refused as cut short (``source.loading.ShortContactList``), only with
     ``SOURCE_PROVIDER_FAILED``, which carries it for the same reason.
+    ``source_organizations`` is a load's counts for a ParishSoft key that
+    reaches several organizations (#1554, ``source.loading
+    .ORGANIZATION_LOG_FIELDS``), only with ``TASK_STARTED``, for the same
+    reason.
 
     ``drive_failure`` is an off-site copy's Drive category; ``timeout`` names
     the limit that stopped work, with that limit and the elapsed time in
@@ -494,6 +499,10 @@ def emit(
         or not _safe_coverage(source_contact_coverage)
     ):
         raise ValueError("Contact list coverage must be its named counts.")
+    if source_organizations is not None and (
+        event is not Event.TASK_STARTED or not _safe_organizations(source_organizations)
+    ):
+        raise ValueError("Other-organization detail must be its named counts.")
     if drive_failure is not None and drive_failure not in DRIVE_FAILURES:
         raise ValueError("Drive failure categories must be reviewed values.")
     if timeout is not None and timeout not in TIMEOUT_LIMITS:
@@ -549,6 +558,7 @@ def emit(
                 "source_drop_acceptance": source_drop_acceptance,
                 "source_acceptance_lapsed": source_acceptance_lapsed,
                 "source_contact_coverage": source_contact_coverage,
+                "source_organizations": source_organizations,
                 "drive_failure": drive_failure,
                 "timeout": timeout,
                 "limit_seconds": limit_seconds,
@@ -711,6 +721,17 @@ def _safe_coverage(value):
     return (
         type(value) is tuple
         and len(value) == len(CONTACT_COVERAGE_FIELDS)
+        and all(type(item) is int and item >= 0 for item in value)
+    )
+
+
+def _safe_organizations(value):
+    """A load's other-organization counts: one non-negative int per name."""
+    from .source.loading import ORGANIZATION_LOG_FIELDS
+
+    return (
+        type(value) is tuple
+        and len(value) == len(ORGANIZATION_LOG_FIELDS)
         and all(type(item) is int and item >= 0 for item in value)
     )
 
@@ -980,6 +1001,20 @@ class SafeJsonFormatter(JsonLogFormatter):
                 zip(
                     CONTACT_COVERAGE_FIELDS,
                     context["source_contact_coverage"],
+                    strict=True,
+                )
+            )
+        if (
+            record.msg is Event.TASK_STARTED
+            and isinstance(context, dict)
+            and _safe_organizations(context.get("source_organizations"))
+        ):
+            from .source.loading import ORGANIZATION_LOG_FIELDS
+
+            safe.extra["source_organizations"] = dict(
+                zip(
+                    ORGANIZATION_LOG_FIELDS,
+                    context["source_organizations"],
                     strict=True,
                 )
             )

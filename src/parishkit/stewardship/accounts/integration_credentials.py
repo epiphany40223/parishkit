@@ -187,17 +187,18 @@ def switch_patch(row, records):
     ]
 
 
-# A ParishSoft key that authenticates but sees another organization (#1495).
-# Once data is loaded the organization is locked, so the key must change;
-# before the first load either the key or the organization ID may be wrong.
+# A ParishSoft key that authenticates but does not reach the configured
+# organization (#1495). It may reach others (#1554), so the line says what is
+# missing rather than "belongs to another organization". Once data is loaded
+# the organization is locked, so the key must change; before the first load
+# either the key or the organization ID may be wrong.
 MISMATCHED = _(
-    "This key belongs to a different ParishSoft organization than the data "
-    "already loaded. Paste the key for the loaded organization."
+    "This key does not reach the ParishSoft organization whose data is "
+    "already loaded. Paste a key that reaches the loaded organization."
 )
 MISMATCHED_BEFORE_LOAD = _(
-    "This key belongs to a different ParishSoft organization than the "
-    "configured organization ID. Check the key and the organization ID, then "
-    "try again."
+    "This key does not reach the configured ParishSoft organization ID. Check "
+    "the key and the organization ID, then try again."
 )
 
 
