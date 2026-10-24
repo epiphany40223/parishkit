@@ -201,7 +201,8 @@ Details the table cannot hold:
   ([#2041](https://github.com/epiphany40223/parishkit/issues/2041)): while
   To enter by hand, **Withdraw** and Entered by hand; once Entered by hand,
   **Not entered yet** (the terminal step's undo, back to To enter by hand,
-  with its required note) and **Withdraw** (the undo and the withdrawal in
+  with its required note; on its row, choosing the pressed Entered by hand
+  again, per [decision toggles](../ui-conventions/spec.md#decision-toggles)) and **Withdraw** (the undo and the withdrawal in
   one action, with the same note). Withdraw moves it to History, and the
   Family no longer sees it. Accepting the Family's own change of the same
   field withdraws its open addition in the same action, so one field never
@@ -1340,7 +1341,8 @@ request, rule 3 cannot apply.
 
 Entered incorrectly's two fixes
 ([#1737](https://github.com/epiphany40223/parishkit/issues/1737)) are the
-row's Entered by hand and Back to review icons (one by one or in bulk, each
+row's Entered by hand icon and Back to review (its pressed Accept chosen
+again, per [decision toggles](../ui-conventions/spec.md#decision-toggles); one by one or in bulk, each
 change recorded as its own icon would record it), for Staff and
 Administrators. Correcting ParishSoft to the reviewer's value without either
 also works: the next refresh confirms it.
@@ -1362,7 +1364,8 @@ also works: the next refresh confirms it.
   open to today's reconciliation. A refresh before it is marked again finds
   ParishSoft differing from both the stored value and the reviewer's, so the
   change is a Conflict, decided again against ParishSoft's value; to Edit it
-  to ParishSoft's value at once, choose Back to review again and Edit. The
+  to ParishSoft's value at once, choose its pressed Accept again (Back to
+review) and Edit. The
   dialog promises no confirmation.
 
 Entered by hand again is refused unless the change's latest refresh check,
@@ -1924,18 +1927,21 @@ reader). **Review these one at a time** sits beside it and opens the
 
 ### Individual actions
 
-Each row offers only the actions its stage and the reader's
-[role](#role-specific-actions) allow, as
+Each row draws its actions as
 [row action](../ui-conventions/spec.md#row-actions-and-confirmation) icons
-(hidden, not disabled, by role):
+that are [decision toggles](../ui-conventions/spec.md#decision-toggles): the same icons at every stage (hidden,
+not disabled, by [role](#role-specific-actions)), each offered only while
+its stage allows it and otherwise unavailable with its reason:
 Accept (check), Edit (pencil; opens the stream's own value editor: for a
 pledge the amount and frequency, for a Ministry request the Ministry list
-scoped to the reader), Ignore (eye struck through), Back to review (arrow
-turning back), and, in the update phase, Entered by hand / Handled (check in
-a box), on accepted rows only (never To review or Conflict, #1890). A
-census addition's Back to review is worded **Not entered yet**, and it
-offers **Withdraw** (a circled minus) in its place while To enter by hand, beside it
-once Entered by hand (#2041,
+scoped to the reader), Ignore (eye struck through), and, in the update
+phase, Entered by hand / Handled (check in a box), on accepted rows only
+(never To review or Conflict, #1890). Back to review has no icon of its
+own: it is the pressed icon of the latest state in force, chosen again
+(an item with nothing pressed, a Ministry request a refresh confirmed,
+keeps a Back to review icon). A census addition's Back to review is
+worded **Not entered yet**, and it offers **Withdraw** (a circled minus)
+in both states (#2041,
 [role-specific actions](#role-specific-actions)). A row
 whose value ParishSoft already holds before its step says "ParishSoft
 already holds this value." on the line under its stage
@@ -1956,7 +1962,8 @@ stream's page (#2064,
 
 A row's decision is shown on its action icons, not only in the Stage
 column: Accept, Ignore and Entered by hand / Handled follow the
-[selected state](../ui-conventions/spec.md#row-actions-and-confirmation) rule, and Back to review is the row's undo.
+[selected state](../ui-conventions/spec.md#row-actions-and-confirmation) rule, and choosing the selected icon again is the row's undo, Back to review
+([decision toggles](../ui-conventions/spec.md#decision-toggles), #2131).
 Ministry requests uses it too.
 
 ### Bulk actions
