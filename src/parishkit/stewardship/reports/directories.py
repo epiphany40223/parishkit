@@ -76,8 +76,8 @@ RESPONSES = {
     "link-not-followed": "Invited, link not followed",
     "not-invited": "No invitation delivered",
 }
-# The choices that list active Families only; every other choice also lists
-# the campaign's Families no longer active in ParishSoft (see
+# The choices that list campaign Families only; every other choice also
+# lists the Families that have left the campaign (see
 # stewardship_directory_report_v2), so the page header drops "active".
 ACTIVE_ONLY_RESPONSES = frozenset({"any", "not-submitted", "not-invited"})
 # The ParishSoft data to check filter (#933): the two launch-day problems.
@@ -264,7 +264,7 @@ class DirectoryQuery:
     def postal(self):
         """These filters as the mail merge applies them: "By postal mail only".
 
-        Postal invitations go only to active parishioner Families with no
+        Postal invitations go only to campaign Families with no
         deliverable head email (Administrator decision, #951), the rule the
         invitation sender uses (``source.families.family_recipients``). Reach
         ``mail`` keeps the active Families without deliverable head email
