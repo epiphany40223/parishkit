@@ -329,13 +329,19 @@ def test_repeating_posts_one_reminder_row_per_date(
     reading = page.locator(f"#id_{NEW}time_reading")
     assert repeat(page, "time").get_attribute("data-time-entry") == "time"
     reading_height = reading.bounding_box()["height"]
-    gap = page_top(repeat(page, "email")) - page_top(reading)
+    email_top = page_top(repeat(page, "email"))
+    control_height = repeat(page, "time").bounding_box()["height"]
     repeat(page, "time").fill("9xx")
     has_text(reading, "“9xx” isn't a time. Try 2:00 PM, 2pm, 14:00 or 1400.")
     has_attribute(repeat(page, "time"), "aria-invalid", "true")
-    # Its two lines are reserved: the refusal moves nothing below it.
+    # Its lines are reserved: the refusal moves nothing below it. An invalid
+    # control's own border may draw it a little taller (2px in Chromium and
+    # WebKit), which moves Email to send by that much at most: not at all on
+    # desktop when the taller From and Until set the row's height, as on
+    # Linux Chromium (train t106).
     assert reading.bounding_box()["height"] == pytest.approx(reading_height, abs=1)
-    assert abs(page_top(repeat(page, "email")) - page_top(reading) - gap) < 1
+    grown = repeat(page, "time").bounding_box()["height"] - control_height
+    assert -1 < page_top(repeat(page, "email")) - email_top < grown + 1
     repeat(page, "time").fill("6am")
     has_text(reading, reads("Reads as 6:00 AM"))
     repeat(page, "time").blur()
