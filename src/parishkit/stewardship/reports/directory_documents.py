@@ -234,7 +234,8 @@ def _family_cells(item):
     The Family cell is the page's surname-and-heads name, blank when the
     current ParishSoft data no longer has the Family (#933). The status cell
     holds the shared words the page's badge shows ("Not in ParishSoft" or
-    "Inactive in ParishSoft"), and is blank for a current Family (#1216).
+    "No longer in this campaign", #1393), and is blank for a current Family
+    (#1216).
     """
     name = item["family_name"]
     status = family_status(name, active=item.get("active", True))

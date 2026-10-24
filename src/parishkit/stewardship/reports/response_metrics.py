@@ -17,8 +17,8 @@ an earlier reading.
 
 One statement returns one row per Family of the campaign with each instant as
 it stood at ``as_of`` (``FamilyResponse``). It is the installed SQL function
-``stewardship_family_response_v1`` (migration 0050, #933), which the active
-parishioner family directory's Response filters also read, so the
+``stewardship_family_response_v1`` (migration 0050, #933), which the
+Campaign Family directory's Response filters also read, so the
 dashboard's counts and the directory's lists cannot drift apart. The stage
 totals, the separate
 figures ("skipped: already responded", "submitted without a delivered
