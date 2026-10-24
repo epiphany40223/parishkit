@@ -4059,13 +4059,14 @@ New and Edit scheduled email
 date-change review
 ([#1944](https://github.com/epiphany40223/parishkit/issues/1944)) has
 modes: both follow Once or Repeating, and the date-change review's New
-schedule pane one schedule at a time. A later
-[#1129](https://github.com/epiphany40223/parishkit/issues/1129) slice brings
-the shared preview to the date-change review's editors and reminder
-repeats; the report email editor is built with them
-([#1786](https://github.com/epiphany40223/parishkit/issues/1786)). Until
-each change lands, an
-editor keeps the behavior its feature spec describes.
+schedule pane one schedule at a time. Every one of these editors lists
+its dates through the shared [schedule preview](#schedule-previews): the
+date-change review (its full review and the New schedule pane's short
+confirmation), New and Edit scheduled email's review, and the two repeat
+rules' live date lists
+([#2092](https://github.com/epiphany40223/parishkit/issues/2092)); the
+report email editor is built with them
+([#1786](https://github.com/epiphany40223/parishkit/issues/1786)).
 
 ### Schedule previews
 
@@ -4268,7 +4269,16 @@ at 3:00 AM"), as the line's "set for" time; a refresh list keeps its
 
 **Adoption.** The refresh schedule's seven-day list (ADM-04 slice 7b) and
 the mail schedule review (slice 7c) draw it
-([ADM-04](../../../plans/stewardship/admin-portal.md#adm-04-campaign-editor-content-schedules-and-previews)).
+([ADM-04](../../../plans/stewardship/admin-portal.md#adm-04-campaign-editor-content-schedules-and-previews)),
+as do the report email editor's Next sends and the two mail repeat rules'
+live date lists
+([#2092](https://github.com/epiphany40223/parishkit/issues/2092)). A repeat
+rule's dates depend on fields not yet posted (the date-change review's
+proposed dates and the rows being edited), so the page script works out
+each date and why it is not added, as a code, and posts them with the send
+time and both zones to a read-only fragment
+(`repeat_dates_preview`), which draws them through the component and owns
+the reasons' words. No page script draws an occurrence list.
 Copy campaign's review still lists its copied schedules through the mail
 review's summary until
 [#145](https://github.com/epiphany40223/parishkit/issues/145) removes the
