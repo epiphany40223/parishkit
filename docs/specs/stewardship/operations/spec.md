@@ -379,17 +379,44 @@ PostgreSQL's command (the first rollout), the recreated container reads
 the new file when it starts instead. The LOCAL fake-clock override
 swaps only PostgreSQL's image and keeps the mount and the command.
 
+`pg_reload_conf()` only signals the postmaster and returns before the
+reload happens, so the upgrade then waits, bounded, for the reload to take
+effect: it polls `pg_conf_load_time()` about once a second until it is later
+than the file's modification time from `pg_stat_file`, for at most 30
+seconds. A timeout stops the run (see the hba check below) and, per the
+timeout-logging rule, writes one persistent line to the upgrade log with
+what timed out (the wait for the hba reload), the limit (30 seconds) and the
+elapsed seconds; a wait that succeeds logs its elapsed seconds too. Both
+conditions are needed: `pg_conf_load_time()` advances even when the hba part
+of a reload fails and the old rules stay, so only the pairing with "no error
+row" proves the rules in force were loaded from this file.
+
 ### Checks, rollout and rollback
 
 **Drift.** `pg_hba_file_rules` and a digest describe the file on disk, not
-the rules in memory, so the upgrade check compares what PostgreSQL loaded:
-it requires that `SHOW hba_file` is the mounted path, that the mounted
-file's digest matches the rendered one, that `pg_hba_file_rules` reports no
-error row (so the last load did not keep older rules), and that
-`pg_conf_load_time()` is later than the file's modification time from
-`pg_stat_file` (so the rules in force were loaded from this file). This
-catches an unreloaded file but is still indirect; only `database-sources`
-below proves which rules are in force. Online services need no new
+the rules in memory, and the upgrade check (step 1) runs against the
+PostgreSQL that is still running the previous release, before the retarget.
+So the hba conditions must not be part of that check's `t`/`f` answer: on the
+first rollout the old PostgreSQL has no `hba_file`, and on a later release
+that changes the rendered file the old mounted file differs from the new
+rendering, so either would refuse a correct run at step 1, and an `f` at
+step 4 runs migrations and grants, which cannot fix hba drift. The upgrade
+check keeps only what can hold before the reload (the database, extension
+and identity checks).
+
+The hba conditions are their own **hba check**, run by
+`stewardship-upgrade-host.sh` after step 3's reload (or, when the first
+rollout or the full stop recreated PostgreSQL, after that restart) and
+before step 4, as the operator over the socket. It requires that
+`SHOW hba_file` is the mounted path, that the mounted file's digest matches
+the rendered one, that `pg_hba_file_rules` reports no error row (so the
+last load did not keep older rules), and that `pg_conf_load_time()` is later
+than the file's `pg_stat_file` modification time (after the bounded wait
+above), so the rules in force were loaded from this file. A failure stops the
+run before step 4 with the maintenance page still up, names the failed
+condition, and leaves the fixed-forward or rollback decision to the operator.
+This is still indirect; only `database-sources` below proves which rules are
+in force. Online services need no new
 check: a refused source fails their database wait at once (a `pg_hba`
 refusal is not on the "not available yet" list in
 [online service startup](#online-service-startup)), as `database_unavailable`.
@@ -448,7 +475,7 @@ retarget and any fake-clock image builds) and before step 4 it stops and
 removes every container of the project except Caddy, PostgreSQL and Valkey
 included (volumes untouched), removes the `backend` network so Compose
 recreates it, and starts PostgreSQL and Valkey on their fixed addresses.
-Step 4 (the upgrade check, `pg_trgm`, and any migration and
+The hba check runs on it, then step 4 (the upgrade check, `pg_trgm`, and any migration and
 `database-grants`, none of which this release changes) then runs against
 the recreated PostgreSQL, and step 6 starts the other services and runs
 the source check. Caddy stays up throughout: it is only on `proxy`, which
