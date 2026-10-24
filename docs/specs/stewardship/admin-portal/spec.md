@@ -8455,7 +8455,10 @@ same icons, selected states, words and dialogs:
   An item drawn on a line of its own (a New Member's addition) carries its
   icons after its stage on that line; the pledge, one item whose fields are
   its table's rows, carries them in the Actions cell spanning those rows.
-  The stage chip then comes from the same row as its icons.
+  The stage chip then comes from the same row as its icons. The review
+  wizard's pages are to draw the same per-stream sections, split out of
+  these tabs ([wizard shared component](../review-pipeline/spec.md#wizard-shared-component),
+  proposed by [#2123](https://github.com/epiphany40223/parishkit/issues/2123)).
 - **Where it posts.** Each decision posts to the stream page with that
   page's view fields, through the same decision path, so the role checks,
   version checks, refusals, audit and the notice are the stream's; a row
