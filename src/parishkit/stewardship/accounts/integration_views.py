@@ -159,6 +159,9 @@ def _form(target, *args, stored=None, **kwargs):
     )
 
 
+_LOOKUP = object()  # `_page`: look the organization up itself
+
+
 def _organization(configuration, target):
     """ParishSoft's organization named "Name (ID)" (#1554), else None.
 
@@ -239,8 +242,22 @@ def _summary(*forms):
     ]
 
 
-def _page(request, configuration, target, *, form=None, credential=None, status=200):
-    """Show editable settings, the optional new-key field and one status line."""
+def _page(
+    request,
+    configuration,
+    target,
+    *,
+    form=None,
+    credential=None,
+    status=200,
+    organization=_LOOKUP,
+):
+    """Show editable settings, the optional new-key field and one status line.
+
+    ``organization`` is ParishSoft's named organization when the caller has
+    already looked it up (a refused key does, #1554), so one request costs
+    one lookup; left out, the page looks it up itself.
+    """
     from parishkit.stewardship.source.loading import snapshot_organizations
 
     record = _optional(configuration, target)
@@ -272,7 +289,8 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
     latest = summary(target, record) if target in ROTATING_TARGETS else None
     pending = latest is not None and latest.kind == "pending"
     unavailable = False
-    organization = _organization(configuration, target)
+    if organization is _LOOKUP:
+        organization = _organization(configuration, target)
     if target in ROTATING_TARGETS and credential is None and not pending:
         try:
             credential = _inline_credential_form(
@@ -569,7 +587,9 @@ def sign_key_intent(configuration, actor_id, target):
     )
 
 
-def _refused_key(configuration, request, target, message=None, *, code=None):
+def _refused_key(
+    configuration, request, target, message=None, *, code=None, organization=_LOOKUP
+):
     """The new-key field redrawn with a refusal at the field (#563).
 
     The field is bound empty, with a freshly signed intent, so the page shows
@@ -582,7 +602,8 @@ def _refused_key(configuration, request, target, message=None, *, code=None):
     """
     if message is not None and not code:
         raise TypeError("A refused key's message needs its closed code.")
-    organization = _organization(configuration, target)
+    if organization is _LOOKUP:
+        organization = _organization(configuration, target)
     blank = _inline_credential_form(
         configuration,
         request,
@@ -601,14 +622,14 @@ def _refused_key(configuration, request, target, message=None, *, code=None):
     return credential
 
 
-def _key_with_schedule(request, configuration, target, form):
-    """Refuse a new key saved with a refresh schedule change, at the key field.
+def _refused_key_page(request, configuration, target, form, *args, **kwargs):
+    """A 400 page with the key field refused, looking the organization up once.
 
-    A key save never changes the refresh schedule: change it first. The
-    refusal is shown at the key field, with the schedule edits kept on the
-    redrawn page (#563); the key itself is never shown. The key's review
-    (``_key_review``) and its save (``_save``) both refuse it.
+    ``args`` and ``kwargs`` are ``_refused_key``'s message and code. The page
+    and the refused field both name the organization (#1554), so it is looked
+    up here and passed to both.
     """
+    organization = _organization(configuration, target)
     return _page(
         request,
         configuration,
@@ -618,14 +639,34 @@ def _key_with_schedule(request, configuration, target, form):
             configuration,
             request,
             target,
-            _(
-                "Nothing was saved: a new key and a refresh schedule change "
-                "can't be saved together. Leave this empty and save the "
-                "schedule change first, then paste the new key again."
-            ),
-            code="key_with_schedule_change",
+            *args,
+            organization=organization,
+            **kwargs,
         ),
         status=400,
+        organization=organization,
+    )
+
+
+def _key_with_schedule(request, configuration, target, form):
+    """Refuse a new key saved with a refresh schedule change, at the key field.
+
+    A key save never changes the refresh schedule: change it first. The
+    refusal is shown at the key field, with the schedule edits kept on the
+    redrawn page (#563); the key itself is never shown. The key's review
+    (``_key_review``) and its save (``_save``) both refuse it.
+    """
+    return _refused_key_page(
+        request,
+        configuration,
+        target,
+        form,
+        _(
+            "Nothing was saved: a new key and a refresh schedule change "
+            "can't be saved together. Leave this empty and save the "
+            "schedule change first, then paste the new key again."
+        ),
+        code="key_with_schedule_change",
     )
 
 
@@ -727,15 +768,8 @@ def _save(request, service, configuration, actor, target):
         # in the rule's words; the key is never drawn again. Any other
         # refusal of the key (a forged oversized post) is drawn as before.
         error = refused[0]
-        return _page(
-            request,
-            configuration,
-            target,
-            form=form,
-            credential=_refused_key(
-                configuration, request, target, error.message, code=error.code
-            ),
-            status=400,
+        return _refused_key_page(
+            request, configuration, target, form, error.message, code=error.code
         )
     if not (form.is_valid() and credential.is_valid()):
         return _refused_entries(request, configuration, target, form)
@@ -914,14 +948,7 @@ def _preview(request, service, actor, target):
         # requires it, and a request without one is redrawn with the
         # refusal at the key field and the other entries kept.
         form.is_valid()
-        return _page(
-            request,
-            configuration,
-            target,
-            form=form,
-            credential=_refused_key(configuration, request, target),
-            status=400,
-        )
+        return _refused_key_page(request, configuration, target, form)
     review = review_settings(service, actor, configuration, target, form)
     if review is None:
         if form.has_error(NON_FIELD_ERRORS, "unchanged"):
