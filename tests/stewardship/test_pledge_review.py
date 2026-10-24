@@ -342,14 +342,24 @@ def test_the_search_never_travels_in_an_address():
         views._choices(QueryDict("stage=updating"), export=False, private=True)
 
 
+def test_the_files_put_parishsoft_status_right_after_the_family():
+    """The status describes the name, so it follows it, before the DUID
+    (UX conventions, "Members and Families no longer in ParishSoft", #2107)."""
+    assert views.HEADINGS[:3] == ("Family", "ParishSoft status", "Family DUID")
+    assert list(views.PDF_WEIGHTS) == list(views.HEADINGS)
+    zone = ZoneInfo("America/Chicago")
+    (line,) = views.export_rows([pledge_row(family_name=None)], zone)
+    assert line[:3] == ("", "Not in ParishSoft", "101")
+
+
 def test_the_files_name_every_column_once():
     """CSV rows hold the headings' values in order, cents kept."""
     zone = ZoneInfo("America/Chicago")
     (line,) = views.export_rows([pledge_row()], zone)
     assert dict(zip(views.HEADINGS, line, strict=True)) == {
         "Family": "Smith, Ann and Bob",
-        "Family DUID": "101",
         "ParishSoft status": "",
+        "Family DUID": "101",
         "Annual pledge": "$1,200.00",
         "Frequency": "Weekly",
         "Share methods": "Online giving, Other: Stock gift",

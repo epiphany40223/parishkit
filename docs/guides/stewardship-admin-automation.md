@@ -2563,7 +2563,7 @@ does. It needs a full-scope session and takes the same `--stage`, plus
 `--format` (`xlsx`, the default, `csv`, `pdf` or `jsonl`) and `--timezone`
 (UTC, the default, or a time zone name). JSON Lines is for scripts: one
 object per pledge, the files' columns under the keys `family`,
-`family_duid`, `parishsoft_status`, `annual_pledge`, `frequency`,
+`parishsoft_status`, `family_duid`, `annual_pledge`, `frequency`,
 `share_methods`, `reviewer_annual_pledge`, `reviewer_frequency`,
 `annual_pledge_to_enter`, `frequency_to_enter`, `parishsoft_annual_pledge`,
 `stage`, `decision`, `entered_by`, `entered_at`, `submitted`,
