@@ -10,6 +10,7 @@ row, the overall time limit) is pinned without contacting ParishSoft.
 import base64
 import io
 import json
+import logging
 from unittest.mock import Mock
 
 import pytest
@@ -290,7 +291,12 @@ def test_worker_main_answers_a_lookup_with_one_json_line(monkeypatch, capsys):
     )
     stdin = io.BytesIO(json.dumps(request()).encode())
     monkeypatch.setattr(worker.sys, "stdin", Mock(buffer=stdin))
-    assert worker.main() == 0
+    try:
+        assert worker.main() == 0
+    finally:
+        # main() silences all logging for the isolated helper process; in
+        # this one, later tests (and their log capture) need it back.
+        logging.disable(logging.NOTSET)
     assert capsys.readouterr().out == '{"outcome": "refused"}\n'
 
 
