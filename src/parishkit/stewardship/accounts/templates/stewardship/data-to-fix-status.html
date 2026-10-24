@@ -23,6 +23,9 @@
 {% elif section.key == "census_changes" %}<h2 id="data-to-fix-{{ section.key }}">{% translate "Census changes to enter" %}</h2>
 <p data-count>{% if section.reason %}{{ section.reason }}{% elif section.count %}{% blocktranslate count counter=section.count %}{{ counter }} census change that Families reported is still to be handled.{% plural %}{{ counter }} census changes that Families reported are still to be handled.{% endblocktranslate %}{% else %}{% translate "None: every census change Families reported has been handled." %}{% endif %}</p>
 <p>{% translate "Fix: enter each change in ParishSoft, or publish it there from Census changes." %}</p>
+{% elif section.key == "roster_changes" %}<h2 id="data-to-fix-{{ section.key }}">{% translate "Roster changes to enter" %}</h2>
+<p data-count>{% if section.reason %}{{ section.reason }}{% elif section.count %}{% blocktranslate count counter=section.count %}{{ counter }} accepted Ministry request is still to be entered in its ParishSoft roster by hand.{% plural %}{{ counter }} accepted Ministry requests are still to be entered in their ParishSoft rosters by hand.{% endblocktranslate %}{% else %}{% translate "None: every accepted Ministry request has been entered in ParishSoft." %}{% endif %}</p>
+<p>{% translate "Fix: enter each change in the Ministry's roster in ParishSoft, then mark it Entered by hand in Ministry requests." %}</p>
 {% endif %}<p>{% blocktranslate asvar open_label with name=section.label %}Open {{ name }}{% endblocktranslate %}{% if section.url %}<a href="{{ section.url }}">{{ open_label }}</a>{% else %}{% with control_id="data-to-fix-open-"|add:section.key %}{% include "stewardship/components/disabled-control.html" with control_id=control_id label=open_label tip=section.reason %}{% endwith %}{% endif %}</p>
 </section>{% endfor %}
 </div>

@@ -222,6 +222,7 @@ SHAPING_STEPS = frozenset(
         "data_to_fix_refused_addresses",
         "data_to_fix_unreachable_families",
         "data_to_fix_census_changes",
+        "data_to_fix_roster_changes",
         # A Family hub census change whose stored state has no stage (#1678).
         "hub_census_stage",
         # A hub Ministry request or Additional information item whose

@@ -7601,7 +7601,9 @@ transitions, retries and outcome stay.
 ## Data to fix in ParishSoft
 
 Status: built
-([#1011](https://github.com/epiphany40223/parishkit/issues/1011)). The
+([#1011](https://github.com/epiphany40223/parishkit/issues/1011); roster
+changes to enter since
+[#2113](https://github.com/epiphany40223/parishkit/issues/2113)). The
 Administrator decided on 2026-10-11, in the
 [#935](https://github.com/epiphany40223/parishkit/issues/935) follow-up,
 that one obvious page should show every kind of data problem that is fixed
@@ -7619,11 +7621,12 @@ rest of this section follows those decisions:
    Responses and reports (since R39, Review work and Reports and queries).
 3. The sections run: Families the form cannot open, refused email
    addresses, Families no mail can reach, census and roster changes to
-   enter.
+   enter (two blocks, census then roster, since
+   [#2113](https://github.com/epiphany40223/parishkit/issues/2113)).
 4. "No mail can reach" means no usable email **and** no usable mailing
    address (the definition Home used before #1673); postal-only Families are not counted.
 5. A role sees only the sections whose detail page it can open, so Staff
-   see sections 3 and 4; Staff get no counts for sections 1 and 2.
+   see sections 3 to 5; Staff get no counts for sections 1 and 2.
 6. The menu entry carries no count.
 7. Home does not link the page for now; NAV-18's Next steps keep it
    unlinked (a default on #522 the Administrator may revisit).
@@ -7656,7 +7659,7 @@ rest of this section follows those decisions:
   heading, one sentence with its count in plain words, one short line on
   where the fix is made, and a link to the detail page whose text is
   "Open" plus that page's name. It is a short list of blocks, not an
-  [Admin table](../ui-conventions/spec.md#admin-tables): four rows of
+  [Admin table](../ui-conventions/spec.md#admin-tables): five rows of
   different kinds have nothing to sort, filter or page. The About panel
   explains that each problem is corrected in ParishSoft and shows here
   after the next refresh (linking Refresh from ParishSoft for
@@ -7674,7 +7677,8 @@ role may not see left out:
 | 1 | Families the form cannot open | Families that cannot open the Family form because a Member's ParishSoft data has a value the form cannot accept | [Families the form cannot open](#system-health-page) | Administrator | `reports.source_form.blocked_families`, the System health sentence's own read, with its per-campaign and per-snapshot cache |
 | 2 | Refused email addresses | Unresolved refused addresses, and how many Families they belong to | [Refused addresses](#refused-addresses) | Administrator | `jobs.delivery_reads.unresolved_refusals()`, the set behind Sent mail's link-line count, counted in one query |
 | 3 | Families no mail can reach | Active parishioner Families with no deliverable email and no usable mailing address | The [active parishioner family directory](../reports/spec.md#active-parishioner-family-directory) with its "Can't be reached by email or mail" preset | Administrator, Staff | `accounts.admin_dashboard.unreachable_families`, the count Home showed before #1673, which is the directory's own "neither" selection |
-| 4 | Census and roster changes to enter | Census changes at the [Census changes](../reports/spec.md#pending-census-changes) To review and Conflict stages, the same for every role; later, roster changes to enter | Census changes; later, Ministry requests at its Stage To enter by hand | Administrator, Staff | `reports.census_changes.census_changes` at every stage, counting the To review and Conflict rows; later, the roster filter's own read |
+| 4 | Census changes to enter | Census changes at the [Census changes](../reports/spec.md#pending-census-changes) To review and Conflict stages, the same for every role | Census changes | Administrator, Staff | `reports.census_changes.census_changes` at every stage, counting the To review and Conflict rows |
+| 5 | Roster changes to enter | Accepted Ministry requests at Ministry requests' To enter by hand Stage: not yet marked Entered by hand ([#528](https://github.com/epiphany40223/parishkit/issues/528)) | Ministry requests at `?stage=to_enter_by_hand` | Administrator, Staff (those who may enter roster changes, the rule for Ministry requests' To enter by hand card) | `accounts.admin_context.roster_entry_count`, the open-stage read Home's Next steps and [My review work](../review-pipeline/spec.md#role-views) show for that Stage |
 
 Notes on the sections:
 
@@ -7689,11 +7693,17 @@ Notes on the sections:
   deliverable email": a Family with a usable mailing address still gets a
   postal invitation, and many Families have no email by choice, so their
   number is not a list of errors.
-- **Roster changes** join section 4 with the #528 roster tick: until that
-  step lands the section counts census changes only and says nothing about
-  rosters. That step also lets the follow-up queue accept its *Roster
-  changes to enter* view as a closed GET value (as it accepts `?ministry=`),
-  so the link opens the filtered queue.
+- **Roster changes** are section 5
+  ([#2113](https://github.com/epiphany40223/parishkit/issues/2113)): the
+  requests Ministry requests lists at To enter by hand, which is where the
+  retired *Roster changes to enter* list was folded, so the link opens
+  Ministry requests at that Stage (`?stage=to_enter_by_hand`). The count is
+  the same number as Home's and My review work's To enter by hand card and
+  the Stage choice's count on the same data. Before go-live (a draft or
+  scheduled campaign) no request is resolved yet, so the section reads
+  zero without asking; for a campaign without Ministries it is greyed out
+  with Ministry requests' menu reason; when Ministry requests itself would
+  not show its list, the section says so and sends the reader there.
 - **No new SQL.** Every count calls the function its detail page (or Home, before #1673)
   already uses, with that page's own filters, so a count always matches the
   list its link opens. The page adds no query to any other page and no
@@ -7756,7 +7766,7 @@ Notes on the sections:
   `campaign_id` and, under `sections`, one key per section the session's
   role may see
   (`form_cannot_open`, `refused_addresses`, `unreachable_families`,
-  `census_changes`, and later `roster_changes`), each with its count (and
+  `census_changes`, `roster_changes`), each with its count (and
   `families` for refused addresses) or `unavailable` with the page's
   reason, counts only, and records the page's view event. The
   [admin automation coverage](../admin-automation/spec.md#operations) lists
@@ -7764,7 +7774,7 @@ Notes on the sections:
 - **No download.** The page offers no export of its own. Each detail page
   keeps its own downloads (Census changes and the directory offer CSV, XLSX
   and PDF); Refused addresses and Families the form cannot open offer none,
-  by Administrator decision on #935. A combined file would join four
+  by Administrator decision on #935. A combined file would join five
   different column sets, which the
   [downloaded files](../ui-conventions/spec.md#downloaded-files) rule (one
   column set, matching its page) cannot express.

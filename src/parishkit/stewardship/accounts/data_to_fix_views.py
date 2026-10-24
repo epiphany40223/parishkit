@@ -3,8 +3,9 @@
 The page (admin-portal spec, "Data to fix in ParishSoft") shows, for
 Administrators and Staff, one block per kind of problem, most blocking
 first: Families the form cannot open, refused email addresses, Families no
-mail can reach, and census changes to enter. Each block is a count and a
-link to the existing page that lists and fixes those problems.
+mail can reach, census changes to enter, and roster changes to enter by
+hand (#2113). Each block is a count and a link to the existing page that
+lists and fixes those problems.
 
 Nothing here is a new query of its own: each count calls the read its
 detail page (or Home) already uses, with that page's own default filters,
@@ -41,6 +42,7 @@ from parishkit.stewardship.campaigns.read_guards import CampaignReadGuard
 from parishkit.stewardship.jobs.delivery_views import UNAVAILABLE
 from parishkit.stewardship.load_check import LoadCheckRefused
 from parishkit.stewardship.observability import Event, emit_failure
+from parishkit.stewardship.pipeline import Stage
 from parishkit.stewardship.web.contracts import (
     ErrorCode,
     FieldError,
@@ -68,19 +70,28 @@ NO_SOURCE = _("ParishSoft data has not been read yet, so there is nothing to cou
 FAILED = _(
     "These could not be counted just now. They will be counted again in about a minute."
 )
+# The roster read answers no number when Ministry requests itself would
+# refuse its list (follow-up unavailable, or the reader's scope drifted);
+# that page says why, so this sends the reader there.
+ROSTER_UNCOUNTED = _("These cannot be counted right now. Ministry requests says why.")
 
 
 @dataclass(frozen=True)
 class Section:
     """One kind of data problem: who may see it and where its list is.
 
-    ``capability`` is the capability the detail page itself checks (its own
-    ``_principal``), so the section shows exactly when the viewer may open
-    that page. ``page`` is the detail page's URL name and ``query`` the
-    preset its link opens. ``reason`` is the detail page's menu reason
-    check, or None for a page that opens whatever the campaign's state:
-    when it gives a reason, the page would refuse the visit too, so the
-    link is greyed out with that reason.
+    ``capability`` decides who sees the section. For most sections it is
+    the capability the detail page itself checks (its own ``_principal``),
+    so the section shows exactly when the viewer may open that page. Roster
+    changes to enter is narrower than its page: Ministry requests admits
+    MINISTRY_REPORT (scoped to a leader's Ministries), but only those who
+    may enter roster changes see the section, so it takes
+    MINISTRY_FOLLOWUP (see its entry in ``SECTIONS``). ``page`` is the
+    detail page's URL name and ``query`` the preset its link opens.
+    ``reason`` is the detail page's menu reason check, or None for a page
+    that opens whatever the campaign's state: when it gives a reason, the
+    page would refuse the visit too, so the link is greyed out with that
+    reason.
     """
 
     key: str
@@ -127,6 +138,19 @@ SECTIONS = (
         Capability.VIEW_CENSUS,
         "census_changes",
         reason=admin_navigation.MENU_REASONS["census_changes"],
+    ),
+    # Roster changes to enter by hand (#2113): Ministry requests at its
+    # To enter by hand Stage, shown only to those who may enter roster
+    # changes (MINISTRY_FOLLOWUP without a Ministry, workflows.roster's
+    # can_tick: Administrators and Staff), as My review work's card is;
+    # greyed out, as Ministry requests' menu entry is, for a campaign
+    # without Ministries.
+    Section(
+        "roster_changes",
+        Capability.MINISTRY_FOLLOWUP,
+        "ministry_report",
+        query=f"?stage={Stage.TO_ENTER_BY_HAND.value}",
+        reason=admin_navigation.MENU_REASONS["ministry_report"],
     ),
 )
 
@@ -243,12 +267,61 @@ def _census_changes(principal, campaign_id):
     return {"count": sum(row["stage"] in stages for row in result["rows"])}
 
 
+def _roster_changes(principal, campaign_id):
+    """Ministry requests' To enter by hand count: the menu's own roster read.
+
+    ``admin_context.roster_entry_count`` is the count Home's Next steps and
+    My review work's Ministry card show, held equal to the Stage's rows by
+    their database tests, so this block, those cards and the list agree.
+    Before go-live (a draft or scheduled campaign) no request is resolved
+    yet, so nothing is to enter and the read is skipped, as the menu skips
+    it. A count the read cannot give (None) sends the reader to the list,
+    which says why.
+    """
+    from parishkit.stewardship.campaigns.models import Campaign
+    from parishkit.stewardship.reports.read_admission import admit_report_read
+
+    def read():
+        """The count, read with the campaign's state inside the guard."""
+        campaign = Campaign.objects.only("state").get(pk=campaign_id)
+        if campaign.state not in admin_context.ROSTER_STATES:
+            return 0
+        return admin_context.roster_entry_count(principal, campaign)
+
+    count = _guarded(campaign_id, read, admit=admit_report_read)
+    return {"reason": ROSTER_UNCOUNTED} if count is None else {"count": count}
+
+
 READS = {
     "form_cannot_open": _form_cannot_open,
     "refused_addresses": _refused_addresses,
     "unreachable_families": _unreachable_families,
     "census_changes": _census_changes,
+    "roster_changes": _roster_changes,
 }
+
+
+def entry_count(rows, campaign):
+    """The roster section's read for the chrome to reuse, or ``UNREAD``.
+
+    A full page load draws the Admin chrome after the sections, and the
+    chrome's menu statement reads the same To enter by hand count for
+    Ministry requests. Handing it the section's number (or None, when the
+    read answered no number) lets that statement skip the selection, so it
+    runs once per page. A section that was not read (greyed out, failed,
+    hidden, or a campaign before go-live, where the chrome skips it anyway)
+    hands nothing, and the chrome reads for itself.
+    """
+    if getattr(campaign, "state", None) not in admin_context.ROSTER_STATES:
+        return admin_context.UNREAD
+    for row in rows:
+        if row["key"] != "roster_changes":
+            continue
+        if "count" in row:
+            return row["count"]
+        if row.get("reason") == ROSTER_UNCOUNTED:
+            return None
+    return admin_context.UNREAD
 
 
 def _sentence(text):
@@ -401,6 +474,7 @@ def _read(request, *, page):
         }
         if page:
             context["can_refresh"] = allows(actor, Capability.CONFIGURE)
+            request._stewardship_entry_count = entry_count(rows, campaign)
             response = render(request, TEMPLATE, context)
         else:
             # The fragment needs no Admin chrome, so it skips the context

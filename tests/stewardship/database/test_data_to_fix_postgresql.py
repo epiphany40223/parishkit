@@ -17,7 +17,10 @@ import pytest
 from parishkit.stewardship.accounts import data_to_fix_views
 from parishkit.stewardship.accounts.admin_dashboard import unreachable_families
 from parishkit.stewardship.accounts.models import PortalSession
+from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
+from parishkit.stewardship.campaigns.models import Campaign
+from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports import source_form
 
 from ..policy_factory import address as rule_address
@@ -27,10 +30,14 @@ from .leader_builders import promote_leaders
 from .response_builders import activate_response_service
 from .test_admin_export_cli_postgresql import read_only_session
 from .test_admin_report_cli_postgresql import cli  # noqa: F401
+from .test_background_grants_postgresql import task_login
+from .test_campaign_end_counts_postgresql import to_enter
 from .test_census_changes_postgresql import submit_live
+from .test_ministry_reports_postgresql import actor
 from .test_ministry_responses_postgresql import ministry_source, start
 from .test_recipient_suppressions_postgresql import refused, remember
 from .test_report_workspace_postgresql import read as get
+from .test_roster_entries_postgresql import resolved, tick
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -41,6 +48,7 @@ ORDER = (
     "refused_addresses",
     "unreachable_families",
     "census_changes",
+    "roster_changes",
 )
 
 
@@ -96,7 +104,7 @@ def sign_in_as(harness, google, roles):
 
 
 def test_an_administrator_sees_every_section_counted(scenario, google):
-    """Four sections in the decided order, each count matching its page's
+    """Five sections in the decided order, each count matching its page's
     read, with links to the detail pages; the view is audited as a total."""
     unreachable = unreachable_families(scenario.campaign.pk)
     browser, login = signed_in()
@@ -122,13 +130,17 @@ def test_an_administrator_sees_every_section_counted(scenario, google):
 
 
 def test_staff_see_only_the_sections_they_can_open(scenario, google):
-    """Staff see Families no mail can reach and census changes (To review
-    and Conflict, as an Administrator does), never a source-form or
-    refused-address count."""
+    """Staff see Families no mail can reach, census changes (To review
+    and Conflict, as an Administrator does) and roster changes to enter,
+    never a source-form or refused-address count."""
     browser = sign_in_as(scenario, google, ("staff",))
     response, body = get(browser, PAGE)
     assert response.status_code == 200
-    assert sections(body) == (b"unreachable_families", b"census_changes")
+    assert sections(body) == (
+        b"unreachable_families",
+        b"census_changes",
+        b"roster_changes",
+    )
     text = body.decode()
     assert "2 census changes that Families reported are still to be handled." in text
     assert "refused" not in text.lower() and "source-form" not in text
@@ -183,6 +195,8 @@ def test_the_command_prints_the_page_counts(scenario, google, cli):  # noqa: F81
     assert result["sections"]["form_cannot_open"] == {"count": 0}
     assert result["sections"]["refused_addresses"] == {"count": 1, "families": 1}
     assert result["sections"]["census_changes"] == {"count": 2}
+    # No Ministry request is resolved yet, so none is to enter by hand.
+    assert result["sections"]["roster_changes"] == {"count": 0}
     assert result["sections"]["unreachable_families"] == (
         {"count": unreachable}
         if unreachable is not None
@@ -222,6 +236,7 @@ def test_the_command_shows_staff_their_sections_only(
     assert set(document["result"]["sections"]) == {
         "unreachable_families",
         "census_changes",
+        "roster_changes",
     }
     assert document["result"]["sections"]["census_changes"] == {"count": 2}
 
@@ -294,3 +309,71 @@ def test_the_status_fragment_refuses_a_ministry_leader(scenario, google):
     assert response.status_code == 403
     assert b"census change" not in response.content
     assert viewed() == []
+
+
+def test_the_roster_count_is_ministry_requests_to_enter_by_hand(response_service):
+    """Roster changes to enter (#2113) equals the rows Ministry requests
+    lists at To enter by hand on the same data, for Staff and an
+    Administrator: one resolved join, none once it is ticked Entered by
+    hand, one again once the tick is undone. Its link opens that Stage."""
+    harness, admin, join, _ = resolved(response_service)
+    campaign = Campaign.objects.select_related("active_configuration").get(
+        pk=harness.campaign.pk
+    )
+    readers = (actor(harness, ("staff",), ()), actor(harness, ("administrator",), ()))
+
+    def counts():
+        """Each reader's (section count, Stage rows), on the web login."""
+        found = []
+        for principal in readers:
+            with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+                rows = data_to_fix_views.read_sections(
+                    principal, SystemConfiguration.objects.get(), campaign
+                )
+            (row,) = [row for row in rows if row["key"] == "roster_changes"]
+            assert row["url"] == "/admin/reports/ministries/?stage=to_enter_by_hand"
+            found.append((row["count"], to_enter(campaign, principal)))
+        return found
+
+    assert counts() == [(1, 1), (1, 1)]
+    tick(harness, admin, join, True)
+    assert counts() == [(0, 0), (0, 0)]
+    tick(harness, admin, join, False)
+    assert counts() == [(1, 1), (1, 1)]
+
+
+def follow_up_runs(queries):
+    """How many times the captured statements ran each follow-up selection.
+
+    The menu's statement (``admin_context.OPEN_COUNTS``) always carries both
+    laterals; each runs only when its ``WHERE`` flag, bound as a literal in
+    the captured SQL, is true. Returns (To review runs, To enter by hand
+    runs).
+    """
+    sql = [query["sql"] for query in queries]
+    return tuple(
+        sum(len(re.findall(rf"WHERE true\s*\) {alias} ON true", text)) for text in sql)
+        for alias in ("f", "t")
+    )
+
+
+def test_a_page_load_runs_each_follow_up_selection_once(response_service, google):
+    """The roster section reads only the To enter by hand selection, and the
+    chrome reuses its number, so a full page load runs the To review
+    selection once (the menu's Ministry requests count) and the roster
+    selection once (#2113 review finding 1). The status fragment, which
+    draws no chrome, runs the roster selection alone."""
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    resolved(response_service)
+    browser, login = signed_in()
+    assert login.status_code == 302
+    with CaptureQueriesContext(connection) as page:
+        response, body = get(browser, PAGE)
+    assert response.status_code == 200
+    assert "1 accepted Ministry request is still to be entered" in body.decode()
+    assert follow_up_runs(page.captured_queries) == (1, 1)
+    with CaptureQueriesContext(connection) as fragment:
+        assert browser.get(STATUS).status_code == 200
+    assert follow_up_runs(fragment.captured_queries) == (0, 1)

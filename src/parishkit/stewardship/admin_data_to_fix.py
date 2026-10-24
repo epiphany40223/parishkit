@@ -28,8 +28,9 @@ class DataToFixReport(ReadModel):
 
     ``campaign_id`` is the current campaign, or None without one.
     ``sections`` maps each visible section's key (``form_cannot_open``,
-    ``refused_addresses``, ``unreachable_families``, ``census_changes``) to
-    its count, or to ``unavailable`` with the page's reason.
+    ``refused_addresses``, ``unreachable_families``, ``census_changes``,
+    ``roster_changes``) to its count, or to ``unavailable`` with the page's
+    reason.
     """
 
     campaign_id: UUID | None
