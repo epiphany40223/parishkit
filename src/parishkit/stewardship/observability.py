@@ -194,6 +194,12 @@ class FailureKind(StrEnum):
     # WorkGroup, so no Family's Reminders are skipped. Warned on each refresh
     # that reads it, riding on the refresh's reviewed task_started event.
     REMINDER_WORKGROUP_MISSING = "reminder_workgroup_missing"
+    # The campaign's Families rule (#1393) chose a Family group the refresh's
+    # ParishSoft group lookup does not have, so that group matches no Family.
+    # Warned on each refresh that applies the rule, riding on the refresh's
+    # reviewed task_started event; the group's name stays in the load
+    # evidence, never in the log line.
+    CAMPAIGN_FAMILY_GROUP_MISSING = "campaign_family_group_missing"
     # ``pk-stewardship load-check`` stopped because something it measures
     # changed under it (#633): the ParishSoft data, the Testing Family
     # portal, or the campaign. Each says to run the check again.

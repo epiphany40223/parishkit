@@ -12,7 +12,11 @@ from dataclasses import dataclass, field
 from django.db import connection, transaction
 
 from parishkit.config import ConfigError
+from parishkit.parishsoft import family_matches_rule
 from parishkit.stewardship.accounts.policy_schema import normalized_email
+from parishkit.stewardship.campaigns.campaign_families import KEY as FAMILIES
+from parishkit.stewardship.campaigns.campaign_families import digest as rule_digest
+from parishkit.stewardship.campaigns.campaign_families import recorded_rule
 from parishkit.stewardship.campaigns.family_identity import (
     FamilyStatus,
     reconcile_families,
@@ -101,14 +105,29 @@ class FamilyEligibility:
     addresses: frozenset[str] = field(repr=False)
 
 
-def family_eligibility(corpus):
+# ``family_eligibility``'s default: the caller does not know the snapshot's
+# Families rule, so a rule row's ``portal_eligible`` is taken as recorded
+# (still checked against its heads), while a legacy row is checked in full.
+UNCHECKED_RULE = object()
+
+
+def family_eligibility(corpus, rule=UNCHECKED_RULE):
     """Each Family's corpus-only eligibility, in Family key order.
 
-    Malformed or contradictory payloads raise InvalidSourcePayload.
+    ``rule`` is the Families rule the snapshot's load recorded (#1393;
+    ``None`` is the legacy rule), which promotion passes: every row must then
+    carry that rule's digest (none for legacy) and its eligibility must be
+    what the rule gives for the row's own facts. Malformed or contradictory
+    payloads raise InvalidSourcePayload.
     """
     try:
+        members = None
+        if rule is not UNCHECKED_RULE and rule is not None:
+            members = {}
+            for member in corpus["member"].values():
+                members.setdefault(member["family_key"], []).append(member)
         return tuple(
-            _eligibility(key, family, corpus)
+            _eligibility(key, family, corpus, rule, members)
             for key, family in sorted(corpus["family"].items())
         )
     except (KeyError, TypeError, ValueError, ConfigError):
@@ -148,8 +167,32 @@ def _suppressed(eligibility, suppressed_addresses):
         ) from None
 
 
-def _eligibility(key, family, corpus):
-    """Cross-check normalized eligibility against the same snapshot's head contacts."""
+def _rule_eligible(family, rule, members):
+    """Whether ``rule`` selects this normalized Family row, from its own facts.
+
+    Registration is the row's ``parishioner`` flag (the corpus keeps no
+    organization ID), passed to the shared predicate as the Family's own
+    organization when it is registered here.
+    """
+    return family_matches_rule(
+        {
+            "registeredOrganizationID": family.get("registeredOrganizationID"),
+            "famGroupID": family.get("famGroupID"),
+            "py family group": family["family_group"],
+            "py members": members,
+        },
+        rule,
+        family.get("registeredOrganizationID") if family["parishioner"] else None,
+    )
+
+
+def _eligibility(key, family, corpus, rule=UNCHECKED_RULE, members=None):
+    """Cross-check normalized eligibility against the same snapshot's head contacts.
+
+    A legacy row (no ``campaign_families`` digest) is Portal-eligible exactly
+    when it is active and registered, as always. A rule row is checked
+    against ``rule`` when the caller knows it (``family_eligibility``).
+    """
     if str(int(key)) != key or not 1 <= int(key) < 2**31:
         raise ValueError("Invalid Family identity.")
     if (
@@ -195,7 +238,19 @@ def _eligibility(key, family, corpus):
                     if address != email["value"]:
                         raise ValueError("Noncanonical head address.")
                     addresses.add(address)
-    eligible = family["active"] and family["parishioner"]
+    marker = family.get(FAMILIES)
+    if marker is None:
+        if rule is not UNCHECKED_RULE and rule is not None:
+            raise ValueError("Contradictory source eligibility.")
+        eligible = family["active"] and family["parishioner"]
+    elif type(marker) is not str or (
+        rule is not UNCHECKED_RULE and marker != rule_digest(rule)
+    ):
+        raise ValueError("Contradictory source eligibility.")
+    elif rule is UNCHECKED_RULE:
+        eligible = family["portal_eligible"]
+    else:
+        eligible = _rule_eligible(family, rule, members.get(key, []))
     email_eligible = eligible and bool(addresses)
     if (
         family["portal_eligible"] != eligible
@@ -209,14 +264,20 @@ def _recipients(item, suppressed):
     """One Family's status and head addresses once ``suppressed`` is applied."""
     email_eligible = item.eligible and bool(item.addresses)
     deliverable = email_eligible and bool(item.addresses - suppressed)
+    # A campaign Family is active in its campaign even when ParishSoft's own
+    # flag says otherwise, which only an Advanced rule choosing the Inactive
+    # group can do (#1393); the legacy rule selects only active Families, so
+    # this is ``item.active`` for it. Delivery reads the campaign row's
+    # ``active`` with its eligibility, so such a Family is mailed too.
+    active = item.active or item.eligible
     status = FamilyStatus(
         int(item.key),
-        item.active,
+        active,
         item.eligible,
         email_eligible,
         deliverable,
         "inactive"
-        if not item.active
+        if not active
         else "eligible"
         if item.eligible
         else "non_parishioner",
@@ -274,9 +335,16 @@ class PreparedPromotion:
 
     @classmethod
     def of(cls, snapshot):
-        """Decode and check ``snapshot``, whose row the caller holds locked."""
+        """Decode and check ``snapshot``, whose row the caller holds locked.
+
+        Its rows are checked against the Families rule its load recorded.
+        """
         corpus = _decode(snapshot)
-        return cls(snapshot.pk, corpus, family_eligibility(corpus))
+        return cls(
+            snapshot.pk,
+            corpus,
+            family_eligibility(corpus, recorded_rule(snapshot.cursor)),
+        )
 
     def statuses(self, suppressed_addresses):
         """Each Family's status once ``suppressed_addresses`` is applied."""
@@ -308,7 +376,7 @@ def prepare_promotion(snapshot_id, claim):
             )
             if cursor.fetchone() is None:
                 return None
-        snapshot = SourceSnapshot.objects.only("id").get(pk=snapshot_id)
+        snapshot = SourceSnapshot.objects.only("id", "cursor").get(pk=snapshot_id)
         try:
             return PreparedPromotion.of(snapshot)
         except InvalidSourcePayload:
