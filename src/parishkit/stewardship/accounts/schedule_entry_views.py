@@ -801,7 +801,8 @@ def entry_form(
 
     It offers the campaign's emails labelled by the schedules that send them,
     with their preview, test and edit links (#446). For Edit it carries the
-    saved values, so its mail type is fixed. The saved
+    saved values, so its mail type is fixed, and the schedule's name for
+    the legend (``schedule_label``). The saved
     date and time are campaign-local; the page script shows them in the
     browser's zone (``entry_times``), and ``kept`` is the saved time in that
     zone, so a legacy time with seconds posted back unchanged still reads.
@@ -829,6 +830,15 @@ def entry_form(
         # sends on a date, so choosing it keeps the day.
         else ({"kind": "reminder", "date": on} if on else None),
         browser_times=True,
+    )
+    # Edit's legend names the schedule (Reminder 1, schedule-entry.html), so
+    # the reader sees which one they are changing.
+    form.schedule_label = (
+        dict(
+            zip((row["id"] for row in saved), schedule_labels(saved), strict=True)
+        ).get(schedule["id"])
+        if schedule
+        else None
     )
     # The address names the schedule; a posted ID is never read.
     del form.fields["id"]
