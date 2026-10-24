@@ -503,6 +503,7 @@ sections:
     "Row actions and confirmation": [ADM-03]
     "New pages and in-page panes": [ADM-03]
     "Table column order": [ADM-03, RPT-01]
+    "Default row order": [ADM-03, RPT-01]
     "Family and Member names": [ADM-03, RPT-01]
     "Members and Families no longer in ParishSoft": [ADM-03, RPT-01]
     "Table fit and row height": [ADM-03]

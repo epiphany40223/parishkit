@@ -404,10 +404,13 @@ def test_followup_contact_waits_for_a_known_browser_zone(
 
 def test_followup_sort_heading_posts_privately(page, component_origin):
     """A heading re-sorts the queue by POST, keeping private filters. The
-    default order (newest first) has no column to show it (#1064), so no
-    heading is marked sorted."""
+    default order is the Member column's A-Z order (#2124), so the Member
+    heading alone is marked sorted."""
     page.goto(component_origin + "/followup-queue")
-    assert page.locator("#table thead th[aria-sort]").count() == 0
+    sorted_headings = page.locator("#table thead th[aria-sort]")
+    assert sorted_headings.count() == 1
+    assert sorted_headings.get_attribute("data-sort-column") == "member"
+    assert sorted_headings.get_attribute("aria-sort") == "ascending"
     page.route("**/reports/ministries/", lambda route: route.fulfill(body="Sorted"))
     # "Member" alone would also match the Member DUID heading.
     member = page.locator("th[data-sort-column='member']")
