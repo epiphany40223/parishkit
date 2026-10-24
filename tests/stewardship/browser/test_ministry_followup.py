@@ -572,16 +572,29 @@ def worklist_row(page, request_id):
     return page.locator(f"#requests-row-{request_id}")
 
 
+# A row's icons by what they do; "Send" is its Back to review, the pressed
+# icon (#2131) or, on a row with nothing pressed, an icon of its own.
+ICONS = {
+    "Accept": '[data-row-action="accept"]',
+    "Edit": '[data-row-action="edit"]',
+    "Ignore": '[data-row-action="ignore"]',
+    "Mark": '[data-row-action="entered_by_hand"]',
+    "Send": '[data-row-undo], [data-row-action="back_to_review"]',
+}
+
+
 def icon_named(page, request_id, label):
-    """A row's icon whose accessible name starts with ``label``."""
-    return worklist_row(page, request_id).locator(f"button[aria-label^='{label} ']")
+    """A row's ``label`` icon (Accept, Edit, Ignore, Mark or Send)."""
+    return worklist_row(page, request_id).locator(
+        ", ".join(f"button{part.strip()}" for part in ICONS[label].split(","))
+    )
 
 
 def test_each_stage_shows_its_decision_on_the_icons(page, component_origin):
     """Staff see every stage with the pipeline's words (#1684): To review
     offers Accept, Edit and Ignore; an accepted request is To enter by hand
-    with Accept selected and Back to review and Entered by hand offered;
-    once entered, the mark is selected and Back to review undoes it (#1840);
+    with Accept pressed as its Back to review (#2131) and Entered by hand
+    offered; once entered, the pressed mark undoes it (#1840);
     an ignored one names its outcome; an edited one and an added one say
     so; a confirmed one offers only Back to review."""
     page.set_viewport_size({"width": 1280, "height": 900})
@@ -603,15 +616,19 @@ def test_each_stage_shows_its_decision_on_the_icons(page, component_origin):
     accepted = UUID(int=120)
     chosen = icon_named(page, accepted, "Accept")
     assert chosen.get_attribute("aria-pressed") == "true"
-    assert chosen.get_attribute("title") == (
-        "Accepted; choose Back to review to change it"
+    assert chosen.get_attribute("title").startswith(
+        "Accepted; select to send "
+    ) and chosen.get_attribute("title").endswith(" back to review")
+    assert icon_named(page, accepted, "Send").get_attribute("data-row-action") == (
+        "accept"
     )
-    visible(icon_named(page, accepted, "Send"))
     visible(icon_named(page, accepted, "Mark"))
     has_text(worklist_row(page, accepted).locator(".stage-chip"), "To enter by hand")
     entered = UUID(int=121)
     assert icon_named(page, entered, "Mark").get_attribute("aria-pressed") == "true"
-    visible(icon_named(page, entered, "Send"))
+    assert icon_named(page, entered, "Send").get_attribute("data-row-action") == (
+        "entered_by_hand"
+    )
     ignored = worklist_row(page, UUID(int=122))
     has_text(ignored.locator(".stage-chip"), "Ignored")
     assert "Stayed in the Ministry" in ignored.inner_text()
@@ -631,9 +648,11 @@ def test_each_stage_shows_its_decision_on_the_icons(page, component_origin):
     confirmed = worklist_row(page, UUID(int=125))
     has_text(confirmed.locator(".stage-chip"), "Confirmed")
     offered = [
-        node.get_attribute("data-row-action")
+        "back_to_review"
+        if node.get_attribute("data-row-undo") is not None
+        else node.get_attribute("data-row-action")
         for node in confirmed.locator(".table-actions button").all()
-        if node.get_attribute("aria-pressed") != "true"
+        if node.get_attribute("aria-disabled") is None
     ]
     assert offered == ["back_to_review"]
     visible(page.locator(".bulk-bar").get_by_role("button", name="Add"))

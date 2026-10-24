@@ -27,123 +27,168 @@ KEY = "00000000-0000-0000-0000-000000000001"
 
 
 def icons(stream, placement, roles=STAFF, **flags):
-    """(action, selected, pressed) of each icon a reader sees, in order."""
+    """(action, selected, pressed, active) of each icon a reader sees, in order."""
     return [
-        (icon["action"], icon["selected"], icon["pressed"])
+        (icon["action"], icon["selected"], icon["pressed"], icon["active"])
         for icon in row_icons(stream, placement, roles, name="Item", **flags)
     ]
+
+
+DECIDE = [("accept", False, False, True), ("edit", False, None, True)]
+DECIDE.append(("ignore", False, False, True))
+# Edit and Ignore once a decision is in force: unavailable until it is undone.
+WAITING = [("edit", False, None, False), ("ignore", False, False, False)]
 
 
 @pytest.mark.parametrize(
     "placement,flags,expected",
     [
         # To review offers the decisions, none selected; Edit is no toggle.
-        (
-            Placement(Stage.TO_REVIEW),
-            {},
-            [("accept", False, False), ("edit", False, None), ("ignore", False, False)],
-        ),
-        # A By hand To review change offers no Entered by hand: it follows
-        # an Accept (#1890, decision 2 reversed).
+        (Placement(Stage.TO_REVIEW), {}, DECIDE),
+        # A By hand To review change draws Entered by hand unavailable: it
+        # follows an Accept (#1890, decision 2 reversed), and the row keeps
+        # its icons at every stage (#2131).
         (
             Placement(Stage.TO_REVIEW),
             {"by_hand": True},
-            [("accept", False, False), ("edit", False, None), ("ignore", False, False)],
+            [*DECIDE, ("entered_by_hand", False, False, False)],
         ),
-        # The decision in force is drawn selected, beside its undo.
+        # The decision in force is drawn pressed and is the row's undo: no
+        # Back to review icon beside it (#2131).
         (
             Placement(Stage.READY_TO_UPDATE, Decision.ACCEPTED),
             {},
-            [("accept", True, True), ("back_to_review", False, None)],
+            [("accept", True, True, True), *WAITING],
         ),
         # Accepted (edited) selects Accept: Edit is Accept with a value.
         (
             Placement(Stage.TO_ENTER_BY_HAND, Decision.ACCEPTED_EDITED),
             {"by_hand": True},
             [
-                ("accept", True, True),
-                ("back_to_review", False, None),
-                ("entered_by_hand", False, False),
+                ("accept", True, True, True),
+                *WAITING,
+                ("entered_by_hand", False, False, True),
             ],
         ),
         (
             Placement(Stage.IGNORED, Decision.IGNORED),
             {},
-            [("ignore", True, True), ("back_to_review", False, None)],
+            [
+                ("accept", False, False, False),
+                ("edit", False, None, False),
+                ("ignore", True, True, True),
+            ],
         ),
-        # A mark in force is selected too; Back to review undoes it (#1840),
-        # so it is drawn just right of the mark (R45 W, #2041).
+        # A mark in force is pressed too and is the undo (#1840): the
+        # decision before it waits for that undo.
         (
             Placement(Stage.ENTERED_BY_HAND, Decision.ACCEPTED),
             {},
             [
-                ("accept", True, True),
-                ("entered_by_hand", True, True),
-                ("back_to_review", False, None),
+                ("accept", True, True, False),
+                *WAITING,
+                ("entered_by_hand", True, True, True),
             ],
         ),
-        # Entered incorrectly's old mark is not in force: mark it again.
+        # Entered incorrectly's old mark is not in force: mark it again, or
+        # choose the pressed Accept to undo the step.
         (
             Placement(Stage.ENTERED_INCORRECTLY, Decision.ACCEPTED),
             {},
             [
-                ("accept", True, True),
-                ("back_to_review", False, None),
-                ("entered_by_hand", False, False),
+                ("accept", True, True, True),
+                *WAITING,
+                ("entered_by_hand", False, False, True),
             ],
         ),
         # A Conflict's held decision is not in force.
-        (
-            Placement(Stage.CONFLICT, held_decision=Decision.ACCEPTED),
-            {},
-            [("accept", False, False), ("edit", False, None), ("ignore", False, False)],
-        ),
+        (Placement(Stage.CONFLICT, held_decision=Decision.ACCEPTED), {}, DECIDE),
     ],
 )
 def test_staff_census_icons_show_the_decision_in_force(placement, flags, expected):
-    """Offered icons and the selected one follow the stage and the decision."""
+    """A row draws the same icons at every stage; the decision in force is
+    pressed, the latest one is active as the undo, and the rest wait."""
     assert icons("census", placement, **flags) == expected
+
+
+def test_no_row_draws_back_to_review_beside_a_decision():
+    """Back to review has an icon of its own only on a row with nothing in
+    force to press (a Ministry request a refresh confirmed, #2131)."""
+    for stage in Stage:
+        for decision in (None, *Decision):
+            placement = Placement(stage, decision)
+            drawn = [a for a, *_ in icons("ministry", placement, leads=True)]
+            if any(selected for _, selected, *_ in icons("ministry", placement)):
+                assert "back_to_review" not in drawn, placement
+    confirmed = Placement(Stage.CONFIRMED)
+    assert icons("ministry", confirmed) == [
+        ("accept", False, False, False),
+        *WAITING,
+        ("back_to_review", False, None, True),
+        ("entered_by_hand", False, False, False),
+    ]
 
 
 def test_a_leader_sees_only_what_their_role_allows():
     """On a Ministry they lead a leader reviews; never Entered by hand,
-    selected or not; on another Ministry, nothing at all."""
+    selected or not; on another Ministry, nothing at all. A terminal step
+    is Staff's to undo, so its pressed Accept says so."""
     review = Placement(Stage.TO_REVIEW)
-    assert [a for a, _, _ in icons("ministry", review, LEADER, leads=True)] == [
+    assert [a for a, *_ in icons("ministry", review, LEADER, leads=True)] == [
         "accept",
         "edit",
         "ignore",
     ]
     assert icons("ministry", review, LEADER, leads=False) == []
     entered = Placement(Stage.ENTERED_BY_HAND, Decision.ACCEPTED)
-    assert icons("ministry", entered, LEADER, leads=True) == [("accept", True, True)]
+    drawn = row_icons("ministry", entered, LEADER, name="x", leads=True)
+    assert [(i["action"], i["selected"], i["active"]) for i in drawn] == [
+        ("accept", True, False),
+        ("edit", False, False),
+        ("ignore", False, False),
+    ]
+    assert drawn[0]["title"] == "Accepted; only Staff can change it now"
     assert icons("census", review, LEADER) == []
 
 
 def test_selected_icons_are_named_and_filled():
-    """A selected icon keeps the action's name, says the state in its
-    tooltip and takes its status look; an unselected one is plain."""
+    """A pressed icon says its state and what choosing it does, in its name
+    and tooltip alike, and takes its status look; an unavailable one says
+    why; an offered one is plain (#2131)."""
     edited = Placement(Stage.READY_TO_UPDATE, Decision.ACCEPTED_EDITED)
-    accept, back = row_icons("census", edited, STAFF, name="Phone for Pat")
-    assert accept["label"] == "Accept Phone for Pat"
-    assert accept["title"] == "Accepted (edited); choose Back to review to change it"
-    assert accept["css"] == "icon-button is-selected status-working"
-    assert back["css"] == "icon-button" and back["label"] == (
-        "Send Phone for Pat back to review"
+    accept, edit, ignore = row_icons("census", edited, STAFF, name="Phone for Pat")
+    assert (
+        accept["label"]
+        == accept["title"]
+        == ("Accepted (edited); select to send Phone for Pat back to review")
     )
-    # A mark is undone by Back to review too (#1840), so the tooltip says so.
+    assert accept["css"] == "icon-button is-selected status-working"
+    assert accept["undo"] and accept["active"]
+    assert ignore["css"] == "icon-button" and ignore["title"] == (
+        "Ignore Phone for Pat; send it back to review first"
+    )
+    assert not ignore["active"]
+    # A mark is undone by choosing it again (#1840), so the tooltip says so,
+    # and the decision before it waits.
     marked = Placement(Stage.ENTERED_BY_HAND, Decision.ACCEPTED)
-    titles = [icon["title"] for icon in row_icons("census", marked, STAFF, name="x")]
-    assert titles == [
-        "Accepted; choose Back to review to change it",
-        "Entered by hand; choose Back to review to change it",
-        "Send x back to review",
+    titles = [
+        icon["title"]
+        for icon in row_icons("census", marked, STAFF, name="x", by_hand=True)
     ]
+    assert titles == [
+        "Accepted; undo Entered by hand first",
+        "Edit x; undo Entered by hand first",
+        "Ignore x; undo Entered by hand first",
+        "Entered by hand; select to undo Entered by hand for x",
+    ]
+    review = Placement(Stage.TO_REVIEW)
+    marks = row_icons("census", review, STAFF, name="x", by_hand=True)
+    assert marks[-1]["title"] == "Mark x entered by hand; accept it first"
     assert accept["focus"] == "accept"
-    edit = row_icons("census", Placement(Stage.TO_REVIEW), STAFF, name="x")[1]
+    edit = row_icons("census", review, STAFF, name="x")[1]
     assert edit["action"] == "edit" and edit["focus"] == "accept"
     ignored = Placement(Stage.IGNORED, Decision.IGNORED)
-    assert row_icons("census", ignored, STAFF, name="x")[0]["css"].endswith(
+    assert row_icons("census", ignored, STAFF, name="x")[2]["css"].endswith(
         "status-unknown"
     )
 
@@ -289,7 +334,8 @@ def test_too_many_rows_turn_the_bulk_bar_off():
 
 def test_the_template_draws_selected_icons_and_the_filters_open():
     """The rendered worklist: Stage filter outside any disclosure, a box
-    only on rows with a bulk action, and selected icons pressed and
+    only on rows with a bulk action; the latest selected icon pressed and
+    opening Back to review's dialog (#2131), an earlier one pressed and
     unavailable with no dialog to open."""
     from django.template.loader import render_to_string
 
@@ -300,9 +346,15 @@ def test_the_template_draws_selected_icons_and_the_filters_open():
     )
     assert "<details" not in html.split('id="table-filters"')[0][-200:]
     assert html.count("data-select-row") == 3
-    selected = html.split('aria-label="Accept Phone for Member 1"')[1].split(">")[0]
-    assert 'aria-pressed="true"' in selected and 'aria-disabled="true"' in selected
-    assert "data-confirm-open" not in selected
+    undo = "Accepted; select to send Phone for Member 1 back to review"
+    pressed = html.split(f'aria-label="{undo}"')[1].split(">")[0]
+    assert 'aria-pressed="true"' in pressed and "aria-disabled" not in pressed
+    assert "data-row-undo" in pressed and "decide=back_to_review" in pressed
+    assert 'data-confirm-open="census-decide-dialog"' in pressed
+    waiting = html.split('aria-label="Accepted; undo Entered by hand first"')[1]
+    waiting = waiting.split(">")[0]
+    assert 'aria-pressed="true"' in waiting and 'aria-disabled="true"' in waiting
+    assert "data-confirm-open" not in waiting
     offered = html.split('aria-label="Accept Phone for Member 0"')[1].split(">")[0]
     assert 'aria-pressed="false"' in offered
     assert 'data-confirm-open="census-decide-dialog"' in offered
@@ -327,12 +379,10 @@ def test_a_silent_action_hides_its_note():
     built = made(shown=shown, silent={Action.ENTERED_BY_HAND})
     entered, ignored = built.rows
     choices = {
-        icon["action"]: icon["choice"]
-        for icon in entered["icons"]
-        if not icon["selected"]
+        icon["decide"]: icon["choice"] for icon in entered["icons"] if icon["active"]
     }
     assert choices == {"back_to_review": "", "entered_by_hand": "no_note"}
-    back = [i for i in ignored["icons"] if not i["selected"]]
+    back = [i for i in ignored["icons"] if i["active"]]
     assert [(i["choice"], i["body"]) for i in back] == [("", REOPEN_BODY)]
     assert ignored["choice"] == ""
     bulk = {button["value"]: button["choice"] for button in built.bulk}
@@ -340,7 +390,7 @@ def test_a_silent_action_hides_its_note():
     assert bulk["back_to_review"] == "reopen" and bulk["accept"] == ""
     # Without ``silent`` every action keeps its note.
     plain = made(shown=shown)
-    assert {i["choice"] for i in plain.rows[0]["icons"] if not i["selected"]} == {""}
+    assert {i["choice"] for i in plain.rows[0]["icons"] if i["active"]} == {""}
 
 
 def test_a_stream_family_column_links_anywhere():
@@ -507,13 +557,15 @@ def test_a_withheld_action_is_left_out_of_one_row():
     """An item that cannot take an action has no icon for it (#1683).
 
     A census field no value can be typed for (moved, deceased, the email
-    opt-out, a New Member) has no Edit, whatever its stage.
+    opt-out, a New Member) has no Edit, whatever its stage; Entered by hand
+    waits for an Accept (#2131).
     """
     assert icons(
         "census", Placement(Stage.TO_REVIEW), by_hand=True, withheld={"edit"}
     ) == [
-        ("accept", False, False),
-        ("ignore", False, False),
+        ("accept", False, False, True),
+        ("ignore", False, False, True),
+        ("entered_by_hand", False, False, False),
     ]
 
 
@@ -649,7 +701,8 @@ def test_a_row_with_its_own_entered_fields_gets_its_own_dialog():
     # Without the stream's fields, Entered by hand opens the shared dialog.
     plain = made(shown=[rows()[0] | {"by_hand": True}]).rows[0]
     assert not plain["offers_entered"]
-    assert {icon["dialog"] for icon in plain["icons"]} >= {"census-decide-dialog"}
+    dialogs = {icon["dialog"] for icon in plain["icons"] if icon["active"]}
+    assert dialogs == {"census-decide-dialog", "census-edit-dialog-0"}
 
 
 def test_a_terminal_undo_says_where_the_item_goes():

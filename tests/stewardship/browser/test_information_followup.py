@@ -51,10 +51,20 @@ def row(page, index):
     return page.locator(f"#information-row-{UUID(int=200 + index)}")
 
 
+# A row's icons by what they do: a pressed icon's name says what choosing
+# it does (#2131); "Send" is the row's Back to review, its pressed icon.
+ICONS = {
+    "Accept": '[data-row-action="accept"]',
+    "Ignore": '[data-row-action="ignore"]',
+    "Mark": '[data-row-action="handled"]',
+    "Send": "[data-row-undo]",
+}
+
+
 def icon(page, index, label, after=""):
-    """Row ``index``'s icon named ``label``, the request and then ``after``."""
-    title = f"{label} {name(index)}{after}"
-    return row(page, index).get_by_role("button", name=title, exact=True)
+    """Row ``index``'s ``label`` icon (Accept, Ignore, Mark or Send); ``after``
+    is the rest of its name, kept for the reader."""
+    return row(page, index).locator(f"button{ICONS[label]}")
 
 
 def posts(page, origin, answer):
@@ -127,7 +137,9 @@ def test_accept_then_handled_in_place(page, component_origin):
         node.get_attribute("data-row-action")
         for node in row(page, 0).locator(".table-actions button").all()
     ]
-    assert actions == ["accept", "ignore"]
+    # Handled is drawn from the start, unavailable until an Accept (#2131).
+    assert actions == ["accept", "ignore", "handled"]
+    assert icon(page, 0, "Mark").get_attribute("aria-disabled") == "true"
     icon(page, 0, "Accept").click()
     dialog = page.locator("#information-decide-dialog")
     has_text(dialog.locator("h2"), f"Accept {name(0)}?")
@@ -142,7 +154,7 @@ def test_accept_then_handled_in_place(page, component_origin):
     icon(page, 0, "Mark", " handled").click()
     has_text(
         dialog.locator("[data-confirm-body]"),
-        "Record that this was handled. Back to review undoes it.",
+        "Record that this was handled. Choose Handled again to undo it.",
     )
     dialog.get_by_role("button", name="Record").click()
     has_text(page.locator("#information-notice"), HANDLED_NOTICE)
@@ -152,7 +164,8 @@ def test_accept_then_handled_in_place(page, component_origin):
 
 
 def test_back_to_review_undoes_handled_with_a_note(page, component_origin):
-    """A Handled request offers Back to review (#1840); its dialog says the
+    """A Handled request offers Back to review (#1840), its pressed Handled
+    chosen again (#2131); its dialog says the
     request goes back to To handle with its decision kept and waits for the
     required note, then the redrawn row is To handle, with no reload."""
     page.goto(component_origin + HANDLED)
@@ -162,8 +175,9 @@ def test_back_to_review_undoes_handled_with_a_note(page, component_origin):
         node.get_attribute("data-row-action")
         for node in row(page, 0).locator(".table-actions button").all()
     ]
-    # The undo sits just right of the mark it undoes (R45 W, #2041).
-    assert actions == ["accept", "handled", "back_to_review"]
+    # No Back to review beside the mark: the pressed mark is the undo.
+    assert actions == ["accept", "ignore", "handled"]
+    assert icon(page, 0, "Send").get_attribute("data-row-action") == "handled"
     icon(page, 0, "Send", " back to review").click()
     dialog = page.locator("#information-decide-dialog")
     has_text(

@@ -128,11 +128,14 @@ def test_the_worklist_lists_and_decides_requests_in_place(
         rebound = accept | {"decide": "ignore"}
         assert search(browser, ROUTE, rebound)[0].status_code == 409
         assert AdditionalInformationRevision.objects.count() == 1
-        # On To handle the Accept icon is drawn selected, Handled offered.
+        # On To handle the Accept icon is drawn pressed, as the row's undo
+        # (#2131), Handled offered.
         response, body = search(browser, ROUTE, {"stage": "to_handle"})
         page = body.decode()
-        accepted = page.split('aria-label="Accept the request from')[1].split(">")[0]
-        assert 'aria-pressed="true"' in accepted and 'aria-disabled="true"' in accepted
+        accepted = page.split('aria-label="Accepted; select to send the request')[1]
+        accepted = accepted.split(">")[0]
+        assert 'aria-pressed="true"' in accepted and "aria-disabled" not in accepted
+        assert "decide=back_to_review" in accepted
         assert 'data-row-action="handled"' in page
         assert "Will call" in page
         # The export pane takes the view: To handle is follow-up needed.

@@ -23,6 +23,8 @@ from .review_worklist_components import (
     REOPENED_NOTICE,
     STALE_NOTICE,
     STALED,
+    UNDONE,
+    UNDONE_NOTICE,
 )
 from .test_bulk_bar import assert_accessible
 from .test_table_sorting import MARK, MARKED, fulfil_post_with
@@ -45,9 +47,32 @@ def row(page, index):
     return page.locator(f"#worklist-row-{index}")
 
 
+# The row action each test names an icon by. A pressed icon's name says
+# what choosing it does (#2131), so the tests find icons by their action.
+ACTIONS = {
+    "Accept": "accept",
+    "Edit": "edit",
+    "Ignore": "ignore",
+    "Mark": "entered_by_hand",
+}
+
+
 def icon(page, index, label):
-    """Row ``index``'s icon whose name is ``label`` followed by the row."""
-    return row(page, index).get_by_role("button", name=f"{label} {name(index)}")
+    """Row ``index``'s ``label`` icon (Accept, Edit, Ignore or Mark)."""
+    return row(page, index).locator(f'button[data-row-action="{ACTIONS[label]}"]')
+
+
+def boxes(locator):
+    """The bounding box of each button under ``locator``, to the pixel, from
+    its table's corner, so scrolling the table into view does not count."""
+    return locator.locator("button").evaluate_all(
+        """nodes => nodes.map(node => {
+            const box = node.getBoundingClientRect();
+            const table = node.closest("table").getBoundingClientRect();
+            return [box.left - table.left, box.top - table.top, box.width,
+                    box.height].map(Math.round);
+        })"""
+    )
 
 
 def top(locator):
@@ -72,8 +97,9 @@ def posts_to(page, origin, answer):
 
 @pytest.mark.parametrize("width", [320, 1280])
 def test_icons_show_the_decision_in_force(page, component_origin, axe_source, width):
-    """Each row draws the icons its stage offers a Staff reader, and the
-    decision or mark in force selected: pressed, unavailable and filled.
+    """Each row draws the same icons at every stage, the decision or mark in
+    force pressed and filled, the latest one its undo (#2131), and the rest
+    unavailable with their reason.
     The filters are always open, Stage first, and the page has no WCAG
     violation at a phone or a desktop width."""
     page.set_viewport_size({"width": width, "height": 900})
@@ -86,19 +112,24 @@ def test_icons_show_the_decision_in_force(page, component_origin, axe_source, wi
     accept = icon(page, 0, "Accept")
     assert accept.get_attribute("aria-pressed") == "false"
     assert icon(page, 0, "Edit").get_attribute("aria-pressed") is None
-    assert icon(page, 0, "Send").count() == 0
-    # Ready to update: Accept selected beside Back to review.
+    assert page.locator('[data-row-action="back_to_review"]').count() == 0
+    # Ready to update: Accept pressed, and it is the undo; no Back to review
+    # icon beside it.
     chosen = icon(page, 2, "Accept")
     assert chosen.get_attribute("aria-pressed") == "true"
-    assert chosen.get_attribute("aria-disabled") == "true"
-    assert chosen.get_attribute("title") == (
-        "Accepted; choose Back to review to change it"
+    assert chosen.get_attribute("aria-disabled") is None
+    undo = f"Accepted; select to send {name(2)} back to review"
+    assert chosen.get_attribute("title") == undo
+    visible(row(page, 2).get_by_role("button", name=undo, exact=True))
+    # Ignore waits for the undo, saying why; choosing it does nothing.
+    ignore = icon(page, 2, "Ignore")
+    assert ignore.get_attribute("aria-disabled") == "true"
+    assert ignore.get_attribute("title") == (
+        f"Ignore {name(2)}; send it back to review first"
     )
-    visible(row(page, 2).get_by_role("button", name=f"Send {name(2)} back to review"))
-    # Choosing it again is no undo: nothing opens and nothing is sent.
     sent = []
     page.on("request", lambda r: sent.append(r) if r.method == "POST" else None)
-    chosen.click(force=True)
+    ignore.click(force=True)
     assert page.locator("dialog[open]").count() == 0 and sent == []
     fill = "node => getComputedStyle(node).backgroundColor"
     assert chosen.evaluate(fill) != accept.evaluate(fill)
@@ -107,10 +138,15 @@ def test_icons_show_the_decision_in_force(page, component_origin, axe_source, wi
         icon(page, 3, "Accept").get_attribute("title").startswith("Accepted (edited);")
     )
     assert icon(page, 4, "Ignore").get_attribute("aria-pressed") == "true"
-    # Entered by hand: Accept and the mark selected; Back to review undoes
-    # the mark (#1840), its box's one kind; Not seen flagged.
+    # Entered by hand: Accept and the mark pressed; the mark is the undo
+    # (#1840), its box's one kind, and Accept waits for it; Not seen flagged.
     marked = row(page, 6)
     assert icon(page, 6, "Mark").get_attribute("aria-pressed") == "true"
+    assert icon(page, 6, "Mark").get_attribute("aria-disabled") is None
+    assert icon(page, 6, "Accept").get_attribute("aria-disabled") == "true"
+    assert icon(page, 6, "Accept").get_attribute("title") == (
+        "Accepted; undo Entered by hand first"
+    )
     box = marked.locator("input[data-select-row]")
     assert box.get_attribute("data-confirm-kind") == "back_to_review"
     visible(marked.locator(".stage-chip.status-warning"))
@@ -120,7 +156,7 @@ def test_icons_show_the_decision_in_force(page, component_origin, axe_source, wi
     assert "555-0177" in wrong.inner_text()
     assert "555-0177" not in row(page, 0).inner_text()
     # Every row with a bulk action has a box (UX conventions, "Several rows"),
-    # the Entered by hand row too since its Back to review undoes it (#1840).
+    # the Entered by hand row too since its pressed mark undoes it (#1840).
     assert page.locator("input[data-select-row]").count() == 8
     visible(page.locator(".bulk-bar").get_by_role("button", name="Add"))
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
@@ -194,21 +230,23 @@ def test_bulk_buttons_wait_for_rows_that_all_offer_them(page, component_origin):
 
 
 def test_reopening_an_ignored_item_takes_an_optional_note(page, component_origin):
-    """Back to review on an Ignored item, as on an accepted one, records with
-    no note (#1889). A bulk Back to review asks for one only while a ticked
-    row is at a terminal stage, not while only an Ignored row is."""
+    """Back to review on an Ignored item (its pressed Ignore chosen again,
+    #2131), as on an accepted one, records with no note (#1889). A bulk Back
+    to review asks for one only while a ticked row is at a terminal stage,
+    not while only an Ignored row is."""
     page.goto(component_origin + PATH)
     page.evaluate(MARK)
     sent = posts_to(page, component_origin, REOPENED)
     dialog = page.locator("#worklist-decide-dialog")
     record = dialog.get_by_role("button", name="Record")
-    row(page, 2).get_by_role("button", name=f"Send {name(2)} back to review").click()
+    icon(page, 2, "Accept").click()
+    has_text(dialog.locator("h2"), f"Send {name(2)} back to review?")
     available(record)
     # The note's label follows the action in place (R38 finding 3).
     has_text(dialog.locator("label[for$=-note]"), "Note (optional)")
     dialog.get_by_role("button", name="Cancel").click()
     hidden(dialog)
-    row(page, 4).get_by_role("button", name=f"Send {name(4)} back to review").click()
+    icon(page, 4, "Ignore").click()
     has_text(
         dialog.locator("[data-confirm-body]"),
         "The ignored item goes back to To review, to be decided again.",
@@ -235,6 +273,83 @@ def test_reopening_an_ignored_item_takes_an_optional_note(page, component_origin
     back.click()
     assert bulk.get_by_role("button", name="Record").is_disabled()
     has_text(bulk.locator("label[for$=-note]"), "Note (required)")
+
+
+def test_a_pressed_mark_undoes_with_its_note_in_place(page, component_origin):
+    """Choosing the pressed Entered by hand opens Back to review's own
+    dialog, which requires a note on a terminal stage (#1840); recording
+    posts Back to review, and the row is redrawn in place with the same
+    buttons in the same places, the mark now unpressed and focused
+    (#2131)."""
+    page.goto(component_origin + PATH)
+    page.evaluate(MARK)
+    sent = posts_to(page, component_origin, UNDONE)
+    actions = row(page, 6).locator(".table-actions")
+    before = boxes(actions)
+    icon(page, 6, "Mark").click()
+    dialog = page.locator("#worklist-decide-dialog")
+    has_text(dialog.locator("h2"), f"Send {name(6)} back to review?")
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "Entered by hand is undone: the item goes back to To enter by hand, "
+        "with its decision kept. Say why.",
+    )
+    has_text(dialog.locator("label[for$=-note]"), "Note (required)")
+    record = dialog.get_by_role("button", name="Record")
+    assert record.is_disabled()
+    dialog.get_by_label("Note (required)").fill("Typed in the wrong Member")
+    available(record)
+    record.click()
+    has_text(page.locator("#worklist-notice"), UNDONE_NOTICE)
+    hidden(dialog)
+    body = sent[-1]
+    assert "decide=back_to_review" in body and "item=6" in body
+    assert "note=Typed+in+the+wrong+Member" in body
+    mark = icon(page, 6, "Mark")
+    assert mark.get_attribute("aria-pressed") == "false"
+    assert page.evaluate("document.activeElement.dataset.rowAction") == (
+        "entered_by_hand"
+    )
+    assert boxes(actions) == before
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_a_decision_keeps_every_button_in_place(page, component_origin):
+    """Accept fills its own button and nothing appears or disappears: every
+    button of the row keeps its bounding box (UX conventions, "No layout
+    shift"; #2131)."""
+    page.goto(component_origin + PATH)
+    sent = posts_to(page, component_origin, ACCEPTED)
+    actions = row(page, 0).locator(".table-actions")
+    before = boxes(actions)
+    icon(page, 0, "Accept").click()
+    page.locator("#worklist-decide-dialog").get_by_role("button", name="Record").click()
+    has_text(page.locator("#worklist-notice"), ACCEPTED_NOTICE)
+    assert "decide=accept" in sent[-1]
+    assert icon(page, 0, "Accept").get_attribute("aria-pressed") == "true"
+    assert boxes(actions) == before
+
+
+@pytest.mark.parametrize("key", ["Space", "Enter"])
+def test_space_and_enter_press_and_unpress(page, component_origin, key):
+    """From the keyboard, Space and Enter choose a decision and choose a
+    pressed one again, each opening its own dialog; an unavailable button
+    opens nothing."""
+    page.goto(component_origin + PATH)
+    dialog = page.locator("#worklist-decide-dialog")
+    icon(page, 0, "Accept").focus()
+    page.keyboard.press(key)
+    has_text(dialog.locator("h2"), f"Accept {name(0)}?")
+    page.keyboard.press("Escape")
+    hidden(dialog)
+    icon(page, 2, "Accept").focus()
+    page.keyboard.press(key)
+    has_text(dialog.locator("h2"), f"Send {name(2)} back to review?")
+    page.keyboard.press("Escape")
+    hidden(dialog)
+    icon(page, 2, "Ignore").focus()
+    page.keyboard.press(key)
+    assert page.locator("dialog[open]").count() == 0
 
 
 def test_edit_and_add_open_the_value_editor(page, component_origin):
@@ -289,10 +404,12 @@ def test_a_leader_sees_only_their_actions(page, component_origin):
     ] == ["accept", "edit", "ignore"]
     assert row(page, 1).locator(".table-actions button").count() == 0
     assert row(page, 1).locator("input[data-select-row]").count() == 0
+    # Accepted: the same icons, Accept pressed as the undo (#2131).
     assert [
         node.get_attribute("data-row-action")
         for node in row(page, 2).locator(".table-actions button").all()
-    ] == ["accept", "back_to_review"]
+    ] == ["accept", "edit", "ignore"]
+    assert icon(page, 2, "Accept").get_attribute("data-row-undo") is not None
     bar = page.locator(".bulk-bar")
     assert [node.inner_text() for node in bar.locator("[data-bulk-action]").all()] == [
         "Accept",

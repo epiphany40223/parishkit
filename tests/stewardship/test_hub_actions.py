@@ -245,7 +245,7 @@ def test_the_pledge_edit_offers_every_frequency_and_shows_the_reviewers_value():
         return unescape(page).split('id="family-tabs-panel-financial"')[1]
 
     edited = panel(pledge_tab())
-    assert 'data-row-action="back_to_review"' in edited
+    assert "decide=back_to_review" in edited
     assert '<th scope="col">Reviewer\'s value</th>' in edited
     assert "Reviewer's value:" not in edited and "This pledge:" not in edited
     # The amount and frequency rows carry the Edit's values; the stage and

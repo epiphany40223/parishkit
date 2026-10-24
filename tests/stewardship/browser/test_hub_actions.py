@@ -97,8 +97,14 @@ def test_accept_from_the_family_tab_redraws_it_in_place(page, component_origin):
     hidden(dialog)
     row = home(page)
     has_text(row.locator(".stage-chip .status-word"), "To enter by hand")
-    accept = row.get_by_role("button", name="Accept Home address for Family")
+    # Pressed, it is the row's undo and its name says so (#2131).
+    accept = row.locator("[data-row-action='accept']")
     has_attribute(accept, "aria-pressed", "true")
+    has_attribute(
+        accept,
+        "aria-label",
+        "Accepted; select to send Home address for Family back to review",
+    )
     focused(accept)
     # The answer's notice is said in the page's status line.
     has_text(page.locator("main > div[role=status].visually-hidden"), NOTICE)
@@ -170,7 +176,8 @@ def test_an_edited_pledge_shows_its_reviewers_value_in_a_column(
     annual = table.get_by_role("row", name="Annual pledge (ParishSoft 2026)")
     visible(annual.get_by_role("cell", name="$1,300.00", exact=True))
     visible(annual.locator(".stage-chip"))
-    visible(annual.get_by_role("button", name="Send", exact=False).first)
+    # The pressed Accept is its Back to review (#2131).
+    visible(annual.locator("button[data-row-undo]"))
     frequency = table.get_by_role("row", name="Frequency")
     visible(frequency.get_by_role("cell", name="Monthly ($108.33 each)", exact=True))
     assert panel.get_by_text("Reviewer's value:").count() == 0

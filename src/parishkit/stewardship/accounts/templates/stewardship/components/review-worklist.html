@@ -26,12 +26,14 @@
     each row's action icons, and each Edit's value editor;
   - the stream's export pane below the table (worklist.export_template).
 
-  A row's icon is offered (it opens the decision dialog, aria-pressed
-  false for an action that records a state) or selected: the decision or
-  mark in force, filled with its status colour, aria-pressed true and
-  unavailable (aria-disabled), since choosing it again is no undo; Back to
-  review is (UX conventions, "Row actions and confirmation"). An action the
-  reader's role does not allow is not drawn at all. Every decision posts to
+  A row's icons are decision toggles (UX conventions, "Decision toggles",
+  #2131), the same at every stage: offered (it opens the decision dialog,
+  aria-pressed false for an action that records a state), selected (the
+  decision or mark in force, filled with its status colour, aria-pressed
+  true; the latest one is the row's undo and opens Back to review's
+  dialog, an earlier one waits for it) or unavailable (aria-disabled, its
+  tooltip saying why). An action the reader's role does not allow is not
+  drawn at all. Every decision posts to
   the page itself with the page's view, and the page is redrawn from the
   answer (answer_page), so nothing reloads; focus returns to the same
   action's icon in the redrawn row (data-row-action).
