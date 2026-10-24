@@ -105,7 +105,8 @@ checks need no database:
   events, from the view's own functions: ParishSoft refreshes at 2:00 and
   8:00 AM New York time (``REFRESH_TIMES``) around each send, a backup that
   ran from 8:58 to 9:03 AM on October 1 (``BACKUP``, while the invitation
-  sent) and go-live milestones on September 29 and 30 (``MILESTONES``),
+  sent), a backup within one minute at 3:00 PM Los Angeles time
+  (``SHORT_BACKUP``) and go-live milestones on September 29 and 30 (``MILESTONES``),
   before the first send.
 - Edit's Delete (#1656): ``EDIT`` posts it to ``EDIT_DELETE``, answered with
   the review of removing Reminder 1; ``EDIT_SERIES`` to ``SERIES_DELETE``,
@@ -251,6 +252,12 @@ REFRESH_TIMES = ("02:00", "08:00")
 BACKUP = (
     datetime(2054, 10, 1, 12, 58, tzinfo=UTC),
     datetime(2054, 10, 1, 13, 3, tzinfo=UTC),
+)
+# A second backup that started and ended in the same minute (3:00 PM Los
+# Angeles time), drawn as one time.
+SHORT_BACKUP = (
+    datetime(2054, 10, 1, 22, 0, 10, tzinfo=UTC),
+    datetime(2054, 10, 1, 22, 0, 40, tzinfo=UTC),
 )
 # Go-live started at 11:00 AM and Production activated at 3:40 PM New York
 # time, on September 29 and 30.
@@ -470,7 +477,7 @@ def _events(sends):
         "full_refresh_times": REFRESH_TIMES,
         "rules": True,
     }
-    backups = [CalendarEvent("backup", *BACKUP)]
+    backups = [CalendarEvent("backup", *BACKUP), CalendarEvent("backup", *SHORT_BACKUP)]
     events = sorted(
         refresh_events(schedule, sends) + backups + milestones(MILESTONES),
         key=lambda event: event.start,

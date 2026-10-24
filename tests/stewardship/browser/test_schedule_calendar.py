@@ -1293,6 +1293,7 @@ def test_operational_events_are_muted_lines_after_a_days_sends(
     assert events_in(opening) == [
         "ParishSoft refresh 5:00 AM, 11:00 PM",
         "Backup 5:58 AM–6:03 AM",
+        "Backup 3:00 PM",
     ]
     assert opening.locator(".calendar-events :is(a, button)").count() == 0
     invitation = opening.locator("li.schedule-past").first
@@ -1329,6 +1330,7 @@ def test_operational_events_are_muted_lines_after_a_days_sends(
     assert events_in(week_cell(page, "Oct 1")) == [
         "ParishSoft refresh 5:00 AM, 11:00 PM",
         "Backup 5:58 AM–6:03 AM",
+        "Backup 3:00 PM",
     ]
     assert events_in(week_cell(page, "2"))[0].startswith("ParishSoft refresh")
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")

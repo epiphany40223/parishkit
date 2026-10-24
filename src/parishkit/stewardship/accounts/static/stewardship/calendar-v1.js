@@ -172,6 +172,16 @@
       first: dates.time(times[0]), last: dates.time(times[times.length - 1])});
   }
 
+  // A backup's line: "Backup 1:00 AM–1:12 AM", or "Backup 1:00 AM" when it
+  // started and ended in the same minute (the times read the same).
+  function backupText(event) {
+    const start = dates.time(event.when);
+    const end = dates.time(event.end || event.when);
+    return start === end
+      ? fillIn(root.dataset.backupOnce, {time: start})
+      : fillIn(root.dataset.backup, {start, end});
+  }
+
   // One day's operational events as list items, by time, or none: the
   // daily ones only when ``withSends`` (the day holds a send), its
   // refreshes as one item at the first one's time.
@@ -181,7 +191,7 @@
     const lines = shown.filter((event) => event.kind !== "refresh").map((event) => ({
       when: event.when,
       text: event.kind === "backup"
-        ? fillIn(root.dataset.backup, {start: dates.time(event.when), end: dates.time(event.end || event.when)})
+        ? backupText(event)
         : fillIn(root.dataset.milestone, {name: event.label, time: dates.time(event.when)}),
     }));
     if (refreshes.length) lines.push({when: refreshes[0], text: refreshText(refreshes)});

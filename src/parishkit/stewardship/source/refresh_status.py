@@ -20,7 +20,7 @@ from django.db import connection
 
 from parishkit.stewardship.jobs.operational_sources import configured_policy
 
-from .cadence import FREQUENCIES, next_full_at, refresh_settings
+from .cadence import FREQUENCIES, next_full_at, refresh_settings, skips_around_emails
 from .data_age import (
     FACTS_COLUMNS,
     FACTS_SQL,
@@ -113,7 +113,13 @@ def refresh_schedule(configuration):
     )
     if settings["frequency"] not in FREQUENCIES:
         return None
-    return {"timezone": timezone, **settings}
+    # Whether the schedule skips refreshes around Family emails (#632): the
+    # rules themselves are not kept in ``settings``.
+    return {
+        "timezone": timezone,
+        **settings,
+        "skips_around_emails": skips_around_emails(record.get("settings", {})),
+    }
 
 
 # The latest full refresh outcomes: the first half of the

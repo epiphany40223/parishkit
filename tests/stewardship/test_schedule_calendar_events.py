@@ -6,6 +6,7 @@ its preparation window or it was sent during a backup.
 """
 
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from parishkit.stewardship.accounts.schedule_calendar_events import (
     NOTE_BACKUP,
@@ -14,6 +15,7 @@ from parishkit.stewardship.accounts.schedule_calendar_events import (
     refresh_events,
     refresh_times,
     send_notes,
+    skip_windows,
 )
 from parishkit.stewardship.accounts.schedule_table import ScheduleRow
 
@@ -91,3 +93,63 @@ def test_a_send_notes_a_backup_it_was_sent_during():
 def test_milestones_are_not_daily():
     """A go-live milestone always shows, whatever the day holds."""
     assert not CalendarEvent("milestone", datetime(2054, 10, 1, tzinfo=UTC)).daily
+
+
+def test_an_initial_invitation_has_no_refresh_note():
+    """Only a reminder is prepared ahead, so an Initial invitation gets no note."""
+    due = datetime(2054, 10, 12, 13, tzinfo=UTC)
+    now = due - timedelta(days=1)
+    wanted = schedule("02:00", "08:00")
+    assert send_notes(send(due, "initial"), wanted, [], now) == []
+    assert send_notes(send(due, "reminder"), wanted, [], now) == [str(NOTE_REFRESH)]
+
+
+def test_a_note_is_for_production_only():
+    """Mail is prepared ahead only in Production; Testing gets no refresh note."""
+    due = datetime(2054, 10, 12, 13, tzinfo=UTC)
+    now = due - timedelta(days=1)
+    wanted = schedule("02:00", "08:00")
+    assert send_notes(send(due), wanted, [], now, production=False) == []
+
+
+def test_skipping_around_emails_keeps_only_the_nightly_time_in_the_note():
+    """The scheduler skips a non-nightly time in a lead window, never the nightly."""
+    due = datetime(2054, 10, 12, 13, tzinfo=UTC)  # 9:00 AM EDT
+    now = due - timedelta(days=1)
+    skipping = schedule("02:00", "08:00") | {"skips_around_emails": True}
+    assert send_notes(send(due), skipping, [], now) == []
+    # The nightly time itself in the window is still noted.
+    nightly = schedule("08:00", "14:00") | {"skips_around_emails": True}
+    assert send_notes(send(due), nightly, [], now) == [str(NOTE_REFRESH)]
+
+
+def test_skipped_refreshes_inside_a_send_window_are_not_drawn():
+    """A non-nightly time in a reminder's lead window or send is left out."""
+    zone = ZoneInfo(ZONE)
+    reminder = send(datetime(2054, 10, 12, 13, tzinfo=UTC))  # 9:00 AM EDT
+    initial = send(datetime(2054, 10, 13, 13, 30, tzinfo=UTC), "initial")  # 9:30
+    now = reminder.due - timedelta(days=2)
+    sends = [reminder, initial]
+    # 08:00 is in the reminder's lead window and 09:30 in its sending hour.
+    # The initial invitation's window starts at its due time, so 09:00 on the
+    # 13th is outside it but 10:00 is inside.
+    wanted = schedule("02:00", "08:00", "09:00", "09:30", "10:00") | {
+        "skips_around_emails": True
+    }
+    drawn = refresh_events(wanted, sends, skip_windows(sends, now))
+    local = {
+        (
+            event.start.astimezone(zone).day,
+            event.start.astimezone(zone).strftime("%H:%M"),
+        )
+        for event in drawn
+    }
+    assert {(12, "08:00"), (12, "09:30"), (13, "10:00"), (13, "09:30")}.isdisjoint(
+        local
+    )
+    assert {(12, "02:00"), (12, "10:00"), (13, "09:00")} <= local
+    # Without windows (skipping off, or Testing) every time is drawn.
+    assert len(refresh_events(wanted, sends)) > len(drawn)
+    # A past send and a report email have no window.
+    assert skip_windows([send(reminder.due, "report")], now) == []
+    assert skip_windows([reminder], reminder.due) == []

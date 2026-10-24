@@ -21,10 +21,13 @@ it stored anew:
   activated.
 
 Refreshes and backups recur daily, so the page draws them only on days that
-also hold a send; milestones always show. Each Family send still to come
-whose two-hour preparation window holds a refresh
+also hold a send; milestones always show. In Production, each reminder still
+to come whose two-hour preparation window holds a refresh
 (``schedule_production.refresh_in_lead_window``, the scheduler's own
-warning) and each send made while a backup ran gets a note in words.
+warning; only a reminder is prepared ahead) and each send made while a
+backup ran gets a note in words. When the schedule skips refreshes around
+Family emails, the non-nightly times inside a send's window
+(``send_windows.email_windows``, the scheduler's own) are not drawn.
 """
 
 from dataclasses import dataclass
@@ -34,6 +37,12 @@ from zoneinfo import ZoneInfo
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.campaigns.intervals import resolve_local
+from parishkit.stewardship.source.send_windows import (
+    MINIMUM_ESTIMATE,
+    Email,
+    email_windows,
+    window_cause,
+)
 
 # The most finished backups listed: a campaign's months of twice-daily
 # backups and requested ones stay far below it.
@@ -83,31 +92,54 @@ def refresh_times(schedule):
     return tuple(sorted({schedule["nightly_time"], *schedule["full_refresh_times"]}))
 
 
-def refresh_events(schedule, sends):
+def skip_windows(sends, now):
+    """The Family email windows the scheduler would skip refreshes in.
+
+    One window set per Family send still to come (not a report email), from
+    the scheduler's own ``email_windows`` with the minimum send estimate:
+    the calendar cannot know how long a send will take.
+    """
+    estimates = {"initial": MINIMUM_ESTIMATE, "reminder": MINIMUM_ESTIMATE}
+    return [
+        window
+        for send in sends
+        if send.kind in estimates and send.due > now
+        for window in email_windows(
+            Email(send.kind, send.due), now=now, estimates=estimates
+        )
+    ]
+
+
+def refresh_events(schedule, sends, windows=()):
     """The refreshes of ``schedule`` on the parish-local days around ``sends``.
 
     Each daily time is resolved on each parish-local day that holds a send,
     and the day either side, so whichever day the browser places a send on,
-    its refreshes are listed.
+    its refreshes are listed. A time other than the nightly one that falls
+    in one of ``windows`` is skipped by the scheduler, so it is left out.
     """
     walls = refresh_times(schedule)
     if not walls:
         return []
-    zone = ZoneInfo(schedule["timezone"])
+    zone_name = schedule["timezone"]
+    zone = ZoneInfo(zone_name)
     days = {
         send.due.astimezone(zone).date() + offset
         for send in sends
         for offset in (-MARGIN, timedelta(), MARGIN)
     }
-    return [
-        CalendarEvent(
-            "refresh",
-            resolve_local(
-                datetime.combine(day, time.fromisoformat(wall)), schedule["timezone"]
-            ),
+    events = [
+        (
+            wall,
+            resolve_local(datetime.combine(day, time.fromisoformat(wall)), zone_name),
         )
         for day in sorted(days)
         for wall in walls
+    ]
+    return [
+        CalendarEvent("refresh", at)
+        for wall, at in events
+        if wall == schedule["nightly_time"] or window_cause(windows, at) is None
     ]
 
 
@@ -151,12 +183,15 @@ def milestones(rows):
     ]
 
 
-def send_notes(send, schedule, backups, now):
+def send_notes(send, schedule, backups, now, production=True):
     """The notes in words for one send of the calendar (#1808).
 
-    A Family send still to come (``send.kind`` not ``report``) whose two
-    hours of preparation hold a refresh says so, from the scheduler's own
-    check; a send whose time falls while a finished backup ran says that.
+    A reminder still to come whose two hours of preparation hold a refresh
+    says so, from the scheduler's own check, in Production only: that is
+    where mail is prepared ahead, and an Initial invitation never is. When
+    the schedule skips refreshes around Family emails, only the nightly
+    time counts (the scheduler never skips it). A send whose time falls
+    while a finished backup ran says that.
     """
     from parishkit.stewardship.campaigns.schedule_production import (
         refresh_in_lead_window,
@@ -164,9 +199,12 @@ def send_notes(send, schedule, backups, now):
 
     notes = []
     walls = refresh_times(schedule)
+    if walls and schedule.get("skips_around_emails"):
+        walls = (schedule["nightly_time"],)
     if (
-        walls
-        and send.kind != "report"
+        production
+        and walls
+        and send.kind == "reminder"
         and send.due > now
         and refresh_in_lead_window(walls, schedule["timezone"], [send.due])
     ):
@@ -192,9 +230,25 @@ def calendar_events(configuration, campaign, sends, now):
     first = min([dates.starts_at, *(send.due for send in sends)]) - MARGIN
     last = max([dates.ends_at, *(send.due for send in sends)]) + MARGIN
     backups = backup_events(first, last)
+    # The scheduler skips refreshes around Family emails only in Production,
+    # with the current campaign live and delivery not paused.
+    production = configuration.mode == "production"
+    windows = []
+    if (
+        production
+        and schedule is not None
+        and schedule.get("skips_around_emails")
+        and campaign.state == "active"
+        and not campaign.delivery_paused
+    ):
+        windows = skip_windows(sends, now)
     events = sorted(
-        refresh_events(schedule, sends) + backups + milestone_events(campaign.pk),
+        refresh_events(schedule, sends, windows)
+        + backups
+        + milestone_events(campaign.pk),
         key=lambda event: event.start,
     )
-    items = [(send, send_notes(send, schedule, backups, now)) for send in sends]
+    items = [
+        (send, send_notes(send, schedule, backups, now, production)) for send in sends
+    ]
     return events, items
