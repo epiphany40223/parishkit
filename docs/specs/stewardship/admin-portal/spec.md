@@ -162,8 +162,9 @@ configured ([#142](https://github.com/epiphany40223/parishkit/issues/142)):
    Staff and Ministry leader. Each address becomes one user with the highest
    role it is listed under, Named by its local part until renamed on the
    Users page. Access is by address only; no list grants a whole domain.
-6. ParishSoft API key replacement, expected organization, connectivity check,
-   and a complete staged source load.
+6. ParishSoft API key, the
+   [organization choice](#parishsoft-organization-choice) from the
+   organizations that key reaches, and a complete staged source load.
 7. Exact preview/readiness summary and final confirmation.
 
 The campaign is created afterwards, from Home, by
@@ -192,8 +193,7 @@ then Parish logos and Administrative access. ParishSoft connection and Load
 parish data come last before Review, next to each other
 ([#1353](https://github.com/epiphany40223/parishkit/issues/1353)): the load
 can take a few minutes, so the rest of setup is done before the wait, and a
-load that fails on a wrong key or organization is one step after the page
-that fixes it. No data-entry page needs the loaded data, and neither test needs the logos,
+load that fails on a wrong key is one step after the page that fixes it. No data-entry page needs the loaded data, and neither test needs the logos,
 the access lists, the ParishSoft key or the load. No setup page checks
 how long ago the Admin signed in
 ([#1547](https://github.com/epiphany40223/parishkit/issues/1547); the
@@ -237,10 +237,11 @@ chosen, as on Parish logos), a short introduction, and plain-language help for
 every field. Revisiting a page shows its saved values; a credential page (and
 the Slack step's bot token) never shows the saved secret (a typed key or token can be checked with the shared
 [Show control](../ui-conventions/spec.md#secret-fields)) but says that one is saved (with its public scope, such as
-the ParishSoft organization), lets it be kept by leaving the key empty
-(unless it was entered for settings changed since, or the ParishSoft
-organization ID or Slack channel ID is changed, when the key is required
-again), and
+the chosen ParishSoft organization, named as
+[ParishSoft organization names](../ui-conventions/spec.md#parishsoft-organization-names)
+describe), lets it be kept by leaving the key empty
+(unless it was entered for settings changed since, or the Slack channel ID
+is changed, when the key is required again), and
 explains that it can be replaced until setup finishes and afterwards from
 Integrations. A page whose prerequisites are unmet explains what is missing
 and links the step that fixes it, keeping the HTTP status of the underlying
@@ -486,17 +487,18 @@ reads; an open Technical details stays open as they update. On success it shows 
 result with Continue to the next wizard page; on failure it says what to do
 next.
 
-A load that fails for good (for example, a wrong ParishSoft key or
-organization ID, which never retries, or a load whose worker stopped on its
+A load that fails for good (for example, a wrong ParishSoft key, or one that
+no longer reaches the chosen organization, which never retries, or a load
+whose worker stopped on its
 last allowed attempt, which recovery then fails) returns setup to collecting
 with the failed load still bound, so every page is editable again and the
 watchdog, which runs only while loading, stops (#1353). Neither the test
 email nor the test Slack message needs the load (#1578). A load that has
 finished, succeeded or failed, can be discarded, and only then (never one
-running, waiting to retry or abandoned): saving a different ParishSoft key
-or organization ID discards it, saving the same key and
-organization keeps it, and Load again discards the load and queues a new
-one. Load again is offered for a load that failed and for one that succeeded
+running, waiting to retry or abandoned): saving a different ParishSoft key,
+or choosing a different organization for the same key, discards it, saving
+the same key and choosing the same organization keeps it, and Load again
+discards the load and queues a new one. Load again is offered for a load that failed and for one that succeeded
 but whose staged data is no longer valid by the check review uses (its
 credential version or fingerprint changed, its exchange was scrubbed, or its
 snapshot or fences no longer match); the Load parish data page then says the
@@ -508,7 +510,7 @@ staging is never used again: finalization and campaign staging bind only to
 the current load. It is disposed of with the attempt's other source staging
 when setup ends, and the time zone the load fixed can change again.
 The progress page of a load that failed for good names the most common cause
-(a wrong key or organization ID) and links to ParishSoft connection and to
+(a wrong key) and links to ParishSoft connection and to
 Load parish data, whose Load again starts a new load; Back goes to ParishSoft
 connection. Only a load that ended with the setup attempt itself (expired)
 still says to cancel setup and start again. A discarded load's progress page
@@ -516,8 +518,8 @@ stays readable, passively only (it is never renewed), and says the load is no
 longer used, with a link to Load parish data and no Continue; a bound load
 that succeeded but is no longer valid is shown the same way. While a
 still-valid load exists, the ParishSoft connection page says that saving a
-different key or organization ID discards the loaded data and that keeping
-the saved key keeps it. The page says so in a static line in its saved-key
+different key, or choosing a different organization, discards the loaded
+data and that keeping the saved key keeps it. The page says so in a static line in its saved-key
 notice, so nothing moves as the key is typed
 ([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
 
@@ -585,6 +587,154 @@ browser wizard behaves the same way.
 Restore is an operator command performed before bootstrap/wizard. A restored,
 valid configured database skips initial setup after version/migration and
 credential-reference checks.
+
+### ParishSoft organization choice
+
+The ParishSoft connection step asks only for the ParishSoft API key; it has
+no organization ID field. The system then asks ParishSoft which
+organizations the key reaches, and the Administrator confirms or picks the
+parish's own one ([#1554](https://github.com/epiphany40223/parishkit/issues/1554);
+Administrator decision of 2026-10-24). The choice stays inside the existing
+step: the wizard gains no step and the stepper is unchanged. The step counts
+as done only once a key is saved and an organization chosen for it.
+
+**Finding the organizations.** Save and continue seals the key exactly as
+today and queues an organization lookup. The lookup runs where every
+ParishSoft call runs, in the isolated provider check helper of a worker,
+never in the web process, which only seals the key: it makes one uncached
+`POST organizations/search` with the key, bounded as the
+[organization check](../data/spec.md#parishsoft-organization-scope)
+bounds it (a list of 1 to 10,000 well-formed records, each a positive
+integer `organizationID`, none repeated). Each record's name is its
+`organizationReportName`, cleaned as
+[ParishSoft organization name](../data/spec.md#parishsoft-organization-name)
+describes. This is the same list the load's organization check reads, so
+the organizations offered are exactly those the load would accept. While
+the lookup runs, the page updates itself in place
+([pages that update themselves](../ui-conventions/spec.md#pages-that-update-themselves))
+with the [working spinner](../ui-conventions/spec.md#working-spinner) and
+"Asking ParishSoft which organizations this key reaches…"; it usually takes
+a few seconds.
+
+**One organization.** The page says "This key reaches one ParishSoft
+organization: St. Example Parish (1234). Is this your parish?" with **Yes,
+use this organization** (primary) and **No, enter a different key**
+(secondary) in the step's action row. Yes saves the choice and continues to
+Load parish data. No discards the staged key and the lookup and shows the
+key field again, empty, as on a first visit.
+
+**Several organizations.** The page says "This key reaches N ParishSoft
+organizations. Choose your parish's organization." and lists each as a
+radio button labelled "Name (ID)", sorted by name and then by ID, with none
+chosen. **Use this organization** (primary) is unavailable until one is
+chosen ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)),
+and **Cancel** (secondary) discards the staged key and the lookup and shows
+the key field again, empty. A list of more than 20 organizations adds a
+type-to-filter box above it, matching the name or the ID; filtering never
+changes the choice already made.
+
+**Errors.** Each is shown at the key field, with the key field ready for a
+different key, and carries its stable error code:
+
+- ParishSoft refuses the key (HTTP 401 or 403),
+  `parishsoft_key_refused`: "ParishSoft did not accept this key. Check that
+  you copied the whole key, then try again."
+- The key reaches no organization (an empty list),
+  `parishsoft_no_organizations`: "ParishSoft accepted this key, but it does
+  not reach any parish organization. Ask ParishSoft support for your
+  parish's API key."
+- The answer is malformed or over the bound,
+  `parishsoft_organizations_unreadable`: "ParishSoft's answer could not be
+  read. Try again in a few minutes; if it keeps happening, tell your IT
+  contact."
+- ParishSoft cannot be reached or the lookup times out,
+  `parishsoft_unavailable`: "ParishSoft could not be reached. Try again in a
+  few minutes." Here the key stays staged and **Try again** repeats the
+  lookup with it, so the Administrator need not paste it again.
+
+**What is stored.** The choice sets the staged credential's public scope to
+the chosen organization ID, as the organization ID field set it before, so
+the load, its checks and the
+[Integrations page](#parish-and-integration-configuration) read the same
+setting as today. The chosen organization's name is kept with the lookup
+for the wizard's own pages until the load records it in its snapshot
+([ParishSoft organization name](../data/spec.md#parishsoft-organization-name)).
+The other organizations' IDs and names are the one place the system ever
+shows another organization: they are shown only on this page, to the setup
+attempt's own Administrator, and are scrubbed from the lookup as soon as an
+organization is chosen, the key is discarded or the attempt ends. They are
+never logged, audited, copied into a snapshot or shown on any other page.
+The audit entry `setup_parishsoft_organization_chosen` records the chosen ID
+and how many organizations the key reached, a count only, never the key.
+
+**Revisiting the step.** The saved-key notice names the choice: "A
+ParishSoft API key is saved for St. Example Parish (1234)." Leaving the key
+field empty keeps the key and the choice. Pasting a key starts a new lookup,
+and the rules above for discarding a finished load apply (a different key,
+or the same key with a different organization chosen, discards it; the
+same key and organization keep it). The load's own organization check
+stays the authority: a key that no longer reaches the chosen organization
+when the load starts fails it as the tenant mismatch
+([organization check](../data/spec.md#parishsoft-organization-scope)).
+
+**After setup.** The organization cannot change after setup
+(changing it is outside #1554). The Integrations page's ParishSoft settings
+show it as text, not a field, and a replacement key must reach it, as
+[Parish and integration configuration](#parish-and-integration-configuration)
+describes.
+
+**Existing installs.** A deployment set up before this change keeps its
+configured organization ID and its loaded data. Nothing asks it to run
+setup again, and no key, Family code or emailed link changes. Its
+organization's name appears once its next full load records it; until then
+pages name the organization by its ID alone
+([ParishSoft organization names](../ui-conventions/spec.md#parishsoft-organization-names)).
+
+**Schema.** The lookup needs a forward migration, under the
+[post-launch schema policy](../operations/spec.md#post-launch-schema-policy):
+the sealed setup credential guard today admits a staged ParishSoft key only
+with exactly an `organization_id` setting, so it must also admit a key
+staged with no organization while its lookup is pending; a new setup row
+holds the lookup (its state, its error code, the bounded list until it is
+scrubbed, and the chosen ID and name); and the setup load must refuse to
+start for a key with no chosen organization. The organization name
+recorded by loads needs no schema change.
+
+**Testing locally.** The fake ParishSoft's
+[multi-organization mode](../local-environment/spec.md#fake-configuration)
+(`fake-parishsoft organizations N`) gives the fixed key one, two or three
+organizations, so both the confirmation and the list can be walked in the
+local environment.
+
+**Wording to change.** Every place the organization ID is entered or named
+today, to change to the choice above or to the
+[organization name rule](../ui-conventions/spec.md#parishsoft-organization-names):
+
+| Where | Today | Becomes |
+| --- | --- | --- |
+| Setup start page (`setup.html`) | "Your parish's ParishSoft API key and ParishSoft organization ID." | "Your parish's ParishSoft API key." |
+| ParishSoft connection about text (`setup-credential.html`) | "…the API key ParishSoft issued to your parish and your parish's ParishSoft organization ID." | "…the API key ParishSoft issued to your parish. The system then asks ParishSoft which parish organization to use." |
+| ParishSoft connection saved notice (`setup-credential.html`) | "A ParishSoft API key is saved (organization 1234)." | "A ParishSoft API key is saved for Name (1234)." |
+| ParishSoft connection form (`setup_credential_views.py`) | "Expected ParishSoft organization ID" field, its whole-number error and "To change the organization ID, enter the ParishSoft API key again as well." | removed (the choice above) |
+| Field help (`setup_help.py`) | `organization_id` help and its "For example 1234." hint | removed; the key's help says the organization is chosen next |
+| Setup load failure (`setup-source-progress-status.html`, two places) | "A wrong ParishSoft API key or organization ID is the most common cause." | "A wrong ParishSoft API key is the most common cause." |
+| ParishSoft settings form (`integration_forms.py`) | "Expected ParishSoft organization ID" field, locked, with "Locked: ParishSoft data for this organization is loaded." and its tip | the text line "ParishSoft organization: Name (1234)", with no field, lock or tip |
+| ParishSoft settings refusal (`integration_forms.py`) | "The organization ID can't change after ParishSoft data has been loaded … Keep 1234 here." | removed with the field; a posted organization is refused as unexpected input |
+| ParishSoft key help (`integration_forms.py`) | "It must be a key for the organization above; a key for another organization is refused." | "It must be a key that reaches Name (1234); any other key is refused." |
+| Key mismatch notice ([Parish and integration configuration](#parish-and-integration-configuration)) | "This key does not reach the ParishSoft organization whose data is already loaded. Paste a key that reaches the loaded organization." | "This key does not reach Name (1234), whose data is loaded. Paste a key that reaches it." (the before-the-first-load variant is removed: the organization now comes from the key's own list) |
+| Reachable-organizations line (`parishsoft-organizations.html`) | "Only the configured organization's data is loaded" | "Only the data of Name (1234) is loaded" (still counts only for the others) |
+| System health problem title (`system_health.py`) | "ParishSoft organization does not match" | "The ParishSoft key does not reach Name (1234)" |
+| System health problem text (`system-health-problem.html`) | "The ParishSoft key reaches a different organization than before" | "The ParishSoft key no longer reaches Name (1234)" |
+| Admin automation (`admin_integration_keys.py`, `pk-admin integration`) | `ORGANIZATION_LOCKED`: "This key was saved with a different ParishSoft organization ID…" at `organization_id` | the settings it prints add `organization_name` beside `organization_id` (both read-only); a posted different `organization_id` is refused as "The ParishSoft organization is Name (1234) and can't change after setup." |
+| Page script (`ui-v1.js`) | the rule that requires the key again once the organization ID differs from the saved one | removed with the field |
+| Specs and guides | this spec's setup and Integrations text; [UX conventions](../ui-conventions/spec.md#conditional-fields) (the locked organization ID as a precedent); the credential installers, Admin automation and launch runbooks guides, where they say the organization ID is entered or cannot change | reworded to the choice and the name rule |
+
+Unchanged: the host-only smoke check keeps its `--organization-id` option
+(an operator tool, not portal wording), structured log fields and audit
+rows keep the integer `organization_id`, and the shared non-Stewardship
+tools keep their `organization_id` and `expected_organization` settings
+(their log line already reads "Validated ParishSoft organization Name
+(1234)"). No email names the organization.
 
 ### Turning Slack off during setup
 
@@ -1991,34 +2141,37 @@ supplied/removed together, so while Slack is not set up its token field is
 required and Save waits for it
 ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)). Non-secret integration setting changes use the YAML
 configuration-request path rather than the credential installer. The ParishSoft
-organization ID can change only until the first ParishSoft data load. After
-that the page shows it as an
-[unavailable control](../ui-conventions/spec.md#conditional-fields): disabled,
-still showing the loaded ID, with the one-line hint "Locked: ParishSoft data
-for this organization is loaded." under its label and the why in its tip
-([#1492](https://github.com/epiphany40223/parishkit/issues/1492)). The browser
-sends no disabled field, so the server uses the loaded ID, and it refuses a
-request that posts a different value, with or without a new key, in plain
-language: every refresh must read the organization whose data is loaded, and a
-refresh for another organization is refused as a tenant mismatch.
+organization is chosen once, in the setup wizard's
+[organization choice](#parishsoft-organization-choice), and cannot change
+afterwards (changing it is outside
+[#1554](https://github.com/epiphany40223/parishkit/issues/1554)). The
+ParishSoft page therefore has no organization field: above the key it shows
+the line "ParishSoft organization: St. Example Parish (1234)", named as
+[ParishSoft organization names](../ui-conventions/spec.md#parishsoft-organization-names)
+describe, and the server refuses a request that posts an organization, with
+or without a new key, as unexpected input: every refresh must read the
+organization whose data is loaded, and a refresh for another organization is
+refused as a tenant mismatch.
 A ParishSoft key may reach several organizations (a key issued above the
 parish, or for several parishes one office serves); it is accepted when it
-reaches the configured organization, and only that organization's data is
+reaches the chosen organization, and only that organization's data is
 loaded ([ParishSoft organization scope](../data/spec.md#parishsoft-organization-scope),
-[#1554](https://github.com/epiphany40223/parishkit/issues/1554)). The
-Administrator always enters the organization ID: nothing picks one of the
-organizations a key reaches, so a key that reaches several cannot load the
-wrong parish by default. While the loaded data came through such a key, the
+[#1554](https://github.com/epiphany40223/parishkit/issues/1554)). Nothing
+picks one of the organizations a key reaches without the Administrator: a
+key that reaches several is listed for an explicit choice in setup, and a
+replacement key is checked against the organization already chosen, so it
+cannot load the wrong parish by default. While the loaded data came through
+such a key, the
 ParishSoft settings page shows a static information notice above its form:
 "At the last load from ParishSoft, this key reached N organizations. Only the
-configured organization's data is loaded; the other organizations' data is
-left out.", followed, when that load left any out, by "Records of other
+data of St. Example Parish (1234) is loaded; the other organizations' data
+is left out.", followed, when that load left any out, by "Records of other
 organizations left out by that load: M." The setup load's result notice and System health's
 [ParishSoft refresh panel](#parishsoft-refresh-panel) show the same line.
 It names counts only, never another organization's ID or name, and a key that
-reaches only the configured organization shows nothing. The count is the
+reaches only the chosen organization shows nothing. The count is the
 load's: a newly pasted key is not counted until data is loaded with it.
-A new ParishSoft key that authenticates but does not reach the configured
+A new ParishSoft key that authenticates but does not reach the chosen
 organization is refused at once by its check, as a rejected key is
 (the check's `mismatch` outcome, never the temporary `unavailable` that waits
 and tries again): nothing is installed and the current key stays in use. The
@@ -2026,15 +2179,12 @@ installer records that cause with the request's failure, as one value-free
 audit event about the request (the request itself stays `failed`), so the
 page's failed line names exactly one cause
 ([#1495](https://github.com/epiphany40223/parishkit/issues/1495)). For such a
-key it says "This key does not reach the ParishSoft organization whose data
-is already loaded. Paste a key that reaches the loaded organization." (before
-the first load, when the organization ID may still be the wrong one: "This
-key does not reach the configured ParishSoft organization ID. Check the key
-and the organization ID, then try again."); for a key ParishSoft rejects it
+key it says "This key does not reach St. Example Parish (1234), whose data
+is loaded. Paste a key that reaches it."; for a key ParishSoft rejects it
 keeps the general line that ParishSoft did not accept the key. System health
-names a refresh refused because the key does not reach the configured
-organization as "ParishSoft organization does not match", never "ParishSoft
-could not be reached".
+names a refresh refused because the key does not reach the chosen
+organization as "The ParishSoft key does not reach St. Example Parish
+(1234)", never "ParishSoft could not be reached".
 
 An integration's settings are saved through the
 [review dialog](../ui-conventions/spec.md#review-dialog) (#750). An ordinary edit
@@ -2064,8 +2214,8 @@ A Review that carries a key, as a field or as an uploaded file, is refused
 as unexpected input without echoing it; a Review while this integration's
 earlier key change is still being installed is refused in the dialog ("A
 new key is already being installed"), since its Apply could not be staged.
-A refusal at a field (the organization ID, a key with a schedule change,
-shown at the key field) keeps the dialog shut and the key in its field;
+A refusal at a field (a key with a schedule change, shown at the key
+field) keeps the dialog shut and the key in its field;
 another refusal (an out-of-date page, a request older than an hour or
 another Administrator's) is shown in the dialog. The dialog, "Replace the
 ParishSoft key?" (or the Google Workspace service-account key, or the Slack
@@ -2090,8 +2240,9 @@ updated, or the failure with its cause and "The previous key is still in
 use." The key is never in the dialog's markup, its hidden fields, any
 response, log line or audit row.
 
-On the ParishSoft page the fields are, in order: the expected ParishSoft
-organization ID, the new ParishSoft API key (with its unavailable notices),
+On the ParishSoft page the fields are, in order: the ParishSoft
+organization line (text, not a field), the new ParishSoft API key (with its
+unavailable notices),
 then the refresh schedule's editor, Save and its status line, and the
 refresh schedule's outlook directly after, so the schedule's entry and its
 display are never split by the key. Google Workspace mail and Slack keep the
