@@ -122,11 +122,11 @@ def test_response_filters_columns_and_inactive_families(page, component_origin):
     # Not in ParishSoft; one it marks inactive keeps its name, badge beside.
     gone = page.get_by_role("rowheader", name="Not in ParishSoft", exact=True)
     visible(gone.locator('[data-source-status="missing"]'))
-    assert gone.locator('[data-source-status="inactive"]').count() == 0
+    assert gone.locator('[data-source-status="left"]').count() == 0
     faded = page.get_by_role(
         "rowheader", name="Faded, Old Head No longer in this campaign", exact=True
     )
-    visible(faded.locator('.status-badge[data-source-status="inactive"]'))
+    visible(faded.locator('.status-badge[data-source-status="left"]'))
     assert page.locator("[data-open-form]").count() == 1
     visible(page.get_by_text("HGFEDCBA", exact=True))
     # A missing Link followed reads "No"; times are localized in place.
