@@ -137,12 +137,15 @@ def test_new_morphs_in_place_from_the_mail_type(
     assert axe_violations(page, axe_source) == []
     page.locator('[name="schedule-date"]').fill("2054-10-12")
     page.locator('[name="schedule-time"]').fill("9am")
-    sends_top = page_top(panel)
+    # The Sends pair itself: on desktop Repeating dissolves the panel's box
+    # (display: contents) so From, Until and Send time share a row.
+    pair = page.get_by_role("group", name="Sends")
+    sends_top = page_top(pair)
     repeating.check()
     visible(rule)
     hidden(field(page, "date"))
     # The pair and what is above it stay where they were.
-    assert abs(page_top(panel) - sends_top) < 1
+    assert abs(page_top(pair) - sends_top) < 1
     assert abs(page_top(kind) - kind_top) < 1
     # The rule starts on the campaign's own dates.
     assert page.locator("#repeat-from").input_value() == "2054-10-01"
@@ -159,7 +162,7 @@ def test_new_morphs_in_place_from_the_mail_type(
     visible(field(page, "date"))
     assert page.locator('[name="schedule-date"]').input_value() == "2054-10-12"
     assert page.locator('[name="schedule-date"]').is_enabled()
-    assert abs(page_top(panel) - sends_top) < 1
+    assert abs(page_top(pair) - sends_top) < 1
     # Repeating's rule kept its day.
     repeating.check()
     assert page.get_by_label("Tuesday").is_checked()

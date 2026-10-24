@@ -3925,7 +3925,12 @@ learned once. **Shared code.**
   possible (a Reminder's mail type), and is not shown for a kind that only
   sends once (an Initial invitation), which is Once. Once shows the date;
   Repeating shows the shared repeat rule in its place, and the
-  fields both use (the send time, the email) follow, shared. Switching
+  fields both use (the send time, the email) follow, shared. On desktop,
+  Repeating's From, Until and Send time share one row, as other
+  [short fields](#field-errors-and-live-checks) do, in that tab order; they
+  wrap where the row is too narrow and stack on a phone, with no sideways
+  scroll (Administrator, pk-local R48,
+  [#2099](https://github.com/epiphany40223/parishkit/pull/2099)). Switching
   keeps what was typed for each, hidden fields are disabled so they are
   not posted, and the fields change in place below the pair, with no
   reload or jump ([conditional fields](#conditional-fields)). First uses:

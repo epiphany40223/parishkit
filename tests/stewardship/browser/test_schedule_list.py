@@ -19,6 +19,7 @@ from urllib.parse import parse_qs
 
 import pytest
 
+from .repeat_dates_components import assert_span_row
 from .schedule_list_components import (
     APPLY,
     APPLY_PASSED,
@@ -476,6 +477,20 @@ def start_repeat(page, origin, path=NEW):
     page.get_by_label("Tuesday").check()
     page.locator('[name="schedule-time"]').fill("06:00")
     choose(page, "template_version", email_for(page, "reminder"))
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_repeating_puts_from_until_and_send_time_on_one_row(
+    page, component_origin, width
+):
+    """Sends Repeating draws From, Until and Send time side by side on
+    desktop and stacked on a phone, without sideways scroll (pk-local R48)."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + NEW)
+    choose(page, "kind", "reminder")
+    page.get_by_role("radio", name="Repeating").check()
+    visible(page.locator("#repeat-until"))
+    assert_span_row(page, width, "[data-repeat-rule]", '[name="schedule-time"]')
 
 
 def reason(button):

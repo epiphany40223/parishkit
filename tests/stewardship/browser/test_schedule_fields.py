@@ -7,6 +7,7 @@ from urllib.parse import parse_qs
 
 import pytest
 
+from .repeat_dates_components import assert_span_row
 from .test_components import axe_violations
 from .waits import (
     available,
@@ -266,6 +267,18 @@ def choose_repeating(page):
     page.locator(f'[name="{NEW}kind"]').select_option("reminder")
     page.locator(PANE).get_by_role("radio", name="Repeating").check()
     visible(page.locator(f"{PANE} [data-repeat-panel]"))
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_repeating_puts_from_until_and_send_time_on_one_row(
+    page, component_origin, width
+):
+    """The pane's Repeating draws From, Until and Send time side by side on
+    desktop and stacked on a phone, without sideways scroll (pk-local R48)."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + "/schedule-editor-mail")
+    choose_repeating(page)
+    assert_span_row(page, width, f"{PANE} [data-repeat-panel]", f'[name="{NEW}time"]')
 
 
 @pytest.mark.parametrize("width", [320, 1280])
