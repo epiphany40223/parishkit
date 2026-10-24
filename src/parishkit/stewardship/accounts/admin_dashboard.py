@@ -351,7 +351,7 @@ def family_tiles(counts, *, recent=None, testing=False):
         tile("active", _("Campaign Families"), counts["active"]),
         tile(
             "responded",
-            _("Campaign Families with a response"),
+            _("Campaign Families responded"),
             counts["active_responded"],
             details=(
                 _("out of %(total)s (%(share)s)")

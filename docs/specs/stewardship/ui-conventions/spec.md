@@ -3253,7 +3253,7 @@ entry). The table records what each string was.
 | --- | --- |
 | Active parishioner family directory (menu, page title and heading, error page, Return link, table and navigator labels, links on Find a Family, Deliveries, Delivery refusals, Timeline, Choose Families to test and the Response dashboard, audit descriptions, CLI help) | Campaign Family directory |
 | Active Families (Home and Go live tiles, participation summary, Past campaigns column and review, confirmation progress) | Campaign Families |
-| Active Families with a response | Campaign Families with a response |
+| Active Families with a response | Campaign Families responded (shortened so the label stays on one line at the Home fold) |
 | Percent of active Families (comparison metric and chart) | Percent of campaign Families |
 | Active Families counted from | Campaign Families counted from |
 | Active parishioner Families, the percentage denominator (archive workbook) | Campaign Families, the percentage denominator |
