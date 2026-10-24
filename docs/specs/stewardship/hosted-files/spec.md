@@ -419,10 +419,9 @@ path `/files/<token>` appears, in any of:
 3. **Unsent email**: the rendered HTML or plain text of every queued message
    that is not yet in a terminal state. For the Family outbox that means
    `pending`, `submitting`, `retry_wait` or `delivery_unknown`, including
-   messages held by a delivery pause. It also covers campaign email tests and
-   report email messages still waiting to send. Scheduled emails that are not
-   rendered yet are covered by item 1, because their template revisions live
-   in the active configuration.
+   messages held by a delivery pause. It also covers campaign email tests.
+   Scheduled emails that are not rendered yet are covered by item 1, because
+   their template revisions live in the active configuration.
 
 Content of campaigns that are archived and no longer the current pointer,
 purged campaigns and historical configuration versions is not current. Such
@@ -586,6 +585,10 @@ placeholder reference mentions `{{ file.<slug> }}` and links to this page.
   deleted.
 - **Housekeeping**: there is no staging area and no scheduled cleanup job.
   The orphan sweep under the storage lock is the only cleanup.
+- **Command line**: `pk-admin files list`, `files delete` and `files rename`
+  give an Administrator session the library, deletion and rename with the same
+  in-use refusals (see the
+  [action inventory](../admin-automation/spec.md#action-inventory)).
 
 ## Security considerations
 
