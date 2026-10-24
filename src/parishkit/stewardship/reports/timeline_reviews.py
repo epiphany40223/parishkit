@@ -16,7 +16,16 @@ from the audit log, whose context deliberately names no item or value:
 - Additional information: ``stewardship_information_revision``;
 - pledges: ``stewardship_pledge_review`` (#2071), listed only for a reader
   who may open Pledges (``Capability.FINANCIAL_DETAIL``, ``steps``);
-- Limitations: ``stewardship_limitation_review`` (#2071).
+- Limitations: ``stewardship_limitation_review`` (#2071);
+- Added by the parish (#2023): a Ministry request Staff added (its first
+  revision reads Added by the parish) and a census change Staff added,
+  ``stewardship_census_addition`` with its later steps
+  (``stewardship_census_addition_resolution``).
+
+The same statement also reads the Timeline's request lines (#2023, reports
+spec, "Timeline request lines"): each census change and Ministry join or
+leave a response asked for, which ``requests`` words apart from the
+review replay (``read_reviews`` returns both).
 
 A census, Ministry or Additional information history row stores the
 item's state after the step, not the step itself, so ``steps`` replays one
@@ -102,7 +111,7 @@ from .money import MoneyAmount
 # (``timelines.scope_values``).
 _HISTORY = """
 WITH subs AS (
-    SELECT s.id, s.answers, s.reviewed_view, s.family_version
+    SELECT s.id, s.answers, s.reviewed_view, s.family_version, s.submitted_at
     FROM stewardship_submission s
     WHERE s.family_id=%(family)s AND s.campaign_id=%(campaign)s
       AND s.mode=%(response_mode)s
@@ -118,7 +127,8 @@ WITH subs AS (
                         AND u.expected_version>b.expected_version
                         AND u.decision<>'approved'))
             THEN 'unreviewed' ELSE pp.decision END AS seed_decision,
-        pp.admin_value_set::text AS seed_set, pp.admin_value::text AS seed_value
+        pp.admin_value_set::text AS seed_set, pp.admin_value::text AS seed_value,
+        pp.id AS carried_from
     FROM subs JOIN stewardship_proposed_change p ON p.submission_id=subs.id
     LEFT JOIN stewardship_proposed_change pp ON pp.superseded_by_id=p.id
         AND NOT subs.reviewed_view
@@ -131,28 +141,29 @@ WITH subs AS (
         p.entity_key, p.field AS subject, v.decision AS a,
         v.admin_value_set::text AS b, v.admin_value::text AS c,
         v.accepted_base::text AS d, p.seed_decision, p.seed_set, p.seed_value,
-        v.note
+        v.note, NULL AS added
     FROM props p
     JOIN stewardship_proposal_review v ON v.proposal_id=p.id
     UNION ALL
     SELECT 'census_resolution', p.id::text, r.expected_version, r.created_at,
         r.actor_id, p.submission_id, p.entity_kind, p.entity_key, p.field,
         r.action, NULL, NULL, NULL, p.seed_decision, p.seed_set, p.seed_value,
-        r.note
+        r.note, NULL
     FROM props p
     JOIN stewardship_proposal_resolution r ON r.proposal_id=p.id
     UNION ALL
     SELECT 'ministry_revision', q.id::text, v.expected_version, v.created_at,
         v.actor_id, q.submission_id, q.entity_kind, q.entity_key,
         q.ministry_duid::text, v.state, v.outcome, q.action,
-        (v.decision_note<>'')::text, NULL, NULL, NULL, v.decision_note
+        (v.decision_note<>'')::text, NULL, NULL, NULL, v.decision_note,
+        q.parish_added::text
     FROM subs JOIN stewardship_ministry_request q ON q.submission_id=subs.id
     JOIN stewardship_ministry_revision v ON v.request_id=q.id
     UNION ALL
     SELECT 'ministry_roster', q.id::text, e.sequence, e.created_at,
         e.actor_id, q.submission_id, q.entity_kind, q.entity_key,
         q.ministry_duid::text, e.entered::text, NULL, q.action, NULL,
-        NULL, NULL, NULL, NULL
+        NULL, NULL, NULL, NULL, NULL
     FROM subs JOIN stewardship_ministry_request q ON q.submission_id=subs.id
     JOIN stewardship_ministry_roster_entry e ON e.request_id=q.id
     -- A tick cleared by Back to review's undo (#1840) is part of that undo,
@@ -166,14 +177,14 @@ WITH subs AS (
     SELECT 'information', i.id::text, v.expected_version, v.created_at,
         v.actor_id, i.submission_id, NULL, NULL, NULL,
         v.follow_up_needed::text, v.followed_up::text, NULL, NULL,
-        NULL, NULL, NULL, v.notes
+        NULL, NULL, NULL, v.notes, NULL
     FROM subs JOIN stewardship_additional_information i ON i.submission_id=subs.id
     JOIN stewardship_information_revision v ON v.item_id=i.id
     UNION ALL
     SELECT 'pledge', g.family_id::text, g.sequence, g.created_at, g.actor_id,
         g.submission_id, NULL, NULL, NULL, g.action, g.decision,
         g.reviewed_annual_pledge::text, g.reviewed_frequency,
-        NULL, NULL, NULL, g.note
+        NULL, NULL, NULL, g.note, NULL
     FROM subs JOIN stewardship_pledge_review g ON g.submission_id=subs.id
     UNION ALL
     SELECT 'limitation', l.kind || ':' || l.member_key, l.expected_version,
@@ -196,12 +207,67 @@ WITH subs AS (
                         later.answers, p.kind, p.member_key)
                     AND NOT stewardship_limitation_answer_v1(
                         later.answers, p.kind, p.member_key))))::text,
-        NULL, NULL, NULL, l.note
+        NULL, NULL, NULL, l.note, NULL
     FROM subs JOIN stewardship_limitation_review l ON l.submission_id=subs.id
+    -- What each response asked for (#2023): a census change it did not
+    -- just carry over, and a Ministry join or leave that is neither the
+    -- parish's own nor a same-intent successor of one still in progress.
+    -- A reviewed form's request chosen again over a decided one (Ignored,
+    -- or edited into another Ministry) supersedes it with the same action
+    -- (``ministry_requests._derive_reviewed``, rule 2): the Family asked
+    -- again, so it is listed. A request's latest revision says whether it
+    -- was decided; one with none was never decided.
+    UNION ALL
+    SELECT 'census_asked', p.id::text, 0, subs.submitted_at, NULL,
+        p.submission_id, p.entity_kind, p.entity_key, p.field,
+        NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+    FROM props p JOIN subs ON subs.id=p.submission_id
+    WHERE p.carried_from IS NULL
+    UNION ALL
+    SELECT 'ministry_asked', q.id::text, 0, subs.submitted_at, NULL,
+        q.submission_id, q.entity_kind, q.entity_key, q.ministry_duid::text,
+        NULL, NULL, q.action, NULL, NULL, NULL, NULL, NULL, NULL
+    FROM subs JOIN stewardship_ministry_request q ON q.submission_id=subs.id
+    WHERE NOT q.parish_added AND NOT EXISTS (
+        SELECT 1 FROM stewardship_ministry_request old
+        WHERE old.superseded_by_id=q.id AND old.action=q.action
+          AND coalesce((SELECT v.state FROM stewardship_ministry_revision v
+              WHERE v.request_id=old.id
+              ORDER BY v.expected_version DESC LIMIT 1), 'new')
+              NOT IN ('resolved', 'closed_no_response'))
+    -- A census change the parish added (#1710) belongs to the Family, not
+    -- to a response: it is named through the Family's latest live response
+    -- (none in a Testing scope, whose responses never enter the pipeline).
+    UNION ALL
+    SELECT 'census_addition', 'add:' || a.id, 0, a.created_at, a.actor_id,
+        (SELECT id FROM subs ORDER BY family_version DESC LIMIT 1),
+        a.entity_kind, a.entity_key, a.field, NULL, NULL, NULL, NULL,
+        NULL, NULL, NULL, a.note, NULL
+    FROM stewardship_census_addition a
+    WHERE a.family_id=%(family)s AND %(response_mode)s='live'
+    UNION ALL
+    SELECT 'census_addition_resolution', 'add:' || a.id, r.sequence,
+        r.created_at, r.actor_id,
+        (SELECT id FROM subs ORDER BY family_version DESC LIMIT 1),
+        a.entity_kind, a.entity_key, a.field, r.action, NULL, NULL, NULL,
+        NULL, NULL, NULL, r.note, NULL
+    FROM stewardship_census_addition a
+    JOIN stewardship_census_addition_resolution r ON r.addition_id=a.id
+    WHERE a.family_id=%(family)s AND %(response_mode)s='live'
+    -- Withdraw of an entered addition stores a reopening and then the
+    -- withdrawal in one request (#2041): one Withdrawn line. Each row's
+    -- time is its own statement's, so the pair is matched by its order
+    -- and the request's correlation id, which both rows carry
+    -- (``census_additions.resolve_census_additions`` binds one).
+      AND NOT (r.action='reopened' AND EXISTS (
+          SELECT 1 FROM stewardship_census_addition_resolution w
+          WHERE w.addition_id=a.id AND w.sequence=r.sequence+1
+            AND w.action='withdrawn'
+            AND w.correlation_id=r.correlation_id))
 )
 SELECT h.stream, h.item, h.step, h.at, u.email, h.entity_kind, h.entity_key,
     h.subject, h.a, h.b, h.c, h.d, h.seed_decision, h.seed_set, h.seed_value,
-    h.note,
+    h.note, h.added,
     (coalesce(subs.answers->'members'->h.entity_key,
         subs.answers->'proposed_members'->h.entity_key)
         -> 'first_name')::text,
@@ -215,7 +281,13 @@ LEFT JOIN stewardship_source_current sc ON sc.singleton
 LEFT JOIN stewardship_snapshot_member mm ON h.entity_kind='member'
     AND mm.snapshot_id=sc.snapshot_id AND mm.source_key=h.entity_key
 LEFT JOIN stewardship_source_member sm ON sm.id=mm.payload_id
-ORDER BY h.at, h.item, h.step
+-- A response's request lines share its instant: keep them in a steady
+-- order (the Family's, then each Member's, by field) rather than by
+-- their random ids.
+ORDER BY h.at,
+    CASE WHEN h.stream LIKE '%%asked' THEN
+        concat_ws(':', h.entity_kind, h.entity_key, h.subject) END,
+    h.item, h.step
 """
 COLUMNS = (
     "stream",
@@ -234,6 +306,7 @@ COLUMNS = (
     "seed_set",
     "seed_value",
     "note",
+    "added",
     "answer_first",
     "answer_last",
     "source_first",
@@ -258,6 +331,14 @@ FORMER_USER = "Former portal user"
 # neither a decision nor a stage.
 BACK_TO_REVIEW = _("Back to review")
 UPDATED = _("Follow-up updated")
+# A reviewer-created item's first step, and a census addition taken back.
+ADDED = DECISION_LABELS[Decision.ADDED]
+WITHDRAWN = _("Withdrawn")
+# The request lines' words, by ``_HISTORY`` stream (#2023).
+ASKED = {
+    "census_asked": _("Asked for a census change"),
+    "ministry_asked": _("Asked for a Ministry change"),
+}
 # A step that finishes an item's work, and the word for undoing it.
 DONE = {"entered": _("Entered by hand"), "handled": _("Handled")}
 CLEARED = {"entered": _("Entered by hand cleared"), "handled": _("Handled cleared")}
@@ -286,6 +367,7 @@ WORDS = frozenset(
         *CLEARED.values(),
         *DECISION_LABELS.values(),
         BACK_TO_REVIEW,
+        WITHDRAWN,
         _("Edited"),
         _("Edit cleared"),
         UPDATED,
@@ -334,6 +416,16 @@ def state_after(row, before):
         undo = a == "accepted" and row["d"] == "true"
         return State(forced=BACK_TO_REVIEW if undo else LIMITATION_WORDS[a])
     before = replace(before, forced=None)
+    if stream == "census_addition":
+        # An Add starts accepted, under its creator's name (#1710).
+        return State(decision=Decision.ACCEPTED, forced=ADDED)
+    if stream == "census_addition_resolution":
+        if a == "entered":
+            return replace(before, done="entered")
+        if a == "withdrawn":
+            return State(forced=WITHDRAWN)
+        # Not entered yet: the mark is undone, the addition stays accepted.
+        return replace(before, done=None, forced=BACK_TO_REVIEW)
     if stream == "census_review":
         # Use the Family's value anyway keeps a decision accepted, so its
         # word is forced: Accepted, or Accepted (edited) over an edit.
@@ -559,6 +651,9 @@ def steps(rows, names=None, reader=None):
     listed only for a ``reader`` who may open Pledges (financial detail,
     #2071), as that page requires; a caller that names no reader sees no
     pledge line.
+
+    Request rows (``ASKED``, #2023) are no review step: ``requests``
+    words them, and they are skipped here.
     """
     names = names or {}
     states, notes, lines = {}, {}, []
@@ -566,9 +661,20 @@ def steps(rows, names=None, reader=None):
     for row in rows:
         if row["stream"] == "pledge" and not pledges:
             continue
+        if row["stream"] in ASKED:
+            continue
         key = (row["stream"].split("_")[0], row["item"])
+        first = key not in states
         before = states.get(key) or first_state(row)
         after = state_after(row, before)
+        if (
+            first
+            and row["stream"] == "ministry_revision"
+            and row.get("added") == "true"
+        ):
+            # The revision that added a parish request (#2023) records it
+            # accepted; its line reads as the Add it was.
+            after = replace(after, forced=ADDED)
         states[key] = after
         # An Additional information revision stores the item's whole Staff
         # notes, carried over when a step adds none, so only notes that
@@ -601,6 +707,21 @@ def steps(rows, names=None, reader=None):
     return lines
 
 
+def requests(rows, names=None):
+    """The request lines, oldest first: ``(at, what, detail)`` per asked item.
+
+    ``rows`` are ``_HISTORY``'s rows as dicts; only its ``ASKED`` streams
+    are lines here (#2023). Each names what a response asked for, as a
+    review line names its item, never who acted or the value.
+    """
+    names = names or {}
+    return [
+        (row["at"], ASKED[row["stream"]], item_words(row, names))
+        for row in rows
+        if row["stream"] in ASKED
+    ]
+
+
 def read_reviews(values, reader=None):
     """One Family's review lines in a scope: ``steps`` over ``_HISTORY``.
 
@@ -616,4 +737,5 @@ def read_reviews(values, reader=None):
     duids = {
         int(row["subject"]) for row in rows if row["stream"].startswith("ministry")
     }
-    return steps(rows, ministry_names(duids) if duids else {}, reader)
+    names = ministry_names(duids) if duids else {}
+    return steps(rows, names, reader), requests(rows, names)

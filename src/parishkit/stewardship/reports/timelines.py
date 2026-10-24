@@ -102,6 +102,9 @@ KINDS = {
     "form": _("Family form activity"),
     "emails": _("Emails"),
     "sessions": _("Sign-ins and sign-outs"),
+    # What each response asked the parish to change (#2023): census
+    # changes and Ministry joins and leaves (``timeline_reviews.ASKED``).
+    "requests": _("Census and Ministry requests"),
     # Review actions on the Family's answers (#1774, ``timeline_reviews``).
     "reviews": _("Reviews"),
 }
@@ -373,6 +376,7 @@ def events(
     workgroup_skips=(),
     session_ends=(),
     reviews=(),
+    requests=(),
 ):
     """The full timeline: every line, oldest first.
 
@@ -411,7 +415,10 @@ def events(
 
     ``reviews`` are ``(instant, what, detail)`` review lines
     (``timeline_reviews.steps``), built last: a reviewer acts after the
-    Family's step at the same instant, never before it.
+    Family's step at the same instant, never before it. ``requests`` are
+    the ``(instant, what, detail)`` request lines (#2023,
+    ``timeline_reviews.requests``), built right after the submissions, so
+    each reads just after the response that asked for it.
     """
 
     def sign_in(value):
@@ -496,6 +503,7 @@ def events(
                 portal=not submission.by_staff,
             )
         )
+    lines += [Event(at, what, detail, kind="requests") for at, what, detail in requests]
     lines += [
         session_end(at, event_type, by_staff)
         for at, event_type, by_staff in session_ends
@@ -767,7 +775,7 @@ def read_timeline(
         mode=values["response_mode"],
         rehearsal_epoch_id=scope.rehearsal_epoch_id,
     ).values_list("created_at", flat=True)
-    review_lines = read_reviews(values, reader) if reviews else ()
+    review_lines, request_lines = read_reviews(values, reader) if reviews else ((), ())
     return Timeline(
         summary(emails, submissions),
         events(
@@ -780,6 +788,7 @@ def read_timeline(
             workgroup_skips=workgroup_skips,
             session_ends=ends,
             reviews=review_lines,
+            requests=request_lines,
         ),
         engagement,
     )

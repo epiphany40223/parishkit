@@ -12,7 +12,12 @@ from uuid import uuid4
 
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.reports import timeline_pdf
-from parishkit.stewardship.reports.timeline_reviews import WORDS, steps
+from parishkit.stewardship.reports.timeline_reviews import (
+    ASKED,
+    WORDS,
+    requests,
+    steps,
+)
 
 from .test_response_metrics import START
 
@@ -534,3 +539,60 @@ def test_limitation_lines_read_as_their_decision():
         "Cannot participate in any ministries for Smith, Anne (proposed)"
         "; by staff@example.org"
     ]
+
+
+def test_request_lines_name_what_a_response_asked_for():
+    """A census change or Ministry join or leave a response asked for is a
+    request line (#2023): the item without who acted or the value, and no
+    part of the item's review replay."""
+    rows = [
+        row("census_asked", "p", 0, actor=None),
+        row("ministry_asked", "q", 0, c="join", subject="9", actor=None),
+        row("census_review", "p", 1, "approved", "false", None, "false"),
+    ]
+    assert requests(rows, {9: "Choir"}) == [
+        (START, ASKED["census_asked"], "Email address for Smith, Anne"),
+        (START, ASKED["ministry_asked"], "Join Choir for Smith, Anne"),
+    ]
+    assert steps(rows, {9: "Choir"}) == [
+        (
+            START + MINUTE,
+            "Accepted",
+            "Email address for Smith, Anne; by staff@example.org",
+        ),
+    ]
+    # The words are their own, never a review word.
+    assert not {str(word) for word in ASKED.values()} & WORDS
+
+
+def test_parish_added_items_read_added_by_the_parish():
+    """A Ministry request the parish added reads Added by the parish for the
+    revision that added it, then as any request (#2023); a census addition
+    reads Added by the parish, Entered by hand, Back to review (its note for
+    readers of Census changes) and Withdrawn."""
+    ministry = {"c": "join", "subject": "9", "added": "true"}
+    rows = [
+        row("ministry_revision", "q", 1, "resolved", "joined", **ministry),
+        row("ministry_revision", "q", 2, "in_progress", None, d="false", **ministry),
+        row("ministry_revision", "r", 3, "resolved", "joined", c="join", subject="9"),
+    ]
+    assert words(rows, {9: "Choir"}) == [
+        "Added by the parish",
+        "Back to review",
+        "Accepted",
+    ]
+    rows = [
+        row("census_addition", "add:a", 0, note="Called"),
+        row("census_addition_resolution", "add:a", 1, "entered"),
+        row("census_addition_resolution", "add:a", 2, "reopened", note="Typo"),
+        row("census_addition_resolution", "add:a", 3, "withdrawn", note="Gone"),
+    ]
+    assert words(rows) == [
+        "Added by the parish",
+        "Entered by hand",
+        "Back to review",
+        "Withdrawn",
+    ]
+    item = "Email address for Smith, Anne; by staff@example.org"
+    assert details(rows, reader("staff")) == [item, item, item + "; note: Typo", item]
+    assert details(rows, reader("ministry_leader", ministries=[9]))[2] == item

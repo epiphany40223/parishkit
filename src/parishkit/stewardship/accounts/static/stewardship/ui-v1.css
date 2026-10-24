@@ -1437,6 +1437,15 @@ section.filter-panel > h2 { margin: 0; padding-block: .6rem; font-size: 1rem; li
    Timeline's From and Through (#1570) are sized the same way, so its Kind,
    days, Apply filters and Clear filters (#1651) share one row at 1280 px. */
 .filter-bar:is(.mail-filters, .timeline-filters) > div.short { flex: 0 1 10rem; min-width: 10rem; margin-inline-end: 0; }
+/* The Timeline's Kind grows from a short basis into the row's room, as
+   Sent mail's filters do, rather than starting at its widest choice: with
+   "Census and Ministry requests" (#2023) and Linux's wider fonts, the
+   widest-choice basis pushed Apply filters and Clear filters onto a second
+   line at 1280 px. The smaller gap leaves Kind the room to show that
+   choice whole there. */
+.filter-bar.timeline-filters { column-gap: .75rem; }
+.filter-bar.timeline-filters > div.fit { flex: 1 1 12rem; }
+.filter-bar.timeline-filters > div.fit > select { width: 100%; }
 .filter-bar.mail-filters > div > :is(input, select) { width: 100%; }
 /* Every label sits on one line of the toggletip's height, and the fields
    line up at their tops, so Recipient's label (with its toggletip) and the

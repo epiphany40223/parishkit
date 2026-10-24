@@ -78,6 +78,8 @@ KINDS = {
     "skipped": Kind("Emails not sent", "X", WARNING_INK),
     "progress": Kind("Form progress", "^", ACCENT),
     "submitted": Kind("Submissions", "D", ACCENT_STRONG, GOLD),
+    # What each response asked the parish to change (#2023).
+    "request": Kind("Requests", "v", ACCENT_STRONG, "white"),
     # Review actions on the Family's answers (#1774).
     "review": Kind("Reviews", "h", ACCENT, GOLD),
     "other": Kind("Other lines", "P", MUTED),
@@ -98,9 +100,14 @@ NUMBERED_REMINDER = re.compile(r"Reminder \d+")
 # equal), copied like the sets above so the file renderer needs no reads.
 REVIEWS = frozenset(
     {"Accepted", "Accepted (edited)", "Ignored", "Added by the parish"}
-    | {"Back to review", "Edited", "Edit cleared", "Follow-up updated"}
+    | {"Back to review", "Withdrawn", "Edited", "Edit cleared"}
+    | {"Follow-up updated"}
     | {"Entered by hand", "Entered by hand cleared", "Handled", "Handled cleared"}
 )
+
+# The request lines' words (``timeline_reviews.ASKED``; a test keeps the
+# two equal).
+REQUESTS = frozenset({"Asked for a census change", "Asked for a Ministry change"})
 
 
 def kind_of(what):
@@ -116,6 +123,8 @@ def kind_of(what):
         return "skipped"
     if what in EMAILS or NUMBERED_REMINDER.fullmatch(what):
         return "email"
+    if what in REQUESTS:
+        return "request"
     if what in REVIEWS:
         return "review"
     return "other"

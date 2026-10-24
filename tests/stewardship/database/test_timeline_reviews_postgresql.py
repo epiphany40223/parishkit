@@ -19,6 +19,7 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from parishkit.stewardship.accounts.models import PortalUser
+from parishkit.stewardship.accounts.policy import current_principal
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.response_metrics import ResponseScope
@@ -32,14 +33,27 @@ from parishkit.stewardship.responses.models import (
 
 from .auth_builders import signed_in
 from .test_background_grants_postgresql import task_login
+from .test_census_add_page_postgresql import worklist
+from .test_census_additions_postgresql import add, campaign_of, member_form
 from .test_census_edit_postgresql import edit
+from .test_census_pipeline_review_postgresql import prepared as pipeline_prepared
 from .test_census_resolution_postgresql import prepared, resolve
 from .test_census_review_postgresql import fresh, review
 from .test_member_requests_postgresql import revisit, send
 from .test_ministry_followup_postgresql import edit as follow_up
+from .test_ministry_reports_postgresql import actor as ministry_actor
+from .test_ministry_reports_postgresql import setup as ministry_setup
+from .test_ministry_responses_postgresql import respond as ministry_respond
+from .test_ministry_responses_postgresql import revisit as ministry_revisit
+from .test_ministry_review_postgresql import decide as ministry_decide
+from .test_ministry_review_postgresql import requests as ministry_requests
 from .test_report_workspace_postgresql import read as get
 from .test_response_http_postgresql import answers_for
 from .test_response_submission_postgresql import form_and_answers, submit
+from .test_reviewed_form_postgresql import again as reviewed_again
+from .test_reviewed_form_postgresql import current_requests as reviewed_requests
+from .test_reviewed_form_postgresql import decide_request, set_choices
+from .test_reviewed_form_postgresql import ministry_setup as reviewed_ministry_setup
 from .test_roster_entries_postgresql import resolved, tick
 from .test_runtime_auth_grants_postgresql import web_login
 
@@ -49,8 +63,9 @@ pytestmark = pytest.mark.django_db(transaction=True)
 REVIEW_SQL = "JOIN stewardship_proposal_review v ON v.proposal_id=p.id"
 
 
-def reviews(campaign_id, family_id, reader=None):
-    """The review lines as the restricted web login, and the statements run."""
+def read(campaign_id, family_id, reader=None):
+    """The review and request lines the review read returns, as the
+    restricted web login, and the statements run."""
     with (
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
         transaction.atomic(),
@@ -58,7 +73,19 @@ def reviews(campaign_id, family_id, reader=None):
     ):
         values = scope_values(ResponseScope(campaign_id), family_id)
         lines = read_reviews(values, reader)
-    return [(str(what), detail) for _at, what, detail in lines], len(queries)
+    return lines, len(queries)
+
+
+def reviews(campaign_id, family_id, reader=None):
+    """The review lines (What happened, Details), and the statements run."""
+    (lines, _requests), statements = read(campaign_id, family_id, reader)
+    return [(str(what), detail) for _at, what, detail in lines], statements
+
+
+def requests(campaign_id, family_id):
+    """The request lines (#2023) as (What happened, Details)."""
+    (_reviews, lines), _ = read(campaign_id, family_id)
+    return [(str(what), detail) for _at, what, detail in lines]
 
 
 def page(client, path):
@@ -163,6 +190,8 @@ def test_a_resubmitted_change_keeps_its_carried_decision(response_service):
     harness, admin, _staff, home, name = prepared(response_service)
     family_id = home.submission.family_id
     review(harness, admin, name, "approved")
+    asked = requests(harness.campaign.pk, family_id)
+    assert ("Asked for a census change", "Home address for the Family") in asked
     with web_login():
         form = revisit(harness)
         send(harness, form, answers_for(form))
@@ -175,6 +204,8 @@ def test_a_resubmitted_change_keeps_its_carried_decision(response_service):
     review(harness, admin, carried, "unreviewed")
     lines, _ = reviews(harness.campaign.pk, family_id)
     assert [what for what, _detail in lines] == ["Accepted", "Back to review"]
+    # The same answers again ask for nothing new (#2023): no line repeats.
+    assert requests(harness.campaign.pk, family_id) == asked
 
 
 def test_ministry_follow_up_and_roster_ticks(response_service):
@@ -204,6 +235,11 @@ def test_ministry_follow_up_and_roster_ticks(response_service):
     assert "; Stayed in the Ministry; by " in lines[-1][1]
     assert all(detail.endswith("; by admin@example.org") for _w, detail in lines)
     assert not any("Phoned" in detail for _w, detail in lines)
+    # What the response asked for (#2023), read in the same statements.
+    asked = requests(harness.campaign.pk, join.submission.family_id)
+    assert [what for what, _detail in asked] == ["Asked for a Ministry change"] * 2
+    assert sorted(detail.split(" ")[0] for _what, detail in asked) == ["Join", "Leave"]
+    assert not any(" by " in detail for _what, detail in asked)
 
 
 def test_additional_information_follow_up(live_response_service, google):
@@ -439,7 +475,9 @@ def test_limitation_decisions_reach_the_timeline(response_service, google):
     decide_answer(harness, actor, Action.ACCEPT, member, 4, note="Asked again")
     staff = Principal(uuid4(), frozenset({"staff"}), frozenset())
     lines, statements = reviews(harness.campaign.pk, family.pk, staff)
-    assert statements == 1
+    # The history, then the Ministry names its responses' Ministry request
+    # lines need (#2023): two more statements.
+    assert statements == 3
     assert [what for what, _detail in lines] == [
         "Accepted",
         "Handled",
@@ -455,3 +493,113 @@ def test_limitation_decisions_reach_the_timeline(response_service, google):
         "Cannot attend Mass or prayer services for the Family; by admin@example.org"
     )
     assert "note:" not in lines[5][1]
+
+
+def test_parish_added_census_changes_and_the_responses_asks(response_service):
+    """A census change the parish added reads Added by the parish, then
+    each later step, with a Withdraw of an entered one as one line (#2023);
+    the response's own changes are request lines, in the same statement."""
+    harness, _, staff, changes = pipeline_prepared(response_service)
+    campaign = campaign_of(changes)
+    family_id = next(iter(changes.values())).submission.family_id
+    addition, _ = add(
+        harness, staff, campaign, member_form(changes, "nickname", "Dave")
+    )
+    key = f"add-{addition.pk}"
+    worklist(harness, staff, campaign, "entered_by_hand", {key: 1})
+    worklist(harness, staff, campaign, "back_to_review", {key: 2}, note="Typo")
+    worklist(harness, staff, campaign, "entered_by_hand", {key: 3})
+    worklist(harness, staff, campaign, "withdraw", {key: 4}, note="Gone")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        principal = current_principal(harness.service.store, staff)
+    lines, statements = reviews(campaign, family_id, principal)
+    assert statements == 1
+    assert [what for what, _detail in lines] == [
+        "Added by the parish",
+        "Entered by hand",
+        "Back to review",
+        "Entered by hand",
+        "Withdrawn",
+    ]
+    item = lines[0][1]
+    assert item.startswith("Nickname for ") and item.endswith("; by staff@example.org")
+    assert lines[2][1] == item + "; note: Typo"
+    assert not any("Dave" in detail for _what, detail in lines)
+    asked = requests(campaign, family_id)
+    assert {what for what, _detail in asked} == {"Asked for a census change"}
+    assert len(asked) == len(changes)
+    assert ("Asked for a census change", "Home address for the Family") in asked
+
+
+def test_a_parish_added_ministry_request_reads_added_by_the_parish(
+    response_service,
+):
+    """Staff's Add on Ministry requests is Added by the parish, not Accepted,
+    and is no request line: the Family did not ask for it (#2023)."""
+    harness = ministry_setup(response_service)
+    staff = ministry_actor(harness, {"staff"}, ())
+    join, _leave = ministry_requests()
+    family_id = join.submission.family_id
+    ministry_decide(harness, staff, "ignore", join)
+    # The Family answers again without the leave, which withdraws it, so
+    # Ministry 4 is free to add (as the Add's own test does).
+    form = ministry_revisit(harness)
+    answers = answers_for(form)
+    answers["ministries"]["members"]["3"] = {"join": [], "leave": []}
+    ministry_respond(harness, form, answers)
+    before = requests(harness.campaign.pk, family_id)
+    fields = {
+        "value_member": ["3"],
+        "value_ministry": ["4"],
+        "value_action": ["join"],
+        "value_in_place_of": [str(join.pk)],
+    }
+    ministry_decide(harness, staff, "add", fields=fields)
+    lines, _ = reviews(harness.campaign.pk, family_id)
+    assert [what for what, _detail in lines][-2:] == ["Ignored", "Added by the parish"]
+    assert lines[-1][1].startswith("Join ")
+    assert requests(harness.campaign.pk, family_id) == before
+
+
+def test_a_separate_withdraw_keeps_the_not_entered_yet_before_it(response_service):
+    """Not entered yet and a later Withdraw with the very same note are two
+    decisions, so both lines stay; only one Withdraw's own pair of steps
+    reads as one line (matched by its request, #2023)."""
+    harness, _, staff, changes = pipeline_prepared(response_service)
+    campaign = campaign_of(changes)
+    family_id = next(iter(changes.values())).submission.family_id
+    addition, _ = add(
+        harness, staff, campaign, member_form(changes, "nickname", "Dave")
+    )
+    key = f"add-{addition.pk}"
+    worklist(harness, staff, campaign, "entered_by_hand", {key: 1})
+    worklist(harness, staff, campaign, "back_to_review", {key: 2}, note="Same")
+    worklist(harness, staff, campaign, "withdraw", {key: 3}, note="Same")
+    lines, _ = reviews(campaign, family_id)
+    assert [what for what, _detail in lines] == [
+        "Added by the parish",
+        "Entered by hand",
+        "Back to review",
+        "Withdrawn",
+    ]
+
+
+def test_a_reviewed_form_asking_again_for_an_ignored_join_is_listed(
+    response_service,
+):
+    """The reviewed form's rule 2 (#1705): ticking an Ignored join again
+    makes a new request To review over the decided one. The Family asked
+    again, so it is one more request line (#2023)."""
+    harness, staff = reviewed_ministry_setup(response_service)
+    join = reviewed_requests()[9, "join"]
+    family_id = join.submission.family_id
+    decide_request(harness, staff, "ignore", join)
+    reviewed_again(harness)
+    before = requests(harness.campaign.pk, family_id)
+    reviewed_again(harness, set_choices([9], [4]))
+    join.refresh_from_db()
+    assert join.state == "superseded"
+    after = requests(harness.campaign.pk, family_id)
+    assert len(after) == len(before) + 1
+    joins = [detail for _what, detail in after if detail.startswith("Join ")]
+    assert len(joins) == 2 and joins[0] == joins[1]

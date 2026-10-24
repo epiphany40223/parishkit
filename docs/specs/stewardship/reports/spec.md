@@ -1121,6 +1121,8 @@ shows them all, with no paging or row navigator. Its lines are:
   reached;
 - each submission, noting when Staff entered it for the Family and when no
   receipt was sent because the Family had no email address;
+- each census change and Ministry join or leave the submission asked for
+  ([Timeline request lines](#timeline-request-lines));
 - each review action Staff, Administrators and Ministry leaders took on the
   Family's answers ([Timeline review lines](#timeline-review-lines)).
 
@@ -1142,8 +1144,14 @@ too:
 - **Kind:** All (the default), Family form activity (form opens, progress
   and submissions), Emails (every email line and the not-sent lines),
   Sign-ins and sign-outs (sign-ins, Staff opened the form, Signed out,
-  Session ended and Earlier session ended), or Reviews (the
-  [review lines](#timeline-review-lines)). A user's timeline adds
+  Session ended and Earlier session ended), Census and Ministry requests
+  (the [request lines](#timeline-request-lines), `kind=requests`), or
+  Reviews (the [review lines](#timeline-review-lines)). All includes the
+  request lines
+  ([#2023](https://github.com/epiphany40223/parishkit/issues/2023)): there
+  is about one per item the Family asked for, as the review lines are, so
+  they do not drown the rest the way a user's Pages viewed would. A user's
+  timeline adds
   Admin actions and Role changes; a Family's shows only the kinds it can have
   ([conditional fields](../ui-conventions/spec.md#conditional-fields)).
 - **From** and **Through:** whole days in the browser's time zone, as on
@@ -1177,7 +1185,8 @@ form opens and submissions through their Family indexes, the skips through
 the campaign's invitation schedules, and the sign-ins, sign-outs and session
 ends in one read through the audit's event-type and time index, which scans
 the campaign's Family session events rather than one Family's. The
-[review lines](#timeline-review-lines) add one statement, plus one for the
+[review lines](#timeline-review-lines) add one statement, which also
+reads the [request lines](#timeline-request-lines), plus two for the
 Ministry names when there is a Ministry line, only while the Timeline tab is
 chosen. The filters narrow the lines in memory, so they add no statement.
 
@@ -1196,8 +1205,10 @@ Each line's **What happened** is the action in the pipeline's words: a
 decision reads as its
 [pipeline vocabulary](../review-pipeline/spec.md#pipeline-vocabulary) word
 (Accepted, Accepted (edited) or Ignored), undoing one reads **Back to
-review**, and the other steps read **Entered by hand**, **Entered by hand
-cleared**, **Handled**, **Handled cleared**, **Edited**, **Edit cleared** or,
+review**, and the other steps read **Added by the parish**, **Withdrawn**
+(a census change the parish added, taken back), **Entered by hand**,
+**Entered by hand cleared**, **Handled**, **Handled cleared**, **Edited**,
+**Edit cleared** or,
 for a step that changes no decision or stage (a note, a contact attempt or a
 move to In progress), **Follow-up updated**. A census, Ministry or
 Additional information line is worded from the item's state before and
@@ -1248,6 +1259,22 @@ none, even with the same answer as the change it replaced (#2028). **Details** n
 
 In this release the lines cover the decisions stored today:
 
+- Added by the parish
+  ([#2023](https://github.com/epiphany40223/parishkit/issues/2023)): a
+  Ministry request Staff added (Add on Ministry requests) reads **Added by
+  the parish** for the step that added it, not Accepted, and its later
+  steps read as any request's. A census change Staff added (Add on Census
+  changes, `stewardship_census_addition`) reads **Added by the parish**,
+  and each later step (`stewardship_census_addition_resolution`) reads
+  **Entered by hand**, **Back to review** (the worklist's Not entered yet,
+  whose note follows the Back to review rule above, for readers of Census
+  changes) or **Withdrawn**; a Withdraw of an entered addition, which
+  stores a reopening and the withdrawal together, is one Withdrawn line.
+  Its Details name the field and whom it is about, as a census line's do,
+  then who acted. An addition belongs to the Family, not to a response, so
+  its Member is named as the Family's latest response answered, else as
+  ParishSoft has them;
+
 - census: each Administrator review (Accept, Ignore, Back to review, Edit,
   Clear edit and Use the Family's value anyway,
   `stewardship_proposal_review`) and each Staff or Administrator resolution
@@ -1267,14 +1294,14 @@ In this release the lines cover the decisions stored today:
 - Limitations: each Accept, Ignore, Back to review and Handled
   (`stewardship_limitation_review`).
 
-Staff's Add, Update ParishSoft and the refresh checks
-(Confirmed, Entered incorrectly, Not seen in ParishSoft, attributed to the
-system) join when the review-pipeline slices that store them land
-([#1734](https://github.com/epiphany40223/parishkit/pull/1734),
-[#1736](https://github.com/epiphany40223/parishkit/pull/1736),
-[#1758](https://github.com/epiphany40223/parishkit/pull/1758),
-[#1741](https://github.com/epiphany40223/parishkit/pull/1741)), each
-reading its own history the same way. Lines are read from the Family's live
+Those are every stream's stored decisions, Staff's Add included (above).
+Two kinds of step are not Timeline lines: Update ParishSoft's writes
+([#1758](https://github.com/epiphany40223/parishkit/pull/1758)) and the
+refresh checks (Confirmed, Entered incorrectly, Not seen in ParishSoft,
+attributed to the system,
+[#1741](https://github.com/epiphany40223/parishkit/pull/1741)); Census
+changes and the other review pages show them. Adding them would read
+their own records the same way. Lines are read from the Family's live
 responses in this campaign (Production), so Testing rehearsal decisions are
 never listed, and only while the Timeline tab is chosen; the
 [timeline export](#timeline-export) always includes them.
@@ -1290,6 +1317,49 @@ financial, Limitations or Additional information line.
 A Back to review line made by `pk-admin followup information-update` shows the
 item's Staff notes as that command saved them (the whole edited text), since
 that command stores the notes along with the revision.
+
+#### Timeline request lines
+
+The timeline lists what each of the Family's responses asked the parish to
+change, so Staff answering "what did this Family do?" see it beside the
+sign-ins, submissions and emails, without opening Census changes or
+Ministry requests
+([#2023](https://github.com/epiphany40223/parishkit/issues/2023)). The
+lines have the Kind **Census and Ministry requests** and come from the
+records the review pages already keep (the response's census changes,
+`stewardship_proposed_change`, and Ministry requests,
+`stewardship_ministry_request`); nothing new is stored or audited. Each is
+at its response's submission time, listed just after that response's
+**Submitted a response** line:
+
+- **Asked for a census change**, with Details naming the field and whom it
+  is about as a census [review line](#timeline-review-lines) does ("Email
+  address for Smith, Anne", "Home address for the Family", "New Member:
+  Smith, Anne");
+- **Asked for a Ministry change**, with Details naming Join or Leave, the
+  Ministry and the Member ("Join Altar Servers for Smith, Anne").
+
+A line never shows the value the Family gave (the Member tabs show it). A
+response that only repeats an item still open from the Family's earlier
+response lists no line for it: a census change carried over with the same
+answer (the rule the review lines' carried decision uses) and a Ministry
+request that replaced the same join or leave still in progress. A reviewed
+form's request chosen again over a decided one (an Ignored join ticked
+again, or the Family's own Ministry over an Edit into another) is asked
+again, so it is listed. A response's request lines share its instant and
+keep a steady order among themselves: the Family's first, then each
+Member's, by field. So a
+Family that submits again with the same answers is not listed twice. A
+request or change Staff added has no such line: it is the **Added by the
+parish** review line. The review steps on each item stay review lines, so
+a request line's status and outcome are read from those.
+
+The lines are read with the review lines, from the Family's live
+responses (Production), in the same statement and only while the Timeline
+tab is chosen; the [timeline export](#timeline-export) always includes
+them. Administrators and Staff see them, as they see the review lines; the
+reduced view keeps none, and Ministry leaders still cannot open the page
+(if a leader view is ever added, the review lines' leader rule applies).
 
 #### Open form
 
@@ -1380,8 +1450,11 @@ page's heading shows its badge. As for every shared export, the CSV is the
 table alone; the XLSX's Report information sheet and the PDF's summary cards
 carry the rest, including the code. The PDF is an infographic sheet
 ([File design](#file-design)); its Sign-ins and form opens kind counts the
-sign-out and session-end lines too, and its Reviews kind counts the
-[review lines](#timeline-review-lines). The page builds its timeline in Python,
+sign-out and session-end lines too, its Requests kind (the page's Census
+and Ministry requests) counts the
+[request lines](#timeline-request-lines), and its Reviews kind counts the
+[review lines](#timeline-review-lines). The page builds its timeline in
+Python,
 so the web supplies that document; the capture trigger admits it only from
 the web login, for a current Administrator or Staff member (a Testing
 capture, which the page no longer makes, for an Administrator only), an
