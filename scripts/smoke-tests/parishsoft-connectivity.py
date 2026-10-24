@@ -16,6 +16,19 @@ def count_items(payload) -> int:
     return len(payload)
 
 
+def organization_field_counts(rows, org_id: int) -> str:
+    """Count, per organization field, the rows naming ``org_id`` (#1554).
+
+    Counts only: no other organization's ID, and no record values.
+    """
+    fields = ("organizationID", "ownerOrganizationID", "registeredOrganizationID")
+    counts = ", ".join(
+        f"{field}={sum(1 for row in rows if row.get(field) == org_id)}"
+        for field in fields
+    )
+    return f"{len(rows)} rows; equal to the organization: {counts}"
+
+
 def main() -> int:
     """Run.
 
@@ -26,6 +39,11 @@ def main() -> int:
     parser.add_argument("--api-key-file", required=True, type=Path)
     parser.add_argument("--expected-organization")
     parser.add_argument(
+        "--organization-id",
+        type=int,
+        help="organization to check when the key reaches several (#1554)",
+    )
+    parser.add_argument(
         "--cache-dir", type=Path, default=Path("/tmp/parishkit-ps-smoke")
     )
     parser.add_argument(
@@ -34,6 +52,14 @@ def main() -> int:
         help="cache age for smoke-test responses; default 0s forces live checks",
     )
     parser.add_argument("--send", action="store_true", help="execute read-only request")
+    parser.add_argument(
+        "--organization-fields",
+        action="store_true",
+        help=(
+            "also count, on one page of Members and contact rows, which "
+            "organization fields equal the organization (counts only)"
+        ),
+    )
     parser.add_argument(
         "--deep",
         action="store_true",
@@ -57,10 +83,23 @@ def main() -> int:
             cache_dir=args.cache_dir,
             expected_organization=args.expected_organization,
             cache_limit=parse_cache_limit(args.cache_limit),
+            organization_id=args.organization_id,
         )
     )
     org_id = client.validate_organization()
     print(f"ParishSoft organization validated: {org_id}")
+    print(f"Organizations the key reaches: {client.organizations_reached}")
+    if args.organization_fields:
+        members = client.post_uncached(
+            "members/search",
+            {"organizationIDs": [org_id], "startRowIndex": 0, "maximumRows": 500},
+        )
+        contacts = client.post_uncached(
+            "members/contact/list",
+            {"organizationIDs": [org_id], "offset": 0, "limit": 500},
+        )
+        print("Members: " + organization_field_counts(members, org_id))
+        print("Member contact rows: " + organization_field_counts(contacts, org_id))
     if args.deep:
         families = client.post(
             "families/search",

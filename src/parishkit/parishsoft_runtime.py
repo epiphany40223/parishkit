@@ -19,15 +19,23 @@ def parishsoft_client_from_config(
     lets the client guard against pointing at the wrong organization. Cache
     location and limits come from the shared CLI options, while the API key is
     read at call time from ``common.ps_api_key_file`` so secrets never live in
-    the config. Raises ``ConfigError`` if the ``parishsoft`` section or its
-    ``expected_organization`` value has the wrong type.
+    the config. ``common.ps_organization_id`` (``parishsoft.organization_id``
+    or ``--ps-organization-id``) selects the organization to load when the key
+    reaches several (#1554). Raises ``ConfigError`` if the ``parishsoft``
+    section or its ``expected_organization`` value has the wrong type.
     """
     parishsoft_config = config.get("parishsoft", {})
     if not isinstance(parishsoft_config, dict):
         raise ConfigError("parishsoft configuration must be a mapping")
     reject_unknown_keys(
         parishsoft_config,
-        {"api_key_file", "cache_dir", "cache_limit", "expected_organization"},
+        {
+            "api_key_file",
+            "cache_dir",
+            "cache_limit",
+            "expected_organization",
+            "organization_id",
+        },
         "parishsoft",
     )
     expected_organization = parishsoft_config.get("expected_organization")
@@ -41,5 +49,6 @@ def parishsoft_client_from_config(
             cache_dir=Path(common.ps_cache_dir),
             cache_limit=parse_cache_limit(common.ps_cache_limit),
             expected_organization=expected_organization,
+            organization_id=common.ps_organization_id,
         )
     )

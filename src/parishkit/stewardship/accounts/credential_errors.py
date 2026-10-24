@@ -9,11 +9,14 @@ class CredentialValidationUnavailable(Exception):
 
 
 class CredentialOrganizationMismatch(Exception):
-    """A ParishSoft key that authenticates but sees another organization (#1495).
+    """A ParishSoft key that authenticates but does not reach the configured
+    organization (#1495); it may reach others (#1554).
 
     Refused for good, as a rejected key is, but named apart so the installer
     can record that cause and the settings page can say which one applied.
     """
 
     def __init__(self):
-        super().__init__("The key belongs to a different ParishSoft organization.")
+        super().__init__(
+            "The key does not reach the configured ParishSoft organization."
+        )

@@ -681,7 +681,19 @@ containing:
   [late-added Family](#response-pattern) is served, or `null` (held back); and
 - `edits` (optional): the operator's changes to the generated parish, in
   order (see [fake ParishSoft edits](#fake-parishsoft-edits)); absent or
-  empty serves the parish as generated.
+  empty serves the parish as generated; and
+- `other_organizations` (optional): 0 (the default), 1 or 2, how many other
+  organizations the fixed key also reaches
+  ([#1554](https://github.com/epiphany40223/parishkit/issues/1554)). Above
+  0, `organizations/search` lists organizations `organization + 1` onwards
+  after the synthetic one, and the scoped searches and lists answer with
+  some of each one's records after the synthetic parish's: two Members of a
+  Family the parish does not have with their contact rows, a Ministry type,
+  a Family WorkGroup, a Member WorkGroup, and a copy of the parish's newest
+  pledge and contribution of each fund. Every one names its own organization,
+  so a load must drop them all (see
+  [ParishSoft organization scope](../data/spec.md#parishsoft-organization-scope)).
+  Rosters and Family groups are unchanged.
 
 The fake reads the file once at start, so restarts and deploys keep the same
 data. `up` writes `release_at: null`, so the setup wizard's initial load does
@@ -705,7 +717,7 @@ envelope parser in `parishkit/parishsoft_pagination.py`, the allowlist in
 
 | Method and path | Paging fields (size, position) | Response shape | Identity field |
 | --- | --- | --- | --- |
-| `POST organizations/search` | none | array of exactly one organization | `organizationID` (plus `organizationReportName`) |
+| `POST organizations/search` | none | array of the synthetic organization, then any `other_organizations` | `organizationID` (plus `organizationReportName`) |
 | `POST families/search` | `pageSize`, `pageNumber` (body) | bare array; each row carries `totalResults` and `rowNumber` | `familyDUID` |
 | `POST members/search` | `maximumRows`, `startRowIndex` (body) | bare array; each row carries `recordCount` and `rowNum`; position 0 and 1 both answer the first page | `memberDUID` |
 | `POST members/contact/list` | `limit`, `offset` (body) | bare array; position 0 and 1 both answer the first page | `memberDUID` |
@@ -730,6 +742,12 @@ Further rules:
 - Embedded row ordinals (`rowNumber`, `rowNum`) are contiguous across pages,
   and embedded totals are constant within a scan.
 - Member rows and Member objects carry the `familyDUID` of their Family.
+- Rows name their organization as the real DTOs do: Members `organizationID`
+  and `ownerOrganizationID`, contact rows `ownerOrganizationID`, Ministry
+  types `organizationId`, Family WorkGroups `ownerOrganizationID` and
+  `sourceOrganizationID`, Member WorkGroups `ownerOrganizationId`, giving
+  `organizationID`/`organizationId`. The generated parish itself does not
+  carry them; the fake adds them when it answers.
 - Tenant parameters are validated: an organization ID in a search body or path
   other than the synthetic organization's gets 404.
 - Malformed parameters get 400: a page size outside 1 to 500, a page position
@@ -813,7 +831,10 @@ recorded; the fake therefore always starts on a document it wrote. `undo`
 drops the last edit and `clear` all of them; `show` prints the recorded
 edits, and `show member|family|ministry ID` the record as the fake now
 serves it (a Family with its Members and pledges, a Ministry with its
-roster). The command opens no connection and writes no file. Replay
+roster). `organizations N` sets the configuration's `other_organizations`
+(0 removes it) and is not an edit of the parish: `undo` and `clear` leave it
+alone ([#1554](https://github.com/epiphany40223/parishkit/issues/1554)). The
+command opens no connection and writes no file. Replay
 re-checks every stored edit and value the same way, so a hand-edited list the
 parish cannot take stops the fake at start, as any invalid configuration
 does.
@@ -1640,7 +1661,7 @@ section is the contract.
 | `down` | Stop the services; never removes data |
 | `start` | Start a stopped deployment's services in the recorded clock mode |
 | `sign-in --email E` | Print a [test sign-in](#local-test-sign-in) link |
-| `fake-parishsoft member ID FIELD=VALUE...` / `family ID FIELD=VALUE...` / `roster add\|remove MINISTRY MEMBER [role=R] [start=D]` / `pledge FAMILY AMOUNT\|none [fund=F] [start=D]` / `undo` / `clear` | Record one [fake ParishSoft edit](#fake-parishsoft-edits) and recreate the fake (below) |
+| `fake-parishsoft member ID FIELD=VALUE...` / `family ID FIELD=VALUE...` / `roster add\|remove MINISTRY MEMBER [role=R] [start=D]` / `pledge FAMILY AMOUNT\|none [fund=F] [start=D]` / `undo` / `clear` / `organizations N` | Record one [fake ParishSoft edit](#fake-parishsoft-edits) (or, for `organizations`, the [multi-organization mode](#fake-configuration)) and recreate the fake (below) |
 | `fake-parishsoft show [member\|family\|ministry ID]` | Print the recorded edits, or one record as the fake now serves it |
 | `fake-parishsoft refresh` | Run the Admin's full ParishSoft refresh of the fake and wait for it (below) |
 | `ca` | Copy Caddy's local root certificate to the laptop and print how to trust it |

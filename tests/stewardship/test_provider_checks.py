@@ -166,6 +166,25 @@ def test_response_size_bound_and_no_arbitrary_origins(monkeypatch):
         worker.CheckSession("production")
 
 
+def test_organization_search_may_list_many_organizations(monkeypatch, tmp_path):
+    """A key reaching many organizations is not refused as oversized (#1554).
+
+    The organization search alone has the larger bound; past it, the check
+    is still unavailable, never a verdict on the key.
+    """
+    monkeypatch.chdir(tmp_path)
+    rows = [{"organizationID": 123}] + [
+        {"organizationID": n, "organizationReportName": "N" * 40}
+        for n in range(1000, 1900)
+    ]
+    body = json.dumps(rows).encode()
+    assert worker.MAX_RESPONSE < len(body) <= worker.MAX_ORGANIZATION_RESPONSE
+    http(monkeypatch, Response(body=body))
+    assert worker.check_request(payload("parishsoft")) == "valid"
+    http(monkeypatch, Response(body=b" " * (worker.MAX_ORGANIZATION_RESPONSE + 1)))
+    assert worker.check_request(payload("parishsoft")) == "unavailable"
+
+
 @pytest.mark.parametrize("profile", list(DeploymentProfile))
 def test_local_fake_endpoint_is_admitted_only_for_a_local_request(
     monkeypatch, tmp_path, profile
@@ -242,7 +261,11 @@ def test_request_without_a_valid_profile_is_invalid(monkeypatch, overrides):
         # A key that sees another organization is its own permanent outcome,
         # never a temporary outage (#1492).
         (b'[{"organizationID":124}]', "mismatch"),
-        (b'[{"organizationID":123},{"organizationID":124}]', "unavailable"),
+        # A key may reach other organizations too (#1554): it is valid
+        # when it reaches the configured one, and a mismatch when it does not.
+        (b'[{"organizationID":124},{"organizationID":123}]', "valid"),
+        (b'[{"organizationID":124},{"organizationID":125}]', "mismatch"),
+        (b'[{"organizationID":123},{"organizationID":123}]', "unavailable"),
         (b'[{"organizationID":"123"}]', "unavailable"),
         (b"[]", "unavailable"),
     ],

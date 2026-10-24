@@ -255,7 +255,10 @@ Point each tool at the key with the `parishsoft.api_key_file` setting in YAML
 (or the `--ps-api-key-file` option). In your config, also set
 `parishsoft.expected_organization` to your parish's name as ParishSoft reports
 it. ParishKit checks this on startup so a misconfigured deployment cannot
-accidentally read or modify the wrong ParishSoft tenant.
+accidentally read or modify the wrong ParishSoft tenant. If your key reaches
+several ParishSoft organizations, also set `parishsoft.organization_id` (or
+pass `--ps-organization-id`) to your parish's organization ID; ParishKit then
+reads only that organization's data.
 
 You can confirm the key works with the read-only ParishSoft smoke test described
 in [Verifying credentials with smoke tests](#verifying-credentials-with-smoke-tests).
@@ -605,8 +608,9 @@ A few settings appear in most configs:
 - **`common.timezone`** — the IANA timezone used for human-visible timestamps.
   It defaults to `America/Kentucky/Louisville`.
 - **`parishsoft`** — your API key file, a cache directory, a cache lifetime
-  (durations look like `30s`, `14m`, `12h`, or `7d`), and your
-  `expected_organization`.
+  (durations look like `30s`, `14m`, `12h`, or `7d`), your
+  `expected_organization`, and, for a key that reaches several
+  organizations, the `organization_id` to load.
 - **`slack`** and **`email`** — optional notification settings as described
   above.
 

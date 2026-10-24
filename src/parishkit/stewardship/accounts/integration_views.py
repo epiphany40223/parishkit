@@ -222,6 +222,8 @@ def _summary(*forms):
 
 def _page(request, configuration, target, *, form=None, credential=None, status=200):
     """Show editable settings, the optional new-key field and one status line."""
+    from parishkit.stewardship.source.loading import snapshot_organizations
+
     record = _optional(configuration, target)
     configured = record is not None
     record = record or _unset(target)
@@ -291,6 +293,11 @@ def _page(request, configuration, target, *, form=None, credential=None, status=
                 full_refresh_status(refresh_schedule(configuration), timezone.now())
                 if target == "parishsoft"
                 else None
+            ),
+            # A key that reaches several organizations (#1554): what the
+            # current snapshot's load recorded, None otherwise.
+            "organizations": (
+                snapshot_organizations() if target == "parishsoft" else None
             ),
             "status_url": reverse("admin:integration_status", args=[target]),
             # Save, Remove and the review dialog's Apply post here (#750).

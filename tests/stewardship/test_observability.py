@@ -130,6 +130,31 @@ def test_contact_list_coverage_is_logged_only_as_named_counts(caplog):
             emit(event, source_contact_coverage=value)
 
 
+def test_other_organization_counts_are_logged_only_as_named_counts(caplog):
+    """#1554: a key reaching several organizations logs counts, nothing else."""
+    counts = {
+        "reached": 3,
+        "skipped": {"members": 4, "pledges": 13},
+        "families_without_members": 1,
+    }
+    task = uuid4()
+    with caplog.at_level(logging.DEBUG):
+        emit(Event.TASK_STARTED, task_id=task, source_organizations=counts)
+    payload = json.loads(SafeJsonFormatter().format(caplog.records[-1]))
+    assert payload["extra"]["source_organizations"] == counts
+    assert payload["extra"]["task_id"] == str(task)
+    for event, value in (
+        (Event.TASK_FAILED, counts),
+        (Event.TASK_STARTED, (3, 17, 1)),
+        (Event.TASK_STARTED, counts | {"reached": 1}),
+        (Event.TASK_STARTED, counts | {"skipped": {"private@example.org": 1}}),
+        (Event.TASK_STARTED, counts | {"skipped": {"members": -1}}),
+        (Event.TASK_STARTED, counts | {"organization": 999}),
+    ):
+        with pytest.raises(ValueError):
+            emit(event, source_organizations=value)
+
+
 def test_source_loss_limit_override_is_logged_only_as_a_percent(caplog):
     """#320: an overridden limit is visible, carried by the reviewed start event."""
     task_id = uuid4()

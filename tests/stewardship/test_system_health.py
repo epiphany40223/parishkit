@@ -3317,3 +3317,17 @@ def test_waiting_to_retry_counts_sent_mails_family_group():
     from parishkit.stewardship.jobs.delivery_metadata import PURPOSE_GROUPS
 
     assert PURPOSE_GROUPS["family"] == system_health.FAMILY_PURPOSES
+
+
+def test_the_source_panel_counts_the_organizations_a_key_reaches():
+    """#1554: a key that reaches several organizations says how many, and how
+    many records the last load left out, in counts only; one that reaches
+    the configured organization alone adds nothing."""
+    line = "At the last load from ParishSoft, this key reached 3 organizations."
+    drawn = whole({"health": health(), "organizations": {"reached": 3, "skipped": 12}})
+    assert line in drawn
+    assert "Records of other organizations left out by that load: 12." in drawn
+    quiet = whole({"health": health(), "organizations": {"reached": 2, "skipped": 0}})
+    assert "this key reached 2 organizations" in quiet
+    assert "left out by that load" not in quiet
+    assert "data-parishsoft-organizations" not in whole({"health": health()})

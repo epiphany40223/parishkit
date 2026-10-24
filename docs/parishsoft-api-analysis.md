@@ -193,6 +193,36 @@ v2 (see `parishsoft.py` loaders):
 `offering/{org}/funds`, `offering/pledge/list`,
 `offering/contributiondetail/list`.
 
+**Organization fields and keys that reach several organizations**
+([#1554](https://github.com/epiphany40223/parishkit/issues/1554)). One API key
+may reach several organizations: `organizations/search` then lists them all.
+ParishKit loads only the configured one (the Stewardship
+[organization scope](specs/stewardship/data/spec.md#parishsoft-organization-scope)
+gives the rules). A read-only probe of a real single-organization key
+(2026-10-17, counts only) found which fields equal the requested
+organization:
+
+| Collection | Organization fields | Matches the requested organization |
+| --- | --- | --- |
+| `families/search` | `registeredOrganizationID` | about half; the rest are `0` or another parish. It is where a Family is registered, not whose record it is. |
+| `members/search` | `organizationID` | every Member |
+| | `ownerOrganizationID` | about 97% (the rest are owned by other organizations) |
+| | `registeredOrganizationID` | about half |
+| `members/contact/list` | `ownerOrganizationID` | every row; Members owned elsewhere have none |
+| `ministry/type/list` | `organizationId` | every row |
+| `members/workgroup/lookup/list` | `ownerOrganizationId` | every row |
+| `families/workgroup/list` | `ownerOrganizationID`, `sourceOrganizationID` | every row |
+| `offering/pledge/list` | `organizationID` | every row |
+| `offering/contributiondetail/list` | `organizationId` | every row |
+| `offering/{id}/funds`, rosters, Family groups, WorkGroup memberships | none | scoped by the request or by an ID from a scoped list |
+
+So a multi-organization load filters Members on `organizationID`, and Ministry
+types, WorkGroups and giving on the fields above, and relies on request
+scoping for Families. A single-organization key cannot show how ParishSoft
+fills these fields for a key that reaches several organizations; that
+`organizationID` names the organization a Member was returned for is an
+assumption to confirm with such a key if one becomes available.
+
 Additional v2 capabilities, in priority order:
 
 1. **`families/change/list` (FamilyChanges)** — an incremental "what changed

@@ -456,6 +456,22 @@ It waits until the refresh and the work it starts have finished. The next
 full refresh sees an edit (every refresh is full since quick updates were
 removed in [#1147](https://github.com/epiphany40223/parishkit/issues/1147)).
 
+To try a ParishSoft key that reaches several organizations
+([#1554](https://github.com/epiphany40223/parishkit/issues/1554)), make the
+fake's key reach one or two more, then refresh:
+
+```sh
+tools/stewardship-local.sh fake-parishsoft organizations 2
+tools/stewardship-local.sh fake-parishsoft refresh
+```
+
+The fake then also answers with a few records of the other organizations,
+which the load leaves out. The ParishSoft settings page, System health's
+ParishSoft refresh panel and a setup load's result say how many organizations
+the key reaches and how many records were left out; the parish data is the
+same as before. `fake-parishsoft organizations 0` and a refresh go back to a
+key for the parish alone.
+
 To produce each refresh outcome for an item a Family submitted (value A in
 ParishSoft before, C the answer being carried forward):
 

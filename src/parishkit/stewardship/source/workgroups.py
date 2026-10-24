@@ -36,6 +36,8 @@ from parishkit.parishsoft import (
 )
 from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP
 
+from .canonical import SourceReferenceSkew
+
 EVIDENCE_KEY = "reminder_workgroup"
 
 
@@ -44,7 +46,7 @@ def configured_name(values):
     return values.get(REMINDER_WORKGROUP) or None
 
 
-def load_reminder_workgroup(client, name):
+def load_reminder_workgroup(client, name, *, families=None):
     """Read the named Family WorkGroup's member Family DUIDs from ParishSoft.
 
     Lists the Family WorkGroups (one paged call), then fetches the membership
@@ -52,6 +54,13 @@ def load_reminder_workgroup(client, name):
     ignoring case and surrounding spaces, so a stray capital in ParishSoft
     does not silently turn the setting off. Returns the evidence a snapshot
     records, or None when no name is configured (nothing is fetched).
+
+    With a key that reaches several ParishSoft organizations (#1554) the list
+    keeps only the configured organization's WorkGroups (the client drops
+    the others), and ``families``, the full load's Family keys, cross-checks
+    the membership: a Family the load does not hold fails the refresh as a
+    dangling reference, since it could be another parish's. A key that
+    reaches one organization is read exactly as before.
     """
     if name is None:
         return None
@@ -67,6 +76,12 @@ def load_reminder_workgroup(client, name):
             duid = row.get("py family duid")
             if type(duid) is int and 1 <= duid < 2**63:
                 duids.add(duid)
+    if (
+        families is not None
+        and (client.organizations_reached or 0) > 1
+        and any(str(duid) not in families for duid in duids)
+    ):
+        raise SourceReferenceSkew("Source WorkGroup has no retained Family.")
     return {"name": name, "found": bool(matches), "family_duids": sorted(duids)}
 
 

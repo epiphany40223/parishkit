@@ -32,6 +32,7 @@ sections:
     "Campaign": [DAT-02]
     "Schedule revisions and fulfillment": [DAT-02, BG-04]
     "Source snapshot": [DAT-03]
+    "ParishSoft organization scope": [DAT-03]
     "Campaign daily report facts": [DAT-07, RPT-03]
     "Derived fact retention": [OPS-07, RPT-03]
     "Family campaign identity": [DAT-04]

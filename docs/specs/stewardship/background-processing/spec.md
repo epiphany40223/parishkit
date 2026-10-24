@@ -1593,7 +1593,11 @@ for a bulk send read nothing until they run.
 
 The cycle:
 
-1. Validates the expected ParishSoft organization without cache.
+1. Validates the expected ParishSoft organization without cache: the key
+   must reach the configured organization, and may reach others too, whose
+   records are then dropped as
+   [ParishSoft organization scope](../data/spec.md#parishsoft-organization-scope)
+   describes.
 2. Loads source collections into staging with bounded shared retries.
 3. Normalizes IDs/dates/emails/relationships and validates referential
    integrity, uniqueness, pagination completeness, and plausible counts.

@@ -622,13 +622,16 @@ usage: fake-parishsoft-edit COMMAND
   pledge FAMILY AMOUNT|none [fund=ID] [start=YYYY-MM-DD]
                                 set (or remove) a Family's pledge; default fund is
                                 the first, default start 1 January after the anchor
+  organizations N               the key also reaches N other organizations (0-2)
   undo | clear                  drop the last edit, or every edit
   show                          the recorded edits
   show member ID | show family ID | show ministry ID
                                 the record as the fake now serves it
 An empty VALUE clears a field. Dates are YYYY-MM-DD."""
 
-MUTATING = frozenset({"member", "family", "roster", "pledge", "undo", "clear"})
+MUTATING = frozenset(
+    {"member", "family", "roster", "pledge", "undo", "clear", "organizations"}
+)
 
 
 def _parish(document, edits):
@@ -684,12 +687,40 @@ def _show(words, document, parish):
     )
 
 
+def _organizations(words, document):
+    """The document with the multi-organization mode set (#1554).
+
+    Not an edit of the parish: it sets how many other organizations the fixed
+    key also reaches, which ``undo`` and ``clear`` leave alone. 0 removes the
+    setting, so the document is as ``up`` wrote it.
+    """
+    from .fake_parishsoft import MAXIMUM_OTHER_ORGANIZATIONS
+
+    if (
+        len(words) != 2
+        or not words[1].isdecimal()
+        or not 0 <= int(words[1]) <= MAXIMUM_OTHER_ORGANIZATIONS
+    ):
+        raise EditError(
+            "organizations takes one number, 0 to "
+            f"{MAXIMUM_OTHER_ORGANIZATIONS}: how many other organizations the "
+            "key also reaches."
+        )
+    result = {**document, "other_organizations": int(words[1])}
+    if not result["other_organizations"]:
+        result.pop("other_organizations")
+    _parish(result, result.get("edits", []))
+    return result
+
+
 def edit_document(words, document):
     """The new configuration document for one mutating command.
 
     Every recorded edit plus the new one is replayed on a freshly generated
     parish, so a document this returns always starts the fake.
     """
+    if words[0] == "organizations":
+        return _organizations(words, document)
     edits = list(document.get("edits", []))
     if words == ["undo"]:
         if not edits:

@@ -196,10 +196,19 @@ or for adding it to the allowed set if the alias is intended.
 The tool calls
 `loader(client, active_only=True, parishioners_only=False)` (default loader
 `load_families_and_members`), so it loads **active** members without restricting
-to registered parishioners. The ParishSoft data layer first validates that the
-API key can see exactly one organization and then scopes family/member searches
-to that organization ID; zero or multiple visible organizations fail before
-roster generation. The loader call shape is asserted in
+to registered parishioners. The ParishSoft data layer first validates which
+organization the API key loads and then scopes family/member searches to that
+organization ID; zero visible organizations fail before roster generation.
+Multiple visible organizations also fail, with a message giving how many the
+key reaches and how to select one, unless one is selected: by the
+`parishsoft.organization_id` setting (or the shared `--ps-organization-id`
+option), or by a unique `parishsoft.expected_organization` name match. That
+selection is an intentional change
+([#1554](https://github.com/epiphany40223/parishkit/issues/1554)): with it, the
+data layer loads only the selected organization and drops other
+organizations' records from the collections that name their organization (see
+[ParishSoft data layer](../intro/spec.md#parishsoft-data-layer)). A key that
+reaches one organization behaves exactly as before. The loader call shape is asserted in
 `test_create_ministry_rosters_main_uploads_workbooks`
 (`loader_calls == [{"active_only": True, "parishioners_only": False}]`).
 

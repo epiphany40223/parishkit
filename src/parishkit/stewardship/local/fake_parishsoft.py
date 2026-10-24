@@ -48,6 +48,11 @@ DEFAULT_BIND = "0.0.0.0"
 MAXIMUM_PAGE_SIZE = 500
 MAXIMUM_BODY_BYTES = 65536
 CONFIGURATION_FIELDS = frozenset({"seed", "families", "anchor_date", "release_at"})
+# Multi-organization mode (#1554): how many other organizations the fixed key
+# also reaches. 0 (the default) is a key for the synthetic organization alone.
+MAXIMUM_OTHER_ORGANIZATIONS = 2
+# Identities of the other organizations' records, far above the generator's.
+OTHER_BASE = 990_000_000
 _IDENTIFIER = r"([1-9][0-9]*)"
 
 
@@ -72,6 +77,7 @@ class FakeConfiguration:
     anchor_date: date
     release_at: datetime | None
     edits: tuple = ()
+    other_organizations: int = 0
 
     @classmethod
     def parse(cls, document):
@@ -79,7 +85,8 @@ class FakeConfiguration:
         if (
             type(document) is not dict
             or not set(document) >= CONFIGURATION_FIELDS
-            or not set(document) <= CONFIGURATION_FIELDS | {"edits"}
+            or not set(document)
+            <= CONFIGURATION_FIELDS | {"edits", "other_organizations"}
         ):
             raise ValueError("The fake ParishSoft configuration has unexpected fields.")
         seed, families = document["seed"], document["families"]
@@ -103,12 +110,16 @@ class FakeConfiguration:
         edits = document.get("edits", [])
         if type(edits) is not list or len(edits) > MAXIMUM_EDITS:
             raise ValueError("The fake ParishSoft edits list is invalid.")
+        others = document.get("other_organizations", 0)
+        if type(others) is not int or not 0 <= others <= MAXIMUM_OTHER_ORGANIZATIONS:
+            raise ValueError("The fake ParishSoft other organizations are invalid.")
         return cls(
             seed,
             families,
             date.fromisoformat(anchor),
             release,
             tuple(edits),
+            others,
         )
 
     @classmethod
@@ -185,16 +196,140 @@ def _date_parameter(parameters, name, *, required):
         raise _Reply(400) from None
 
 
+def _owned(rows, organization, *fields):
+    """``rows`` with each organization field set to ``organization``."""
+    return [{**row, **dict.fromkeys(fields, organization)} for row in rows]
+
+
+class _Others:
+    """The other organizations' records a multi-organization key sees (#1554).
+
+    For each other organization: its organization record, two Members (of a
+    Family the synthetic parish does not have) with their contact rows, a
+    Ministry type, a Family and a Member WorkGroup, and a copy of the
+    synthetic parish's newest pledge and contribution of each fund (so a
+    load's fund and recent date queries return some). Every record names that
+    organization, so the application must drop them all; none reaches its
+    data. Records of collections whose requests take no organization
+    (Family groups, rosters) are not added.
+    """
+
+    def __init__(self, parish, count):
+        """Build ``count`` other organizations' records, deterministically."""
+        self.organizations, self.members, self.contacts = [], [], []
+        self.ministries, self.family_workgroups, self.member_workgroups = [], [], []
+        self.pledges, self.contributions = [], []
+        serial = iter(range(OTHER_BASE + 1, OTHER_BASE + 10_000))
+        for index in range(count):
+            organization = parish.organization_id + index + 1
+            self.organizations.append(
+                {
+                    "organizationID": organization,
+                    "organizationReportName": f"Neighboring Parish {index + 1}",
+                }
+            )
+            family = next(serial)
+            for _ in range(2):
+                member = next(serial)
+                self.members.append(
+                    {
+                        "memberDUID": member,
+                        "familyDUID": family,
+                        "firstName": "Other",
+                        "lastName": f"Parish {index + 1}",
+                        "emailAddress": None,
+                        "organizationID": organization,
+                        "ownerOrganizationID": organization,
+                    }
+                )
+                self.contacts.append(
+                    {
+                        "memberDUID": member,
+                        "familyDUID": family,
+                        "ownerOrganizationID": organization,
+                    }
+                )
+            self.ministries.append(
+                {
+                    "id": next(serial),
+                    "name": f"Neighboring Parish {index + 1} Ministry",
+                    "active": True,
+                    "organizationId": organization,
+                }
+            )
+            self.family_workgroups.append(
+                {
+                    "workgroupDUID": next(serial),
+                    "workgroupName": f"Neighboring Parish {index + 1} WorkGroup",
+                    "workgroupID": next(serial),
+                    "ownerOrganizationID": organization,
+                    "sourceOrganizationID": organization,
+                }
+            )
+            self.member_workgroups.append(
+                {
+                    "id": next(serial),
+                    "name": f"Neighboring Parish {index + 1} Members",
+                    "ownerOrganizationId": organization,
+                }
+            )
+            for rows, field, day, kind in (
+                (parish.pledges, "fundID", "pledgeStartDate", "pledge"),
+                (parish.contributions, "fundId", "contributionDate", "contribution"),
+            ):
+                newest = {}
+                for row in rows:
+                    if row[field] not in newest or row[day] > newest[row[field]][day]:
+                        newest[row[field]] = row
+                for row in newest.values():
+                    if kind == "pledge":
+                        self.pledges.append(
+                            {
+                                **row,
+                                "pledgeID": next(serial),
+                                "organizationID": organization,
+                                "familyID": family,
+                            }
+                        )
+                    else:
+                        self.contributions.append(
+                            {
+                                **row,
+                                "contributionID": next(serial),
+                                "organizationId": organization,
+                                "familyId": family,
+                                "pledgeId": None,
+                            }
+                        )
+
+
 class _View:
     """The collections visible before or after the late-added Family's release."""
 
-    def __init__(self, parish, released):
+    def __init__(self, parish, released, others=None):
         hidden = () if released else (parish.late_family_id,)
+        organization = parish.organization_id
+        # Members and contact rows name their organization as the real DTOs
+        # do (#1554); the generated parish itself does not carry the fields.
         self.families = [f for f in parish.families if f["familyDUID"] not in hidden]
-        self.members = [m for m in parish.members if m["familyDUID"] not in hidden]
-        self.contacts = [c for c in parish.contacts if c["familyDUID"] not in hidden]
+        self.members = _owned(
+            [m for m in parish.members if m["familyDUID"] not in hidden],
+            organization,
+            "organizationID",
+            "ownerOrganizationID",
+        )
+        self.contacts = _owned(
+            [c for c in parish.contacts if c["familyDUID"] not in hidden],
+            organization,
+            "ownerOrganizationID",
+        )
         self.family_by_id = {row["familyDUID"]: row for row in self.families}
         self.member_by_id = {row["memberDUID"]: row for row in self.members}
+        # The searches answer with the other organizations' records after the
+        # synthetic parish's, which the by-ID reads never see.
+        if others is not None:
+            self.members = self.members + others.members
+            self.contacts = self.contacts + others.contacts
 
 
 class FakeParishSoft:
@@ -239,10 +374,21 @@ class FakeParishSoft:
     def _views(self, parish):
         """Both release views of ``parish``; one only with ``release_at: null``."""
         configuration = self.configuration
-        views = {False: _View(parish, False)}
+        self.others = (
+            _Others(parish, configuration.other_organizations)
+            if configuration.other_organizations
+            else None
+        )
+        views = {False: _View(parish, False, self.others)}
         if configuration.release_at is not None:
-            views[True] = _View(parish, True)
+            views[True] = _View(parish, True, self.others)
         return views
+
+    def _with_others(self, rows, name):
+        """``rows`` and, in multi-organization mode, the others' ``name`` rows."""
+        if self.others is None:
+            return rows
+        return rows + getattr(self.others, name)
 
     def released(self):
         """Whether the late-added Family is served: the fake's one clock read."""
@@ -319,7 +465,10 @@ class FakeParishSoft:
     # -- POST searches ----------------------------------------------------------
 
     def _organizations(self, body):
-        return [self.parish.organization]
+        """The synthetic organization, then any others the key reaches (#1554)."""
+        return [self.parish.organization] + (
+            [] if self.others is None else self.others.organizations
+        )
 
     def _families_search(self, body):
         self._tenant_list(body)
@@ -343,8 +492,18 @@ class FakeParishSoft:
 
     def _family_workgroups(self, query):
         size, number = _paging(query, "PageSize", "PageNumber")
+        rows = _owned(
+            self.parish.family_workgroups,
+            self.organization_id,
+            "ownerOrganizationID",
+            "sourceOrganizationID",
+        )
         return _counted(
-            self.parish.family_workgroups, size, number, "recordCount", "rowNum"
+            self._with_others(rows, "family_workgroups"),
+            size,
+            number,
+            "recordCount",
+            "rowNum",
         )
 
     def _family_workgroup(self, query, identifier):
@@ -355,8 +514,12 @@ class FakeParishSoft:
 
     def _member_workgroups(self, query):
         self._tenant(_int(query.get("organizationId")))
+        rows = _owned(
+            self.parish.member_workgroups, self.organization_id, "ownerOrganizationId"
+        )
         return _envelope(
-            self.parish.member_workgroups, *_paging(query, "PageSize", "PageNumber")
+            self._with_others(rows, "member_workgroups"),
+            *_paging(query, "PageSize", "PageNumber"),
         )
 
     def _member_workgroup(self, query, identifier):
@@ -367,8 +530,10 @@ class FakeParishSoft:
 
     def _ministries(self, query):
         self._tenant(_int(query.get("organizationId")))
+        rows = _owned(self.parish.ministries, self.organization_id, "organizationId")
         return _envelope(
-            self.parish.ministries, *_paging(query, "PageSize", "PageNumber")
+            self._with_others(rows, "ministries"),
+            *_paging(query, "PageSize", "PageNumber"),
         )
 
     def _ministers(self, query, identifier):
@@ -383,7 +548,7 @@ class FakeParishSoft:
 
     def _pledges(self, query):
         self._tenant(_int(query.get("OrganizationID")))
-        rows = self.parish.pledges
+        rows = self._with_others(self.parish.pledges, "pledges")
         if "FundID" in query:
             fund = _int(query["FundID"])
             rows = [row for row in rows if row["fundID"] == fund]
@@ -391,7 +556,7 @@ class FakeParishSoft:
 
     def _contributions(self, query):
         self._tenant(_int(query.get("OrganizationId")))
-        rows = self.parish.contributions
+        rows = self._with_others(self.parish.contributions, "contributions")
         if "FundId" in query:
             fund = _int(query["FundId"])
             rows = [row for row in rows if row["fundId"] == fund]
