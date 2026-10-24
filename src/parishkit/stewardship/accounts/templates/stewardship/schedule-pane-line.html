@@ -14,4 +14,4 @@ repeat_dates_preview).
 {% endcomment %}<div class="schedule-pane-line" data-schedule-pane-line hidden>
 <p class="repeat-summary" id="repeat-summary" role="status" data-repeat-summary></p>
 <p class="help" id="schedule-pane-wait">{% translate "Review changes includes this schedule once it is complete. To review without it, set Mail type back to Choose a mail type." %}</p>
-<div data-repeat-dates data-repeat-dates-url="{% url 'admin:schedule_repeat_dates' %}"></div></div>
+<div data-repeat-dates data-repeat-dates-url="{% url 'admin:schedule_repeat_dates' %}" data-repeat-dates-failed="{% translate "These dates couldn't be listed right now. Review changes still checks every date." %}"></div></div>

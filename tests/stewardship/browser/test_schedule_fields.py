@@ -656,3 +656,39 @@ def test_repeat_leaves_out_dates_whose_time_has_passed(page, component_origin):
         assert "not added: its time has passed" in line
     (line,) = [line for line in lines if line.startswith("Monday, October 19, 2054,")]
     assert "not added" not in line
+
+
+def test_a_failed_date_list_read_says_so_in_place(page, component_origin):
+    """#2092: while a newer list is awaited the lines are marked busy, and a
+    refused read replaces them with the list's failure sentence, under the
+    heading, rather than leave the lines of another rule."""
+    from playwright.sync_api import expect
+
+    page.goto(component_origin + "/schedule-editor-mail")
+    choose_repeating(page)
+    pane = page.locator(PANE)
+    panel = pane.locator("[data-repeat-panel]")
+    panel.locator('[data-repeat="weekday"][value="0"]').check()
+    repeat(page, "time").fill("9:00")
+    repeat(page, "email").select_option(index=1)
+    dates = pane.locator("[data-repeat-dates]")
+    repeat_line(dates, "Monday, October 19, 2054", "Reminder")
+    held = []
+    page.route("**/repeat-dates/", lambda route: held.append(route))
+    panel.locator('[data-repeat="weekday"][value="3"]').check()
+    preview = dates.locator("[data-repeat-preview]")
+    has_attribute(preview, "aria-busy", "true")
+    # The earlier lines stay in place while the answer is awaited.
+    assert dates.locator("li").count() > 0
+    # The held read arrives a moment after the change; refuse it.
+    for _ in range(100):
+        if held:
+            break
+        page.wait_for_timeout(50)
+    held[0].fulfill(status=500, body="")
+    expect(preview).to_have_text(
+        "These dates couldn't be listed right now. Review changes still checks "
+        "every date."
+    )
+    expect(preview).not_to_have_attribute("aria-busy", "true")
+    assert dates.locator("[data-repeat-heading]").inner_text().endswith("to add:")

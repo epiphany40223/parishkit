@@ -7239,8 +7239,10 @@
   // (its CSRF token and the browser's zone field), the campaign's zone and
   // the send time ("" while it does not read). The list is asked for a
   // moment after the rule stops changing and only when what it would show
-  // changed; an answer overtaken by a later one is dropped, and a refused
-  // or failed read empties the list below the heading rather than leave a
+  // changed; an answer overtaken by a later one is dropped. While a newer
+  // answer is awaited the drawn lines stay, marked aria-busy and muted (no
+  // layout shift), and a refused or failed read replaces them with the
+  // list's failure sentence (data-repeat-dates-failed) rather than leave a
   // list of other dates. A rule that gives no dates draws nothing: the
   // rule's status line says so.
   const repeatLists = new WeakMap(); // list -> {body, timer, request}
@@ -7283,6 +7285,7 @@
     state.body = text;
     window.clearTimeout(state.timer);
     state.request?.abort();
+    dates.setAttribute("aria-busy", "true");
     state.timer = window.setTimeout(async () => {
       const request = new AbortController();
       state.request = request;
@@ -7299,7 +7302,16 @@
         if (error?.name === "AbortError") return;
       }
       if (state.request !== request) return;
-      if (!answer) state.body = ""; // Asked again on the next change.
+      dates.removeAttribute("aria-busy");
+      if (!answer) {
+        state.body = ""; // Asked again on the next change.
+        const failed = document.createElement("p");
+        failed.className = "help";
+        failed.dataset.repeatDatesFailed = "";
+        failed.textContent = list.dataset.repeatDatesFailed || "";
+        dates.replaceChildren(failed);
+        return;
+      }
       const parsed = new DOMParser().parseFromString(answer, "text/html");
       dates.replaceChildren(...[...parsed.body.childNodes].map((node) => document.importNode(node, true)));
       window.ParishDates?.localize(dates);
