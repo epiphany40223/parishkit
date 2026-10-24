@@ -158,8 +158,9 @@ def drawn(rows, stage):
 
 
 def offered_icons(row):
-    """The actions a drawn row offers (its unselected icons)."""
-    return [icon["action"] for icon in row["icons"] if not icon["selected"]]
+    """The actions a drawn row offers (its active icons; a pressed one is
+    Back to review, #2131)."""
+    return [icon["decide"] for icon in row["icons"] if icon["active"]]
 
 
 def test_entered_incorrectly_shows_parishsoft_now_and_back_to_review():

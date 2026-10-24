@@ -24,7 +24,7 @@ from .followup_components import (
 )
 from .test_bulk_bar import assert_accessible
 from .test_table_sorting import MARK, MARKED, fulfil_post_with
-from .waits import available, has_text, hidden, visible
+from .waits import available, has_attribute, has_text, hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "webkit"], indirect=True
@@ -38,9 +38,12 @@ def row(page, request_id):
 
 
 def actions(page, request_id):
-    """The row's offered (unselected) action icons, in order."""
+    """The decisions the row's available icons record, in order; a pressed
+    one records Back to review (#2131)."""
     return [
-        node.get_attribute("data-row-action")
+        "back_to_review"
+        if node.get_attribute("data-row-undo") is not None
+        else node.get_attribute("data-row-action")
         for node in row(page, request_id)
         .locator(".table-actions button:not([aria-disabled=true])")
         .all()
@@ -92,7 +95,7 @@ def test_entered_by_hand_asks_with_no_note_and_records_in_place(page, component_
     page.evaluate(MARK)
     sent = posts_to(page, component_origin, ENTRY_MARKED)
     dialog = page.locator("#requests-decide-dialog")
-    row(page, ACCEPTED).locator("[data-row-action=back_to_review]").click()
+    row(page, ACCEPTED).locator("[data-row-undo]").click()
     visible(dialog.get_by_label("Note (optional)"))
     dialog.get_by_role("button", name="Cancel").click()
     hidden(dialog)
@@ -136,21 +139,31 @@ def test_bulk_entered_by_hand_asks_with_no_note(page, component_origin):
 
 
 def test_the_request_page_ticks_in_place(page, component_origin):
-    """The tick on a resolved request's own page answers in place, and it is
-    where a mistaken mark is cleared."""
+    """The tick on a resolved request's own page is one Entered by hand
+    toggle (#2131): it answers in place, pressed and in the same place, and
+    is where a mistaken mark is cleared."""
     page.goto(component_origin + TICK_ITEM)
     page.evaluate(MARK)
     visible(
         page.locator("#followup-roster").get_by_text("To enter by hand", exact=True)
     )
-    page.get_by_role("button", name="Mark Entered by hand").click()
+    tick = page.locator("#followup-roster").get_by_role(
+        "button", name="Entered by hand", exact=True
+    )
+    assert tick.get_attribute("aria-pressed") == "false"
+    left = tick.evaluate("node => Math.round(node.getBoundingClientRect().left)")
+    tick.click()
     visible(page.get_by_text("Entered by hand by staff@example.org"))
-    visible(page.get_by_role("button", name="Back to review", exact=True))
+    has_attribute(tick, "aria-pressed", "true")
+    assert tick.evaluate("node => Math.round(node.getBoundingClientRect().left)") == (
+        left
+    )
     assert page.evaluate(MARKED) == "kept"
 
 
 def test_the_request_page_clear_asks_for_the_note(page, component_origin):
-    """Back to review (#1893: the worklist's icon, name and dialog) opens
+    """The pressed Entered by hand toggle is Back to review (#1893: the
+    worklist's dialog; #2131: no button of its own), which opens
     the shared dialog, which says the mark is undone and waits for the
     required note; Record posts it with the clear, and the page is redrawn
     in place, not yet entered."""
@@ -173,11 +186,16 @@ def test_the_request_page_clear_asks_for_the_note(page, component_origin):
             route.continue_()
 
     page.route(lambda url: TICK_ITEM in url, answer)
-    undo = page.get_by_role("button", name="Back to review", exact=True)
-    # The worklist row's tooltip and undo-arrow icon.
-    title = "Send Example <Member> — Example <Ministry> back to review"
+    undo = page.locator("#followup-roster").get_by_role(
+        "button", name="Entered by hand", exact=True
+    )
+    # The tooltip says choosing it again undoes the mark.
+    title = (
+        "Entered by hand; select to undo Entered by hand for Example <Member> — "
+        "Example <Ministry>"
+    )
     assert undo.get_attribute("title") == title
-    assert undo.locator("svg.action-icon").count() == 1
+    assert undo.get_attribute("aria-pressed") == "true"
     undo.click()
     dialog = page.locator("#followup-roster-clear-dialog")
     visible(dialog)

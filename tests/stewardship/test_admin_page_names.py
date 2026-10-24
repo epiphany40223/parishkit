@@ -488,12 +488,9 @@ RETIRED = (
 REVIEW_PIPELINE_PAGES = frozenset(
     {
         "ministry-requests.html",
-        "ministry-followup.html",
         # Additional information and Limitations (#1685).
         "information.html",
         "limitations-report.html",
-        # Pledges, whose help names Back to review's undo (#1840).
-        "pledges-to-enter.html",
         # The Timeline's help says a Back to review line gives its note
         # (#1893).
         "timeline.html",

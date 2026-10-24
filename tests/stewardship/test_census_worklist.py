@@ -155,8 +155,8 @@ def test_the_stage_filter_lists_one_stage_and_counts_them_all():
 def test_staff_review_by_hand_and_automatic_rows():
     """Staff get Accept, Edit and Ignore on every To review row, By hand or
     not, and Entered by hand only once a By hand one is accepted (strict
-    phase order, #1890: no one-step mark); every actionable row has a box
-    (#1680)."""
+    phase order, #1890: no one-step mark; drawn unavailable before, #2131);
+    every actionable row has a box (#1680)."""
     rows = [
         shaped(id="1"),
         shaped(id="2", handling="manual", field="suffix"),
@@ -173,13 +173,25 @@ def test_staff_review_by_hand_and_automatic_rows():
         ("accept", False),
         ("edit", False),
         ("ignore", False),
+        ("entered_by_hand", False),
     ]
     # The email opt-out takes no Edit.
-    assert icons(worklist, "3") == [("accept", False), ("ignore", False)]
+    assert icons(worklist, "3") == [
+        ("accept", False),
+        ("ignore", False),
+        ("entered_by_hand", False),
+    ]
+    # The pressed Accept is the undo: no Back to review icon (#2131).
     assert icons(worklist, "4") == [
         ("accept", True),
-        ("back_to_review", False),
+        ("edit", False),
+        ("ignore", False),
         ("entered_by_hand", False),
+    ]
+    (fourth,) = [row for row in worklist.rows if row["id"] == "4"]
+    assert [i["decide"] for i in fourth["icons"] if i["active"]] == [
+        "back_to_review",
+        "entered_by_hand",
     ]
     assert {row["id"]: row["kinds"] for row in worklist.rows} == {
         "1": "accept ignore",
@@ -214,7 +226,7 @@ def test_a_conflict_with_an_unknown_parishsoft_value_waits():
 
 
 def test_decisions_in_force_show_on_the_icons_and_the_last_decision():
-    """An accepted change's Accept is drawn selected beside Back to review;
+    """An accepted change's Accept is drawn selected, and is its undo;
     Last decision names who, when and the note; a reopened Conflict shows
     why it is back and its earlier Accepted, not in force."""
     rows = [
@@ -229,7 +241,8 @@ def test_decisions_in_force_show_on_the_icons_and_the_last_decision():
         shaped(id="2", execution="conflict", reopened=True),
     ]
     worklist, html = page(rows)
-    assert icons(worklist, 0) == [("accept", True), ("back_to_review", False)]
+    assert icons(worklist, 0) == [("accept", True), ("edit", False), ("ignore", False)]
+    assert worklist.rows[0]["icons"][0]["undo"]
     assert worklist.rows[0]["decided_by"] == "staff@example.org"
     assert "Checked" in html
     reopened = worklist.rows[1]
@@ -570,19 +583,17 @@ def test_an_entered_addition_is_undone_back_to_enter_by_hand():
     )
     worklist, _ = page([entered, reopened], replacements={})
     rows = {row["id"]: row for row in worklist.rows}
-    (undo,) = [
-        icon
-        for icon in rows["add-a1"]["icons"]
-        if icon["action"] == "back_to_review" and not icon["selected"]
-    ]
+    (undo,) = [icon for icon in rows["add-a1"]["icons"] if icon["undo"]]
     assert undo["body"] == (
         "Entered by hand is undone: the item goes back to To enter by hand, "
         "with its decision kept. Say why."
     )
     name = "Mobile phone for Pat Sample"
+    # The pressed Entered by hand is Not entered yet (#2131).
+    assert undo["action"] == "entered_by_hand" and undo["decide"] == "back_to_review"
     assert (undo["label"], undo["title"], undo["title_one"], undo["done"]) == (
-        f"Mark {name} not entered yet",
-        f"Mark {name} not entered yet",
+        f"Entered by hand; select to mark {name} not entered yet",
+        f"Entered by hand; select to mark {name} not entered yet",
         "Mark {name} not entered yet?",
         "{name} marked not entered yet.",
     )
@@ -593,12 +604,9 @@ def test_an_entered_addition_is_undone_back_to_enter_by_hand():
         "Entered by hand is undone and the added change is withdrawn: it moves "
         "to History. The Family will no longer see it. Say why."
     )
-    assert icons["entered_by_hand"]["title"] == (
-        "Entered by hand; choose Not entered yet to change it"
-    )
     assert icons["accept"]["title"] == "Added by the parish"
-    # Not entered yet sits just right of the mark it undoes (R45 W, #2041).
-    assert list(icons) == ["accept", "withdraw", "entered_by_hand", "back_to_review"]
+    # The same icons in both states, so none moves (#2131).
+    assert list(icons) == ["accept", "withdraw", "entered_by_hand"]
     assert rows["add-a1"]["kinds"] == "back_to_review withdraw"
     icons = {icon["action"]: icon for icon in rows["add-a2"]["icons"]}
     assert set(icons) == {"accept", "withdraw", "entered_by_hand"}
@@ -639,7 +647,7 @@ def test_additions_are_tied_to_the_familys_changes_of_their_field():
     assert second["overlap"] and not first["overlap"] and not gone["overlap"]
     worklist, _ = page([ignored, asked, first, second, gone], replacements=replacements)
     rows = {row["id"]: row for row in worklist.rows}
-    assert "back_to_review" not in [icon["action"] for icon in rows["9"]["icons"]]
+    assert "back_to_review" not in [icon.get("decide") for icon in rows["9"]["icons"]]
     assert rows["9"]["decision_label"].count("Mobile phone: 555-0123") == 2
     assert "open change of this field too" in rows["add-a2"]["decision_label"]
     assert asked["withdraws"] == "Mobile phone (555-0123)"
@@ -648,7 +656,9 @@ def test_additions_are_tied_to_the_familys_changes_of_their_field():
     icons = {icon["action"]: icon for icon in rows["8"]["icons"]}
     # The withdrawal is its own paragraph (``warning``), not run on from the
     # body (Administrator, R45 W).
-    assert icons["accept"]["body"] == "Record this decision. Back to review undoes it."
+    assert icons["accept"]["body"] == (
+        "Record this decision. Choose its icon again to undo it."
+    )
     assert icons["accept"]["warning"] == icons["edit"]["warning"] == extra
     assert not icons["edit"].get("body")
     bulk = {item["value"]: item for item in worklist.bulk}
@@ -715,11 +725,12 @@ def test_every_terminal_row_offers_back_to_review_with_a_note():
     rows = {row["id"]: row for row in worklist.rows}
 
     def back(name):
-        """The row's Back to review icon, or None."""
+        """The row's undo (its pressed icon, #2131, or on a row with nothing
+        pressed its own Back to review icon), or None."""
         found = [
             icon
             for icon in rows[name]["icons"]
-            if icon["action"] == "back_to_review" and not icon["selected"]
+            if icon.get("decide") == "back_to_review"
         ]
         return found[0] if found else None
 
@@ -783,11 +794,12 @@ def test_refresh_checks_place_final_changes_and_flag_not_seen():
     worklist, html = page(rows, stage="all")
     by_id = {row["id"]: row for row in worklist.rows}
     assert by_id["wrong"]["stage_label"] == "Entered incorrectly"
-    # The decision in force is drawn selected, and the two fixes beside it:
-    # Back to review, and the mark made again, worded so (#1737).
+    # The decision in force is drawn selected, and the two fixes: Back to
+    # review (the pressed Accept, #2131), and the mark made again, worded
+    # so (#1737).
     icons = {icon["action"]: icon for icon in by_id["wrong"]["icons"]}
-    assert list(icons) == ["accept", "back_to_review", "entered_by_hand"]
-    assert icons["accept"]["selected"]
+    assert list(icons) == ["accept", "ignore", "entered_by_hand"]
+    assert icons["accept"]["selected"] and icons["accept"]["undo"]
     again = icons["entered_by_hand"]
     assert not again["selected"]
     assert again["label"] == f"Mark {by_id['wrong']['name']} entered by hand again"
@@ -796,7 +808,7 @@ def test_refresh_checks_place_final_changes_and_flag_not_seen():
     assert again["body"] == INCORRECT_BODIES[Action.ENTERED_BY_HAND]
     # Back to review undoes the mark (#1840): back to To enter by hand with
     # its decision kept, with a required note.
-    back = icons["back_to_review"]
+    back = icons["accept"]
     assert back["body"] == (
         "Entered incorrectly is undone: the item goes back to To enter by "
         "hand, with its decision kept. Say why."
@@ -967,10 +979,11 @@ def test_an_entered_new_member_offers_correcting_its_member_id():
     (shown,) = worklist.rows
     assert icons(worklist) == [
         ("accept", True),
+        ("ignore", False),
         ("entered_by_hand", True),
-        ("back_to_review", False),
         ("entered_by_hand", False),
     ]
+    assert shown["icons"][2]["undo"]
     correct = shown["icons"][3]
     name = shown["name"]
     assert correct["remark"] and correct["icon"] == "edit"
@@ -1044,6 +1057,6 @@ def test_no_correction_without_the_census_roles_or_on_other_rows():
     worklist, _ = page([suffix])
     assert icons(worklist) == [
         ("accept", True),
+        ("ignore", False),
         ("entered_by_hand", True),
-        ("back_to_review", False),
     ]

@@ -32,6 +32,8 @@ LEADER = "/review-worklist-leader"
 ACCEPTED = "/review-worklist-accepted"
 BULKED = "/review-worklist-bulked"
 REOPENED = "/review-worklist-reopened"
+# The page after row 6's pressed Entered by hand was chosen again (#2131).
+UNDONE = "/review-worklist-undone"
 # A decision another reader overtook, with a long item name: the longest
 # notice the line must hold (R38 finding 10).
 STALED = "/review-worklist-staled"
@@ -42,6 +44,7 @@ FILTERED_ADDRESS = PATH + "?stage=ignored"
 ACCEPTED_NOTICE = "Mobile phone for Member 00 accepted."
 BULK_NOTICE = "2 changes accepted."
 REOPENED_NOTICE = "Mobile phone for Member 04 sent back to review."
+UNDONE_NOTICE = "Mobile phone for Member 06 sent back to review."
 STALE_NOTICE = STALE.format(name="Home address for Martin, Luke and Emily")
 
 # The host page: the stream's heading, then the shared component.
@@ -198,6 +201,7 @@ def components(context, admin):
     accepted = {0: (Stage.READY_TO_UPDATE, Decision.ACCEPTED)}
     both = accepted | {1: (Stage.TO_ENTER_BY_HAND, Decision.ACCEPTED)}
     reopened = {4: (Stage.TO_REVIEW, None)}
+    undone = {6: (Stage.TO_ENTER_BY_HAND, Decision.ACCEPTED)}
     staff = {"staff"}
     ignored = [row for row in staff_rows() if row["placement"].stage is Stage.IGNORED]
     return {
@@ -209,6 +213,7 @@ def components(context, admin):
         REOPENED: _page(
             context, admin, staff_rows(reopened), staff, notice=REOPENED_NOTICE
         ),
+        UNDONE: _page(context, admin, staff_rows(undone), staff, notice=UNDONE_NOTICE),
         STALED: _page(context, admin, staff_rows(), staff, notice=STALE_NOTICE),
         FILTERED: _page(context, admin, ignored, staff, stage="ignored"),
         FILTERED_ADDRESS: _page(context, admin, ignored, staff, stage="ignored"),

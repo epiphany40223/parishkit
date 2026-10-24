@@ -27,6 +27,7 @@ from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
 from parishkit.stewardship.pipeline import (
+    TERMINAL_STAGES,
     TERMS,
     Action,
     Decision,
@@ -35,14 +36,16 @@ from parishkit.stewardship.pipeline import (
     allowed_actions,
     may_add,
     role_actions,
+    stage_actions,
     undo_needs_note,
     undo_stage,
 )
 from parishkit.stewardship.web.refusals import Refusal
 
-# The row icons, in the order every row draws them, so an action keeps its
-# place from row to row (UX conventions, "Row actions and confirmation"),
-# save Back to review, drawn just right of the state it undoes.
+# The row actions in their one order, so an action keeps its place from row
+# to row (UX conventions, "Row actions and confirmation"); ``pk-admin`` lists
+# them so too. A row draws no Back to review icon beside a decision: its
+# pressed icon is the undo (UX conventions, "Decision toggles", #2131).
 ROW_ORDER = (
     Action.ACCEPT,
     Action.EDIT,
@@ -211,16 +214,17 @@ ALREADY_HELD = "ParishSoft already holds this value."
 EVERY_STAGE = "all"
 
 
-# What a row's dialog says about each action. Back to review undoes a
-# decision, and a mark or other terminal step after it (spec, "Undoing a
-# terminal stage", #1840): nothing is final.
-DECIDE_BODY = "Record this decision. Back to review undoes it."
+# What a row's dialog says about each action. Choosing a decision's icon
+# again undoes it, and a mark or other terminal step after it (spec,
+# "Undoing a terminal stage", #1840; UX conventions, "Decision toggles",
+# #2131): nothing is final.
+DECIDE_BODY = "Record this decision. Choose its icon again to undo it."
 BODIES = {
     Action.ENTERED_BY_HAND: (
         "Record that you typed this into ParishSoft. Check ParishSoft first; "
-        "Back to review undoes the mark."
+        "choose Entered by hand again to undo the mark."
     ),
-    Action.HANDLED: "Record that this was handled. Back to review undoes it.",
+    Action.HANDLED: "Record that this was handled. Choose Handled again to undo it.",
     Action.WITHDRAW: (
         "The item is withdrawn: nothing is entered in ParishSoft, and it moves "
         "to History."
@@ -317,20 +321,74 @@ def undo_body(stream, placement, *, by_hand=False):
     return body
 
 
-def _selected_title(action, placement, undo):
-    """A selected icon's tooltip: the state in force, and how to undo it.
-
-    Accept names the decision exactly (Accepted, Accepted (edited), Added
-    by the parish). The undo is named only while the row offers it
-    (``undo``): there is none while an item's update is running, nor for a
-    reader whose role does not offer Back to review (a Ministry leader on a
-    terminal stage).
-    """
-    state = WORDS[action].selected
+def _state(action, placement):
+    """The state a selected icon shows: Accept names the decision exactly
+    (Accepted, Accepted (edited), Added by the parish)."""
     if action is Action.ACCEPT and placement.decision is not None:
-        state = placement.decision.label
-    # One phrase, no full stop (UX conventions, R38 finding 5).
-    return f"{state}; choose Back to review to change it" if undo else state
+        return placement.decision.label
+    return WORDS[action].selected
+
+
+def undo_phrase(stream, placement, name, *, by_hand=False):
+    """What choosing the pressed undo icon does, as its tooltip says it.
+
+    Before a terminal step it sends the item back to review; on a terminal
+    stage it undoes only that step (``pipeline.undo_stage``), so the phrase
+    names the step.
+    """
+    if undo_stage(stream, placement, by_hand=by_hand) is Stage.TO_REVIEW:
+        return f"select to send {name} back to review"
+    return f"select to undo {placement.stage.label} for {name}"
+
+
+def _unavailable_reason(action, placement, *, undo, kept=False):
+    """Why an icon the row draws cannot be chosen now (UX conventions,
+    "Decision toggles"): one short phrase, after the icon's own name.
+
+    The stage machine decides it: a mark waits for an accepted decision, and
+    a decision already made is changed only through its pressed icon (the
+    undo). With no undo on the row, the item can no longer be changed here
+    (``kept``: the item withholds its undo, as a census change an open
+    addition covers does) or, on a terminal stage, only Staff may undo it.
+    """
+    stage = placement.stage
+    if stage is Stage.UPDATING:
+        return "an update is running"
+    if kept and not undo:
+        return "it can no longer be changed here"
+    if stage in TERMINAL_STAGES and not undo:
+        return "only Staff can change it now"
+    if action in (Action.ENTERED_BY_HAND, Action.HANDLED) and placement.decision in (
+        None,
+        Decision.IGNORED,
+    ):
+        return "accept it first"
+    if stage in TERMINAL_STAGES:
+        return f"undo {stage.label} first"
+    return "send it back to review first"
+
+
+def _drawn_actions(
+    stream, placement, allowed, offered, selected, withheld, offers, by_hand
+):
+    """The decision icons one row draws, offered now or not (#2131).
+
+    A row keeps the same icons whatever its stage, so none appears or
+    disappears when a decision is made (UX conventions, "Decision
+    toggles"): every action some stage of a Family's item offers and the
+    reader's role allows, less those this item can never take
+    (``withheld``). A census change the update run carries never takes
+    Entered by hand. An item with its own actions (``offers``, a census
+    addition, whose states offer the same icons) and an item in History
+    draw only what they offer and what is in force.
+    """
+    if offers is not None or placement.stage is Stage.HISTORY:
+        return offered | selected
+    ever = frozenset().union(*(stage_actions(stream, stage) for stage in Stage))
+    drawn = (ever & allowed) - withheld
+    if Stream(stream) is Stream.CENSUS and not by_hand:
+        drawn -= {Action.ENTERED_BY_HAND}
+    return drawn | offered | selected
 
 
 def row_icons(
@@ -344,70 +402,116 @@ def row_icons(
     withheld=(),
     offers=None,
 ):
-    """One row's action icons for one reader, in ``ROW_ORDER``, its undo
-    beside the state it undoes (``_undo_after_selected``).
+    """One row's decision toggles for one reader, in ``ROW_ORDER`` (#2131).
 
-    Each is offered (an icon that opens its dialog, ``aria-pressed`` false
-    for an action that records a state) or selected (the decision or mark
-    in force: filled, ``aria-pressed`` true and unavailable, since choosing
-    it again is no undo; Back to review is). An action the reader's role
-    does not allow is left out, selected or not (UX conventions, "By role").
-    ``withheld`` are actions this one item cannot take whatever its stage
-    (a census field no value can be typed for has no Edit); they are left
-    out too, as the stream's service refuses them. ``offers`` are an item's
-    own actions in place of its stage's (a census addition's, #2041).
+    The row draws the same icons at every stage (``_drawn_actions``). Each
+    is offered (``active``: it opens its dialog, ``aria-pressed`` false for
+    an action that records a state), selected (the decision or mark in
+    force: filled and ``aria-pressed`` true) or unavailable, with its
+    tooltip saying why (``_unavailable_reason``). There is no separate Back
+    to review icon: the latest state in force (the mark when a decision and
+    a mark are both in force) is the undo, so choosing it again opens Back
+    to review's own dialog (``undo`` true; ``_decorate`` words it), and an
+    earlier selected icon waits for that undo. Only an item with nothing in
+    force to press (a Ministry request a refresh confirmed) keeps a Back to
+    review icon of its own. An action the reader's role does not allow is
+    left out, selected or not (UX conventions, "By role"); so are
+    ``withheld`` actions, which this one item cannot take whatever its
+    stage (a census field no value can be typed for has no Edit), as the
+    stream's service refuses them. ``offers`` are an item's own actions in
+    place of its stage's (a census addition's, #2041).
     """
-    offered = allowed_actions(
-        stream, placement.stage, roles, leads=leads, by_hand=by_hand, offers=offers
-    ) - frozenset(Action(action) for action in withheld)
+    withheld = frozenset(Action(action) for action in withheld)
+    offered = (
+        allowed_actions(
+            stream, placement.stage, roles, leads=leads, by_hand=by_hand, offers=offers
+        )
+        - withheld
+    )
     allowed = role_actions(stream, roles, leads=leads)
     selected = selected_actions(placement) & allowed
     undo = Action.BACK_TO_REVIEW in offered
+    kept = Action.BACK_TO_REVIEW in withheld
+    drawn = _drawn_actions(
+        stream, placement, allowed, offered, selected, withheld, offers, by_hand
+    )
+    # The undo is the last state in force in ROW_ORDER: a mark after its
+    # decision, since Back to review undoes the latest step.
+    target = (
+        next((a for a in reversed(ROW_ORDER) if a in selected), None) if undo else None
+    )
     icons = []
     for action in ROW_ORDER:
-        if action not in offered and action not in selected:
+        if action is Action.BACK_TO_REVIEW:
+            if undo and target is None:
+                icons.append(_icon(action, placement, name, active=True))
             continue
-        words = words_for(action, placement.stage)
+        if action not in drawn:
+            continue
         on = action in selected
+        if on and action is target:
+            title = f"{_state(action, placement)}; " + undo_phrase(
+                stream, placement, name, by_hand=by_hand
+            )
+        elif on and target is not None:
+            title = (
+                f"{_state(action, placement)}; undo {_state(target, placement)} first"
+            )
+        elif on:
+            title = _state(action, placement)
+            if kept or placement.stage in (*TERMINAL_STAGES, Stage.UPDATING):
+                title += "; " + _unavailable_reason(
+                    action, placement, undo=undo, kept=kept
+                )
+        elif action in offered:
+            title = None
+        else:
+            title = (
+                words_for(action, placement.stage).label.format(name=name)
+                + "; "
+                + _unavailable_reason(action, placement, undo=undo, kept=kept)
+            )
         icons.append(
-            {
-                "action": action.value,
-                "icon": words.icon,
-                "label": words.label.format(name=name),
-                "title": _selected_title(action, placement, undo)
-                if on
-                else words.label.format(name=name),
-                "selected": on,
-                # A selected icon is filled with its state's status look.
-                "css": f"icon-button is-selected status-{SELECTED_LOOK[action]}"
-                if on
-                else "icon-button",
-                # Where focus returns once the decision is redrawn: an Edit
-                # is shown as its Accept drawn selected.
-                "focus": Action.ACCEPT.value if action is Action.EDIT else action.value,
-                # Back to review records no state, so it is no toggle.
-                "pressed": on if words.selected else None,
-            }
+            _icon(
+                action,
+                placement,
+                name,
+                active=(on and action is target) or (not on and action in offered),
+                on=on,
+                title=title,
+            )
         )
-    return _undo_after_selected(icons)
+    return icons
 
 
-def _undo_after_selected(icons):
-    """Move Back to review to just right of the last selected icon.
+def _icon(action, placement, name, *, active, on=False, title=None):
+    """One decision icon's drawing: its glyph, name, tooltip and state.
 
-    Back to review undoes the latest state in force, so it sits beside the
-    icon it undoes (Administrator, R45 W, #2041): an Entered by hand or
-    Handled mark is drawn after Back to review in ``ROW_ORDER``, so the
-    undo moves after it; on a decided row it is already there. A row with
-    no selected icon or no undo keeps ``ROW_ORDER``.
+    ``title`` is its accessible name and tooltip alike (one phrase, no
+    full stop, R38 finding 5); None names it by its own label. A selected
+    icon is filled with its state's status look; ``undo`` marks the pressed
+    icon that opens Back to review. Back to review records no state, so its
+    own icon (``action`` BACK_TO_REVIEW) is no toggle.
     """
-    undo = next((i for i in icons if i["action"] == Action.BACK_TO_REVIEW.value), None)
-    chosen = [n for n, icon in enumerate(icons) if icon["selected"]]
-    if undo is None or not chosen:
-        return icons
-    rest = [icon for icon in icons if icon is not undo]
-    last = rest.index(icons[chosen[-1]])
-    return [*rest[: last + 1], undo, *rest[last + 1 :]]
+    words = words_for(action, placement.stage)
+    title = title or words.label.format(name=name)
+    return {
+        "action": action.value,
+        "icon": words.icon,
+        "label": title,
+        "title": title,
+        "selected": on,
+        "active": active,
+        "undo": on and active,
+        "css": f"icon-button is-selected status-{SELECTED_LOOK[action]}"
+        if on
+        else "icon-button",
+        # Where focus returns once the decision is redrawn: an Edit is
+        # shown as its Accept drawn selected; a pressed icon's undo
+        # returns to the same icon, now drawn unpressed.
+        "focus": Action.ACCEPT.value if action is Action.EDIT else action.value,
+        "pressed": on if words.selected else None,
+    }
 
 
 def bulk_buttons(stream, roles, *, items="items", silent=frozenset()):
@@ -543,6 +647,9 @@ def remark_icon(words, row, prefix, *, name):
         "label": words.label.format(name=name),
         "title": words.label.format(name=name),
         "selected": False,
+        "active": True,
+        "undo": False,
+        "decide": Action.ENTERED_BY_HAND.value,
         "css": "icon-button",
         "focus": Action.ENTERED_BY_HAND.value,
         "pressed": None,
@@ -603,9 +710,12 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
     reopen = undo_needs_note(placement.stage)
     own_entered = bool(row.get("entered_template"))
     for icon in icons:
-        if icon["selected"]:
+        if not icon["active"]:
             continue
-        action = Action(icon["action"])
+        # A pressed icon is the row's undo: it posts Back to review, with
+        # Back to review's own dialog, words and note (#2131).
+        action = Action.BACK_TO_REVIEW if icon["undo"] else Action(icon["action"])
+        icon["decide"] = action.value
         words = words_for(action, placement.stage)
         icon["post"] = urlencode(
             {"decide": action.value, "version": row["version"], "request_key": key}
@@ -650,9 +760,7 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
     # kinds keep BULK's order whatever order the icons are drawn in, so rows
     # offering the same kinds list them alike (ui-v1.js compares the lists).
     kinds = {
-        icon["action"]
-        for icon in icons
-        if not icon["selected"] and not icon.get("remark")
+        icon["decide"] for icon in icons if icon["active"] and not icon.get("remark")
     }
     row["kinds"] = " ".join(kind.value for kind in BULK if kind.value in kinds)
     # A bulk Back to review asks for a note while a ticked row is at a
@@ -680,15 +788,12 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
     row["edit_form"] = f"{prefix}-edit-{row['id']}"
     row["edit_dialog"] = f"{prefix}-edit-dialog-{row['id']}"
     row["edit_hint"] = f"{prefix}-edit-hint-{row['id']}"
-    row["offers_edit"] = any(
-        icon["action"] == Action.EDIT and not icon["selected"] for icon in icons
-    )
+    row["offers_edit"] = any(icon.get("decide") == Action.EDIT for icon in icons)
     row["entered_form"] = f"{prefix}-entered-{row['id']}"
     row["entered_dialog"] = f"{prefix}-entered-dialog-{row['id']}"
     row["entered_hint"] = f"{prefix}-entered-hint-{row['id']}"
     row["offers_entered"] = own_entered and any(
-        icon["action"] == Action.ENTERED_BY_HAND and not icon["selected"]
-        for icon in icons
+        icon.get("decide") == Action.ENTERED_BY_HAND for icon in icons
     )
     # The ParishSoft now cell shows only where the value is in question.
     row["shows_now"] = placement.stage in (

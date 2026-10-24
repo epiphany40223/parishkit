@@ -98,7 +98,7 @@ def test_staff_accept_a_change_from_the_family_tab(response_service, google):
     assert "is-selected" in row and 'data-row-action="accept"' in row
     assert 'aria-pressed="true"' in row
     # Its Back to review is now offered, as on Census changes.
-    assert 'data-row-action="back_to_review"' in row
+    assert "decide=back_to_review" in row
 
 
 def test_a_member_tab_offers_its_own_changes_only(response_service, google):
@@ -166,7 +166,7 @@ def test_the_additional_tab_acts_through_limitations_and_its_queue(
     panel = tab(browser, family_id, "other")
     row = panel.split(f'id="{limitation}"')[1].split("</tr>")[0]
     assert '<span class="status-word">Ignored</span>' in row
-    assert 'data-row-action="back_to_review"' in row
+    assert "decide=back_to_review" in row
 
 
 def test_a_ministry_request_is_accepted_from_its_member_tab(response_service, google):

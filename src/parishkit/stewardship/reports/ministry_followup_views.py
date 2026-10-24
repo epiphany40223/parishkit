@@ -54,6 +54,7 @@ from parishkit.stewardship.web.review_worklist import (
     read_decision,
     record,
     undo_body,
+    undo_phrase,
 )
 from parishkit.stewardship.web.tables import (
     PAGE_SIZES,
@@ -1182,13 +1183,15 @@ def undo_words(name, placement):
     """Back to review's words for request ``name`` at ``placement`` (#1893).
 
     Pure, so a component test draws the page with the view's own words:
-    the worklist row's button word, tooltip, dialog title, dialog body and
-    done line (``review_worklist.WORDS``, ``undo_body``).
+    the pressed Entered by hand toggle's tooltip, which says choosing it
+    again undoes the tick (#2131), and Back to review's dialog title,
+    dialog body and done line (``review_worklist.WORDS``, ``undo_body``).
     """
     words = WORDS[pipeline.Action.BACK_TO_REVIEW]
+    entered = WORDS[pipeline.Action.ENTERED_BY_HAND].selected
+    phrase = undo_phrase(pipeline.Stream.MINISTRY, placement, name)
     return {
-        "label": words.button,
-        "title": words.label.format(name=name),
+        "title": f"{entered}; {phrase}",
         "dialog_title": words.title_one.format(name=name),
         "body": undo_body(pipeline.Stream.MINISTRY, placement),
         "done": f"{name} {words.done}",
