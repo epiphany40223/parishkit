@@ -51,7 +51,9 @@ Production Compose contains:
 - `token-key-rotation`: an explicitly invoked maintenance profile that alone
   performs link-token private-key migration/rotation;
 - `scheduler`: exactly one scheduler process that materializes due work;
-- `postgres`: PostgreSQL with a durable volume;
+- `postgres`: PostgreSQL with a durable volume, accepting each SQL login only
+  from the network identity of the service that uses it (planned, see
+  [database connection sources](../operations/spec.md#database-connection-sources));
 - `valkey`: broker/cache with a durable local volume, though task correctness
   cannot depend on broker persistence;
 - `caddy`: Caddy on ports 80/443 with durable ACME state; and

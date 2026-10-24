@@ -235,6 +235,299 @@ administration-login limits are application middleware defined by the
 Local development binds an unprivileged HTTP port and uses localhost Google
 OAuth redirect registration. TLS remains optional locally.
 
+## Database connection sources
+
+**Status: planned, post-launch (#2111).** Until it ships, PostgreSQL runs
+with the stock image's `pg_hba.conf`, which accepts any login with its
+password from any address, so a container that can read another login's
+password can connect as that login. The backup worker reads every login's
+password, the cluster superuser's included, because it archives the
+credentials tree (see the
+[backup guide](../../../guides/stewardship-backup.md#the-whole-trees-read-only-by-one-identity)).
+This design makes PostgreSQL accept each login only from the container
+network identity of the service that uses it, so a stolen password is
+useless from anywhere else. The per-login passwords, `scram-sha-256`, the
+grants and every login's [grant admission](#installer-idle-polling) stay as
+they are; the source rules are a second, independent check in front of them.
+The [dedicated off-site uploader](https://github.com/epiphany40223/parishkit/issues/235)
+waits for this design and gets its own source when it lands.
+
+### Logins and their sources
+
+The logins are the closed inventory in `runtime_identities.py` plus the
+operator superuser; nothing else may connect over TCP.
+
+| Login | Used by | Allowed source |
+| --- | --- | --- |
+| `pk_stewardship_web`, `pk_stewardship_download` | `web` (it holds both passwords by design) | `web`'s backend address |
+| `pk_stewardship_worker` | `worker` (both processes) | `worker`'s backend address |
+| `pk_stewardship_mail_dispatch` | `mail-dispatch` | its backend address |
+| `pk_stewardship_scheduler` | `scheduler` | its backend address |
+| `pk_stewardship_config_installer` | `config-installer` | its backend address |
+| `pk_stewardship_credential_<target>` (one per target) | `credential-installer-<target>` | that installer's backend address |
+| `pk_stewardship_bootstrap` | the `bootstrap` profile | the `bootstrap` network |
+| `pk_stewardship_migration` | the `migration` profile (also LOCAL's seeder check step) | the `migration` network |
+| `pk_stewardship_admin_recovery` | the `admin-recovery` profile | the `admin-recovery` network |
+| `pk_stewardship_backup_worker` | the `backup-worker` profile | the `backup-worker` network |
+| `pk_stewardship_operator` (superuser) | the `database-provision` profile (`database-roles`, `database-grants`) | the `database-provision` network; locally, the socket inside the PostgreSQL container |
+
+**Superuser scope, narrowed from #2111.** The issue lists migration,
+`database-roles`, backup and restore as superuser users. Only
+`database-provision` keeps a TCP source for the operator: migration and the
+backup worker connect as their own logins (rows above), and `pk-restore`,
+the upgrade check and the runbook's commands reach the operator through the
+socket by `docker exec`. No other profile may use the operator over TCP.
+
+**`token-key-rotation`.** It is a `ServiceRole` and an architecture-spec
+profile, but `render_runtime` does not render it and it has no SQL login in
+`database_identities()`, so it gets no rule today. When it is rendered it
+gets its own login (an inventory and grant change in its own release) and
+its own one-shot network like the rows above; the renderer refuses an
+inventory login without a source, so it cannot ship without one.
+
+Every rule names the deployment's one database (`postgres.name`), never
+`all`, so no login reaches the `postgres` or template databases over TCP.
+
+**Source identity.** Docker gives no per-container authentication, so the
+source address is the identity, and the renderer makes it fixed:
+
+- **Long-running services** keep the one `backend` network and get a fixed
+  `ipv4_address` on it, as web and Caddy already have on `proxy`. The
+  addresses are fixed offsets from the backend subnet's network address,
+  computed by `RuntimeNetwork` (like `web(replica)`) and valid for every
+  allowed prefix (/24 to /26): PostgreSQL, Valkey, web (one offset per
+  replica), the configuration installer, worker, mail-dispatch, scheduler,
+  then the credential installers in sorted target order, then LOCAL's
+  `mailpit`, `fake-parishsoft` and seeder. The offsets start at 2, skipping
+  the network address and the gateway at offset 1, and stay in the lower
+  half of the subnet; the renderer refuses a `backend` member without one
+  and an offset outside that half.
+- **Dynamic addresses on `backend`.** Compose services all have fixed
+  addresses, but any `docker run --network <project>_backend` without
+  `--ip` still gets a dynamic one. While a fixed-address service is stopped,
+  such a container could take its address (the service then cannot start)
+  and with it that login's source. So the `backend` network's IPAM sets an
+  `ip_range` of the upper half of the subnet: Docker allocates dynamic
+  addresses only there, which no rule allows. Starting such a container
+  needs host root (see [what source rules cannot stop](#what-source-rules-cannot-stop)).
+  pk-local's seeder is the one such container today; it passes its own
+  fixed address with `--ip`, and its web-identity steps never run two at
+  once because every seed holds the seed lock and runs its steps in turn
+  ([seeder phases](../local-environment/spec.md#seeder-phases-and-identities)).
+- **One-shot profiles** (`bootstrap`, `migration`, `admin-recovery`,
+  `database-provision`, `backup-worker`) leave `backend`. Each gets its own
+  internal network with a small fixed subnet, joined only by that profile
+  and PostgreSQL. A one-shot is started with `docker compose run`,
+  sometimes twice at once (a cron backup during an upgrade's backup), so
+  one fixed address would make the second container fail to start; a range
+  does not. Each network is a /28 whose IPAM sets the gateway at offset 1,
+  PostgreSQL's fixed address at offset 2, and an `ip_range` of the upper
+  /29 (offsets 8 to 15) for the profile's containers. The rule allows the
+  profile's login from that /29 only, so the gateway, which an internal
+  bridge network still places on the host's bridge interface, is never an
+  allowed source. The implementation verifies the gateway placement and
+  the `ip_range` allocation on the Docker Engine version Production runs.
+  The subnets are /28 slices, in a fixed order, of one new `runtime_network`
+  block (`offline`, default `172.29.242.0/24`, private and disjoint from
+  `backend` and `proxy` like them). None of these profiles uses Valkey or
+  another backend service; the backup worker keeps
+  `application-egress`. A side effect is that the backup worker, which
+  reads the Valkey ACL, can no longer reach Valkey.
+- **No spoofing.** A container can claim another address only by changing
+  its interface (`NET_ADMIN`) or crafting packets (`NET_RAW`). Every
+  container on `backend` or a one-shot network already drops all
+  capabilities; the renderer test makes that, and no `network_mode: host`,
+  an invariant.
+
+**The rules.** One rule per login and source, `host` with
+`scram-sha-256` (the backend is an internal network without TLS; adding
+`hostssl` is a separate decision), then a final `host all all all reject`. The
+socket gets `local all pk_stewardship_operator trust` and
+`local all all reject`: the socket lives on a mode-0700 tmpfs inside the
+PostgreSQL container, so only `docker exec` (host root) reaches it, which is
+how the upgrade check, `pk-restore`, the operations scripts and the
+runbook's `ALTER ROLE` commands already connect. The socket rule names `all`
+databases, not the deployment's, because first-time setup needs the
+`postgres` database: the stock entrypoint passes the command's `-c` options,
+`hba_file` included, to its temporary init server, then connects as the
+operator over the socket to the `postgres` database to check for and create
+`POSTGRES_DB`. That happens on every empty store: a fresh install, a
+`pk-restore` onto an empty store, a pk-local reset and CI's operational
+Compose job. Only the operator, and only through the socket, gets that. The stock file's in-container
+`127.0.0.1` trust lines are dropped; nothing uses them. The rules carry no
+`trust` over TCP and no `md5`.
+
+**Generation and installation.** The renderer builds the file from the same
+topology that renders Compose (`runtime_topology.py`), so a service, login or
+address cannot change in one and not the other. Provisioning and
+`retarget-image` write it beside the rendered Compose documents, owner-only
+and readable by the PostgreSQL UID, in its own directory. PostgreSQL mounts
+that directory read-only and starts with `-c hba_file=<mounted path>`. The
+directory, not the file, is mounted so a renamed-in replacement is seen
+without recreating PostgreSQL, the same reason rotating credentials use
+directory mounts. The stock `pg_hba.conf` inside the data directory is never
+edited, which is what keeps rollback simple.
+
+**When PostgreSQL reads the rules.** PostgreSQL reads `hba_file` only when
+it starts and when it reloads its configuration (SIGHUP); a new file on
+disk changes nothing until then, and a reload that finds an invalid file
+logs the error and keeps the previous rules. So the scripted upgrade, after
+step 3's `retarget-image` writes the file, requires `pg_hba_file_rules` to
+report no error row and then runs `SELECT pg_reload_conf()` as the operator
+over the socket by `docker exec`. When the retarget also changed
+PostgreSQL's command (the first rollout), the recreated container reads
+the new file when it starts instead. The LOCAL fake-clock override
+swaps only PostgreSQL's image and keeps the mount and the command.
+
+`pg_reload_conf()` only signals the postmaster and returns before the
+reload happens, so the upgrade then waits, bounded, for the reload to take
+effect: it polls `pg_conf_load_time()` about once a second until it is later
+than the file's modification time from `pg_stat_file`, for at most 30
+seconds. A timeout stops the run (see the hba check below) and, per the
+timeout-logging rule, writes one persistent line to the upgrade log with
+what timed out (the wait for the hba reload), the limit (30 seconds) and the
+elapsed seconds; a wait that succeeds logs its elapsed seconds too. Both
+conditions are needed: `pg_conf_load_time()` advances even when the hba part
+of a reload fails and the old rules stay, so only the pairing with "no error
+row" proves the rules in force were loaded from this file.
+
+### Checks, rollout and rollback
+
+**Drift.** `pg_hba_file_rules` and a digest describe the file on disk, not
+the rules in memory, and the upgrade check (step 1) runs against the
+PostgreSQL that is still running the previous release, before the retarget.
+So the hba conditions must not be part of that check's `t`/`f` answer: on the
+first rollout the old PostgreSQL has no `hba_file`, and on a later release
+that changes the rendered file the old mounted file differs from the new
+rendering, so either would refuse a correct run at step 1, and an `f` at
+step 4 runs migrations and grants, which cannot fix hba drift. The upgrade
+check keeps only what can hold before the reload (the database, extension
+and identity checks).
+
+The hba conditions are their own **hba check**, run by
+`stewardship-upgrade-host.sh` after step 3's reload (or, when the first
+rollout or the full stop recreated PostgreSQL, after that restart) and
+before step 4, as the operator over the socket. It requires that
+`SHOW hba_file` is the mounted path, that the mounted file's digest matches
+the rendered one, that `pg_hba_file_rules` reports no error row (so the
+last load did not keep older rules), and that `pg_conf_load_time()` is later
+than the file's `pg_stat_file` modification time (after the bounded wait
+above), so the rules in force were loaded from this file. A failure stops the
+run before step 4 with the maintenance page still up, names the failed
+condition, and leaves the fixed-forward or rollback decision to the operator.
+This is still indirect; only `database-sources` below proves which rules are
+in force. Online services need no new
+check: a refused source fails their database wait at once (a `pg_hba`
+refusal is not on the "not available yet" list in
+[online service startup](#online-service-startup)), as `database_unavailable`.
+
+**Source check.** A new `pk-stewardship database-sources` command proves
+the matrix on a host without any password. PostgreSQL decides `pg_hba`
+before it asks for a password, so a connection attempt with no password
+ends either with the server asking for one (the source is allowed for that
+login, which libpq reports as `fe_sendauth: no password supplied`) or with
+the server's refusal (SQLSTATE `28000`). Because the file ends in an
+explicit `host all all all reject`, every refusal matches a line, so the
+server's message is `pg_hba.conf rejects connection for host ...`, never
+`no pg_hba.conf entry`; both are `28000`, and the command classifies by the
+SQLSTATE and that message. Each probe forces an empty password: it sets no
+`PGPASSWORD` and points `PGPASSFILE` at an empty file, so a mounted
+password can never turn a probe into a real sign-in. The command tries every
+login from where it runs and prints, per login, `allowed` or `refused`,
+then compares with the rendered matrix and exits non-zero on any
+difference. The scripted upgrade runs it by `docker exec` in every running
+online service and by `compose run` in each one-shot profile, after step 6
+starts the services; restores, drills and pk-local run the same check. A
+login allowed from a source the matrix does not list is reported as a
+security failure; the operator decides between a fix-forward release and the
+rollback below.
+
+**Tests (CI and pk-local).** Unit tests, with no PostgreSQL, cover the
+renderer: every login in the inventory has exactly its sources, there is one
+final reject and no TCP `trust`, the operator is reachable over TCP only from
+`database-provision`, addresses are unique and inside their subnets, every
+member of `backend` has a fixed address and drops all capabilities, and the
+Production file is pinned by the golden-file test with the Compose document.
+The operational Compose job (`test_operational_compose.py`, real Docker)
+runs `database-sources` after its bootstrap, and adds the negative cases:
+from `worker` with web's password, and from `backup-worker` with the
+operator's, the connection fails with SQLSTATE `28000` and
+`pg_hba.conf rejects connection`. The
+PostgreSQL test shards keep the stock rules, because they test SQL, not the
+network. pk-local renders the same rules; its only difference is the
+seeder's fixed address, allowed for the web and download logins and only in
+LOCAL, because the seeder's web-identity steps start with `docker run` from
+web's definition while web runs
+([seeder phases](../local-environment/spec.md#seeder-phases-and-identities));
+the seeder passes that address with `--ip`.
+
+**Rollout.** The change ships alone, in a release with no migration and no
+grant change, so the application-only
+[rollback](../../../guides/stewardship-deployment-runbook.md#rollback) stays
+available. `retarget-image` renders the new topology; its PostgreSQL
+command changes, so the upgrade recreates PostgreSQL. Running containers
+still hold dynamic `backend` addresses that the fixed ones may collide
+with, and the `backend` network's IPAM gains its `ip_range`, so that one
+upgrade needs a full stop. `stewardship-upgrade-host.sh` owns it: it
+detects the case by comparing the retargeted `backend` IPAM with the
+running network's (`docker network inspect`), and right after step 3 (the
+retarget and any fake-clock image builds) and before step 4 it stops and
+removes every container of the project except Caddy, PostgreSQL and Valkey
+included (volumes untouched), removes the `backend` network so Compose
+recreates it, and starts PostgreSQL and Valkey on their fixed addresses.
+The hba check runs on it, then step 4 (the upgrade check, `pg_trgm`, and any migration and
+`database-grants`, none of which this release changes) then runs against
+the recreated PostgreSQL, and step 6 starts the other services and runs
+the source check. Caddy stays up throughout: it is only on `proxy`, which
+does not change, and it keeps serving the maintenance page. The stop adds a
+few minutes inside the maintenance window. Later upgrades find the IPAM
+unchanged and skip it. The off-site copy and
+cron backups need no change; a cron backup that starts during the stop
+fails as it would in any upgrade's offline phase.
+
+**Rollback.** Under the
+fail-forward policy a wrong rule is
+fixed in a new release. A service whose own login is refused cannot start,
+so if the site is down the operator runs the scripted rollback: the
+previous image's `retarget-image` renders Compose without `hba_file`,
+PostgreSQL restarts on the untouched stock file in its data directory, and
+the services run on dynamic addresses again. The rollback needs no full
+stop and adds no step to the previous release's tooling: dynamic addresses
+are allocated only from the `ip_range` that no fixed address uses, so
+moving from fixed to dynamic cannot collide. The one difference the
+previous tooling meets is the `backend` network's added `ip_range`; the
+implementation proves, with the previous release's scripted rollback on
+the Docker Engine and Compose versions Production runs, that it starts on
+that network unchanged. If that proof fails, the implementation drops the
+`ip_range` and lists dynamic `backend` containers under
+[what source rules cannot stop](#what-source-rules-cannot-stop) instead.
+Nothing in the database changed, so no restore is ever needed. The new
+`runtime_network.offline` field is written to the provisioning record only
+when the deployment YAML sets it, so the previous release's
+`retarget-image` accepts the record; the implementation proves this with
+the previous release's image before the release ships.
+
+### What source rules cannot stop
+
+- A compromised container acting as its own login: the grants and
+  admissions limit that, not `pg_hba`. Web keeps both web and download.
+- Valkey: it has no source-address rule. Each online service still mounts
+  only its own Valkey password, and after this change the backup worker,
+  which reads them all, has no route to Valkey.
+- Anyone with host root or `docker exec`: the socket's operator `trust` and
+  every container are theirs already. That includes starting a container on
+  `backend` with another service's fixed address (`--ip`) while that
+  service is stopped.
+- Reading data in transit on `backend`: there is no TLS on the internal
+  network.
+- Sessions already open when the rules change: PostgreSQL applies
+  `pg_hba` only when a session starts (the rollout recreates everything).
+- The backup worker still holds every password in its archive; it can no
+  longer use them from its network, but whatever reads a backup set's
+  plaintext could. Sets are sealed to an off-host key, which is unchanged.
+- The checked-in development Compose file, which uses one login, is out of
+  scope.
+
 ## Startup and upgrades
 
 Documented first deployment order is:

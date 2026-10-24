@@ -230,6 +230,10 @@ The LOCAL rendering differs from Production only as follows:
 - **Extra services.** `mailpit` ([mail catcher](#mail-catcher)) and
   `fake-parishsoft` ([fake ParishSoft](#fake-parishsoft-service)), both on the
   `backend` network.
+- **Database sources (planned, #2111).** The seeder's web-identity steps
+  get one LOCAL-only fixed `backend` address that the PostgreSQL source rules
+  allow for the web and download logins; every other rule is Production's
+  ([database connection sources](../operations/spec.md#database-connection-sources)).
 - **TLS.** Caddy serves `localhost` with `tls internal` (its own local CA).
   There is no ACME account and no port 80 listener.
 - **Published ports.** Caddy publishes only `127.0.0.1:8443` and Mailpit only
