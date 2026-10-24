@@ -68,6 +68,17 @@
 // carry ?calendar=<that Sunday>, so New and Edit return to the week. A
 // week's first day of a month shows its month ("Oct 1", Administrator
 // 2026-10-23), as the row can cross into it.
+//
+// Operational events (#1808): the page's second hidden list
+// (data-calendar-events) holds ParishSoft refresh times, finished backups
+// and go-live milestones. Each is drawn after its day's sends, muted, not
+// linked and never movable, led by its kind in words ("ParishSoft refresh
+// 2:00 AM", "Backup 1:00 AM–1:12 AM", "Production activated 3:40 PM").
+// Refreshes and backups (data-daily) recur, so they are drawn only on a day
+// that holds a send, and a day's refreshes are one line, so a schedule with
+// many times never makes a day tall. A send's notes about them (a refresh in
+// its preparation window, a backup it was sent during) are drawn under it.
+// The table stays sends only.
 (() => {
   const root = document.querySelector("[data-calendar]");
   const template = document.getElementById("calendar-month");
@@ -130,6 +141,55 @@
       days.get(key).push({when, row});
     });
     return days;
+  }
+
+  // The operational events (#1808) grouped by local day, each day's by
+  // time: ``kind``, ``when``, the backup's ``end`` and a milestone's
+  // ``label``, ``daily`` for the ones drawn only beside sends.
+  function eventsByDay() {
+    const days = new Map();
+    document.querySelectorAll("[data-calendar-events] [data-calendar-event]").forEach((row) => {
+      const [when, end] = Array.from(row.querySelectorAll("time[datetime]"),
+        (node) => new Date(node.dateTime));
+      if (!when || !Number.isFinite(when.getTime())) return;
+      const key = localKey(when);
+      if (!days.has(key)) days.set(key, []);
+      days.get(key).push({kind: row.dataset.kind, when, end, label: row.dataset.label || "",
+        daily: row.hasAttribute("data-daily")});
+    });
+    days.forEach((list) => list.sort((a, b) => a.when - b.when));
+    return days;
+  }
+
+  // A day's refresh times as one line: each time when there are a few, else
+  // how many and the first and last.
+  const FEW_REFRESHES = 3;
+  function refreshText(times) {
+    if (times.length <= FEW_REFRESHES) {
+      return fillIn(root.dataset.refresh, {times: times.map((when) => dates.time(when)).join(", ")});
+    }
+    return fillIn(root.dataset.refreshMany, {count: String(times.length),
+      first: dates.time(times[0]), last: dates.time(times[times.length - 1])});
+  }
+
+  // One day's operational events as list items, by time, or none: the
+  // daily ones only when ``withSends`` (the day holds a send), its
+  // refreshes as one item at the first one's time.
+  function eventItems(events, withSends) {
+    const shown = events.filter((event) => withSends || !event.daily);
+    const refreshes = shown.filter((event) => event.kind === "refresh").map((event) => event.when);
+    const lines = shown.filter((event) => event.kind !== "refresh").map((event) => ({
+      when: event.when,
+      text: event.kind === "backup"
+        ? fillIn(root.dataset.backup, {start: dates.time(event.when), end: dates.time(event.end || event.when)})
+        : fillIn(root.dataset.milestone, {name: event.label, time: dates.time(event.when)}),
+    }));
+    if (refreshes.length) lines.push({when: refreshes[0], text: refreshText(refreshes)});
+    return lines.sort((a, b) => a.when - b.when).map(({text}) => {
+      const item = document.createElement("li");
+      item.textContent = text;
+      return item;
+    });
   }
 
   // The view shown ("month" or "week", #1808) and its month or week
@@ -200,7 +260,22 @@
     const status = document.createElement("span");
     status.className = "visually-hidden";
     status.textContent = `, ${row.dataset.status}`;
-    item.append(target, status);
+    // Its notes about a refresh or a backup (#1808), in words under its
+    // link, which they share a box with so Move… stays beside the link.
+    const notes = Array.from(row.querySelectorAll("[data-calendar-note]"), (source) => {
+      const note = document.createElement("span");
+      note.className = "calendar-note";
+      note.textContent = source.textContent;
+      return note;
+    });
+    if (notes.length) {
+      const body = document.createElement("span");
+      body.className = "calendar-send-body";
+      body.append(target, status, ...notes);
+      item.append(body);
+    } else {
+      item.append(target, status);
+    }
     if (edit && row.dataset.moveUrl && root.dataset.moveName) {
       // The link drags on a fine pointer; the browser's own link drag
       // would take the pointer away from the page's drag.
@@ -291,6 +366,13 @@
       sends.forEach((send) => list.append(sendItem(send)));
       cell.append(list);
     }
+    const others = eventItems(events.get(key) || [], Boolean(sends));
+    if (others.length) {
+      const list = document.createElement("ul");
+      list.className = "calendar-events";
+      list.append(...others);
+      cell.append(list);
+    }
     return cell;
   }
 
@@ -345,12 +427,15 @@
     return region;
   }
 
-  // The sends by day and the first and last months and weeks (#1808), read
-  // from the list; read again when Apply redraws the list (#1521).
+  // The sends and events by day and the first and last months and weeks
+  // (#1808), read from the lists; read again when Apply redraws them
+  // (#1521). Events never widen the range: it is the sends' and dates'.
   let days = new Map();
+  let events = new Map();
   const ends = {month: [0, 0], week: [0, 0]};
   function readSends() {
     days = sendsByDay();
+    events = eventsByDay();
     const keys = [...days.keys(), root.dataset.start, root.dataset.end].filter(Boolean).sort();
     if (!keys.length) return false;
     const [earliest, latest] = [keys[0], keys[keys.length - 1]];

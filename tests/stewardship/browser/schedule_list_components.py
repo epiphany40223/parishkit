@@ -101,6 +101,12 @@ checks need no database:
   place from its own address; Reminder 2's answers 400 with the entry page
   drawn again with the send date refused (``DATE_REFUSAL``), as Edit
   answers a day outside the campaign.
+  ``CALENDAR_EVENTS`` (#1808) is the same calendar with its operational
+  events, from the view's own functions: ParishSoft refreshes at 2:00 and
+  8:00 AM New York time (``REFRESH_TIMES``) around each send, a backup that
+  ran from 8:58 to 9:03 AM on October 1 (``BACKUP``, while the invitation
+  sent) and go-live milestones on September 29 and 30 (``MILESTONES``),
+  before the first send.
 - Edit's Delete (#1656): ``EDIT`` posts it to ``EDIT_DELETE``, answered with
   the review of removing Reminder 1; ``EDIT_SERIES`` to ``SERIES_DELETE``,
   answered with the review of deleting its whole series; ``EDIT_INITIAL``
@@ -126,6 +132,12 @@ from django.urls import reverse
 from parishkit.stewardship.accounts import schedule_calendar_views, schedule_email
 from parishkit.stewardship.accounts.campaign_mail import NOT_OPEN as CLOSED
 from parishkit.stewardship.accounts.reports_conversion import converted_values
+from parishkit.stewardship.accounts.schedule_calendar_events import (
+    CalendarEvent,
+    milestones,
+    refresh_events,
+    send_notes,
+)
 from parishkit.stewardship.accounts.schedule_calendar_views import (
     WEEK,
     calendar_sends,
@@ -233,6 +245,18 @@ DATES_INITIAL = "/schedule-dates-initial"
 # The Mondays a Repeating pane gives inside the proposed dates (#1944).
 PANE_DAYS = ("2054-10-12", "2054-10-19")
 CALENDAR = "/schedule-calendar"
+# The calendar with its operational events (#1808).
+CALENDAR_EVENTS = "/schedule-calendar-events"
+REFRESH_TIMES = ("02:00", "08:00")
+BACKUP = (
+    datetime(2054, 10, 1, 12, 58, tzinfo=UTC),
+    datetime(2054, 10, 1, 13, 3, tzinfo=UTC),
+)
+# Go-live started at 11:00 AM and Production activated at 3:40 PM New York
+# time, on September 29 and 30.
+MILESTONES = [
+    (datetime(2054, 9, 29, 15, tzinfo=UTC), datetime(2054, 9, 30, 19, 40, tzinfo=UTC))
+]
 # New opened by the calendar's Add on October 12, 2054 (#1521).
 ADD_DAY = "2054-10-12"
 ADD_ON = f"{NEW}?date={ADD_DAY}"
@@ -433,12 +457,34 @@ def _list(values, owner, emails, rows, *, sort="when", **extra):
     )
 
 
-def _calendar(values, owner, emails, rows, address=CALENDAR):
+def _events(sends):
+    """The operational events and each send's notes (#1808), as the view's.
+
+    The refreshes are ``REFRESH_TIMES``, the backup ``BACKUP`` and the
+    milestones ``MILESTONES``, each through the view's own functions.
+    """
+    schedule = {
+        "timezone": "America/New_York",
+        "nightly_time": REFRESH_TIMES[0],
+        "frequency": "daily",
+        "full_refresh_times": REFRESH_TIMES,
+        "rules": True,
+    }
+    backups = [CalendarEvent("backup", *BACKUP)]
+    events = sorted(
+        refresh_events(schedule, sends) + backups + milestones(MILESTONES),
+        key=lambda event: event.start,
+    )
+    return events, [(send, send_notes(send, schedule, backups, NOW)) for send in sends]
+
+
+def _calendar(values, owner, emails, rows, address=CALENDAR, *, events=False):
     """The Campaign calendar for ``rows`` and two report emails (invitation sent).
 
     ``address`` is the page's address: its ``show`` and ``sort`` choose the
     table's view, as the view's own ``sends_view`` reads them. The report
     emails' rows follow the Family mail's, by time, as the view lists them.
+    With ``events`` it has its operational events (#1808, ``_events``).
     """
     names = email_names([row for row in emails if row["values"]["kind"] == "email"])
     summary = {rows[0]["id"]: {"delivered": 1031, "failed": 2}}
@@ -468,6 +514,8 @@ def _calendar(values, owner, emails, rows, address=CALENDAR):
     } | sends_view(sends, parameters, NOW, CALENDAR)
     # The View (#1808), as the view draws it; the script redraws both.
     context |= {"view": "month", "view_links": view_links(CALENDAR)}
+    shown, items = _events(sends) if events else ([], [(send, []) for send in sends])
+    context |= {"events": shown, "items": items}
     return (
         "text/html",
         render_to_string("stewardship/schedule-calendar.html", values | context),
@@ -993,6 +1041,7 @@ def components(context, admin):
         REFUSED: _list(values, owner, emails, rows, delete_url=f"{REFUSED}/deletion"),
         FAILED: _list(values, owner, emails, rows, delete_url=f"{FAILED}/deletion"),
         CALENDAR: _calendar(values, owner, emails, rows),
+        CALENDAR_EVENTS: _calendar(values, owner, emails, rows, events=True),
         **{month: _calendar(values, owner, emails, rows) for month in MONTHS},
         **{week: _calendar(values, owner, emails, rows) for week in WEEKS},
         **{

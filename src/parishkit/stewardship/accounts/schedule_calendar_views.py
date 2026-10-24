@@ -27,6 +27,11 @@ date, #1521) posts the new date to that send's Edit page
 too: the page only draws the review dialog Edit's answer opens in, and
 Apply redraws the list of sends and the table in place.
 
+Beside the sends the grid draws read-only operational events (#1808):
+ParishSoft refresh times, finished backups and go-live milestones
+(``schedule_calendar_events``), muted and never linked, and a note on a send
+that a refresh or a backup runs into. The table stays sends only.
+
 The table, Every email by date, has its own view of the sends (#1656): Show
 (``?show=``) leaves out the past ones by default, and its When and Schedule
 headings sort it (``?sort=``, ``SORTING``), each refreshed in place. The grid
@@ -53,6 +58,7 @@ from parishkit.stewardship.web.tables import Sorting, whole_table
 from .admin_editing import error_response, principal
 from .authentication import runtime
 from .content_views import _records
+from .schedule_calendar_events import calendar_events
 from .schedule_entry_views import ERRORS, _recheck, added_on, year_month
 from .schedule_forms import schedule_order
 from .schedule_preview import work_summary
@@ -339,6 +345,9 @@ def schedule_calendar(request, campaign_id):
                 ),
                 key=lambda send: (send.due, send.position),
             )
+            # Refreshes, backups and go-live milestones (#1808), and each
+            # send's notes about them.
+            events, items = calendar_events(configuration, campaign, sends, now)
             response = render(
                 request,
                 "stewardship/schedule-calendar.html",
@@ -346,6 +355,8 @@ def schedule_calendar(request, campaign_id):
                     "campaign": campaign,
                     "values": values,
                     "sends": sends,
+                    "items": items,
+                    "events": events,
                     "weekdays": WEEK,
                     "list_url": reverse("admin:schedule_settings"),
                     # Each day's Add (#1521) opens New with ?date=<day>.
