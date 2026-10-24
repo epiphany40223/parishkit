@@ -52,7 +52,7 @@ EMPHASIS_ALLOWED = {
 GROUP_CLASSES = {
     "filter-bar",
     "bulk-bar",
-    "export-panel",
+    "export-actions",
     "dialog-actions",
     "session-dialog-actions",
     "setup-actions",
@@ -196,6 +196,27 @@ def crowded_groups(source):
 def crowded(name):
     """crowded_groups() of one portal template."""
     return crowded_groups((TEMPLATES / name).read_text())
+
+
+def test_every_group_class_is_drawn_by_a_template():
+    """A group class no template draws guards nothing (#2107: the export
+    row's class is ``export-actions``, not the retired ``export-panel``)."""
+    drawn = set()
+    for name in ALL_TEMPLATES:
+        for classes in re.findall(
+            r"""\bclass=["']([^"']*)["']""", (TEMPLATES / name).read_text()
+        ):
+            drawn.update(classes.split())
+    assert GROUP_CLASSES - drawn == set()
+
+
+def test_an_export_row_is_one_group():
+    """Two primary buttons in one export row are flagged as one group."""
+    source = (
+        '<div class="export-actions">{% button type="submit" %}CSV{% endbutton %}'
+        '{% button type="submit" %}PDF{% endbutton %}</div>'
+    )
+    assert len(crowded_groups(source)) == 1
 
 
 def test_the_exceptions_name_real_templates():
