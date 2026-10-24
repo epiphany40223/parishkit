@@ -4150,9 +4150,9 @@ page with that send's slot key (`?send=2054-11-03`), so it can offer
 [Skip selected sends](../report-emails/spec.md#skip-and-unskip-sends), with that send's box ticked; a `send` that is
 not a date is refused as an unknown address.
 A muted send is told apart by its status, in words in the table and read to
-screen readers in the grid. Production activation and go-live milestones,
-ParishSoft refresh times and the backup window, and changing a series' rule
-from the Admin page, are planned in
+screen readers in the grid. Beside the sends the grids draw read-only
+[operational events](#operational-events-on-the-calendar); changing a
+series' rule from the Admin page is planned in
 [#1808](https://github.com/epiphany40223/parishkit/issues/1808).
 
 ##### Week view
@@ -4200,6 +4200,50 @@ changes them.
   carries it too, so Cancel, Apply and Delete return to that week; the
   table's Show and sort links keep the view and the week; Apply of a Move
   redraws the week shown.
+
+##### Operational events on the calendar
+
+From [#1808](https://github.com/epiphany40223/parishkit/issues/1808)
+(slice 2); the defaults below stand until the Administrator changes them.
+The grids show what else the server does that a send can run into, so the
+Administrator can see a reminder that would land during a refresh or a
+backup. Nothing new is stored: each is read in the page's one read-only
+snapshot from what the server already records.
+
+- **ParishSoft refresh** times are the saved
+  [refresh schedule](../background-processing/spec.md#schedule-entries-and-rules)'s
+  daily times, the ones the refresh scheduler runs at, each resolved on its
+  day in the campaign's zone as the scheduler resolves it. A schedule that
+  refreshes every hour or quarter hour (an older setting) draws none, since
+  it would fill every day, and with ParishSoft not set up there are none.
+- **Backup** is each backup that finished (the record the
+  [backups panel](#backups-panel) reads), from when it started to when it
+  completed, whether scheduled or requested. The backup schedule is a cron
+  entry on the server that the application cannot read, so a backup still
+  to come is never drawn; the About text says so.
+- **Go-live started** and **Production activated** are the campaign's
+  [go-live](#go-live-page) milestones: for each Production activation, when its
+  go-live began and when Production was activated.
+
+Each is drawn after its day's sends, in a muted list set off by a rule,
+led by its kind in words ("ParishSoft refresh 2:00 AM", "Backup 1:00
+AM–1:12 AM", "Production activated 3:40 PM"), never linked, never movable,
+and never with Move… or Edit. Refreshes and backups recur, so they are
+drawn only on a day that also holds a send, and a day's refreshes are one
+line: each time when there are up to three, else how many and the first and
+last ("ParishSoft refresh 24 times, 12:00 AM to 11:00 PM"). Milestones
+always show. Times are browser-local and the events go on their days in the
+browser's zone, as sends do; events never widen the months or weeks the
+calendar runs through.
+
+A send gets a note in words under it, in the grid only: an Initial
+invitation or reminder still to come whose two hours of preparation (the
+Production bulk send's [preparation
+lead](../background-processing/spec.md#preparing-ahead-of-the-due-time)) hold a refresh
+says "A ParishSoft refresh falls in the 2 hours before it", the check the
+scheduler warns with (`refresh_lead_window_conflict`); a send whose time
+fell while a backup ran says "Sent during a backup". The table, Every email
+by date, stays sends only.
 
 ##### Editing from the calendar
 
