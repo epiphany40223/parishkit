@@ -406,9 +406,11 @@ def test_population_header_follows_the_response_choice(response, active):
     )
     header = html.split('<p id="directory-population" data-table-sync>')[1]
     header = header.split("</p>")[0]
-    assert ("Active registered Families from ParishSoft data as of" in header) is active
+    assert ("Campaign Families from ParishSoft data as of" in header) is active
     assert "Families from ParishSoft data as of" in header
-    assert "Campaign" not in header and "data load" not in header
+    # The campaign's name ("Campaign") is not in it; "Campaign Families" is.
+    shown = header.replace("Campaign Families", "")
+    assert "Campaign" not in shown and "data load" not in header
 
 
 def test_directory_headings_and_pages_post_private_filters():
@@ -533,7 +535,7 @@ def test_contact_details_list_each_address_with_its_heads():
                 "query": DirectoryQuery(),
             },
         )
-        assert html.count("Active Family heads") == 1
+        assert html.count("Active heads and emails") == 1
         return html.split('<dd class="head-emails">')[1].split("</dd>")[0]
 
     html = pane(

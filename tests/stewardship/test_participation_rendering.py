@@ -75,7 +75,7 @@ def summary():
         {
             "observed_at": "2026-11-02T05:30:00+00:00",
             "population": [
-                {"label": "Active Families", "value": 1234, "note": ""},
+                {"label": "Campaign Families", "value": 1234, "note": ""},
                 {"label": "Active Members", "value": 3456, "note": ""},
                 {
                     "label": "Current annual pledges",

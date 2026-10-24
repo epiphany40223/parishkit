@@ -475,7 +475,7 @@ RETIRED = (
     "Setup credential",
     # Retired by #1061: it read as if those Families get Reminders.
     "Reminder WorkGroup",
-    # Retired by #520: the page is the Active parishioner family directory,
+    # Retired by #520: the page is the Campaign Family directory,
     # and an integration's page is named after the integration.
     "Family directory",
     "ParishSoft settings page",
@@ -608,7 +608,7 @@ def _user_facing_texts():
 
 # Retired names matched exactly as written, because their lowercase form is
 # ordinary prose or part of a current name: "Dates and mail schedules",
-# "Active parishioner family directory", "delivery controls" in general
+# "Campaign Family directory", "delivery controls" in general
 # wording, "ministry activity" as a state,
 # and "back to " in sentences.
 CASE_SENSITIVE = {
@@ -621,7 +621,13 @@ CASE_SENSITIVE = {
 
 
 def _mentions(text, name):
-    """Whether ``text`` uses a retired ``name``: exactly, or in any case."""
+    """Whether ``text`` uses a retired ``name``: exactly, or in any case.
+
+    The retired "Family directory" is part of the current "Campaign Family
+    directory" (#1393), which is not a use of it.
+    """
+    if name == "Family directory":
+        text = text.replace("Campaign Family directory", "")
     if name in CASE_SENSITIVE:
         return name in text
     return name.lower() in text.lower()

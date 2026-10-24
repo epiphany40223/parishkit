@@ -1306,7 +1306,7 @@ changes** and **Apply changes**, as `parish preview` and `parish
 confirm` are for the parish profile. They need a full-scope session.
 Give the new name with `--name`, as ParishSoft shows it (capital letters
 and spaces at the ends do not matter), or `--clear` to name none, so
-every eligible Family that has not responded gets the Reminders. A blank
+every campaign Family that has not responded gets the Reminders. A blank
 `--name` is refused (exit 1, `invalid`): turning the exclusion off takes
 `--clear`. Nothing changes until the change from `workgroup confirm` is
 applied. Then `--clear` stops every exclusion at once, and going back to
@@ -3064,7 +3064,7 @@ pk-admin export fetch EXPORT_ID
 
 #### Family codes and mail merge
 
-`export directory` is the Active parishioner family directory's export of
+`export directory` is the Campaign Family directory's export of
 Family codes, for
 the current campaign, and `export postal` its mail merge. Each needs a
 full-scope session and records the page's events, plus

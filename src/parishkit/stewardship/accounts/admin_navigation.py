@@ -265,7 +265,7 @@ PAGES = {
     # menu entry of its own in Review work, in the Administrator's order
     # (R39 finding 1).
     "pledges_to_enter": Page("review", _("Pledges")),
-    "family_directory": Page("reports", _("Active parishioner family directory")),
+    "family_directory": Page("reports", _("Campaign Family directory")),
     # One Family's summary and timeline (#477; the Timeline since #1570),
     # opened from every Family name the shared family_link tag draws.
     "timeline": Page("reports", _("Timeline"), "family_directory"),

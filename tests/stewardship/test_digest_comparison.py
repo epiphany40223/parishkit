@@ -99,7 +99,7 @@ def test_the_section_is_the_two_day_charts_and_the_outside_tiles():
         assert chart["table"]["headings"][0] == "Day"
     assert [tile["label"] for tile in document["tiles"]] == [
         "Families responded",
-        "Percent of active Families",
+        "Percent of campaign Families",
         "Annual pledges",
         "Average pledge",
         "Renewal of last year's responders",

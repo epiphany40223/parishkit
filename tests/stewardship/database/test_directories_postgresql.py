@@ -228,7 +228,7 @@ def test_mailing_columns_merge_postal_outreach_into_the_directory(
         # The empty row says why (#1828): with mailing columns and no other
         # filter (the overridden reach is not one), no Family needs a postal
         # invitation; with another filter, Clear filters is the next step.
-        postal = b"No active Family needs a postal invitation:"
+        postal = b"No campaign Family needs a postal invitation:"
         filtered = b"No Families match these filters. Select Clear filters"
         for own, empty, (response, body) in (
             ("any", postal, read(browser, route + "?mailing=yes")),
@@ -260,7 +260,7 @@ def test_mailing_columns_merge_postal_outreach_into_the_directory(
         ):
             response, body = search(browser, route, values)
             assert response.status_code == 200 and filtered in body
-            assert b"No active Families in the ParishSoft data yet." not in body
+            assert b"No campaign Families in the ParishSoft data yet." not in body
         # Without mailing columns the same filter finds the Family, without
         # the mailing columns.
         response, body = search(browser, route, {"reach": "email"})
@@ -271,7 +271,7 @@ def test_mailing_columns_merge_postal_outreach_into_the_directory(
         assert b"Addressee" not in body and b"<td>1 Example Street<br>" not in body
         # The page is named for who it lists (#870), and the population
         # summary and code-privacy lines above the filters are gone.
-        assert b"<h1>Active parishioner family directory</h1>" in body
+        assert b"<h1>Campaign Family directory</h1>" in body
         assert b"those without deliverable email:" not in body
         assert b"Family codes are private:" not in body
         moved = browser.post(
@@ -1451,8 +1451,8 @@ def test_unfiltered_empty_directory_says_no_data_has_loaded(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read(browser, route)
     assert response.status_code == 200
-    assert b"No active Families in the ParishSoft data yet." in body
+    assert b"No campaign Families in the ParishSoft data yet." in body
     assert b"Refresh from ParishSoft" in body
     # The filtered and mailing messages are for other cases.
     assert b"No Families match these filters" not in body
-    assert b"No active Family needs a postal invitation" not in body
+    assert b"No campaign Family needs a postal invitation" not in body

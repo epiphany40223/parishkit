@@ -54,13 +54,13 @@ def test_the_capture_is_the_pages_summary_as_plain_json():
     assert set(payload) == {"observed_at", "population", "stages"}
     assert payload["observed_at"] == statistics.observed_at.isoformat()
     assert [row["label"] for row in payload["population"]] == [
-        "Active Families",
+        "Campaign Families",
         "Active Members",
         "Current annual pledges",
         "Last year's pledges (all Families)",
     ]
     assert payload["population"][0] == {
-        "label": "Active Families",
+        "label": "Campaign Families",
         "value": statistics.active.families,
         "note": "",
     }
@@ -109,7 +109,7 @@ def test_rows_add_data_as_of_and_give_shares_only_once_invited():
     stage has one before an invitation was delivered, as on the page."""
     rows = summary().rows()
     assert [row[1] for row in rows[:5]] == [
-        "Active Families",
+        "Campaign Families",
         "Active Members",
         "Current annual pledges",
         "Last year's pledges (all Families)",
@@ -143,7 +143,7 @@ def test_csv_leads_with_the_summary_rows_under_the_section_column():
     sections = [row["Section"] for row in rows]
     assert sections == ["Summary"] * 10 + ["Daily participation"] * 3
     by_figure = {row["Figure"]: row for row in rows[:10]}
-    assert by_figure["Active Families"]["Value"] == "1234"
+    assert by_figure["Campaign Families"]["Value"] == "1234"
     assert by_figure["Current annual pledges"]["Value"] == "123456.78"
     assert by_figure["Last year's pledges (all Families)"]["Value"] == ""
     assert (
@@ -172,7 +172,7 @@ def test_xlsx_summary_sheet_keeps_native_types():
         sheet = book["Summary"]
         assert [cell.value for cell in sheet[1]] == list(COLUMNS)
         rows = {row[1].value: row for row in sheet.iter_rows(min_row=2)}
-        families = rows["Active Families"][2]
+        families = rows["Campaign Families"][2]
         assert families.value == 1234 and families.number_format == "#,##0"
         pledges = rows["Current annual pledges"][2]
         assert pledges.value == 123456.78 and pledges.number_format == '"$"#,##0.00'
@@ -207,7 +207,7 @@ def test_pdf_summary_table_reads_as_the_page(monkeypatch):
     (headings, rows), (daily, _) = seen
     assert headings == COLUMNS
     shown = {row[1]: row for row in rows}
-    assert shown["Active Families"][2] == "1,234"
+    assert shown["Campaign Families"][2] == "1,234"
     assert shown["Current annual pledges"][2] == "$123,456.78"
     assert shown["Last year's pledges (all Families)"][2] == "Unavailable"
     assert shown["Submitted"][3] == "41%"
