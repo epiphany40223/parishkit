@@ -621,12 +621,10 @@ def _draw_row(canvas, table, y, cells, fill, *, heading=False):
 # (``report_record``). Every value a card does show is drawn in full.
 
 # Report details the report-information card has left out since #929: the
-# time zones (the page stamp names the display zone) and the
-# digest-resolution note. These are report details, never table columns,
-# so a card still shows every column.
-HIDDEN_FIELDS = frozenset(
-    {"Display timezone", "Campaign date-filter timezone", "Digest resolution"}
-)
+# time zones (the page stamp names the display zone). These are report
+# details, never table columns, so a card still shows every column. (The
+# digest-resolution note left with the digests, #2102.)
+HIDDEN_FIELDS = frozenset({"Display timezone", "Campaign date-filter timezone"})
 # Report details the page frame already shows on every page (the parish and
 # campaign line, the title, the privacy and Testing-mode footer lines).
 FRAME_FIELDS = frozenset({"Report", "Parish", "Campaign", "Privacy", "Testing mode"})

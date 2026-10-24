@@ -1553,7 +1553,12 @@ DUID, Submitted time, disposition and submitted text, which identify the item
 to a reader even after the sheet is sorted or filtered. A superseded item's
 "Replaced by request submitted" value is the Submitted time of the later
 request that replaced it, which finds that request's row, or "Not in this
-export" when the export's filters left that request out.
+export" when the export's filters left that request out. The weekly
+digest's columns (Previously reported, Correction resolved) and its "Digest
+resolution" report detail left with the digest
+([#2102](https://github.com/epiphany40223/parishkit/issues/2102)); the
+Timeline and the request's history keep the record, and the request page
+no longer names the digest's correction workflow.
 
 The selection itself keeps its submitted-date filters (from, through), which
 the host command line still takes (`--start`, `--end` and `--zone`, see

@@ -110,13 +110,10 @@ def test_a_request_page_shows_its_stage_contacts_and_history(page, component_ori
     # The submitted text is text, never markup.
     assert page.locator("our").count() == 0
     page.goto(component_origin + "/information-unresolved")
-    visible(
-        page.get_by_text(
-            "This change is visible to the weekly digest correction workflow; "
-            "the old request is no longer actionable.",
-            exact=True,
-        )
-    )
+    # The retired weekly digest correction workflow is no longer named
+    # (#2102); the earlier digest's mark stays.
+    visible(page.get_by_text("Included in a previously delivered weekly digest."))
+    assert "correction workflow" not in page.inner_text("main")
 
 
 def test_accept_then_handled_in_place(page, component_origin):
