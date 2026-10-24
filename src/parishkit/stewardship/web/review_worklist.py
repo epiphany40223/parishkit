@@ -44,8 +44,9 @@ from parishkit.stewardship.web.refusals import Refusal
 
 # The row actions in their one order, so an action keeps its place from row
 # to row (UX conventions, "Row actions and confirmation"); ``pk-admin`` lists
-# them so too. A row draws no Back to review icon beside a decision: its
-# pressed icon is the undo (UX conventions, "Decision toggles", #2131).
+# them so too. A row never draws a Back to review icon of its own: its
+# pressed icon is the undo (UX conventions, "Decision toggles", #2131), so
+# ``row_icons`` skips it; ``pk-admin`` and the bulk bar keep it.
 ROW_ORDER = (
     Action.ACCEPT,
     Action.EDIT,
@@ -212,6 +213,8 @@ NOW_MATCHES = "ParishSoft now matches the Family's answer."
 # to type. Every ParishSoft-backed stream uses it.
 ALREADY_HELD = "ParishSoft already holds this value."
 EVERY_STAGE = "all"
+# Why an item that withholds its undo cannot be changed on its row.
+KEPT_REASON = "it can no longer be changed here"
 
 
 # What a row's dialog says about each action. Choosing a decision's icon
@@ -321,11 +324,22 @@ def undo_body(stream, placement, *, by_hand=False):
     return body
 
 
+# What a pressed Accept says on a Confirmed item no decision was behind
+# (ParishSoft already held the change, or a refresh found the Ministry
+# request on the roster): the outcome Accept would have reached (#2131).
+ALREADY_IN_PARISHSOFT = "Already in ParishSoft"
+
+
 def _state(action, placement):
     """The state a selected icon shows: Accept names the decision exactly
-    (Accepted, Accepted (edited), Added by the parish)."""
+    (Accepted, Accepted (edited), Added by the parish), or, with no
+    decision behind a step, the step's own outcome."""
     if action is Action.ACCEPT and placement.decision is not None:
         return placement.decision.label
+    if action is Action.ACCEPT and placement.stage is Stage.CONFIRMED:
+        return ALREADY_IN_PARISHSOFT
+    if action is Action.ACCEPT and placement.stage is not Stage.TO_REVIEW:
+        return placement.stage.label
     return WORDS[action].selected
 
 
@@ -349,15 +363,16 @@ def _unavailable_reason(action, placement, *, undo, kept=False):
     a decision already made is changed only through its pressed icon (the
     undo). With no undo on the row, the item can no longer be changed here
     (``kept``: the item withholds its undo, as a census change an open
-    addition covers does) or, on a terminal stage, only Staff may undo it.
+    addition covers does) or, on a terminal stage, only Staff and
+    Administrators may undo it.
     """
     stage = placement.stage
     if stage is Stage.UPDATING:
         return "an update is running"
     if kept and not undo:
-        return "it can no longer be changed here"
+        return KEPT_REASON
     if stage in TERMINAL_STAGES and not undo:
-        return "only Staff can change it now"
+        return "only Staff and Administrators can change it now"
     if action in (Action.ENTERED_BY_HAND, Action.HANDLED) and placement.decision in (
         None,
         Decision.IGNORED,
@@ -412,14 +427,16 @@ def row_icons(
     to review icon: the latest state in force (the mark when a decision and
     a mark are both in force) is the undo, so choosing it again opens Back
     to review's own dialog (``undo`` true; ``_decorate`` words it), and an
-    earlier selected icon waits for that undo. Only an item with nothing in
-    force to press (a Ministry request a refresh confirmed) keeps a Back to
-    review icon of its own. An action the reader's role does not allow is
-    left out, selected or not (UX conventions, "By role"); so are
-    ``withheld`` actions, which this one item cannot take whatever its
-    stage (a census field no value can be typed for has no Edit), as the
-    stream's service refuses them. ``offers`` are an item's own actions in
-    place of its stage's (a census addition's, #2041).
+    earlier selected icon waits for that undo. An item whose step had no
+    decision behind it (a change ParishSoft already held, a Ministry
+    request a refresh confirmed) draws Accept pressed as its undo, the
+    outcome Accept would have reached ("Already in ParishSoft"). An action
+    the reader's role does not allow is left out, selected or not (UX
+    conventions, "By role"); so are ``withheld`` actions, which this one
+    item cannot take whatever its stage (a census field no value can be
+    typed for has no Edit), as the stream's service refuses them.
+    ``offers`` are an item's own actions in place of its stage's (a census
+    addition's, #2041).
     """
     withheld = frozenset(Action(action) for action in withheld)
     offered = (
@@ -440,11 +457,15 @@ def row_icons(
     target = (
         next((a for a in reversed(ROW_ORDER) if a in selected), None) if undo else None
     )
+    if undo and target is None and Action.ACCEPT in drawn:
+        # Nothing in force to press: Accept stands for the step that had
+        # no decision behind it, so the row keeps its icons (no layout
+        # shift) and still has its undo.
+        target = Action.ACCEPT
+        selected = selected | {target}
     icons = []
     for action in ROW_ORDER:
         if action is Action.BACK_TO_REVIEW:
-            if undo and target is None:
-                icons.append(_icon(action, placement, name, active=True))
             continue
         if action not in drawn:
             continue

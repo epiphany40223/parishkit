@@ -111,20 +111,19 @@ def test_staff_census_icons_show_the_decision_in_force(placement, flags, expecte
     assert icons("census", placement, **flags) == expected
 
 
-def test_no_row_draws_back_to_review_beside_a_decision():
-    """Back to review has an icon of its own only on a row with nothing in
-    force to press (a Ministry request a refresh confirmed, #2131)."""
+def test_no_row_draws_back_to_review():
+    """Back to review never has an icon of its own (#2131): a Ministry
+    request a refresh confirmed, with no decision behind it, draws Accept
+    pressed as its undo, the row's icons unchanged."""
     for stage in Stage:
         for decision in (None, *Decision):
             placement = Placement(stage, decision)
             drawn = [a for a, *_ in icons("ministry", placement, leads=True)]
-            if any(selected for _, selected, *_ in icons("ministry", placement)):
-                assert "back_to_review" not in drawn, placement
+            assert "back_to_review" not in drawn, placement
     confirmed = Placement(Stage.CONFIRMED)
     assert icons("ministry", confirmed) == [
-        ("accept", False, False, False),
+        ("accept", True, True, True),
         *WAITING,
-        ("back_to_review", False, None, True),
         ("entered_by_hand", False, False, False),
     ]
 
@@ -147,7 +146,9 @@ def test_a_leader_sees_only_what_their_role_allows():
         ("edit", False, False),
         ("ignore", False, False),
     ]
-    assert drawn[0]["title"] == "Accepted; only Staff can change it now"
+    assert drawn[0]["title"] == (
+        "Accepted; only Staff and Administrators can change it now"
+    )
     assert icons("census", review, LEADER) == []
 
 
