@@ -161,7 +161,7 @@ def _choices(**choices):
                 "resolve_available": True,
                 "resolution": _choices(cancel=True, uncancellable=["Receipts"]),
             },
-            f"Resolve that email on the {OUTGOING} page first.",
+            f"not sure it arrived, on the {OUTGOING} page.",
         ),
         (
             {

@@ -538,13 +538,18 @@ class SeriesScope(AdminForm):
         ],
         widget=forms.RadioSelect,
         help_text=_(
-            "Choose \u201cThis reminder only\u201d to change just this reminder; "
-            "moving it to a day its series does not repeat on takes it out of "
-            "the series. \u201cThis and following\u201d and \u201cThe whole "
-            "series\u201d change only the send time and email, of every "
-            "reminder they cover, and each keeps its own date. Reminders that "
-            "sent or are being prepared don't change."
+            "\u201cThis and following\u201d and \u201cThe whole series\u201d "
+            "change only the send time and email; each reminder keeps its own "
+            "date."
         ),
+    )
+    # The rest of the help, in the "i" beside the legend (#2130;
+    # schedule-series-scope.html draws this field itself).
+    scope.tip = _(
+        "Choose \u201cThis reminder only\u201d to change just this reminder; "
+        "moving it to a day its series does not repeat on takes it out of the "
+        "series. The other choices change every reminder they cover. Reminders "
+        "that sent or are being prepared don't change."
     )
 
     def clean_scope(self):

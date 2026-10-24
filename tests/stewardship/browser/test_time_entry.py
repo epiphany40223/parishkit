@@ -359,6 +359,7 @@ def test_edit_as_text_lists_read_live_one_per_line_and_follow_the_rows(
     described = page.locator(full).get_attribute("aria-describedby").split()
     assert described == [
         "refresh-text-help",
+        "refresh-text-tip",
         "refresh-text-error",
         line.get_attribute("id"),
     ]

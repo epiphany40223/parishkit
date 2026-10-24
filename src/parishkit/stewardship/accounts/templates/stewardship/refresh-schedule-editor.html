@@ -28,8 +28,8 @@ and a stored quick rule is not shown.
 <div class="refresh-schedule-modes" data-editor-modes="refresh-schedule">
 {% translate "Your custom schedule has no basic equivalent." as no_basic_title %}{% translate "Basic can't show your custom schedule. If you switch, no basic schedule is chosen: choose one and review it. Nothing changes until you apply it." as no_basic_body %}{% include "stewardship/components/editor-mode.html" with mode_id="refresh-schedule-mode" mode=schedule.mode name="refresh_schedule_mode" no_basic_title=no_basic_title no_basic_body=no_basic_body %}
 <fieldset class="editor-mode-panel schedule-basic" data-editor-mode-panel="basic" data-not-a-change data-missing-hint="{% translate "Choose a basic schedule to review it." %}"{% if schedule.mode != "basic" %} hidden disabled{% endif %}>
-<legend>{% translate "Basic schedule" %}</legend>
-<p class="help">{% translate "Each choice replaces the rules and skips in Advanced. Times inside Family email windows are skipped by the switch below, so no choice needs to avoid them." %}</p>
+<legend id="refresh-basic-legend">{% translate "Basic schedule" %}</legend>{% translate "Times inside Family email windows are skipped by the switch below, so no choice needs to avoid them." as basic_tip %}{% include "stewardship/components/toggletip.html" with tip_id="refresh-basic-tip" tip_label_id="refresh-basic-legend" tip_text=basic_tip %}
+<p class="help">{% translate "Each choice replaces the rules and skips in Advanced." %}</p>
 <ul class="schedule-basic-list">{% for choice in basic_choices %}<li><input type="radio" name="refresh_basic" id="refresh-basic-{{ choice.key }}" value="{{ choice.key }}" required{% if choice.key == "every" %} aria-label="{{ choice.name }}"{% endif %} aria-describedby="refresh-basic-{{ choice.key }}-help"{% if schedule.basic.key == choice.key %} checked{% endif %}>
 {% if choice.key == "every" %}<label for="refresh-basic-every">{% translate "Every" %}</label> <label class="visually-hidden" for="refresh-basic-hours">{% translate "Hours between full refreshes" %}</label><select name="refresh_basic_hours" id="refresh-basic-hours" aria-describedby="refresh-basic-every-help" data-basic-hours>{% for hours in every_hours %}<option value="{{ hours }}"{% if hours == schedule.basic.hours %} selected{% endif %}>{{ hours }}</option>{% endfor %}</select> <span aria-hidden="true">{% translate "hours" %}</span>{% else %}<label for="refresh-basic-{{ choice.key }}">{{ choice.name }}</label>{% endif %}
 <span class="help" id="refresh-basic-{{ choice.key }}-help">{{ choice.description }}</span></li>{% endfor %}</ul>
@@ -37,23 +37,23 @@ and a stored quick rule is not shown.
 {{ basic_payload|json_script:"refresh-schedule-basic" }}
 <div class="editor-mode-panel schedule-advanced" data-editor-mode-panel="advanced"{% if schedule.mode != "advanced" %} hidden{% endif %}>
 <h3>{% translate "Rules" %}</h3>
-<p class="help">{% translate "Each rule gives full refreshes every so often between two times, or at one time. Use quarter-hour times (:00, :15, :30 or :45), at least 15 minutes apart." %} {% blocktranslate with most=editor.rules.max_num %}A schedule has at most {{ most }} rules.{% endblocktranslate %}</p>
+<p class="help">{% translate "Rules refresh at intervals between two times, or at one time, on quarter hours at least 15 minutes apart." %} {% blocktranslate with most=editor.rules.max_num %}A schedule has at most {{ most }} rules.{% endblocktranslate %}</p>
 {{ editor.rules.management_form }}{{ editor.skips.management_form }}
 <div data-schedule-rows="rules">{% for row in schedule.rule_rows %}{% include 'stewardship/refresh-schedule-rule.html' %}{% endfor %}</div>
 <template data-row-template="rules">{% include 'stewardship/refresh-schedule-rule.html' with row=schedule.empty_rule_row %}</template>
 <p>{% button type="button" variant="secondary" data-row-add="rules" %}{% translate "Add a rule" %}{% endbutton %}</p>
 <h3>{% translate "Skip these times" %}</h3>
-<p class="help">{% translate "A skip removes a time the rules give, or every time from one time up to (not including) another, for example from 12:00 to 13:00." %} {% blocktranslate with most=editor.skips.max_num %}A schedule has at most {{ most }} skips.{% endblocktranslate %}</p>
+<p class="help">{% translate "A skip removes one time, or every time from one up to (not including) another, for example 12:00–13:00." %} {% blocktranslate with most=editor.skips.max_num %}A schedule has at most {{ most }} skips.{% endblocktranslate %}</p>
 <div data-schedule-rows="skips">{% for row in schedule.skip_rows %}{% include 'stewardship/refresh-schedule-skip.html' %}{% endfor %}</div>
 <template data-row-template="skips">{% include 'stewardship/refresh-schedule-skip.html' with row=schedule.empty_skip_row %}</template>
 <p>{% button type="button" variant="secondary" data-row-add="skips" %}{% translate "Add a skip" %}{% endbutton %}</p>
 <details class="schedule-text" data-schedule-text-panel><summary>{% translate "Edit as text" %}</summary>
-<p class="help" id="refresh-text-help">{% translate "The full refresh times the rules give, as a list you can copy or paste, separated by commas or one time per line. Use this list replaces your rules and skips with one “at” rule for each time." %} {% blocktranslate with most=editor.rules.max_num %}So the list can have at most {{ most }} times; a schedule with more is changed with its rules instead.{% endblocktranslate %}</p>
-<div><label for="refresh-text-full">{% translate "Full refresh times" %}</label><textarea id="refresh-text-full" rows="2" autocomplete="off" spellcheck="false" autocapitalize="off" aria-describedby="refresh-text-help refresh-text-error" data-time-entry="list" data-schedule-text="full">{{ schedule.text_lists.full }}</textarea></div>
+<p class="help" id="refresh-text-help">{% translate "The full refresh times, separated by commas or one per line. Use this list replaces your rules and skips." %}</p>
+<div><div class="label-row"><label for="refresh-text-full" id="refresh-text-label">{% translate "Full refresh times" %}</label>{% blocktranslate asvar text_tip with most=editor.rules.max_num %}The full refresh times the rules give, as a list you can copy or paste. Use this list replaces your rules and skips with one “at” rule for each time, so the list can have at most {{ most }} times; a schedule with more is changed with its rules instead.{% endblocktranslate %}{% include "stewardship/components/toggletip.html" with tip_id="refresh-text-tip" tip_label_id="refresh-text-label" tip_text=text_tip %}</div><textarea id="refresh-text-full" rows="2" autocomplete="off" spellcheck="false" autocapitalize="off" aria-describedby="refresh-text-help refresh-text-tip refresh-text-error" data-time-entry="list" data-schedule-text="full">{{ schedule.text_lists.full }}</textarea></div>
 <p>{% button type="button" variant="secondary" data-schedule-text-apply %}{% translate "Use this list" %}{% endbutton %}</p>
 <p class="errorlist schedule-text-error" id="refresh-text-error" data-schedule-text-error></p></details>
 </div>
 </div>
 <div class="schedule-switch"><input type="checkbox" name="skip_around_family_emails" id="id_skip_around_family_emails" aria-describedby="id_skip_around_family_emails_help"{% if editor.switch %} checked{% endif %}> <label for="id_skip_around_family_emails">{% translate "Skip refreshes around Family emails" %}</label>
-<p class="help" id="id_skip_around_family_emails_help">{% translate "Refreshes are skipped while a reminder is being prepared and while a Family email is being sent, so ParishSoft reads never slow the email down. The nightly full refresh still runs." %}</p></div>
+<p class="help" id="id_skip_around_family_emails_help">{% translate "Skips refreshes while a reminder is prepared or a Family email is sent. The nightly full refresh still runs." %}</p></div>
 </section>{% endwith %}

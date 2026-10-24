@@ -64,9 +64,8 @@ class EmailToggle(AdminForm):
         widget=forms.CheckboxInput(attrs={"data-change-ignore": ""}),
         label=_("Edit this schedule's email"),
         help_text=_(
-            "Change the subject or text for this scheduled email only. Saving "
-            "makes a new email just for it; the email chosen above stays as it "
-            "is for every other schedule."
+            "Saves the changed subject or text as a new email just for this "
+            "scheduled email; the email chosen above stays as it is."
         ),
     )
 

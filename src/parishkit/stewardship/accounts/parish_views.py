@@ -31,7 +31,7 @@ from parishkit.stewardship.web.refusals import (
     with_default_code,
 )
 
-from . import admin_navigation
+from . import admin_navigation, field_tips
 from .admin_editing import (
     confirm,
     editable_configuration,
@@ -168,6 +168,12 @@ def url_input():
     )
 
 
+# The date format's one visible line (#2130); its tip has the whole help.
+DATE_FORMAT_HINT = _(
+    "US styles use a 12-hour clock; European and ISO styles a 24-hour clock."
+)
+
+
 class ParishForm(AdminForm):
     """The profile form cannot modify branding, runtime mode or campaign snapshots."""
 
@@ -218,6 +224,13 @@ class ParishForm(AdminForm):
     base_digest = forms.RegexField(
         regex=r"^[0-9a-f]{64}$", max_length=64, widget=forms.HiddenInput
     )
+
+    def __init__(self, *args, **kwargs):
+        """Keep one help line under the date format (#2130); the rest is its tip."""
+        super().__init__(*args, **kwargs)
+        if "date_format" in self.fields:
+            field = self.fields["date_format"]
+            field_tips.add(field, field.help_text, DATE_FORMAT_HINT)
 
     def clean_website(self):
         """Refuse credentials, a query or a fragment at the field (#1330).

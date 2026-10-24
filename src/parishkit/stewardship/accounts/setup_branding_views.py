@@ -58,6 +58,8 @@ class SetupLogoForm(LogoForm):
             }
         )
         setup_help.apply(self, setup_help.LOGO, replace=True)
+        # Its template draws a tip (field_tips.TIP_TEMPLATES), so the long
+        # help above moved into it, leaving the hint as its one line (#2130).
 
     def clean_logo(self):
         """An empty optional upload keeps the saved logo; others are checked.

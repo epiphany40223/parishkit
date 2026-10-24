@@ -88,6 +88,7 @@ def test_delete_reviews_in_place_and_returns_to_the_list(
     assert page.locator('#schedule-delete-form [name="scope"]').count() == 0
     help_line = page.locator("#schedule-delete-help").inner_text()
     assert help_line.startswith("Deleting cancels this email's sends")
+    assert page.locator("#schedule-delete-tip").count() == 0
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     request, shown = open_review(page, EDIT)
     assert request.url.endswith(EDIT_DELETE)
