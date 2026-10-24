@@ -5010,7 +5010,7 @@ exactly the commands that exist.
   `report-email` in #1786). **PR 8e:** the Family-level exports that
   create an export record without the Family keys (`export financial`,
   `export information`, `export ministry`, `export ministry-packet`).
-  **PR 8f:** the Active parishioner family directory's exports (`export
+  **PR 8f:** the Campaign Family directory's exports (`export
   directory`, `export postal`). **PR 8g:** the one-Family timeline
   export (`export
   family-timeline`, with the page's export form and migration 0063), and

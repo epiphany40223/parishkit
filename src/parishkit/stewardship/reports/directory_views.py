@@ -1,4 +1,4 @@
-"""The private-POST active parishioner family directory, with read admission.
+"""The private-POST Campaign Family directory, with read admission.
 
 One page serves both uses that used to be separate pages: the Family-code
 directory and postal outreach. The "Include mailing columns" checkbox

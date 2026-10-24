@@ -732,7 +732,7 @@ REPORT_SORT_COLUMNS = (
     # Entered by Staff (#529), admitted by migration 0065.
     "staff_entered",
 )
-# The active parishioner family directory's Response choices (#933), as
+# The Campaign Family directory's Response choices (#933), as
 # stewardship_safe_context_v1 admits them; "yes" and "no" are the older
 # Campaign response choices earlier entries recorded.
 DIRECTORY_RESPONSES = frozenset(

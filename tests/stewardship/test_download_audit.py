@@ -186,7 +186,7 @@ def test_system_logs_show_the_choices_in_words():
         "snapshot_id",
         "search_used",
         "report_sort",
-        # The active parishioner family directory's choices (#933).
+        # The Campaign Family directory's choices (#933).
         "directory_response",
         "directory_data_check",
         "directory_response_columns",

@@ -129,7 +129,7 @@ def _year(value, series, renewal, day, final=True, distribution=None):
         distribution=distribution or _distribution(40, 60, 90, 70, 60, 30, 12, 4),
         notes=(
             ("Source system", "Invented old system"),
-            ("Active Families counted from", "An invented snapshot"),
+            ("Campaign Families counted from", "An invented snapshot"),
             ("note.01", "Converted from <three> invented exports"),
             ("note.02", f"Invented note for {value} only"),
         ),

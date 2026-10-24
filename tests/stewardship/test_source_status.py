@@ -67,7 +67,7 @@ def test_an_unknown_status_fails_loudly():
         # A Family the data no longer has is never also called inactive.
         (None, False, "missing"),
         ("Example", True, "current"),
-        ("Example", False, "inactive"),
+        ("Example", False, "left"),
         # A blank but present name is a data gap, not a removal.
         ("", True, "current"),
     ],
