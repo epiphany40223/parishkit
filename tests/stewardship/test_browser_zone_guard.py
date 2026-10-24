@@ -133,9 +133,6 @@ SERVER_INSTANTS = {
 # Form fields whose label, help or errors name a fixed zone, by (form class,
 # field).
 FORM_ZONE_TEXT = {
-    # The end day is a day of the active window, a campaign-zone system
-    # definition (ui-conventions "Dates and times").
-    ("LiveEndDateForm", "end_date"): "active window day",
     # The default help, shown only on the retired Copy campaign page; every
     # browser-mode page replaces it with BROWSER_TIME_HELP.
     ("ScheduleForm", "time"): "Copy campaign page only",

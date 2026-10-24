@@ -23,10 +23,10 @@
 <section class="panel" aria-labelledby="portal-state">
   <h2 id="portal-state">{% translate "The Family portal is open" %}</h2>
   {% comment %}The browser refuses an "@" at once (data-pattern, #563), and a refusal from the server comes back at the field with the message kept.{% endcomment %}<form method="post" data-require-complete>{% csrf_token %}<input type="hidden" name="action" value="close">
-    <label for="maintenance-message">{% translate "Message for Families (optional)" %}</label>
-    <textarea id="maintenance-message" name="message" maxlength="{{ message_limit }}" rows="3" data-pattern="[^@]*" data-missing-hint="{% translate 'Leave email addresses out of the message: it cannot contain @.' %}" aria-describedby="maintenance-message-help{% if message_error %} maintenance-message-error{% endif %}"{% if message_error %} aria-invalid="true"{% endif %}>{{ message }}</textarea>
+    <div class="label-row"><label for="maintenance-message" id="maintenance-message-label">{% translate "Message for Families (optional)" %}</label>{% translate "It is also kept in the audit log, so leave out personal details such as names, phone numbers or addresses. Up to 500 characters; no email addresses." as message_tip %}{% include "stewardship/components/toggletip.html" with tip_id="maintenance-message-tip" tip_label_id="maintenance-message-label" tip_text=message_tip %}</div>
+    <textarea id="maintenance-message" name="message" maxlength="{{ message_limit }}" rows="3" data-pattern="[^@]*" data-missing-hint="{% translate 'Leave email addresses out of the message: it cannot contain @.' %}" aria-describedby="maintenance-message-help maintenance-message-tip{% if message_error %} maintenance-message-error{% endif %}"{% if message_error %} aria-invalid="true"{% endif %}>{{ message }}</textarea>
     {% if message_error %}<ul class="errorlist" id="maintenance-message-error"><li>{{ message_error }}</li></ul>{% endif %}
-    <p class="help" id="maintenance-message-help">{% translate "For example: “We expect to be back by 3 PM.” It is also kept in the audit log, so leave out personal details such as names, phone numbers or addresses. Up to 500 characters; no email addresses." %}</p>
+    <p class="help" id="maintenance-message-help">{% translate "For example: “We expect to be back by 3 PM.” Leave out names, phone numbers and addresses." %}</p>
     {% button type="submit" aria-describedby="maintenance-close-hint" %}{% translate "Close the Family portal for maintenance" %}{% endbutton %}
     <p class="help" id="maintenance-close-hint" data-complete-hint="reserve"></p>
   </form>

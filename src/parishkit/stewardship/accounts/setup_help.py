@@ -16,7 +16,7 @@ from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
 
 from . import field_tips
-from .campaign_forms import MULTI_SELECT_HELP
+from .campaign_forms import MULTI_SELECT_HELP, MULTI_SELECT_HINTS
 
 PARISH = {
     "name": _(
@@ -91,10 +91,9 @@ MAIL = {
 
 SLACK = {
     "enabled": _(
-        "Turn on to post alerts about problems that need an administrator, such "
-        "as failed background work, to a Slack channel. Leave off if your parish "
-        "does not use Slack. Turning Slack off discards any Slack token entered "
-        "for this setup, so turning it on again needs the token again."
+        "Posts alerts about problems that need an administrator to a Slack "
+        "channel. Turning Slack off discards any Slack token entered for this "
+        "setup."
     ),
     "channel_id": _(
         "The ID (not the name) of the Slack channel for these alerts, for example "
@@ -284,6 +283,10 @@ CREATION_TIMEZONE = _(
     "is on the list, otherwise the parish time zone; choose any time zone. "
     "It can be changed while the campaign is a draft."
 )
+# Its one visible line (#2130); the rest opens from its "i".
+CREATION_TIMEZONE_HINT = _(
+    "Starts on your browser's time zone when it is on the list; choose any."
+)
 
 HINTS = {
     "website": _("For example https://www.yourparish.org/"),
@@ -305,8 +308,7 @@ HINTS = {
     "organization_id": _("For example 1234."),
 }
 # The multi-select lists keep a short how-to visible; the tip has the full text.
-for name in ("ministry_duids", "fund_duids", "comparison_fund_duids"):
-    HINTS[name] = _("Hold Ctrl (Cmd on a Mac) to choose several, or Shift for a range.")
+HINTS |= MULTI_SELECT_HINTS
 
 
 def apply(form, texts, *, replace=False):

@@ -97,7 +97,7 @@ def test_the_field_explains_itself_and_each_state_says_what_happens(
     page.goto(component_origin + "/reminder-workgroup-found")
     field = page.get_by_label("ParishSoft Family WorkGroup")
     assert field.input_value() == "Active: Stewardship 2027"
-    visible(page.get_by_text("Families in that WorkGroup get no Reminder emails"))
+    visible(page.get_by_text("Families in this WorkGroup get no Reminder emails"))
     visible(page.get_by_text("found 2 Families in"))
     page.goto(component_origin + "/reminder-workgroup-missing")
     visible(page.locator("[data-workgroup-status=missing]"))

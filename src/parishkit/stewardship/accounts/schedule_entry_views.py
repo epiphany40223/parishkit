@@ -538,13 +538,18 @@ class SeriesScope(AdminForm):
         ],
         widget=forms.RadioSelect,
         help_text=_(
-            "Choose \u201cThis reminder only\u201d to change just this reminder; "
-            "moving it to a day its series does not repeat on takes it out of "
-            "the series. \u201cThis and following\u201d and \u201cThe whole "
-            "series\u201d change only the send time and email, of every "
-            "reminder they cover, and each keeps its own date. Reminders that "
-            "sent or are being prepared don't change."
+            "\u201cThis reminder only\u201d changes just this one; "
+            "\u201cThis and following\u201d and \u201cThe whole series\u201d "
+            "change only the send time and email."
         ),
+    )
+    # The rest of the help, in the "i" beside the legend (#2130;
+    # schedule-series-scope.html draws this field itself).
+    scope.tip = _(
+        "Choose \u201cThis reminder only\u201d to change just this reminder; "
+        "moving it to a day its series does not repeat on takes it out of the "
+        "series. The other choices change every reminder they cover. Reminders "
+        "that sent or are being prepared don't change."
     )
 
     def clean_scope(self):
@@ -796,8 +801,7 @@ def entry_form(
 
     It offers the campaign's emails labelled by the schedules that send them,
     with their preview, test and edit links (#446). For Edit it carries the
-    saved values, so its mail type is fixed, and the schedule's name, so the
-    email summary can say which other schedules share its email. The saved
+    saved values, so its mail type is fixed. The saved
     date and time are campaign-local; the page script shows them in the
     browser's zone (``entry_times``), and ``kept`` is the saved time in that
     zone, so a legacy time with seconds posted back unchanged still reads.
@@ -810,9 +814,6 @@ def entry_form(
     is New's send date from the calendar's Add on a day (#1521), drawn as
     a reminder on that day.
     """
-    labels = dict(
-        zip((row["id"] for row in saved), schedule_labels(saved), strict=True)
-    )
     form = ScheduleForm(
         data,
         prefix=ENTRY,
@@ -820,7 +821,6 @@ def entry_form(
         usage=email_usage(saved),
         links=True,
         test_mail=test_mail,
-        label=labels.get(schedule["id"]) if schedule else None,
         initial=schedule["values"] | {"id": schedule["id"], "drawn_at": drawn or ""}
         if schedule
         # A day from the calendar is drawn as a reminder on that date: the

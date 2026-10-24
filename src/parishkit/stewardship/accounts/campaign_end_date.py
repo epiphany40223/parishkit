@@ -64,9 +64,8 @@ class LiveEndDateForm(AdminForm):
         label=_("Campaign end date"),
         widget=forms.DateInput(attrs={"type": "date"}),
         help_text=_(
-            "The last day Families can respond, in the campaign's time zone. "
-            "Choose a later day to extend the campaign or an earlier one to "
-            "end it sooner."
+            "The last day Families can respond. Choose a later day to extend "
+            "the campaign or an earlier one to end it sooner."
         ),
     )
     base_digest = forms.RegexField(

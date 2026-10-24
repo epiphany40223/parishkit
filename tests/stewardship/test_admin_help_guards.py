@@ -522,3 +522,191 @@ def test_the_technical_guard_follows_includes(tmp_path, monkeypatch):
         "mirror-shown": True,
         "not-included": True,
     }
+
+
+# One help line under each Admin field (#2130; UX conventions, "Page
+# help"): a field's visible help is one short line, about 25 words at most,
+# in one paragraph; anything longer sits in the field's "i" toggletip or is
+# left out. Two scans: the help lines Admin templates draw (``class="help"``
+# and Django's ``helptext``), and the help every Admin form field shows as
+# its form builds it.
+FIELD_HELP_WORDS = 25
+HELP_LINE = re.compile(
+    r'<(p|div|span)\b[^>]*\bclass="(?:[^"]*\s)?(?:help|helptext)(?=[\s"])[^"]*"'
+    r"[^>]*>(.*?)</\1>",
+    re.S,
+)
+TAG = re.compile(r"<[^>]+>")
+# The tags that start or end one branch of a help line that says one of
+# several things.
+BRANCH = re.compile(r"{% (?:if|elif|else|endif)\b[^%]*%}")
+# Help lines that are not a field's: a section's or a list's own guidance,
+# or the reason an action is unavailable, each (template, its first words).
+# They are outside #2130's field rule; never add a field's help here.
+HELP_LINE_ALLOWED = {
+    ("admin-banners.html", "Acknowledging hides the problems"),
+    ("integration-settings.html", "Test access is not"),
+    ("integrations.html", "A new key is"),
+    ("logs.html", "Usually easier: select an"),
+    ("ministry-packet.html", "Ministry leaders receive the"),
+    ("production-progress.html", "Items processed counts work"),
+    ("refresh-schedule-preview.html", "Times skipped around Family"),
+    ("schedule-review.html", "A schedule that already"),
+    ("schedule-settings.html", "Report emails to Administrators"),
+    ("system-health-backup-button.html", "The server checks every"),
+    ("system-health-clear-halt-button.html", "A mail sender reports"),
+    ("users.html", "People ParishSoft lists as"),
+    ("users.html", "Send each chosen Ministry"),
+    # Lines that sit right after another help line but are not a second
+    # paragraph of one field's help: a section's stacked guidance, a
+    # status line or the alternative of two states of which one shows.
+    ("refresh-schedule-editor.html", "Refreshes never overlap: one"),
+    ("refresh-schedule-editor.html", "Times are in the"),
+    ("report-email-entry.html", "Every block is in"),
+    ("schedule-email.html", "The generated plain text"),
+    ("users.html", "{{ count }} Ministry"),
+}
+
+
+def help_words(text):
+    """Words of help in ``text``: markup, values and bare punctuation left out."""
+    plain = VALUE.sub("", TAG.sub(" ", str(text)))
+    return sum(1 for token in plain.split() if re.search(r"\w", token))
+
+
+def help_key(name, message):
+    """A help line's allowlist key: its template and its first four words."""
+    return (name, " ".join(TAG.sub(" ", message).split()[:4]))
+
+
+def adjacent_help(source):
+    """The body of each help element that directly follows another one.
+
+    Only whitespace may lie between the two; a tag or an ``{% if %}``
+    between them means alternatives or separate things.
+    """
+    matches = list(HELP_LINE.finditer(source))
+    return [
+        after.group(2)
+        for before, after in zip(matches, matches[1:], strict=False)
+        if not source[before.end() : after.start()].strip()
+    ]
+
+
+def long_help_lines(name):
+    """Each help line of a template longer than one line, as an allowlist key.
+
+    A line is too long when its messages together (two sentences in one
+    help paragraph count as one line's) have more than FIELD_HELP_WORDS
+    words. A line that says one of several things (``{% if %}``,
+    ``{% elif %}`` and ``{% else %}``) is counted per branch, since only one
+    shows at a time; text around the branches is counted on its own.
+    """
+    found = []
+    for _, body in HELP_LINE.findall(read(name)):
+        for branch in BRANCH.split(body):
+            texts = messages(branch)
+            if sum(help_words(text) for text in texts) > FIELD_HELP_WORDS:
+                found.append(help_key(name, texts[0]))
+    # Help split into several short paragraphs is still more than one line:
+    # a help element right after another one counts as long, whatever its
+    # own length. Text between them (a tag, an ``{% if %}``) means they are
+    # alternatives or separate things and is not counted.
+    for body in adjacent_help(read(name)):
+        texts = messages(body)
+        if texts:
+            found.append(help_key(name, texts[0]))
+    return found
+
+
+@pytest.mark.parametrize("name", ADMIN_TEMPLATES)
+def test_each_help_line_is_one_line(name):
+    """A help line under an Admin field is one short line (#2130)."""
+    found = [key for key in long_help_lines(name) if key not in HELP_LINE_ALLOWED]
+    assert not found, (
+        f"{name}: help lines longer than about {FIELD_HELP_WORDS} words: "
+        f"{[words for _, words in found]}; keep one short line under the "
+        "field and move the rest into its toggletip "
+        "(components/toggletip.html), or leave it out"
+    )
+
+
+def test_help_line_exceptions_are_still_needed():
+    """A stale exception is removed rather than left to hide a new line."""
+    found = {key for name in ADMIN_TEMPLATES for key in long_help_lines(name)}
+    stale = sorted(HELP_LINE_ALLOWED - found)
+    assert not stale, f"remove these HELP_LINE_ALLOWED entries: {stale}"
+
+
+def admin_form_fields():
+    """Every Admin form field and its visible help, as (form.field, help).
+
+    Each form class of the package (the classes ``test_admin_forms`` finds)
+    is built with no arguments, as a page first draws it, so the help its
+    own ``__init__`` sets and moves into a tip is what is checked; a class
+    that needs arguments is checked by its declared fields. Help a view
+    sets after building a form is not seen here: keep that to one line, or
+    give it a tip with ``field_tips``.
+    """
+    from django import forms
+
+    from .test_admin_forms import stewardship_classes
+
+    found = []
+    for cls in stewardship_classes():
+        if not issubclass(cls, forms.BaseForm):
+            continue
+        try:
+            fields = cls().fields
+        except Exception:  # Needs arguments: check what it declares.
+            fields = cls.base_fields
+        found.extend(
+            (f"{cls.__module__}.{cls.__qualname__}.{name}", field.help_text)
+            for name, field in fields.items()
+        )
+    return sorted(found)
+
+
+def test_each_admin_form_field_shows_one_help_line():
+    """No Admin form field shows more than one short line of help (#2130)."""
+    fields = admin_form_fields()
+    assert len(fields) > 150
+    found = [
+        f"{name} ({help_words(text)} words)"
+        for name, text in fields
+        if help_words(text) > FIELD_HELP_WORDS
+        or re.search(r"<(?:p|br|ul|ol)\b|\n\s*\n", str(text))
+    ]
+    assert not found, (
+        "keep one short line of help under each field and move the rest "
+        f"into its tip (accounts/field_tips.py): {found}"
+    )
+
+
+def test_the_help_line_guard_catches_what_it_describes():
+    """A long line and two sentences in one line fail; a short one passes."""
+    long_line = '<p class="help">{% translate "' + "word " * 26 + '" %}</p>'
+    two = (
+        '<p class="help" id="x">{% translate "' + "word " * 15 + '" %} '
+        "{% blocktranslate with n=3 %}At most {{ n }} "
+        + "word " * 12
+        + "{% endblocktranslate %}</p>"
+    )
+    short = (
+        '<div class="label-row"><label>L</label>{% translate "'
+        + "word " * 40
+        + '" as tip %}</div><p class="help">{% translate "One line." %}</p>'
+    )
+    split = (
+        '<p class="help">{% translate "' + "word " * 20 + '" %}</p>\n'
+        '<p class="help">{% translate "Second line here." %}</p>'
+    )
+    either = (
+        '{% if a %}<p class="help">{% translate "One." %}</p>{% endif %}'
+        '{% if b %}<p class="help">{% translate "Two." %}</p>{% endif %}'
+    )
+    assert len(adjacent_help(split)) == 1 and not adjacent_help(either)
+    assert [len(messages(b)) for _, b in HELP_LINE.findall(long_line)] == [1]
+    assert help_words(messages(long_line)[0]) > FIELD_HELP_WORDS
+    assert sum(map(help_words, messages(HELP_LINE.findall(two)[0][1]))) == 29
+    assert [b for _, b in HELP_LINE.findall(short)] == ['{% translate "One line." %}']

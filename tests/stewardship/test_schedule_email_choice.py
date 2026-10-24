@@ -1,6 +1,5 @@
 """A schedule's email list tells look-alike emails apart and describes each (#446)."""
 
-import json
 from html import unescape
 from types import SimpleNamespace
 
@@ -133,12 +132,12 @@ def test_a_saved_reminder_offers_its_type_with_usage_labels():
     ]
 
 
-def test_options_carry_the_summary_and_links_only_when_asked():
-    """The page script reads each option's excerpt, users and addresses."""
+def test_options_carry_the_links_only_when_asked():
+    """The page script reads each option's addresses, and nothing else (#2130)."""
     rows = emails()
     initial, first, second = rows
     plain = str(formset(rows, saved(rows)).forms[1]["template_version"])
-    assert "data-used-by" in plain and "data-edit-url" not in plain
+    assert "data-edit-url" not in plain and "data-test-url" not in plain
     linked = unescape(
         str(formset(rows, saved(rows), email_links=True).forms[1]["template_version"])
     )
@@ -147,9 +146,7 @@ def test_options_carry_the_summary_and_links_only_when_asked():
         f'data-edit-url="/admin/campaign/content/email/reminder/{first["id"]}/"'
         in linked
     )
-    users = json.dumps(["Reminder 1", "Reminder 2"])
-    assert f'data-used-by="{users}"' in linked
-    assert 'data-excerpt="A second reminder for {{ parish_name }}."' in linked
+    assert "data-used-by" not in linked and "data-excerpt" not in linked
     # The blank new row gets the same details, so a new schedule's choice is
     # described as well.
     blank = str(formset(rows, saved(rows), email_links=True).empty_form)
@@ -220,16 +217,3 @@ def test_email_usage_names_senders_in_sending_order():
     assert usage[initial["id"]] == ["Initial invitation"]
     assert usage[first["id"]] == ["Reminder 1", "Reminder 2"]
     assert second["id"] not in usage
-
-
-def test_every_saved_form_knows_its_schedule_name():
-    """Setup and copy pages build the formset without the table (#446)."""
-    rows = emails()
-    schedules = formset(rows, saved(rows))
-    assert [form.schedule_label for form in schedules.forms] == [
-        "Initial invitation",
-        "Reminder 1",
-        "Reminder 2",
-        None,
-    ]
-    assert schedules.empty_form.schedule_label is None

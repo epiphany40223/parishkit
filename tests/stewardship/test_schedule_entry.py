@@ -148,10 +148,9 @@ def test_entry_form_fixes_a_saved_mail_type_and_never_reads_a_posted_id():
     form = entry_form(None, templates, rows, rows[1])
     assert "id" not in form.fields
     assert form.fields["kind"].disabled
-    assert form.schedule_label == "Reminder 1"
     assert form["date"].value() == "2054-10-10"
     blank = entry_form(None, templates, rows)
-    assert not blank.fields["kind"].disabled and blank.schedule_label is None
+    assert not blank.fields["kind"].disabled
     # The page's help (in the send time's tip, #2129) names no campaign
     # zone: times are this computer's.
     assert "this computer's time zone" in str(form.fields["time"].tip)
