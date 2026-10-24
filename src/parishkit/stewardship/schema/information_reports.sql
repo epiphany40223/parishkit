@@ -68,9 +68,15 @@ BEGIN
                 CASE WHEN p.id IS NOT NULL THEN 'Name not recorded in ParishSoft' END) AS surname,
             CASE WHEN jsonb_typeof(p.canonical::jsonb->'active_head_duids')='array'
                 THEN p.canonical::jsonb->'active_head_duids' END AS head_duids,
-            -- Whether ParishSoft marks the Family active (NULL when it is not
-            -- in the data), for its ParishSoft status (#1216).
-            CASE WHEN jsonb_typeof(p.canonical::jsonb->'active')='boolean'
+            -- Whether the Family is still one of the campaign's Families
+            -- (NULL when it is not in the data), for its status badge (#1216,
+            -- #1393). A row loaded under a Families rule names the rule
+            -- (campaign_families) and its portal_eligible is "matches the
+            -- rule"; a legacy row names none and keeps ParishSoft's active.
+            CASE WHEN p.canonical::jsonb ? 'campaign_families'
+                    AND jsonb_typeof(p.canonical::jsonb->'portal_eligible')='boolean'
+                THEN (p.canonical::jsonb->'portal_eligible')::boolean
+                WHEN jsonb_typeof(p.canonical::jsonb->'active')='boolean'
                 THEN (p.canonical::jsonb->'active')::boolean END AS active,
             h.value->'reported' ? i.id::text AS previously_reported,
             h.value->'corrected' @>

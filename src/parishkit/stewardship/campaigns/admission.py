@@ -63,6 +63,7 @@ def validate_installation(document, *, request_id=None):
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
     from parishkit.stewardship.accounts.schedule_preview import work_summary
 
+    from .campaign_families import KEY as FAMILIES
     from .configuration import DIGEST_KINDS
     from .models import (
         Campaign,
@@ -128,6 +129,11 @@ def validate_installation(document, *, request_id=None):
         values = candidates[identifier]["values"]
         if identifier != str(current) and values != row.active_configuration.values:
             raise ConfigError("Historical campaign configuration cannot be edited.")
+        # The Families rule (#1393) is fixed when the campaign is created, in
+        # every state, and an absent one (the legacy rule) stays absent, as
+        # SQL's stewardship_campaign_pointer_v1 requires (migration 0175).
+        if values.get(FAMILIES) != row.active_configuration.values.get(FAMILIES):
+            raise ConfigError("The campaign's Families cannot be changed.")
         # Campaign artwork (#248) is presentation, so it stays editable live,
         # and so does the Reminder WorkGroup (#861): staff mark Families in
         # ParishSoft while the campaign runs. So are the Ministry leader roles

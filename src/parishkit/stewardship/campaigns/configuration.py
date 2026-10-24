@@ -244,8 +244,19 @@ def campaign_values(values):
     ``reminder_workgroup`` is optional too (#861): the name of the ParishSoft
     Family WorkGroup whose Families get no Reminders; absent means none. So is
     ``ministry_leader_roles`` (#922); absent means the default role names.
+    So is ``campaign_families`` (#1393), the Families rule; absent means the
+    legacy rule, which only campaigns created before the rule existed use.
     """
-    optional = {"talent_options", "artwork", REMINDER_WORKGROUP, MINISTRY_LEADER_ROLES}
+    from .campaign_families import KEY as FAMILIES
+    from .campaign_families import validate as validate_families
+
+    optional = {
+        "talent_options",
+        "artwork",
+        REMINDER_WORKGROUP,
+        MINISTRY_LEADER_ROLES,
+        FAMILIES,
+    }
     if set(values) - optional != {
         "name",
         "year_label",
@@ -330,6 +341,8 @@ def campaign_values(values):
         text(values[REMINDER_WORKGROUP], WORKGROUP_NAME_LIMIT)
     if MINISTRY_LEADER_ROLES in values:
         _leader_roles(values[MINISTRY_LEADER_ROLES])
+    if FAMILIES in values:
+        validate_families(values[FAMILIES])
     content = values["content_versions"]
     if type(content) is not dict or not set(content) <= {
         "welcome",

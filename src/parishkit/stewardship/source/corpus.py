@@ -16,13 +16,16 @@ from parishkit.parishsoft import (
     ParishSoftData,
     family_is_active,
     family_is_parishioner,
+    family_matches_rule,
     get_family_heads,
     member_is_active,
     member_is_deceased,
+    member_matches_rule,
     ministry_membership_is_current,
     split_email_addresses,
 )
 from parishkit.stewardship.accounts.policy_schema import normalized_email
+from parishkit.stewardship.campaigns.campaign_families import digest as rule_digest
 
 from .canonical import InvalidSourcePayload, SourceReferenceSkew, canonical_payload
 
@@ -257,13 +260,24 @@ def _address(corpus, kind, identifier, fields, publishable):
         )
 
 
-def normalize_core(source, *, as_of):
+def normalize_core(source, *, as_of, families=None):
     """Build all explicit core collections, retaining inactive/empty source Families.
 
     Call the shared full loader with active_only=False, parishioners_only=False,
     include_deceased=True and retain_empty_families=True. Funds may be attached
     from the separately loaded catalog. Giving must be loaded/normalized by its
     explicit current-window owner, never through an unscoped history option.
+
+    ``families`` is the current campaign's Families rule (#1393); ``None``,
+    the legacy rule, builds exactly the rows it always built. A Family row's
+    ``active`` and ``parishioner`` keep their meanings under every rule;
+    ``portal_eligible`` is "matches the rule", and ``active_head_duids``
+    lists the heads the rule accepts (legacy: not Inactive or Deceased; a
+    preset or Advanced rule: one of its Member statuses), so every reader
+    that reaches a Family through its heads, the email address selection
+    included, follows the rule. Under a preset or Advanced rule each row
+    also names the rule's digest (``campaign_families``), which the Families
+    check (``families.family_eligibility``) reads.
     """
     if not isinstance(source, ParishSoftData) or type(as_of) is not date:
         raise InvalidSourcePayload(
@@ -349,26 +363,21 @@ def normalize_core(source, *, as_of):
         heads = [
             key
             for key, member in get_family_heads(family).items()
-            if member_is_active(member)
+            if member_matches_rule(member, families)
         ]
-        active = family_is_active(family)
-        registered = family_is_parishioner(family, source.organization_id)
-        _put(
-            corpus,
-            "family",
-            str(identifier),
-            {
-                **values,
-                "family_group": group,
-                "active": active,
-                "parishioner": registered,
-                "portal_eligible": active and registered,
-                "active_head_duids": sorted(heads),
-                "email_eligible": active
-                and registered
-                and any(member_emails[key] for key in heads),
-            },
-        )
+        eligible = family_matches_rule(family, families, source.organization_id)
+        row = {
+            **values,
+            "family_group": group,
+            "active": family_is_active(family),
+            "parishioner": family_is_parishioner(family, source.organization_id),
+            "portal_eligible": eligible,
+            "active_head_duids": sorted(heads),
+            "email_eligible": eligible and any(member_emails[key] for key in heads),
+        }
+        if families is not None:
+            row["campaign_families"] = rule_digest(families)
+        _put(corpus, "family", str(identifier), row)
         _contact(
             corpus,
             "family",
