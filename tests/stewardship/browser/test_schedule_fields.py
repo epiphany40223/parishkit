@@ -16,7 +16,7 @@ pytestmark = pytest.mark.parametrize(
 
 # The blank new row follows the one saved initial invitation.
 NEW = "schedules-1-"
-FIELDS = ("date", "time", "weekday", "template_version")
+FIELDS = ("date", "time", "template_version")
 # A new row is Family mail only: report emails replaced the digests (#1786).
 SHOWN = {
     "": set(),
@@ -107,23 +107,18 @@ def test_rows_show_only_the_fields_of_their_mail_type(
     assert not failures
 
 
-def test_a_reported_field_stays_visible_until_the_type_changes(
-    page, component_origin, axe_source
-):
-    """The server's weekday error is readable; a new type then hides and clears it."""
+def test_a_reported_field_error_is_readable(page, component_origin, axe_source):
+    """The server's date error is readable beside its field at phone width,
+    and the row draws no weekday field (#2102)."""
     page.set_viewport_size({"width": 320, "height": 900})
     page.goto(component_origin + "/schedule-editor-error")
     prefix = "schedules-0-"
-    weekday = group(page, "weekday", prefix)
-    visible(weekday)
-    assert "leave it at Not weekly" in weekday.inner_text()
-    assert page.locator(f'[name="{prefix}weekday"]').input_value() == "0"
+    day = group(page, "date", prefix)
+    visible(day)
+    assert "Choose a date within the campaign" in day.inner_text()
+    assert page.locator(f'[name="{prefix}weekday"]').count() == 0
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
-    page.locator(f'[name="{prefix}kind"]').select_option("reminder")
-    page.locator(f'[name="{prefix}kind"]').select_option("initial")
-    hidden(weekday)
-    assert page.locator(f'[name="{prefix}weekday"]').input_value() == ""
     assert shown(page, prefix) == SHOWN["initial"]
 
 

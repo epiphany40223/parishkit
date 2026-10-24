@@ -625,7 +625,8 @@ def test_named_schedules_keep_what_the_document_leaves_out():
     assert data["schedules-0-id"] == initial["id"]
     assert data["schedules-0-time"] == "10:30:00"
     assert data["schedules-0-date"] == SEND_DAY
-    assert data["schedules-0-weekday"] == ""
+    # The form has no weekday field since #2102, so none is posted.
+    assert not any(name.endswith("-weekday") for name in data)
     assert "schedules-0-DELETE" not in data
     assert data["schedules-1-DELETE"] == "on"
     assert data["schedules-1-date"] == REMINDER_DAY
@@ -676,6 +677,41 @@ def test_the_overlap_acknowledgement_needs_a_financial_period():
     assert data["window-overlap_confirmed"] == "on"
     data, _ = bind({}, [], funded["values"])
     assert "window-overlap_confirmed" not in data
+
+
+def test_a_weekday_is_refused_by_field_and_a_null_one_is_accepted():
+    """The retired digests' weekday (#2102): null is no change; any other
+    value is invalid, named at the schedule's weekday, as the form did."""
+    owner = campaign_record()
+    initial = saved(owner, date=SEND_DAY)
+    data, _ = bind(
+        {"schedules": [{"id": initial["id"], "weekday": None}]},
+        [initial],
+        owner["values"],
+    )
+    assert data["schedules-0-date"] == SEND_DAY
+    added = {"kind": "reminder", "date": REMINDER_DAY, "time": "09:00:00"}
+    document = {
+        "schedules": [
+            {"id": initial["id"], "weekday": 2},
+            added | {"template_version": TEMPLATE, "weekday": 0},
+        ]
+    }
+    with pytest.raises(admin_changes.InvalidChange) as refused:
+        bind(document, [initial], owner["values"])
+    message = admin_changes.NO_WEEKDAY
+    assert refused.value.fields == [
+        {
+            "field": f"schedules.{initial['id']}.weekday",
+            "code": "invalid",
+            "message": message,
+        },
+        {"field": "schedules.new0.weekday", "code": "invalid", "message": message},
+    ]
+    assert [problem.logged for problem in refused.value.fields] == [
+        "schedules-weekday",
+        "schedules-weekday",
+    ]
 
 
 def test_an_unknown_schedule_id_is_named_in_the_refusal():

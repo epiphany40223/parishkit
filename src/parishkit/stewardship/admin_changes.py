@@ -78,6 +78,12 @@ CHANGES_LIMIT = 256_000
 ROW_LIMIT = 101
 WINDOW_FIELDS = ("timezone", "start_date", "end_date", "overlap_confirmed")
 ROW_FIELDS = ("kind", "date", "time", "weekday", "template_version")
+# The members the page's form posts. ``weekday`` belonged to the retired
+# weekly digests and is no longer a form field (#2102): a document may still
+# carry it as null, and a weekday is refused before anything is posted
+# (``weekday_problems``).
+FORM_FIELDS = tuple(name for name in ROW_FIELDS if name != "weekday")
+NO_WEEKDAY = "No schedule is sent on a day of the week; leave weekday null."
 # A repeat entry's members besides its rule (#469). It always adds
 # reminders, so it takes no kind, and its rule gives the dates.
 REPEAT_FIELDS = ("time", "template_version")
@@ -483,6 +489,7 @@ def form_data(changes, previous, campaign, *, editable, base_digest, end_only=Fa
             ]
         )
     added = [entry for entry in changes["schedules"] if "id" not in entry]
+    weekday_problems(named, added)
     data = QueryDict(mutable=True)
     data["action"] = "preview"
     data["base_digest"] = base_digest
@@ -495,14 +502,14 @@ def form_data(changes, previous, campaign, *, editable, base_digest, end_only=Fa
             name: entry[name] for name in ROW_FIELDS if name in entry
         }
         data[f"schedules-{index}-id"] = row["id"]
-        for name in ROW_FIELDS:
+        for name in FORM_FIELDS:
             data[f"schedules-{index}-{name}"] = _text(values.get(name))
         if entry.get("delete"):
             data[f"schedules-{index}-DELETE"] = "on"
         identifiers.append(row["id"])
     for offset, entry in enumerate(added):
         index = len(rows) + offset
-        for name in ROW_FIELDS:
+        for name in FORM_FIELDS:
             data[f"schedules-{index}-{name}"] = _text(entry.get(name))
         # parse_changes labels each added entry (a repeat's by its date);
         # the pages' own entries are numbered here.
@@ -533,6 +540,34 @@ def form_data(changes, previous, campaign, *, editable, base_digest, end_only=Fa
     if window.get("overlap_confirmed"):
         data["window-overlap_confirmed"] = "on"
     return data, identifiers
+
+
+def weekday_problems(named, added):
+    """Refuse a document that gives any schedule a weekday (``invalid``).
+
+    ``named`` maps a saved schedule's id to its entry and ``added`` lists the
+    added entries. The form had a weekday field, refused for Family mail,
+    until #2102 removed it with the weekly digests, so each such entry is
+    still one field problem at ``schedules.<id or label>.weekday``, as the
+    form reported it.
+    """
+    labelled = [*named.items()] + [
+        (entry.get(LABEL, f"new{offset}"), entry) for offset, entry in enumerate(added)
+    ]
+    problems = [
+        FieldProblem(
+            {
+                "field": f"schedules.{identifier}.weekday",
+                "code": "invalid",
+                "message": NO_WEEKDAY,
+            },
+            logged="schedules-weekday",
+        )
+        for identifier, entry in labelled
+        if entry.get("weekday") is not None
+    ]
+    if problems:
+        raise InvalidChange(problems)
 
 
 def _problem(field, item, logged=None):

@@ -14,7 +14,6 @@ from parishkit.stewardship.campaigns.configuration import (
     campaign_values,
     schedule_values,
 )
-from parishkit.stewardship.wall_clock import weekday_choices
 from parishkit.stewardship.web.admin_forms import AdminForm, AdminFormSet
 from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.field_rules import ERROR_LINE_TEMPLATE
@@ -495,17 +494,6 @@ class ScheduleForm(AdminForm):
             "your computer's, for example 9:00 AM, 9am or 21:00."
         ),
     )
-    weekday = forms.TypedChoiceField(
-        label=_("Day of week"),
-        required=False,
-        coerce=int,
-        empty_value=None,
-        choices=[
-            ("", _("Not weekly")),
-            *weekday_choices(),
-        ],
-        help_text=_("Weekly Admin digests only: the day of the week it is sent."),
-    )
     template_version = forms.ChoiceField(
         label=_("Email to send"),
         widget=TemplateSelect,
@@ -884,7 +872,7 @@ class ScheduleSet(AdminFormSet):
             self._check_collection(rows)
 
     def _to_campaign(self, form, previous):
-        """Convert a row's typed send date, time and weekday to campaign-local.
+        """Convert a row's typed send date and time to campaign-local.
 
         Only in browser-time mode, before any rule reads them: the row's
         cleaned values were typed in the browser's zone, and every rule
@@ -899,10 +887,12 @@ class ScheduleSet(AdminFormSet):
         and ``ValueError`` for a date that cannot convert.
         """
         data = form.cleaned_data
-        data["date"], data["time"], data["weekday"] = schedule_local.to_campaign(
+        # Family mail has no weekday: the retired weekly digests' field is
+        # gone from the form (#2102), though the stored record keeps it.
+        data["date"], data["time"], _weekday = schedule_local.to_campaign(
             data["date"],
             data["time"],
-            data["weekday"],
+            None,
             zone=self.zone,
             campaign_zone=self.timezone,
             now=self.now,
@@ -915,8 +905,8 @@ class ScheduleSet(AdminFormSet):
         """Attach each rule this row breaks to its field; return whether any did.
 
         The rules are those of configuration.schedule_values: initial and
-        reminder mail needs a date within the campaign's (inclusive) dates and
-        no weekday, and sends a saved email of its own mail type.
+        reminder mail needs a date within the campaign's (inclusive) dates
+        and sends a saved email of its own mail type.
         """
         data = form.cleaned_data
         kind = data["kind"]
@@ -934,19 +924,6 @@ class ScheduleSet(AdminFormSet):
             # Its own code, which a live end-date review recognizes
             # (campaign_end_date.end_review).
             problems.append(("date", OUTSIDE_WINDOW, OUTSIDE_CAMPAIGN))
-        # The weekday field stays for the stored record's shape and the
-        # schedule commands' change documents; Family mail never has one.
-        if data["weekday"] is not None:
-            problems.append(
-                (
-                    "weekday",
-                    _(
-                        "A weekday applies only to weekly digests — leave it "
-                        "at Not weekly."
-                    ),
-                    "weekday_not_allowed",
-                )
-            )
         if self._subject(data, previous) is None:
             problems.append(
                 (
@@ -1052,7 +1029,8 @@ class ScheduleSet(AdminFormSet):
             "kind": data["kind"],
             "date": data["date"].isoformat() if data["date"] else None,
             "time": data["time"].isoformat(timespec="seconds"),
-            "weekday": data["weekday"],
+            # Kept for the stored record's shape; Family mail has none.
+            "weekday": None,
             "template_version": data["template_version"],
             "subject": subject,
         }

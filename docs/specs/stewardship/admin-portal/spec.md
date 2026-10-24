@@ -393,9 +393,11 @@ type uses (initial invitation and reminder: date, time and email) and offer
 only emails of that type; the page script clears a field it hides. The send time is a [time
 entry](../ui-conventions/spec.md#time-entry) field. A saved schedule's mail type is shown but cannot
 change. The server reports a missing or inapplicable value on its own field (for
-example a weekday on an invitation, or a date outside the campaign with the
-campaign's dates); only rules between schedules, such as a second initial
-invitation or a reminder before it, are page-level errors. The page checks
+example a date outside the campaign, with the campaign's dates); only rules between schedules, such as a second initial
+invitation or a reminder before it, are page-level errors. The form has no day-of-week field: it served only
+the retired weekly digests and was removed in
+[#2102](https://github.com/epiphany40223/parishkit/issues/2102), though a
+saved schedule's record keeps a null `weekday`. The page checks
 an invitation's or reminder's send date and time against the campaign dates
 as they are typed, by the server's rule
 ([send dates inside the campaign](../ui-conventions/spec.md#schedules)):
@@ -3423,7 +3425,7 @@ compare the moments the Admin chose. A typed time follows
 the shared [daylight-saving rule](../ui-conventions/spec.md#schedules); a
 saved campaign-local time that the campaign's own change skips stays as saved
 and the scheduler resolves it. An
-Edit page posted with the date, time and weekday it showed keeps the saved
+Edit page posted with the date and time it showed keeps the saved
 values exactly, so saving it unchanged never moves the send, even when the two
 zones change their clocks at different instants. A page posted without a
 usable zone is refused with a hint to check the computer's time zone setting;

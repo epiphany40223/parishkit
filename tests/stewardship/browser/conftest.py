@@ -386,14 +386,14 @@ def refused_refresh_times():
 
 
 def invalid_schedule_data(emails):
-    """A posted blank row the server refused: a weekday on an invitation."""
+    """A posted blank row the server refused: an invitation dated after the
+    campaign (October 2054)."""
     return {
         "schedules-TOTAL_FORMS": "1",
         "schedules-INITIAL_FORMS": "0",
         "schedules-0-kind": "initial",
-        "schedules-0-date": "2054-10-01",
+        "schedules-0-date": "2054-11-15",
         "schedules-0-time": "09:00:00",
-        "schedules-0-weekday": "0",
         "schedules-0-template_version": emails[0]["id"],
     }
 
@@ -1378,7 +1378,7 @@ def component_responses():
         ),
         (
             # The owner's mistake posted without the page script: a new
-            # initial invitation with a weekday. The error stays visible.
+            # initial invitation after the campaign. The error stays visible.
             "/schedule-editor-error",
             "schedule-reconcile",
             schedule_page(

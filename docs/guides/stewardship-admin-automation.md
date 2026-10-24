@@ -694,7 +694,7 @@ The document is JSON with two optional members:
 
 | Entry | Members |
 | --- | --- |
-| Change a saved schedule | `id` (from `schedule show`) and any of `date`, `time` and `weekday` (in the campaign's time zone, as for adding one) and `template_version`. Members you leave out keep their values. Its `kind` cannot change, so it may not be given. A report email's sends are skipped and changed with `report-email preview` instead ([#1786](https://github.com/epiphany40223/parishkit/issues/1786)). |
+| Change a saved schedule | `id` (from `schedule show`) and any of `date` and `time` (in the campaign's time zone, as for adding one) and `template_version`. `weekday` may be given only as `null`: no schedule has a day of the week since the weekly digests were retired, so any other value is exit 1 (`invalid`) naming that schedule's `weekday` ([#2102](https://github.com/epiphany40223/parishkit/issues/2102)). Members you leave out keep their values. Its `kind` cannot change, so it may not be given. A report email's sends are skipped and changed with `report-email preview` instead ([#1786](https://github.com/epiphany40223/parishkit/issues/1786)). |
 | Remove a saved schedule | `id` and `"delete": true`, nothing else. |
 | Add a schedule | `kind` (`initial` or `reminder`; report emails replaced the digests, so no `daily_digest` or `weekly_digest` can be added, [#1786](https://github.com/epiphany40223/parishkit/issues/1786)) and the members its kind needs: `date`, and `time` (in the campaign's time zone, or in the new one when `window` changes `timezone` in the same document; the Admin portal takes times in your computer's zone instead) and `template_version`. A `time` may be written in any form the page accepts, such as `09:00:00`, `9:00`, `9am` or `21:00`, and is stored as `HH:MM:SS`. |
 | Add repeating reminders | `repeat` (the rule below), `time` and `template_version`, as for one reminder, and nothing else. It adds one ordinary reminder per date the rule gives, as if you listed each one. Every date must fit: unlike the page, which leaves out a date that does not fit, the command refuses the whole change. A problem with one date alone, such as a date after the campaign closes, names that date; a conflict between schedules, such as a date at the same moment as a saved reminder or not after the initial invitation, comes back as a plain `schedules` error, as for reminders listed one by one. A rule that gives no dates or more than 30, or skips a month, is exit 1 (`invalid`). The rule itself is not saved unless you add `"remember": true`, which also saves it as a reminder series holding exactly the reminders this repeat adds, so later changes can treat them as one. The reminders are the same either way, and they send as ordinary reminders. |
@@ -4443,3 +4443,7 @@ Each change is recorded in System logs as on the page
   Mail queue page never should have: report emails replaced the digests
   (#1786), so nothing queues them and their rows were always zero. Sent
   mail and `delivery list --purpose` still list their past emails.
+- `pk-admin/1` (#2102): no output change. The schedule pages' form lost
+  its hidden day-of-week field; `schedule preview` still accepts a null
+  `weekday` and refuses any other value as before (`invalid`, with
+  `error.fields` naming `schedules.<id>.weekday`), with a new message.

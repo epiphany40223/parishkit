@@ -31,7 +31,7 @@ def data_for(rows, *, total=None):
     }
     for index, row in enumerate(rows):
         values = row["values"] | {"id": row["id"]}
-        for name in ("id", "kind", "date", "time", "weekday", "template_version"):
+        for name in ("id", "kind", "date", "time", "template_version"):
             value = values.get(name)
             data[f"schedules-{index}-{name}"] = "" if value is None else str(value)
     return data
@@ -249,7 +249,6 @@ def test_schedule_add_replace_and_explicit_remove():
         {"schedules-0-id": str(uuid4())},
         {"schedules-0-id": ""},
         {"schedules-0-date": "2054-11-01"},
-        {"schedules-0-weekday": "0"},
         {"schedules-0-time": "invalid"},
         {"schedules-0-time": "09:00:00.5"},
         {"schedules-0-time": "09:00:00+04:00"},
@@ -359,15 +358,24 @@ def with_new_row(owner, saved, templates, **fields):
 WINDOW = "October 1, 2054 – October 31, 2054"
 
 
+def test_a_row_has_no_weekday_field():
+    """The retired weekly digests' day of week is no field of the row any
+    more (#2102), so nothing draws it and a posted one is not read."""
+    owner = campaign()
+    templates = emails(owner)
+    assert "weekday" not in Schedules.form.base_fields
+    row = {"kind": "initial", "date": "2054-10-01", "time": "09:00:00"}
+    formset, form = with_new_row(
+        owner, [], templates, **row, template_version="initial", weekday="0"
+    )
+    assert formset.is_valid(), formset.errors
+    assert "weekday" not in form.cleaned_data
+    assert formset.patch()[0]["values"]["weekday"] is None
+
+
 @pytest.mark.parametrize(
     ("fields", "field", "message"),
     [
-        # The owner's case: an initial invitation with a weekday.
-        (
-            {"kind": "initial", "date": "2054-10-01", "weekday": "0"},
-            "weekday",
-            "A weekday applies only to weekly digests — leave it at Not weekly.",
-        ),
         (
             {"kind": "reminder", "date": ""},
             "date",

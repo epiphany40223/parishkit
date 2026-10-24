@@ -168,7 +168,6 @@ ENTRY_FIELDS = (
     "kind",
     "date",
     "time",
-    "weekday",
     "template_version",
     # The moment an Edit page drew its schedule from (#558, ScheduleForm).
     "drawn_at",
@@ -936,10 +935,11 @@ def _entries(entry, repeat, schedule, *, zone, campaign_zone, now):
     repeating = repeat is not None and repeat.cleaned_data["repeat"]
     result = []
     for day in _days(entry, repeat):
+        # Family mail has no weekday (#2102); the record keeps it as null.
         sent_on, clock, weekday = schedule_local.to_campaign(
             day,
             data["time"],
-            data.get("weekday"),
+            None,
             zone=zone,
             campaign_zone=campaign_zone,
             now=now,

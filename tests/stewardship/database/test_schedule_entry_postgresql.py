@@ -301,7 +301,7 @@ def test_a_repeat_with_one_date_keeps_the_full_review(auth_service, google):
 
 @pytest.mark.parametrize(
     ("kind", "fields"),
-    [("daily_digest", {}), ("weekly_digest", {"weekday": "1"})],
+    [("daily_digest", {}), ("weekly_digest", {})],
 )
 def test_new_scheduled_email_cannot_add_a_digest(auth_service, google, kind, fields):
     """Report emails replaced the digests (#1786): New offers Family mail only.
