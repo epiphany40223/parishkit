@@ -403,10 +403,21 @@ def serve_credential_installer(configuration, lease):
         """
         worked = [installer.run_once() is not None]
         if configuration.credential_target == "parishsoft":
+            from .accounts import setup_lookups
             from .source.setup_exchange import relay_pending
 
             lease.check()
             worked.append(relay_pending(installer.files.private))
+            # The setup wizard's organization lookup (#1554).
+            lease.check()
+            worked.append(
+                setup_lookups.run_pending(
+                    installer.files.private,
+                    check=lease.check,
+                    profile=configuration.profile,
+                    base_url=configuration.parishsoft_base_url,
+                )
+            )
         elif configuration.credential_target == "google_workspace":
             from .accounts.setup_mail_exchange import relay_pending
 
@@ -457,12 +468,12 @@ def installer_pending(installer, target):
     """
     from . import backup_probes
     from .accounts import setup_credential_installation as initial
-    from .accounts import setup_mail_exchange, setup_notifications
+    from .accounts import setup_lookups, setup_mail_exchange, setup_notifications
     from .source import setup_exchange
 
     checks = [installer.pending]
     if target == "parishsoft":
-        checks.append(setup_exchange.has_pending)
+        checks += [setup_exchange.has_pending, setup_lookups.has_pending]
     elif target == "google_workspace":
         checks += [setup_mail_exchange.has_pending, backup_probes.has_pending]
     elif target == "slack":

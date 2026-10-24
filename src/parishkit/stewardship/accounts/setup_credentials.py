@@ -56,14 +56,17 @@ def _receipt(row):
     )
 
 
-def _context(attempt, target, organization_id):
-    """Derive mail/Slack scope from this draft, never caller-submitted overrides."""
+def _context(attempt, target):
+    """Derive mail/Slack scope from this draft, never caller-submitted overrides.
+
+    A ParishSoft key is staged with no settings: its organization is chosen
+    afterwards from the organizations the key reaches (#1554,
+    ``setup_lookups``).
+    """
     if target not in TARGETS:
         raise ValueError("Unknown setup credential target.")
     if target == "parishsoft":
-        return validated_context(target, {"organization_id": organization_id})
-    if organization_id is not None:
-        raise ValueError("Only ParishSoft accepts an organization.")
+        return {}
     sections = {
         row.step: row.values
         for row in SetupDraftSection.objects.filter(
@@ -133,14 +136,17 @@ def stage_credential(
     target,
     candidate,
     expected_version,
-    organization_id=None,
 ):
     """Seal in memory after original-login admission and exact-version checks.
 
     Replacing a candidate is allowed only while collecting; the same target row
     and attempt both advance versions. A running source load freezes this
-    input; once it has finished, a different ParishSoft key or organization
-    discards it and the same ones keep it (#1353). An expired attempt cannot
+    input. A ParishSoft key is sealed with no organization and queues an
+    organization lookup (#1554, ``setup_lookups``); the organization is
+    chosen from its answer. Once a load has finished, a different
+    ParishSoft key discards it (#1353); the saved key pasted again is kept
+    as it is, with its organization, and only a different organization
+    chosen from the new lookup discards the load. An expired attempt cannot
     regain authority by supplying valid credential bytes.
     """
     if is_automation(request):
@@ -155,7 +161,7 @@ def stage_credential(
             or _expiry(attempt, database_now()) is not None
         ):
             raise PermissionError("Setup cannot accept credentials now.")
-        settings = _context(attempt, target, organization_id)
+        settings = _context(attempt, target)
         if target == "parishsoft":
             from parishkit.stewardship.source.credentials import SourceCredential
 
@@ -186,30 +192,35 @@ def stage_credential(
         )
         identifier = row.pk if row is not None else uuid4()
         fingerprint = credential_receipt(candidate, target)
+        if (
+            target == "parishsoft"
+            and row is not None
+            and row.fingerprint == fingerprint
+        ):
+            # The saved key pasted again (#1554): it keeps its row, version
+            # and organization, so a load bound to it stays (any write would
+            # advance the credential version the load is bound to), and a
+            # new lookup lets the Administrator confirm or change the
+            # organization; only a different choice discards the load.
+            from .setup_lookups import queue_lookup
+
+            queue_lookup(attempt, row, actor_id=actor.identity)
+            SetupAttempt.objects.filter(pk=attempt.pk, version=attempt.version).update(
+                actor_id=actor.identity,
+                correlation_id=current_correlation(),
+                version=F("version") + 1,
+            )
+            authenticated_admin(request, store=service.store, activity=True)
+            attempt.refresh_from_db()
+            return _status(attempt), _receipt(row)
         if target == "parishsoft" and attempt.source_task_id is not None:
             # A load is bound (it succeeded or failed; a running one keeps
-            # setup loading, refused above). The same key and organization
-            # keep it and write nothing, since any write would advance the
-            # credential version the load is bound to. A change discards it
+            # setup loading, refused above). A different key discards it
             # first, so the next load reads the new connection (#1353).
-            if (
-                row is not None
-                and row.scrubbed_at is None
-                and row.fingerprint == fingerprint
-                and dict(row.settings) == settings
-            ):
-                authenticated_admin(request, store=service.store, activity=True)
-                return _status(attempt), _receipt(row)
             from .setup_source import void_source_load
 
             attempt = void_source_load(
-                attempt,
-                reason=(
-                    "key_changed"
-                    if row is None or row.fingerprint != fingerprint
-                    else "organization_changed"
-                ),
-                actor_id=actor.identity,
+                attempt, reason="key_changed", actor_id=actor.identity
             )
         sealed = public_handoff(target).seal(identifier, candidate)
         context = dict(actor_id=actor.identity, correlation_id=current_correlation())
@@ -225,6 +236,11 @@ def stage_credential(
             row.refresh_from_db(
                 fields=["fingerprint", "version", "scrubbed_at", "settings"]
             )
+        if target == "parishsoft":
+            # Which organizations the new key reaches (#1554).
+            from .setup_lookups import queue_lookup
+
+            queue_lookup(attempt, row, actor_id=actor.identity)
         SetupAttempt.objects.filter(pk=attempt.pk, version=attempt.version).update(
             **context, version=F("version") + 1
         )

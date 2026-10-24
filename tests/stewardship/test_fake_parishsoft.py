@@ -467,7 +467,7 @@ def test_handle_serves_without_http():
     status, body = fake.handle(
         "GET", BASE_PATH + "families/group/lookup/list?PageSize=1", None, KEY
     )
-    assert status == 200 and len(json.loads(body)) == 6
+    assert status == 200 and len(json.loads(body)) == 18
     assert (
         fake.handle("GET", BASE_PATH + "families/group/lookup/list", None, {})[0] == 401
     )

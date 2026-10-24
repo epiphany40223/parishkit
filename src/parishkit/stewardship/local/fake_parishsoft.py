@@ -53,6 +53,11 @@ CONFIGURATION_FIELDS = frozenset({"seed", "families", "anchor_date", "release_at
 MAXIMUM_OTHER_ORGANIZATIONS = 2
 # Identities of the other organizations' records, far above the generator's.
 OTHER_BASE = 990_000_000
+# An other organization that holds Families is a small generated parish of its
+# own (#1554): this many Families, its record identities shifted by this much
+# per organization, so none is shared with the synthetic parish's.
+OTHER_FAMILIES = 12
+OTHER_IDENTITY_SPAN = 100_000_000
 _IDENTIFIER = r"([1-9][0-9]*)"
 
 
@@ -201,17 +206,76 @@ def _owned(rows, organization, *fields):
     return [{**row, **dict.fromkeys(fields, organization)} for row in rows]
 
 
-class _Others:
-    """The other organizations' records a multi-organization key sees (#1554).
+class _Tenant:
+    """What another reachable organization's own scoped requests answer (#1554).
 
-    For each other organization: its organization record, two Members (of a
-    Family the synthetic parish does not have) with their contact rows, a
-    Ministry type, a Family and a Member WorkGroup, and a copy of the
-    synthetic parish's newest pledge and contribution of each fund (so a
-    load's fund and recent date queries return some). Every record names that
-    organization, so the application must drop them all; none reaches its
-    data. Records of collections whose requests take no organization
-    (Family groups, rosters) are not added.
+    ``parish`` is the organization's own generated parish, served whole (it
+    has no late-added Family held back) with every row naming the
+    organization as the real DTOs do; without one the organization holds
+    nothing, and every one of its scoped requests answers an empty
+    collection. The rosters are found by identity, which no other
+    organization's records share (``OTHER_IDENTITY_SPAN``).
+    """
+
+    def __init__(self, organization, parish=None):
+        """Precompute every collection the organization's requests answer."""
+        empty = parish is None
+        view = None if empty else _View(parish, True)
+        self.families = [] if empty else view.families
+        self.members = [] if empty else view.members
+        self.contacts = [] if empty else view.contacts
+        self.member_by_id = {} if empty else view.member_by_id
+        self.ministries = (
+            [] if empty else _owned(parish.ministries, organization, "organizationId")
+        )
+        self.family_workgroups = (
+            []
+            if empty
+            else _owned(
+                parish.family_workgroups,
+                organization,
+                "ownerOrganizationID",
+                "sourceOrganizationID",
+            )
+        )
+        self.member_workgroups = (
+            []
+            if empty
+            else _owned(parish.member_workgroups, organization, "ownerOrganizationId")
+        )
+        self.funds = [] if empty else parish.funds
+        # The generator already names the organization on giving rows.
+        self.pledges = [] if empty else parish.pledges
+        self.contributions = [] if empty else parish.contributions
+        self.rosters = {
+            name: {} if empty else getattr(parish, name)
+            for name in (
+                "family_workgroup_rosters",
+                "member_workgroup_rosters",
+                "ministry_rosters",
+            )
+        }
+
+
+class _Others:
+    """The other organizations a multi-organization key reaches (#1554).
+
+    Each is answered two ways. Its own scoped requests (``tenants``) answer
+    as a parish of its own: the first, third, ... other organization is a
+    small generated parish (``OTHER_FAMILIES`` Families, every collection
+    the loads read, consistent with each other), so choosing it in the setup
+    wizard loads it; the second holds nothing at all, so the wizard greys it
+    and a load of it is refused as empty.
+
+    And the synthetic organization's scoped searches and lists answer with
+    some records naming each other organization after the parish's own, as
+    a key that reaches several organizations may: two Members (of a Family
+    the synthetic parish does not have) with their contact rows, a Ministry
+    type, a Family and a Member WorkGroup, and a copy of the synthetic
+    parish's newest pledge and contribution of each fund (so a load's fund
+    and recent date queries return some). The application must drop them
+    all; none reaches its data. Records of collections whose requests take
+    no organization (Family groups, rosters) are not added there.
     """
 
     def __init__(self, parish, count):
@@ -219,14 +283,26 @@ class _Others:
         self.organizations, self.members, self.contacts = [], [], []
         self.ministries, self.family_workgroups, self.member_workgroups = [], [], []
         self.pledges, self.contributions = [], []
+        self.tenants = {}
         serial = iter(range(OTHER_BASE + 1, OTHER_BASE + 10_000))
         for index in range(count):
             organization = parish.organization_id + index + 1
+            name = f"Neighboring Parish {index + 1}"
             self.organizations.append(
-                {
-                    "organizationID": organization,
-                    "organizationReportName": f"Neighboring Parish {index + 1}",
-                }
+                {"organizationID": organization, "organizationReportName": name}
+            )
+            self.tenants[organization] = _Tenant(
+                organization,
+                None
+                if index % 2
+                else generate(
+                    parish.seed + index + 1,
+                    OTHER_FAMILIES,
+                    date.fromisoformat(parish.anchor_date),
+                    organization_id=organization,
+                    organization_name=name,
+                    identity_offset=(index + 1) * OTHER_IDENTITY_SPAN,
+                ),
             )
             family = next(serial)
             for _ in range(2):
@@ -390,6 +466,10 @@ class FakeParishSoft:
             return rows
         return rows + getattr(self.others, name)
 
+    def _tenants(self):
+        """The other reachable organizations' own answers, in organization order."""
+        return [] if self.others is None else list(self.others.tenants.values())
+
     def released(self):
         """Whether the late-added Family is served: the fake's one clock read."""
         release_at = self.configuration.release_at
@@ -453,14 +533,39 @@ class FakeParishSoft:
         return [(re.compile(pattern), verbs) for pattern, verbs in routes]
 
     def _tenant(self, value):
-        """An organization parameter other than the synthetic tenant's is a 404."""
-        if value != self.organization_id:
+        """The organization a scoped request names (#1554).
+
+        None for the synthetic organization, whose answers the handler
+        builds; another organization the key reaches answers as its own
+        ``_Tenant``. Any other organization is a 404.
+        """
+        if value == self.organization_id:
+            return None
+        if self.others is None or value not in self.others.tenants:
             raise _Reply(404)
+        return self.others.tenants[value]
 
     def _tenant_list(self, body):
-        """Search bodies scope by ``organizationIDs``: exactly this tenant."""
-        if body.get("organizationIDs") != [self.organization_id]:
+        """Search bodies scope by ``organizationIDs``: exactly one organization."""
+        requested = body.get("organizationIDs")
+        if type(requested) is not list or len(requested) != 1:
             raise _Reply(404)
+        if type(requested[0]) is not int or isinstance(requested[0], bool):
+            raise _Reply(404)
+        return self._tenant(requested[0])
+
+    def _roster(self, name, identifier):
+        """One roster by identity, the synthetic parish's or another's.
+
+        Roster requests name no organization; identities are never shared
+        between organizations, so at most one holds it. Unknown is a 404.
+        """
+        for rosters in [getattr(self.parish, name)] + [
+            tenant.rosters[name] for tenant in self._tenants()
+        ]:
+            if identifier in rosters:
+                return rosters[identifier]
+        raise _Reply(404)
 
     # -- POST searches ----------------------------------------------------------
 
@@ -471,19 +576,33 @@ class FakeParishSoft:
         )
 
     def _families_search(self, body):
-        self._tenant_list(body)
+        """The named organization's Families.
+
+        The setup wizard's organization lookup asks each organization the
+        key reaches for at most one Family (#1554): in multi-organization
+        mode the first other organization holds some and the second none,
+        so ``organizations 2`` offers one selectable and one greyed
+        organization.
+        """
+        other = self._tenant_list(body)
         size, number = _paging(body, "pageSize", "pageNumber")
-        return _counted(self.view().families, size, number, "totalResults", "rowNumber")
+        rows = self.view().families if other is None else other.families
+        return _counted(rows, size, number, "totalResults", "rowNumber")
 
     def _members_search(self, body):
-        self._tenant_list(body)
+        """The named organization's Members (the parish's with the others')."""
+        other = self._tenant_list(body)
         size, number = _paging(body, "maximumRows", "startRowIndex", zero_origin=True)
-        return _counted(self.view().members, size, number, "recordCount", "rowNum")
+        rows = self.view().members if other is None else other.members
+        return _counted(rows, size, number, "recordCount", "rowNum")
 
     def _contacts(self, body):
-        self._tenant_list(body)
+        """The named organization's Member contact rows."""
+        other = self._tenant_list(body)
         size, number = _paging(body, "limit", "offset", zero_origin=True)
-        return _page(self.view().contacts, size, number)
+        return _page(
+            self.view().contacts if other is None else other.contacts, size, number
+        )
 
     # -- GET lookups and lists ------------------------------------------------
 
@@ -498,65 +617,76 @@ class FakeParishSoft:
             "ownerOrganizationID",
             "sourceOrganizationID",
         )
-        return _counted(
-            self._with_others(rows, "family_workgroups"),
-            size,
-            number,
-            "recordCount",
-            "rowNum",
-        )
+        # The list names no organization: every reachable organization's
+        # WorkGroups, the parish's first.
+        rows = self._with_others(rows, "family_workgroups")
+        for tenant in self._tenants():
+            rows = rows + tenant.family_workgroups
+        return _counted(rows, size, number, "recordCount", "rowNum")
 
     def _family_workgroup(self, query, identifier):
-        rows = self.parish.family_workgroup_rosters.get(identifier)
-        if rows is None:
-            raise _Reply(404)
+        rows = self._roster("family_workgroup_rosters", identifier)
         return _envelope(rows, *_paging(query, "PageSize", "PageNumber"))
 
     def _member_workgroups(self, query):
-        self._tenant(_int(query.get("organizationId")))
-        rows = _owned(
-            self.parish.member_workgroups, self.organization_id, "ownerOrganizationId"
-        )
-        return _envelope(
-            self._with_others(rows, "member_workgroups"),
-            *_paging(query, "PageSize", "PageNumber"),
-        )
+        """The named organization's Member WorkGroups."""
+        other = self._tenant(_int(query.get("organizationId")))
+        if other is None:
+            rows = self._with_others(
+                _owned(
+                    self.parish.member_workgroups,
+                    self.organization_id,
+                    "ownerOrganizationId",
+                ),
+                "member_workgroups",
+            )
+        else:
+            rows = other.member_workgroups
+        return _envelope(rows, *_paging(query, "PageSize", "PageNumber"))
 
     def _member_workgroup(self, query, identifier):
-        rows = self.parish.member_workgroup_rosters.get(identifier)
-        if rows is None:
-            raise _Reply(404)
+        rows = self._roster("member_workgroup_rosters", identifier)
         return _envelope(rows, *_paging(query, "PageSize", "PageNumber"))
 
     def _ministries(self, query):
-        self._tenant(_int(query.get("organizationId")))
-        rows = _owned(self.parish.ministries, self.organization_id, "organizationId")
-        return _envelope(
-            self._with_others(rows, "ministries"),
-            *_paging(query, "PageSize", "PageNumber"),
-        )
+        """The named organization's Ministry types."""
+        other = self._tenant(_int(query.get("organizationId")))
+        if other is None:
+            rows = self._with_others(
+                _owned(self.parish.ministries, self.organization_id, "organizationId"),
+                "ministries",
+            )
+        else:
+            rows = other.ministries
+        return _envelope(rows, *_paging(query, "PageSize", "PageNumber"))
 
     def _ministers(self, query, identifier):
-        rows = self.parish.ministry_rosters.get(identifier)
-        if rows is None:
-            raise _Reply(404)
+        rows = self._roster("ministry_rosters", identifier)
         return _envelope(rows, *_paging(query, "PageSize", "PageNumber"))
 
     def _funds(self, query, organization_id):
-        self._tenant(organization_id)
-        return self.parish.funds
+        other = self._tenant(organization_id)
+        return self.parish.funds if other is None else other.funds
 
     def _pledges(self, query):
-        self._tenant(_int(query.get("OrganizationID")))
-        rows = self._with_others(self.parish.pledges, "pledges")
+        """The named organization's pledges, optionally of one fund."""
+        other = self._tenant(_int(query.get("OrganizationID")))
+        if other is None:
+            rows = self._with_others(self.parish.pledges, "pledges")
+        else:
+            rows = other.pledges
         if "FundID" in query:
             fund = _int(query["FundID"])
             rows = [row for row in rows if row["fundID"] == fund]
         return _envelope(rows, *_paging(query, "PageSize", "PageNumber"))
 
     def _contributions(self, query):
-        self._tenant(_int(query.get("OrganizationId")))
-        rows = self._with_others(self.parish.contributions, "contributions")
+        """The named organization's contributions, by fund and date if asked."""
+        other = self._tenant(_int(query.get("OrganizationId")))
+        if other is None:
+            rows = self._with_others(self.parish.contributions, "contributions")
+        else:
+            rows = other.contributions
         if "FundId" in query:
             fund = _int(query["FundId"])
             rows = [row for row in rows if row["fundId"] == fund]
@@ -578,10 +708,13 @@ class FakeParishSoft:
         return _envelope(rows, *_paging(query, "PageSize", "PageNumber"))
 
     def _member(self, query, identifier):
-        row = self.view().member_by_id.get(identifier)
-        if row is None:
-            raise _Reply(404)
-        return row
+        """One Member by identity, the parish's or another organization's."""
+        for members in [self.view().member_by_id] + [
+            tenant.member_by_id for tenant in self._tenants()
+        ]:
+            if identifier in members:
+                return members[identifier]
+        raise _Reply(404)
 
     # -- The one write ----------------------------------------------------------
 

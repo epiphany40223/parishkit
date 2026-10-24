@@ -780,6 +780,12 @@ CLOSURE_TABLES = {
     # Send a test to me (0173, #2036): web records a test, the worker makes
     # its message and mail dispatch sends it.
     "stewardship_report_email_test": ("stewardship_reports", "0047_report_email_test"),
+    # The setup wizard's ParishSoft organization lookup (0174, #1554): web
+    # requests and chooses, the ParishSoft installer answers.
+    "stewardship_setup_parishsoft_lookup": (
+        "stewardship_accounts",
+        "0035_parishsoft_organization_choice",
+    ),
 }
 
 
@@ -1300,6 +1306,10 @@ def runtime_grants(role, *, target=None):
 
         add_exchange_cleanup_grants(columns)
         add_web_setup_catalog_grants(tables, columns)
+        from .accounts.setup_lookup_grants import add_web_lookup_grants
+
+        # The setup wizard's ParishSoft organization lookup (#1554).
+        add_web_lookup_grants(tables, columns)
         from .accounts.setup_mail_grants import add_setup_mail_cleanup_grants
 
         add_setup_mail_cleanup_grants(tables, columns, read_payload=True)

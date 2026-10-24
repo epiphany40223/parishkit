@@ -5685,7 +5685,13 @@ BEGIN
             'report','format',
             -- A report view the open page made by itself to bring newer
             -- figures in (#1620; audit.schemas): a boolean.
-            'automatic']
+            'automatic',
+            -- The setup wizard's ParishSoft organization choice (#1554;
+            -- audit.schemas): the chosen organization ID and how many
+            -- organizations the key reached, held no Families or were
+            -- unknown, integers as every unlisted key.
+            'organization','organizations_reached','organizations_without_families',
+            'organizations_unknown']
         WHEN 'boundary' THEN ARRAY['occurrence_id','kind','intended_unix_microseconds','actual_unix_microseconds','lag_microseconds','before_state','after_state']
         WHEN 'schedule' THEN ARRAY['definition_id','previous_revision_id','selected_revision_id','cancelled_messages','skipped_occurrences','failed_occurrences','delivered_slots']
         WHEN 'timeout' THEN ARRAY['task_id','task_type','attempt','limit_seconds','elapsed_seconds','what','helper','count','outcome']
@@ -8653,11 +8659,23 @@ BEGIN
             RAISE EXCEPTION 'Setup credential scrub requires its terminal fence'
                 USING ERRCODE='23514';
         END IF;
+        -- A ParishSoft key whose organization is not chosen yet is
+        -- discarded at once when the Administrator answers No or Cancel to
+        -- its organization lookup (#1554): only the web, for the attempt's
+        -- owner, while it is collecting. A key with a chosen organization
+        -- is replaced, never discarded, until setup ends.
+        IF attempt.state='collecting' AND NEW.target='parishsoft' THEN
+            IF current_user<>'pk_stewardship_web'
+               OR NEW.actor_id IS DISTINCT FROM attempt.owner_id
+               OR OLD.settings<>'{}'::jsonb THEN
+                RAISE EXCEPTION 'Only a ParishSoft key with no organization chosen is discarded during setup (#1554)'
+                    USING ERRCODE='23514';
+            END IF;
         -- Turning Slack off during setup discards the staged Slack token at
         -- once (#1499): only the web, for the attempt's owner, while it is
         -- collecting and its saved Slack step is off. Every other scrub
         -- needs the terminal fence, by the system.
-        IF attempt.state='collecting' THEN
+        ELSIF attempt.state='collecting' THEN
             IF current_user<>'pk_stewardship_web' OR NEW.target<>'slack'
                OR NEW.actor_id IS DISTINCT FROM attempt.owner_id
                OR NOT EXISTS (SELECT 1 FROM public.stewardship_setup_draft_section slack
@@ -8713,10 +8731,12 @@ BEGIN
     SELECT array_agg(key ORDER BY key) INTO keys
         FROM jsonb_object_keys(NEW.settings) key;
     IF NEW.target='parishsoft' THEN
-        IF keys IS DISTINCT FROM ARRAY['organization_id']
+        -- No settings while its organization lookup runs (#1554), else
+        -- exactly the chosen organization.
+        IF keys IS NOT NULL AND (keys IS DISTINCT FROM ARRAY['organization_id']
            OR jsonb_typeof(NEW.settings->'organization_id') <> 'number'
            OR (NEW.settings->>'organization_id') !~ '^[1-9][0-9]{0,9}$'
-           OR (NEW.settings->>'organization_id')::numeric >= 2147483648 THEN
+           OR (NEW.settings->>'organization_id')::numeric >= 2147483648) THEN
             RAISE EXCEPTION 'Invalid provider validation context' USING ERRCODE='23514';
         END IF;
     ELSIF NEW.target='slack' THEN

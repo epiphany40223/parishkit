@@ -9,6 +9,7 @@ from parishkit.stewardship.local import LOCAL_ORGANIZATION_ID
 from parishkit.stewardship.local.synthetic_parish import (
     DEFAULT_FAMILIES,
     FAMILY_GROUPS,
+    INACTIVE_GROUP,
     SyntheticParish,
     age_at,
     digest,
@@ -22,8 +23,8 @@ SIZES = (100, 1100)
 # The digests of seed 1 at the default size and at the real parish's size.
 # Any generator change, however small, changes these; update them on purpose.
 DIGESTS = {
-    100: "a4cdbc884f6a19a1900163a3c18971fdcc462dd8e0cb008f7e7a85e50de250c6",
-    1100: "ef442e01cb175cba88b74c667ca32c7e19156d285c08275dc121260634a73bdc",
+    100: "9c8e36ca4146abc57e84e4e77e647fa4fef69317fd2d411c61c6277be4706f07",
+    1100: "03bf9aa727fd083fd5aa4af13271753f7ba7e075cb4cbf9fbe7400c85f3ee611",
 }
 _cache = {}
 
@@ -69,7 +70,7 @@ def test_scaling_table_values():
         "families": 100,
         "inactive_families": 8,
         "no_email_families": 10,
-        "family_groups": 6,
+        "family_groups": 18,
         "family_workgroups": 4,
         "member_workgroups": 5,
         "ministries": 25,
@@ -81,7 +82,7 @@ def test_scaling_table_values():
         "families": 1100,
         "inactive_families": 88,
         "no_email_families": 110,
-        "family_groups": 6,
+        "family_groups": 18,
         "family_workgroups": 8,
         "member_workgroups": 10,
         "ministries": 40,
@@ -109,7 +110,7 @@ def test_collections_scale_with_the_family_count(families):
     assert len(value.pledges) == counts["pledges"]
     assert len(value.contributions) == counts["contributions"]
     # 8% inactive or non-parishioner, half each; 10% with no head email.
-    inactive = [f for f in regular_families if f["famGroupID"] == 2]
+    inactive = [f for f in regular_families if f["famGroupID"] == INACTIVE_GROUP]
     elsewhere = [
         f
         for f in regular_families
@@ -168,7 +169,7 @@ def test_member_types_follow_the_household_rules(families):
         assert member["memberStatus"] in {"Active", "Inactive", "Deceased"}
     # Members of inactive Families are inactive themselves.
     for family in value.families:
-        if family["famGroupID"] == 2:
+        if family["famGroupID"] == INACTIVE_GROUP:
             assert all(
                 m["memberStatus"] != "Active" for m in by_family[family["familyDUID"]]
             )

@@ -552,6 +552,9 @@ FROZEN = {
     "0173_report_email_test.sql": (
         "f112d010b3feb86f79adcc3e48d38781f7cf66970eaf3104719fd9c416bedd35"
     ),
+    "0174_parishsoft_organization_choice.sql": (
+        "133e6978d1421afd54db67cefe5a373f7648e16d95c4d33288dda84a57253acd"
+    ),
 }
 
 

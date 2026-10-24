@@ -8,7 +8,7 @@ from io import BytesIO
 from pathlib import Path
 from threading import Thread
 from types import MappingProxyType, SimpleNamespace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from django import forms
@@ -54,8 +54,13 @@ from parishkit.stewardship.accounts.setup_branding_views import SetupLogoForm
 from parishkit.stewardship.accounts.setup_confirmation_views import (
     SetupConfirmationForm,
 )
-from parishkit.stewardship.accounts.setup_credential_views import SetupCredentialForm
+from parishkit.stewardship.accounts.setup_credential_views import (
+    SetupCredentialForm,
+    _lookup_context,
+    lookup_failure,
+)
 from parishkit.stewardship.accounts.setup_forms import FORMS
+from parishkit.stewardship.accounts.setup_lookups import LookupStatus, Organization
 from parishkit.stewardship.accounts.setup_mail_views import SetupMailForm
 from parishkit.stewardship.accounts.setup_notification_views import (
     SetupNotificationForm,
@@ -243,6 +248,29 @@ HISTORY_EVENT = {
         "display": Percentage(1000, 4000),
     },
 }
+
+
+# The one lookup every organization lookup page answers (#1554), so a
+# test can check the form's posted lookup.
+LOOKUP_ID = UUID("00000000-0000-4000-8000-000000001554")
+
+
+def lookup_page(organizations, *, state="ready", error=None):
+    """The ParishSoft connection page's context for one lookup (#1554).
+
+    ``organizations`` are (ID, name, holds Families) triples, as the page
+    lists them (only while ``ready``); ``error`` is a ``failed`` lookup's
+    code, shown at the key field as the view shows it.
+    """
+    lookup = LookupStatus(
+        LOOKUP_ID,
+        state,
+        error,
+        tuple(Organization(*item) for item in organizations),
+        1,
+    )
+    form = lookup_failure(SetupCredentialForm("parishsoft"), lookup)
+    return {"form": form} | _lookup_context(None, lookup)
 
 
 def _history(events):
@@ -1557,26 +1585,63 @@ def component_responses():
                 "saved": False,
             },
         ),
-        # A current ParishSoft key may be kept; changing the organization
-        # needs the key again (#563).
+        # A current ParishSoft key may be kept (#563); its organization is
+        # named, not a field (#1554).
         (
             "/setup-credential-kept",
             "setup-credential",
             {
                 "draft": setup_draft,
-                "form": SetupCredentialForm(
-                    "parishsoft",
-                    saved=True,
-                    organization=4321,
-                    initial={"organization_id": 4321},
-                ),
+                "form": SetupCredentialForm("parishsoft", saved=True),
                 "target": "parishsoft",
                 "label": "ParishSoft",
                 "step_label": "ParishSoft connection",
                 "saved": True,
                 "current": True,
                 "organization": 4321,
+                "organization_label": "St. Example Parish (4321)",
             },
+        ),
+        # The key's organization lookup (#1554): several organizations to
+        # choose from, one greyed and one unknown, and a long list with its
+        # filter box; the wait, one organization to confirm, and a failure
+        # at the key field, which the wait's re-read swaps in.
+        *(
+            (
+                path,
+                "setup-credential",
+                {
+                    "draft": setup_draft,
+                    "target": "parishsoft",
+                    "label": "ParishSoft",
+                    "step_label": "ParishSoft connection",
+                    "saved": False,
+                    **lookup_page(organizations, **lookup),
+                },
+            )
+            for path, organizations, lookup in (
+                (
+                    "/setup-organization-choice",
+                    [
+                        (7, "St. Example Parish", True),
+                        (8, "Diocesan School", False),
+                        (9, "Mission Chapel", None),
+                    ],
+                    {},
+                ),
+                (
+                    "/setup-organization-filter",
+                    [(n, f"Parish {n:02d}", True) for n in range(1, 23)],
+                    {},
+                ),
+                ("/setup-organization-wait", [], {"state": "queued"}),
+                ("/setup-organization-one", [(7, "St. Example Parish", True)], {}),
+                (
+                    "/setup-organization-failed",
+                    [],
+                    {"state": "failed", "error": "parishsoft_key_refused"},
+                ),
+            )
         ),
         # Check waits for a DUID; a review over the allowance shows Send
         # unavailable with its reason (#563).

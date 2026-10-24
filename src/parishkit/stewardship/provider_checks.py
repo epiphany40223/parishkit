@@ -325,3 +325,138 @@ def request_validator(target, *, check, profile, base_url=None, redirect=None):
             raise CredentialValidationUnavailable() from None
 
     return validate
+
+
+# The longest the setup wizard's organization lookup may run (#1554),
+# ParishSoft's organization list and every Family check together.
+LOOKUP_SECONDS = 120
+# The largest answer the lookup helper may write: 10,000 organizations of
+# a 200-character name each, with room for the JSON around them.
+MAX_LOOKUP_OUTPUT = 4 * 1024 * 1024
+
+
+def _lookup_answer(output):
+    """The helper's answer once checked for its exact shape, else None."""
+    from parishkit.parishsoft_source import MAXIMUM_ORGANIZATIONS
+
+    try:
+        answer = json.loads(output.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError, RecursionError):
+        return None
+    if type(answer) is not dict or answer.get("outcome") not in {
+        "ok",
+        "refused",
+        "unavailable",
+        "unreadable",
+    }:
+        return None
+    if answer["outcome"] != "ok":
+        return answer if set(answer) == {"outcome"} else None
+    organizations = answer.get("organizations")
+    elapsed = answer.get("elapsed")
+    if (
+        set(answer) != {"outcome", "organizations", "unchecked", "elapsed"}
+        or type(organizations) is not list
+        or len(organizations) > MAXIMUM_ORGANIZATIONS
+        or type(answer["unchecked"]) is not int
+        or not 0 <= answer["unchecked"] <= len(organizations)
+        or (elapsed is not None and type(elapsed) not in (int, float))
+    ):
+        return None
+    for organization in organizations:
+        if (
+            type(organization) is not dict
+            or set(organization) != {"id", "name", "families"}
+            or type(organization["id"]) is not int
+            or not 1 <= organization["id"] < 2**31
+            or (
+                organization["name"] is not None
+                and (
+                    type(organization["name"]) is not str
+                    or not 1 <= len(organization["name"]) <= 200
+                )
+            )
+            or organization["families"] not in (True, False, None)
+        ):
+            return None
+    if len({organization["id"] for organization in organizations}) != len(
+        organizations
+    ):
+        return None
+    return answer
+
+
+def lookup_organizations(value, *, check, profile, base_url=None):
+    """Ask ParishSoft which organizations a staged key reaches (#1554).
+
+    Runs only the isolated helper, as ``check_candidate`` does, with the
+    request's profile and base URL and one overall limit of
+    ``LOOKUP_SECONDS``. Returns the helper's checked answer
+    (``provider_check_worker.lookup_organizations``); a helper that
+    answers nothing usable, or that the limit stops, is ``unavailable``.
+    ``check`` is the caller's ownership check, run while it waits.
+    """
+    if (
+        type(value) is not bytes
+        or not 0 < len(value) <= MAX_FILE_BYTES
+        or not callable(check)
+        or not isinstance(profile, DeploymentProfile)
+    ):
+        raise ValueError("Invalid organization lookup invocation.")
+    payload = json.dumps(
+        {
+            "operation": "organizations",
+            "candidate": base64.b64encode(value).decode("ascii"),
+            "profile": profile.value,
+            "base_url": source_base_url(profile, base_url),
+            "seconds": LOOKUP_SECONDS,
+        }
+    ).encode()
+    process = None
+    _check_owner(check)
+    # A little past the helper's own limit, so its answer with what it
+    # checked arrives before this deadline stops it.
+    deadline = time.monotonic() + LOOKUP_SECONDS + 5
+    on_timeout = helper_timeout_recorder(
+        "provider_check_worker", what="provider_check", seconds=LOOKUP_SECONDS + 5
+    )
+    try:
+        try:
+            process = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-I",
+                    "-m",
+                    "parishkit.stewardship.provider_check_worker",
+                ],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                close_fds=True,
+                env={},
+            )
+            output = _exchange(
+                process,
+                payload,
+                deadline=deadline,
+                check=check,
+                on_timeout=on_timeout,
+            )
+        except (OSError, CredentialValidationUnavailable):
+            return {"outcome": "unavailable"}
+        answer = (
+            _lookup_answer(output)
+            if process.returncode == 0 and len(output) <= MAX_LOOKUP_OUTPUT
+            else None
+        )
+        return answer or {"outcome": "unavailable"}
+    except ProviderCheckDrainFailure:
+        # As in check_candidate: never close a pipe a live exchange owns.
+        process = None
+        raise
+    finally:
+        if process is not None:
+            _stop(process)
+            for stream in (process.stdin, process.stdout):
+                if stream is not None:
+                    stream.close()

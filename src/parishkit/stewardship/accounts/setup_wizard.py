@@ -335,8 +335,9 @@ def staged_scope(sections):
     A staged credential is current only while its settings equal these: the
     Google Workspace key is sealed with the mail and Testing settings, the
     Slack token with the saved channel. ParishSoft (None) carries its own
-    organization, which its page compares. A target whose settings are not
-    saved yet maps to False, which no staged settings equal.
+    organization, chosen on its page from the organizations the key reaches
+    (#1554): it is current once one is chosen. A target whose settings are
+    not saved yet maps to False, which no staged settings equal.
     """
     from .provider_context import workspace_scope
 
@@ -366,7 +367,11 @@ def _receipts(draft):
     for target, *binding, settings in SetupSealedCredential.objects.filter(
         attempt_id=draft.status.attempt_id, scrubbed_at=None
     ).values_list("target", "id", "version", "fingerprint", "settings"):
-        credentials[target] = expected[target] is None or settings == expected[target]
+        credentials[target] = (
+            "organization_id" in settings
+            if expected[target] is None
+            else settings == expected[target]
+        )
         if credentials[target]:
             bindings[target] = tuple(binding)
     return credentials, bindings
