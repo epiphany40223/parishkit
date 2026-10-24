@@ -50,7 +50,7 @@ def test_a_failed_load_links_back_to_the_connection(
     page.goto(component_origin + PROGRESS_FAILED)
     panel = page.locator("[data-progress-failed]")
     visible(panel)
-    assert "wrong ParishSoft API key or organization ID" in panel.inner_text()
+    assert "A wrong ParishSoft API key is the most common cause." in panel.inner_text()
     connection = panel.get_by_role("link", name="Go to “ParishSoft connection”")
     load = panel.get_by_role("link", name="Go to “Load parish data”")
     assert connection.get_attribute("href") == "/admin/setup/credentials/parishsoft"

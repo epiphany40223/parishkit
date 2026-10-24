@@ -189,12 +189,13 @@ def read_integration_list(caller, service):
     return _read(caller, service, read)
 
 
-def show_model(configuration, target, *, key, refresh, backup):
+def show_model(configuration, target, *, key, refresh, backup, organization_name=None):
     """``integration show``'s document from the page's own parts.
 
     ``key`` is ``key_summary``'s line, ``refresh`` the ParishSoft page's
     ``full_refresh_status`` and ``backup`` ``backup_state``'s documents, each
-    None where the page reads none.
+    None where the page reads none. ``organization_name`` is the ParishSoft
+    organization's recorded name (#1554), printed beside its ID.
     """
     from .accounts.integration_forms import LABELS
     from .accounts.integration_views import REMOVABLE, _optional
@@ -203,6 +204,10 @@ def show_model(configuration, target, *, key, refresh, backup):
 
     record = _optional(configuration, target)
     settings = {} if record is None else dict(record["values"]["settings"])
+    if target == "parishsoft" and "organization_id" in settings:
+        # Read-only, beside the ID (#1554): the name the current snapshot's
+        # load recorded, or None until a full load records one.
+        settings["organization_name"] = organization_name
     offsite, probe = backup or (None, None)
     return IntegrationShow(
         version=configuration.active_configuration.digest,
@@ -233,9 +238,19 @@ def read_integration_show(caller, service, target):
 
     def read(configuration, actor):
         """The page's record, key line, refresh facts and backup status."""
+        from .accounts.integration_views import _optional
+        from .source.organization_names import current_organization_name
+
+        record = _optional(configuration, target) if target == "parishsoft" else None
+        organization = (record or {}).get("values", {}).get("settings", {})
         return show_model(
             configuration,
             target,
+            organization_name=(
+                current_organization_name(organization["organization_id"])
+                if "organization_id" in organization
+                else None
+            ),
             key=(
                 key_summary(configuration, target)
                 if target in ROTATING_TARGETS

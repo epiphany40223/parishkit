@@ -15,6 +15,8 @@ from uuid import uuid4
 import pytest
 import requests
 
+from parishkit.parishsoft import ParishSoftClient, ParishSoftConfig
+from parishkit.parishsoft_source import organization_name
 from parishkit.stewardship.local import LOCAL_ORGANIZATION_ID
 from parishkit.stewardship.local.fake_parishsoft import (
     FakeParishSoft,
@@ -22,8 +24,10 @@ from parishkit.stewardship.local.fake_parishsoft import (
     start_server,
 )
 from parishkit.stewardship.observability import SafeJsonFormatter
+from parishkit.stewardship.provider_check_worker import _holds_families
 from parishkit.stewardship.source.canonical import SourceReferenceSkew
 from parishkit.stewardship.source.loading import (
+    ORGANIZATION_KEY,
     ORGANIZATIONS_KEY,
     load_full_source,
     log_organizations,
@@ -124,6 +128,48 @@ def test_a_full_load_stores_only_the_configured_organization(servers, tmp_path, 
     assert not any(
         row.get("organizationID") in others for row in several.corpus["member"].values()
     )
+
+
+def test_a_full_load_records_the_organizations_name(servers, tmp_path):
+    """The configured organization's cleaned name, whatever else it reaches."""
+    single, multi = servers
+    fake = multi.fake
+    name = organization_name(fake.parish.organization["organizationReportName"])
+    assert name
+    for server in (single, multi):
+        loaded = load_full_source(
+            client(server, tmp_path), window=window(fake), as_of=ANCHOR
+        )
+        assert loaded.evidence[ORGANIZATION_KEY] == {"name": name}
+
+
+def test_other_organizations_answer_the_lookups_family_search(servers, tmp_path):
+    """Odd-numbered other organizations hold a Family, even-numbered none."""
+    single, multi = servers
+    plain = ParishSoftClient(
+        ParishSoftConfig(
+            KEY["x-api-key"],
+            tmp_path,
+            cache_enabled=False,
+            api_base_url=base_url(multi),
+            timeout=5,
+        )
+    )
+    assert _holds_families(plain, LOCAL_ORGANIZATION_ID) is True
+    assert _holds_families(plain, LOCAL_ORGANIZATION_ID + 1) is True
+    assert _holds_families(plain, LOCAL_ORGANIZATION_ID + 2) is False
+    # A one-organization key still answers 404 for any other organization.
+    response = requests.post(
+        base_url(single) + "/families/search",
+        json={
+            "organizationIDs": [LOCAL_ORGANIZATION_ID + 1],
+            "pageSize": 1,
+            "pageNumber": 1,
+        },
+        headers=KEY,
+        timeout=5,
+    )
+    assert response.status_code == 404
 
 
 def test_the_reminder_workgroup_list_keeps_only_the_parishs(servers, tmp_path):

@@ -11,6 +11,7 @@ import logging
 import smtplib
 import ssl
 import sys
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -19,10 +20,13 @@ from google.auth.exceptions import RefreshError
 
 from parishkit.config import ConfigError
 from parishkit.email.google_workspace import xoauth2_string
-from parishkit.parishsoft import ParishSoftAPIError, ParishSoftConfig
+from parishkit.parishsoft import ParishSoftAPIError, ParishSoftClient, ParishSoftConfig
+from parishkit.parishsoft_pagination import IncompleteSourceCollection
 from parishkit.parishsoft_source import (
     CoherentParishSoftClient,
     SourceOrganizationMismatch,
+    organization_name,
+    organization_records,
 )
 from parishkit.parishsoft_transport import ExactSourceResponse
 from parishkit.retry import RetryError, RetryPolicy
@@ -94,16 +98,25 @@ class CheckSession(requests.Session):
     Workspace check needs before it may reach Google from LOCAL.
     """
 
-    def __init__(self, profile=None, base_url=None, redirect=None):
-        """Bind the session to the request's profile, base URL and allowlist."""
+    def __init__(self, profile=None, base_url=None, redirect=None, *, families=False):
+        """Bind the session to the request's profile, base URL and allowlist.
+
+        ``families`` also admits the one-row Family search the setup
+        wizard's organization lookup makes (#1554); no other check may send
+        it.
+        """
         super().__init__()
         if profile is not None and not isinstance(profile, DeploymentProfile):
             raise ValueError("A provider check requires a deployment profile.")
+        if families and profile is None:
+            raise ValueError("A Family search requires a deployment profile.")
         self.trust_env = False
         self.profile = profile
         self.redirect = redirect
         self.base_url = None if profile is None else source_base_url(profile, base_url)
         self.endpoints = endpoints(profile, self.base_url)
+        if families:
+            self.endpoints |= {("POST", self.base_url + "/families/search")}
 
     def request(self, method, url, **kwargs):
         """Forbid redirects/proxies; the subprocess parent supplies a hard timeout."""
@@ -114,7 +127,8 @@ class CheckSession(requests.Session):
             "timeout",
         }:
             raise ValueError("Unsupported provider check operation.")
-        kwargs["timeout"] = 10
+        # At most 10 seconds; a lookup near its overall limit asks for less.
+        kwargs["timeout"] = min(10, kwargs.get("timeout") or 10)
         with super().request(
             method, url, stream=True, allow_redirects=False, **kwargs
         ) as upstream:
@@ -360,10 +374,177 @@ def classify(target, value, settings, *, profile, base_url=None, redirect=None):
         return "unavailable"
 
 
+# The setup wizard's organization lookup (#1554): one request names the
+# operation instead of a target and settings, and the answer is one JSON
+# line (``lookup_request``), never a key, provider body or exception.
+LOOKUP_FIELDS = frozenset({"operation", "candidate", "profile", "base_url", "seconds"})
+# The longest a lookup may run, which the parent's own limit matches.
+MAX_LOOKUP_SECONDS = 120
+# The lookup stops this long before its limit, so it can still answer with
+# the organizations checked so far before the parent stops the helper.
+LOOKUP_MARGIN_SECONDS = 5
+
+
+def _lookup_client(credential, session, timeout):
+    """An uncached, single-attempt ParishSoft client on the restricted session."""
+    return ParishSoftClient(
+        ParishSoftConfig(
+            credential.api_key,
+            Path("."),
+            cache_enabled=False,
+            api_base_url=session.base_url,
+            timeout=timeout,
+        ),
+        session=session,
+        retry_policy=RetryPolicy(attempts=1),
+    )
+
+
+def _holds_families(client, organization):
+    """Whether one organization holds Families: True, False, or raise.
+
+    One ``families/search`` for at most one Family of that organization
+    (#1554). An empty array is no Families; one row numbered 1 with a
+    positive integer total is some. Its content is never read further.
+    Anything else raises, which the caller records as unknown.
+    """
+    rows = client.post_uncached(
+        "families/search",
+        {"organizationIDs": [organization], "pageSize": 1, "pageNumber": 1},
+    )
+    if rows == []:
+        return False
+    if (
+        type(rows) is list
+        and len(rows) == 1
+        and type(rows[0]) is dict
+        and rows[0].get("rowNumber") == 1
+        and type(rows[0].get("totalResults")) is int
+        and rows[0]["totalResults"] >= 1
+    ):
+        return True
+    raise ValueError("Unrecognized Family search answer.")
+
+
+def lookup_organizations(value, *, profile, base_url, seconds):
+    """List the organizations a ParishSoft key reaches, and which hold Families.
+
+    The answer is a dict with ``outcome``: ``refused`` (ParishSoft refused
+    the key, HTTP 401 or 403, on any request), ``unavailable`` (ParishSoft
+    could not be reached or the organization list timed out),
+    ``unreadable`` (the list is malformed or over its bound), or ``ok``
+    with ``organizations`` (each ``{"id", "name", "families"}``, in
+    ParishSoft's order, ``families`` None when unknown, possibly empty),
+    ``unchecked`` (how many were not checked when the time limit came) and
+    ``elapsed`` (seconds, when the limit stopped the checks). The Family
+    checks run one at a time; an error other than a refused key leaves
+    that organization unknown.
+    """
+    started = time.monotonic()
+    deadline = started + max(1, seconds - LOOKUP_MARGIN_SECONDS)
+    try:
+        credential = SourceCredential(value)
+        with CheckSession(profile, base_url, families=True) as session:
+            client = _lookup_client(credential, session, 10)
+            try:
+                rows = client.post_uncached("organizations/search", {})
+                records = organization_records(rows, allow_empty=True)
+            except IncompleteSourceCollection:
+                return {"outcome": "unreadable"}
+            organizations = [
+                {
+                    "id": identity,
+                    "name": organization_name(row.get("organizationReportName")),
+                    "families": None,
+                }
+                for identity, row in records
+            ]
+            unchecked, elapsed = 0, None
+            for index, organization in enumerate(organizations):
+                remaining = deadline - time.monotonic()
+                if remaining < 1:
+                    unchecked = len(organizations) - index
+                    elapsed = time.monotonic() - started
+                    break
+                try:
+                    organization["families"] = _holds_families(
+                        _lookup_client(credential, session, min(10, remaining)),
+                        organization["id"],
+                    )
+                except ParishSoftAPIError as error:
+                    if error.status_code in {401, 403}:
+                        return {"outcome": "refused"}
+                except Exception:
+                    # Unknown: the first load's empty-data check still
+                    # refuses an organization with no Families.
+                    pass
+            return {
+                "outcome": "ok",
+                "organizations": organizations,
+                "unchecked": unchecked,
+                "elapsed": elapsed,
+            }
+    except ParishSoftAPIError as error:
+        if error.status_code in {401, 403}:
+            return {"outcome": "refused"}
+        # A success status whose body is not JSON is an unreadable answer.
+        if 200 <= error.status_code < 300:
+            return {"outcome": "unreadable"}
+        return {"outcome": "unavailable"}
+    except (ConfigError, CryptographicError):
+        # The staged key's own format was checked when it was sealed.
+        return {"outcome": "refused"}
+    except ValueError:
+        # An over-bound or redirected answer: not readable as a list.
+        return {"outcome": "unreadable"}
+    except Exception:
+        # Unreachable, timed out or any other transport failure.
+        return {"outcome": "unavailable"}
+
+
+def lookup_request(request):
+    """Answer one decoded lookup request as a JSON line's dict."""
+    try:
+        if set(request) != LOOKUP_FIELDS or request["operation"] != "organizations":
+            raise ValueError("Invalid lookup request.")
+        value = base64.b64decode(request["candidate"], validate=True)
+        seconds = request["seconds"]
+        if (
+            not 0 < len(value) <= MAX_FILE_BYTES
+            or type(seconds) is not int
+            or not 1 <= seconds <= MAX_LOOKUP_SECONDS
+            or type(request["profile"]) is not str
+            or type(request["base_url"]) is not str
+        ):
+            raise ValueError("Invalid lookup request.")
+        profile = DeploymentProfile(request["profile"])
+        base_url = source_base_url(profile, request["base_url"])
+    except (ValueError, TypeError, ConfigError):
+        return {"outcome": "unavailable"}
+    return lookup_organizations(
+        value, profile=profile, base_url=base_url, seconds=seconds
+    )
+
+
 def main():
-    """Keep every third-party diagnostic off stdout/stderr in the isolated helper."""
+    """Keep every third-party diagnostic off stdout/stderr in the isolated helper.
+
+    A request naming an ``operation`` is the organization lookup (#1554),
+    which answers with one JSON line; every other request is a provider
+    check, which answers with one closed word.
+    """
+    from .accounts.integration_candidates import _object
+
     logging.disable(logging.CRITICAL)
-    result = check_request(sys.stdin.buffer.read(MAX_INPUT + 1))
+    raw = sys.stdin.buffer.read(MAX_INPUT + 1)
+    try:
+        request = json.loads(raw.decode("utf-8"), object_pairs_hook=_object)
+    except (ValueError, TypeError, RecursionError):
+        request = None
+    if type(request) is dict and "operation" in request and len(raw) <= MAX_INPUT:
+        sys.stdout.write(json.dumps(lookup_request(request)) + "\n")
+        return 0
+    result = check_request(raw)
     sys.stdout.write(result + "\n")
     return 0
 

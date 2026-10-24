@@ -743,7 +743,8 @@ the load, its checks and the
 [Integrations page](#parish-and-integration-configuration) read the same
 setting as today. The chosen organization's name is kept with the lookup
 for the wizard's own pages until the load records it in its snapshot
-([ParishSoft organization name](../data/spec.md#parishsoft-organization-name)).
+([ParishSoft organization name](../data/spec.md#parishsoft-organization-name));
+a later choice clears the name an earlier one kept.
 The other organizations' IDs and names are the one place the system ever
 shows another organization (Administrator decision of 2026-10-24): they
 are shown only on this page, to the setup attempt's own Administrator, and
@@ -756,7 +757,9 @@ of them hold no Families or are unknown, counts only, never the key.
 
 **Revisiting the step.** The saved-key notice names the choice: "A
 ParishSoft API key is saved for St. Example Parish (1234)." Leaving the key
-field empty keeps the key and the choice. Pasting a key starts a new lookup,
+field empty keeps the key and the choice, and discards any lookup still open
+for the saved key pasted again (one that failed, say), so it never holds
+Load parish data back. Pasting a key starts a new lookup,
 and the rules above for discarding a finished load apply (a different key,
 or the same key with a different organization chosen, discards it; the
 same key and organization keep it). The load's own organization check
@@ -784,7 +787,9 @@ with exactly an `organization_id` setting, so it must also admit a key
 staged with no organization while its lookup is pending; a new setup row
 holds the lookup (its state, its error code, the bounded list with each
 organization's Families result until it is scrubbed, and the chosen ID and
-name); and the setup load must refuse to
+name), which the web changes only for the attempt's Administrator while
+their setup sign-in is live, as the credential guard requires to stage a
+key; and the setup load must refuse to
 start for a key with no chosen organization. The organization name
 recorded by loads needs no schema change.
 

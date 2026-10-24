@@ -10,7 +10,12 @@ from parishkit.parishsoft_pagination import (
     IncompleteSourceCollection,
     SourceLoadBudgetExceeded,
 )
-from parishkit.parishsoft_source import CoherentParishSoftClient
+from parishkit.parishsoft_source import (
+    MAXIMUM_ORGANIZATION_NAME,
+    CoherentParishSoftClient,
+    organization_name,
+    organization_records,
+)
 from parishkit.parishsoft_transport import ExactSourceResponse
 
 
@@ -371,3 +376,31 @@ def test_source_load_can_retain_empty_families_without_changing_tool_defaults(
     assert set(corpus.families) == ({1, 2} if retain_empty else {1})
     if retain_empty:
         assert corpus.families[2]["py members"] == []
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("St. Example Parish", "St. Example Parish"),
+        ("  St.\tExample\n\n Parish  ", "St. Example Parish"),
+        ("St.\x00 Exa\x7fmple", "St. Example"),
+        ("   ", None),
+        ("\x01\x02", None),
+        (None, None),
+        (1234, None),
+        ("x" * 300, "x" * MAXIMUM_ORGANIZATION_NAME),
+    ],
+)
+def test_organization_name_is_cleaned_display_text(value, expected):
+    """Trimmed, single-spaced, without controls, at most 200 characters (#1554)."""
+    assert organization_name(value) == expected
+
+
+def test_organization_records_are_bounded_and_may_be_empty_for_the_lookup():
+    """The load needs at least one; the setup lookup reports none itself."""
+    rows = [{"organizationID": 2}, {"organizationID": 1}]
+    assert organization_records(rows) == [(2, rows[0]), (1, rows[1])]
+    assert organization_records([], allow_empty=True) == []
+    for bad in ([], {}, [{"organizationID": 1}, {"organizationID": 1}], [[]]):
+        with pytest.raises(IncompleteSourceCollection):
+            organization_records(bad)

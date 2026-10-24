@@ -32,7 +32,11 @@ def extend_installer_permissions(target, tables, metadata):
     """Only ParishSoft's isolated target gains the source relay and safe proof."""
     if target != "parishsoft":
         return
+    from .setup_lookup_grants import extend_lookup_permissions
+
     tables["stewardship_setup_source_exchange"] = {"SELECT", "UPDATE"}
+    # The setup wizard's organization lookup (#1554).
+    extend_lookup_permissions(tables)
     tables["stewardship_setup_sealed_credential"] = {"SELECT"}
     for table, names in (
         ("stewardship_setup_attempt", ATTEMPT_COLUMNS),

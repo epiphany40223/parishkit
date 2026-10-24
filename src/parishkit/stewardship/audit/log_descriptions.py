@@ -907,6 +907,9 @@ DESCRIPTIONS = {
     "setup_source_voided": _(
         "A finished ParishSoft load during setup was discarded, to load again."
     ),
+    "setup_parishsoft_organization_chosen": _(
+        "The ParishSoft organization to load was chosen during setup."
+    ),
     "setup_frozen": _("Initial setup was completed and locked."),
     # Reports and pages (audit).
     "daily_digest_viewed": _("Someone opened a daily summary."),

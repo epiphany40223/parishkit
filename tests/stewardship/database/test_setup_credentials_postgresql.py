@@ -31,6 +31,7 @@ from parishkit.stewardship.storage import StaleRecordError
 
 from ..test_integration_candidates import account
 from ..test_setup_forms import VALUES
+from .setup_lookup_builders import answered_and_chosen
 from .test_background_grants_postgresql import task_login
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_handoff_discovery_postgresql import key
@@ -76,10 +77,13 @@ def publish(target, *, material=b"s" * 32):
     return private
 
 
-def staged(service, target="parishsoft", *, age_minutes=0):
+def staged(service, target="parishsoft", *, age_minutes=0, choose=True):
     """Use real owner services and exact grants for the entire collecting path.
 
-    ``age_minutes`` models a Google sign-in that long ago.
+    ``age_minutes`` models a Google sign-in that long ago. A ParishSoft key's
+    organization lookup is then answered and organization 1 chosen (#1554),
+    unless ``choose`` is false; the attempt and receipt returned are the
+    latest.
     """
     private = publish(target)
     with web_login():
@@ -114,8 +118,11 @@ def staged(service, target="parishsoft", *, age_minutes=0):
             target=target,
             candidate=account() if target == "google_workspace" else CANDIDATE,
             expected_version=attempt.version,
-            organization_id=1 if target == "parishsoft" else None,
         )
+    if target == "parishsoft" and choose:
+        attempt = answered_and_chosen(request, service, attempt.attempt_id, private)
+        with web_login():
+            (receipt,) = credential_status(request, service, attempt.attempt_id)
     return request, attempt, receipt, private
 
 
@@ -153,7 +160,6 @@ def test_replace_collecting_candidate_uses_exact_attempt_version(setup_service):
                 attempt.attempt_id,
                 target="parishsoft",
                 candidate=b"stale",
-                organization_id=1,
                 expected_version=attempt.version - 1,
             )
         changed, result = stage_credential(
@@ -162,7 +168,6 @@ def test_replace_collecting_candidate_uses_exact_attempt_version(setup_service):
             attempt.attempt_id,
             target="parishsoft",
             candidate=b"corrected",
-            organization_id=2,
             expected_version=attempt.version,
         )
     row = SetupSealedCredential.objects.get()
@@ -170,7 +175,10 @@ def test_replace_collecting_candidate_uses_exact_attempt_version(setup_service):
     assert result.version == receipt.version + 1
     assert changed.version == attempt.version + 1
     assert private.open(row.pk, row.ciphertext) == b"corrected"
-    assert row.settings == {"organization_id": 2}
+    # A new key has no organization until its lookup is answered (#1554).
+    assert row.settings == {}
+    answered_and_chosen(request, setup_service, attempt.attempt_id, private, 2)
+    assert SetupSealedCredential.objects.get().settings == {"organization_id": 2}
 
 
 @pytest.mark.parametrize(
@@ -304,7 +312,6 @@ def test_new_login_cannot_adopt_or_retrieve_a_staged_credential(setup_service):
                 target="parishsoft",
                 candidate=b"another-login",
                 expected_version=attempt.version,
-                organization_id=1,
             )
 
 
@@ -393,7 +400,6 @@ def test_loading_freezes_input_in_python_and_sql(setup_service):
                 target="parishsoft",
                 candidate=b"too-late",
                 expected_version=version,
-                organization_id=1,
             )
         with pytest.raises(DatabaseError), work_transaction():
             SetupSealedCredential.objects.update(
@@ -402,19 +408,10 @@ def test_loading_freezes_input_in_python_and_sql(setup_service):
     assert SetupSealedCredential.objects.get().version == receipt.version
 
 
-@pytest.mark.parametrize(
-    "target, organization",
-    [
-        ("not-a-target", None),
-        ("google_workspace", 1),
-        ("google_workspace", None),
-        ("slack", None),
-    ],
-)
+@pytest.mark.parametrize("target", ["not-a-target", "google_workspace", "slack"])
 def test_missing_or_unowned_public_scope_never_accepts_candidate(
     setup_service,
     target,
-    organization,
 ):
     """Declared stored draft settings are prerequisites, not arbitrary POST input."""
     with web_login():
@@ -428,6 +425,5 @@ def test_missing_or_unowned_public_scope_never_accepts_candidate(
                 target=target,
                 candidate=CANDIDATE,
                 expected_version=attempt.version,
-                organization_id=organization,
             )
         assert not SetupSealedCredential.objects.exists()

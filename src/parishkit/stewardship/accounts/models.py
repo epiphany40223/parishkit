@@ -66,6 +66,7 @@ from .setup_install_models import (
     SetupCredentialInstallation,  # noqa: F401
     SetupPreparationReceipt,  # noqa: F401
 )
+from .setup_lookup_models import SetupParishSoftLookup  # noqa: F401
 from .setup_mail_exchange_models import SetupMailExchange  # noqa: F401
 from .setup_models import (  # noqa: F401
     SetupAttempt,

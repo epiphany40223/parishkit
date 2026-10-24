@@ -2,12 +2,12 @@
 
 A setup credential step keeps Save and continue unavailable while an earlier
 step is not done, named by the reason; otherwise it waits for a key the
-server needs, including a kept ParishSoft key once the organization ID
-changes. Send to chosen Families waits for a DUID before Check, and shows
-Send unavailable with its reason. Each hint sits after its button, so it
-never moves the control just used, and every state is worked out again on
-pageshow, when a page restored from history gets back its values without
-events.
+server needs. ParishSoft connection's organization choice waits for a
+selectable organization (#1554). Send to chosen Families waits for a DUID
+before Check, and shows Send unavailable with its reason. Each hint sits
+after its button, so it never moves the control just used, and every state
+is worked out again on pageshow, when a page restored from history gets
+back its values without events.
 """
 
 import pytest
@@ -19,9 +19,6 @@ pytestmark = pytest.mark.parametrize(
 )
 
 RESTORE = "window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))"
-ORGANIZATION_HINT = (
-    "To change the organization ID, enter the ParishSoft API key again as well."
-)
 
 
 def spot(locator):
@@ -43,45 +40,63 @@ def waits_with(button, hint, text):
     assert hint.get_attribute("id") in button.get_attribute("aria-describedby").split()
 
 
-def test_a_kept_parishsoft_key_is_needed_again_once_the_organization_changes(
-    page, component_origin
-):
-    """Save stays available to keep the key, waits once the organization
-    differs, and is available again with a new key or the old organization."""
+def test_a_kept_parishsoft_key_saves_without_a_new_key(page, component_origin):
+    """Save stays available to keep the key; the page names its organization
+    and has no organization field (#1554)."""
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.goto(component_origin + "/setup-credential-kept")
     save = page.get_by_role("button", name="Save and continue")
     hint = page.locator("#setup-complete-hint")
-    organization = page.get_by_label("Expected ParishSoft organization ID")
-    key = page.get_by_label("ParishSoft API key")
     assert save.is_enabled()
     hidden(hint)
-    where = (spot(organization), spot(save))
-    organization.fill("98765")
-    waits_with(save, hint, ORGANIZATION_HINT)
-    assert (spot(organization), spot(save)) == where
-    key.fill("synthetic-key")
+    assert page.locator("#id_organization_id").count() == 0
+    assert "A ParishSoft API key is saved for St. Example Parish (4321)." in (
+        page.locator(".setup-saved").text_content()
+    )
+    page.get_by_label("ParishSoft API key").fill("synthetic-key")
     assert save.is_enabled()
-    hidden(hint)
-    key.fill("")
-    organization.fill("4321")
-    assert save.is_enabled()
-    # The server reads the ID as a whole number, so leading zeros still
-    # name the saved organization and the key can be kept.
-    organization.fill("04321")
-    assert save.is_enabled()
-    hidden(hint)
-    # An emptied ID asks for the ID, not for the key again.
-    organization.fill("")
-    waits_with(save, hint, "Enter the ParishSoft organization ID, a whole number.")
-    organization.fill("4321")
-    assert save.is_enabled()
-    # A restored organization, with no events, is checked again on pageshow.
-    organization.evaluate("node => { node.value = '555'; }")
     page.evaluate(RESTORE)
-    waits_with(save, hint, ORGANIZATION_HINT)
+    assert save.is_enabled()
     assert failures == []
+
+
+def test_use_this_organization_waits_for_a_selectable_choice(page, component_origin):
+    """The greyed organization cannot be chosen; Use waits for a choice,
+    while Cancel and Check again need none (#1554)."""
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.goto(component_origin + "/setup-organization-choice")
+    use = page.get_by_role("button", name="Use this organization")
+    hint = page.locator("#setup-complete-hint")
+    visible(hint)
+    assert use.is_disabled()
+    assert page.get_by_role("button", name="Cancel").is_enabled()
+    assert page.get_by_role("button", name="Check again").is_enabled()
+    assert page.get_by_label("Diocesan School (8)").is_disabled()
+    where = spot(use)
+    page.get_by_label("Mission Chapel (9)").check()
+    assert use.is_enabled()
+    hidden(hint)
+    assert spot(use) == where
+    assert page.locator("#organization-filter").count() == 0
+    assert failures == []
+
+
+def test_a_long_list_filters_by_name_or_id_and_keeps_the_choice(page, component_origin):
+    """Above 20 organizations a filter box narrows the list (#1554)."""
+    page.goto(component_origin + "/setup-organization-filter")
+    choices = page.locator("#organization-choices li")
+    page.get_by_label("Parish 05 (5)").check()
+    page.get_by_label("Find an organization by name or ID").fill("parish 1")
+    shown = [item.text_content().strip() for item in choices.all() if item.is_visible()]
+    assert shown == [f"Parish {n} ({n})" for n in range(10, 20)]
+    page.get_by_label("Find an organization by name or ID").fill("(22)")
+    assert [item.is_visible() for item in choices.all()].count(True) == 1
+    page.get_by_label("Find an organization by name or ID").fill("")
+    assert all(item.is_visible() for item in choices.all())
+    assert page.get_by_label("Parish 05 (5)").is_checked()
+    assert page.get_by_role("button", name="Use this organization").is_enabled()
 
 
 def test_a_blocked_credential_step_shows_save_unavailable_with_its_reason(

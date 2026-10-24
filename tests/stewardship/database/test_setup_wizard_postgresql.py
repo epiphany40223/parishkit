@@ -4,10 +4,12 @@
 
 import pytest
 
+from parishkit.stewardship.accounts.setup_lookups import current_lookup
 from parishkit.stewardship.accounts.setup_models import SetupAttempt
 from parishkit.stewardship.accounts.setup_secret_models import SetupSealedCredential
 
 from ..test_setup_forms import VALUES
+from .setup_lookup_builders import answer_lookup
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_runtime_auth_grants_postgresql import web_login
 from .test_setup_credentials_postgresql import CANDIDATE, publish
@@ -153,12 +155,28 @@ def test_source_step_offers_the_load_only_after_its_prerequisites(setup_http, go
             "/admin/setup/credentials/parishsoft",
             {
                 "candidate": CANDIDATE.decode(),
-                "organization_id": "1",
+                "version": str(SetupAttempt.objects.get().version),
+            },
+        )
+        # The key's organization is chosen first, on the same page (#1554).
+        assert staged["Location"] == "/admin/setup/credentials/parishsoft"
+        waiting = browser.get("/admin/setup/source")
+        assert b'value="load"' not in waiting.content
+    answer_lookup()
+    with web_login():
+        lookup = current_lookup(SetupAttempt.objects.get().pk)
+        chosen = post(
+            browser,
+            "/admin/setup/credentials/parishsoft",
+            {
+                "action": "choose",
+                "lookup": str(lookup.identifier),
+                "organization": "1",
                 "version": str(SetupAttempt.objects.get().version),
             },
         )
         # The load is the page right after ParishSoft connection (#1353).
-        assert staged["Location"] == "/admin/setup/source"
+        assert chosen["Location"] == "/admin/setup/source"
         ready = browser.get("/admin/setup/source")
         assert b'value="load"' in ready.content
 
@@ -185,7 +203,6 @@ def test_credential_prerequisites_and_format_are_inline_form_errors(setup_http, 
             "/admin/setup/credentials/parishsoft",
             {
                 "candidate": "not a key",
-                "organization_id": "1",
                 "version": str(SetupAttempt.objects.get().version),
             },
         )

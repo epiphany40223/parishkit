@@ -1672,7 +1672,7 @@ Workspace mail or Outgoing email addresses not set up is exit 1
 | `target`, `name` | The integration and the page's name for it |
 | `configured` | Whether it is set up; Slack and Off-site backups are optional |
 | `removable` | Whether the page offers Remove (Slack and Off-site backups, once set up) |
-| `settings` | The saved settings the page shows, such as the ParishSoft organization ID and refresh schedule, the mailbox and addresses, the Slack channel or the Drive folder link; empty when not set up |
+| `settings` | The saved settings the page shows, such as the ParishSoft organization ID and refresh schedule, the mailbox and addresses, the Slack channel or the Drive folder link; empty when not set up. ParishSoft's also carry `organization_name` beside `organization_id`, read-only: the name the latest full load recorded, or null until one records it ([#1554](https://github.com/epiphany40223/parishkit/issues/1554)) |
 | `refresh_schedule` | For ParishSoft, the refresh schedule as its editor shows it, in the shape `integration preview --refresh-schedule` takes (see [Changing the refresh schedule](#changing-the-refresh-schedule)); an older schedule is shown converted to rules; null otherwise |
 | `key` | For ParishSoft, Google Workspace mail and Slack, the latest key change line: `state` (`pending`, `updated`, `unselected` when Finish switching is needed, or `failed`), `at`, `message` and `request_id`; null when the page shows none |
 | `source` | For ParishSoft, the same refresh facts as `refresh status`'s `source`; null otherwise |

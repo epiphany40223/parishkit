@@ -35,8 +35,14 @@ from .test_setup_final_steps import actions, page, wizard
 BLOCKED = ("Save the outgoing email settings first.", "/admin/setup/mail")
 
 
-def credential_page(target="google_workspace", *, prerequisite=None, **form):
-    """Render one setup credential step, with its form built as the view does."""
+def credential_page(
+    target="google_workspace", *, prerequisite=None, organization=None, **form
+):
+    """Render one setup credential step, with its form built as the view does.
+
+    ``organization`` is a saved ParishSoft key's chosen organization, which
+    the page names; the form has no field for it (#1554).
+    """
     saved = form.get("saved", False)
     # Not page(), whose "current" is the step key: here "current" says the
     # saved key is still current, which a stale or blocked step's is not.
@@ -51,7 +57,7 @@ def credential_page(target="google_workspace", *, prerequisite=None, **form):
             "label": "Google Workspace",
             "step_label": BY_KEY[target].label,
             "saved": saved,
-            "organization": form.get("organization"),
+            "organization": organization,
             "prerequisite": prerequisite,
         },
     )
@@ -108,16 +114,17 @@ def test_a_stale_saved_credential_must_be_entered_again():
 
 
 def test_a_current_saved_credential_may_be_kept():
-    """A current key is optional; only an organization change needs the key."""
+    """A current key is optional; a saved ParishSoft key's organization is
+    chosen from its lookup, never typed, so nothing makes the key required
+    again (#1554)."""
     form = SetupCredentialForm("slack", {}, saved=True)
     assert not form.fields["candidate"].required
     assert "data-required-when" not in form.fields["candidate"].widget.attrs
     html = credential_page("parishsoft", saved=True, organization=4321)
     key = field(html, "candidate")
     assert " required" not in key
-    assert 'data-required-when="organization_id!=4321"' in key
-    assert "enter the ParishSoft API key again" in key
-    assert "data-missing-hint=" in field(html, "organization_id")
+    assert "data-required-when" not in key
+    assert 'name="organization_id"' not in html
 
 
 def test_finish_setup_names_the_readiness_problem_on_its_unavailable_button():

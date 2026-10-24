@@ -29,6 +29,49 @@ class SourceOrganizationMismatch(IncompleteSourceCollection):
     """A fresh organization response did not prove the configured tenant identity."""
 
 
+# The longest organization name kept for display (#1554).
+MAXIMUM_ORGANIZATION_NAME = 200
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+def organization_name(value):
+    """The display name ParishSoft reports for an organization, or None (#1554).
+
+    ``value`` is a record's ``organizationReportName``. It is trimmed, runs
+    of white space become one space, control characters are removed and it
+    is cut to ``MAXIMUM_ORGANIZATION_NAME`` characters. A value that is not
+    text, or is empty once cleaned, is no name. The name is display text
+    only: the organization ID stays the identity.
+    """
+    if type(value) is not str:
+        return None
+    # White space first, so a tab or line break between words is a space,
+    # then the remaining control characters.
+    cleaned = " ".join(_CONTROL.sub("", " ".join(value.split())).split())
+    return cleaned[:MAXIMUM_ORGANIZATION_NAME].rstrip() or None
+
+
+def organization_records(rows, *, allow_empty=False):
+    """Check an ``organizations/search`` answer and return its records.
+
+    The answer must be a list of at most ``MAXIMUM_ORGANIZATIONS`` records,
+    each with a positive integer ``organizationID``, none repeated, and at
+    least one unless ``allow_empty`` (the setup lookup reports an empty list
+    itself, #1554). Returns ``(organization ID, record)`` pairs in answer
+    order; anything else is ``IncompleteSourceCollection``.
+    """
+    if (
+        type(rows) is not list
+        or not (0 if allow_empty else 1) <= len(rows) <= MAXIMUM_ORGANIZATIONS
+        or any(type(row) is not dict for row in rows)
+    ):
+        raise IncompleteSourceCollection("Source organization response is incomplete.")
+    identities = [_identifier(row, "organizationID") for row in rows]
+    if len(set(identities)) != len(identities):
+        raise IncompleteSourceCollection("Source organization response is incomplete.")
+    return list(zip(identities, rows, strict=True))
+
+
 POST_CONTRACTS = {
     "families/search": (
         PageContract(
@@ -182,20 +225,9 @@ class CoherentParishSoftClient(ParishSoftClient):
         self.kept_members = None
         self.other_organization_families = set()
         self.families_without_members = 0
+        self.organization_name = None
         rows = super().post_uncached("organizations/search", {})
-        if (
-            type(rows) is not list
-            or not 1 <= len(rows) <= MAXIMUM_ORGANIZATIONS
-            or any(type(row) is not dict for row in rows)
-        ):
-            raise IncompleteSourceCollection(
-                "Source organization response is incomplete."
-            )
-        identities = [_identifier(row, "organizationID") for row in rows]
-        if len(set(identities)) != len(identities):
-            raise IncompleteSourceCollection(
-                "Source organization response is incomplete."
-            )
+        identities = [identity for identity, _ in organization_records(rows)]
         if self.expected_organization_id not in identities:
             raise SourceOrganizationMismatch(
                 "Source organization is not the expected tenant."
@@ -216,6 +248,8 @@ class CoherentParishSoftClient(ParishSoftClient):
                 "Source organization is not the expected tenant."
             )
         self.organizations_reached = len(rows)
+        # Display text for the portal (#1554); never compared or matched.
+        self.organization_name = organization_name(row.get("organizationReportName"))
         self._organization_id = self.expected_organization_id
         return self._organization_id
 

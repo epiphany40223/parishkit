@@ -1001,6 +1001,22 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_reports", "0047_report_email_test"),
     ),
+    # 0174 (#1554) creates the setup organization lookup table (in
+    # CLOSURE_TABLES) with these functions and two triggers on the setup
+    # attempt, and replaces the setup credential guard and the safe context
+    # in place (see their CLOSURE_REPLACED_ONLY entries). Its file, whole,
+    # puts all of it back.
+    **dict.fromkeys(
+        (
+            "public.stewardship_setup_parishsoft_lookup_mutable_v1()",
+            "public.stewardship_setup_lookup_list_valid_v1(jsonb)",
+            "public.stewardship_setup_owner_live_v1(uuid)",
+            "public.stewardship_setup_parishsoft_lookup_guard_v1()",
+            "public.stewardship_setup_scrub_lookups_v1()",
+            "public.stewardship_setup_load_organization_v1()",
+        ),
+        ("stewardship_accounts", "0035_parishsoft_organization_choice"),
+    ),
 }
 
 
@@ -1410,9 +1426,11 @@ CLOSURE_REPLACED_ONLY = {
     # format keys, and 0122 (#1620) widens 0109's with the automatic view
     # key; the reruns above bring back 0106's, so 0122's replacement, whose
     # body holds both, runs alone (0109's discard table cannot be made twice).
+    # 0174 (#1554) widens 0122's with the organization choice's four keys,
+    # so its replacement, whose body holds every earlier key, runs alone.
     "stewardship_safe_context_v1": (
-        ("stewardship_audit", "0006_automatic_report_views"),
-        "'automatic']",
+        ("stewardship_accounts", "0035_parishsoft_organization_choice"),
+        "'organizations_unknown']",
     ),
     # 0109 also lets each capture trigger, the export history trigger and
     # the request guard admit the discard; the reruns of the files that made
@@ -1443,9 +1461,11 @@ CLOSURE_REPLACED_ONLY = {
     # (0062, 0078, 0080, 0087, 0088, 0090, 0104, and 0111/0112 once merged)
     # bring back older; its bodies all carry the issue number. It also
     # creates the ended-automation check, so it cannot run whole twice.
+    # 0174 (#1554) replaces 0114's body again, admitting a ParishSoft key
+    # staged with no organization; its body keeps 0114's rules.
     "stewardship_setup_secret_guard_v1": (
-        ("stewardship_accounts", "0027_no_sign_in_age"),
-        "(#1547)",
+        ("stewardship_accounts", "0035_parishsoft_organization_choice"),
+        "(#1554)",
     ),
     # 0124 (#1762) rewords four of 0114's guards again, and 0104's setup
     # credential audit (which 0104's rerun above brings back); each body is

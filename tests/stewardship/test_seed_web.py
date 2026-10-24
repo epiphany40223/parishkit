@@ -301,6 +301,14 @@ def test_unattended_wizard_saves_its_pages_in_the_wizards_order(monkeypatch):
         """Record the source load."""
         calls.append("source")
 
+    def organization(request, service, attempt_id, *, wait):
+        """The organization choice that follows the key (#1554)."""
+        assert calls[-1] == "parishsoft" and wait is waiting
+        return status
+
+    def waiting(label, done):
+        """No wait is needed: the choice is stubbed."""
+
     monkeypatch.setattr(setup_staging, "begin_setup", lambda *_: status)
     monkeypatch.setattr(setup_drafts, "save_section", save_section)
     monkeypatch.setattr(
@@ -309,7 +317,8 @@ def test_unattended_wizard_saves_its_pages_in_the_wizards_order(monkeypatch):
     monkeypatch.setattr(setup_credentials, "stage_credential", stage_credential)
     monkeypatch.setattr(setup_source, "start_source_load", started)
     monkeypatch.setattr(seed_web, "stage_logo", lambda *_: "bundle")
-    assert seed_web.wizard_collect(None, None) == "attempt"
+    monkeypatch.setattr(seed_web, "wizard_organization", organization)
+    assert seed_web.wizard_collect(None, None, wait=waiting) == "attempt"
     # Slack is off, so Test Slack is skipped. The tests need only their own
     # inputs (#1578), so the email test, sent in wizard_confirm after the
     # load, proves the same settings; Review onwards follow there too.
