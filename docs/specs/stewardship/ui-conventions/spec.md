@@ -615,7 +615,8 @@ never scrolls to show it (Administrator, pk-local review of
   live regions never speak at once (Load ParishSoft data, #1404 PR 5).
 - **Views the page script draws.** A view drawn by the page script from data
   the page already holds (from #1656, the
-  [Campaign calendar](../admin-portal/spec.md#campaign-calendar)'s month)
+  [Campaign calendar](../admin-portal/spec.md#campaign-calendar)'s month
+  and, from #1808, its week)
   changes with no request at all: the script redraws it, focus stays on the
   control, the new view is announced, and the address's parameter for
   that view is replaced (never added to the history), so reload, bookmarks
@@ -2084,7 +2085,8 @@ Testing rehearsal.
   [family directory](../reports/spec.md#active-parishioner-family-directory)'s Responses shown
   (Production | Testing rehearsal), above its Filters panel, and the
   [Campaign calendar](../admin-portal/spec.md#campaign-calendar)'s
-  Show (Upcoming emails | Include past emails), above Every email by date.
+  Show (Upcoming emails | Include past emails), above Every email by date,
+  and its View (Month | Week, #1808), before its Previous and Next.
 - **Links.** Each segment is a link to the page's own address with that
   choice (`a[data-in-place]`, marked `aria-current="page"` when chosen), so
   each view has a real address that a reload or bookmark keeps. The link
@@ -2096,7 +2098,10 @@ Testing rehearsal.
   POST form holding the applied filters as hidden fields, as a POST table's
   navigator does, with one button marked `aria-current="page"` when chosen;
   it looks and acts the same, and the address bar then shows the page's own
-  link-safe address.
+  link-safe address. When both views are drawn by the page script (the
+  Campaign calendar's View), the script follows the segments itself with no
+  request, as [views the page script draws](#in-place-controls) change, and
+  sets their links to match the view shown.
 - **Beside a filter form.** When the page also has a filter form, the pair
   sits outside it, before it, and each segment carries the filters the page
   shows (not ones typed but not yet applied) and goes back to the first

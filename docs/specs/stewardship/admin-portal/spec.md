@@ -1315,9 +1315,9 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `artwork_upload` | Campaign images | Campaign images | Administrator | Campaign images (upload error); Campaign image upload | `/admin/campaign/images/<slot>/` (POST only) | (same) | POST-only: a staged upload answers with the review dialog's review of it (#750); a refused one re-renders Campaign images (status 400). Review campaign image is a review, and Remove campaign image a confirmation (#1356), in Campaign images' review dialog; their old addresses are gone. |
 | `schedule_settings` | Dates and mail schedules | Menu: Dates and mail schedules | Administrator | Mail schedules and campaign dates; Mail schedules | `/admin/campaign/schedules/` | (same) |  |
 | `schedule_new` | New scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/addition/` | (same) | Its review confirms through Dates and mail schedules. |
-| `schedule_edit` | Edit scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/<schedule>/` | (same) | The New page filled in; refuses a read-only schedule. `?calendar=<month>` (from the calendar) returns to that month. |
+| `schedule_edit` | Edit scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/<schedule>/` | (same) | The New page filled in; refuses a read-only schedule. `?calendar=<month>` (from the calendar) returns to that month, and `?calendar=<date>` to that week (#1808). |
 | `schedule_email_test` | Send a test of this text | New and Edit scheduled email | Administrator | (new, #446) | `/admin/campaign/schedules/test-email/` (POST only) | (same) | The page script posts the schedule's unsaved email here; nothing is saved. |
-| `schedule_calendar` | Campaign calendar | Dates and mail schedules | Administrator | (new, #469) | `/admin/campaign/schedules/calendar/` | (same) | Read-only; every send by date. `?month=<year-month>` names the month shown. |
+| `schedule_calendar` | Campaign calendar | Dates and mail schedules | Administrator | (new, #469) | `/admin/campaign/schedules/calendar/` | (same) | Read-only; every send by date. `?month=<year-month>` names the month shown; `?view=week&week=<date>` the week shown (#1808). |
 | `schedule_delete` | Delete scheduled emails | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/deletion/` (POST only) | (same) | The table's confirmation dialog posts here; Edit's Delete posts `action=preview` for its review (#1656). |
 | `share_settings` | Share options | Menu: Share options | Administrator | How Families will share | `/admin/campaign/share-options/` | (same) | Gains a Return link and About panel. |
 | `reminder_workgroup` | No-reminders WorkGroup | Menu: No-reminders WorkGroup | Administrator | (new, #861) | `/admin/campaign/no-reminders-workgroup/` | (same) | Edit, confirm, apply; stays editable while live. |
@@ -3839,7 +3839,8 @@ come, expanded the way the scheduler evaluates them, following the
 that has passed never shows a send computed from a schedule's rule
 (Administrator, R43).
 
-- **By month** shows one month at a time, Sunday first (#1656), with
+- **By month or week** shows one month at a time (or one week, in the
+  [week view](#week-view)), Sunday first (#1656), with
   **Previous month** and **Next month** buttons above it and the month's name
   after them, so a longer name never moves either button. The months run
   from the campaign's first day (or its first send, if earlier) to its last
@@ -3909,10 +3910,52 @@ page with that send's slot key (`?send=2054-11-03`), so it can offer
 [Skip selected sends](../report-emails/spec.md#skip-and-unskip-sends), with that send's box ticked; a `send` that is
 not a date is refused as an unknown address.
 A muted send is told apart by its status, in words in the table and read to
-screen readers in the grid. A week view,
-Production activation and go-live milestones, ParishSoft refresh times and the
-backup window are planned in
+screen readers in the grid. Production activation and go-live milestones,
+ParishSoft refresh times and the backup window, and changing a series' rule
+from the Admin page, are planned in
 [#1808](https://github.com/epiphany40223/parishkit/issues/1808).
+
+##### Week view
+
+From [#1808](https://github.com/epiphany40223/parishkit/issues/1808)
+(split from #1521); the defaults below stand until the Administrator
+changes them.
+
+- **View** is a [binary choice](../ui-conventions/spec.md#binary-choices)
+  before Previous and Next: **Month** (the default) or **Week**, the same
+  page-script grid drawn from the same list of sends, changed as [views the
+  page script draws](../ui-conventions/spec.md#in-place-controls) are; the
+  view's name is announced with the segment's word ("Week: Week of October
+  11, 2054"). It sits before the buttons, whose words change with the
+  view, so it never moves.
+- **One week** is one row of seven days, Sunday first, under the month
+  grid's weekday headings; its caption and the name after the buttons say
+  "Week of" and its Sunday's date. Each day is drawn as in a month: its
+  number, Add on a day, Today and the campaign's first and last days in
+  words, and its sends with Move… and drag onto any day of the week.
+- **Previous week** and **Next week** take the month buttons' place and
+  step a week. The weeks run from the one holding the campaign's first day
+  (or its first send) to the one holding its last day (or its last send);
+  at either end the button there is unavailable as a month's is, and the
+  reserved line says "This is the campaign's first week." or "This is the
+  campaign's last week."
+- **The address.** The week view is `?view=week&week=` its Sunday
+  (`?view=week&week=2054-10-11`), without `month`; Month names `month`
+  again, without `view` and `week`. The calendar opens on the week the
+  address names (any of its days; the address then names its Sunday), else
+  on this week in the browser's zone when it is one of the campaign's,
+  else on the first; a week outside them opens the nearer end. A `view`
+  other than `month` or `week`, or a `week` that is not a date, is refused
+  as an unknown address; `week` counts only with `view=week`.
+- **Changing view.** Week opens on this week when today is in the month
+  shown, else on the week holding the month's first day; Month opens on
+  today's month when the week holds today, else on the month of the week's
+  Sunday. Each is kept within the campaign's range.
+- **Returning.** In the week view each Edit link carries the week's Sunday
+  (`?calendar=2054-10-11`) instead of the month, and each Add on a day
+  carries it too, so Cancel, Apply and Delete return to that week; the
+  table's Show and sort links keep the view and the week; Apply of a Move
+  redraws the week shown.
 
 ##### Editing from the calendar
 
