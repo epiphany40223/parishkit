@@ -820,9 +820,10 @@ today, to change to the choice above or to the
 | ParishSoft settings form (`integration_forms.py`) | "Expected ParishSoft organization ID" field, locked, with "Locked: ParishSoft data for this organization is loaded." and its tip | the text line "ParishSoft organization: Name (1234)", with no field, lock or tip |
 | ParishSoft settings refusal (`integration_forms.py`) | "The organization ID can't change after ParishSoft data has been loaded … Keep 1234 here." | removed with the field; a posted organization is refused as unexpected input |
 | ParishSoft key help (`integration_forms.py`) | "It must be a key for the organization above; a key for another organization is refused." | "It must be a key that reaches Name (1234); any other key is refused." |
+| Key refused notice (`integration_credentials.py`) | "ParishSoft did not accept the new API key for this organization ID. Check the key and the organization ID, then try again." | "ParishSoft did not accept the new API key. Check the key, then try again." |
 | Key mismatch notice ([Parish and integration configuration](#parish-and-integration-configuration)) | "This key does not reach the ParishSoft organization whose data is already loaded. Paste a key that reaches the loaded organization." | "This key does not reach Name (1234), whose data is loaded. Paste a key that reaches it." (the before-the-first-load variant is removed: the organization now comes from the key's own list) |
 | Reachable-organizations line (`parishsoft-organizations.html`) | "Only the configured organization's data is loaded" | "Only the data of Name (1234) is loaded" (still counts only for the others) |
-| System health problem title (`system_health.py`) | "ParishSoft organization does not match" | "The ParishSoft key does not reach Name (1234)" |
+| System health problem title (`system_health.py`) | "ParishSoft organization does not match" | "The ParishSoft key does not reach Name (1234)"; the critical-problems banner keeps the old words, which name no organization (see [Banner events and problems](#system-health)) |
 | System health problem text (`system-health-problem.html`) | "The ParishSoft key reaches a different organization than before" | "The ParishSoft key no longer reaches Name (1234)" |
 | Admin automation (`admin_integration_keys.py`, `pk-admin integration`) | `ORGANIZATION_LOCKED`: "This key was saved with a different ParishSoft organization ID…" at `organization_id` | the settings it prints add `organization_name` beside `organization_id` (both read-only); a posted different `organization_id` is refused as "The ParishSoft organization is Name (1234) and can't change after setup." |
 | Page script (`ui-v1.js`) | the rule that requires the key again once the organization ID differs from the saved one | removed with the field |
@@ -9784,7 +9785,7 @@ The same problem never appears twice in ways that disagree.
   | Banner event | Problem kind | Words |
   | --- | --- | --- |
   | `source_destructive_change` | `source_destructive_change` | shared: "ParishSoft refresh refused: too large a change" |
-  | `source_tenant_mismatch` | `source_tenant_mismatch` | shared: "ParishSoft organization does not match" |
+  | `source_tenant_mismatch` | `source_tenant_mismatch` | the banner keeps "ParishSoft organization does not match", which names no organization; the tile names it, "The ParishSoft key does not reach St. Example Parish (1234)" ([#1554](https://github.com/epiphany40223/parishkit/issues/1554)) |
   | `source_invalid` | `source_failed` | shared: "ParishSoft refresh failed" |
   | `source_provider_failed` | `source_failing` | shared: "ParishSoft could not be reached" |
   | `source_credential_failed` | `source_failing` | the banner keeps "ParishSoft API key was refused", which names the cause; the tile's sentence names it too when the connection record does |

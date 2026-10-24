@@ -354,7 +354,9 @@ class Problem:
     "reminders_scheduled" for an unknown No-reminders WorkGroup while the
     campaign still has Reminders to send. ``workgroup`` is that WorkGroup's
     name, as an Administrator typed it, so it is never part of the
-    document.
+    document. ``organization`` is the loaded ParishSoft organization, named
+    "Name (ID)" (#1554), which a refused organization's
+    (``source_tenant_mismatch``) words name.
     """
 
     kind: str
@@ -364,6 +366,7 @@ class Problem:
     message_id: str | None = None
     detail: str | None = None
     workgroup: str | None = None
+    organization: str | None = None
 
     @property
     def names(self):
@@ -428,6 +431,12 @@ class Problem:
             "versions_differ": _("versions differ"),
             "schema_mismatch": _("database does not match"),
         }.get(self.kind, self.kind)
+        if self.kind == "source_tenant_mismatch" and self.organization:
+            # The banner keeps the shared words above, which name no
+            # organization; the tile names it (#1554).
+            return _("The ParishSoft key does not reach %(organization)s") % {
+                "organization": self.organization
+            }
         if self.kind == "workgroup_missing":
             from .campaigns.configuration import REMINDER_WORKGROUP_NAME
 
@@ -785,6 +794,7 @@ def find_problems(
     backup_key="matches",
     backup_request=None,
     offsite_set_up=True,
+    organization=None,
 ):
     """Every current problem, in the order the page lists them.
 
@@ -806,6 +816,8 @@ def find_problems(
     ``backup_request`` is the newest Take a backup now request's
     ``BackupRequestStatus`` (or None), and ``offsite_set_up`` whether
     off-site copies are set up, which only Production needs.
+    ``organization`` names the loaded ParishSoft organization (#1554) for
+    a refused organization's problem, None when none is open.
     """
     running = [line for line in processes if line.running]
     senders = [line for line in running if line.sender]
@@ -870,7 +882,11 @@ def find_problems(
         if refresh.out_of_date and not refresh.held_for_send:
             problems.append(Problem("source_late", at=refresh.overdue_at))
     problems.extend(
-        Problem(kind, at=incidents[kind])
+        Problem(
+            kind,
+            at=incidents[kind],
+            organization=organization if kind == "source_tenant_mismatch" else None,
+        )
         for kind in SOURCE_INCIDENTS
         if kind in incidents
     )
@@ -2152,7 +2168,9 @@ def shared_inputs(configuration, facts, now, *, key_fallback=False):
     Home and the page both take them from here, so they cannot disagree.
     ``configuration`` carries the current campaign (``current_campaign``),
     already loaded with its settings. Every input comes from the facts or
-    from the applied configuration, so none costs a query. A configured
+    from the applied configuration, so none costs a query, but the loaded
+    ParishSoft organization's name, read only while a refused organization
+    is open (#1554). A configured
     backup key that cannot be read raises ``ConfigError`` (the page's 503),
     unless ``key_fallback``: Home then lists ``backup_key_unchecked``.
     """
@@ -2181,7 +2199,21 @@ def shared_inputs(configuration, facts, now, *, key_fallback=False):
         "backup_key": backup_key,
         "backup_request": request_from_row(facts.request, now),
         "offsite_set_up": _offsite_set_up(configuration),
+        "organization": _tenant_organization(facts.incidents),
     }
+
+
+def _tenant_organization(incidents):
+    """The loaded organization's name while its refusal is open, else None.
+
+    One query, and only while ``source_tenant_mismatch`` is open, so a
+    healthy page costs nothing more (#1554).
+    """
+    from .source.organization_names import loaded_organization_label
+
+    if "source_tenant_mismatch" not in incidents:
+        return None
+    return loaded_organization_label()
 
 
 def _offsite_set_up(configuration):

@@ -4297,6 +4297,18 @@ lists them.
 | Finish switching through `integration_settings` (its review dialog; the separate `select_credential` page is retired, #1568) | `integration key finish-switching-preview TARGET` and `integration key finish-switching TARGET` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
 | Backup encryption key change, through `integration_settings` with proof of possession | `integration backup-key challenge`, `integration backup-key preview` and `integration backup-key confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see [secret replacement](#secret-replacement) and below) |
 
+ParishSoft's organization is read-only for these commands
+([#1554](https://github.com/epiphany40223/parishkit/issues/1554)):
+`integration show parishsoft` prints `organization_id` and
+`organization_name`, and a `--changes` document (for `integration preview`
+or `integration key replace`) may carry `organization_id` back unchanged,
+which changes nothing; another value is `invalid` at
+`settings.organization_id`, in the words the page's Finish switching uses
+("The ParishSoft organization is St. Example Parish (1234) and can't change
+after setup."), as
+[Parish and integration configuration](../admin-portal/spec.md#parish-and-integration-configuration)
+describes.
+
 The refresh schedule is given to `integration preview parishsoft` as
 `--refresh-schedule DOCUMENT` (`-` reads standard input), with or without
 `--changes` and never with `--remove`: a YAML or JSON document in the

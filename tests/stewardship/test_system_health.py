@@ -2292,11 +2292,12 @@ def test_the_source_panel_repeats_no_problem_sentence():
             },
             refresh=refresh,
             backup_at=NOW,
+            organization="St. Example Parish (1234)",
         ),
     )
     details = source_details(tiles({"health": model}))
     for words in (
-        "reaches a different organization than before",
+        "The ParishSoft key no longer reaches St. Example Parish (1234)",
         "Old ParishSoft copies are not being removed",
         "did not finish",
         "is late",
@@ -2393,6 +2394,10 @@ def test_an_organization_mismatch_is_never_said_as_could_not_be_reached():
         Problem(kind, at=NOW).summary for kind in kinds({"source_tenant_mismatch": NOW})
     ]
     assert "ParishSoft organization does not match" in words
+    # Named once the loaded organization is known (#1554); the banner keeps
+    # the shared words above.
+    named = Problem("source_tenant_mismatch", at=NOW, organization="Ours (1)")
+    assert named.summary == "The ParishSoft key does not reach Ours (1)"
     assert "ParishSoft could not be reached" not in words
     assert kinds({}) == ["source_failing"]
     # A real outage after the key is fixed opens the provider-failure incident
@@ -3324,10 +3329,15 @@ def test_the_source_panel_counts_the_organizations_a_key_reaches():
     many records the last load left out, in counts only; one that reaches
     the configured organization alone adds nothing."""
     line = "At the last load from ParishSoft, this key reached 3 organizations."
-    drawn = whole({"health": health(), "organizations": {"reached": 3, "skipped": 12}})
+    ours = "St. Example Parish (1234)"
+    counts = {"reached": 3, "skipped": 12, "organization": ours}
+    drawn = whole({"health": health(), "organizations": counts})
     assert line in drawn
+    # The loaded organization is named "Name (ID)" (#1554); the others never.
+    assert f"Only the data of {ours} is loaded;" in drawn
     assert "Records of other organizations left out by that load: 12." in drawn
-    quiet = whole({"health": health(), "organizations": {"reached": 2, "skipped": 0}})
+    counts = {"reached": 2, "skipped": 0, "organization": ours}
+    quiet = whole({"health": health(), "organizations": counts})
     assert "this key reached 2 organizations" in quiet
     assert "left out by that load" not in quiet
     assert "data-parishsoft-organizations" not in whole({"health": health()})

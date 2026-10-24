@@ -99,23 +99,25 @@ def check_answer(stored, body, now):
     )
 
 
+# The organization the sample pages name (#1554).
+ORGANIZATION = "St. Example Parish (12345)"
+
+
 def components(context, admin, now):
     """The settings page for each sample stored schedule.
 
     ``/refresh-schedule-gated`` is Production's schedule with Save waiting
-    for a change too, as the view draws it (#1330); ``-loaded`` is
-    Production's schedule once its organization's data is loaded, with the
-    organization ID locked (#1492).
+    for a change too, as the view draws it (#1330). Every page names the
+    organization as text, which has no field (#1554).
     """
     responses = {}
-    extra = dict.fromkeys(("/refresh-schedule-gated", "/refresh-schedule-loaded"))
+    extra = dict.fromkeys(("/refresh-schedule-gated",))
     for path, stored in (STORED | extra).items():
         stored = stored or PRODUCTION
         form = IntegrationForm(
             "parishsoft",
             initial=stored | {"base_digest": "a" * 64},
             stored=stored,
-            loaded_organization=12345 if path.endswith("-loaded") else None,
         )
         responses[path] = (
             "text/html",
@@ -128,8 +130,11 @@ def components(context, admin, now):
                     "label": "ParishSoft",
                     "summary": None,
                     "configured": True,
+                    "organization": ORGANIZATION,
                     "credential": InlineCredentialForm(
-                        "parishsoft", initial={"intent": "synthetic-intent"}
+                        "parishsoft",
+                        initial={"intent": "synthetic-intent"},
+                        organization=ORGANIZATION,
                     ),
                     "refresh_key": uuid4(),
                     "form": form,

@@ -84,7 +84,7 @@ def test_credential_states_have_plain_language(state, expected, text):
 @pytest.mark.parametrize(
     "target,check",
     [
-        ("parishsoft", "Check the key and the organization ID"),
+        ("parishsoft", "Check the key, then try again"),
         ("google_workspace", "domain-wide delegation"),
         ("slack", "invited to the channel"),
     ],
