@@ -84,7 +84,7 @@ Dates and mail schedules again, its status line saying what was saved.
 {% include 'stewardship/schedule-email.html' %}
 {% if repeat %}<p class="repeat-summary" role="status" data-repeat-summary hidden></p><div data-repeat-posted></div>{% endif %}
 {% if direct %}<p><span class="gate-hints"><span class="help unchanged-hint" data-unchanged-hint data-idle>{% if new %}{% translate "Fill in the scheduled email to save it." %}{% else %}{% translate "Change the date, time or email to save it." %}{% endif %}</span><span class="help" id="schedule-complete-hint" data-complete-hint="reserve"></span></span></p>{% else %}<p>{% button type="submit" autocomplete="off" aria-describedby="schedule-complete-hint" %}{% if new %}{% translate "Add the scheduled email" %}{% else %}{% translate "Review changes" %}{% endif %}{% endbutton %} <a href="{{ list_url }}">{% translate "Cancel" %}</a> <span class="gate-hints"><span class="help unchanged-hint" data-unchanged-hint data-idle>{% if new %}{% translate "Fill in the scheduled email to add it." %}{% else %}{% translate "Change the date, time or email to review it." %}{% endif %}</span><span class="help" id="schedule-complete-hint" data-complete-hint="reserve"></span></span></p>{% endif %}
-{% if repeat %}<div data-repeat-dates></div>{% endif %}
+{% if repeat %}<div data-repeat-dates data-repeat-dates-url="{% url 'admin:schedule_repeat_dates' %}" data-repeat-dates-failed="{% translate "These dates couldn't be listed right now. Review changes still checks every date." %}"></div>{% endif %}
 </form>
 {% if not direct and not new %}<section class="panel schedule-delete" aria-labelledby="schedule-delete-title">
 <h2 id="schedule-delete-title">{% translate "Delete this scheduled email" %}</h2>

@@ -7123,9 +7123,13 @@
   // ``room`` how many more of the ``limit`` schedules fit; ``sendTime`` the canonical send
   // time, or "" when it does not read yet; ``email`` whether an email is
   // chosen and ``emails`` whether any reminder email exists. Returns the
-  // dates that fit (``ready``), one {text, reason} item per date or skipped
-  // month, the summary line and the list's heading, and ``tally`` when the
-  // summary only counts what the heading already says; for a rule
+  // dates that fit (``ready``), one item per date ({date, reason}, the
+  // reason a code of repeat_dates_preview.REASONS, "" for a date that fits)
+  // or skipped month ({month, reason: "skipped"}), the rule's day of the
+  // month (``day``) for a skipped month's words, ``limit`` for an "over
+  // the limit of schedules" date's, the summary line and the
+  // list's heading, and ``tally`` when the summary only counts what the
+  // heading already says; for a rule
   // expandRecurrence refuses, only its ``error`` (a REPEAT_ERRORS key),
   // which is shown at its fields (markRepeatRule, #1915), not in the
   // summary.
@@ -7163,32 +7167,28 @@
     };
     expanded.dates.forEach((date) => {
       let reason = "";
-      if (outside(date)) reason = "outside the campaign dates";
+      if (outside(date)) reason = "outside";
       // Without a send time the remaining checks wait; the date is
       // listed but not counted.
       else if (!sendTime) reason = "";
       // Both panels' dates and times are in the browser's zone, so
       // localMoment gives the moment to compare with the clock (#1948).
-      else if (localMoment(date, sendTime) <= Date.now()) reason = "its time has passed";
+      else if (localMoment(date, sendTime) <= Date.now()) reason = "passed";
       else if (bounds && !(when(date) >= bounds.start && when(date) < bounds.end)) {
-        reason = "outside the campaign dates";
+        reason = "outside";
       } else if (initial && when(date) <= sends(initial)) {
-        reason = "not after the initial invitation";
+        reason = "initial";
       } else if (taken.has(when(date))) {
-        reason = "another email is already scheduled then";
+        reason = "taken";
       } else if (ready.length >= REPEAT_LIMIT) {
-        reason = `over the limit of ${REPEAT_LIMIT} reminders at a time`;
+        reason = "batch";
       } else if (ready.length >= room) {
-        reason = `over the limit of ${limit} schedules`;
+        reason = "room";
       }
       if (!reason && sendTime) ready.push(date);
-      items.push({text: spokenDay(date), reason});
+      items.push({date, reason});
     });
-    expanded.missing.forEach((month) => {
-      const [year, number] = month.split("-").map(Number);
-      items.push({text: `${MONTH_NAMES[number - 1]} ${year}`,
-        reason: `skipped: it has no day ${rule.monthly.day}`});
-    });
+    expanded.missing.forEach((month) => items.push({month, reason: "skipped"}));
     const left = items.filter((item) => item.reason).length;
     const plural = (number, word) =>
       `${number.toLocaleString("en-US")} ${word}${number === 1 ? "" : "s"}`;
@@ -7205,21 +7205,99 @@
       : ready.length
         ? `${ready.length.toLocaleString("en-US")} ${ready.length === 1 ? "reminder" : "reminders"} to add:`
         : "Nothing to add yet:";
-    return {ready, items, summary, heading, tally};
+    return {ready, items, summary, heading, tally, day: rule.monthly.day, limit};
   };
-  // Draw repeatDates' list: its heading, then one line per date, a date it
-  // will not add saying why.
-  const showRepeatDates = (list, {items, heading}) => {
-    const title = document.createElement("p");
+  // Draw repeatDates' list (#2092): its heading at once, then the dates
+  // through the one schedule preview (UX conventions "Schedule previews"),
+  // which the server draws (repeat_dates_preview) from the dates and
+  // reasons worked out here, so the list has the other previews' words,
+  // days, struck lines and daylight-saving note. ``source`` gives the form
+  // (its CSRF token and the browser's zone field), the campaign's zone and
+  // the send time ("" while it does not read). The list is asked for a
+  // moment after the rule stops changing and only when what it would show
+  // changed; an answer overtaken by a later one is dropped. While a newer
+  // answer is awaited the drawn lines stay, marked aria-busy and muted (no
+  // layout shift), and a refused or failed read replaces them with the
+  // list's failure sentence (data-repeat-dates-failed) rather than leave a
+  // list of other dates. A rule that gives no dates draws nothing: the
+  // rule's status line says so.
+  const repeatLists = new WeakMap(); // list -> {body, timer, request}
+  const showRepeatDates = (list, {items, heading, day, limit}, source) => {
+    const state = repeatLists.get(list) || {};
+    repeatLists.set(list, state);
+    const url = list.dataset.repeatDatesUrl;
+    if (!items.length || !url) {
+      window.clearTimeout(state.timer);
+      state.request?.abort();
+      state.body = "";
+      list.replaceChildren();
+      return;
+    }
+    let title = list.querySelector(":scope > [data-repeat-heading]");
+    let dates = list.querySelector(":scope > [data-repeat-preview]");
+    if (!title || !dates) {
+      title = document.createElement("p");
+      title.dataset.repeatHeading = "";
+      dates = document.createElement("div");
+      dates.dataset.repeatPreview = "";
+      list.replaceChildren(title, dates);
+    }
     title.textContent = heading;
-    const listing = document.createElement("ul");
+    const body = new URLSearchParams();
+    body.set("zone", source.form.querySelector("[data-browser-zone]")?.value || "");
+    body.set("campaign_zone", source.campaignZone);
+    body.set("time", source.sendTime);
     items.forEach((item) => {
-      const entry = document.createElement("li");
-      entry.textContent = item.reason ? `${item.text}: not added, ${item.reason}` : item.text;
-      if (item.reason) entry.className = "help";
-      listing.append(entry);
+      if (item.month) body.append("skipped", item.month);
+      else {
+        body.append("date", item.date);
+        body.append("reason", item.reason);
+      }
     });
-    list.replaceChildren(...(items.length ? [title, listing] : []));
+    if (items.some((item) => item.month)) body.set("day", String(day));
+    if (items.some((item) => item.reason === "room")) body.set("limit", String(limit));
+    const text = body.toString();
+    if (text === state.body) return; // The list drawn (or asked for) is this one.
+    state.body = text;
+    window.clearTimeout(state.timer);
+    state.request?.abort();
+    dates.setAttribute("aria-busy", "true");
+    state.timer = window.setTimeout(async () => {
+      const request = new AbortController();
+      state.request = request;
+      const token = source.form.querySelector('input[name="csrfmiddlewaretoken"]')?.value || "";
+      let answer = "";
+      try {
+        const response = await fetch(url, {
+          method: "POST", credentials: "same-origin", cache: "no-store",
+          // The body is the fields' text, so it must say it is a form:
+          // without this fetch sends text/plain, which Django does not read
+          // as fields, and every list was refused (pk-local, #2099).
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-CSRFToken": token, "X-Requested-With": "fetch", ...PASSIVE_READ,
+          },
+          body: text, signal: request.signal,
+        });
+        if (response.ok) answer = await response.text();
+      } catch (error) {
+        if (error?.name === "AbortError") return;
+      }
+      if (state.request !== request) return;
+      dates.removeAttribute("aria-busy");
+      if (!answer) {
+        state.body = ""; // Asked again on the next change.
+        const failed = document.createElement("p");
+        failed.className = "help";
+        failed.dataset.repeatDatesFailed = "";
+        failed.textContent = list.dataset.repeatDatesFailed || "";
+        dates.replaceChildren(failed);
+        return;
+      }
+      const parsed = new DOMParser().parseFromString(answer, "text/html");
+      dates.replaceChildren(...[...parsed.body.childNodes].map((node) => document.importNode(node, true)));
+      window.ParishDates?.localize(dates);
+    }, 150);
   };
   // A summary line that is a live region is written a moment after typing
   // pauses, and only when its text changes, so a screen reader hears one
@@ -7620,11 +7698,16 @@
         // is missing or wrong.
         text = result.error && !marked.atField ? REPEAT_ERRORS[result.error]
           : result.tally ? "" : result.summary;
-        showRepeatDates(dates, result);
+        showRepeatDates(dates, result, {
+          form,
+          campaignZone: form.querySelector('[name="window-timezone"]')?.value
+            || rule.dataset.repeatZone || "",
+          sendTime: time.value.trim() && !reading.error ? canonicalTime(reading.value) : "",
+        });
         if (email.value) ({ready} = result);
       } else {
         markRepeatRule(rule, "", true);
-        dates.replaceChildren();
+        showRepeatDates(dates, {items: []});
         if (chosen) {
           const reading = readTimeEntry(time);
           // The first thing the pane still needs, or what Review will add.
@@ -7830,7 +7913,7 @@
       posted.replaceChildren();
       if (!on) {
         summary.textContent = "";
-        list.replaceChildren();
+        showRepeatDates(list, {items: []});
         markRepeatRule(panel, "", true);
         holdFormButtons(form, gate, "");
         return;
@@ -7857,7 +7940,11 @@
       const {atField} = markRepeatRule(panel, result.error || "", show);
       if (!show) pause = window.setTimeout(update, TIME_PAUSE);
       announce(result.error && !atField ? REPEAT_ERRORS[result.error] : result.summary);
-      showRepeatDates(list, result);
+      showRepeatDates(list, result, {
+        form,
+        campaignZone: panel.dataset.repeatZone || "",
+        sendTime: time.value.trim() && !reading.error ? canonicalTime(reading.value) : "",
+      });
       holdFormButtons(form, gate, result.ready.length ? ""
         : REPEAT_ERRORS[result.error] || result.summary);
       result.ready.forEach((day) => {

@@ -26,10 +26,11 @@ previews and confirms exactly like reminders added one at a time. A rule
 error is shown at its fields,
 in the rule's reserved error lines (#1915). From and Until start at the
 campaign dates being proposed (data-repeat-start and -end as drawn, then
-the window fields).
+the window fields). data-repeat-zone is the saved campaign zone, which
+the date list (#2092) uses while the window has no time zone field.
 {% endcomment %}<div class="schedule-sends" data-schedule-sends hidden>
 {% translate "Sends" as sends_legend %}{% translate "Once" as once_label %}{% translate "Repeating" as repeating_label %}{% include "stewardship/components/choice-pair.html" with pair_id="schedule-sends" name="schedule_sends" legend=sends_legend first_value="once" first_label=once_label second_value="repeat" second_label=repeating_label chosen="once" help_id="schedule-sends-help" data_not_a_change=True disabled=True errors=None %}
 <p class="help" id="schedule-sends-help">{% translate "Once sends this reminder on one date. Repeating adds a reminder on each date of a rule, for example every Monday until the campaign ends; each date becomes an ordinary reminder, which you can later change or remove from the table." %}</p></div>
-<div class="schedule-repeat" data-repeat-panel data-repeat-start="{{ schedules.campaign.start_date }}" data-repeat-end="{{ schedules.campaign.end_date }}" hidden>
+<div class="schedule-repeat" data-repeat-panel data-repeat-start="{{ schedules.campaign.start_date }}" data-repeat-end="{{ schedules.campaign.end_date }}" data-repeat-zone="{{ schedules.campaign.timezone }}" hidden>
 {% include 'stewardship/components/repeat-rule.html' with rule=schedules.repeat_rule %}
 </div>
