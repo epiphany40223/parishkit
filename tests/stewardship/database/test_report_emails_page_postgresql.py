@@ -147,6 +147,41 @@ def test_a_ministry_leader_and_unknown_options_are_refused(
         assert read(leader).status_code == 403
 
 
+def test_past_sends_page_with_their_navigator(live_response_service, google):
+    """Each report's past sends take their own page and size, on Report
+    emails and on Edit; a malformed choice is refused (400), a page past the
+    end shows the last one, and the refresh address keeps the choice."""
+    from parishkit.stewardship.reports.report_email_list import sends_prefix
+
+    harness = live_response_service
+    with campaign_clock(INSTANT):
+        preparation = allocated(harness)
+        settle_messages()
+        admin, _ = signed_in()
+        prefix = sends_prefix(preparation.definition_id)
+        page = read(admin, f"?{prefix}page=4&{prefix}size=50")
+        assert page.status_code == 200
+        html = page.content.decode()
+        assert f'id="{prefix[:-1]}-table"' in html
+        assert "Page 1 of 1" in html and 'aria-label="Past sends pages of' in html
+        assert (
+            f'data-refresh-url="/admin/mail/report-emails/?{prefix}page=4&amp;' in html
+        )
+        assert reverse("admin:report_email_send", args=[preparation.pk]) in html
+        assert read(admin, f"?{prefix}size=7").status_code == 400
+        assert read(admin, f"?{prefix}page=x").status_code == 400
+        assert read(admin, f"?{prefix}sort=made").status_code == 400
+        edit = reverse("admin:report_email_edit", args=[preparation.definition_id])
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            answer = admin.get(f"{edit}?{prefix}page=2")
+            assert answer.status_code == 200
+            assert (
+                f'id="{prefix[:-1]}-table" data-table-region' in answer.content.decode()
+            )
+            other = sends_prefix(uuid4())
+            assert admin.get(f"{edit}?{other}page=2").status_code == 400
+
+
 def test_pause_resume_and_delete_apply_in_place(live_response_service, google):
     """Each records one change; once applied the row shows it."""
     harness = live_response_service

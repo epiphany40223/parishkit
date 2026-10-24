@@ -18,6 +18,8 @@ and ``admin_report_emails`` admit first and call ``listing`` inside their
 own read snapshot.
 """
 
+import re
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from uuid import UUID
 
@@ -34,6 +36,7 @@ from parishkit.stewardship.campaigns.schedule_models import (
 )
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.wall_clock import WEEKDAYS
+from parishkit.stewardship.web.tables import paginate
 
 from .report_blocks import REGISTRY
 from .report_blocks.registry import LIST
@@ -44,8 +47,11 @@ from .report_email_models import (
     ReportEmailSnapshot,
 )
 
-# Each report lists this many of its newest past sends (spec, "Past sends").
+# The command line's ``sends`` and ``show`` read this many newest sends.
 SENDS_SHOWN = 20
+# The pages' Past sends tables show this many sends per page by default
+# (spec, "Past sends"), one of the shared navigator's sizes.
+SENDS_PAGE = 25
 
 UPCOMING, SENDING, PAUSED, DONE, ATTENTION = (
     "upcoming",
@@ -330,6 +336,91 @@ def report_sends(campaign_id, mode, definition_ids=None, *, limit=SENDS_SHOWN):
     cancelled preparation is no send and is left out. Only ``mode``'s
     sends are listed: a Testing rehearsal's are not Production history.
     """
+    listed = _listed(campaign_id, mode, definition_ids)
+    return _hydrated({definition: kept[:limit] for definition, kept in listed.items()})
+
+
+def sends_prefix(report_id):
+    """The query-parameter prefix of one report's Past sends navigator.
+
+    It is the report's UUID without dashes (``s<32 hex>_``), so each
+    report's past sends page on their own on one page, as the UX
+    conventions' prefixed tables do, and its anchor (``s<hex>-table``) is
+    a valid element id.
+    """
+    return f"s{UUID(str(report_id)).hex}_"
+
+
+# The page and size keys of every report's Past sends navigator.
+_SENDS_PARAMETER = re.compile(r"s[0-9a-f]{32}_(?:page|size)")
+
+
+def sends_parameters(parameters):
+    """The Past sends navigators' page and size keys among ``parameters``."""
+    return {key for key in parameters if _SENDS_PARAMETER.fullmatch(key)}
+
+
+def paged_sends(campaign_id, mode, parameters, definition_ids=None, *, carry=()):
+    """Each report's past sends as one page of its Past sends table.
+
+    ``parameters`` are the page's validated single values (``filters``):
+    each report reads its own ``<prefix>page`` and ``<prefix>size``
+    (``sends_prefix``), and a key naming a report not listed is ignored.
+    Every navigator keeps the other reports' keys and ``carry`` (the Edit
+    page's ``send`` and ``calendar``), never a one-time notice such as Send
+    now's ``requested``. A malformed page or size is refused (ValueError);
+    a page past the end shows the last page. Returns, by definition id,
+    ``{"table", "newest", "name"}``: the ``TablePage`` of the sends shown
+    (``report_sends``' shape), the newest send, which gives the report its
+    status and last send, and the name the newest named send's revision
+    had (a deleted report's name). Only the sends shown are read in full.
+    """
+    listed = _listed(campaign_id, mode, definition_ids)
+    paging = {key: parameters[key] for key in sorted(sends_parameters(parameters))}
+    tables = {}
+    for definition, kept in listed.items():
+        prefix = sends_prefix(definition)
+        tables[definition] = paginate(
+            kept,
+            paging,
+            prefix=prefix,
+            default=SENDS_PAGE,
+            carry=[
+                *carry,
+                *(
+                    (key, value)
+                    for key, value in paging.items()
+                    if not key.startswith(prefix)
+                ),
+            ],
+        )
+    # The newest send leads each list, so one read serves both its status
+    # and the page shown (which may be page 1 and repeat it).
+    full = _hydrated(
+        {
+            definition: [kept[0], *tables[definition].rows]
+            for definition, kept in listed.items()
+        }
+    )
+    return {
+        definition: {
+            "table": replace(tables[definition], rows=full[definition][1:]),
+            "newest": full[definition][0],
+            "name": next((row["name"] for row in kept if row.get("name")), None),
+        }
+        for definition, kept in listed.items()
+    }
+
+
+def _listed(campaign_id, mode, definition_ids):
+    """Every send of each report, by definition id (text), newest first.
+
+    A report email send is still its preparation's row here: ``_hydrated``
+    makes it a send once its snapshot and messages are read, so a page
+    reads only the sends it shows in full, never every snapshot's blocks.
+    A converted digest's send (``kind`` set) is already whole; digests
+    are older than every report send, so they follow them.
+    """
     query = ReportEmailPreparation.objects.filter(campaign_id=campaign_id, mode=mode)
     if definition_ids is not None:
         query = query.filter(definition_id__in=list(definition_ids))
@@ -376,33 +467,43 @@ def report_sends(campaign_id, mode, definition_ids=None, *, limit=SENDS_SHOWN):
             "content_required",
         )
     )
-    shown = {}
+    listed = {}
     for row in rows:
-        kept = shown.setdefault(str(row["definition_id"]), [])
-        if len(kept) < limit:
-            kept.append(row)
-    chosen = [row["id"] for kept in shown.values() for row in kept]
+        listed.setdefault(str(row["definition_id"]), []).append(row)
+    for definition, send in _digest_sends(campaign_id, definition_ids):
+        listed.setdefault(str(definition), []).append(send)
+    return listed
+
+
+def _hydrated(chosen):
+    """Each list of ``chosen`` (``_listed`` rows) with its report sends read whole.
+
+    Two reads serve every list: the snapshots and the message states of the
+    report sends named, which ``_send`` turns into their rows.
+    """
+    ids = [row["id"] for kept in chosen.values() for row in kept if "kind" not in row]
     snapshots = {
         row["preparation_id"]: row
-        for row in ReportEmailSnapshot.objects.filter(preparation_id__in=chosen).values(
+        for row in ReportEmailSnapshot.objects.filter(preparation_id__in=ids).values(
             "preparation_id", "has_content", "created_at", "blocks"
         )
     }
     messages = {}
     for row in ReportEmailRecipient.objects.filter(
-        snapshot__preparation_id__in=chosen, outbox_id__isnull=False
+        snapshot__preparation_id__in=ids, outbox_id__isnull=False
     ).values("snapshot__preparation_id", "outbox__state"):
         messages.setdefault(row["snapshot__preparation_id"], []).append(
             row["outbox__state"]
         )
-    result = {}
-    for definition, kept in shown.items():
-        result[definition] = [
-            _send(row, snapshots.get(row["id"]), messages.get(row["id"], []))
+    return {
+        definition: [
+            row
+            if "kind" in row
+            else _send(row, snapshots.get(row["id"]), messages.get(row["id"], []))
             for row in kept
         ]
-    _add_digest_sends(result, campaign_id, definition_ids, limit)
-    return result
+        for definition, kept in chosen.items()
+    }
 
 
 def _send(row, snapshot, states):
@@ -432,12 +533,12 @@ def _send(row, snapshot, states):
     }
 
 
-def _add_digest_sends(result, campaign_id, definition_ids, limit):
-    """Add the Daily and Weekly digests a converted report sent before it was one.
+def _digest_sends(campaign_id, definition_ids):
+    """The Daily and Weekly digests converted reports sent before they were ones.
 
-    The conversion kept each digest's definition UUID (spec, "Conversion"),
-    so a digest snapshot names its report through its preparation. They
-    are older than every report send, so they follow them, newest first.
+    Each is ``(definition id, send)``, newest first. The conversion kept
+    each digest's definition UUID (spec, "Conversion"), so a digest
+    snapshot names its report through its preparation.
     """
     from .digest_models import DailyDigestReady, DailyDigestSnapshot
     from .weekly_models import WeeklyDigestSnapshot, WeeklyManualRequest
@@ -500,10 +601,7 @@ def _add_digest_sends(result, campaign_id, definition_ids, limit):
         )
     ]
     old.sort(key=lambda item: item[1]["made_at"], reverse=True)
-    for definition, row in old:
-        kept = result.setdefault(str(definition), [])
-        if len(kept) < limit:
-            kept.append(row)
+    return old
 
 
 def _open_send(sends):
@@ -614,9 +712,10 @@ def report_rows(configuration, campaign, now, sends, *, administrator):
 
     Each row holds the report's id, name, values, schedule words, recipients
     in short (Administrators only), next send, last send, status, paused
-    instant, the next send a Resume would make, its past sends and its
+    instant, the next send a Resume would make, its past sends (``past``,
+    the page of them shown, and ``sends``, that page's rows) and its
     actions (Administrators only). Reports with no send ahead come last.
-    ``sends`` are the campaign's past sends by report (``report_sends``).
+    ``sends`` are the campaign's past sends by report (``paged_sends``).
     """
     values_of = campaign.active_configuration.values
     archived = campaign.state == "archived"
@@ -640,8 +739,9 @@ def report_rows(configuration, campaign, now, sends, *, administrator):
     for record in records:
         values = record["values"]
         upcoming = next_send(values, values_of, now)
-        past = sends.get(record["id"], [])
-        row_status = status(values, past, upcoming)
+        paged = sends.get(record["id"])
+        newest = paged["newest"] if paged else None
+        row_status = status(values, [newest] if newest else [], upcoming)
         resumes = resumed_send(values, values_of, now) if row_status == PAUSED else None
         dialogs = (
             _dialog_text(
@@ -664,12 +764,13 @@ def report_rows(configuration, campaign, now, sends, *, administrator):
                 else None,
                 "recipient_count": len(values["recipients"]),
                 "next": upcoming,
-                "last": past[0] if past else None,
+                "last": newest,
                 "status": row_status,
                 "status_label": STATUS_LABELS[row_status],
                 "paused_since": paused_since(values),
                 "resumes": resumes,
-                "sends": past,
+                "past": paged["table"] if paged else None,
+                "sends": paged["table"].rows if paged else [],
                 "has_list_block": any(
                     REGISTRY[entry["block"]].kind == LIST for entry in values["blocks"]
                 ),
@@ -692,22 +793,34 @@ def report_rows(configuration, campaign, now, sends, *, administrator):
 def deleted_reports(sends, kept_ids):
     """The deleted reports that sent something, each with its past sends.
 
-    ``sends`` are the campaign's past sends by report (``report_sends``)
+    ``sends`` are the campaign's past sends by report (``paged_sends``)
     and ``kept_ids`` the reports still in the configuration. A deleted
-    report is named as its newest send's revision named it.
+    report is named as its newest named send's revision named it; it has
+    ``past`` (the page of its sends shown) and ``sends`` (that page's rows).
     """
     rows = []
-    for definition, past in sends.items():
-        if definition in kept_ids or not past:
+    for definition, paged in sends.items():
+        if definition in kept_ids:
             continue
-        name = next((send["name"] for send in past if send["name"]), None)
-        rows.append({"id": definition, "name": name or "", "sends": past})
+        table = paged["table"]
+        rows.append(
+            {
+                "id": definition,
+                "name": paged["name"] or "",
+                "past": table,
+                "sends": table.rows,
+            }
+        )
     return sorted(rows, key=lambda row: (row["name"].casefold(), row["id"]))
 
 
-def listing(configuration, campaign, mode, now, *, administrator):
-    """The page's whole view of ``campaign``: its reports and deleted ones."""
-    sends = report_sends(campaign.pk, mode)
+def listing(configuration, campaign, mode, now, *, administrator, parameters=None):
+    """The page's whole view of ``campaign``: its reports and deleted ones.
+
+    ``parameters`` are the page's Past sends navigator choices
+    (``paged_sends``); without them every report shows its first page.
+    """
+    sends = paged_sends(campaign.pk, mode, parameters or {})
     rows = report_rows(configuration, campaign, now, sends, administrator=administrator)
     return {
         "rows": rows,

@@ -470,7 +470,8 @@ exactly what any send reports: its as-of moment and every open request then
 
 Pausing is refused while a send of the report is in progress or uncertain,
 as every schedule change is. A paused one-time report whose time passes
-while paused never sends; its row says so ("Did not send: paused").
+while paused never sends; its row keeps showing Paused, with "None while
+paused" as its next send.
 
 Pause and resume mail
 ([live delivery pause](../admin-portal/spec.md#live-delivery-pause)) is
@@ -580,8 +581,9 @@ Report sends use the shared machinery unchanged:
   still on its way), saying nothing needs doing yet. Sent mail's About
   panel explains the note. `pk-admin delivery list` and `delivery show`
   carry the same read (`report_waiting`). The Report
-  emails page's [past sends](#past-sends) list such a send as "Waiting"
-  from the same read. The read
+  emails page's [past sends](#past-sends) show such a send as Sending,
+  as any send whose emails are not all settled is; Sent mail's note says
+  why it waits. The read
   (`stewardship_report_email_waiting_v1`, Administrators only, frozen file
   0165) returns
   each waiting send's preparation, due time and the ids of the messages
@@ -679,13 +681,14 @@ Administrator recheck does
   against the report's current revision instead: an address the
   Administrator has since removed from the report is no longer a recipient.
 
-A recipient who fails the recheck has their unsent message safely cancelled
-with `recipient_revoked`, retained as an audited withdrawal of that
-obligation, never as delivery, with today's completion, settlement, retry
-and reopening rules unchanged. When no recipient was accepted (a
-[covered](#catch-up-recovery-and-holds) recipient counts as accepted) the
-occurrence records `report_email_no_current_recipients` and an `empty`
-fulfillment.
+What follows a failed recheck (the `recipient_revoked` cancellation, a
+`permanent_failure` that can no longer be retried, completion, reopening
+and the `report_email_no_current_recipients` outcome with an `empty`
+fulfillment when no recipient was accepted, a
+[covered](#catch-up-recovery-and-holds) recipient counting as accepted)
+is in the background-processing specification's
+[Administrator report emails](../background-processing/spec.md#administrator-report-emails)
+delivery rules, which every report send shares.
 
 ### Testing redirect
 
@@ -1067,28 +1070,35 @@ status, and the row's actions. Status is one of Upcoming, Sending, Paused
 stands out, #1966),
 Done (a one-time report that sent, or a repeating report with no send
 ahead) and "Needs attention" (a failed or uncertain send, linking Sent
-mail). Row actions: **Edit**, **Preview**, **Send now**, **Pause** or
-**Resume**, and **Delete**. Every action acts in place
-([in-place controls](../ui-conventions/spec.md#in-place-controls)): a
-dialog opens over the page, and Apply redraws only the changed row and the
-status line, never reloading the page or moving the reader, with focus kept
-on the row's control or moved as the in-place focus rule says when a row
-leaves. An action the row cannot take now (Send now while a send of the
+mail). Row actions: **Edit**, **Preview**, **Send a test to me**, **Send
+now**, **Pause** or **Resume**, and **Delete**. Every action acts in place
+([in-place controls](../ui-conventions/spec.md#in-place-controls)), never
+reloading the page or moving the reader, with focus kept on the row's
+control or moved as the in-place focus rule says when a row leaves. Send
+now, Pause, Resume and Delete open the row actions' one-step
+[confirmation](../ui-conventions/spec.md#row-actions-and-confirmation)
+dialog, not the review dialog: it says what the action does, and its
+button records the action at once and redraws the list and its status
+line in place ("Paused Weekly report.", "Resumed Weekly report.",
+"Deleted Weekly report.", "Send now of Weekly report requested.").
+[Preview](#preview) opens the review dialog with no Apply, and
+[Send a test to me](#send-a-test-to-me) writes its result to the status
+line. An action the row cannot take now (Send now while a send of the
 report is in progress, Pause while a send is uncertain, every action but
-Preview on a report whose send is being prepared) is drawn unavailable with its reason
+Preview and Send a test to me on a report whose send is being prepared) is drawn unavailable with its reason
 ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)).
 
 Which actions each status offers (an unavailable action stays in place,
 greyed, with its reason):
 
-| Status | Edit | Preview | Send now | Pause / Resume | Delete |
-| --- | --- | --- | --- | --- | --- |
-| Upcoming | yes | yes | yes | Pause | yes |
-| Sending | unavailable (a send is in progress) | yes | unavailable | unavailable | unavailable |
-| Paused | yes | yes | yes (Send now is not a scheduled send) | Resume | yes |
-| Needs attention | yes, once the uncertain send is resolved | yes | unavailable until resolved | unavailable until resolved | unavailable until resolved |
-| Done | yes (a later time or new rule makes it Upcoming again) | yes | yes | unavailable (nothing ahead to pause) | yes |
-| Any status, archived campaign | no actions; the page is read-only | | | | |
+| Status | Edit | Preview | Send a test to me | Send now | Pause / Resume | Delete |
+| --- | --- | --- | --- | --- | --- | --- |
+| Upcoming | yes | yes | yes | yes | Pause | yes |
+| Sending | unavailable (a send is in progress) | yes | yes | unavailable | unavailable | unavailable |
+| Paused | yes | yes | yes | yes (Send now is not a scheduled send) | Resume | yes |
+| Needs attention | unavailable until the failed or uncertain send is resolved | yes | yes | unavailable until resolved | unavailable until resolved | unavailable until resolved |
+| Done | yes (a later time or new rule makes it Upcoming again) | yes | yes | yes | unavailable (nothing ahead to pause) | yes |
+| Any status, archived campaign | no actions; the page is read-only | | | | | |
 
 A report can switch between one-time and repeating only while it has made
 no scheduled send; afterwards the schedule kind is fixed, as a schedule's
@@ -1100,8 +1110,8 @@ local date ([slot keys](#slot-keys)), so a one-time report's single send
 and any edit of its date keep one slot per date.
 
 Staff see the table without the recipients column and with no actions, no
-New report email and no links to Edit; each report's past sends are their
-way in.
+New report email and no links to Edit; each report's
+[past sends](#past-sends), under its row, are their way in.
 
 ### New and Edit report email
 
@@ -1534,38 +1544,66 @@ refuses once any work for the report has changed since it was drawn.
 
 ### Pause and Resume actions
 
-**Pause** and **Resume** are row actions and Edit buttons. Each opens a
-confirmation in the review dialog: Pause says that no send is made while
-paused and that sends missed while paused are not made later; Resume names
-the next send. Apply records the change in place; the row's status becomes
-Paused, or returns to its schedule status. A paused report's row keeps its
-schedule shown, with "Paused since 9:00 AM, October 20" under it.
+**Pause** and **Resume** are row actions only; Edit has no Pause or
+Resume. Each opens the row actions' one-step confirmation ("Pause Weekly
+report?"): Pause says that no email is sent while it is paused and that
+sends missed while paused are not made later; Resume names the day of the
+next send it makes (browser-local). Its button records the change at once,
+in place ("Paused Weekly report."); the row's status becomes Paused, or
+returns to its schedule status. A paused report's row keeps its schedule
+shown, with "Paused since 9:00 AM, October 20" under its status and "None
+while paused" as its next send.
 
 ### Delete a report email
 
-**Delete** (a row action, and a section of its own at the bottom of Edit)
-opens the review dialog: the report's sends still to come stop, sends
-already made are not recalled, planned sends not started are cancelled, and
-sends in progress or uncertain block it. Apply removes the definition (its
-removal marker), in place on the list ("Report email deleted."), or from
-Edit back to the list. Past sends, their saved copies and their Sent mail
-rows stay, listed under **Deleted report emails**, a collapsed
-[disclosure](../ui-conventions/spec.md#disclosures) under the table, so
-history is never lost.
+**Delete** is a row action and a section of its own at the bottom of Edit:
+the report's sends still to come stop, sends already made are not
+recalled, planned sends not started are cancelled, and sends in progress
+or uncertain block it. On the list it opens the row actions' one-step
+confirmation, whose Delete removes the definition (its removal marker) at
+once, in place ("Deleted Weekly report."). Edit's opens the review dialog,
+whose Apply removes it and returns to the list. Past sends, their saved
+copies and their Sent mail rows stay, listed under **Deleted report
+emails**, a collapsed [disclosure](../ui-conventions/spec.md#disclosures)
+under the table, so history is never lost.
 
 ### Past sends
 
-Each report's past sends are listed on its Edit page (for Staff, under the
-report's row, in a disclosure) newest first, 20 at a time with the table
-navigator: when it was made (browser-local), what it was (scheduled,
-manual, recovery), the as-of moment it reported, its recipient count, its
-result (Sent, Not sent: nothing to report, Not sent: no current recipients,
-Failed, Uncertain: check Sent mail, Sending, or Waiting while it [waits on
-an earlier message](#catch-up-recovery-and-holds)) and a link to its saved
-copy. A list block's count is shown beside it ("12 open
-requests"). The sends of the converted Daily and Weekly made before the
-migration are listed with their report, linking their existing saved
-copies.
+Each report's past sends are listed for every reader under its row on
+Report emails, in a collapsed
+[disclosure](../ui-conventions/spec.md#disclosures) ("Past sends of
+Weekly report (12)") that stays open while the page updates itself, and
+on its Edit page; a deleted report's are under Deleted report emails.
+Only the sends of the system's current mode are listed: a Testing
+rehearsal's sends are not Production history, and a Production page never
+lists them.
+
+They are listed newest first, 25 at a time, with the shared row navigator
+of [Admin tables](../ui-conventions/spec.md#admin-tables) above and below
+(25, 50, 100, 250 or All); they have no sortable columns. Each report's
+past sends page on their own, by a parameter prefix made from the
+report's id (`s` and its 32 hexadecimal digits, then `_page` and
+`_size`), so the page's address keeps every report's place: a reload, a
+bookmark, the page's 30-second re-read and a row action's redraw show the
+same pages, and each navigator keeps the other reports' choices. A page
+past the end shows the last page, and a malformed page or size is
+refused (400). Previous, Next, a page number or a rows-per-page choice
+re-pages the list in place: on Report emails through the page's one
+table region, on Edit through a table region of its own. Edit accepts
+only its own report's prefix.
+
+Each send shows when it was made (browser-local), what it was (Scheduled,
+Send now, Recovery), the as-of moment it reported, its email count, and
+its result (Sent, Not sent: nothing to report, Not sent: no current
+recipients, Failed, Uncertain: check Sent mail, or Sending, which also
+covers a send that [waits on an earlier
+message](#catch-up-recovery-and-holds)) with a link to its saved copy,
+and, for an Administrator, to Sent mail when it failed or is uncertain. A
+list block's count is shown under the result ("12 open requests"). The
+sends of the converted Daily and Weekly made before the migration are
+listed with their report, after its report sends, linking their existing
+saved copies. `report-email sends` lists the newest 20
+([command line](#command-line)).
 
 ### Saved copies
 

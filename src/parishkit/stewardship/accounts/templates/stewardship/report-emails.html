@@ -3,7 +3,8 @@
 {% block content %}{% comment %}
 Mail › Report emails (report-emails spec, "Report emails page", #1786;
 report_email_views). One region (#report-emails-table) holds the status line,
-the action forms, the table, each report's past sends and the deleted reports,
+the action forms, the table, each report's past sends (each with its own row navigator, whose
+page and size are in the address) and the deleted reports,
 so the hidden re-read link (every 30 seconds) and every row action redraw it in
 place. Row actions are icon buttons that open the row actions' confirmation
 dialog; an action the row cannot take now stays in place, unavailable, with its
@@ -60,14 +61,14 @@ stops sending.
     <td><span class="status-badge{% if row.status == 'upcoming' %} status-badge-on{% elif row.status == 'paused' %} status-warning{% endif %}">{% if row.status == 'paused' %}{% include "stewardship/components/level-icon.html" with level="warning" %} {% endif %}{{ row.status_label }}</span>{% if administrator and row.status == "attention" %}<br><a href="{% url 'admin:deliveries' %}">{% translate "Check it on Sent mail" %}</a>{% endif %}{% if row.paused_since %}<br><span class="help">{% translate "Paused since" %} <time datetime="{{ row.paused_since|instant }}" data-local-instant data-compact>{{ row.paused_since|instant }}</time></span>{% endif %}</td>
     {% if administrator %}<td class="table-actions">{% include "stewardship/components/report-actions.html" %}</td>{% endif %}
   </tr>
-  <tr class="report-sends-row"><td colspan="{% if administrator %}7{% else %}5{% endif %}">{% if row.sends %}<details class="disclosure" id="report-sends-{{ row.id }}" data-keep-open><summary>{% blocktranslate trimmed count sends=row.sends|length with name=row.name %}Past sends of {{ name }} ({{ sends }}){% plural %}Past sends of {{ name }} ({{ sends }}){% endblocktranslate %}</summary>
-  {% include "stewardship/components/report-sends.html" with sends=row.sends name=row.name %}</details>{% else %}<span class="help">{% blocktranslate with name=row.name %}{{ name }} has not sent yet.{% endblocktranslate %}</span>{% endif %}</td></tr>
+  <tr class="report-sends-row"><td colspan="{% if administrator %}7{% else %}5{% endif %}">{% if row.sends %}<details class="disclosure" id="report-sends-{{ row.id }}" data-keep-open><summary>{% blocktranslate trimmed count sends=row.past.count with name=row.name %}Past sends of {{ name }} ({{ sends }}){% plural %}Past sends of {{ name }} ({{ sends }}){% endblocktranslate %}</summary>
+  {% include "stewardship/components/report-sends.html" with table=row.past name=row.name %}</details>{% else %}<span class="help">{% blocktranslate with name=row.name %}{{ name }} has not sent yet.{% endblocktranslate %}</span>{% endif %}</td></tr>
   </tbody>{% endfor %}
 </table>
 </div>{% else %}<p>{% translate "This campaign has no report emails." %}</p>{% endif %}
 {% if deleted %}<details class="disclosure" id="deleted-report-emails" data-keep-open><summary>{% blocktranslate trimmed count reports=deleted|length %}Deleted report emails ({{ reports }}){% plural %}Deleted report emails ({{ reports }}){% endblocktranslate %}</summary>
 {% for report in deleted %}<h3>{{ report.name }}</h3>
-{% include "stewardship/components/report-sends.html" with sends=report.sends name=report.name %}{% endfor %}
+{% include "stewardship/components/report-sends.html" with table=report.past name=report.name %}{% endfor %}
 </details>{% endif %}
 </section>
 {% if administrator and not archived %}

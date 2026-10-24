@@ -188,7 +188,7 @@ list.
 <form method="post" action="{{ post_url }}" id="report-skip-form" data-review-open="report-skip-review" data-review-region="report-schedule-preview" data-table-sync>{% csrf_token %}<input type="hidden" name="base_digest" value="{{ base_digest }}"></form>
 {% translate "Review the selected sends" as skip_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="report-skip-review" title=skip_title apply_url=post_url outcome_id="report-skip-outcome" fallback="report-preview-title" %}
 <section class="panel" aria-labelledby="report-past-title"><h2 id="report-past-title">{% translate "Past sends" %}</h2>
-{% if sends %}{% include "stewardship/components/report-sends.html" with sends=sends name=saved.name administrator=True %}{% else %}<p>{% translate "This report email has not sent yet." %}</p>{% endif %}</section>
+{% if past.rows %}{% include "stewardship/components/report-sends.html" with table=past name=saved.name administrator=True region=True %}{% else %}<p>{% translate "This report email has not sent yet." %}</p>{% endif %}</section>
 <section class="panel report-delete" aria-labelledby="report-delete-title">
 <h2 id="report-delete-title">{% translate "Delete this report email" %}</h2>
 <form method="post" action="{{ post_url }}" id="report-delete-form" data-review-open="report-delete-review" data-table-sync>{% csrf_token %}<input type="hidden" name="action" value="delete_preview"><input type="hidden" name="base_digest" value="{{ base_digest }}">
