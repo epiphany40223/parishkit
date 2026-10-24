@@ -11263,7 +11263,13 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   page or command, the refused fields and the reason in words, followed by
   the expected and actual values when the entry has them, such as "Create
   the campaign: Time zone refused (the campaign must use the parish's time
-  zone; expected Africa/Abidjan, got America/New_York)". An entry marked
+  zone; expected Africa/Abidjan, got America/New_York)". An image refused
+  for its size reads its stored byte counts in megabytes, "limit 5 MB, file
+  8 MB". An `unclassified` entry with no error codes says "something
+  unexpected went wrong while checking it" and never reads out its
+  `exception_class`, a programmer's name kept in the downloads. The page's
+  help says that nothing typed is kept; only a value checked against a fixed
+  set, such as a chosen time zone or a file's size, is shown. An entry marked
   `capped` also says that the person's further refusals at that level were
   not kept here for the rest of the window (see the
   [cap](../operations/spec.md#admin-input-refusals)). The Actor column
