@@ -158,6 +158,89 @@ REASON_TEXT = {
 }
 
 
+# Why an Admin input was refused, for each closed reason code
+# (``audit.refusal_context.REASONS``, pinned by a test): a lowercase clause,
+# read in parentheses after what was refused (#2114). ``unclassified`` has
+# none; its entry says its error codes or its exception's kind instead.
+REFUSAL_TEXT = {
+    "stale_page": gettext_lazy(
+        "the page was out of date; something changed since it was opened"
+    ),
+    "unexpected_fields": gettext_lazy("the form sent fields the page does not have"),
+    "expired_preview": gettext_lazy("the review was too old or had changed"),
+    "bad_signature": gettext_lazy("the review could not be verified"),
+    "fresh_authentication_required": gettext_lazy(
+        "the person had to confirm it was them first"
+    ),
+    "csrf_failed": gettext_lazy(
+        "the form's security check failed, often an old or reopened tab"
+    ),
+    "denied": gettext_lazy("the person's role does not allow it"),
+    "gone": gettext_lazy("the action has been retired or belongs to another campaign"),
+    "campaign_zone_not_parish": gettext_lazy(
+        "the campaign must use the parish's time zone"
+    ),
+    "image_too_large": gettext_lazy("the file is larger than the limit"),
+    "image_unsupported": gettext_lazy("the file is not an image the page accepts"),
+    "drive_not_in_local": gettext_lazy(
+        "Google Drive backups are not available in this installation"
+    ),
+    "workspace_mail_missing": gettext_lazy(
+        "Google Workspace mail is not set up for this installation"
+    ),
+    "drive_folder_missing": gettext_lazy("the Google Drive folder was not found"),
+    "drive_folder_link_invalid": gettext_lazy(
+        "the Google Drive folder link was not one the page accepts"
+    ),
+    "test_pending": gettext_lazy("a test email was still on its way"),
+    "test_result_uncertain": gettext_lazy(
+        "the mail provider left a test email's result uncertain"
+    ),
+    "pairing_code_refused": gettext_lazy(
+        "the automation access code was not recognized"
+    ),
+    "release_refused": gettext_lazy("the restored site's state refused the release"),
+    "resend_refused": gettext_lazy("the restored site's state refused the resend"),
+    "production_only": gettext_lazy("only the server operator may do this"),
+    "send_time_passed": gettext_lazy(
+        "the reviewed send time had passed; review it again"
+    ),
+    "send_work_blocks": gettext_lazy("sending in progress blocked the change"),
+    "publication_off": gettext_lazy("Update ParishSoft is switched off"),
+    "publication_nothing_approved": gettext_lazy(
+        "nothing was Ready to update in ParishSoft"
+    ),
+    "publication_running": gettext_lazy("a ParishSoft update was still running"),
+    "publication_campaign_held": gettext_lazy(
+        "other campaign work was holding the campaign"
+    ),
+    "publication_testing": gettext_lazy("Testing mode does not update ParishSoft"),
+    "publication_nothing_to_write": gettext_lazy(
+        "the plan had nothing to write to ParishSoft"
+    ),
+    "publication_plan_expired": gettext_lazy("the update plan was too old"),
+    "publication_plan_changed": gettext_lazy(
+        "the update plan changed since it was checked"
+    ),
+    "publication_plan_superseded": gettext_lazy(
+        "a newer update plan replaced this one"
+    ),
+    "publication_overlap": gettext_lazy(
+        "another update plan was still writing its changes"
+    ),
+    "publication_finished": gettext_lazy("nothing was left unfinished to run again"),
+    "publication_stopped": gettext_lazy(
+        "an update stopped before finishing; run it again first"
+    ),
+    "publication_checking": gettext_lazy("a check of ParishSoft was still running"),
+    "usage": gettext_lazy("the command was not used as documented"),
+    "configuration": gettext_lazy("the installation's settings did not allow it"),
+    "credential_mismatch": gettext_lazy(
+        "the stored credentials did not match the settings"
+    ),
+}
+
+
 def duration(seconds):
     """A whole-second duration as "45 s", "17 min" or "2 h 5 min"."""
     seconds = max(0, int(seconds))
@@ -356,6 +439,85 @@ def _recovered(context):
     return text
 
 
+def _listed(context, key):
+    """The text words stored in the list ``key``, in words; [] otherwise."""
+    value = context.get(key)
+    if type(value) is not list:
+        return []
+    return [_words(item) for item in value if type(item) is str]
+
+
+def _place(context):
+    """Where an Admin input was refused: its page's title, or its command.
+
+    The page is the entry's resolved URL name, named as the Admin trail
+    names it (``admin_navigation.PAGES``); a page with no title there is
+    "An Admin page" rather than its internal name.
+    """
+    command = context.get("command")
+    if type(command) is str:
+        return _("pk-admin %(command)s") % {"command": command}
+    # Imported here: navigation loads the URL configuration's modules,
+    # which this module must not need at import time.
+    from parishkit.stewardship.accounts.admin_navigation import PAGES
+
+    route = context.get("route")
+    name = route.removeprefix("admin:") if type(route) is str else ""
+    page = PAGES.get(name) if route != name else None
+    return str(page.label) if page is not None else _("An Admin page")
+
+
+def _why(context):
+    """The refusal's reason in words, or its error codes or exception kind
+    when it has no reason of its own (``unclassified``); None if neither."""
+    text = REFUSAL_TEXT.get(context.get("reason"))
+    if text is not None:
+        return str(text)
+    codes = _listed(context, "codes")
+    if codes:
+        return ", ".join(codes)
+    kind = context.get("exception_class")
+    return _words(kind) if type(kind) is str else None
+
+
+def _refused(context):
+    """A refused Admin input (``refusal``, #1403, #2114).
+
+    Built only from the entry's closed values: "Create the campaign: Time
+    zone refused (the campaign must use the parish's time zone; expected
+    Africa/Abidjan, got America/New_York)." Field names are the form's own,
+    in words; nothing the person entered is ever in the entry. A ``capped``
+    entry adds that later refusals in its window were not kept here.
+    """
+    if not any(type(context.get(key)) is str for key in ("route", "command")):
+        return None
+    what = ", ".join(_listed(context, "fields"))
+    what = (what[:1].upper() + what[1:] + " " + _("refused")) if what else _("Refused")
+    facts = [fact for fact in (_why(context),) if fact]
+    count = _int(context, "unexpected_count")
+    if count:
+        facts.append(
+            ngettext("%(count)d unexpected field", "%(count)d unexpected fields", count)
+            % {"count": count}
+        )
+    expected, actual = context.get("expected"), context.get("actual")
+    if type(expected) is str and type(actual) is str:
+        facts.append(
+            _("expected %(expected)s, got %(actual)s")
+            % {"expected": expected, "actual": actual}
+        )
+    text = _place(context) + ": " + what
+    if facts:
+        text += " (" + "; ".join(facts) + ")"
+    text += "."
+    if context.get("capped") is True:
+        text += " " + _(
+            "This person's further refusals at this level were not kept here "
+            "for the rest of the ten-minute window."
+        )
+    return text
+
+
 def explain(schema, context):
     """The plain-language detail of one operational entry, or None.
 
@@ -369,4 +531,6 @@ def explain(schema, context):
         return _failure(context)
     if schema == "recovery":
         return _recovered(context)
+    if schema == "refusal":
+        return _refused(context)
     return None

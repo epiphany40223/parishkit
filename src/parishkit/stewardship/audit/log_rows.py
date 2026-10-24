@@ -187,6 +187,9 @@ EVENTS = tuple(sorted({item.value for item in Action} | {item.value for item in 
 # - Family portal activity: Families signing in, out and responding,
 #   invalid links, preparing and replacing Family links, and closing the
 #   Family portal for maintenance.
+# - Refused input (#2114): every refused Admin page request and pk-admin
+#   command (#1403). Operational entries only, the reverse of the
+#   audit-only groups (``OPERATIONAL_ONLY_ACTIVITIES``).
 ACTIVITY_TYPES = {
     "sign_in": (
         "admin_login",
@@ -398,6 +401,7 @@ ACTIVITY_TYPES = {
         "family_maintenance_ended",
         "admin_cmd_portal_maintenance_set",
     ),
+    "refused_input": ("admin_input_refused",),
 }
 # Written types no Activity group lists, under the reason each is left
 # out. A reader still finds them with the type search. Together with the
@@ -579,12 +583,6 @@ UNGROUPED_REASONS = {
     "Found while using already-loaded ParishSoft data, not in a refresh": (
         "source_member_unusable",
     ),
-    # Refused Admin input (#1403): its writer is in place before anything
-    # calls it, and its own Activity group, Refused input, comes with the
-    # page's operational-only handling of that group.
-    "Refused Admin input; its own Activity group is still to come": (
-        "admin_input_refused",
-    ),
     "In the Action vocabulary, but nothing records it today": (
         "privileged_reauthentication",
     ),
@@ -603,6 +601,14 @@ OPERATIONAL_ACTIVITIES = frozenset(
     for key, types in ACTIVITY_TYPES.items()
     if set(types) & {item.value for item in Event}
 )
+# The groups of operational entries only (Refused input, #2114): while one
+# is chosen the page greys Audit record and waits for a level, and the read
+# leaves audit records out.
+OPERATIONAL_ONLY_ACTIVITIES = frozenset(
+    key
+    for key, types in ACTIVITY_TYPES.items()
+    if set(types) <= {item.value for item in Event}
+)
 # The Activity choice's options, in the order the filter bar lists them.
 ACTIVITY_LABELS = (
     ("", _("All activity")),
@@ -613,6 +619,7 @@ ACTIVITY_LABELS = (
     ("downloads", _("Reports and downloads")),
     ("security", _("Security events")),
     ("family_portal", _("Family portal activity")),
+    ("refused_input", _("Refused input")),
 )
 # A type is searched as an exact identifier, never as free text: the same shape
 # the audit table's own check constraint enforces on every stored type.
@@ -840,6 +847,11 @@ class LogQuery:
         return bool(self.activity) and self.activity not in OPERATIONAL_ACTIVITIES
 
     @property
+    def activity_operational_only(self):
+        """Whether the chosen Activity group is operational entries only (#2114)."""
+        return self.activity in OPERATIONAL_ONLY_ACTIVITIES
+
+    @property
     def bounds(self):
         """The From and Through days as a UTC interval ``[lower, upper)``.
 
@@ -1034,12 +1046,18 @@ def page_context(
         "ministry_unlisted": bool(shown.ministry) and shown.ministry not in listed,
         # The conditional-field rules for the Show boxes (#953): the levels
         # are enabled for all activity and the groups with operational
-        # entries, and Audit record is required for the audit-only groups.
+        # entries, and Audit record is required for the audit-only groups
+        # and enabled for every group but the operational-only ones.
         "levels_rule": "activity=" + "|".join(["", *sorted(OPERATIONAL_ACTIVITIES)]),
         "audit_rule": "activity="
         + "|".join(
             sorted(key for key in ACTIVITY_TYPES if key not in OPERATIONAL_ACTIVITIES)
         ),
+        # Audit record is greyed and unsent while an operational-only group
+        # (Refused input, #2114) is chosen; the Show gate then counts only
+        # the levels.
+        "audit_enabled_rule": "activity!="
+        + "|".join(sorted(OPERATIONAL_ONLY_ACTIVITIES)),
     }
 
 
