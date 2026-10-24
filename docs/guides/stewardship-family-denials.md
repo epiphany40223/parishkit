@@ -32,8 +32,11 @@ category, never a reason within it. The kinds and their callers:
 | --- | --- | --- |
 | `code` | This Family code cannot be found or used. | Manual code entry, 403 |
 | `link` | This secure Family link cannot be found or used. | `/access/<token>`, 403 |
-| `unavailable` | Sign-in is temporarily unavailable. Please try again later. | Any 429 or 503, Family or Admin |
-| default | Sign-in is unavailable. Please try again. | Other Admin refusals; Family fetch 400/403 |
+| `unavailable` | Sign-in is temporarily unavailable. Please try again later. | Any Family 429; any 503, Family or Admin |
+| `no_access` | You signed in with Google as the verified address, but that address doesn't have access to the Administration portal. | Admin sign-in refused by policy after Google verified the address, 403 |
+| `unfinished` | Signing in with Google didn't complete. | Other Admin sign-in refusals (cancelled, provider error, used or expired state, local test link), 403 |
+| `rate_limited` | Too many sign-in attempts. Try again later. | Every Admin 429 |
+| default | Sign-in is unavailable. Please try again. | Signed-in Admin refusals such as report views; Family fetch 400/403 |
 
 - Family `denied()` maps any 429 or 503 to `unavailable`. That covers the
   manual entry limiter checks, including the failure that crosses the limit,
@@ -41,14 +44,20 @@ category, never a reason within it. The kinds and their callers:
   keepalive and presence.
 - The `/access/` rate-limit and outage gate in the authentication middleware,
   and the access-gate outage path on Family routes, use `unavailable`.
-- Every Admin refusal with a 429 or 503 status uses `unavailable` too, since
-  the architecture specification gives Admin OAuth and Family code entry the
-  same generic temporary-unavailability response. That reaches the sign-in
-  routes, the access gate and signed-in pages such as the report views,
-  which call the same helper for restore review, database and limiter
-  outages (their old text also read "Sign-in is unavailable"). Other Admin
-  refusals keep the original generic text, and every Admin page keeps the
-  Admin retry route.
+- Every Admin 503 uses `unavailable` too, since the architecture
+  specification gives Admin OAuth and Family code entry the same generic
+  temporary-unavailability response. That reaches the sign-in routes, the
+  access gate and signed-in pages such as the report views, which call the
+  same helper for restore review, database and limiter outages.
+- Admin sign-in refusals say which kind they are (#2116): every Admin 429
+  (all are sign-in routes') uses `rate_limited`; a refusal after Google
+  verified the address uses `no_access`, which shows only that address and
+  a "Sign in with a different account" form; every other sign-in refusal
+  uses `unfinished`. The
+  [login and denial behavior](../specs/stewardship/admin-portal/spec.md#login-and-denial-behavior)
+  specification has their text and rationale.
+- Signed-in Admin refusals keep the original default text, and every Admin
+  page except `no_access` keeps the Admin retry route.
 - The keepalive and presence endpoints are called by page scripts that never
   display the response body, so their 400 and ended-session 403 keep the
   default text.
@@ -62,12 +71,6 @@ campaign-ended page that `/` shows, still byte-identical across credentials
 codes, `Retry-After`, `Cache-Control: no-store` and limiter accounting are
 unchanged, and so is the optional access-denied help, except that after
 close the ended page's "After the campaign" content takes its place.
-
-Since #2116, Admin sign-in refusals have their own kinds (`no_access`,
-`unfinished`, and `rate_limited` for every Admin `429`) instead of the
-default and temporary texts above; Family denials are unchanged. The
-[login and denial behavior](../specs/stewardship/admin-portal/spec.md#login-and-denial-behavior)
-specification has their text and rationale.
 
 ## Focused validation
 
