@@ -134,8 +134,14 @@ PREFIX = "pledges"
 # Family's answer, Reviewer's value, Stage, Submitted, Last decision and
 # Actions.
 COLUMNS = (
-    Column("family", "Family", sort="family"),
-    Column("family_duid", "Family DUID", sort="duid", numeric=True),
+    Column(
+        "family",
+        "Family",
+        sort="family",
+        detail="family_duid",
+        detail_heading="Family DUID",
+        detail_sort="duid",
+    ),
 )
 # The files' columns: the page's, without Actions, its combined cells split
 # into their parts (UX conventions, "Downloaded files"), and the pledge to

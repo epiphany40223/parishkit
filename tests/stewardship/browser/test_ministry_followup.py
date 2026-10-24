@@ -433,7 +433,7 @@ def test_clipped_name_tip_never_swallows_the_next_tap(browser_engine, component_
     try:
         page = context.new_page()
         page.goto(component_origin + "/followup-all")
-        name = page.locator(ROWS).nth(1).locator(".cell-clamp")
+        name = page.locator(ROWS).nth(1).locator(".cell-clamp:not(.name-clamp)")
         # The Ministry name now opens the request's page (R38 finding 13),
         # and a tap on a link opens it as it shows the tip; the tip itself is
         # what this checks, so its link is set aside.
@@ -468,15 +468,16 @@ def test_clipped_name_tip_never_swallows_the_next_tap(browser_engine, component_
 
 def test_followup_columns_follow_the_shared_order(page, component_origin):
     """The worklist's columns follow the shared order (#932, #1684): the
-    Member leads and the Member DUID has its own column (a Member added on
-    the form reads New Member), then the Ministry and Last contact, then the
-    review worklist's own. No Ministry DUID.
+    Member leads, its Member DUID on the line under it (a Member added on
+    the form reads New Member, #2124), then the Ministry, then the review
+    worklist's own, Last contact a line of the Submitted and Last decision
+    cell (#2124). No Ministry DUID.
     A Ministry name too long even for two lines (#1136) ends in an
     ellipsis on its second line, joins the tab order and shows whole in a
     tip on keyboard focus, and never widens the page."""
     from playwright.sync_api import expect
 
-    page.set_viewport_size({"width": 1280, "height": 900})
+    page.set_viewport_size({"width": 1366, "height": 900})
     page.goto(component_origin + "/followup-all")
     headings = page.locator("#table thead th").all_inner_texts()
     # A sort heading's text also holds its button's arrow and hint lines. The
@@ -485,26 +486,23 @@ def test_followup_columns_follow_the_shared_order(page, component_origin):
     assert [text.split("\n")[0].strip() for text in headings] == [
         "",
         "Member",
-        "Member DUID",
         "Ministry",
-        "Last contact",
         "Family's answer",
-        "Reviewer's value",
         "Stage",
         "Submitted",
-        "Last decision",
         "Actions",
     ]
     rows = page.locator(ROWS)
     first, second = (rows.nth(n).locator("th, td") for n in (0, 1))
-    assert first.nth(1).inner_text() == "Example <Member>"
-    assert first.nth(2).inner_text() == "12345"
-    assert second.nth(2).inner_text() == "New Member"
-    name = second.nth(3).locator(".cell-clamp")
+    assert first.nth(1).locator("a").inner_text() == "Example <Member>"
+    assert first.nth(1).locator(".cell-detail").inner_text().endswith("12345")
+    assert second.nth(1).locator(".cell-detail").inner_text().endswith("New Member")
+    assert "Last contact" in first.nth(5).inner_text()
+    name = second.nth(2).locator(".cell-clamp")
     assert name.text_content().endswith("<end>")
     assert name.evaluate("e => e.scrollHeight > e.clientHeight")
     # Two lines: twice the first row's one-line name, whatever the font.
-    short = first.nth(3).locator(".cell-clamp")
+    short = first.nth(2).locator(".cell-clamp")
     height = name.bounding_box()["height"]
     assert abs(height - 2 * short.bounding_box()["height"]) <= 2, height
     # The Ministry cell is the request's link (R38 finding 13), so the
@@ -637,13 +635,10 @@ def test_each_stage_shows_its_decision_on_the_icons(page, component_origin):
     assert "Stayed in the Ministry" in ignored.inner_text()
     edited = worklist_row(page, UUID(int=123))
     assert "Accepted (edited)" in edited.inner_text()
-    # The edited Ministry is in the Reviewer's value column itself (R38
-    # finding 11), not only somewhere in the row.
-    headings = [
-        node.inner_text().strip() for node in page.locator("#table thead th").all()
-    ]
-    cells = edited.locator(":scope > th, :scope > td")
-    assert cells.nth(headings.index("Reviewer's value")).inner_text().strip() == (
+    # The edited Ministry is on the values cell's Reviewer's value line (R38
+    # finding 11, #2124), not only somewhere in the row.
+    reviewer = edited.locator(".values-cell .stack-line", has_text="Reviewer's value")
+    assert reviewer.locator(".value-clamp").inner_text().strip() == (
         "Join Another Ministry"
     )
     added = worklist_row(page, UUID(int=124))

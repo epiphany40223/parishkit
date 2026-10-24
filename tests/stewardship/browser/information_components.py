@@ -230,6 +230,8 @@ def components(context, admin):
         "/information-all": page(size),
         "/information-page-2": page({"size": "25", "page": "2"}),
         "/information-by-name": page({"size": "25", "sort": "-family"}),
+        # Sorted by the Family DUID the name heading stacks (#2124).
+        "/information-by-duid": page({"size": "25", "sort": "duid"}),
         ACCEPTED: page(size, ACCEPTED_NOTICE, accepted={0}),
         IGNORED: page(size, IGNORED_NOTICE, ignored={1}),
         REOPENED: page(size, REOPENED_NOTICE),

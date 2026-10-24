@@ -6,6 +6,7 @@ from html import unescape
 
 import pytest
 from django.template.loader import render_to_string
+from django.utils.html import strip_tags
 
 from parishkit.stewardship.pipeline import (
     Action,
@@ -279,23 +280,28 @@ def test_the_page_draws_the_worklist_columns_and_the_download_below():
         ]
     )
     table = html[html.index("<thead>") : html.index("</thead>")]
-    headings = re.findall(r"<th[^>]*>(?:<[^>]+>)*([^<]+)", table)
-    assert [heading.strip() for heading in headings if heading.strip()] == [
-        "Family",
-        "Family DUID",
-        "Who",
-        "Member DUID",
+    # Each heading's lines (a stacked heading's name and DUID, #2124),
+    # without its sort control's arrow and hidden instructions.
+    headings = []
+    for cell in re.findall(r"<th[^>]*>(.*?)</th>", table, re.S):
+        lines = re.sub(r'<span class="stack-line[^"]*"[^>]*>', "|", cell)
+        lines = re.sub(
+            r"\s*\(sort (?:a|de)scending\)|[▲▼↕]", "", unescape(strip_tags(lines))
+        )
+        headings.append(" / ".join(line.strip() for line in lines.split("|") if line))
+    assert [heading for heading in headings if heading] == [
+        "Family / Family DUID",
+        "Who / Member DUID",
         "What changed",
-        "Baseline",
-        "Family's answer",
-        "Reviewer's value",
+        "Baseline → Family's answer",
         "Stage",
-        "Submitted",
-        "Last decision",
+        "Submitted / Last decision",
         "Actions",
     ]
-    assert '<td class="numeric">41</td>' in html
-    assert '<td class="numeric">New Member</td>' in html
+    # Each name's DUID on the line under it.
+    detail = '<span class="stack-line cell-detail"><span class="visually-hidden">'
+    assert f"{detail}Member DUID </span>41</span>" in html
+    assert f"{detail}Member DUID </span>New Member</span>" in html
     assert 'data-source-status="missing"' in html
     assert html.index('id="table-filters"') < html.index("<table")
     assert html.index("<table") < html.index('id="table-export"')
@@ -852,9 +858,11 @@ def test_a_member_who_left_keeps_the_stage_with_the_shared_badge(status, label):
     (found,) = worklist.rows
     assert found["placement"].stage is Stage.TO_REVIEW
     assert found["name"] == "Mobile phone for Pat Sample"
+    # The name wraps to two lines, then clamps, whole in its tip (#2124).
     assert (
-        f'Pat Sample <span class="status-badge" data-source-status="{status}">'
-        f"{label}</span>"
+        '<span class="cell-with-badge"><span class="cell-clamp name-clamp"'
+        ' data-clip-tip>Pat Sample</span> <span class="status-badge"'
+        f' data-source-status="{status}">{label}</span>'
     ) in html
 
 

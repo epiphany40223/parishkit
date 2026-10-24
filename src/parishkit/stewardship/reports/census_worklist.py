@@ -85,6 +85,7 @@ from parishkit.stewardship.web.review_worklist import (
     Remark,
     StaleDecision,
     build,
+    clamp_name,
     page_address,
 )
 from parishkit.stewardship.workflows.models import RefreshCheck
@@ -95,12 +96,26 @@ from .census_changes import LABELS, REOPENED, STAGES
 # conventions, "Table column order"), each sorted by ``census_change_views``'s
 # whitelisted sort tokens. The Stage is chosen with the Stage filter. How
 # it reaches ParishSoft is left out of the table, which it made too wide,
-# and kept in the downloads and as a filter (R38 finding 16).
+# and kept in the downloads and as a filter (R38 finding 16). Each name
+# carries its DUID on the line under it (UX conventions, "Review work
+# tables", #2124).
 COLUMNS = (
-    Column("family", "Family", sort="family"),
-    Column("family_duid", "Family DUID", sort="duid", numeric=True),
-    Column("who", "Who", sort="who"),
-    Column("member_duid", "Member DUID", sort="member_duid", numeric=True),
+    Column(
+        "family",
+        "Family",
+        sort="family",
+        detail="family_duid",
+        detail_heading="Family DUID",
+        detail_sort="duid",
+    ),
+    Column(
+        "who",
+        "Who",
+        sort="who",
+        detail="member_duid",
+        detail_heading="Member DUID",
+        detail_sort="member_duid",
+    ),
     Column("what", "What changed", sort="what"),
 )
 # PostgreSQL's SQLSTATE for a unique violation: a racing second decision of
@@ -165,7 +180,12 @@ def _who(row):
     (Not in ParishSoft, Inactive or Deceased in ParishSoft) says why.
     """
     badge = source_status(row.get("member_status"))
-    return format_html("{} {}", row["who"], badge) if badge else row["who"]
+    name = clamp_name(row["who"])
+    if not badge:
+        return name
+    # The space keeps the name and badge apart in the cell's text, for
+    # screen readers; the flex gap spaces them on screen.
+    return format_html('<span class="cell-with-badge">{} {}</span>', name, badge)
 
 
 def _member_duid(row):

@@ -32,7 +32,7 @@ RAW_ALLOWED = {
     "components/toggletip.html": 1,
     # A POST heading's button and a GET heading's link share one label across
     # an {% if %}, which a block tag cannot straddle.
-    "table-sort-heading.html": 1,
+    "table-sort-control.html": 1,
     # Attribute values built from several parts ("log-{{ … }}-actor"), which
     # the tag cannot take as one argument yet.
     "hosted-files.html": 2,

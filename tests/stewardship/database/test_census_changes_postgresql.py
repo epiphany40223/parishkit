@@ -8,6 +8,7 @@ from uuid import uuid4
 import pytest
 from django.db import connection, transaction
 from django.test.utils import CaptureQueriesContext
+from django.utils.html import escape
 from openpyxl import load_workbook
 
 from parishkit.stewardship.accounts.policy import Principal
@@ -168,8 +169,13 @@ def test_native_page_and_downloads(response_service, google, settings):
         # record ids read once, however many rows it shows.
         duid = rows[0]["family_duid"]
         link = timeline_link(harness.campaign, duid, directory_name(duid))
-        # The worklist draws the Family as each row's header cell.
-        cell = f'<th scope="row">{link}</th>'.encode()
+        # The worklist draws the Family as each row's header cell, its
+        # Family DUID on the line under it, the name wrapping to two lines,
+        # then clamped, whole in its tip (#2124).
+        name = escape(directory_name(duid))
+        clamped = f'<span class="cell-clamp name-clamp" data-clip-tip>{name}</span>'
+        link = link.replace(f">{name}<", f">{clamped}<")
+        cell = f'<th scope="row">{link}<span class="stack-line cell-detail">'.encode()
         assert len(rows) == body.count(cell) == 2
         assert len(link_reads(queries)) == 1
         assert get(browser, route + "?search=x")[0].status_code == 400
@@ -191,10 +197,12 @@ def test_native_page_and_downloads(response_service, google, settings):
             assert search(browser, route, invalid)[0].status_code == 400
         response, body = search(browser, route, {"sort": "-who"})
         assert response.status_code == 200 and b'aria-sort="descending"' in body
-        # Member DUID has its own column beside Who, and sorts in place (#932).
+        # Member DUID sits on the line under Who, with its own sort control
+        # in Who's heading, and sorts in place (#932, #2124).
         response, body = search(browser, route, {"stage": "all", "sort": "member_duid"})
         assert response.status_code == 200 and b'aria-sort="ascending"' in body
-        assert b'<td class="numeric">3</td>' in body
+        assert b'data-sort-column="member_duid"' in body
+        assert b'<span class="visually-hidden">Member DUID </span>3</span>' in body
         export = route + "exports/"
         # A download pane drawn before #1888 still posts its empty dates.
         response, body = search(

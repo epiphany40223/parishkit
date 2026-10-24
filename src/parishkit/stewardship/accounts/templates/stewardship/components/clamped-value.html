@@ -1,0 +1,10 @@
+{% load i18n stewardship %}{% comment %}
+  A review work table's value, clamped to two lines (the clamped_value tag;
+  UX conventions, "Review work tables", #2124). A long one has Show all
+  under it: the shared toggletip (ui-v1.js) whose bubble floats over the
+  page with the whole value, so opening it moves no control and grows no
+  row. The pointer resting on a clamped value shows it whole in the shared
+  clipped-name tip too (data-clip-tip="hover", admin-menu-v1.js); the
+  keyboard reaches it through Show all, so the value adds no tab stop. The
+  clamp is only drawn: the whole value stays the cell's text.
+{% endcomment %}<span class="clamped"><span class="value-clamp" data-clip-tip="hover">{{ value }}</span>{% if long %}<span class="toggletip cell-more">{% button type="button" variant="link" class="toggletip-button cell-more-button" aria-expanded=False aria-controls=tip_id %}{% translate "Show all" %}{% endbutton %}<span class="toggletip-bubble cell-more-bubble" id="{{ tip_id }}" hidden>{{ value }}</span></span>{% endif %}</span>

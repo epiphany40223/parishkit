@@ -2184,6 +2184,92 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .worklist-table > nav.table-nav:first-child { margin-block: 0 .5rem; }
 .worklist-table .table-scroll { margin-block: .5rem .75rem; }
 .worklist-table caption { padding-block: .3rem; }
+/* Review work tables (ui-conventions "Review work tables", #2124): every
+   stream's review worklist, drawn once by components/review-worklist.html.
+   Names, fields and stages keep a minimum width and wrap only between words
+   (break-word breaks a word only when it alone is wider than the cell,
+   never letter by letter as main's overflow-wrap: anywhere did); free text
+   wraps at word boundaries first. The Actions cell holds its icons two to a
+   line. The table's own box is a size container, so the rows stack as cards
+   whenever it is narrower than 57rem (912 px), whatever the window:
+   the Admin menu takes part of a wide window, none of a narrow one. Only
+   that box: a container around the row dialogs moved their fields as they
+   changed in WebKit. */
+.worklist-table .table-scroll { container: review-worklist / inline-size; }
+.review-table { width: 100%; }
+.review-table th, .review-table td { overflow-wrap: break-word; word-break: normal; }
+/* A little less side padding than other whole-word tables, so the widest
+   (Ministry requests) keeps its table at a 1280 px window with the Admin
+   menu open. */
+.data-table.review-table th, .data-table.review-table td { padding-inline: .5rem; }
+.review-table .name-cell, .review-table tbody th[scope=row] { min-width: 7rem; }
+.review-table .field-cell { min-width: 6rem; }
+.review-table .stage-cell { min-width: 6.5rem; }
+.review-table .values-cell { min-width: 8rem; max-width: 18rem; }
+.review-table .dates-cell { min-width: 9rem; }
+/* Names are cut short last (ui-conventions "Table fit and row height",
+   cut-short values): a Family or Member name (name-clamp) and a Ministry
+   name wrap between words to two lines, then clamp, whole in their tip
+   (#1136); a badge beside a name or a Ministry wraps under it, its own
+   words wrapping too, rather than widening the column. The Ministry's
+   13rem holds a name as long as any in use whole on two lines even in
+   Linux's wider DejaVu Sans ("Hospitality and welcome" is about 197 px
+   there); 12rem cut it to a third line at 1280 px. */
+.review-table .cell-clamp { min-width: 13rem; max-width: 16rem; }
+.review-table .cell-clamp.name-clamp { min-width: 6rem; max-width: 10rem; }
+.review-table .cell-with-badge { flex-wrap: wrap; gap: .2rem .4rem; }
+.review-table .status-badge { white-space: normal; }
+.review-table .cell-detail, .review-table .value-old,
+.review-table .value-label { color: var(--muted); }
+.review-table .cell-detail { font-size: .875rem; font-variant-numeric: tabular-nums; }
+.review-table .value-label { display: block; font-size: .8125rem; line-height: 1.3; margin-block-start: .25rem; }
+/* The two sort controls of a stacked heading keep 24px targets
+   (WCAG 2.2 target size). */
+.review-table .stacked-heading .sort-link { display: inline-flex; align-items: center; min-height: 24px; }
+/* A long value that two lines hold after all keeps its Show all's line
+   but hides it (ui-v1.js), so no row changes height. */
+.review-table .cell-more-unneeded { visibility: hidden; }
+.review-table .value-new { display: flex; gap: .3rem; align-items: baseline; }
+.review-table .value-new > :not(.value-arrow) { min-width: 0; }
+.review-table .stage-cell .stage-chip { white-space: normal; }
+.review-table .review-actions { white-space: normal; width: calc(2 * var(--button-min-height) + .5rem); min-width: calc(2 * var(--button-min-height) + .5rem); box-sizing: content-box; }
+.review-table .review-actions .icon-button { margin-block: 0 .35rem; }
+.review-table .review-actions .icon-button:nth-of-type(2n) { margin-inline-end: 0; }
+/* A value clamped to two lines; its Show all (a toggletip styled as a link)
+   sits under it, and its bubble floats over the page, so it moves nothing. */
+.review-table .value-clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.review-table .clamped, .review-table .cell-more { display: block; }
+.review-table .toggletip-button.cell-more-button { display: inline; width: auto; height: auto; min-height: 0; border: 0; border-radius: 0; background: none; color: var(--link); font: inherit; font-size: .875rem; font-style: normal; font-weight: 400; text-decoration: underline; }
+.review-table .toggletip-button.cell-more-button::before { inset: -.25rem; }
+.review-table .toggletip-button.cell-more-button:not(:disabled):hover, .review-table .toggletip-button.cell-more-button[aria-expanded=true] { background: none; color: var(--link); }
+.review-table .cell-more-bubble { max-width: min(30rem, calc(100vw - 2rem)); max-height: 50vh; overflow: auto; white-space: pre-line; overflow-wrap: break-word; }
+/* The card layout: each row a card of label/value pairs, its name first
+   between its selection box and its actions (on the card's first line, so
+   a decision that adds lines to the card never moves them), then the other
+   cells, flowing side by side where the card has room; the headings a row
+   of sort controls above the cards. */
+@container review-worklist (width < 57rem) {
+  .review-table, .review-table > tbody, .review-table > tbody > tr,
+  .review-table > tbody > tr > * { display: block; }
+  .review-table > thead > tr { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; padding: .4rem .6rem; }
+  .review-table > thead > tr > th { padding: 0; border: 0; background: none; }
+  .review-table > thead > tr > th:not(.select-col):not([data-sort-column]) { display: none; }
+  .review-table > thead .stacked-heading { display: flex; flex-wrap: wrap; gap: .25rem 1rem; }
+  .review-table > thead .stacked-heading > .stack-line:not(:has(.sort-link)) { display: none; }
+  .review-table > tbody > tr { display: flex; flex-wrap: wrap; gap: .5rem 1rem; padding: .6rem; border-block-start: 1px solid var(--border); }
+  .review-table > tbody > tr > * { flex: 1 1 11rem; min-width: 0; max-width: none; width: auto; padding: 0; border: 0; text-align: start; }
+  .review-table > tbody > tr > * { order: 2; }
+  .review-table > tbody > tr > :is(.select-col, th[scope=row], .review-actions) { order: 1; }
+  .review-table > tbody > tr::after { content: ""; order: 1; flex-basis: 100%; }
+  .review-table > tbody > tr > .select-col { flex: 0 0 auto; }
+  .review-table > tbody > tr > th[scope=row] { flex: 1 1 0; }
+  .review-table > tbody > tr > [colspan] { flex-basis: 100%; }
+  .review-table > tbody > tr > .review-actions { flex: 0 0 auto; }
+  .review-table > tbody > tr > td.review-actions[data-label]::before { content: none; }
+  .review-table > tbody > tr > [data-label]::before { content: attr(data-label); display: block; color: var(--muted); font-size: .8125rem; font-weight: 400; line-height: 1.3; }
+  .review-table .review-actions { width: calc(2 * var(--button-min-height) + .5rem); }
+  .review-table .cell-clamp.name-clamp { max-width: 100%; }
+}
 /* Ministry requests' By Ministry counts (#1133, #1653): a closed
    disclosure whose control sits on the heading's line after About this
    page, drawn like it (a quiet summary with a fixed chevron), so the

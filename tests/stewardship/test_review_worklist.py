@@ -294,9 +294,10 @@ def test_build_gives_each_row_its_box_kinds_and_posts():
     assert built.fields == {"stage": "all"}
     assert built.selectable and not built.add
     assert [kind for kind, _, _ in built.dialogs] == ["decide", "bulk"]
-    # Who, Baseline, Family's answer, Reviewer's value, Stage, Submitted,
-    # Last decision, Actions and the selection column.
-    assert built.span == 9
+    # Who, the values (Baseline → Family's answer, the Reviewer's value),
+    # Stage, Submitted and Last decision, Actions and the selection column
+    # (#2124).
+    assert built.span == 6
 
 
 def test_a_stream_without_baseline_or_edit_drops_those_columns():
@@ -306,9 +307,9 @@ def test_a_stream_without_baseline_or_edit_drops_those_columns():
     table = paginate(rows(), {"size": "25"}, carry=[("stage", "all")])
     built = made(shown=table.rows, baseline=False, reviewer=False)
     assert not built.baseline and not built.reviewer
-    # Who, Family's answer, Stage, Submitted, Last decision, Actions and the
-    # selection column.
-    assert built.span == 7
+    # Who, Family's answer, Stage, Submitted and Last decision, Actions and
+    # the selection column.
+    assert built.span == 6
     html = render_to_string(
         "stewardship/components/review-worklist.html",
         {"worklist": built, "table": table, "csrf_token": "x"},
@@ -428,7 +429,11 @@ def test_a_stream_family_column_links_anywhere():
         "stewardship/components/review-worklist.html",
         {"worklist": built, "table": table, "csrf_token": "x", "request": staff},
     )
-    assert ">Sample, Pat and Lee</a></td>" in html
+    # The name wraps to two lines, then clamps, whole in its tip (#2124).
+    assert (
+        '><span class="cell-clamp name-clamp" data-clip-tip>'
+        "Sample, Pat and Lee</span></a></td>"
+    ) in html
 
 
 def test_read_decision_reads_a_row_add_and_bulk_post():
@@ -662,7 +667,7 @@ def test_identity_cells_carry_their_item_page():
         stages=[],
     )
     (decorated,) = worklist.rows
-    assert [(value, href) for value, _column, href in decorated["identity"]] == [
+    assert [(value, href) for value, _column, href, _ in decorated["identity"]] == [
         ("Pat", ""),
         ("Phone", "/item/1"),
     ]

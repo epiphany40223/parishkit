@@ -330,9 +330,19 @@ def table_body(raw, paging):
     return html[html.index("<table") : html.index("</table>")]
 
 
+def duid(heading, value):
+    """A name cell's DUID line (#2124): muted, under the name, its heading
+    hidden but read."""
+    return (
+        '<span class="stack-line cell-detail"><span class="visually-hidden">'
+        f"{heading} </span>{value}</span>"
+    )
+
+
 def test_the_table_leads_with_the_family_then_the_member_and_their_duids():
     """Family, Family DUID, Member, Member DUID, then the shared columns
-    (#932, #1685); each DUID has its own right-aligned cell and sorts."""
+    (#932, #1685); each DUID sits on the line under its name and sorts
+    (#2124)."""
     raw = result()
     raw["members"].append(
         raw["members"][0]
@@ -344,15 +354,18 @@ def test_the_table_leads_with_the_family_then_the_member_and_their_duids():
     positions = [table.index(f'data-sort-column="{key}"') for key in columns]
     assert positions == sorted(positions)
     assert 'data-sort-column="talents"' not in table
-    assert '<td class="numeric">10</td><td>Alex Example</td>' in table
-    assert '<td>Alex Example</td><td class="numeric">3</td>' in table
+    family_10 = duid("Family DUID", 10) + '</th><td class="name-cell"'
+    # The name wraps to two lines, then clamps, whole in its tip (#2124).
+    clamp = '<span class="cell-clamp name-clamp" data-clip-tip>'
+    assert family_10 + ' data-label="Member">' + clamp + "Alex Example" in table
+    assert "Alex Example</span>" + duid("Member DUID", 3) + "</td>" in table
     assert "Cannot participate in any ministries" in table
     assert "Cannot attend Mass or prayer services" in table
     # Sorted by Family DUID: 7 comes before 10.
-    assert table.index(">7</td>") < table.index(">10</td>")
+    assert table.index(duid("Family DUID", 7)) < table.index(duid("Family DUID", 10))
     # Sorted by Member DUID, descending: 41 comes before 3.
     table = table_body(raw, {"sort": "-member_duid"})
-    assert table.index(">41</td>") < table.index(">3</td>")
+    assert table.index(duid("Member DUID", 41)) < table.index(duid("Member DUID", 3))
 
 
 def test_a_proposed_member_reads_new_member_and_sorts_last():
@@ -365,8 +378,8 @@ def test_a_proposed_member_reads_new_member_and_sorts_last():
         | {"kind": "proposed_member", "member_key": str(UUID(int=5))}
     )
     table = table_body(raw, {"sort": "member_duid"})
-    assert '<td>New</td><td class="numeric">New Member</td>' in table
-    assert table.index(">3</td>") < table.index("New Member")
+    assert "New</span>" + duid("Member DUID", "New Member") + "</td>" in table
+    assert table.index(duid("Member DUID", 3)) < table.index("New Member")
 
 
 def test_the_stage_filter_lists_and_counts_each_stage():

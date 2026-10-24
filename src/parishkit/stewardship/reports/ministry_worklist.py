@@ -48,6 +48,7 @@ from parishkit.stewardship.web.review_worklist import (
     WORDS,
     Column,
     build,
+    clamp_name,
 )
 from parishkit.stewardship.web.tables import (
     PAGE_SIZES,
@@ -102,10 +103,16 @@ PREFIX = "requests"
 # (plain for a Ministry leader), and the Ministry opens the request's own
 # page for every viewer (an Administrator decision, R38 finding 13).
 COLUMNS = (
-    Column("member_cell", "Member", sort="member", family=True),
-    Column("duid_cell", "Member DUID", numeric=True),
+    Column(
+        "member_cell",
+        "Member",
+        sort="member",
+        family=True,
+        detail="duid_cell",
+        detail_heading="Member DUID",
+    ),
     Column("ministry_cell", "Ministry", sort="ministry", link="item_url"),
-    Column("contact_cell", "Last contact"),
+    Column("contact_cell", "Last contact", dated=True),
 )
 FORMER = "Former portal user"
 REPLACED = "Replaced by a later response"
@@ -643,7 +650,8 @@ def _family_ids(rows):
 
 
 def _member_cell(row):
-    """The Member cell: the name with the ParishSoft badge.
+    """The Member cell: the name with the ParishSoft badge, the name
+    wrapping to two lines and then clamped, whole in its tip (#2124).
 
     A Member the data no longer has in this Family has no name, so the badge
     stands alone (#1216). The worklist links it to the Family hub for the
@@ -658,10 +666,7 @@ def _member_cell(row):
         if row["source_mark"]
         else ""
     )
-    link = format_html(
-        '<span class="cell-ellipsis" data-clip-tip>{}</span>',
-        row["member_name"] or badge,
-    )
+    link = clamp_name(row["member_name"] or badge)
     if not row["source_mark"]:
         return link
     return format_html(

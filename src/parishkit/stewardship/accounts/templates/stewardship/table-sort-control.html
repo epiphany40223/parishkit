@@ -1,0 +1,8 @@
+{% load i18n %}{% comment %}
+  One sort control, the inside of a sortable column heading: a GET table's
+  link or a POST table's small CSRF form (the sort_heading and
+  sort_heading_pair tags in templatetags/stewardship.py, which pass it
+  ``table``, ``csrf_token`` and the control's own ``c``). The visible
+  arrow is decoration; the hidden text says what activating the control
+  does.
+{% endcomment %}{% if table.method == "post" %}<form method="post" action="{{ table.action }}#{{ table.anchor }}" class="inline-form sort-form"><input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">{% for name, value in c.fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}<button type="submit" class="link-button sort-link">{% else %}<a class="sort-link" href="?{{ c.query }}#{{ table.anchor }}">{% endif %}{{ c.label }}<span class="sort-indicator" aria-hidden="true">{% if c.state == "ascending" %}▲{% elif c.state == "descending" %}▼{% else %}↕{% endif %}</span><span class="visually-hidden"> {% if c.descends %}{% translate "(sort descending)" %}{% else %}{% translate "(sort ascending)" %}{% endif %}</span>{% if table.method == "post" %}</button></form>{% else %}</a>{% endif %}

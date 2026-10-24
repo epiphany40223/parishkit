@@ -12,7 +12,7 @@ import pytest
 
 from .followup_components import REQUESTS, SORTED
 from .limitations_components import PATH as LIMITATIONS
-from .waits import eventually, has_attribute, has_text, recorded, visible
+from .waits import eventually, focused, has_attribute, has_text, recorded, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -242,6 +242,46 @@ def test_filter_and_export_forms_follow_a_post_tables_sort(page, component_origi
         page.get_by_role("button", name="Apply filters").click()
     assert "sort=-family" in got.value.request.post_data
     has_attribute(sort_heading(page, "family"), "aria-sort", "descending")
+
+
+def test_a_stacked_name_headings_two_controls_sort_in_place(page, component_origin):
+    """A review work table's name heading stacks the Family DUID's sort
+    control under the name's (#2124). Each re-sorts in place: the heading
+    cell's aria-sort states the new order, focus goes back to the control
+    pressed, and the status names its column."""
+    page.goto(component_origin + "/information-all")
+    page.evaluate(MARK)
+    heading = sort_heading(page, "family")
+    assert heading.get_attribute("aria-sort") == "ascending"
+    fulfil_post_with(
+        page,
+        "**/information/",
+        component_origin,
+        lambda request: (
+            "/information-by-duid"
+            if "sort=duid" in request.post_data
+            else "/information-all"
+        ),
+    )
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        heading.get_by_role("button", name="Family DUID").click()
+    assert "sort=duid" in sent.value.post_data.split("&")
+    has_text(
+        page.get_by_role("status").filter(has_text="Sorted by"),
+        "Sorted by Family DUID, ascending",
+    )
+    has_attribute(heading, "aria-sort", "ascending")
+    assert "Family DUID" in page.evaluate("document.activeElement.textContent")
+    assert page.evaluate(MARKED) == "kept"
+    # Back to the name, whose control now sorts ascending.
+    heading.get_by_role("button", name="Family (sort ascending)").click()
+    has_text(
+        page.get_by_role("status").filter(has_text="Sorted by"),
+        "Sorted by Family, ascending",
+    )
+    has_attribute(heading, "aria-sort", "ascending")
+    focused(heading.get_by_role("button", name="Family (sort descending)"))
+    assert page.evaluate(MARKED) == "kept"
 
 
 def test_export_choices_survive_a_sort_and_its_hidden_fields_follow(
@@ -539,8 +579,10 @@ def test_limitations_filter_updates_the_table_and_its_counts(page, component_ori
         page.get_by_role("status").filter(has_text="Showing"),
         "Showing 1–2 of 2 · Page 1 of 1",
     )
+    # Each row header's first line is the name, its Family DUID under it
+    # (#2124).
     families = page.locator("#table tbody th[scope=row]").all_inner_texts()
-    assert families == ["Carter", "Carter"]
+    assert [text.split("\n")[0] for text in families] == ["Carter", "Carter"]
     assert page.evaluate(MARKED) == "kept"
 
 
@@ -587,7 +629,11 @@ def test_duid_headings_sort_the_sql_ordered_reports(
     page.goto(component_origin + path)
     page.route(action, lambda route: route.fulfill(body="Sorted"))
     with page.expect_request(lambda request: request.method == "POST") as sent:
-        page.get_by_role("columnheader", name=heading).get_by_role("button").click()
+        # A review worklist stacks the DUID under the name, its heading
+        # holding both sort controls (#2124): press the DUID's.
+        page.get_by_role("columnheader", name=heading).get_by_role(
+            "button", name=heading
+        ).click()
     assert token in sent.value.post_data.split("&")
     assert "?" not in sent.value.url
     # Let the routed answer finish loading before the page closes.

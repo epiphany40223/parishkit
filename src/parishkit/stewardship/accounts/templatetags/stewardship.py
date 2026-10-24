@@ -5,7 +5,7 @@ from datetime import date, time
 
 from django import template
 from django.urls import reverse
-from django.utils.html import conditional_escape, format_html
+from django.utils.html import conditional_escape, format_html, strip_tags
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
@@ -17,6 +17,7 @@ from parishkit.stewardship.source.source_status import source_status_label
 from parishkit.stewardship.web import dates, presentation, stat_tiles
 from parishkit.stewardship.web.buttons import portal_classes
 from parishkit.stewardship.web.exports import DEFAULT_EXPORT_FORMAT
+from parishkit.stewardship.web.review_worklist import clamp_name
 
 register = template.Library()
 for name in (
@@ -251,7 +252,7 @@ def family_timeline_url(context, family_id):
 
 
 @register.simple_tag(takes_context=True)
-def family_link(context, family_id, name, active=None):
+def family_link(context, family_id, name, active=None, clamp=False):
     """A Family's name in an Admin table, linked to its Timeline (#1570).
 
     Usage: ``{% family_link row.family_id row.display_name active=row.active %}``.
@@ -265,11 +266,15 @@ def family_link(context, family_id, name, active=None):
     the Timeline (a Testing-only list, or a name already linking its row's
     own page). ``active`` False adds the
     "No longer in this campaign" badge after a known name (#1393), outside the link
-    (ui-conventions, #1216). The name links only when
+    (ui-conventions, #1216). ``clamp`` True wraps a known name to at most
+    two lines, then clamps it, whole in its tip (a review work table's
+    names, #2124). The name links only when
     ``family_timeline_url`` gives an address, so every table that names a
     Family links it the same way, for the same viewers.
     """
     shown = conditional_escape(name) if name else source_status("missing")
+    if name and clamp:
+        shown = clamp_name(name)
     href = family_timeline_url(context, family_id)
     if href:
         shown = format_html('<a href="{}">{}</a>', href, shown)
@@ -610,13 +615,44 @@ def sort_heading(context, table, column, label, css_class=""):
     """
     return {
         "table": table,
+        "c": _sort_control(table, column, label),
+        "css_class": css_class,
+        "csrf_token": context.get("csrf_token"),
+    }
+
+
+def _sort_control(table, column, label):
+    """What one sort control (table-sort-control.html) draws for ``column``."""
+    return {
         "column": column,
         "label": label,
-        "css_class": css_class,
         "state": table.aria_sort(column),
         "descends": table.sort_descends(column),
         "fields": table.heading_fields(column),
         "query": table.heading_query(column),
+    }
+
+
+@register.inclusion_tag("stewardship/table-sort-pair.html", takes_context=True)
+def sort_heading_pair(context, table, column, label, second, second_label):
+    """A heading over a cell stacking two sortable values (#2124): a name
+    and its DUID, each with its own control, the second under the first.
+
+    The heading's ``aria-sort`` is that of whichever of the two the table
+    is sorted by. An empty ``second`` names a value the table does not sort
+    by (a Ministry request's Member DUID), drawn as plain text.
+    """
+    first = _sort_control(table, column, label)
+    other = (
+        _sort_control(table, second, second_label)
+        if second
+        else {"label": second_label, "state": None}
+    )
+    return {
+        "table": table,
+        "first": first,
+        "second": other,
+        "state": first["state"] or other["state"],
         "csrf_token": context.get("csrf_token"),
     }
 
@@ -850,3 +886,26 @@ class ButtonNode(template.Node):
         tag = "a" if self.link else "button"
         label = self.nodelist.render(context)
         return mark_safe(f"<{tag}{''.join(parts)}>{label}</{tag}>")
+
+
+# How many characters of a review work table's value fit its two clamped
+# lines at the cell's minimum width (UX conventions, "Review work tables",
+# #2124); a longer value, or one of several lines, gets Show all.
+CLAMP_CHARS = 28
+
+
+@register.inclusion_tag("stewardship/components/clamped-value.html")
+def clamped_value(value, tip_id):
+    """A review work table's value clamped to two lines, with Show all.
+
+    Show all (a toggletip, ``tip_id`` its bubble) is drawn only for a value
+    longer than ``CLAMP_CHARS`` or of several lines, which two lines may
+    not hold; its bubble floats over the page with the whole value, so
+    opening it moves nothing (#2124).
+    """
+    text = strip_tags(str(value or "")).strip()
+    return {
+        "value": value,
+        "tip_id": tip_id,
+        "long": len(text) > CLAMP_CHARS or "\n" in text,
+    }

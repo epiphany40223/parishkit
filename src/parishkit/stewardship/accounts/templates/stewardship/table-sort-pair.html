@@ -1,0 +1,10 @@
+{% comment %}
+  A heading over a cell that stacks two values (UX conventions, "Review
+  work tables", #2124): a name and its DUID, each with its own sort
+  control, one above the other in the cell's order (the sort_heading_pair
+  tag); a second value the table does not sort by is plain text. The
+  heading names the first column (data-sort-column) and its aria-sort
+  states the order of whichever of the two sorts the table; the second
+  control's line names its own column, so ui-v1.js puts focus back on the
+  control that was chosen.
+{% endcomment %}<th scope="col" class="stacked-heading"{% if state %} aria-sort="{{ state }}"{% endif %} data-sort-column="{{ first.column }}"><span class="stack-line">{% include "stewardship/table-sort-control.html" with c=first %}</span>{% if second.column %}<span class="stack-line" data-sort-column="{{ second.column }}">{% include "stewardship/table-sort-control.html" with c=second %}</span>{% else %}<span class="stack-line">{{ second.label }}</span>{% endif %}</th>

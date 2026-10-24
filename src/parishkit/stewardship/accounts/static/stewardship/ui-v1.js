@@ -1323,10 +1323,12 @@
         return found instanceof HTMLFormElement ? firstSubmit(found) : found;
       };
     }
-    const heading = control.closest("th[data-sort-column]");
+    // A sort control's column: its heading's, or, in a heading stacking
+    // two values (a name and its DUID, #2124), its own line's.
+    const heading = control.closest("th [data-sort-column], th[data-sort-column]");
     if (heading) {
       const column = CSS.escape(heading.dataset.sortColumn);
-      return (fresh) => fresh.querySelector(`th[data-sort-column="${column}"] .sort-link`);
+      return (fresh) => fresh.querySelector(`th [data-sort-column="${column}"] .sort-link, th[data-sort-column="${column}"] .sort-link`);
     }
     const navs = [...region.querySelectorAll(".table-nav")];
     const index = navs.indexOf(control.closest(".table-nav"));
@@ -1386,13 +1388,16 @@
         return label ? `${label}: ${tableCount(region)}` : tableCount(region);
       }).join(". ");
     }
-    const column = control.closest("th[data-sort-column]")?.dataset.sortColumn;
+    const column = control.closest("th [data-sort-column], th[data-sort-column]")?.dataset.sortColumn;
     if (column === undefined) return tableCount(fresh);
-    const heading = fresh.querySelector(`th[data-sort-column="${CSS.escape(column)}"]`);
+    const escaped = CSS.escape(column);
+    const heading = fresh.querySelector(`th [data-sort-column="${escaped}"], th[data-sort-column="${escaped}"]`);
     const label = [...(heading?.querySelector(".sort-link")?.childNodes || [])]
       .filter((node) => node.nodeType === Node.TEXT_NODE)
       .map((node) => node.textContent).join("").trim();
-    const state = heading?.getAttribute("aria-sort");
+    // A stacked heading's aria-sort is on the heading cell itself, and
+    // states the order of the control just chosen.
+    const state = heading?.closest("th")?.getAttribute("aria-sort");
     return state ? `Sorted by ${label}, ${state}` : `Sorted by ${label}`;
   };
   // Enhance freshly swapped-in content as the page's own was enhanced, then
@@ -9309,4 +9314,35 @@
   document.addEventListener("submit", (event) => maskSecrets(event.target), true);
   window.addEventListener("pagehide", () => maskSecrets(document));
   window.addEventListener("pageshow", () => maskSecrets(document));
+})();
+
+// A review work table's Show all (components/clamped-value.html, #2124):
+// the server draws it under every value long enough that two lines may not
+// hold it, and this hides it (visibility only, so its line stays and no row
+// changes height) where the value fits its two lines after all. Measured
+// when the page loads, when an in-place answer swaps rows in
+// (parishkit:swap) and when the window changes size.
+(() => {
+  const measure = (root) => {
+    root.querySelectorAll?.(".review-table .clamped").forEach((cell) => {
+      const value = cell.querySelector(".value-clamp");
+      const more = cell.querySelector(".cell-more");
+      if (!value || !more || more.classList.contains("toggletip-open")) return;
+      more.classList.toggle("cell-more-unneeded", value.scrollHeight <= value.clientHeight + 1);
+    });
+  };
+  let queued = false;
+  const again = () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; measure(document); });
+  };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => measure(document));
+  } else {
+    measure(document);
+  }
+  document.fonts?.ready.then(() => measure(document));
+  document.addEventListener("parishkit:swap", (event) => measure(event.target));
+  window.addEventListener("resize", again);
 })();
