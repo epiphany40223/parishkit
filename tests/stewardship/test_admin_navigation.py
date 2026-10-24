@@ -1212,6 +1212,12 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
         ["manual", "member", "ignored", "pending", 6],
         ["api", "member", "approved", "superseded", 7],
     ]
+    # Additional information's groups (follow-up needed, completed, ignored
+    # by Staff, rows) and Limitations' (decision, in force, rows), #2101:
+    # 3 and 4 To review, with stages the count leaves out.
+    information = [[False, False, False, 3], [True, False, False, 5]]
+    information += [[False, False, True, 1]]
+    limitations = [[None, False, 3], ["accepted", True, 2], ["none", True, 1]]
 
     class Cursor:
         """Records each statement and answers both counts."""
@@ -1227,14 +1233,15 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
 
         def fetchone(self):
             return (
-                3 if statements[-1]["information"] else None,
+                json.dumps(information) if statements[-1]["information"] else None,
                 2 if statements[-1]["ministry"] else None,
                 selected if statements[-1]["ministry"] else None,
                 json.dumps(groups) if statements[-1]["census"] else None,
                 6 if statements[-1]["roster"] else None,
                 [] if statements[-1]["roster"] else None,
-                4 if statements[-1]["limitations"] else None,
+                json.dumps(limitations) if statements[-1]["limitations"] else None,
                 5 if statements[-1]["pledges"] else None,
+                0,
             )
 
     monkeypatch.setattr(
@@ -1285,6 +1292,24 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
         counts = admin_context._open_counts(request, actor, items, campaign)
         assert counts == expected, role
         assert len(statements) == (1 if expected else 0), role
+        # The same read by stage is left for My review work's cards (#2101).
+        stages = request._stewardship_open_stages
+        if "census_changes" in expected:
+            assert stages["census_changes"] == {
+                "to_review": 3,
+                "conflict": 4,
+                "ready_to_update": 8,
+                "updated": 5,
+                "ignored": 6,
+                "history": 7,
+            }
+        if "information_queue" in expected:
+            assert stages["information_queue"] == {
+                "to_review": 3,
+                "to_handle": 5,
+                "ignored": 1,
+            }
+            assert stages["limitations_report"] == {"to_review": 4, "to_handle": 2}
         # A second chrome render in the same request reuses the counts.
         assert admin_context._open_counts(request, actor, items, campaign) == counts
         assert len(statements) == (1 if expected else 0), role

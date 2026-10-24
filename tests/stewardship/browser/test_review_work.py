@@ -22,10 +22,12 @@ BOXES = """() => [...document.querySelectorAll('[data-link-card]')].map(card => 
 def test_staff_panels_link_each_stage_and_fit(
     page, component_origin, axe_source, width
 ):
-    """One panel per stream in order, each stage a link card read as its
+    """One panel per stream, named and ordered as the Review work menu
+    (#2108), each stage a link card read as its
     stage, count and what is counted, linking its page at that Stage
-    (#1818); no sideways scroll on a phone, and the whole page fits a
-    laptop window."""
+    (#1818; Limitations, Entered incorrectly and Not seen in
+    ParishSoft since #2101); no sideways scroll on a phone, and the whole
+    page fits a laptop window."""
     page.set_viewport_size({"width": width, "height": 768})
     page.goto(component_origin + PATH)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
@@ -37,17 +39,20 @@ def test_staff_panels_link_each_stage_and_fit(
     ) == [
         "census",
         "ministry",
-        "cannot_participate",
         "financial",
         "additional_information",
+        "cannot_participate",
     ]
     census = page.get_by_role("region", name="Census changes")
-    expect(census.get_by_role("link")).to_have_count(3)
+    expect(census.get_by_role("link")).to_have_count(4)
     link = census.get_by_role("link", name="To review 1,234 changes")
     expect(link).to_have_attribute("href", "/admin/reports/census/?stage=to_review")
     expect(census.get_by_role("link", name="Conflict 2 changes")).to_have_attribute(
         "href", "/admin/reports/census/?stage=conflict"
     )
+    expect(
+        census.get_by_role("link", name="Entered incorrectly 0 changes")
+    ).to_have_attribute("href", "/admin/reports/census/?stage=entered_incorrectly")
     # Ready to update is the Administrator's; Staff do not see it.
     expect(census.get_by_text("Ready to update")).to_have_count(0)
     ministry = page.get_by_role("region", name="Ministry requests")
@@ -57,22 +62,30 @@ def test_staff_panels_link_each_stage_and_fit(
     expect(
         ministry.get_by_role("link", name="To enter by hand 3 requests")
     ).to_have_attribute("href", "/admin/reports/ministries/?stage=to_enter_by_hand")
+    # Not seen in ParishSoft shows while a request carries the flag (#2101).
+    expect(
+        ministry.get_by_role("link", name="Not seen in ParishSoft 1 requests")
+    ).to_have_attribute("href", "/admin/reports/ministries/?stage=not_seen")
     # A stream the menu greys out keeps its cards, greyed with the reason.
-    financial = page.get_by_role("region", name="Financial")
+    financial = page.get_by_role("region", name="Pledges")
     expect(financial.get_by_role("link")).to_have_count(0)
     expect(financial).to_contain_text("does not include Financial stewardship")
     information = page.get_by_role("region", name="Additional information")
     expect(information.get_by_role("link", name="To handle 1 items")).to_have_attribute(
         "href", "/admin/reports/information/?stage=to_handle"
     )
-    # Cannot participate has only To review and links its plain page.
+    # Limitations links its To review and To handle stages.
+    limitations = page.get_by_role("region", name="Limitations")
     expect(
-        page.get_by_role("region", name="Cannot participate").get_by_role("link")
-    ).to_have_attribute("href", "/admin/reports/limitations/")
+        limitations.get_by_role("link", name="To review 4 answers")
+    ).to_have_attribute("href", "/admin/reports/limitations/?stage=to_review")
+    expect(
+        limitations.get_by_role("link", name="To handle 0 answers")
+    ).to_have_attribute("href", "/admin/reports/limitations/?stage=to_handle")
     if width == 1366:
         # An overview page fits a laptop window without scrolling.
         assert page.evaluate(
-            "document.querySelector('[data-review-stream=additional_information]')"
+            "document.querySelector('[data-review-stream=cannot_participate]')"
             ".getBoundingClientRect().bottom <= innerHeight"
         )
 

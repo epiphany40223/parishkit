@@ -1814,38 +1814,58 @@ changes what each role lands on:
   [#1590](https://github.com/epiphany40223/parishkit/issues/1590)), and it
   replaces My Ministries for a leader. As built
   ([#1690](https://github.com/epiphany40223/parishkit/issues/1690)):
-  - The panels are Census changes, Ministry requests, Cannot participate,
-    Financial and Additional information, in that order, each a grid of
+  - The panels are named and ordered exactly as the Review work menu
+    names and orders their pages, from the menu's own definitions, so the
+    two cannot drift (Administrator,
+    [#2108](https://github.com/epiphany40223/parishkit/pull/2108)): today
+    Census changes, Ministry requests, Pledges, Additional information
+    and Limitations. Each is a grid of
     link cards (the UX conventions' Overview pages rule, from
     [#1673](https://github.com/epiphany40223/parishkit/issues/1673): the
     stage, its count, what is counted). A stream is shown only when the viewer's menu
     has its page, greyed with the menu's reason while the menu greys it.
-  - A panel shows only the stages its stream can reach: Ministry requests
-    never have a Conflict (rosters are never written), and Financial and
-    Cannot participate are only To review until
-    [#1686](https://github.com/epiphany40223/parishkit/issues/1686) and
-    [#1685](https://github.com/epiphany40223/parishkit/issues/1685) store
-    their decisions. Until those slices move them onto the pipeline,
-    their cards still show counts, every current answer counting as To
-    review, rather than no number (Administrator decision, 2026-10-18).
-    Additional information's cards show counts too, placed as its
-    [stream mapping](#additional-information-stream) says: needed follow-up is To handle,
-    completed follow-up is not counted, and every other current request,
-    one set "not needed" included, stays To review until
-    [#1685](https://github.com/epiphany40223/parishkit/issues/1685). The
-    page's About text says so.
-    Entered incorrectly and Not seen in ParishSoft cards
-    come with [#1689](https://github.com/epiphany40223/parishkit/issues/1689),
-    which first places an item there.
+  - A panel shows only the stages its stream can reach, each card with its
+    count: Census changes To review, Conflict, To enter by hand, Entered
+    incorrectly and Not seen in ParishSoft; Ministry requests To review,
+    To enter by hand and Not seen in ParishSoft (rosters are never
+    written, so a request has no Conflict and is never Entered
+    incorrectly); Limitations To review and To handle; Pledges
+    To review, Conflict, To enter by hand, Entered incorrectly and Not
+    seen in ParishSoft; Additional information To review and To handle.
+    Not seen in ParishSoft is the
+    [refresh flag](#baseline-refresh-re-evaluation) on Entered by hand
+    items, counted beside their stage as each worklist's Stage choice
+    counts it, and its card is shown only while some item carries the
+    flag, as that Stage choice is
+    ([#2101](https://github.com/epiphany40223/parishkit/issues/2101)).
   - A leader's Ministry panel has one To review card per Ministry they
     lead, linking Ministry requests filtered to it (`?ministry=<DUID>`), as
-    My Ministries did. Ministry To enter by hand is Staff's and opens
-    [Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter).
-  - Every count is placed by the shared stage mapping from the stream's
-    stored state. Ministry To review is the follow-up queue's own count
-    (the menu's), and every other count is one statement, run only for the
-    streams the viewer's role may open; a leader's counts come from the
-    follow-up selection, which derives the leader's scope in SQL.
+    My Ministries did. Ministry To enter by hand and Not seen in ParishSoft
+    are Staff's and open Ministry requests at that Stage, where Roster
+    changes to enter was folded
+    ([roster entry](../admin-portal/spec.md#roster-entry-on-ministry-requests)).
+  - Each card's count is the count its stream's worklist shows for that
+    Stage choice, on the same data
+    ([#2101](https://github.com/epiphany40223/parishkit/issues/2101)): a
+    card with a count opens a list with that many items, and one at 0 an
+    empty list. A stage the menu's statement also reads (Census changes To
+    review, Conflict, Ready to update and To enter by hand, Ministry
+    requests To review and To enter by hand, Cannot participate To review
+    and To handle, Additional information To review and To handle) takes
+    the menu's own read: that statement places each of those streams'
+    stored state by stage with the shared stage mapping, and the cards show
+    each stage of the same read. The menu shows one number per list, its
+    open stages' total (To review; Census changes To review and Conflict
+    together), so that number always equals those cards'; Financial has no
+    menu number. The other counts (a
+    Census change the parish added, Financial, and the refresh checks
+    behind Entered incorrectly and Not seen in ParishSoft) are one more
+    statement, run only for the streams the viewer's role may open, plus
+    each stream's refresh-check read when it has an item Entered by hand;
+    a leader's counts come from the follow-up selection, which derives
+    the leader's scope in SQL. A greyed stream's cards show no number, as
+    its menu entry does. The page's About text says each count is its
+    list's, and what the menu's one number per list counts.
   - A count that cannot be read (a database error, a stored state the
     mapping does not place, the Limitations inputs unavailable) is logged
     and its cards show no number; the page never fails for it. The page's
@@ -1853,14 +1873,15 @@ changes what each role lands on:
     every "Return to" it, for those who land on it. Its menu entry is the
     first of the Review work group, not a Home entry above the groups
     ([admin portal, menu groups](../admin-portal/spec.md#menu-groups)).
-  - Each Staff card of Census changes, Ministry requests, Additional
-    information and Financial links its stream's worklist at its stage,
-    `?stage=<value>`, so the page opens on the rows counted
-    (Administrator decision, 2026-10-19,
-    [#1818](https://github.com/epiphany40223/parishkit/issues/1818)). A
-    leader's per-Ministry cards link `?ministry=<DUID>` instead, and Cannot
-    participate, which has only To review, links its page unfiltered. A
-    stage link the page cannot use is refused in plain words, as every
+  - Each Staff card links its stream's worklist at its Stage,
+    `?stage=<value>` (Not seen in ParishSoft's value is `not_seen`), so
+    the page opens on the rows counted (Administrator decision,
+    2026-10-19,
+    [#1818](https://github.com/epiphany40223/parishkit/issues/1818);
+    Cannot participate since
+    [#2101](https://github.com/epiphany40223/parishkit/issues/2101)). A
+    leader's per-Ministry cards link `?ministry=<DUID>` instead. A stage
+    link the page cannot use is refused in plain words, as every
     worklist link is.
 - **Administrators** keep the full Home and menu, and also get the same
   panels, plus a Ready to update count per stream with its update link.

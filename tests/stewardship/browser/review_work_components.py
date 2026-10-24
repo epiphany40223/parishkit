@@ -1,9 +1,11 @@
 """My review work with the real menu code (#1690).
 
 ``PATH`` is a Staff member's landing page on an active campaign without
-the financial module, so Financial is greyed out with the menu's reason,
+the financial module, so Pledges is greyed out with the menu's reason,
 with counts on every other stream (one in the thousands, to check a wide
-count). ``LEADER_PATH`` is a Ministry leader's, with two Ministries, one
+count): the menu's read by stage (``MENU_STAGES``) and My review work's
+own (``COUNTS``), one Ministry request flagged Not seen in ParishSoft.
+``LEADER_PATH`` is a Ministry leader's, with two Ministries, one
 long-named. ``HOME_PATH`` is an Administrator's Home with its Review work
 panel.
 """
@@ -36,12 +38,18 @@ CAMPAIGN = SimpleNamespace(
         values={"modules": ["ministry", "census"]},
     ),
 )
+MENU_STAGES = {
+    "census_changes": {"to_review": 1234, "conflict": 2, "ready_to_update": 5},
+    "ministry_report": {"to_review": 8, "to_enter_by_hand": 3},
+    "limitations_report": {"to_review": 4},
+    "information_queue": {"to_review": 6, "to_handle": 1},
+}
 COUNTS = {
-    Stream.CENSUS: {"to_review": 1234, "conflict": 2, "ready_to_update": 5},
-    Stream.MINISTRY: {"to_enter_by_hand": 3},
-    Stream.CANNOT_PARTICIPATE: {"to_review": 4},
+    Stream.CENSUS: {},
+    Stream.MINISTRY: {"not_seen": 1},
+    Stream.CANNOT_PARTICIPATE: {},
     Stream.FINANCIAL: {},
-    Stream.ADDITIONAL_INFORMATION: {"to_review": 6, "to_handle": 1},
+    Stream.ADDITIONAL_INFORMATION: {},
     "leader": None,
 }
 LEADER = {
@@ -78,6 +86,7 @@ def chrome(admin, actor, menu_counts):
     for section in sections:
         for entry in section["items"]:
             entry["count"] = menu_counts.get(entry["name"]) if entry["url"] else None
+            entry["stages"] = MENU_STAGES.get(entry["name"]) if entry["url"] else None
     # Staff and leaders see My review work as Review work's first entry, as
     # the context processor draws it (R39 finding 4).
     lands = review_work.lands_here(actor)

@@ -178,6 +178,18 @@ def pledge_check_states(items):
     )
 
 
+def not_seen_count(reviews):
+    """How many Entered by hand pledges carry Not seen in ParishSoft (#2101).
+
+    ``reviews`` are the decision row ids (text) of the pledges at Entered by
+    hand, each checked (``checked``) since its stage is past a decision in
+    force. The flag is the one Pledges' rows carry (``pledge_review_views.
+    pledge_rows``), from the same check run. Two queries, none without one.
+    """
+    states = check_states({review: review for review in reviews})
+    return sum(state.not_seen(True) for state in states.values())
+
+
 def _definition(campaign_id):
     """The campaign's financial definition, or None without a financial period."""
     campaign = Campaign.objects.select_related("active_configuration").get(

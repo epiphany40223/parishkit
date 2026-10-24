@@ -386,6 +386,24 @@ def place(result, principal, *, marks=None, checks=None):
     return result
 
 
+def not_seen_count(entered):
+    """How many Entered by hand requests carry Not seen in ParishSoft (#2101).
+
+    ``entered`` are ``[id, version]`` lists of the roster requests whose
+    current tick is Entered (a person resolved them as a roster change,
+    ``eligible``). Each request's tick and refresh checks at its version
+    place it as ``place`` does for Staff, so the count is the Stage
+    choice's. Four queries (the ticks, their markers, the Not seen start and
+    the checks), none without a request.
+    """
+    versions = {key: version for key, version in entered}
+    if not versions:
+        return 0
+    marks = roster_marks(versions)
+    states = check_states(requests=list(versions), marks=marks, versions=versions)
+    return sum(state.not_seen(True) for state in states.values())
+
+
 def stage_counts(rows):
     """How many of ``rows`` are at each Stage choice's value.
 

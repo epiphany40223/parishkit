@@ -17,6 +17,7 @@ from django.db import DatabaseError, IntegrityError, connection, transaction
 
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.pipeline import Stream
 from parishkit.stewardship.responses.census_additions import (
     AddRefusal,
     KeyRebound,
@@ -34,6 +35,7 @@ from ..census_factory import address
 from .test_background_grants_postgresql import task_login
 from .test_census_pipeline_review_postgresql import decide, prepared
 from .test_census_resolution_postgresql import leader
+from .test_review_work_postgresql import matches, principal_of
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -155,6 +157,10 @@ def test_an_open_change_of_the_field_refuses_a_second(response_service):
         ),
     )
     assert addition.in_place_of_id == rows["first_name"].pk
+    # My review work counts the open addition To enter by hand, as the
+    # worklist does (#2101).
+    cards = matches(harness, principal_of(harness, staff))[Stream.CENSUS]
+    assert cards["To enter by hand"] == 1
     with pytest.raises(AddRefusal) as refused:
         add(harness, staff, campaign, member_form(rows, "first_name", "Rob"))
     assert refused.value.code == "add_exists"

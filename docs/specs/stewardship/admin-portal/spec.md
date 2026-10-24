@@ -1144,7 +1144,11 @@ Notes on the groups:
   its own stage selection, for a viewer who may open Pledges; where that
   page would say Pledges are unavailable, no number shows. All the counts
   ride on one statement, which reads Pledges' stage selection once for both
-  its count and Limitations'. Each is a plain number after the entry's
+  its count and Limitations' and places each stream by stage; My review
+  work's cards show those same stage counts, including Pledges' To review
+  ([review pipeline, role views](../review-pipeline/spec.md#role-views),
+  [#2101](https://github.com/epiphany40223/parishkit/issues/2101)). Each is a
+  plain number after the entry's
   name that screen readers announce as "(N open)". No number shows at zero,
   nor on a greyed-out entry. The counts are read when a page loads, never
   updated in place, so a number never appears or disappears under the

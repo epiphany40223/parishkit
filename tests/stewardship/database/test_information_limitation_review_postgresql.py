@@ -9,6 +9,7 @@ migrations 0150 and 0151).
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -19,7 +20,7 @@ from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.models import FamilyCampaign
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
-from parishkit.stewardship.pipeline import Action, Stage, Stream
+from parishkit.stewardship.pipeline import Action, Stage
 from parishkit.stewardship.reports.limitations import (
     LimitationsQuery,
     limitations_report,
@@ -191,7 +192,7 @@ def test_back_to_review_undoes_handled_with_a_note(live_response_service, google
     My review work and the export's To handle selection place it as To
     handle. A repeat of the undo's key replays it.
     """
-    from parishkit.stewardship.accounts.review_work import read_counts
+    from parishkit.stewardship.accounts import admin_context
     from parishkit.stewardship.reports.information import (
         InformationQuery,
         information_page,
@@ -288,9 +289,12 @@ def test_back_to_review_undoes_handled_with_a_note(live_response_service, google
         )
         assert counts == {"to_handle": 1}
         assert [row["id"] for row in rows] == [str(item.pk)]
+        # My review work's cards show the menu's read by stage (#2101).
+        menu = SimpleNamespace()
+        items = [SimpleNamespace(name="information_queue", url="/information/")]
         with transaction.atomic():
-            found = read_counts(staff, harness.campaign.pk)
-        assert found[Stream.ADDITIONAL_INFORMATION] == {"to_handle": 1}
+            admin_context._open_counts(menu, staff, items, harness.campaign)
+        assert menu._stewardship_open_stages["information_queue"] == {"to_handle": 1}
         page = information_page(
             harness.campaign.pk, InformationQuery(needed="yes", completed="no")
         )

@@ -3650,6 +3650,11 @@ without scrolling.
   screen readers, the card keeps its two lines, and the start bar warns
   while either count is above zero. A card the menu greys out is
   plain text in the muted colour with the menu's reason, never a link.
+  One exception: [My review work](../review-pipeline/spec.md#role-views)'s
+  stream panels fit four cards on a row in a laptop window so that the
+  whole overview still fits it, so a longer stage name with its count
+  ("Entered incorrectly") may take two lines there, making that card three
+  ([#2101](https://github.com/epiphany40223/parishkit/issues/2101)).
   Cards keep their size on hover and focus
   ([no layout shift](#no-layout-shift)) and stack on a phone with no
   sideways scroll.

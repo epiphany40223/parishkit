@@ -3666,7 +3666,12 @@ The filters are always open: **Stage** first (To review by default, each
 choice with its count), then a name or Family DUID search and a Show choice
 (`show`) of everything, cannot participate or cannot attend; any other value
 is refused. No summary sits above the table: the counts are the Stage
-choices'. Staff and Administrators Accept (To handle: the office will act on
+choices'. The search and filters travel in POST bodies; the one address a
+link may carry is a Stage alone (`?stage=<value>`, a
+[My review work](../review-pipeline/spec.md#role-views) card's,
+[#2101](https://github.com/epiphany40223/parishkit/issues/2101)), and any
+other query string, or a Stage the filter does not offer, is refused with
+the page's plain-language filter error (a 400). Staff and Administrators Accept (To handle: the office will act on
 it), Ignore, mark Handled, and send a decision Back to review (with an
 optional note, #1889), one row at a time or in bulk, all or
 none, as the pipeline's
