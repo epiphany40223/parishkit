@@ -109,23 +109,40 @@ def private_response(message, *, status=200):
 
 # Denial kinds select only the fixed message category, never a reason within
 # it. "code" and "link" are the Family portal's generic credential failures;
-# "unavailable" is rate limiting or a limiter/configuration outage. The empty
-# default keeps the original generic sign-in text used by Admin routes and by
-# Family fetch endpoints whose bodies are never displayed.
-DENIAL_KINDS = frozenset({"", "code", "link", "unavailable"})
+# "unavailable" is a limiter/configuration outage, or a Family rate limit.
+# The Admin sign-in kinds (#2116) say what kind of refusal it was, because
+# Google does the authentication: "no_access" (Google verified the account
+# but it has no Admin access), "unfinished" (Google sign-in didn't complete)
+# and "rate_limited" (too many attempts). The empty default keeps the
+# original generic text used by signed-in Admin refusals and by Family fetch
+# endpoints whose bodies are never displayed.
+DENIAL_KINDS = frozenset(
+    {"", "code", "link", "unavailable", "no_access", "unfinished", "rate_limited"}
+)
 
 
-def login_denial(*, admin=False, status=403, public_content="", kind="", sign_in=False):
-    """Accessible uniform error with a fixed retry route, never an input redirect.
+def login_denial(
+    *,
+    admin=False,
+    status=403,
+    public_content="",
+    kind="",
+    account="",
+    csrf_token=None,
+):
+    """Accessible error with a fixed retry route, never an input redirect.
 
     Callers choose ``kind`` from ``DENIAL_KINDS`` by denial category alone, so
-    every reason within one category renders byte-identical content.
-    ``sign_in`` marks a refusal of sign-in itself, which adds the Admin
-    Google Account guidance (#1593); it is chosen by call site, never by
-    reason, so every sign-in refusal still renders the same bytes.
+    every reason within one category renders the same content. ``no_access``
+    alone also shows ``account``, the address Google verified on this very
+    callback, and a CSRF-protected "Sign in with a different account" form,
+    so it needs the request's ``csrf_token``; the address is rendered into
+    this response only, never into a URL, query string or cookie (#2116).
     """
     if kind not in DENIAL_KINDS:
         raise ValueError("Unsupported denial kind.")
+    if kind == "no_access" and not (admin and account and csrf_token):
+        raise ValueError("A no-access denial needs its verified account.")
     response = HttpResponse(
         render_to_string(
             "stewardship/denied.html",
@@ -136,7 +153,11 @@ def login_denial(*, admin=False, status=403, public_content="", kind="", sign_in
                 "retry_path": "/admin/login" if admin else "/",
                 "public_content": public_content,
                 "kind": kind,
-                "sign_in": sign_in,
+                "account": account if kind == "no_access" else "",
+                # Rendering without the request keeps the context
+                # processors (and their queries) off this page; the
+                # {% csrf_token %} tag reads this value directly.
+                "csrf_token": csrf_token,
             },
         ),
         status=status,

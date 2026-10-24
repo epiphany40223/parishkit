@@ -1,16 +1,18 @@
 {% extends admin|yesno:'stewardship/admin-base.html,stewardship/base.html' %}{% load i18n stewardship %}
 {% comment %}
-  One page per denial kind, never per reason: every rejected Family code shares
-  the "code" text and every rejected secure link shares the "link" text, so
-  the page cannot reveal why a credential failed. The code and link sentences
-  are quoted from the parishioner-portal specification.
+  One page per denial kind, never per reason within it: every rejected Family
+  code shares the "code" text and every rejected secure link shares the
+  "link" text, so the page cannot reveal why a credential failed. The code
+  and link sentences are quoted from the parishioner-portal specification.
   Admin denials (admin is true) extend the JavaScript-gated Admin base
-  (#565); Family denials extend the ungated base. The generic Admin denial
-  adds the Google Account guidance (#1593) for every sign-in refusal alike
-  (sign_in), so it still says nothing about which check failed; a signed-in
-  person's refused report view gets none.
+  (#565); Family denials extend the ungated base.
+  Admin sign-in refusals say which kind of refusal it was (#2116): Google
+  does the authentication, so "no_access" shows only the address Google just
+  verified for this person, and never says whether it was never added or
+  removed. Its "Sign in with a different account" form starts the ordinary
+  Google sign-in, which always asks Google for its account chooser.
 {% endcomment %}
-{% block title %}{% if kind == "code" %}{% translate "Family code not accepted" %}{% elif kind == "link" %}{% translate "Family link not accepted" %}{% elif kind == "unavailable" %}{% translate "Sign-in temporarily unavailable" %}{% else %}{% translate "Access unavailable" %}{% endif %}{% endblock %}
+{% block title %}{% if kind == "code" %}{% translate "Family code not accepted" %}{% elif kind == "link" %}{% translate "Family link not accepted" %}{% elif kind == "unavailable" %}{% translate "Sign-in temporarily unavailable" %}{% elif kind == "no_access" %}{% translate "No access with this account" %}{% elif kind == "unfinished" %}{% translate "Sign-in didn't finish" %}{% elif kind == "rate_limited" %}{% translate "Too many sign-in attempts" %}{% else %}{% translate "Access unavailable" %}{% endif %}{% endblock %}
 {% block content %}<section class="flow panel">
   {% if kind == "code" %}
   <h1>{% translate "Family code not accepted" %}</h1>
@@ -21,11 +23,25 @@
   {% elif kind == "unavailable" %}
   <h1>{% translate "Sign-in temporarily unavailable" %}</h1>
   <p>{% translate "Sign-in is temporarily unavailable. Please try again later." %}</p>
+  {% elif kind == "no_access" %}
+  <h1>{% translate "No access with this account" %}</h1>
+  <p>{% blocktranslate %}You signed in with Google as <strong>{{ account }}</strong>, but that address doesn't have access to the Administration portal.{% endblocktranslate %}</p>
+  <p>{% translate "If the parish gave access to a different address, sign in with that one. It doesn't have to be a Gmail address, but it needs a Google Account." %}</p>
+  <p>{% translate "Need access? Ask the parish staff member who manages access to this portal." %}</p>
+  {% elif kind == "unfinished" %}
+  <h1>{% translate "Sign-in didn't finish" %}</h1>
+  <p>{% translate "Signing in with Google didn't complete. This can happen if it was cancelled or the sign-in page was open for a while." %}</p>
+  {% elif kind == "rate_limited" %}
+  <h1>{% translate "Too many sign-in attempts" %}</h1>
+  <p>{% translate "Too many sign-in attempts. Try again later." %}</p>
   {% else %}
   <h1>{% translate "Access unavailable" %}</h1>
   <p>{% translate "Sign-in is unavailable. Please try again." %}</p>
-  {% if admin and sign_in %}{% google_account_help %}{% endif %}
   {% endif %}
   {% if public_content %}<div class="content-block">{{ public_content|safe }}</div>{% endif %}
-  <p><a href="{{ retry_path }}">{% if kind == "code" %}{% translate "Try another Family code" %}{% elif kind == "link" %}{% translate "Enter your Family code instead" %}{% else %}{% translate "Try signing in again" %}{% endif %}</a></p>
+  {% if kind == "no_access" %}<form method="post" action="/admin/login">
+    {% csrf_token %}{% button type="submit" %}{% translate "Sign in with a different account" %}{% endbutton %}
+  </form>
+  <p><a href="/">{% translate "Family campaign portal" %}</a></p>
+  {% else %}<p><a href="{{ retry_path }}">{% if kind == "code" %}{% translate "Try another Family code" %}{% elif kind == "link" %}{% translate "Enter your Family code instead" %}{% else %}{% translate "Try signing in again" %}{% endif %}</a></p>{% endif %}
 </section>{% endblock %}

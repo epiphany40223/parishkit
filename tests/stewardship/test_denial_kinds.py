@@ -9,6 +9,8 @@ TEXTS = {
     "code": b"This Family code cannot be found or used.",
     "link": b"This secure Family link cannot be found or used.",
     "unavailable": b"Sign-in is temporarily unavailable. Please try again later.",
+    "unfinished": b"Signing in with Google didn't complete.",
+    "rate_limited": b"Too many sign-in attempts. Try again later.",
 }
 
 
@@ -41,13 +43,13 @@ def test_unknown_kind_fails_closed():
 @pytest.mark.parametrize(
     "status,text",
     [
-        (429, b"Sign-in is temporarily unavailable. Please try again later."),
+        (429, b"Too many sign-in attempts. Try again later."),
         (503, b"Sign-in is temporarily unavailable. Please try again later."),
         (403, b"Sign-in is unavailable. Please try again."),
     ],
 )
 def test_admin_rate_limits_and_outages_read_as_temporary(status, text):
-    """Admin OAuth shares the Family temporary text; other refusals do not."""
+    """An Admin rate limit says so (#2116); an outage reads as temporary."""
     from parishkit.stewardship.accounts.authentication import denial
 
     response = denial(status=status, retry=5 if status != 403 else None)
@@ -166,40 +168,82 @@ def test_require_role_admits_the_level_and_those_above_it():
         require_role(None, "staff")
 
 
-def test_only_the_generic_admin_sign_in_refusal_carries_the_google_account_guidance():
-    """Every Admin sign-in refusal alike explains a missing Google Account (#1593).
+def test_no_denial_page_carries_the_google_account_guidance():
+    """The guidance stays on the Users About panel only (#2116).
 
-    The guidance is the same for every reason, so it reveals no check; the
-    temporary-unavailability page and Family refusals do not show it.
+    The no-access page has its own wording with the verified address.
     """
     marker = b"data-google-account-help"
-    assert marker in login_denial(admin=True, status=403, sign_in=True).content
-    unavailable = login_denial(admin=True, status=503, kind="unavailable", sign_in=True)
-    assert marker not in unavailable.content
-    for kind in TEXTS:
+    for kind in set(TEXTS) - {"rate_limited", "unfinished"}:
         assert marker not in login_denial(status=403, kind=kind).content
+    for kind in ("unfinished", "rate_limited", "unavailable", ""):
+        assert marker not in login_denial(admin=True, kind=kind).content
 
 
-def test_guidance_shows_for_sign_in_refusals_only():
-    """A signed-in person's refusal gets no Google Account advice (#1593).
+def test_each_sign_in_refusal_says_which_kind_it_is():
+    """Sign-in refusals say why; a signed-in refusal keeps the generic text.
 
-    A report view's ``denial()`` reaches a person who is already signed in,
-    so the advice would be wrong; each sign-in refusal kind renders
-    byte-identical content, so it still reveals no check.
+    A report view's ``denial()`` reaches a person who is already signed in;
+    every unfinished sign-in renders byte-identical content (#2116).
     """
     from parishkit.stewardship.accounts.authentication import denial
 
-    marker = b"data-google-account-help"
     try:
         raise PermissionError
     except PermissionError:
         report_refusal = denial()
-        sign_in_refusals = [
+        unfinished = [
             denial(sign_in=True),
             denial(status=403, retry=0, sign_in=True),
-            login_denial(admin=True, status=403, sign_in=True),
+            login_denial(admin=True, status=403, kind="unfinished"),
         ]
-    assert marker not in report_refusal.content
-    assert marker not in login_denial(admin=True, status=403).content
-    assert len({r.content for r in sign_in_refusals}) == 1
-    assert marker in sign_in_refusals[0].content
+    assert TEXTS[""] in report_refusal.content
+    assert len({r.content for r in unfinished}) == 1
+    assert b"<h1>Sign-in didn't finish</h1>" in unfinished[0].content
+    assert b'<a href="/admin/login">Try signing in again</a>' in unfinished[0].content
+    limited = denial(status=429, retry=5, sign_in=True)
+    assert limited.status_code == 429 and limited["Retry-After"] == "5"
+    assert TEXTS["rate_limited"] in limited.content
+    # The minute count is never shown.
+    assert b"minute" not in limited.content
+
+
+def test_no_access_names_only_the_verified_address(rf):
+    """The address is escaped into the body; the form carries a CSRF token."""
+    from parishkit.stewardship.accounts.authentication import denial
+
+    request = rf.post("/admin/oauth/callback")
+    response = denial(sign_in=True, account=(request, "a<b>@example.org"))
+    body = response.content.decode()
+    assert response.status_code == 403
+    assert "<h1>No access with this account</h1>" in body
+    assert "<strong>a&lt;b&gt;@example.org</strong>" in body
+    assert 'name="csrfmiddlewaretoken"' in body
+    assert '<form method="post" action="/admin/login">' in body
+    assert "Sign in with a different account" in body
+    assert '<a href="/">Family campaign portal</a>' in body
+    assert "Try signing in again" not in body
+    assert "a<b>" not in str(dict(response.items()))
+    # A rate limit wins over the address: the 429 page names no one.
+    limited = denial(
+        status=429, retry=5, sign_in=True, account=(request, "a@example.org")
+    )
+    assert b"a@example.org" not in limited.content
+
+
+def test_only_a_sign_in_refusal_may_name_an_address(rf):
+    """A signed-in refusal passing ``account`` is refused, not rendered."""
+    from parishkit.stewardship.accounts.authentication import denial
+
+    request = rf.post("/admin/reports/weekly")
+    for status in (403, 429, 503):
+        with pytest.raises(ValueError):
+            denial(status=status, account=(request, "a@example.org"))
+
+
+def test_no_access_without_its_account_fails_closed():
+    """No caller can render the no-access page without a verified address."""
+    with pytest.raises(ValueError):
+        login_denial(admin=True, kind="no_access")
+    with pytest.raises(ValueError):
+        login_denial(kind="no_access", account="a@example.org", csrf_token="x")

@@ -185,14 +185,20 @@ def test_expired_token_is_refused(local):
     token = mint(local)
     local.limiter.client.pexpire(key_for(local, token), 1)
     time.sleep(0.05)
-    assert post_token(browser(), token).status_code == 403
+    response = post_token(browser(), token)
+    assert response.status_code == 403
+    # An expired link reads as a sign-in that didn't finish (#2116).
+    assert b"<h1>Sign-in didn't finish</h1>" in response.content
     assert PortalSession.objects.count() == 0
 
 
 def test_unauthorized_email_is_refused_by_the_login_rules(local):
     """An address no rule names gets no session, as with Google."""
     token = mint(local, email="stranger@example.org")
-    assert post_token(browser(), token).status_code == 403
+    response = post_token(browser(), token)
+    assert response.status_code == 403
+    # Past the link, the login rules refuse it as they would for Google.
+    assert b"<h1>No access with this account</h1>" in response.content
     assert PortalSession.objects.count() == 0
     # The token was still consumed: a refusal does not leave it usable.
     assert local.limiter.client.exists(key_for(local, token)) == 0
@@ -218,7 +224,9 @@ def test_disabled_user_is_refused(local):
 @pytest.mark.parametrize("token", ["", "short", "x" * 43, "!" * 43, "y" * 44])
 def test_unknown_or_malformed_tokens_are_refused(local, token):
     """Garbage and well-formed but unknown tokens are refused alike."""
-    assert post_token(browser(), token).status_code == 403
+    response = post_token(browser(), token)
+    assert response.status_code == 403
+    assert b"<h1>Sign-in didn't finish</h1>" in response.content
     assert PortalSession.objects.count() == 0
 
 

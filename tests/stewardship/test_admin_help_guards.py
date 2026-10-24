@@ -89,8 +89,23 @@ INTRO_WORDS = 15
 # ``admin`` is set and the Family layout otherwise, and one template serves
 # both, so their wording is kept as a reviewed exception. Lower or remove an
 # entry when its page is converted; never raise one or add a page.
+# denied.html renders one refusal kind per page ({% if kind == ... %}), so
+# it is counted per kind (``intro_words_by_kind``) and each kind keeps its
+# own count: a kind's text can never grow into another kind's allowance.
+# The pre-#2116 kinds keep their old sizes (31 words together, as the whole
+# page was once counted); the Admin sign-in refusal kinds (#2116) carry the
+# Administrator-approved text that is the error itself. "" is the
+# ``{% else %}`` (generic) kind.
 INTRO_ALLOWED = {
-    "denied.html": 31,
+    "denied.html": {
+        "code": 8,
+        "link": 9,
+        "unavailable": 8,
+        "no_access": 58,
+        "unfinished": 22,
+        "rate_limited": 7,
+        "": 6,
+    },
     "availability.html": 21,
 }
 
@@ -179,7 +194,7 @@ def test_long_help_allowances_are_still_needed():
 VALUE = re.compile(r"{{.*?}}", re.S)
 
 
-def visible_intro_words(name):
+def intro_words(source):
     """Words of help sentences shown between a page's heading and its data.
 
     The About panel and any other disclosure are one deliberate click away,
@@ -196,7 +211,6 @@ def visible_intro_words(name):
     hint counts like any paragraph; and text outside ``<p>`` elements, or not
     marked for translation, is not seen.
     """
-    source = read(name)
     if "</h1>" not in source:
         return 0
     after = NOTICE_BLOCK.sub(
@@ -211,6 +225,46 @@ def visible_intro_words(name):
         for message in messages(paragraph)
         if message.strip()[-1:] in ".!?"
     )
+
+
+# One branch of the {% if kind == "..." %} chain a page renders in its
+# content block; {% else %} is the default kind, named "".
+KIND_BRANCH = re.compile(r'{% (?:if|elif) kind == "(\w+)" %}|{% else %}')
+
+
+def intro_words_by_kind(name):
+    """``intro_words`` for each ``kind`` a page renders, by kind name.
+
+    A page whose content block starts its body with a ``{% if kind == ... %}``
+    chain (denied.html) shows only one branch per render, so each branch is
+    scanned as if it were the page: the text before the chain, that branch,
+    and the text after the chain's ``{% endif %}``. The chain holds no nested
+    ``{% if %}``, so its first ``{% endif %}`` closes it. A page without such a
+    chain is one kind, "".
+    """
+    source = read(name)
+    head, marker, content = source.partition("{% block content %}")
+    first = KIND_BRANCH.search(content) if marker else None
+    if first is None or first.group(0).startswith("{% else"):
+        return {"": intro_words(source)}
+    before, chain = content[: first.start()], content[first.start() :]
+    chain, _, after = chain.partition("{% endif %}")
+    marks = list(KIND_BRANCH.finditer(chain))
+    return {
+        mark.group(1) or "": intro_words(
+            head
+            + marker
+            + before
+            + chain[mark.end() : marks[i + 1].start() if i + 1 < len(marks) else None]
+            + after
+        )
+        for i, mark in enumerate(marks)
+    }
+
+
+def visible_intro_words(name):
+    """The most intro words any one rendered kind of the page shows."""
+    return max(intro_words_by_kind(name).values())
 
 
 # The "About this page" control sits beside the page heading (ui-v1.css puts
@@ -241,20 +295,24 @@ def test_about_panel_directly_follows_the_page_heading(name):
 @pytest.mark.parametrize("name", ADMIN_TEMPLATES)
 def test_page_introduction_is_in_the_about_panel(name):
     """A page's data comes first; its introductory help waits in the panel."""
-    words = visible_intro_words(name)
-    assert words <= INTRO_ALLOWED.get(name, INTRO_WORDS), (
-        f"{name}: {words} words of help show between the heading and the "
-        "page's data; move them into the page's About panel ({% aboutpage %}) "
-        "and keep at most a one-line hint that prevents a likely mistake"
-    )
+    allowed = INTRO_ALLOWED.get(name, INTRO_WORDS)
+    for kind, words in intro_words_by_kind(name).items():
+        limit = allowed.get(kind, INTRO_WORDS) if isinstance(allowed, dict) else allowed
+        assert words <= limit, (
+            f"{name} ({kind or 'default'} kind): {words} words of help show "
+            "between the heading and the page's data; move them into the "
+            "page's About panel ({% aboutpage %}) and keep at most a one-line "
+            "hint that prevents a likely mistake"
+        )
 
 
 @pytest.mark.parametrize("name", sorted(INTRO_ALLOWED))
 def test_intro_allowances_are_still_needed(name):
     """An introduction allowance shrinks with its page."""
-    assert visible_intro_words(name) == INTRO_ALLOWED[name], (
-        f"{name}: update or remove its INTRO_ALLOWED entry"
-    )
+    allowed = INTRO_ALLOWED[name]
+    counts = intro_words_by_kind(name)
+    found = counts if isinstance(allowed, dict) else counts[""]
+    assert found == allowed, f"{name}: update or remove its INTRO_ALLOWED entry"
 
 
 # {% include %} of another template in this directory, by its file name.
@@ -406,6 +464,24 @@ def test_the_intro_guard_catches_what_it_describes(tmp_path, monkeypatch):
     assert visible_intro_words("not-a-notice.html") > INTRO_WORDS
     # A value is not words of help; the words around it still count.
     assert visible_intro_words("data-line.html") == 2
+
+
+def test_the_intro_guard_counts_each_kind_alone(tmp_path, monkeypatch):
+    """Each ``kind`` branch is counted as its own page, never summed."""
+    one = '<h1>A</h1><p>{% translate "One two three." %}</p>'
+    two = '<h1>B</h1><p>{% translate "One two." %}</p>'
+    (tmp_path / "kinds.html").write_text(
+        '{% block title %}{% if kind == "x" %}X{% endif %}{% endblock %}'
+        '{% block content %}<section>{% if kind == "a" %}'
+        + one
+        + '{% elif kind == "b" %}'
+        + two
+        + '{% else %}<h1>C</h1>{% endif %}<p>{% translate "Shared tail." %}</p>'
+        "<form></form></section>{% endblock %}"
+    )
+    monkeypatch.setitem(globals(), "TEMPLATES", tmp_path)
+    assert intro_words_by_kind("kinds.html") == {"a": 5, "b": 4, "": 2}
+    assert visible_intro_words("kinds.html") == 5
 
 
 def test_the_technical_guard_follows_includes(tmp_path, monkeypatch):
