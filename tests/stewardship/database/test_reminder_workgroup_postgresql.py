@@ -229,8 +229,9 @@ def test_refreshes_record_the_workgroup_and_a_change_is_promoted(tmp_path, monke
     members = {"value": [1]}
     reads = []
 
-    def read(client, name):
-        """Stand in for the ParishSoft WorkGroup read (no HTTP)."""
+    def read(client, name, **_options):
+        """Stand in for the ParishSoft WorkGroup read (no HTTP); the
+        ``families`` cross-check keyword is accepted and unused."""
         reads.append(name)
         return {"name": name, "found": True, "family_duids": list(members["value"])}
 
@@ -259,8 +260,9 @@ def test_a_misspelled_rename_keeps_the_old_set_until_a_refresh_finds_it(
     reads = {NAME: [1], "Corrected": [2], "Empty": []}
     name = {"value": NAME}
 
-    def read(client, configured):
-        """Stand in for the ParishSoft WorkGroup read (no HTTP)."""
+    def read(client, configured, **_options):
+        """Stand in for the ParishSoft WorkGroup read (no HTTP); the
+        ``families`` cross-check keyword is accepted and unused."""
         if configured not in reads:
             return {"name": configured, "found": False, "family_duids": []}
         return {"name": configured, "found": True, "family_duids": reads[configured]}
