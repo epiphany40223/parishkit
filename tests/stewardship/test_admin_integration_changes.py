@@ -39,7 +39,8 @@ def document(settings):
 @pytest.mark.parametrize(
     ("target", "names"),
     [
-        ("parishsoft", ["organization_id"]),
+        # The organization is chosen once, in setup (#1554): no field.
+        ("parishsoft", []),
         ("google_workspace", ["delegated_email"]),
         ("email", ["sender", "sender_name", "reply_to"]),
         ("slack", ["channel_id"]),
@@ -119,10 +120,33 @@ def test_the_form_post_keeps_what_the_document_omits():
         "base_digest": "f" * 64,
     }
     # No schedule rows are posted, so the page keeps the stored schedule.
-    assert form_data({"organization_id": "12"}, ["organization_id"], {}, "0") == {
-        "organization_id": "12",
-        "base_digest": "0",
-    }
+    assert form_data({"organization_id": "12"}, [], {}, "0") == {"base_digest": "0"}
+
+
+def test_the_organization_is_read_only(monkeypatch):
+    """``integration show``'s ``organization_id`` may come back unchanged and
+    is never posted; another value is refused at its field in the page's
+    words (#1554)."""
+    from parishkit.stewardship.source import organization_names
+
+    monkeypatch.setattr(
+        organization_names, "loaded_organization_label", lambda: "St. Example (12)"
+    )
+    stored = {"organization_id": "12"}
+    assert form_data(stored, [], {"organization_id": 12}, "0") == {"base_digest": "0"}
+    with pytest.raises(InvalidChange) as refused:
+        form_data(stored, [], {"organization_id": "13"}, "0")
+    assert refused.value.fields == [
+        {
+            "field": "settings.organization_id",
+            "code": "invalid",
+            "message": "The ParishSoft organization is St. Example (12) and "
+            "can't change after setup.",
+        }
+    ]
+    # Only ParishSoft's documents may carry it.
+    with pytest.raises(InvalidChange):
+        parse_settings(document({"organization_id": 7}), "slack")
 
 
 def test_the_prompt_names_changed_settings_never_values():

@@ -46,3 +46,32 @@ def current_organization_label(organization_id):
     return organization_label(
         organization_id, current_organization_name(organization_id)
     )
+
+
+def loaded_organization_label():
+    """The current snapshot's organization, named, or None before any load.
+
+    The organization whose data is loaded, as the key mismatch notice and
+    System health's refused-organization problem name it. One query.
+    """
+    from .loading import snapshot_organization
+
+    found = snapshot_organization()
+    return None if found is None else organization_label(*found)
+
+
+def organization_fixed(organization_id=None):
+    """The refusal of another ParishSoft organization after setup (#1554).
+
+    The organization is chosen once, in the setup wizard. Named as the
+    loaded data's organization, else as ``organization_id`` (the configured
+    one) while nothing is loaded. The Integrations page's Finish switching
+    and every ``pk-admin integration`` command that is posted another
+    organization share these words. One query.
+    """
+    label = loaded_organization_label()
+    if label is None:
+        label = organization_label(organization_id)
+    return _(
+        "The ParishSoft organization is %(organization)s and can't change after setup."
+    ) % {"organization": label}

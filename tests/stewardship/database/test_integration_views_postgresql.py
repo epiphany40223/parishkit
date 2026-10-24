@@ -67,7 +67,6 @@ def save_key(browser, candidate, page=None, **fields):
         {
             "action": "preview",
             "base_digest": hidden(page, "base_digest"),
-            "organization_id": "12345",
             "intent": hidden(page, "intent"),
             "candidate": candidate,
         }
@@ -80,12 +79,17 @@ STATUS = URL + "status/"
 
 
 def edit(store, **values):
-    """Known synthetic tenant profile starts with organization 12345."""
-    return {
-        "action": "preview",
-        "base_digest": store.active().digest,
-        "organization_id": "54321",
-    } | values
+    """The page's Save of a changed refresh schedule ("Full at 04:15").
+
+    The known synthetic tenant profile starts with organization 12345,
+    which has no field (#1554), so a ParishSoft settings change is a
+    schedule change; ``values`` (such as ``shown(page)``) override it.
+    """
+    return (
+        {"action": "preview", "base_digest": store.active().digest}
+        | rows([{"kind": "full", "at": "04:15"}])
+        | values
+    )
 
 
 @pytest.fixture
@@ -151,9 +155,9 @@ def test_settings_preview_install_and_exact_retry(auth_service, google):
     record = auth_service.store.active().document()["sections"]["integrations"][0][
         "values"
     ]
-    # The page's unchanged schedule writes nothing new (#632): the existing
-    # schedule's defaults stay implied, as before the save.
-    assert record["settings"] == {"organization_id": "54321"}
+    # The organization is kept (#1554); the schedule is the one saved.
+    assert record["settings"]["organization_id"] == "12345"
+    assert record["settings"]["nightly_time"] == "04:15"
     assert record["credential_fingerprint"] == "a" * 64
     assert (
         post(browser, URL, {"action": "confirm", "preview": preview})["Location"]
@@ -231,9 +235,7 @@ def test_a_saved_rule_reaches_yaml_and_the_real_scheduler(auth_service, google):
         "rules-0-at": "3:15am",
         "refresh_schedule_mode": "advanced",
     }
-    review = post(
-        browser, URL, edit(auth_service.store, organization_id="12345") | posted
-    )
+    review = post(browser, URL, edit(auth_service.store) | posted)
     assert review.status_code == 200, review.content
     page = unescape(review.content.decode())
     assert "Full refreshes added: 03:15." in page
@@ -274,9 +276,7 @@ def test_a_saved_rule_reaches_yaml_and_the_real_scheduler(auth_service, google):
     # The page now shows the saved rules, and saving them as shown is no change.
     page = browser.get(URL).content.decode()
     assert 'name="rules-0-at" value="03:15"' in page
-    unchanged = post(
-        browser, URL, edit(auth_service.store, organization_id="12345") | shown(page)
-    )
+    unchanged = post(browser, URL, edit(auth_service.store) | shown(page))
     assert b"No settings have changed." in unchanged.content
 
 
@@ -287,7 +287,7 @@ def test_a_row_that_cannot_be_read_is_refused_at_its_row(auth_service, google):
     refused = post(
         browser,
         URL,
-        edit(auth_service.store, organization_id="12345")
+        edit(auth_service.store)
         | rows([full_at("02:00"), full_at("02:00")])
         | {"rules-0-at": "3:15 PM", "rules-1-at": "25:00"},
     )
@@ -314,9 +314,7 @@ def test_an_older_document_is_shown_as_rules_and_saved_unchanged(auth_service, g
     page = browser.get(URL).content.decode()
     assert 'name="rules-0-at" value="03:00"' in page
     assert "Your current schedule, shown as rules." in page
-    unchanged = post(
-        browser, URL, edit(auth_service.store, organization_id="12345") | shown(page)
-    )
+    unchanged = post(browser, URL, edit(auth_service.store) | shown(page))
     assert unchanged.status_code == 400
     assert b"No settings have changed." in unchanged.content
     assert ConfigurationChangeRequest.objects.count() == requests
@@ -332,28 +330,23 @@ CLOSE = {
 }
 
 
-def test_other_settings_save_with_an_unchanged_schedule_that_has_problems(
-    auth_service, google
-):
-    """Problems on the shown schedule block only a change to it (#632).
-
-    The organization ID changes; the schedule is stored byte for byte, and
-    no rules are written, so the scheduler runs it exactly as before.
-    """
+def test_a_posted_organization_is_refused_with_the_schedule_kept(auth_service, google):
+    """The organization is chosen once, in setup (#1554): a Save that posts
+    one, even with the shown schedule untouched, is refused as unexpected
+    input, queues nothing and keeps the stored settings byte for byte."""
     replace_settings(auth_service.store, CLOSE)
+    requests = ConfigurationChangeRequest.objects.count()
     browser, _ = signed_in()
     page = browser.get(URL).content.decode()
-    assert "00:00 is only 10 minutes after the 23:50 full refresh" in page
-    review = post(
-        browser, URL, edit(auth_service.store, organization_id="54321") | shown(page)
+    assert 'name="organization_id"' not in page
+    refused = post(
+        browser,
+        URL,
+        edit(auth_service.store) | shown(page) | {"organization_id": "54321"},
     )
-    assert review.status_code == 200, review.content
-    assert b"Refresh schedule changes" not in review.content
-    response = post(
-        browser, URL, {"action": "confirm", "preview": hidden(review, "preview")}
-    )
-    install(auth_service.store, response)
-    assert applied_settings(auth_service.store) == CLOSE | {"organization_id": "54321"}
+    assert refused.status_code == 400
+    assert ConfigurationChangeRequest.objects.count() == requests
+    assert applied_settings(auth_service.store) == CLOSE
 
 
 def test_a_changed_schedule_with_problems_is_refused(auth_service, google):
@@ -368,9 +361,7 @@ def test_a_changed_schedule_with_problems_is_refused(auth_service, google):
         f"skips-{count}-shape": "at",
         f"skips-{count}-at": "12:00",
     }
-    refused = post(
-        browser, URL, edit(auth_service.store, organization_id="12345") | posted
-    )
+    refused = post(browser, URL, edit(auth_service.store) | posted)
     assert refused.status_code == 400
     assert b"Fix " in refused.content
     assert ConfigurationChangeRequest.objects.count() == requests
@@ -490,49 +481,16 @@ def test_a_schedule_saved_with_its_rules_is_shown_as_saved(auth_service, google)
     assert 'name="rules-1-' not in page
     assert "18:00" not in shown(page).values()
     assert "Your current schedule, shown as rules." not in page
-    unchanged = post(
-        browser, URL, edit(auth_service.store, organization_id="12345") | shown(page)
-    )
+    unchanged = post(browser, URL, edit(auth_service.store) | shown(page))
     assert unchanged.status_code == 400
     assert b"No settings have changed." in unchanged.content
     stale = post(
         browser,
         URL,
-        edit(auth_service.store, organization_id="12345", full_refresh_times="02:00"),
+        edit(auth_service.store, full_refresh_times="02:00"),
     )
     assert stale.status_code == 400
     assert ConfigurationChangeRequest.objects.count() == requests
-
-
-def test_another_setting_saved_on_a_rules_schedule_keeps_it_exactly(
-    auth_service, google
-):
-    """A real change to another setting stores the schedule byte for byte (#632)."""
-    apply_rules_schedule(auth_service.store)
-    before = stored_schedule(auth_service.store)
-    assert json.loads(before)["delta_refresh"] == "times"
-    browser, _ = signed_in()
-    page = browser.get(URL).content.decode()
-    review = post(
-        browser, URL, edit(auth_service.store, organization_id="54321") | shown(page)
-    )
-    response = post(
-        browser, URL, {"action": "confirm", "preview": hidden(review, "preview")}
-    )
-    request = ConfigurationChangeRequest.objects.get(
-        pk=response["Location"].rstrip("/").rsplit("/", 1)[-1]
-    )
-    assert (
-        install_request(
-            auth_service.store, request_id=request.pk, correlation_id=uuid4()
-        ).state
-        == "applied"
-    )
-    settings = auth_service.store.active().document()["sections"]["integrations"][0][
-        "values"
-    ]["settings"]
-    assert settings["organization_id"] == "54321"
-    assert stored_schedule(auth_service.store) == before
 
 
 def test_a_new_key_on_a_rules_schedule_leaves_the_schedule_alone(
@@ -581,9 +539,7 @@ def test_a_changed_schedule_drops_the_stored_quick_rule(auth_service, google):
     assert "Remove quick updates" not in page and "Quick update" not in page
     assert 'value="advanced" data-editor-mode-choice checked' in page
     posted = shown(page) | {"skips-0-at": "07:00", "refresh_schedule_mode": "advanced"}
-    review = post(
-        browser, URL, edit(auth_service.store, organization_id="12345") | posted
-    )
+    review = post(browser, URL, edit(auth_service.store) | posted)
     reviewed = unescape(review.content.decode())
     assert "Quick updates removed" not in reviewed
     assert "Full refreshes added: 06:00." in reviewed
@@ -609,9 +565,7 @@ def test_a_basic_choice_is_saved_with_its_mode(auth_service, google):
         "refresh_basic": "every",
         "refresh_basic_hours": "4",
     }
-    review = post(
-        browser, URL, edit(auth_service.store, organization_id="12345") | posted
-    )
+    review = post(browser, URL, edit(auth_service.store) | posted)
     settings = confirm_and_install(browser, auth_service.store, review)
     assert settings["refresh_schedule_mode"] == "basic"
     assert settings["full_refresh_times"] == ["00:00", "04:00", "08:00"] + [
@@ -905,9 +859,10 @@ def fetch(browser, url, values):
 
 
 def test_the_review_dialog_shows_public_settings_only(auth_service, google, handoff):
-    """Save without a key answers the review dialog with a compact review
-    (#750): the dialog's question, one line per changed setting, and the
-    signed preview as its only field. Neither the key field, its signed
+    """Save without a key answers the review dialog with its review (#750):
+    ParishSoft's one editable setting is its refresh schedule (#1554), so
+    the schedule's changes in words, and the signed preview as its only
+    field. Neither the key field, its signed
     request nor the key in use is ever in it, even with spaces posted as the
     key; Apply's answer is the change's status, which the dialog follows."""
     browser, _ = signed_in()
@@ -918,13 +873,11 @@ def test_the_review_dialog_shows_public_settings_only(auth_service, google, hand
     )
     assert review.status_code == 200, review.content
     text = unescape(review.content.decode())
-    assert 'data-review-title="Save the ParishSoft settings?"' in text
     assert 'data-review-done="ParishSoft settings changed."' in text
-    assert 'data-review-describedby="integration-review-summary"' in text
     assert re.findall(r'<input type="hidden" name="(\w+)"', text) == ["preview"]
-    line = re.search(r'<ul class="compact-review"[^>]*>.*?</ul>', text, re.S).group(0)
-    assert "Expected ParishSoft organization ID:" in line
-    assert "12345" in line and "54321" in line
+    # ParishSoft's one editable setting is its schedule (#1554), whose
+    # review lists its changes in words.
+    assert "Full refreshes added: 04:15." in text
     for secret in (intent, "a" * 64, 'name="candidate"', 'name="intent"'):
         assert secret not in text
     confirmed = fetch(
@@ -953,7 +906,8 @@ def test_an_unchanged_save_is_refused_to_the_dialog(auth_service, google):
     of reach, is refused to the review dialog's script as the server's own
     words (400, with its fix) and queues nothing (#750)."""
     browser, _ = signed_in()
-    refused = fetch(browser, URL, edit(auth_service.store, organization_id="12345"))
+    shown_page = shown(browser.get(URL).content.decode())
+    refused = fetch(browser, URL, edit(auth_service.store) | shown_page)
     assert refused.status_code == 400
     assert refused.json()["refusal"]["message"] == "No settings have changed."
     assert refused.json()["refusal"]["fix"] == "Nothing was changed."
@@ -974,7 +928,8 @@ def test_a_key_from_a_script_still_takes_the_key_save_path(
     response = fetch(
         browser,
         URL,
-        edit(auth_service.store, organization_id="12345")
+        edit(auth_service.store)
+        | shown(page.content.decode())
         | {"intent": hidden(page, "intent"), "candidate": pasted},
     )
     assert b"data-review-answer" not in response.content
@@ -996,7 +951,6 @@ def key_review(browser, page, **fields):
         {
             "action": "preview",
             "base_digest": hidden(page, "base_digest"),
-            "organization_id": "12345",
             "intent": hidden(page, "intent"),
             "key_review": "yes",
         }
@@ -1019,8 +973,9 @@ def test_a_key_is_confirmed_in_the_dialog_and_staged_by_apply(
     """Save with a key pasted is a confirmation in the review dialog (#1568).
 
     Its Review is posted without the key and stages, seals and records
-    nothing: the answer names the integration, lists the other setting
-    saved with it, says what happens next, and carries no field at all, so
+    nothing: the answer names the integration, lists no other setting (the
+    organization has no field, #1554), says what happens next, and carries
+    no field at all, so
     no key, signed request or preview can reach the dialog. Apply posts the
     page's own form, key included, to the unchanged key save: exactly one
     sealed request and one selection request, and an answer (the page,
@@ -1032,7 +987,7 @@ def test_a_key_is_confirmed_in_the_dialog_and_staged_by_apply(
     with identity("pk_stewardship_web"):
         page = browser.get(URL)
         intent = hidden(page, "intent")
-        review = key_review(browser, page, organization_id="54321")
+        review = key_review(browser, page)
         assert review.status_code == 200, review.content
         text = unescape(review.content.decode())
         assert "data-review-key " in text
@@ -1040,8 +995,7 @@ def test_a_key_is_confirmed_in_the_dialog_and_staged_by_apply(
         assert 'data-review-describedby="integration-review-summary"' in text
         assert "ending in {tail}" in text
         assert "The new key is checked with ParishSoft in the background." in text
-        line = re.search(r'<ul class="compact-review"[^>]*>.*?</ul>', text, re.S)
-        assert "12345" in line.group(0) and "54321" in line.group(0)
+        assert "compact-review" not in text
         assert re.findall(r"<input\b", text) == []
         for absent in (intent, 'name="candidate"', "a" * 64):
             assert absent not in text
@@ -1052,7 +1006,6 @@ def test_a_key_is_confirmed_in_the_dialog_and_staged_by_apply(
             {
                 "action": "preview",
                 "base_digest": hidden(page, "base_digest"),
-                "organization_id": "54321",
                 "intent": intent,
                 "candidate": SECRET,
             },
@@ -1109,7 +1062,6 @@ def test_a_key_review_waits_for_a_key_change_installing(auth_service, google, ha
             {
                 "action": "preview",
                 "base_digest": hidden(first, "base_digest"),
-                "organization_id": "12345",
                 "intent": hidden(first, "intent"),
                 "candidate": SECRET,
             },
@@ -1127,17 +1079,13 @@ def test_a_key_review_refuses_before_apply(
     auth_service, google, handoff, monkeypatch, refusal
 ):
     """A key's Review refuses what its save would (#1568). A key with a
-    refresh schedule change and a changed loaded organization are refused at
-    their field, the form drawn again (400) so the dialog stays shut; a
-    forged key request (400) and an out-of-date page (409) are the dialog's
-    refusals. Nothing is staged."""
+    refresh schedule change is refused at its field, the form drawn again
+    (400) so the dialog stays shut; a posted organization, which has no
+    field (#1554), is unexpected input (400), and a forged key request
+    (400) and an out-of-date page (409) are the dialog's refusals. Nothing
+    is staged."""
     if refusal == "schedule":
         apply_rules_schedule(auth_service.store)
-    if refusal == "locked":
-        monkeypatch.setattr(
-            "parishkit.stewardship.accounts.integration_views.loaded_organization",
-            lambda: 12345,
-        )
     browser, _ = signed_in()
     requests = set(ConfigurationChangeRequest.objects.values_list("pk", flat=True))
     with identity("pk_stewardship_web"):
@@ -1151,13 +1099,9 @@ def test_a_key_review_refuses_before_apply(
         response = key_review(browser, page, **fields)
     assert response.status_code == {"stale": 409}.get(refusal, 400), response.content
     form = b'id="integration-form"' in response.content
-    assert form is (refusal in {"schedule", "locked"})
+    assert form is (refusal == "schedule")
     if refusal == "schedule":
         assert b"a new key and a refresh schedule change" in response.content
-    if refusal == "locked":
-        assert b"can&#x27;t change after ParishSoft data has been loaded" in (
-            response.content
-        )
     assert not SecretReplacementRequest.objects.exists()
     assert not SealedCredentialStaging.objects.exists()
     assert set(ConfigurationChangeRequest.objects.values_list("pk", flat=True)) == (
@@ -1168,16 +1112,17 @@ def test_a_key_review_refuses_before_apply(
 def test_the_parishsoft_key_sits_between_the_organization_and_the_schedule(
     auth_service, google, handoff
 ):
-    """ParishSoft's form draws the organization ID, the new key, then the
-    refresh schedule editor, Save, and the schedule's outlook after the
-    form, so the key never splits the schedule's entry from its display
-    (#1568). The form reviews a pasted key without it (data-review-key)."""
+    """ParishSoft's form draws its organization line (text naming it, never
+    a field, #1554), the new key, then the refresh schedule editor, Save,
+    and the schedule's outlook after the form, so the key never splits the
+    schedule's entry from its display (#1568). The form reviews a pasted key
+    without it (data-review-key)."""
     browser, _ = signed_in()
     page = browser.get(URL).content.decode()
     places = [
         page.index(marker)
         for marker in (
-            'name="organization_id"',
+            "ParishSoft organization: ParishSoft organization 12345",
             'name="candidate"',
             'name="rules-TOTAL_FORMS"',
             'id="refresh-schedule-status"',
@@ -1217,6 +1162,7 @@ def test_a_malformed_new_key_is_refused_at_its_field(auth_service, google, hando
         browser,
         URL,
         edit(auth_service.store)
+        | shown(page.content.decode())
         | {"intent": hidden(page, "intent"), "candidate": "SYNTHETIC KEY"},
     )
     assert refused.status_code == 400

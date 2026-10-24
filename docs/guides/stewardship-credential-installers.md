@@ -192,10 +192,11 @@ lists any other setting saved with it; **Apply** then sends the key:
    shown again.
 2. The same web request records the configuration request that will select the
    new fingerprint, together with any changed settings the key was checked
-   against, such as a new Slack channel. (The ParishSoft organization ID can
-   change only before the first ParishSoft data load; see the
-   [Admin portal spec](../specs/stewardship/admin-portal/spec.md).) If that
-   request cannot be recorded, the staged key is cancelled.
+   against, such as a new Slack channel. (The ParishSoft organization is
+   chosen once, in the setup wizard, and never changes: the page names it
+   "Name (ID)" as text above the key, and a new key must reach it; see the
+   [Admin portal spec](../specs/stewardship/admin-portal/spec.md#parish-and-integration-configuration).)
+   If that request cannot be recorded, the staged key is cancelled.
 3. The target's installer checks the key with the provider, using exactly those
    settings, and renames it into place (`awaiting_ack`). A rejected key fails
    the request; the previous key stays in use.
@@ -223,12 +224,13 @@ key** button. Its confirmation, in a dialog on the same page, repeats the
 key's original selection on the current settings, and any Administrator may
 apply it. Only the key-scope
 settings saved with the key (what the provider checked it against, such as the
-organization ID or the Slack channel) are carried over, merged onto the current
+Slack channel) are carried over, merged onto the current
 settings, so a newer change to anything else, such as the refresh schedule,
 is kept. The confirmation lists every setting the switch would change. When the save
 added the integration, the whole new record is added again. A switch that would
-change the ParishSoft organization ID after the first data load is refused in
-that dialog, and the configuration installer refuses such a change from any path
+change the ParishSoft organization is refused in that dialog ("The ParishSoft
+organization is Name (ID) and can't change after setup."), and the
+configuration installer refuses such a change from any path
 (`invalid_candidate`). Meanwhile
 Family and operational mail treat the mismatch as a hold, not a failure:
 while the latest Workspace key change is in progress, or installed with the

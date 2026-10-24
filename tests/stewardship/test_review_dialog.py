@@ -840,9 +840,9 @@ def test_finish_switching_is_a_confirmation_carrying_its_key_change():
                 "label": "ParishSoft",
                 "changes": [
                     {
-                        "label": "Expected ParishSoft organization ID",
-                        "before": "12345",
-                        "after": "54321",
+                        "label": "Slack channel ID",
+                        "before": "C0123456789",
+                        "after": "C0987654321",
                     }
                 ],
                 "preview": "signed",

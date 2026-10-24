@@ -3,9 +3,8 @@
 import pytest
 
 from parishkit.stewardship.accounts.integration_forms import (
-    ORGANIZATION_LOCKED,
-    ORGANIZATION_LOCKED_TIP,
     CredentialForm,
+    InlineCredentialForm,
     IntegrationForm,
 )
 
@@ -44,8 +43,14 @@ from parishkit.stewardship.accounts.integration_forms import (
     ],
 )
 def test_public_values_use_exact_yaml_types(target, values, expected):
-    """UI normalization does not change the frozen canonical configuration schema."""
-    form = IntegrationForm(target, {"base_digest": "a" * 64} | values)
+    """UI normalization does not change the frozen canonical configuration schema.
+
+    ParishSoft's organization ID is carried over from its stored settings
+    (#1554), never posted.
+    """
+    stored = {"organization_id": "123"} if target == "parishsoft" else None
+    posted = {} if target == "parishsoft" else values
+    form = IntegrationForm(target, {"base_digest": "a" * 64} | posted, stored=stored)
     assert form.is_valid(), form.errors
     assert form.public_settings() == expected
 
@@ -53,8 +58,6 @@ def test_public_values_use_exact_yaml_types(target, values, expected):
 @pytest.mark.parametrize(
     ("target", "values"),
     [
-        ("parishsoft", {"organization_id": 0}),
-        ("parishsoft", {"organization_id": 2**31}),
         ("slack", {"channel_id": "https://example.org/private"}),
         ("google_workspace", {"delegated_email": "invalid"}),
         ("backup", {"target": "https://docs.google.com/document/d/1AbCdEfGhIjKl"}),
@@ -85,35 +88,28 @@ def test_candidate_is_write_only_even_when_another_field_is_invalid():
         assert form.cleaned_data["candidate"] == "SYNTHETIC-PRIVATE-CREDENTIAL"
 
 
-def test_loaded_organization_is_disabled_with_its_reason_and_cannot_change():
-    """Once ParishSoft data is loaded, the organization ID is a disabled field
-    showing the loaded ID, with a one-line reason under its label (#1492).
-
-    The browser sends no disabled field, so the loaded ID is the value; a
-    request that posts another ID anyway is refused, never quietly ignored.
-    """
+def test_parishsoft_has_no_organization_field_and_keeps_the_stored_one():
+    """The organization is chosen once, in setup (#1554): the settings form
+    has no field for it, so a posted one is never read, and the stored ID is
+    what every save keeps."""
     digest = {"base_digest": "a" * 64}
-    unsent = IntegrationForm("parishsoft", digest, loaded_organization=123)
-    assert unsent.is_valid(), unsent.errors
-    assert unsent.public_settings()["organization_id"] == "123"
-    field = unsent["organization_id"]
-    html = str(field)
-    assert " disabled" in html and 'value="123"' in html
-    assert str(ORGANIZATION_LOCKED) in unsent.as_div()
-    assert str(ORGANIZATION_LOCKED_TIP) in unsent.as_div()
-    assert "readonly" not in html
-    same = IntegrationForm(
-        "parishsoft", digest | {"organization_id": "123"}, loaded_organization=123
+    form = IntegrationForm(
+        "parishsoft",
+        digest | {"organization_id": "456"},
+        stored={"organization_id": "123"},
     )
-    assert same.is_valid(), same.errors
-    for forged in ("456", "x"):
-        other = IntegrationForm(
-            "parishsoft", digest | {"organization_id": forged}, loaded_organization=123
-        )
-        assert not other.is_valid()
-        assert other.has_error("organization_id", "organization_locked")
-        assert "Keep 123 here." in other.errors["organization_id"][0]
-    before = IntegrationForm("parishsoft", digest | {"organization_id": "456"})
-    assert before.is_valid(), before.errors
-    assert " disabled" not in str(before["organization_id"])
-    assert str(ORGANIZATION_LOCKED) not in before.as_div()
+    assert "organization_id" not in form.fields
+    assert form.is_valid(), form.errors
+    assert form.public_settings()["organization_id"] == "123"
+    assert "organization" not in form.as_div().lower()
+
+
+def test_parishsoft_key_help_names_the_organization():
+    """The new key's help names the organization it must reach (#1554)."""
+    form = InlineCredentialForm("parishsoft", organization="St. Example Parish (1234)")
+    field = form.fields["candidate"]
+    tip = str(getattr(field, "tip", field.help_text))
+    assert "It must be a key that reaches St. Example Parish (1234); any other" in tip
+    unnamed = InlineCredentialForm("parishsoft")
+    tip = str(getattr(unnamed.fields["candidate"], "tip", ""))
+    assert "the organization chosen in setup" in tip

@@ -79,6 +79,10 @@ SKIP_SHAPES = (frozenset({"at"}), frozenset({"from", "to"}))
 TIME_MEMBERS = frozenset({"at", "from", "to"})
 # The settings that may be null (or empty): the optional From name.
 NULLABLE = frozenset({"sender_name"})
+# Settings ``integration show`` prints that no change sets (#1554): the
+# ParishSoft organization, chosen once in setup. A document may carry it
+# back unchanged; another value is refused.
+READ_ONLY = {"parishsoft": ("organization_id",)}
 
 
 def setting_names(target):
@@ -107,7 +111,7 @@ def parse_settings(text, target):
     fields = value["settings"]
     if not isinstance(fields, dict) or not fields:
         raise ValueError("The change document's settings are not valid.")
-    names = setting_names(target)
+    names = setting_names(target) + list(READ_ONLY.get(target, ()))
     problems = [
         unexpected_problem(
             f"settings.{name}", "This is not one of this integration's settings."
@@ -327,14 +331,47 @@ def form_data(stored, names, values, expected_version):
     fields keep the applied value the page's editor shows, so the review
     reports only what the document changes; a null is the blank field. No
     refresh schedule rows are posted, so the page's schedule editor keeps
-    the stored schedule exactly.
+    the stored schedule exactly. A read-only setting (``READ_ONLY``) the
+    document carries is checked by ``refuse_read_only`` and never posted.
     """
+    refuse_read_only(stored, values)
     data = {name: str(stored.get(name, "")) for name in names}
     data.update(
-        {name: "" if value is None else str(value) for name, value in values.items()}
+        {
+            name: "" if value is None else str(value)
+            for name, value in values.items()
+            if name in names
+        }
     )
     data["base_digest"] = expected_version
     return data
+
+
+def refuse_read_only(stored, values):
+    """Refuse a document that changes the ParishSoft organization (#1554).
+
+    ``integration show`` prints ``organization_id`` among the settings, so a
+    document built from it may carry it back: the same value is ignored, as
+    the page has no field for it; another is ``invalid`` at
+    ``settings.organization_id``, in the page's words
+    (``organization_fixed``). Only ParishSoft's documents may hold it
+    (``parse_settings``).
+    """
+    from .source.organization_names import organization_fixed
+
+    organization = stored.get("organization_id")
+    if "organization_id" in values and str(values["organization_id"]) != str(
+        organization
+    ):
+        raise InvalidChange(
+            [
+                {
+                    "field": "settings.organization_id",
+                    "code": "invalid",
+                    "message": organization_fixed(organization),
+                }
+            ]
+        )
 
 
 def field_errors(form):
