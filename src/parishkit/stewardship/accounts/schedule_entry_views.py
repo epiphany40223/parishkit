@@ -2305,7 +2305,7 @@ def schedule_suggested(request, campaign_id):
                         BLOCKED,
                         fix=BLOCKED_FIX,
                         link=reverse("admin:deliveries"),
-                        link_label=_("Outgoing mail"),
+                        link_label=_("Sent mail"),
                         reason="send_work_blocks",
                     )
         if refused is not None:

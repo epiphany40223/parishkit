@@ -295,6 +295,9 @@ def test_send_work_that_blocks_the_change_refuses_it(auth_service, google, monke
         refused = post(browser, SUGGESTED, data)
     assert refused.status_code == 409
     assert refused.stewardship_reason == "send_work_blocks"
+    # The refusal links Sent mail by its name (#2102).
+    assert "Sent mail" in refused.content.decode()
+    assert "Outgoing mail" not in refused.content.decode()
     assert ConfigurationChangeRequest.objects.count() == requests
 
 

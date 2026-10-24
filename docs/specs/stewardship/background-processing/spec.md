@@ -2472,10 +2472,9 @@ A leader email belongs to no campaign (its outbox campaign is empty and its
 scope is the parish), so it gets no pause hold record and is not in the
 pause's held counts, and held-email decisions, Testing cleanup and the
 Production transition never select it.
-Outgoing mail does not list it yet; the section's Last emailed column shows
-each address's latest outcome
-([#1562](https://github.com/epiphany40223/parishkit/issues/1562) brings
-every email to one list). Unlike an Administrator notice's, a failed or
+[Sent mail](../admin-portal/spec.md#sent-mail) lists it with every other
+email ([#1562](https://github.com/epiphany40223/parishkit/issues/1562)), and
+the section's Last emailed column shows each address's latest outcome. Unlike an Administrator notice's, a failed or
 uncertain leader email writes no System logs error; Last emailed shows it.
 
 ## Exports and graph rendering
