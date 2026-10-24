@@ -216,6 +216,8 @@ A `Campaign` includes:
 - initial/reminder mail schedules and template versions;
 - campaign-owned content versions;
 - the selected set of Ministry DUIDs;
+- the [Families rule](#campaign-families) (`campaign_families`), fixed at
+  creation;
 - financial period, comparison period, and mapped fund DUIDs;
 - configurable share-option versions;
 - additional-information enabled flag;
@@ -391,6 +393,160 @@ worker under its own lock); until then a purge attempt fails closed.
 Deleting a Campaign through ordinary CRUD is impossible. Closing and archiving
 retain all relationships. Exceptional purge is defined by the
 [Admin portal](../admin-portal/spec.md#campaign-purge).
+
+### Campaign Families
+
+Status: specified, not built
+([#1393](https://github.com/epiphany40223/parishkit/issues/1393),
+Administrator redesign 2026-10-24). Until it is built, every campaign uses
+the [legacy rule](#the-existing-campaigns-rule).
+
+A campaign is sent to its **campaign Families** ("Families in this
+campaign"): the Families its **Families rule** selects from the promoted
+ParishSoft data. They are the Families a campaign targets, who may or may not
+be what anyone would call active parishioners, so nothing calls them "active
+parishioners" any more; the [wording
+convention](../ui-conventions/spec.md#campaign-families-wording) lists the
+words pages, downloads, the CLI and the specs use. A campaign Family is what
+the code and the rest of this specification call *Portal-eligible*
+(`portal_eligible`): it gets a Family code and link, the Family form and the
+Family email, and it is counted in every campaign population. Nothing else
+changes meaning: email eligibility, deliverability, Testing rehearsals, the
+[drop check](../background-processing/spec.md#full-cycle) and the
+[refresh reconciliation](#parishsoft-refresh-reconciliation) all read the
+same flag.
+
+The Administrator chooses the rule on [Create the
+campaign](../admin-portal/spec.md#families-in-this-campaign), and it can
+never be changed after the campaign is created: a campaign never gains or
+loses Families because its rule changed, so no emailed code or link is ever
+affected by a rule change. Families still enter and leave the campaign when
+their ParishSoft data changes, exactly as Families became and stopped being
+active registered Families before (below).
+
+**The rules.** Every rule is three conditions joined by AND:
+
+| Rule | Registered to this parish | Family group | At least one Member whose Status is |
+| --- | --- | --- | --- |
+| **Active parishioners** (preset) | yes | the group named exactly "Active" | Active |
+| **Active parishioners and Staff** (preset) | yes | the group named exactly "Active" or exactly "Staff" | Active |
+| **Advanced** | yes, or not required | any of the chosen groups (one or more) | any of the chosen statuses (one or more of Active, ActOther, Unknown) |
+| **Legacy** (only campaigns created before this rule existed) | yes | any group except the one named exactly "Inactive", or no group | anything except Inactive or Deceased (an empty status counts) |
+
+- *Registered to this parish* is today's `family_is_parishioner`: the
+  Family's `registeredOrganizationID` equals the configured ParishSoft
+  organization. Advanced's "not required" admits Families registered
+  elsewhere or nowhere; it never means "only Families registered elsewhere".
+- A Member's Status is ParishSoft's `memberStatus`, compared exactly. A
+  Deceased or Inactive Member never satisfies a preset or Advanced rule, since
+  neither status can be chosen.
+- Preset groups match by exact name, as the legacy rule's "Inactive" always
+  has, so the presets mean the same thing in every parish's data. Advanced
+  groups are chosen from the group lookup the latest promoted snapshot
+  recorded (every group, including groups no Family is in) and are stored by
+  `famGroupID` with the name shown when it was chosen; pages show the current
+  name. A Family with no group is not in any group, so no preset or Advanced
+  rule selects it.
+- A chosen group (preset name or Advanced ID) that a later refresh no longer
+  finds matches no Family. The refresh records the missing group in its load
+  evidence and raises an Admin alert naming it; the drop check stops a refresh
+  that would lose many Families that way, and the Administrator decides with
+  [accept a large ParishSoft change once](../admin-portal/spec.md#accept-a-large-parishsoft-change-once).
+
+One parish-neutral predicate in `parishkit/parishsoft.py` (for example
+`family_matches_rule(family, rule, organization_id)`) evaluates every rule,
+the legacy one by calling today's `family_is_active` and
+`family_is_parishioner`, which other ParishKit tools keep using unchanged.
+
+**What each flag means.** The snapshot's Family row keeps `active` and
+`parishioner` with today's meanings (the legacy rule's group and Member test,
+and registration). `active` stays the flag [Ministry leader](#ministry-leaders)
+sign-in reads (Administrator decision, 2026-10-15): the Families rule decides
+only which Families get the Family form and email. `portal_eligible` becomes
+"matches the campaign's Families rule". `email_eligible` stays
+`portal_eligible` and at least one active head (today's head test: Head,
+Husband or Wife, not Inactive or Deceased) with a valid email address, for
+every rule. Under an Advanced rule a Family can be a campaign Family while
+`active` is false (for example one in a chosen "Inactive" group); the status
+reason then reads as a campaign Family, not as inactive.
+
+**Storage.** The rule is a campaign configuration value,
+`values.campaign_families`, materialized and versioned like the campaign's
+other configurable fields ([Campaign](#campaign)):
+
+- `{"rule": "active_parishioners"}`
+- `{"rule": "active_parishioners_and_staff"}`
+- `{"rule": "advanced", "registered": true, "family_groups": [{"id": 12,
+  "name": "Active"}], "member_statuses": ["Active", "ActOther"]}`
+  (`registered` is a boolean; both lists are non-empty, without duplicates, in
+  a canonical order; statuses are a subset of the three).
+
+A configuration with no `campaign_families` value means the legacy rule;
+that value is never written. Applied configuration versions are immutable and
+digested, so the existing campaign's versions are not rewritten to add one.
+
+One frozen forward migration (number assigned centrally) per the
+[post-launch schema policy](../operations/spec.md#post-launch-schema-policy):
+
+1. Replaces the configuration pointer guard
+   (`stewardship_campaign_pointer_v1`) with the same body plus two checks: a
+   configuration that creates a campaign must carry a well-formed
+   `campaign_families` value (the shapes above); and a configuration for a
+   campaign that already exists must carry exactly the value that campaign's
+   current configuration carries, absent staying absent, in every campaign
+   state, so the rule is fixed from creation for the existing campaign and
+   every later one. `campaign_families` is not added to the live structural
+   exemptions. The migration repeats any `ALTER … SECURITY DEFINER` and ends
+   with a self-verifying `DO` block.
+2. Replaces the `stewardship_family_campaign` check
+   `family_eligible_has_code_cohort` with one that no longer requires
+   `active` (a campaign Family still needs its code and first-eligibility
+   pair), so an Advanced campaign Family whose `active` is false can be
+   stored.
+
+It rewrites no rows: no `FamilyCampaign`, code, link token, lookup digest,
+schedule occurrence or outbox message changes.
+
+**How refreshes apply it.** A refresh reads the current campaign's rule when
+it is requested, as it reads the giving window, and records it in its
+snapshot cursor's load evidence, `cursor.load.campaign_families = {rule,
+digest, missing_groups}`, beside the Family group lookup it read
+(`cursor.load.family_groups`, every `{id, name}`), which the Advanced choice
+and the [count preview](../admin-portal/spec.md#families-in-this-campaign)
+read. With no current campaign the snapshot uses the legacy rule. The
+Families check (`source/families.py`) evaluates the recorded rule against the
+row's own facts, as it cross-checks today's flags. The [drop
+check](../background-processing/spec.md#full-cycle) compares the
+Portal-eligible and email-eligible counts only with snapshots recorded under
+the same rule digest; the first load after creation, whose rule the
+Administrator approved with its count, starts their trend again (the other
+counts keep theirs).
+
+**Families whose data changes mid-campaign.** A Family that stops matching
+the rule (it leaves the "Active" group, its last Active Member becomes
+Inactive, it registers elsewhere) leaves the campaign at the next promotion
+and one that starts matching joins it, exactly as [refresh
+reconciliation](#parishsoft-refresh-reconciliation) describes: access is
+revoked without deleting history, the existing code and link are restored if
+it matches again, its unsent follow-ups are cancelled as `family_ineligible`,
+a returning responder gets no new invitation, and a joining Family gets its
+code and link and is planned by the Family schedule sweep.
+
+#### The existing campaign's rule
+
+The Production campaign was created before campaigns had a rule, and its
+Families were emailed codes and links that must never be invalidated
+(Administrator's hard rule). It keeps exactly the Families it has. Its
+configuration has no `campaign_families` value, which means the legacy rule:
+today's code path, evaluated by today's functions, so every refresh selects
+the same Families it would have selected before this change, and the
+migration's guard keeps it that way for the rest of the campaign (no
+configuration version may add a rule to it). Campaign settings shows the
+rule as "Chosen before this choice existed: Families registered to this
+parish, not in the Inactive Family group, with at least one Member who is not
+Inactive or Deceased." The new framing applies to its wording too: its pages
+say "campaign Families", not "active parishioners". Its successor (#145)
+chooses a preset or Advanced rule at creation.
 
 ### Schedule revisions and fulfillment
 
@@ -768,7 +924,7 @@ the resolved campaign-local day boundary. `FamilyCampaign` is retained with its
 Campaign until purge, so this cohort provenance does not protect every
 intermediate SourceSnapshot from compaction.
 
-Codes are generated for every newly active registered Family during initial
+Codes are generated for every newly Portal-eligible ([campaign](#campaign-families)) Family during initial
 campaign population or snapshot promotion, even if the Family lacks eligible
 email. A code is never changed during that campaign. Token rotation does not
 change it. A non-null access-token lookup digest is unique within its campaign
@@ -998,7 +1154,7 @@ signs in with a valid email address on that Member's ParishSoft contact record
 Ministry can sign in but sees no Ministry. Both flags are the promoted source's
 own: a Member is active unless ParishSoft marks them Inactive or Deceased, and
 a Family is active unless it is in ParishSoft's "Inactive" Family group or has
-no active Member, the same Family flag Portal eligibility requires. The Family
+no active Member, the same flag the [legacy Families rule](#the-existing-campaigns-rule) uses; a campaign's Families rule does not change it (Administrator decision, 2026-10-15). The Family
 need not be registered at the parish: a non-parishioner can lead a Ministry, an
 inactive Member cannot (Administrator decision, 2026-10-10). The Ministry must
 be catalog-present and selected in the current campaign, which asks about
@@ -2187,13 +2343,13 @@ immutable `CampaignDailyFactSet`; submission never mutates published facts.
 
 Snapshot promotion performs these effects transactionally:
 
-- recompute active registered Families and Members using shared ParishKit
+- recompute each Family's match with the campaign's [Families rule](#campaign-families), and active Members, using shared ParishKit
   predicates;
 - generate campaign identities for newly Portal-eligible Families, regardless
   of email eligibility;
-- revoke access for newly inactive/non-Parishioner Families without deleting
+- revoke access for Families that no longer match the rule without deleting
   prior history;
-- restore the existing code if a Family reactivates;
+- restore the existing code if a Family matches the rule again;
 - recompute eligible head email addresses and current deliverability after
   applying provider-suppression records;
 - store ParishSoft's new value on each open proposal; one that now matches
@@ -2230,8 +2386,8 @@ still needs a hold, so it is held, and can be decided, before normal work
 admission opens.
 
 If a reactivated Family already has a live submission, it remains a responder
-and does not receive a new initial invitation. Current metrics exclude inactive
-Families; historical activity retains submissions made while eligible.
+and does not receive a new initial invitation. Current metrics exclude Families no longer in the campaign;
+historical activity retains submissions made while eligible.
 
 ## Review and publication
 

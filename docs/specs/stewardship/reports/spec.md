@@ -335,8 +335,8 @@ the axis names the campaign's zone.
 
 ## Population and calculation rules
 
-"Active" means current promoted ParishSoft eligibility. Current participation
-and financial cards/tables exclude Families that later became inactive.
+"Active" means current promoted ParishSoft eligibility: the Families that currently match the campaign's [Families rule](../data/spec.md#campaign-families), which pages call campaign Families ([wording](../ui-conventions/spec.md#campaign-families-wording); #1393, not built). Current participation
+and financial cards/tables exclude Families that later left the campaign.
 Historical event views retain a submission made while the Family was eligible.
 
 A Family participates on the campaign-local date, resolved with the Campaign's
@@ -1587,9 +1587,9 @@ the source for report emails'
 One **Active parishioner family directory** page serves both Family-code
 lookup and postal outreach; they were separate pages until
 [#202](https://github.com/epiphany40223/parishkit/issues/202). The page lists
-the campaign's Families: those both active and registered at the parish
-(portal-eligible). Active Families registered elsewhere, and inactive
-Families, are left out by design, and the page's name says so
+the campaign's Families: those that match the campaign's [Families rule](../data/spec.md#campaign-families)
+(portal-eligible). Families the rule does not select
+are left out by design, and the page's name says so (it becomes "Campaign Family directory", [wording](../ui-conventions/spec.md#campaign-families-wording))
 ([#870](https://github.com/epiphany40223/parishkit/issues/870)). The page
 shows no population summary or separate code-privacy line above its filters;
 the page's About help covers code privacy. Each row has the Family's name,

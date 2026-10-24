@@ -3006,7 +3006,7 @@ Campaign settings
 ([#1119](https://github.com/epiphany40223/parishkit/issues/1119)) is one
 editor. Every setting it edits (name, year label, time zone, dates,
 modules, additional information, Ministry selections and leader roles,
-financial periods and funds) is shown once, in the same place and order in
+financial periods and funds, and [Families in this campaign](#families-in-this-campaign), which is always locked) is shown once, in the same place and order in
 every campaign state. There is no second, read-only copy of the settings.
 
 - **Open or locked in place.** A setting that can change now is open. Every
@@ -4088,7 +4088,7 @@ no-campaign text instead.
 **First page.** It collects the campaign's basics in the ordinary campaign
 form: name, modules, start and end dates, Ministries (from the loaded catalog,
 initially all active ones) and, for Financial stewardship, the financial
-period and current and comparison funds. As step 1 it
+period and current and comparison funds, and [Families in this campaign](#families-in-this-campaign) (below). As step 1 it
 is the Campaign settings form itself, so it also asks the
 [Ministry leader roles](#ministry-leader-roles), starting on the configured
 list, and every Campaign settings question is asked here once; leaving the
@@ -4280,10 +4280,10 @@ live.
     in the browser's time zone), and the action row's primary **Continue
     to** the next step not done yet, a link.
   - *Loaded, no Families* (the newest full refresh succeeded, yet the
-    campaign has no Families, because ParishSoft reported no active
-    Parishioner Families for it): "The campaign's ParishSoft data loaded,
-    but no Families matched. Check that ParishSoft has active Parishioner
-    Families, then load again.", with **See the load** (the run's
+    campaign has no Families, because no ParishSoft Family matched its
+    [Families rule](#families-in-this-campaign)): "The campaign's ParishSoft data loaded,
+    but no Families matched. Check that ParishSoft has Families that match
+    this campaign's Families choice, then load again.", with **See the load** (the run's
     Background task) and **Refresh from ParishSoft** (which shows what
     the load found). Every stage is done, since the load ran and finished;
     the line after the boxes is empty; and there is no button at all, not
@@ -4532,6 +4532,85 @@ live), or once a go-live has started, the stepper is no longer shown.
 Production, never sees Create the campaign, and its campaign, being active,
 never shows the stepper; nothing about its setup, campaign, Family codes or
 emailed links changes.
+
+#### Families in this campaign
+
+Status: specified, not built
+([#1393](https://github.com/epiphany40223/parishkit/issues/1393)). What the
+choice means, how it is stored and how refreshes apply it are in the data
+specification's [campaign Families](../data/spec.md#campaign-families); this
+section is the page.
+
+**Where.** Create the campaign's first page has a **Families in this
+campaign** section, after the modules and before the dates, because the
+choice has to be made before the campaign's first load creates its Families
+(above). It is part of the one Campaign settings form, so it is asked once.
+Its help says, in plain words: "Choose which ParishSoft Families this
+campaign is sent to. They get a Family code and link, the Family form and the
+campaign's emails. You can't change this after the campaign is created."
+
+**Basic and Advanced.** The section follows [Basic and Advanced
+modes](../ui-conventions/spec.md#basic-and-advanced-modes), with its toggle at
+the top of the section rather than the page, since the rest of the form has no
+modes. It opens in Basic with **Active parishioners** chosen.
+
+- **Basic** offers two radio choices, each with a one-line description:
+  - **Active parishioners**: "Families registered to this parish, in the
+    Active Family group, with at least one Member whose status is Active."
+  - **Active parishioners and Staff**: "The same, but Families in the Staff
+    Family group are included too."
+- **Advanced** offers the three conditions, all of which a Family must meet:
+  - **Registered to this parish**: a [binary
+    choice](../ui-conventions/spec.md#binary-choices), **Required** / **Not
+    required**, with the tip "Not required also includes Families registered
+    to another parish, or to none."
+  - **In any of these Family groups**: one checkbox per Family group in the
+    latest ParishSoft data's group lookup, by name, each with the number of
+    Families in it; at least one is required.
+  - **With at least one Member whose status is**: checkboxes **Active**,
+    **ActOther** and **Unknown**, with ParishSoft's own words; at least one is
+    required.
+
+  Each preset maps to the Advanced configuration it equals (registered
+  Required, the named groups, Active), so Basic → Advanced is lossless. A
+  preset whose group the latest data does not have is still offered, and its
+  count says no Families match.
+
+**Count preview.** Under the section a reserved status line says how many
+Families the current choice selects in the latest promoted ParishSoft data,
+and how many of them can be emailed: "1,031 Families match in the ParishSoft
+data as of Oct 24, 2026, 2:05 AM; 998 of them can be emailed." It updates in
+place as the choice changes, without a reload, without moving anything
+([in-place controls](../ui-conventions/spec.md#in-place-controls), [no layout
+shift](../ui-conventions/spec.md#no-layout-shift)), through a passive,
+unaudited count read that takes the posted choice and the page's snapshot and
+returns the two numbers (no names, no Family data). The time is browser-local.
+While the choice is incomplete the line says what is missing ("Choose at
+least one Family group."). When no Family matches, the line says so and
+**Create the campaign and continue** is unavailable with the reason "No
+Families in the latest ParishSoft data match this choice."
+([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)). The
+"Create the campaign?" confirmation repeats the choice in words and the count,
+and says "This can't be changed after the campaign is created." The count is
+a preview: the first load after creation counts the Families again from the
+data it reads.
+
+**Locked after creation.** On Campaign settings the section stays in its
+place in every campaign state, disabled, with the reason in its tip: "Chosen
+when the campaign was created; it can't be changed." It shows the rule in the
+words above (an Advanced rule lists its groups by current name, and a group
+the latest data no longer has as "*name* (no longer in ParishSoft)"). The
+server keeps the saved rule whatever is posted, and the configuration guard
+refuses any change ([data](../data/spec.md#campaign-families)). The existing
+campaign shows [the legacy rule's words](../data/spec.md#the-existing-campaigns-rule).
+
+**CLI parity.** `campaign create-preview` accepts the same choice as a
+`campaign_families` member of its change document (the data specification's
+shapes; a document that leaves it out takes the page's default, Active
+parishioners) and prints the preview's two counts; `campaign show` prints the
+rule; `campaign preview` refuses a change to it as `invalid` at
+`campaign.campaign_families`
+([admin automation](../admin-automation/spec.md#schedules-and-configuration)).
 
 ### Production transition
 

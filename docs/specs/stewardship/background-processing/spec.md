@@ -1606,7 +1606,7 @@ The cycle:
    drop threshold (25% by default). Every record can stay while the fields
    eligibility depends on disappear, so both are checked. The recent full
    snapshots bound the loss accumulated over several full refreshes that each
-   drop just under the threshold. A full
+   drop just under the threshold. The Portal-eligible and email-eligible counts are compared only with snapshots recorded under the same [campaign Families rule](../data/spec.md#campaign-families) (#1393, not built), so a new campaign's first load, whose count the Administrator approved, starts their trend again. A full
    refresh accepted past the threshold by the operator's raised threshold
    starts this trend again: older full snapshots are not compared with after
    it. One accepted by an Administrator's
@@ -1649,8 +1649,8 @@ server-built markup; parish-authored email content admits only
 [hosted images](../hosted-files/spec.md#inline-images) through file
 placeholders, and the plain-text part carries no banner.
 
-At each configured schedule, the scheduler considers current active registered
-Families. One personalized message is due only when:
+At each configured schedule, the scheduler considers the current [campaign Families](../data/spec.md#campaign-families).
+One personalized message is due only when:
 
 - the campaign is open and the global mode matches the occurrence's mode;
 - the Family is currently eligible for mail;
