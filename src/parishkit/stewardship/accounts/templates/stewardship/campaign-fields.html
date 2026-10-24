@@ -9,8 +9,9 @@ every campaign state (#1119): a setting that can't change now is disabled
 where it stands, with the reason in its "i" tip (campaign_views._lock). While
 a live campaign's end date may move (end_saved), its field is checked as it
 is typed (#944): the server's answer goes in the line reserved under it, a
-polite live region, so the answer is heard. That field takes the form's
-whole width (field-live), and its line keeps room for the longest answer
+polite live region, so the answer is heard. The start and end dates share
+one row on desktop (field-pair, #2144); a live end date's field (field-live)
+takes the rest of that row, and its line keeps room for the longest answer
 (end_check.size, an invisible copy), so no answer moves the settings below.
 While a live campaign's Ministries can change (live_ministries, #342), a
 line under the list says what adding and removing one does. While Ministry
@@ -18,10 +19,10 @@ stewardship is on, the leader roles wait for one ticked (data-require-one,
 #1330); greyed or hidden roles ask for nothing.
 {% endcomment %}
 {{ form.non_field_errors }}{{ form.base_digest }}{{ form.base_digest.errors }}
-{% for field in form.general_fields %}{% if end_saved and field.name == "end_date" %}<div class="field-live" data-missing-hint="{% translate 'Choose the new end date first.' %}">{% if field.field.tip %}<div class="label-row">{{ field.tip_label }}{% include "stewardship/components/toggletip.html" with tip_id=field.tip_id tip_label_id=field.tip_label_id tip_text=field.field.tip %}</div>{% else %}{{ field.label_tag }}{% endif %}
+{% for field in form.general_fields %}{% if field.name == "start_date" %}<div class="field-pair">{% endif %}{% if end_saved and field.name == "end_date" %}<div class="field-live" data-missing-hint="{% translate 'Choose the new end date first.' %}">{% if field.field.tip %}<div class="label-row">{{ field.tip_label }}{% include "stewardship/components/toggletip.html" with tip_id=field.tip_id tip_label_id=field.tip_label_id tip_text=field.field.tip %}</div>{% else %}{{ field.label_tag }}{% endif %}
 {% if field.help_text %}<div class="helptext" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</div>{% endif %}
 {{ field }}<div class="field-error-line" role="status"><span class="field-error-size" aria-hidden="true">{{ end_check.size }}</span><ul class="errorlist" id="{{ field.auto_id }}_error" data-live-check-error{% if not field.errors %} hidden{% endif %}>{% for error in field.errors %}<li>{{ error }}</li>{% empty %}<li></li>{% endfor %}</ul></div></div>
-{% else %}<div>{{ field.as_field_group }}</div>{% endif %}{% endfor %}
+{% else %}<div>{{ field.as_field_group }}</div>{% endif %}{% if field.name == "end_date" %}</div>{% endif %}{% endfor %}
 <div data-require-one data-missing-hint="{% translate 'Choose at least one: Census, Ministry stewardship or Financial stewardship.' %}">{% for field in form.module_fields %}<div>{{ field.as_field_group }}</div>{% endfor %}</div>
 <div>{{ form.additional_information.as_field_group }}</div>
 <fieldset id="ministry-selections" data-campaign-module="id_ministry"{% if live_ministries %} aria-describedby="ministry-selections-tip"{% endif %}><legend id="ministry-selections-legend">{% translate "Ministry selections" %}</legend>{% if live_ministries %}{% translate "This campaign is live: Families see an added Ministry at their next visit; those who already submitted are not asked again and get no email. Removing a Ministry deletes none of their answers." as live_tip %}{% include "stewardship/components/toggletip.html" with tip_id="ministry-selections-tip" tip_label_id="ministry-selections-legend" tip_text=live_tip %}{% endif %}

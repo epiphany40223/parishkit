@@ -349,7 +349,10 @@ label. **Shared code.** The stylesheet lays out every form or fieldset
 `div` that holds one checkbox or radio and its `label` this way (and a
 `label` wrapping its control), so a template never adds its own rule
 (#1656, Edit scheduled email's Apply this edit to and Delete this
-scheduled email).
+scheduled email). The boxes of a group that needs one ticked
+(`data-require-one`) are laid out the same way, so a list of options, such
+as Campaign settings' modules, lines every box up first, in the same place
+([#2144](https://github.com/epiphany40223/parishkit/issues/2144)).
 
 Client validation improves feedback but never replaces server validation.
 Browser-local timezone conversion uses UTC ISO timestamps supplied by the
@@ -3049,8 +3052,11 @@ is left to convert
 An edit form's short fields (a status, an outcome,
 a date and a time) likewise share a row on desktop (`.field-row` in
 `ui-v1.css`), top-aligned so a time's reading line fits under its box, while
-notes span the form; at phone width each field takes its own row (#1014). The
-Family portal keeps its own spacing.
+notes span the form; at phone width each field takes its own row (#1014).
+Two short fields that belong together, such as Campaign settings' start
+and end dates, always share one row on desktop (`.field-pair`), even while
+one of them is checked as it is typed (#2144). The Family portal keeps its
+own spacing.
 
 **One help line under a field.** An Admin field has at most one line of
 help or guidance under it: one short paragraph of plain language, about 25
@@ -3069,9 +3075,13 @@ the tip. `test_admin_help_guards.py` fails when an Admin template's help
 line (`class="help"` or Django's `helptext`) or an Admin form field's own
 help runs past one line; its short list of exceptions holds only help that
 is not a field's (a section's guidance, or why an action is unavailable).
-The Family portal keeps its own wording rules. Checkbox help is a toggletip
-beside the box. A toggletip in a table heading is described by its bubble
-alone, and it closes when the table's box scrolls its button out of view. An
+A checkbox's help stays under its words; when it runs long, a one-line
+hint stays there and the rest opens from the "i" beside its words
+(`field_tips`, #2144); Tab reaches the box, then its "i". A legend's "i"
+sits beside the legend's words, as a label's does, never on a line under
+it. The Family portal keeps its own wording rules. Checkbox help is a
+toggletip beside the box. A toggletip in a table heading is described by
+its bubble alone, and it closes when the table's box scrolls its button out of view. An
 export carries no help about how its formats write values (see
 [Downloaded files](#downloaded-files)).
 

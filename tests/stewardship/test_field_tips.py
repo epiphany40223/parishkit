@@ -35,6 +35,19 @@ def test_only_long_help_on_eligible_fields_becomes_a_tip():
     assert form.fields["choices"].help_text == ""
 
 
+def test_a_checkbox_with_a_hint_keeps_one_line_and_tips_the_rest():
+    """A checkbox's long help moves into its tip only with a hint (#2144),
+    which stays as its one help line under its words."""
+    form = field_tips.shorten(Sample(), {"box": "Box hint."})
+    assert form.fields["box"].tip == LONG
+    assert form.fields["box"].help_text == "Box hint."
+    html = form["box"].as_field_group()
+    assert '<div class="label-row"><label id="id_box_label" for="id_box">' in html
+    # The box comes first, so Tab meets it before its "i", as drawn.
+    assert html.index('type="checkbox"') < html.index('class="label-row"')
+    assert 'aria-describedby="id_box_helptext id_box_tip"' in html
+
+
 def test_tip_markup_is_labelled_described_and_escaped():
     """The button names its field via the label id; the control reads the tip."""
     form = field_tips.shorten(Sample(), {"long": "Hint."})

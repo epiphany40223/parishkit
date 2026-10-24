@@ -6,7 +6,7 @@
 <p>{{ source.active_configuration.name }}</p>
 <p class="notice">{% translate "This copies content, share options and mail schedule structures into a new draft. It never copies Family codes, responses or sent email. Enter every new date and explicitly select current funds. The historical campaign is unchanged." %}</p>
 <form method="post" data-campaign-form data-new-campaign>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="clone_seed" value="{{ clone_seed }}">
-<div class="panel">{% include 'stewardship/campaign-fields.html' %}</div>
+<div class="panel campaign-fields">{% include 'stewardship/campaign-fields.html' %}</div>
 <h2>{% translate "New mail schedules" %}</h2>{{ schedules.management_form }}{{ schedules.non_form_errors }}
 {% for form in schedules %}{% include 'stewardship/schedule-row.html' with number=forloop.counter %}{% endfor %}
 {% button type="submit" %}{% translate "Preview new campaign" %}{% endbutton %}</form>

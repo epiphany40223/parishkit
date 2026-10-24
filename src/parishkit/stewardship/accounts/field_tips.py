@@ -7,9 +7,12 @@ need every time, such as a format. The input stays described by the full text
 (``aria-describedby`` also names the hidden bubble, which assistive technology
 reads even while it is closed), so screen-reader users lose nothing.
 
-Checkbox fields and fields that already use their own template keep their
-help visible: their layouts place the help beside the box, and their help is
-short enough to read in place (one line, #2130; ``test_admin_help_guards``).
+Fields that already use their own template keep their help visible: their
+help is short enough to read in place (one line, #2130;
+``test_admin_help_guards``). A checkbox keeps its help under its words too,
+unless it has a one-line hint to keep there: then its long help moves into
+the tip beside its words like any other field's (Campaign settings' modules,
+#2144), so a checkbox never loses its one help line.
 The exceptions are a field with a shared format rule
 (``web.field_rules.apply``), whose field group, with a reserved error line,
 draws a tip itself, and a field whose own template draws one
@@ -56,12 +59,16 @@ class TipBoundField(BoundField):
         return " ".join(filter(None, [described, self.tip_id]))
 
 
-def eligible(field):
-    """Whether the field's layout can take a tip beside its label."""
+def eligible(field, hint=""):
+    """Whether the field's layout can take a tip beside its label.
+
+    A checkbox can only when ``hint`` keeps one help line under its words.
+    """
     own_template = field.template_name not in {None, *TIP_TEMPLATES} and not ruled(
         field
     )
-    return not own_template and not isinstance(field.widget, forms.CheckboxInput)
+    checkbox = isinstance(field.widget, forms.CheckboxInput)
+    return not own_template and (bool(hint) or not checkbox)
 
 
 def ruled(field):
@@ -88,9 +95,9 @@ def shorten(form, hints=None):
     """
     hints = hints or {}
     for name, field in form.fields.items():
-        text = field.help_text
-        if text and len(str(text)) > LONG_HELP and eligible(field):
-            add(field, text, hints.get(name, ""))
+        text, hint = field.help_text, hints.get(name, "")
+        if text and len(str(text)) > LONG_HELP and eligible(field, hint):
+            add(field, text, hint)
     return form
 
 
