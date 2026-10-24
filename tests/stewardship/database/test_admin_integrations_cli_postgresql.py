@@ -106,6 +106,8 @@ def test_parishsoft_shows_its_settings_and_refresh_facts(admin):
     assert (result["target"], result["name"]) == ("parishsoft", "ParishSoft")
     assert result["configured"] and not result["removable"]
     assert result["settings"]["organization_id"] == "12345"
+    # Read-only beside it (#1554): no full load has recorded a name yet.
+    assert result["settings"]["organization_name"] is None
     assert result["key"] is None
     assert result["offsite_backup"] is None and result["probe"] is None
     refresh = read(admin, reader, "refresh", "status")["source"]
