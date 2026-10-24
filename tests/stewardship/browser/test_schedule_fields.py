@@ -8,7 +8,16 @@ from urllib.parse import parse_qs
 import pytest
 
 from .test_components import axe_violations
-from .waits import available, has_attribute, has_text, hidden, reads, visible
+from .waits import (
+    available,
+    has_attribute,
+    has_text,
+    hidden,
+    reads,
+    repeat_line,
+    repeat_lines,
+    visible,
+)
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -338,10 +347,14 @@ def test_repeating_posts_one_reminder_row_per_date(
     panel.locator('[data-repeat="weekday"][value="3"]').check()
     counted(pane, 8)
     assert abs(page_top(wait) - top) < 1
-    assert (
-        "Thursday, October 1, 2054: not added, not after the initial invitation"
-        in dates.inner_text()
+    # The lines are the shared schedule preview (#2092): a date not added is
+    # struck, with its reason.
+    line = repeat_line(
+        dates,
+        "Thursday, October 1, 2054",
+        "not added: not after the initial invitation",
     )
+    assert dates.locator("li s").filter(has_text="not after").count() == 1, line
     assert "8 reminders to add:" in dates.inner_text()
     # A whole schedule: Review covers it.
     available(review)
@@ -430,14 +443,12 @@ def test_repeating_judges_each_date_in_the_campaigns_zone(
     repeat(page, "time").blur()
     repeat(page, "email").select_option(index=1)
     dates = pane.locator("[data-repeat-dates]")
+    counted(pane, len(kept))
     if left_out:
-        counted(pane, len(kept))
-        assert (
-            f"{left_out}: not added, outside the campaign dates" in dates.inner_text()
-        )
+        repeat_line(dates, left_out, "not added: outside the campaign dates")
     else:
-        counted(pane, len(kept))
-        assert "not added" not in dates.inner_text()
+        lines = repeat_lines(dates, len(kept))
+        assert not [line for line in lines if "not added" in line]
     first = int(page.locator('[name="schedules-TOTAL_FORMS"]').input_value()) - 1
     fields = posted(page, component_origin, path)
     assert [
@@ -464,17 +475,20 @@ def test_repeat_monthly_names_skipped_months_and_refusals(page, component_origin
     pane = page.locator(PANE)
     dates = pane.locator("[data-repeat-dates]")
     counted(pane, 1)
-    text = dates.inner_text()
-    assert "Saturday, October 31, 2054" in text
-    assert "November 2054: not added, skipped: it has no day 31" in text
+    from playwright.sync_api import expect
+
+    repeat_line(dates, "Saturday, October 31, 2054", "Reminder")
+    # A skipped month is no send: a line after the shared preview's.
+    expect(dates.locator("[data-repeat-preview] > p.help")).to_have_text(
+        "November 2054 is skipped: it has no day 31."
+    )
     # The nth-weekday form replaces the day of the month.
     repeat(page, "by").select_option("weekday")
     hidden(panel.locator('[data-repeat-by="day"]'))
     repeat(page, "ordinal").select_option("-1")
     repeat(page, "month-weekday").select_option("4")
-    assert (
-        "Friday, November 27, 2054: not added, outside the campaign dates"
-        in dates.inner_text()
+    repeat_line(
+        dates, "Friday, November 27, 2054", "not added: outside the campaign dates"
     )
     # A rule error is said at its fields (#1915), not in the summary.
     repeat(page, "until").fill("2054-09-01")
@@ -608,7 +622,8 @@ def test_repeat_limit_leaves_out_saved_rows_marked_delete(page, component_origin
     repeat(page, "time").fill("9:00")
     repeat(page, "email").select_option(index=1)
     counted(pane, 3)
-    assert f"over the limit of {total + 2} schedules" in pane.inner_text()
+    over = f"not added: over the limit of {total + 2} schedules"
+    repeat_line(pane.locator("[data-repeat-dates]"), over, over)
     open_saved(page)
     page.locator('[name="schedules-0-DELETE"]').check()
     counted(pane, 4)
@@ -635,8 +650,9 @@ def test_repeat_leaves_out_dates_whose_time_has_passed(page, component_origin):
     repeat(page, "time").blur()
     repeat(page, "email").select_option(index=1)
     counted(pane, 4)
-    text = pane.locator("[data-repeat-dates]").inner_text()
+    lines = repeat_lines(pane.locator("[data-repeat-dates]"), 9)
     for passed in ("Thursday, October 1", "Monday, October 5", "Thursday, October 15"):
-        assert f"{passed}, 2054: not added, its time has passed" in text
-    assert "Monday, October 19, 2054" in text
-    assert "Monday, October 19, 2054: not added" not in text
+        (line,) = [line for line in lines if line.startswith(f"{passed}, 2054,")]
+        assert "not added: its time has passed" in line
+    (line,) = [line for line in lines if line.startswith("Monday, October 19, 2054,")]
+    assert "not added" not in line

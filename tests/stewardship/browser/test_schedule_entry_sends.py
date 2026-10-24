@@ -23,7 +23,7 @@ from .schedule_list_components import (
     NEW_INITIAL_SENT,
 )
 from .test_components import axe_violations
-from .waits import eventually, has_text, hidden, visible
+from .waits import eventually, has_text, hidden, repeat_line, repeat_lines, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -313,13 +313,11 @@ def test_repeating_judges_each_date_in_the_campaigns_zone(
         dates = page.locator("[data-repeat-dates]")
         if left_out:
             has_text(summary, f"{len(kept)} reminders to add, 1 not added.")
-            assert (
-                f"{left_out}: not added, outside the campaign dates"
-                in dates.inner_text()
-            )
+            repeat_line(dates, left_out, "not added: outside the campaign dates")
         else:
             has_text(summary, f"{len(kept)} reminders to add.")
-            assert "not added" not in dates.inner_text()
+            lines = repeat_lines(dates, len(kept))
+            assert not [line for line in lines if "not added" in line]
         eventually(
             page,
             "document.querySelectorAll('input[name=\"repeat-dates\"]').length",

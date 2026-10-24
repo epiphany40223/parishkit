@@ -62,6 +62,7 @@ from .waits import (
     has_attribute,
     has_text,
     hidden,
+    repeat_line,
     same_place,
     visible,
 )
@@ -441,10 +442,10 @@ def test_new_repeating_reminder_lists_and_posts_the_dates_that_fit(
         "document.querySelector('[data-repeat-summary]').textContent"
         " === '3 reminders to add, 1 not added.'",
     )
-    dates = page.locator("[data-repeat-dates]")
-    assert (
-        "Tuesday, October 20, 2054: not added, another email is already "
-        "scheduled then" in dates.inner_text()
+    repeat_line(
+        page.locator("[data-repeat-dates]"),
+        "Tuesday, October 20, 2054",
+        "not added: another email is already scheduled then",
     )
     with page.expect_request(lambda request: request.method == "POST") as sent:
         page.get_by_role("button", name=ADD).click()
@@ -880,9 +881,10 @@ def test_a_repeat_compares_moments_in_a_zone_a_day_ahead(
             "document.querySelector('[data-repeat-summary]').textContent"
             " === '3 reminders to add, 1 not added.'",
         )
-        assert (
-            "Wednesday, October 21, 2054: not added, another email is already "
-            "scheduled then" in page.locator("[data-repeat-dates]").inner_text()
+        repeat_line(
+            page.locator("[data-repeat-dates]"),
+            "Wednesday, October 21, 2054",
+            "not added: another email is already scheduled then",
         )
         with page.expect_request(lambda request: request.method == "POST") as sent:
             page.get_by_role("button", name=ADD).click()

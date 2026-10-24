@@ -771,6 +771,9 @@ NON_PAGES = frozenset(
         # New and Edit scheduled email's test of an unsaved edit (#446), a
         # POST the page script makes.
         "schedule_email_test",
+        # The repeat rules' live date list (#2092), a fragment the page
+        # script reads.
+        "schedule_repeat_dates",
         "report_export_cancel",
         "report_export_create",
         "report_export_download",

@@ -241,3 +241,27 @@ def same_place(found, expected, *, tolerance=0.5):
             )
         )
     return abs(found - expected) < tolerance
+
+
+def repeat_line(dates, day, words):
+    """Assert that the repeat date list ``dates`` comes to have ``day``'s
+    line saying ``words``, waiting; return the line's text.
+
+    The list's lines are the shared schedule preview, which the server draws
+    after the page script writes the heading (#2092), so an immediate
+    ``inner_text`` races it.
+    """
+    from playwright.sync_api import expect
+
+    line = dates.locator("li").filter(has_text=day).first
+    expect(line).to_contain_text(words)
+    return line.inner_text()
+
+
+def repeat_lines(dates, count):
+    """Wait for the repeat date list ``dates`` to draw ``count`` lines (#2092);
+    return their texts."""
+    from playwright.sync_api import expect
+
+    expect(dates.locator("li")).to_have_count(count)
+    return dates.locator("li").all_inner_texts()
