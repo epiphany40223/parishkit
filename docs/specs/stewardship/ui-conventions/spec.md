@@ -2927,6 +2927,15 @@ match.
     has started, or the deployment is in Production) has its ordinary Save,
     unavailable until something changes, and its ordinary review dialog.
 
+**Not a step wizard.** The
+[review wizard](../review-pipeline/spec.md#review-wizard) (#2123, proposed)
+pages through review items one at a time: its pages are positions in a run,
+not steps to complete, so the numbered rules do not apply to it, except
+that no page needs an action (rule 9). It
+keeps the [stepper button row](#stepper-button-row)'s fixed slots (Previous,
+Finish, Next), pinned to the bottom of the screen as the Family form's row
+is, and [no layout shift](#no-layout-shift).
+
 Status: these rules are the target; the wizards reach them in steps, as #1404's
 plan lays out. The setup wizard meets rules 2, 4, 5, 7, 8 and 12, and
 rule 1 except the "Next:" line: a saved page stays completed, while its
