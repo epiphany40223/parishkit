@@ -35,6 +35,7 @@ sections:
     "Schedule revisions and fulfillment": [DAT-02, BG-04]
     "Source snapshot": [DAT-03]
     "ParishSoft organization scope": [DAT-03]
+    "ParishSoft organization name": [DAT-03]
     "Campaign daily report facts": [DAT-07, RPT-03]
     "Derived fact retention": [OPS-07, RPT-03]
     "Family campaign identity": [DAT-04]
@@ -60,6 +61,7 @@ sections:
   admin-portal/spec.md:
     "Login and denial behavior": [ADM-01]
     "Bootstrap and first-Admin wizard": [ADM-02]
+    "ParishSoft organization choice": [ADM-02]
     "Turning Slack off during setup": [ADM-02]
     "Navigation and home": [ADM-03]
     "JavaScript requirement": [ADM-12]
@@ -447,6 +449,7 @@ sections:
     "Portal-wide presentation": [DOM-04]
     "Devices and browsers": [DOM-04, ARC-08, FAM-08]
     "Language and localization": [DOM-04]
+    "ParishSoft organization names": [DOM-04, ADM-03]
     "Numbers and money": [DOM-04]
     "Dates and times": [DOM-04, ADM-03]
     "Date format": [DOM-04]

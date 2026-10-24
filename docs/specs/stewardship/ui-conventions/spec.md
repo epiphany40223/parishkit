@@ -40,6 +40,7 @@ when it lands.
 
 - Portal-wide presentation: [devices and browsers](#devices-and-browsers),
   [language](#language-and-localization),
+  [ParishSoft organization names](#parishsoft-organization-names),
   [numbers and money](#numbers-and-money),
   [dates and times](#dates-and-times), [date format](#date-format),
   [accessibility and client behavior](#accessibility-and-client-behavior),
@@ -119,6 +120,30 @@ change for phones never changes the desktop layout.
 Application strings ship in English but use a localization framework from the
 start. Admin-authored content may use any language. The application does not
 claim a translated Spanish UI in the first release.
+
+### ParishSoft organization names
+
+**Rule.** Wherever a page, notice, help text, problem, CLI message or log
+message meant for people names the parish's ParishSoft organization, it is
+written "Name (ID)", for example "St. Example Parish (1234)": the name
+ParishSoft reports and, in parentheses, its organization ID. It is never the
+bare integer, and never the name without the ID. While no name is recorded
+(an install set up before
+[#1554](https://github.com/epiphany40223/parishkit/issues/1554), until its
+next full load, or an organization ParishSoft reports without a name), it
+is "ParishSoft organization 1234". Structured log fields, audit rows and
+automation JSON keep the integer `organization_id`; automation output may
+add the name beside it. Another organization is never named this way
+outside the setup wizard's
+[organization choice](../admin-portal/spec.md#parishsoft-organization-choice).
+**Why.** An Administrator recognizes the parish by name, while the ID is
+what ParishSoft support and the configuration use; together they cannot be
+mistaken for another parish's. **Shared code.** One helper renders the
+name and ID from the current snapshot's recorded name
+([ParishSoft organization name](../data/spec.md#parishsoft-organization-name));
+pages never build the string themselves. **Precedent.**
+[#1554](https://github.com/epiphany40223/parishkit/issues/1554)
+(Administrator, 2026-10-24).
 
 ### Numbers and money
 
@@ -2032,7 +2057,11 @@ around it, two gates keep it in place instead:
   ticked. When the Administrator needs to see why a locked field cannot
   change, the reason may also be one line in the field's own hint slot (the
   line a hint would take, so nothing shifts), as the locked ParishSoft
-  organization ID shows ([#1492](https://github.com/epiphany40223/parishkit/issues/1492)).
+  organization ID first showed
+  ([#1492](https://github.com/epiphany40223/parishkit/issues/1492); that
+  field is removed by
+  [#1554](https://github.com/epiphany40223/parishkit/issues/1554), which
+  shows the organization as text).
 
 The two overlap, and are to be merged into one shared gate once both have
 landed. The Ministry follow-up request form greys its outcome and contact

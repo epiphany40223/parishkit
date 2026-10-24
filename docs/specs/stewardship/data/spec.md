@@ -912,7 +912,48 @@ organizations and that ParishKit drops all but the configured one). The rules:
   log and the snapshot agree. No other organization's ID or name, and no
   parish data, is logged or stored. A key that reaches one organization
   records nothing new. No schema change: the evidence is part of the
-  existing cursor.
+  existing cursor. The one exception is the setup wizard's
+  [organization choice](../admin-portal/spec.md#parishsoft-organization-choice),
+  which shows the setup Administrator every organization the key reaches,
+  by name and ID, and scrubs that list as soon as one is chosen.
+
+#### ParishSoft organization name
+
+The configured organization's name is shown wherever the portal names the
+organization, as "Name (ID)"
+([ParishSoft organization names](../ui-conventions/spec.md#parishsoft-organization-names),
+[#1554](https://github.com/epiphany40223/parishkit/issues/1554)). The ID
+stays the identity: every request, check, snapshot and versioned record keys
+on the integer organization ID, and the name is display text only, never
+compared, matched or used to choose an organization.
+
+- **Source.** The name is the `organizationReportName` of the configured
+  organization's record in the uncached `organizations/search` answer that
+  the [organization check](#parishsoft-organization-scope) already reads, so
+  it costs no extra request.
+- **Cleaning.** The name is trimmed, runs of white space become one space,
+  control characters are removed, and it is cut to at most 200 characters.
+  A name that is missing, not text or empty after cleaning is no name: it
+  does not fail the load (only a configured expected organization name,
+  when one is set, is compared, as before), and the portal then names the
+  organization by its ID alone.
+- **Stored with each full load.** A full load records the cleaned name in
+  its snapshot's load evidence as `organization` (`{"name": "…"}`, or
+  `{"name": null}` for no name). A snapshot that is not a full load carries
+  its base's value forward. Pages read the current snapshot's value, so a
+  name changed in ParishSoft shows after the next full load, and nothing
+  else stores it. No schema change: the evidence is part of the existing
+  cursor.
+- **Before the first load.** The setup wizard shows the name its
+  [organization lookup](../admin-portal/spec.md#parishsoft-organization-choice)
+  read, held with the lookup, until the setup load records its own.
+- **Existing installs.** A snapshot recorded before this change has no
+  `organization` value, so the portal names the organization by its ID
+  alone until the next full load records the name. Nothing is backfilled
+  and no re-setup is asked for.
+- **A key that stops reaching the organization** fails the load as the
+  tenant mismatch the organization check already reports; the name shown
+  stays the last one recorded.
 
 ### Campaign daily report facts
 
