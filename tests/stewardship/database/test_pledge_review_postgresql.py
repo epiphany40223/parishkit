@@ -653,3 +653,90 @@ def test_limitations_lists_a_held_cannot_contribute_to_review(
     assert [r for r in at_stage(rows, "to_review")[0] if r["kind"] == "cannot_give"]
     assert [r["kind"] for r in at_stage(rows, "all")[0]].count("cannot_give") == 1
     assert count
+
+
+def test_the_menu_counts_the_pledges_to_review(response_service, google):
+    """The menu's Pledges count is the page's To review rows (#2125): a
+    decision moves the pledge out of it, Back to review brings it back, a
+    viewer Pledges does not admit gets no count, and an unavailable page
+    (its source snapshot compacted) shows no number."""
+    import re
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts import admin_context
+    from parishkit.stewardship.accounts.policy import Principal
+    from parishkit.stewardship.reports.pledge_review_views import (
+        at_stage,
+        pledge_rows,
+    )
+
+    harness, submission = pledged(response_service)
+    browser, staff_id = staff_browser(harness, google)
+    staff = Principal(staff_id, frozenset({"staff"}), frozenset())
+    items = [SimpleNamespace(name="pledges_to_enter", url=reverse(ROUTE))]
+
+    def counts(principal=staff):
+        """The menu's count and the page's To review rows, read by the web role."""
+        with (
+            task_login(ServiceRole.WEB, exact=True, reconnect=True),
+            transaction.atomic(),
+        ):
+            menu = admin_context._open_counts(
+                SimpleNamespace(), principal, items, harness.campaign
+            ).get("pledges_to_enter")
+            rows, _ = pledge_rows(harness.campaign.pk, principal)
+        return menu, len(at_stage(rows, "to_review"))
+
+    def drawn():
+        """The count the rendered menu shows after Pledges, or None."""
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            body = get(browser, "/admin/")[1]
+        found = re.search(
+            rb'>Pledges <span class="admin-menu-count" aria-hidden="true"'
+            rb' title="[^"]*">([0-9,]+)</span>',
+            body,
+        )
+        return int(found.group(1)) if found else None
+
+    assert counts() == (1, 1)
+    assert drawn() == 1
+    decide(harness, admin(), "accept", [submission])
+    assert counts() == (0, 0)
+    assert drawn() is None
+    decide(harness, admin(), "back_to_review", [submission])
+    assert counts() == (1, 1)
+    # Pledges admits FINANCIAL_DETAIL only: anyone else gets no count, even
+    # if a caller offers the entry.
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert (
+            admin_context._open_counts(
+                SimpleNamespace(),
+                Principal(staff_id, frozenset(), frozenset()),
+                items,
+                harness.campaign,
+            ).get("pledges_to_enter")
+            is None
+        )
+    # The page says Pledges are unavailable without a usable source
+    # snapshot, so the menu shows no number either. The guard protects the
+    # current snapshot from compaction, so the test sets it compacted with
+    # the session's triggers off (the test login owns the database).
+    with connection.cursor() as cursor:
+        cursor.execute("SET session_replication_role = replica")
+        try:
+            cursor.execute(
+                "UPDATE stewardship_source_snapshot SET compacted_at=now() "
+                "WHERE id=(SELECT snapshot_id FROM stewardship_source_current)"
+            )
+        finally:
+            cursor.execute("RESET session_replication_role")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert (
+            admin_context._open_counts(
+                SimpleNamespace(), staff, items, harness.campaign
+            ).get("pledges_to_enter")
+            is None
+        )
+        response, body = get(browser, reverse(ROUTE))
+    assert b"unavailable" in body
+    assert b"Pledges <span" not in body
