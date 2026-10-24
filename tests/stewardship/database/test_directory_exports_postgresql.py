@@ -287,12 +287,12 @@ def test_native_directory_exports_render_and_download(
             )
             assert (
                 response.status_code == 200
-                and b"Active parishioner family directory export" in body
+                and b"Campaign Family directory export" in body
             )
             # The trail's last crumb names the page as its heading does (#520).
             assert (
                 b'<span aria-current="page">'
-                b"Active parishioner family directory export</span>" in body
+                b"Campaign Family directory export</span>" in body
             )
             # A code-list export with no reach filter returns to the plain
             # page, which the parent crumb links, so no "Return to" repeats
@@ -520,7 +520,8 @@ def test_postal_mail_merge_leaves_out_families_without_a_mailing_address(
         response, body = read(browser, route + "?mailing=yes")
         # A campaign-wide fact, not a claim about this file's contents.
         assert (
-            b"Across all active Families, 2 Families have neither a deliverable" in body
+            b"Across all campaign Families, 2 Families have neither a deliverable"
+            in body
         )
         # The "neither" list holds them; mailing columns always list "By
         # postal mail only", so asking them for "neither" lists only Family 1.
@@ -633,7 +634,7 @@ def test_mail_merge_always_lists_by_postal_mail_only(
     assert status.status_code == 200
     assert (
         b'<span aria-current="page">'
-        b"Active parishioner family directory mail-merge export</span>" in body
+        b"Campaign Family directory mail-merge export</span>" in body
     )
     # The crumb links the plain page, so "Return to" stays (#1345).
     assert f'href="{route}?mailing=yes">Return to '.encode() in body

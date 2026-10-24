@@ -145,7 +145,7 @@ def test_notes_are_flagged_as_the_helper_flags_them():
     )
     flags = {label: flagged for label, _, flagged in views.note_rows(row)}
     assert flags == {
-        "Active Families counted from": False,
+        "Campaign Families counted from": False,
         "Source system": False,
         "Repeat submissions": True,
         "count.active_now": False,

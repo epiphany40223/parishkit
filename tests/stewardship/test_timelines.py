@@ -564,7 +564,7 @@ def test_open_form_is_unavailable_with_its_reason():
     assert "this Family has no code for this campaign" in page
     page = render(TIMELINE, eligible=False)
     assert "data-open-form" not in page
-    assert "no longer lists this Family as active and registered" in page
+    assert "this Family is no longer in this campaign" in page
     page = render(TIMELINE, current=False)
     assert "this is not the current campaign" in page
 
@@ -848,7 +848,7 @@ def test_the_page_is_a_hub_with_the_timeline_tab():
     row = page.index('role="tablist" aria-label="Family information"')
     assert page.index("<h1>") < strip < row
     # The strip has no directory link: the Admin menu has it (2026-10-19).
-    assert "Active parishioner family directory</a>" not in page[strip:row]
+    assert "Campaign Family directory</a>" not in page[strip:row]
     # The summary, the filter bar, the table region and the export are all
     # inside the Timeline's panel, which is the one drawn.
     panel = page.index('id="family-tabs-panel-timeline"')

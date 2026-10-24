@@ -268,7 +268,7 @@ def notes(archive):
     """
     pairs = [
         ("Source system", archive.source_system),
-        ("Active Families counted from", archive.active_families_provenance),
+        ("Campaign Families counted from", archive.active_families_provenance),
         ("Repeat submissions", archive.dedup_rule),
     ]
     pairs += [(key, str(value)) for key, value in sorted(archive.notes.items())]

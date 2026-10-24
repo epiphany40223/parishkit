@@ -1,10 +1,10 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n %}
-{% block title %}{% translate "Active parishioner family directory unavailable" %}{% endblock %}
+{% block title %}{% translate "Campaign Family directory unavailable" %}{% endblock %}
 {% block content %}
-<h1>{% translate "Active parishioner family directory unavailable" %}</h1>
+<h1>{% translate "Campaign Family directory unavailable" %}</h1>
 {% if no_rehearsal %}<p class="notice notice-error" role="alert">{% translate "That Testing rehearsal is no longer active, so its responses cannot be listed." %}</p>
 {% elif status == 503 %}<p class="notice notice-error" role="alert">{% translate "The report is temporarily unavailable. Your saved data has not changed; please try again shortly." %}</p>
 {% elif status == 409 %}{% include 'stewardship/export-request-bound.html' %}
 {% else %}<p class="notice notice-error" role="alert">{% translate "Invalid report filters. Return to the directory and check the values." %}</p>{% endif %}
-<p><a href="{% url 'admin:family_directory' %}">{% translate "Return to Active parishioner family directory" %}</a></p>
+<p><a href="{% url 'admin:family_directory' %}">{% translate "Return to Campaign Family directory" %}</a></p>
 {% endblock %}

@@ -24,7 +24,7 @@ from parishkit.stewardship.source.family_names import (
     name_series,
 )
 from parishkit.stewardship.source.source_status import (
-    INACTIVE_IN_PARISHSOFT,
+    NOT_IN_CAMPAIGN,
     NOT_IN_PARISHSOFT,
 )
 from parishkit.stewardship.web.content import bounded_text
@@ -112,11 +112,11 @@ def admit_mode(principal, mode):
         require_role(principal, "administrator")
 
 
-# A row the Response filter lists although the current ParishSoft data no
-# longer lists the Family as active and registered (reason "inactive"), and
-# the name shown when that data no longer has the Family at all.
-# Both are the shared phrases of ui-conventions (#1216).
-INACTIVE = INACTIVE_IN_PARISHSOFT
+# A row the Response filter lists although the Family has left the campaign
+# in the current ParishSoft data (reason "inactive"; "No longer in this
+# campaign", #1393), and the name shown when that data no longer has the
+# Family at all. Both are the shared phrases of ui-conventions (#1216).
+INACTIVE = NOT_IN_CAMPAIGN
 MISSING_NAME = NOT_IN_PARISHSOFT
 
 
@@ -728,7 +728,7 @@ def directory_page(campaign_id, query, *, postal, general, mac):
 
 
 # How many matches the header's Find a Family box lists (#561); more than
-# this offers the whole list in the active parishioner family directory instead.
+# this offers the whole list in the Campaign Family directory instead.
 FIND_LIMIT = 8
 # The shortest search the box sends. One character would match nearly every
 # Family (any name with that letter, any DUID with that digit), so a lookup

@@ -4,7 +4,7 @@
 table's Family name the same way: the name (or the shared "Not in ParishSoft"
 badge), linked to the Family's Timeline only when the row carries its
 campaign record id and the page's viewer may open the Timeline, and the
-"Inactive in ParishSoft" badge outside the link.
+"No longer in this campaign" badge outside the link.
 """
 
 import re
@@ -56,7 +56,7 @@ def test_marks_follow_the_shared_convention():
     inactive = draw("{% family_link id 'Adams, Ann' active=False %}", id=FAMILY)
     assert inactive == (
         f'{LINK}Adams, Ann</a> <span class="status-badge" '
-        'data-source-status="inactive">Inactive in ParishSoft</span>'
+        'data-source-status="left">No longer in this campaign</span>'
     )
     # A blank name is a missing one too, never an empty link.
     assert draw("{% family_link id '' %}", id=FAMILY) == missing
@@ -120,7 +120,7 @@ def test_no_template_links_the_timeline_by_hand():
 # new page that names a Family through another key (``row.name``, a heading)
 # must be added here to be checked for the helper.
 FAMILY_NAME_PAGES = {
-    "directory.html": "Active parishioner family directory",
+    "directory.html": "Campaign Family directory",
     "find-family-results.html": "Find a Family results",
     "financial-report.html": "Financial stewardship",
     "update-parishsoft.html": "Update ParishSoft, newest check",

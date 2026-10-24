@@ -91,7 +91,7 @@ lifetime AS (
 # skipped because the Family had already responded, the engagement record's
 # first instants, and the first submission with how many there were. The
 # statement is the installed ``stewardship_family_response_v1`` (migration
-# 0050), so the active parishioner family directory's Response filters
+# 0050), so the Campaign Family directory's Response filters
 # select from exactly these rows (#933). Each source is aggregated once per
 # campaign and joined to the Family rows (hash joins at launch scale, about
 # 1,100 Families), never per Family.

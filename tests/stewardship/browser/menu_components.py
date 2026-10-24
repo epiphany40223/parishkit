@@ -83,7 +83,7 @@ LINKS = (
     '{% block content %}<h1>Response dashboard</h1><p id="report-links">'
     '{% menu_link "information_queue" "Additional information" %} · '
     '{% menu_link "limitations_report" "Limitations" %} · '
-    '{% menu_link "family_directory" "Active parishioner family directory" %}'
+    '{% menu_link "family_directory" "Campaign Family directory" %}'
     " · after</p>{% endblock %}"
 )
 

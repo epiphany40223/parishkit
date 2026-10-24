@@ -8,7 +8,7 @@
 This Phase 5 increment starts from verified main `8dc00e9c`, after
 [PR #68 protected delivery](stewardship-family-directories.md#protected-delivery).
 It completes [RPT-05.03 and remaining .05](../tasks/stewardship/reports.md#rpt-05-family-code-and-postal-outreach-reports)
-under the [report contract](../specs/stewardship/reports/spec.md#active-parishioner-family-directory)
+under the [report contract](../specs/stewardship/reports/spec.md#campaign-family-directory)
 and [implementation plan](../plans/stewardship/reports.md#rpt-05-family-code-and-postal-outreach-reports).
 
 ## Scope and acceptance
@@ -49,7 +49,7 @@ reused for all three formats. Regeneration retains original source/response
 values even after a newer source promotion. Family head emails are the
 exception: once the captured source is compacted they come from the current
 ParishSoft data, dated "Head emails as of" (see the
-[active parishioner family directory spec](../specs/stewardship/reports/spec.md#active-parishioner-family-directory)). The CSV is
+[Campaign Family directory spec](../specs/stewardship/reports/spec.md#campaign-family-directory)). The CSV is
 exactly one header row plus one row per Family, with no report metadata, so it
 opens cleanly in a mail merge; the report details are in the XLSX's Report
 information sheet and the PDF's page header and footer.

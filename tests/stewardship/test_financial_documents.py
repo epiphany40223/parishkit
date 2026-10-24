@@ -128,7 +128,7 @@ def test_rows_word_money_status_shares_and_local_instants():
     # The page's columns in its order, without internal references
     # (decisions B1 and E1); ParishSoft status follows the name (#1216).
     assert HEADINGS[:3] == ("Family", "ParishSoft status", "Family DUID")
-    assert built.rows[2][1] == "Inactive in ParishSoft"
+    assert built.rows[2][1] == "No longer in this campaign"
     assert "Family status" not in HEADINGS and "Family version" not in HEADINGS
     assert "Response reference" not in HEADINGS
     # A zero pledge has no frequency or installment; unproven money is typed

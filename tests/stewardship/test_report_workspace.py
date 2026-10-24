@@ -255,7 +255,7 @@ def test_live_presentation_is_the_digest_presentation_without_population_mixing(
     # #728: one comparison figure, the parish-wide total, ends the tiles.
     whole = replace(value.statistics, comparison_pledge_all=MoneyAmount(98265700))
     tiles = statistics_panel(whole)["tiles"]
-    assert (tiles[0].label, tiles[0].text) == ("Active Families", "1,000")
+    assert (tiles[0].label, tiles[0].text) == ("Campaign Families", "1,000")
     assert (tiles[-1].label, tiles[-1].text) == (
         "Last year's pledges (all Families)",
         "$982,657.00",
@@ -273,7 +273,7 @@ def test_statistics_panel_is_the_active_population_row_only():
     panel = statistics_panel(statistics)
     assert set(panel) == {"tiles"}
     assert [tile.label for tile in panel["tiles"]] == [
-        "Active Families",
+        "Campaign Families",
         "Active Members",
         "Current annual pledges",
         "Last year's pledges (all Families)",

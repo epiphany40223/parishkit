@@ -228,7 +228,7 @@ class Metric:
 
 METRICS = (
     Metric("families", "Families responded", "count"),
-    Metric("percent", "Percent of active Families", "percent"),
+    Metric("percent", "Percent of campaign Families", "percent"),
     Metric("pledged", "Annual pledges", "money", financial=True, whole=True),
     Metric("average", "Average pledge", "money", financial=True),
     Metric("renewal", "Renewal of last year's responders", "percent"),

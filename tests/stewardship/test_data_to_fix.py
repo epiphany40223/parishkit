@@ -323,7 +323,7 @@ def test_zero_sections_keep_their_blocks_and_say_what_zero_means():
     assert html.count('class="panel data-to-fix-section"') == 5
     assert "None: every Family that can use the portal can open the form." in html
     assert "No refused addresses: campaign email reaches every address" in html
-    assert "None: every active Family can be reached by email or postal mail." in html
+    assert "None: every campaign Family can be reached by email or postal mail." in html
     assert "None: every census change Families reported has been handled." in html
     assert "None: every accepted Ministry request has been entered in ParishSoft." in (
         html
@@ -353,7 +353,7 @@ def test_counts_and_unavailable_sections_are_worded():
         "roster by hand." in html
     )
     assert "Open Ministry requests" in html
-    assert 'aria-disabled="true"' in html and "Open Active parishioner family" in html
+    assert 'aria-disabled="true"' in html and "Open Campaign Family directory" in html
     assert 'id="data-to-fix-open-unreachable_families-tip"' in html
     assert "Nothing to fix right now." not in html
 
