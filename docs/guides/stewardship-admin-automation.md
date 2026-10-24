@@ -248,7 +248,7 @@ every kind, and the Family send in progress. It replaced `send progress`
 | `mode`, `paused`, `upcoming` | `mail queue` only: the operating mode, whether delivery is paused, and whether a Production send is about to start |
 | `counts` | `mail queue` only: the operating mode's queued emails as `queued`, `sending`, `retry_wait` and `paused` |
 | `other_mode_queued` | `mail queue` only: how many emails of the other mode are queued (never added to `counts`) |
-| `kinds` | `mail queue` only: one row per kind (`purpose`, as Sent mail's `--purpose` names it) with the same four counts |
+| `kinds` | `mail queue` only: one row per kind (`purpose`, as Sent mail's `--purpose` names it) with the same four counts; the retired `daily_digest` and `weekly_digest` have none |
 | `send` | `mail queue` only: the Family send in progress or the latest, or `null` |
 | `page`, `pages`, `count`, `size`, `sends` | `send history` only: one page of sends, newest first |
 
@@ -4438,3 +4438,8 @@ Each change is recorded in System logs as on the page
   `followup roster-entered` and `roster-bulk` help and prompt say
   Entered by hand instead of Entered in ParishSoft. The census edit
   refusal for a blank value says "Enter the value to use".
+- `pk-admin/1` (#2102): a correction, kept on version 1. `mail queue`
+  `kinds` no longer has `daily_digest` and `weekly_digest` rows, as the
+  Mail queue page never should have: report emails replaced the digests
+  (#1786), so nothing queues them and their rows were always zero. Sent
+  mail and `delivery list --purpose` still list their past emails.

@@ -10,10 +10,12 @@ count as Queued.
 
 The counts cover every kind Sent mail lists (``LISTED_PURPOSES``), the
 Ministry leader emails (#1592) among them, in that order, so a kind added
-to Sent mail appears here too. They come from one grouped count of the
-unsettled messages, which the ``outbox_due (state, not_before)`` index
-finds without reading the settled majority of the outbox; every column
-read is one the web login already reads. Callers run it inside
+to Sent mail appears here too, except the retired digests
+(``RETIRED_PURPOSES``), whose past emails Sent mail keeps listing. They
+come from one grouped count of the unsettled messages, which the
+``outbox_due (state, not_before)`` index finds without reading the settled
+majority of the outbox; every column read is one the web login already
+reads. Callers run it inside
 ``read_transaction`` (no lock), so watching the queue never slows a send.
 """
 
@@ -32,11 +34,16 @@ QUEUED_STATES = (
 )
 # The four headline figures, in the order the page draws them.
 COLUMNS = ("queued", "sending", "retry_wait", "paused")
+# Purposes kept only so past emails stay listed on Sent mail: the daily
+# and weekly digests, which report emails replaced (#1786) and which
+# nothing queues any more.
+RETIRED_PURPOSES = frozenset({"daily_digest", "weekly_digest"})
 # The kinds the queue counts, one table row each, in Sent mail's order. A
-# purpose kept only so past emails stay listed (the digests, once #1786
-# replaces them) is left out here, so it draws no row. Every kind here is
-# one Sent mail's Purpose filter accepts, so each row may link it.
-QUEUE_PURPOSES = LISTED_PURPOSES
+# retired purpose is left out, so it draws no row (#2102). Every kind here
+# is one Sent mail's Purpose filter accepts, so each row may link it.
+QUEUE_PURPOSES = tuple(
+    purpose for purpose in LISTED_PURPOSES if purpose not in RETIRED_PURPOSES
+)
 
 
 @dataclass(frozen=True)
