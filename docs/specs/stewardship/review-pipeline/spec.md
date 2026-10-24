@@ -1938,8 +1938,9 @@ scoped to the reader), Ignore (eye struck through), and, in the update
 phase, Entered by hand / Handled (check in a box), on accepted rows only
 (never To review or Conflict, #1890). Back to review has no icon of its
 own: it is the pressed icon of the latest state in force, chosen again
-(an item with nothing pressed, a Ministry request a refresh confirmed,
-keeps a Back to review icon). A census addition's Back to review is
+(an item confirmed with no decision behind it, such as a change
+ParishSoft already held, draws Accept pressed as "Already in
+ParishSoft"). A census addition's Back to review is
 worded **Not entered yet**, and it offers **Withdraw** (a circled minus)
 in both states (#2041,
 [role-specific actions](#role-specific-actions)). A row

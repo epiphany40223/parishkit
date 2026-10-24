@@ -4837,9 +4837,12 @@ draws an undo button beside a decision.
   ("Ignore Pat; send it back to review first", "Mark Pat entered by hand;
   accept it first"), per the [prerequisite gates](#prerequisite-gates)
   rule.
-- **Nothing to press.** An item whose step has no decision behind it (a
-  Ministry request a ParishSoft refresh confirmed) has no pressed button,
-  so its row keeps one Back to review icon as its undo.
+- **No decision behind a step.** An item confirmed with no decision
+  behind it (a census change or pledge ParishSoft already held, a
+  Ministry request a ParishSoft refresh confirmed, and the like on every
+  stream) draws its Accept pressed, the outcome Accept would have
+  reached, named "Already in ParishSoft; select to send Pat back to
+  review". No row on any stream draws a Back to review button of its own.
 - **Bulk actions are the one exception.** A toggle cannot express a mixed
   selection, so the bulk bar keeps its explicit undo action (Back to
   review, and on Census changes Withdraw) for the ticked rows.
