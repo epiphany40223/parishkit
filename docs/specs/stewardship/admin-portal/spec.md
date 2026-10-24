@@ -11282,13 +11282,16 @@ the process log, such as `go_live_refresh_held` and
 Every group but Family mail, ParishSoft refreshes and Refused input is
 audit records only, and behaves as [Sign-in activity](#sign-in-activity)
 describes: the level boxes are greyed and Apply waits for Audit record.
-Refused input is the reverse: it holds operational entries only, so while
-it is chosen the Audit record box is greyed out and not sent, and Apply
-waits until a level is ticked, by the same `data-enabled-when` and
-`data-required-when` markup; a request that bypasses the page with no level
-ticked gets an empty table that says to tick one. Which groups hold
-operational entries is named in `audit.log_rows.OPERATIONAL_ACTIVITIES`, and a
-unit test compares it with the groups' members on the log-writer manifest.
+Refused input is the reverse
+([#2114](https://github.com/epiphany40223/parishkit/issues/2114)): it holds
+operational entries only, so while it is chosen the Audit record box is
+greyed out and not sent (`data-enabled-when`), the Show choices' gate then
+counts only the levels, so Apply waits until a level is ticked, and the read
+leaves audit records out; a request that bypasses the page with only Audit
+record ticked gets an empty table that says to tick a level. Which groups
+hold operational entries is named in `audit.log_rows.OPERATIONAL_ACTIVITIES`,
+and which hold nothing else in `OPERATIONAL_ONLY_ACTIVITIES`; a unit test
+compares both with the groups' members on the log-writer manifest.
 Family mail and ParishSoft refreshes hold operational entries too, so the level boxes stay available and the Show
 choices apply to their operational members as to any entry
 (`data-enabled-when` and `data-required-when` list alternatives,
