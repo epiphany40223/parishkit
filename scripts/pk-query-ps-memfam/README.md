@@ -41,5 +41,6 @@ pk-query-ps-memfam --config /opt/parishkit/config/pk-query-ps-memfam.yaml --memb
 
 `--load-contributions` without a date loads the default contribution window;
 `--no-load-contributions` disables contribution loading even if your config
-enables it. The output is a bounded, readable summary, not a raw ParishSoft
-record dump.
+enables it. The output is the pretty-printed ParishSoft record (raw and
+derived fields); `membership` lists are replaced by a marker unless you pass
+`--full`.
