@@ -8,7 +8,7 @@ from urllib.parse import parse_qs
 import pytest
 
 from .test_components import axe_violations
-from .waits import available, has_attribute, has_text, hidden, visible
+from .waits import available, has_attribute, has_text, hidden, reads, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -315,7 +315,7 @@ def test_repeating_posts_one_reminder_row_per_date(
     assert reading.bounding_box()["height"] == pytest.approx(reading_height, abs=1)
     assert abs(page_top(repeat(page, "email")) - page_top(reading) - gap) < 1
     repeat(page, "time").fill("6am")
-    has_text(reading, "Reads as 06:00 (6:00 AM)")
+    has_text(reading, reads("Reads as 6:00 AM"))
     repeat(page, "time").blur()
     assert repeat(page, "time").input_value() == "06:00"
     # No email chosen: say so, and Review waits, saying why.

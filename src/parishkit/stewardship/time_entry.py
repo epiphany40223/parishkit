@@ -25,7 +25,7 @@ The rules, case-insensitive, with surrounding spaces ignored:
 - ``noon`` and ``midnight``.
 
 Nothing is guessed: a bare ``7`` is 07:00, never 7 PM, and the reading
-("07:00 (7:00 AM)") always shows both clocks so the Admin can see which.
+("7:00 AM") spells it out on the 12-hour clock so the Admin can see which.
 """
 
 import re
@@ -198,8 +198,12 @@ def twelve_hour(value):
 
 
 def reading(value):
-    """How an entry was read, on both clocks: ``07:00 (7:00 AM)``."""
-    return f"{canonical(value)} ({twelve_hour(value)})"
+    """How an entry was read: ``7:00 AM``, the 12-hour form (#2129).
+
+    The page script's reading line adds the zone's short name after it
+    ("Reads as 7:00 AM EDT"); the zone is the page's, not the parser's.
+    """
+    return twelve_hour(value)
 
 
 def duplicates(values):

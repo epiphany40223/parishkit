@@ -535,6 +535,14 @@ class ScheduleForm(AdminForm):
         super().__init__(*args, **kwargs)
         # A saved time with seconds (set before #631) still saves unchanged.
         self.fields["time"].keep(self.initial.get("time"))
+        # The send time's reading names its zone for this date (ui-v1.js).
+        # The date's id is built here, not read from self["date"]: a bound
+        # field made now would keep the date's help as it is now, and later
+        # help (a series reminder's, series_context) would never show.
+        if "%s" in str(self.auto_id):
+            self.fields["time"].widget.attrs["data-time-date"] = self.auto_id % (
+                self.add_prefix("date")
+            )
         if browser_times:
             self.fields["time"].help_text = BROWSER_TIME_HELP
             # The browser's window check (#1787) says its refusal in the
@@ -557,6 +565,9 @@ class ScheduleForm(AdminForm):
         self.fields["template_version"].widget.details = email_details(
             emails, usage or {}, links=links, test_mail=test_mail
         )
+        # The time field's one visible line is its reading ("Reads as
+        # 9:00 AM EDT", #2129), so its zone and forms move into its tip.
+        field_tips.add(self.fields["time"], self.fields["time"].help_text)
         field_tips.shorten(
             self, {"template_version": _("Only emails of the chosen mail type fit.")}
         )

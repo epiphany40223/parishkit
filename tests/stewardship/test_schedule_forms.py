@@ -709,7 +709,11 @@ def test_an_unbound_saved_row_carries_its_moment_and_browser_help():
     old = schedule(owner["id"])
     form = browser_schedules(None, owner, [old], zone="").forms[0]
     assert form.schedule_moment == "2054-10-01T13:00:00+00:00"
-    assert form.fields["time"].help_text == BROWSER_TIME_HELP
+    # The help is in the send time's tip; its one visible line is the
+    # page script's reading (#2129).
+    assert form.fields["time"].tip == BROWSER_TIME_HELP
+    assert form.fields["time"].help_text == ""
+    assert form["time"].field.widget.attrs["data-time-date"] == form["date"].auto_id
     # Pages that keep campaign times draw no moment.
     plain = Schedules(
         prefix="schedules",
@@ -719,7 +723,7 @@ def test_an_unbound_saved_row_carries_its_moment_and_browser_help():
         campaign=owner["values"],
     ).forms[0]
     assert plain.schedule_moment is None
-    assert plain.fields["time"].help_text != BROWSER_TIME_HELP
+    assert plain.fields["time"].tip != BROWSER_TIME_HELP
     with pytest.raises(ValueError, match="current instant"):
         Schedules(
             prefix="schedules",

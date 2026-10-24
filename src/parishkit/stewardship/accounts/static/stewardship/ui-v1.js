@@ -337,15 +337,17 @@
   // parishkit.stewardship.time_entry, which stays the authority; the shared
   // table tests/stewardship/fixtures/time_entry_cases.json pins both, so
   // keep the messages and rules here in step with it. A bare hour is never
-  // guessed as afternoon: the reading always shows both clocks, as in
-  // "Reads as 07:00 (7:00 AM)". As the Admin types, a readable entry's
+  // guessed as afternoon: the reading spells it out on the 12-hour clock with
+  // the zone it is in, as in "Reads as 7:00 AM EDT" (#2129). As the Admin
+  // types, a readable entry's
   // reading shows at once; a refusal waits for a pause or for focus to
   // leave, so a half-typed "2:" does not flash red. Screen readers hear the
   // reading or refusal once typing pauses. A server error under the field is
   // removed on the first edit; on blur a readable entry is rewritten in its
   // canonical form; and the form's submit buttons stay unavailable while any
   // shown entry cannot be read. The fields read wall-clock times only; which
-  // zone they are in is the page's own rule (stated in each field's help).
+  // zone they are in is the page's own rule: the browser's, or the refresh
+  // schedule's ([data-schedule-zone]), which the reading names (timeZoneName).
   const TIME_MESSAGES = {
     empty: () => "Enter a time, for example 2:00 PM or 14:00.",
     unreadable: (p) => `“${p.entry}” isn't a time. Try 2:00 PM, 2pm, 14:00 or 1400.`,
@@ -391,7 +393,34 @@
     value.second ? `:${pad2(value.second)}` : ""}`;
   const twelveHourTime = (value) => `${value.hour % 12 || 12}:${pad2(value.minute)}${
     value.second ? `:${pad2(value.second)}` : ""} ${value.hour >= 12 ? "PM" : "AM"}`;
-  const timeReading = (value) => `${canonicalTime(value)} (${twelveHourTime(value)})`;
+  // A reading is the 12-hour form, the one Admins read without counting
+  // (#2129); the field is rewritten in the canonical form on blur.
+  const timeReading = twelveHourTime;
+  // The short name of the zone a field's times are in, for the reading
+  // ("EDT", or "GMT+2" where the locale has no name), on the date the time
+  // falls on: the field's paired date (data-time-date, a date input's id)
+  // when it holds one, else today, so a December send reads EST in
+  // October. A refresh time is in the refresh schedule's zone, not the
+  // browser's. The moment is built in the browser's zone, which can name
+  // the wrong side of a clock change only within hours of it. Empty when
+  // the browser cannot say.
+  const timeZoneName = (field, value) => {
+    const date = /^(\d{4})-(\d{2})-(\d{2})$/.exec(
+      document.getElementById(field.dataset.timeDate || "")?.value || "");
+    const today = new Date();
+    const moment = date
+      ? new Date(Number(date[1]), Number(date[2]) - 1, Number(date[3]), value.hour, value.minute)
+      : new Date(today.getFullYear(), today.getMonth(), today.getDate(), value.hour, value.minute);
+    const zone = field.closest("[data-schedule-zone]")?.dataset.scheduleZone || undefined;
+    try {
+      return new Intl.DateTimeFormat(undefined, {timeZone: zone, timeZoneName: "short"})
+        .formatToParts(moment).find((part) => part.type === "timeZoneName")?.value || "";
+    } catch (_) {
+      return "";
+    }
+  };
+  // The one short line under an empty field that has no reading.
+  const TIME_EXAMPLE = "For example 9am or 21:00";
   // One entry: {value} or {error, message}. ``kept`` is the canonical text
   // of a saved time with seconds that may be typed back unchanged.
   const parseTime = (text, kept = "") => {
@@ -481,16 +510,19 @@
   const readTimeEntry = (field) => (field.dataset.timeEntry === "list"
     ? parseTimes(field.value, Number(field.dataset.timeMax) || 0, field.dataset.timeBlank || "")
     : parseTime(field.value, field.dataset.timeKept || ""));
-  // What a field's entry reads as: {message, invalid}. A blank single time
-  // has no reading (``required`` is the server's); a blank list reads as
-  // its data-time-blank, when it has one.
+  // What a field's entry reads as: {message, invalid}, one line (#2129):
+  // "Reads as 10:00 AM EDT", the refusal, or, while blank, a short example
+  // (``required`` is the server's); a blank list reads as its
+  // data-time-blank, when it has one. The zone is named once, at the end.
   const readTimeField = (field) => {
     const list = field.dataset.timeEntry === "list";
-    if (!list && !timeWords(field.value).length) return {message: "", invalid: false};
+    const example = {message: TIME_EXAMPLE, invalid: false};
+    if (!list && !timeWords(field.value).length) return example;
     const result = readTimeEntry(field);
     if (result.error) return {message: result.message, invalid: true};
-    if (!list) return {message: `Reads as ${timeReading(result.value)}`, invalid: false};
-    if (!result.values.length) return {message: "", invalid: false};
+    const zoned = (text, value) => [text, timeZoneName(field, value)].filter(Boolean).join(" ");
+    if (!list) return {message: zoned(`Reads as ${timeReading(result.value)}`, result.value), invalid: false};
+    if (!result.values.length) return example;
     // A long list (Edit as text can hold dozens of times, #1117) reads as
     // its count and range, so the line stays a line or two and does not
     // push the page about as the Admin types.
@@ -500,9 +532,10 @@
     const times = distinct > TIME_LIST_SHOWN
       ? `${distinct} times, from ${timeReading(sorted[0])} to ${timeReading(sorted.at(-1))}`
       : result.values.map(timeReading).join(", ");
-    const read = `${result.blank ? "Blank reads as" : "Reads as"} ${times}`;
+    const read = zoned(`${result.blank ? "Blank reads as" : "Reads as"} ${times}`, sorted[0]);
     const repeated = result.duplicates.length
-      ? `; ${result.duplicates.join(", ")} ${result.duplicates.length > 1 ? "are" : "is"
+      ? `; ${result.duplicates.map((text) => timeReading(parseTime(text, text).value)).join(", ")} ${
+        result.duplicates.length > 1 ? "are" : "is"
       } listed more than once and saved once` : "";
     return {message: read + repeated, invalid: false};
   };

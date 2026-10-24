@@ -3,7 +3,7 @@
 Both read entries with ``parishkit.stewardship.time_entry``, the one parser
 the web pages and the ``pk-stewardship admin`` commands share. Each renders a
 plain text box marked ``data-time-entry`` that ``ui-v1.js`` enhances: it
-shows the reading live beside the field ("Reads as 14:00 (2:00 PM)"), shows a
+shows the reading live beside the field ("Reads as 2:00 PM EDT"), shows a
 refusal at the field, normalises the entry when focus leaves it, and keeps
 the form's Save unavailable while an entry cannot be read. The server still
 reads every entry itself.

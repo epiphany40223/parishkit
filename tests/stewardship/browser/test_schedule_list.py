@@ -837,7 +837,7 @@ def test_edit_fills_and_posts_times_in_a_zone_a_day_ahead(
         assert page.locator('[name="schedule-date"]').input_value() == "2054-10-11"
         assert page.locator('[name="schedule-time"]').input_value() == "02:00"
         reading = page.locator("#id_schedule-time_reading")
-        assert "02:00 (2:00 AM)" in reading.inner_text()
+        assert "2:00 AM" in reading.inner_text()
         # As shown it is unchanged; a later time is a change to review.
         assert page.get_by_role("button", name=REVIEW).is_disabled()
         page.locator('[name="schedule-time"]').fill("03:00")

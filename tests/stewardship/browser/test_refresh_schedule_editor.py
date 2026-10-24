@@ -256,7 +256,7 @@ def test_rows_are_added_removed_and_renumbered_in_place(page, component_origin):
     assert not page.locator(f'[name="rules-{count}-at"]').is_visible()
     page.locator(f'[name="rules-{count}-start"]').fill("9am")
     page.locator(f'[name="rules-{count}-last"]').fill("5pm")
-    contains(page.locator(f"#id_rules-{count}-start_reading"), "Reads as 09:00")
+    contains(page.locator(f"#id_rules-{count}-start_reading"), "Reads as 9:00 AM")
     # Removing the first row renumbers the rest, names and all.
     rule_rows(page).first.get_by_role("button", name="Remove").click()
     assert rule_rows(page).count() == count
@@ -1117,7 +1117,7 @@ def test_a_growing_time_reading_moves_no_rule_under_the_pointer(page, component_
     expect(page.locator(STATUS)).not_to_contain_text("of ParishSoft time a day")
     assert abs(handle_top(watched) - before) <= 0.5
     type_quietly(page, "rules-0-at", "9")
-    contains(reading, "Reads as 09:00")
+    contains(reading, "Reads as 9:00 AM")
     assert abs(handle_top(watched) - before) <= 0.5
 
 
