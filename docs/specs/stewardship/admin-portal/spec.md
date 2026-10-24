@@ -8100,7 +8100,8 @@ yet in the roster, or an ignored one, shows unticked, and leaving it
 unticked is not a withdrawal. When the Family ticks the same action for the
 same Member and Ministry again, no second request is made: the decided
 request keeps its decision, and its row says "Family asked again" with the
-date, so a reviewer can choose Back to review. The match is by the
+date, so a reviewer can send it back to review (its pressed icon chosen
+again). The match is by the
 Family's own Ministry: after an Edit from Choir to Adult Choir, a Family
 that ticks Adult Choir gets a new request to review, which the reviewer
 ignores as a duplicate if it is one.
@@ -8323,12 +8324,14 @@ tick, with its own entry and audit event). A marked row shows the icon
 selected, and the line under its Stage says who marked it and when. A row
 for a Member no longer in ParishSoft, or one a later response replaced,
 offers only Entered by hand: its review decisions stay where they were. A
-mistaken mark is undone by the row's **Back to review**, with a required
+mistaken mark is undone by choosing the row's pressed Entered by hand again
+(Back to review, [decision toggles](../ui-conventions/spec.md#decision-toggles)), with a required
 note, which returns the request to To enter by hand with its decision kept
 ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage));
-a Confirmed request offers the same. The request's own page offers that
-undo too, as **Back to review** with the worklist's undo-arrow icon, and
-opens the worklist's dialog: "Send Member — Ministry back to review?", the
+a Confirmed request offers the same on its pressed Accept. The request's
+own page draws the tick as one **Entered by hand** toggle in both states
+(#2131): unpressed it marks the request; pressed, its tooltip says choosing
+it again sends the request back, and it opens the worklist's dialog: "Send Member — Ministry back to review?", the
 same words for the step undone and where the request goes, and the
 required note, in the shared
 [confirmation dialog](../ui-conventions/spec.md#row-actions-and-confirmation)

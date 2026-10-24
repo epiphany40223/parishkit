@@ -79,6 +79,7 @@ when it lands.
 - Tables: [Admin tables](#admin-tables),
   [empty tables and lists](#empty-tables-and-lists),
   [row actions](#row-actions-and-confirmation),
+  [decision toggles](#decision-toggles),
   [new pages and in-page panes](#new-pages-and-in-page-panes),
   [column order](#table-column-order),
   [Family and Member names](#family-and-member-names),
@@ -4518,8 +4519,9 @@ inventory on #879 lists.
   item's own page, and Delete. Each has an accessible name and a matching
   tooltip that name the row ("Edit Reminder 2", "Delete Reminder 2"). An
   icon's tooltip is one short phrase, never more than one sentence, with
-  no full stop, as these are; a selected icon's names its state and undo
-  in one phrase ("Accepted; choose Back to review to change it"), and a
+  no full stop, as these are; a selected icon's names its state and what
+  choosing it does in one phrase ("Accepted; select to send Pat back to
+  review", [decision toggles](#decision-toggles)), and a
   guard checks every review worklist tooltip (R38). The
   icons are drawn inline, so they need no request and stay inside the
   content security policy. A destructive action with another name uses its
@@ -4527,17 +4529,17 @@ inventory on #879 lists.
   Revoke ("Revoke nightly export") on Automation access. An action that
   records rather than removes, and that the row's other action undoes, also
   takes an icon of its own and acts [in place](#in-place-controls) without a
-  dialog; so far only the request page's tick, "Mark … entered in
-  ParishSoft" (a check mark), whose undo is the review worklist's own
-  Back to review (its undo arrow, name and dialog, with the required note),
-  like every undo of a terminal step (below). An action that carries a note opens the confirmation dialog
+  dialog; so far only the Ministry request page's Entered by hand tick, a
+  [decision toggle](#decision-toggles) whose pressed state's undo is the
+  review worklist's own Back to review (its dialog, with the required
+  note), like every undo of a terminal step (below). An action that carries a note opens the confirmation dialog
   instead, which holds the note, with an ordinary confirm button unless the
   action cannot be undone: Census changes ([#879](https://github.com/epiphany40223/parishkit/issues/879)), whose
   decisions take an optional note, Reopen of an Ignore included
   ([#1889](https://github.com/epiphany40223/parishkit/issues/1889)); every review
   worklist's Back to review on a terminal stage, which needs a note
   ([#1840](https://github.com/epiphany40223/parishkit/issues/1840)); and the
-  Ministry request page's Back to review, the same undo. A note field
+  Ministry request page's undo of its tick, the same undo. A note field
   shared by several actions is labelled by the action chosen: "Note
   (optional)", and "Note (required)" only while that action needs one,
   changing in place as the dialog opens (the review worklist, R38). An
@@ -4548,31 +4550,28 @@ inventory on #879 lists.
   the parish's addition, #2041) is its own paragraph under the dialog's
   words, in the error notice's look, never run on from them.
   A row
-  shows only the actions that apply to it; a row with none shows nothing
-  there.
+  shows only the actions that can apply to it; a row with none shows
+  nothing there. On a table whose actions record decisions, a row keeps
+  the same icons at every stage, an action its stage does not allow drawn
+  unavailable ([decision toggles](#decision-toggles)).
 - **Selected state.** On a table whose row actions record a state (a
   review decision, a mark), the icon of the state in force is drawn
   **selected**: filled with that state's status colour, with the glyph in
   `--paper` (white on the light scheme, and dark on the dark scheme, where
   white on the lighter status colours would fail the 3:1 icon contrast),
   and `aria-pressed="true"`; the row's other icons are drawn
-  unselected (outline, `aria-pressed="false"`). Choosing the selected icon
-  again is not an undo; the row's own undo action (the review pipeline's
-  Back to review) is, so the selected icon is unavailable
-  (`aria-disabled="true"`) and its tooltip names the state and the undo
-  in one phrase. Every recorded state has that undo, a final-looking mark
-  (Entered by hand, Handled, Updated in ParishSoft, Confirmed) included,
-  and undoing such a mark needs a note saying why
+  unselected (outline, `aria-pressed="false"`). The icons are
+  [decision toggles](#decision-toggles): choosing the selected icon again
+  is its undo, and there is no separate undo icon beside it. Every
+  recorded state has that undo, a final-looking mark (Entered by hand,
+  Handled, Updated in ParishSoft, Confirmed) included, and undoing such a
+  mark needs a note saying why
   ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
   [#1840](https://github.com/epiphany40223/parishkit/issues/1840)): no row's state is left with no way back.
   So the decision shows on the icons, not only in a
   status column ([review pipeline](../review-pipeline/spec.md#selected-state-icons),
   [#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
-  The icons keep one order from row to row, except the undo: it is drawn
-  just right of the selected icon it undoes (the last one, when a decision
-  and a mark are both in force), so a row Entered by hand reads Accepted,
-  Entered by hand, Back to review (the Administrator, R45 W,
-  [#2041](https://github.com/epiphany40223/parishkit/issues/2041)).
+  The icons keep one order from row to row.
   An action that amends the mark in force rather than undoing it comes
   after the selected icon, is never a toggle (no `aria-pressed`), acts on
   one row at a time (no bulk), and returns focus to the selected icon; so
@@ -4654,6 +4653,72 @@ inventory on #879 lists.
   POST body, and focus returns to the same row's icon after it filters. So
   far only [System logs](../admin-portal/spec.md#logs) has them: related
   entries, same actor, same subject, same campaign and the task's page.
+
+### Decision toggles
+
+**Rule.** Every decision or mark button in the Admin portal (Accept, Edit's
+Accepted, Ignore, Entered by hand, Handled, and any later one) is a toggle:
+the decision in force is its own button drawn pressed, and choosing it
+again undoes it. No separate "Back to review", "Return to …", "Not entered
+yet" or other undo button is drawn beside a decision, and no button
+appears or disappears when a decision is made. **Why.** An undo button that
+appears beside the decision just made is an extra control under the
+pointer ([no layout shift](#no-layout-shift)); the pressed button already
+says what is in force, so it is the natural place to undo it
+(Administrator decision, 2026-10-24,
+[#2131](https://github.com/epiphany40223/parishkit/issues/2131)). **Shared
+code.** `web/review_worklist.py` (`row_icons`) and
+`components/review-worklist-actions.html`, drawn by every review worklist
+and the Family hub's changed rows (and later the review wizard, #2123);
+the Ministry request page's Entered by hand tick (`roster-tick.html`) is
+the one text-label toggle. `test_decision_toggles.py` guards that no row
+draws an undo button beside a decision.
+
+- **Toggle buttons.** Each decision button carries `aria-pressed`; the
+  chosen one is filled ([selected state](#row-actions-and-confirmation)).
+  A row draws the same buttons at every stage: every action some stage of
+  its item offers and the reader's role allows
+  ([by role](#row-actions-and-confirmation) still leaves out what the role
+  never allows). Only colours change when a decision is made, so the row's
+  controls never move; a test checks their bounding boxes are unchanged
+  after acting.
+- **Discoverable undo.** A pressed button's tooltip and accessible name say
+  what choosing it does, in one phrase with no full stop: "Accepted;
+  select to send Pat back to review", or on a terminal step "Entered by
+  hand; select to undo Entered by hand for Pat". Screen readers announce
+  it as a pressed toggle, and it takes the pointer and a hover ring drawn
+  outside it.
+- **Same safeguards.** Choosing a pressed button opens the confirmation the
+  old undo button opened, with the same words, the same required note
+  where one is required (undoing a terminal step,
+  [#1840](https://github.com/epiphany40223/parishkit/issues/1840)) and the
+  same audit and history; the server's undo endpoint and its checks are
+  unchanged. A double click cannot undo silently: the first click opens
+  the dialog.
+- **Latest step first.** When a decision and a mark are both in force
+  (Accepted, then Entered by hand), the mark is the undo, since undo goes
+  back one step at a time; the decision's pressed button is unavailable,
+  its tooltip saying "Accepted; undo Entered by hand first".
+- **Switching decisions.** Choosing a different decision while one is
+  pressed switches directly through that decision's own confirmation
+  when the stage machine ([role-specific actions](../review-pipeline/spec.md#role-specific-actions))
+  allows the move. Where it does not, the button is unavailable
+  (`aria-disabled`, focusable) with a tooltip saying why in one phrase
+  ("Ignore Pat; send it back to review first", "Mark Pat entered by hand;
+  accept it first"), per the [prerequisite gates](#prerequisite-gates)
+  rule.
+- **No decision behind a step.** An item confirmed with no decision
+  behind it (a census change or pledge ParishSoft already held, a
+  Ministry request a ParishSoft refresh confirmed, and the like on every
+  stream) draws its Accept pressed, the outcome Accept would have
+  reached, named "Already in ParishSoft; select to send Pat back to
+  review". No row on any stream draws a Back to review button of its own.
+- **Bulk actions are the one exception.** A toggle cannot express a mixed
+  selection, so the bulk bar keeps its explicit undo action (Back to
+  review, and on Census changes Withdraw) for the ticked rows.
+- **Focus.** After a decision or its undo, focus returns to the same
+  button in the redrawn row, now pressed or unpressed, so the reader hears
+  the new state. Space and Enter press it, as any button.
 
 ### New pages and in-page panes
 

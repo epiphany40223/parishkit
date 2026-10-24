@@ -42,8 +42,10 @@ from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.review_worklist import (
     ALREADY_HELD,
+    KEPT_REASON,
     NOT_SEEN,
     NOW_MATCHES,
+    WORDS,
     Column,
     build,
 )
@@ -806,7 +808,8 @@ def _withhold(row, actionable):
     update phase (#1160). And a Staff reader's rows for Members no longer in
     ParishSoft offer nothing (#1217), but for a roster row's Entered by
     hand, which is all such a row and one a later response replaced offer
-    (``roster_only``).
+    (``roster_only``): never its undo, so a pressed Entered by hand there is
+    unavailable (#2131).
     """
     if row.pop("_leader_stage"):
         row["stage_label"] = row["placement"].decision.label
@@ -814,7 +817,16 @@ def _withhold(row, actionable):
     if row.pop("_entry_only"):
         entered = Action.ENTERED_BY_HAND.value
         row["icons"] = [icon for icon in row["icons"] if icon["action"] == entered]
-        offered = any(not icon["selected"] for icon in row["icons"])
+        for icon in row["icons"]:
+            if icon["undo"]:
+                icon.update(active=False, undo=False, decide=None)
+                # A greyed icon says why (UX conventions, "Decision
+                # toggles"): the Member left ParishSoft or a later
+                # response replaced the request.
+                icon["label"] = icon["title"] = (
+                    f"{WORDS[Action.ENTERED_BY_HAND].selected}; {KEPT_REASON}"
+                )
+        offered = any(icon["active"] for icon in row["icons"])
         row["kinds"] = entered if offered else ""
         row["offers_edit"] = False
     elif actionable and not row["leads"]:

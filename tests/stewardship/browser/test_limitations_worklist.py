@@ -73,9 +73,13 @@ def test_accept_a_familys_answer_in_place(page, component_origin):
     has_text(dialog.locator("h2"), f"Accept {FAMILY}?")
     dialog.get_by_role("button", name="Record").click()
     has_text(page.locator("#limitations-notice"), ACCEPTED_NOTICE)
-    accept = page.get_by_role("button", name=f"Accept {FAMILY}", exact=True)
-    assert accept.get_attribute("aria-pressed") == "true"
     row = page.locator("#limitations-row-f2")
+    # Pressed, its name says choosing it again sends it back (#2131).
+    accept = row.locator('[data-row-action="accept"]')
+    assert accept.get_attribute("aria-pressed") == "true"
+    assert accept.get_attribute("aria-label") == (
+        f"Accepted; select to send {FAMILY} back to review"
+    )
     has_text(row.locator(".stage-chip .status-word"), "To handle")
     assert row.locator('[data-row-action="handled"]').count() == 1
     body = sent[-1]
@@ -85,7 +89,8 @@ def test_accept_a_familys_answer_in_place(page, component_origin):
 
 
 def test_back_to_review_undoes_a_handled_answer(page, component_origin):
-    """A Handled answer offers Back to review (#1840); its dialog says the
+    """A Handled answer offers Back to review (#1840), its pressed Handled
+    chosen again (#2131); its dialog says the
     answer goes back to To handle with its decision kept and waits for the
     required note, then the redrawn row is To handle, with no reload."""
     page.goto(component_origin + HANDLED)
@@ -100,7 +105,10 @@ def test_back_to_review_undoes_a_handled_answer(page, component_origin):
     fulfil_post_with(page, "**" + PATH, component_origin, choose)
     row = page.locator("#limitations-row-f2")
     has_text(row.locator(".stage-chip .status-word"), "Handled")
-    page.get_by_role("button", name=f"Send {FAMILY} back to review", exact=True).click()
+    handled = row.locator('[data-row-action="handled"]')
+    assert handled.get_attribute("aria-pressed") == "true"
+    assert row.locator('[data-row-action="back_to_review"]').count() == 0
+    handled.click()
     dialog = page.locator("#limitations-decide-dialog")
     has_text(
         dialog.locator("[data-confirm-body]"),

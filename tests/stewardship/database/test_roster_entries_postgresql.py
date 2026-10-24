@@ -533,13 +533,14 @@ def test_a_gated_campaign_takes_no_tick_and_draws_no_form(response_service, goog
     # nothing.
     assert search(browser, ROUTE, mark_form(join))[0].status_code == 403
     assert MinistryRosterEntry.objects.count() == 1
-    # The request's own page shows Clear unavailable, named by the locked
-    # notice, rather than leaving it out (#563); a forged POST is refused.
+    # The request's own page shows its pressed Entered by hand toggle
+    # (#2131) unavailable, named by the locked notice, rather than leaving
+    # it out (#563); a forged POST is refused.
     _, body = get(browser, f"/admin/reports/ministries/follow-up/{join.pk}/")
     assert b'id="followup-locked"' in body
     assert re.search(
         rb'<button[^>]*disabled aria-describedby="followup-locked"'
-        rb"[^>]*><svg class=\"action-icon\".*?</svg>\s+Back to review</button>",
+        rb'[^>]*aria-pressed="true"[^>]*>Entered by hand</button>',
         body,
     )
     refused = dict(form, sequence="2", entered="no", request_key=str(uuid4()))
@@ -568,7 +569,7 @@ def test_a_change_for_a_member_no_longer_in_parishsoft_stays_listed(
         assert b'data-source-status="moved">Not in ParishSoft</span>' in body
         # It offers Entered by hand alone (#1217).
         assert b'data-row-action="entered_by_hand"' in body
-        assert b'data-row-action="back_to_review"' not in body
+        assert b"decide=back_to_review" not in body
         response, body = search(
             browser,
             EXPORT,

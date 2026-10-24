@@ -297,7 +297,7 @@ def test_each_stage_offers_its_role_tables_actions(stage, latest, offered):
         baseline=False,
     )
     icons = worklist.rows[0]["icons"]
-    assert [icon["action"] for icon in icons if not icon["selected"]] == offered
+    assert [icon["decide"] for icon in icons if icon["active"]] == offered
     assert not worklist.add
     assert [choice["value"] for choice in worklist.bulk] == [
         "accept",
@@ -453,7 +453,7 @@ def test_a_terminal_pledges_back_to_review_needs_a_note(found, body):
         baseline=False,
     )
     row = worklist.rows[0]
-    (back,) = [icon for icon in row["icons"] if not icon["selected"]]
-    assert back["action"] == "back_to_review"
+    (back,) = [icon for icon in row["icons"] if icon["active"]]
+    assert back["decide"] == "back_to_review"
     assert back["choice"] == "reopen" and back["body"] == body
     assert row["choice"] == "reopen"

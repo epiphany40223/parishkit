@@ -7,6 +7,7 @@ too; a Ministry leader never reaches the page.
 """
 
 import json
+import re
 from uuid import uuid4
 
 import pytest
@@ -46,9 +47,9 @@ def decide(proposal, action, **fields):
 
 def test_staff_see_and_take_every_review_decision(response_service, google):
     """Staff's page lists every change To review, By hand ones too, with
-    Accept on each and Entered by hand on none (it follows an Accept,
-    #1890); Accept answers with the page, its notice and the row Ready to
-    update."""
+    Accept on each and Entered by hand available on none (it follows an
+    Accept, #1890; drawn unavailable on the By hand ones, #2131); Accept
+    answers with the page, its notice and the row Ready to update."""
     harness, _, _, rows = prepared(response_service)
     browser = staff_browser(google)
     response, body = search(browser, ROUTE, {})
@@ -56,7 +57,8 @@ def test_staff_see_and_take_every_review_decision(response_service, google):
     page = body.decode()
     assert "To review (4)" in page and "Summary" not in page
     assert page.count('data-row-action="accept"') == 4
-    assert page.count('data-row-action="entered_by_hand"') == 0
+    marks = re.findall(r'<button[^>]*data-row-action="entered_by_hand"[^>]*>', page)
+    assert marks and all('aria-disabled="true"' in mark for mark in marks)
     # Staff do not start an update run.
     assert "Update ParishSoft" not in page
     response, body = search(

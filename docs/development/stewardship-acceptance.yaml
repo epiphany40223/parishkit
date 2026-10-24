@@ -493,6 +493,7 @@ sections:
     "Tables": [ADM-03]
     "Admin tables": [ADM-03]
     "Row actions and confirmation": [ADM-03]
+    "Decision toggles": [ADM-03]
     "New pages and in-page panes": [ADM-03]
     "Table column order": [ADM-03, RPT-01]
     "Family and Member names": [ADM-03, RPT-01]
