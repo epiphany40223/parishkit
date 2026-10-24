@@ -1,24 +1,25 @@
-"""The refresh schedule's rules, exceptions, coverage and spacing (#632).
+"""The refresh schedule's rules, exceptions and spacing (#632).
 
 The Administrator describes the daily refresh schedule in layers, the way an
 iCalendar recurrence set is built (see the background-processing spec,
 "Schedule entries and rules"):
 
-1. rules, "Full or Quick every N minutes from a start time to a last time";
-2. single times, "Full or Quick at a time";
+1. rules, "Full every N minutes from a start time to a last time";
+2. single times, "Full at a time";
 3. exceptions ("skips"): times, or from–to ranges (start included, end
-   excluded), that remove any time of either kind;
-4. precedence: a time that is both Full and Quick is Full;
-5. coverage: a quick time a rule generated is left out when a full time falls
-   at or after it and less than one rule step after it, or less than 15
-   minutes before it, on the same day (no wrap past midnight).
+   excluded), that remove times.
 
 The result is the **daily times**, which the settings store as
-``full_refresh_times`` and ``quick_refresh_times`` beside the rules
-themselves (``refresh_rules``). The scheduler reads only the two lists; these
-functions are what the settings page and the command line use to derive and
-check them, and what the configuration schema uses to check the rules' shape.
-Everything here is pure: wall times only, no time zone, no database.
+``full_refresh_times`` beside the rules themselves (``refresh_rules``). The
+scheduler reads only the list; these functions are what the settings page
+and the command line use to derive and check it, and what the configuration
+schema uses to check the rules' shape. Everything here is pure: wall times
+only, no time zone, no database.
+
+Quick rules ("Quick every ..." and "Quick at ...", quick updates) were
+removed (#1147). A stored schedule may still have them, and its shape stays
+valid (``valid_shape(stored=True)``), but they produce no time: the page,
+the command line and the scheduler see only the full rules.
 """
 
 from dataclasses import dataclass
@@ -32,7 +33,10 @@ STEPS = (15, 30, 60, 120, 180, 240, 360, 480, 720)
 # Any two daily times must be at least this many minutes apart.
 SPACING = 15
 DAY = 24 * 60
-KINDS = ("full", "quick")
+# The rule kinds a new or changed schedule may use, and those a stored one
+# may still hold (quick rules, removed by #1147).
+KINDS = ("full",)
+STORED_KINDS = ("full", "quick")
 # The closed set of ``refresh_rules`` fields.
 FIELDS = frozenset({"rules", "skips", "skip_around_family_emails"})
 SINGLE_RULE = frozenset({"kind", "at"})
@@ -49,8 +53,8 @@ RANGE_SKIP = frozenset({"from", "to"})
 # .posted_names; a test pins the sum). One cap means any schedule saved
 # since can be shown and saved back from the page. More rules never matter:
 # "every" rules give any number of times. A converted (upgraded) schedule
-# always fits: it has at most MAX_LEGACY_FULL_TIMES "Full at" rows, one quick
-# rule and a few "Quick at" rows for covered times, and no skips.
+# always fits: it has at most MAX_LEGACY_FULL_TIMES "Full at" rows and no
+# skips.
 MAX_RULES = 64
 MAX_SKIPS = 16
 # The bound before #936: a stored, carried or historical document may hold
@@ -69,9 +73,9 @@ def clock(value):
     return f"{value // 60:02d}:{value % 60:02d}"
 
 
-def _rule_ok(rule):
-    """Whether one rule row has a closed, canonical shape."""
-    if type(rule) is not dict or rule.get("kind") not in KINDS:
+def _rule_ok(rule, kinds=KINDS):
+    """Whether one rule row has a closed, canonical shape of one of ``kinds``."""
+    if type(rule) is not dict or rule.get("kind") not in kinds:
         return False
     if rule.keys() == SINGLE_RULE:
         return is_hhmm(rule["at"])
@@ -108,19 +112,21 @@ def valid_shape(value, *, stored=False):
     ``rules`` (at least one) and ``skips`` are lists of rows of the closed
     forms above; ``skip_around_family_emails`` is a boolean. A schedule
     being authored or changed has at most ``MAX_RULES`` rules and
-    ``MAX_SKIPS`` skips; a ``stored`` one (already accepted, read back or
-    carried unchanged) keeps the older ``MAX_STORED_ROWS`` bound. Whether
-    the rules produce the stored lists is ``check_schedule``'s question.
+    ``MAX_SKIPS`` skips, all of them full rules; a ``stored`` one (already
+    accepted, read back or carried unchanged) keeps the older
+    ``MAX_STORED_ROWS`` bound and may still hold quick rules. Whether the
+    rules produce the stored lists is ``check_schedule``'s question.
     """
     most_rules, most_skips = (
         (MAX_STORED_ROWS, MAX_STORED_ROWS) if stored else (MAX_RULES, MAX_SKIPS)
     )
+    kinds = STORED_KINDS if stored else KINDS
     return (
         type(value) is dict
         and value.keys() == FIELDS
         and type(value["rules"]) is list
         and 1 <= len(value["rules"]) <= most_rules
-        and all(_rule_ok(rule) for rule in value["rules"])
+        and all(_rule_ok(rule, kinds) for rule in value["rules"])
         and type(value["skips"]) is list
         and len(value["skips"]) <= most_skips
         and all(_skip_ok(skip) for skip in value["skips"])
@@ -130,20 +136,14 @@ def valid_shape(value, *, stored=False):
 
 @dataclass(frozen=True)
 class DailyTimes:
-    """The daily times the rules produce, and why others are left out.
+    """The daily times the rules produce.
 
-    ``full`` and ``quick`` are sorted ``HH:MM`` tuples. ``covered`` pairs each
-    quick time that coverage left out with the full time that covers it.
-    ``unmatched_skips`` are the indexes of skips that matched no time.
-    ``replaced`` are the quick times precedence dropped because a full time
-    falls at the same time (the preview shows each as covered by it).
+    ``full`` is a sorted ``HH:MM`` tuple. ``unmatched_skips`` are the
+    indexes of skips that matched no time.
     """
 
     full: tuple
-    quick: tuple
-    covered: tuple = ()
     unmatched_skips: tuple = ()
-    replaced: tuple = ()
 
 
 def _skipped(skip, value):
@@ -153,74 +153,67 @@ def _skipped(skip, value):
     return minutes(skip["from"]) <= value < minutes(skip["to"])
 
 
-def _covering(value, step, full):
-    """The full time (minutes) that covers a rule's quick time, or None.
-
-    A full time at or after it and less than one rule step after it, or less
-    than ``SPACING`` minutes before it, on the same day: the earliest such.
-    """
-    found = [
-        f for f in full if value <= f < value + step or value - SPACING < f < value
-    ]
-    return min(found, default=None)
+def _times(rules, kind):
+    """The times (minutes) the rules of ``kind`` give, before any skip."""
+    found = set()
+    for rule in rules:
+        if rule["kind"] != kind:
+            continue
+        if "at" in rule:
+            found.add(minutes(rule["at"]))
+        else:
+            found.update(
+                range(minutes(rule["from"]), minutes(rule["to"]) + 1, rule["every"])
+            )
+    return found
 
 
 def daily_times(refresh_rules):
-    """Apply the rules, single times, skips, precedence and coverage, in order.
+    """Apply the full rules, single times and skips, in order.
 
     ``refresh_rules`` must have the closed shape (``valid_shape``); anything
     else raises ``ValueError``. Stored schedules are read under their older
-    row bound, so the scheduler, preview and page never fail on one.
+    row bound, so the scheduler, preview and page never fail on one. A
+    stored quick rule (#1147) produces no time and is otherwise ignored.
     """
     if not valid_shape(refresh_rules, stored=True):
         raise ValueError("Refresh rules require the closed rule shape.")
-    full, quick = set(), set()
-    # The largest step of any range rule that generated each quick time; a
-    # quick time an Administrator listed on its own is never covered.
-    steps, single_quick = {}, set()
-    for rule in refresh_rules["rules"]:
-        if "at" in rule:
-            generated = [minutes(rule["at"])]
-        else:
-            generated = range(
-                minutes(rule["from"]), minutes(rule["to"]) + 1, rule["every"]
-            )
-        for value in generated:
-            if rule["kind"] == "full":
-                full.add(value)
-            else:
-                quick.add(value)
-                if "at" in rule:
-                    single_quick.add(value)
-                else:
-                    steps[value] = max(steps.get(value, 0), rule["every"])
+    full = _times(refresh_rules["rules"], "full")
     # Each skip is matched against the times before any skip, so a skip
     # that overlaps or repeats another is not reported as matching nothing.
-    generated = full | quick
+    generated = set(full)
     unmatched = []
     for index, skip in enumerate(refresh_rules["skips"]):
         removed = {value for value in generated if _skipped(skip, value)}
         if not removed:
             unmatched.append(index)
         full -= removed
-        quick -= removed
-    replaced = quick & full
-    quick -= full
-    covered = []
-    for value in sorted(quick):
-        if value in single_quick or value not in steps:
-            continue
-        by = _covering(value, steps[value], full)
-        if by is not None:
-            covered.append((clock(value), clock(by)))
-    quick -= {minutes(value) for value, _ in covered}
-    return DailyTimes(
-        tuple(clock(value) for value in sorted(full)),
-        tuple(clock(value) for value in sorted(quick)),
-        tuple(covered),
-        tuple(unmatched),
-        tuple(clock(value) for value in sorted(replaced)),
-    )
+    return DailyTimes(tuple(clock(value) for value in sorted(full)), tuple(unmatched))
+
+
+def full_rules(refresh_rules):
+    """``refresh_rules`` without its stored quick rules (#1147).
+
+    What the settings page and ``integration show`` present, and what a
+    save writes back, so a schedule saved again drops its quick rules. A
+    skip that matched only quick times goes with them: kept, it would match
+    nothing and block the next save ("This matches no refresh"). A skip
+    that matched nothing before stays, as it was. A schedule with no quick
+    rule is returned as it is.
+    """
+    rules = refresh_rules["rules"]
+    if all(rule["kind"] == "full" for rule in rules):
+        return refresh_rules
+    full, quick = _times(rules, "full"), _times(rules, "quick")
+    return refresh_rules | {
+        "rules": [rule for rule in rules if rule["kind"] == "full"],
+        "skips": [
+            skip
+            for skip in refresh_rules["skips"]
+            if any(_skipped(skip, value) for value in full)
+            or not any(_skipped(skip, value) for value in quick)
+        ],
+    }
 
 
 def spacing_conflicts(times):
@@ -267,9 +260,10 @@ def stored_settings(refresh_rules):
     """The stored schedule settings the rules produce (for the page and CLI).
 
     ``full_refresh`` is "daily"; ``nightly_time`` is the earliest full time;
-    ``delta_refresh`` is "times" with ``quick_refresh_times`` when there are
-    quick times, else "off" with no quick list. Raises ``ValueError`` when
-    the rules leave no full time.
+    ``delta_refresh`` is "off", as the configuration schema still requires
+    of a schedule saved with its rules, with no quick list (quick updates
+    were removed, #1147). Raises ``ValueError`` when the rules leave no
+    full time.
     """
     result = daily_times(refresh_rules)
     if not result.full:
@@ -278,11 +272,9 @@ def stored_settings(refresh_rules):
         "full_refresh": "daily",
         "nightly_time": result.full[0],
         "full_refresh_times": list(result.full),
-        "delta_refresh": "times" if result.quick else "off",
+        "delta_refresh": "off",
         "refresh_rules": refresh_rules,
     }
-    if result.quick:
-        settings["quick_refresh_times"] = list(result.quick)
     return settings
 
 
@@ -293,8 +285,7 @@ def check_schedule(settings, *, kept=()):
     ``settings`` are the ParishSoft integration's schedule settings with
     ``refresh_rules`` of the closed shape (``ValueError`` otherwise).
     ``kept`` are full times already stored off the quarter hour, which an
-    Administrator may keep as full times but not add; they excuse only a
-    full time, never a quick time at the same wall time. The stored lists
+    Administrator may keep but not add. The stored lists
     must be exactly what the rules produce; a stored document is never
     re-derived.
     """
@@ -303,13 +294,13 @@ def check_schedule(settings, *, kept=()):
     problems = []
     if not result.full:
         problems.append(Problem("no_full"))
-    if len(result.full) + len(result.quick) > MAX_DAILY_TIMES:
+    if len(result.full) > MAX_DAILY_TIMES:
         problems.append(Problem("too_many"))
-    for pair in spacing_conflicts(result.full + result.quick):
+    for pair in spacing_conflicts(result.full):
         problems.append(Problem("too_close", pair))
     kept = set(kept)
-    for value in sorted(set(result.full + result.quick)):
-        if minutes(value) % SPACING and not (value in kept and value in result.full):
+    for value in result.full:
+        if minutes(value) % SPACING and value not in kept:
             problems.append(Problem("off_quarter", (value,)))
     for index in result.unmatched_skips:
         problems.append(Problem("unmatched_skip", index=index))
@@ -334,28 +325,20 @@ _EVERY = {
 def converted_rules(settings):
     """The ``refresh_rules`` the settings page shows for stored ``settings``.
 
-    A schedule saved with its rules is shown as saved. An existing schedule
-    (no ``refresh_rules``, every schedule before #632) is converted by the
-    mapping in the background-processing spec's "Stored schedule and
+    A schedule saved with its rules is shown as saved, less any quick rule
+    (``full_rules``; quick updates were removed, #1147). An existing
+    schedule (no ``refresh_rules``, every schedule before #632) is converted
+    by the mapping in the background-processing spec's "Stored schedule and
     upgrade", after ``cadence.refresh_settings`` fills its defaults: one
     "Full at" row per listed full time (kept off-quarter-hour times
     included, no rule inferred), or a full rule every 60 or 15 minutes
-    through the day; a quick rule every 15 or 60 minutes through the day, or
-    none; no skips; and skipping around Family emails off, since such a
-    schedule never skips.
-
-    The result runs exactly today's times: precedence (``daily_times``)
-    drops only a quick time equal to a full time, as the old scheduler
-    joined the two. Coverage would also drop a rule's quick time near a
-    full time (one the old scheduler runs, e.g. 08:00 beside an 08:30 full
-    time with hourly quick updates), so each such time gets its own "Quick
-    at" row, which coverage never removes; a time too close to a full time
-    then shows as a spacing problem rather than silently disappearing.
-    Pure: the result is never stored by this function.
+    through the day; no skips; and skipping around Family emails off, since
+    such a schedule never skips. Its stored quick setting is ignored. Pure:
+    the result is never stored by this function.
     """
     stored = settings.get("refresh_rules")
     if stored is not None:
-        return stored
+        return full_rules(stored)
     schedule = refresh_settings(settings)
     if schedule["frequency"] == "daily":
         rules = [
@@ -363,11 +346,4 @@ def converted_rules(settings):
         ]
     else:
         rules = [{"kind": "full", **_EVERY[schedule["frequency"]]}]
-    if schedule["delta_refresh"] in _EVERY:
-        rules.append({"kind": "quick", **_EVERY[schedule["delta_refresh"]]})
-    converted = {"rules": rules, "skips": [], "skip_around_family_emails": False}
-    # Keep every quick time coverage would remove: the old scheduler runs it.
-    rules.extend(
-        {"kind": "quick", "at": value} for value, _ in daily_times(converted).covered
-    )
-    return converted
+    return {"rules": rules, "skips": [], "skip_around_family_emails": False}

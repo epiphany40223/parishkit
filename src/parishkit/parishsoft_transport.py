@@ -1,7 +1,7 @@
 """Opt-in finite read transport for callers that own durable source leases.
 
 Ordinary ParishKit clients keep their existing Session behavior. This adapter
-intentionally supports only the shared v2 corpus/change-feed read endpoints,
+intentionally supports only the shared v2 corpus read endpoints,
 plus, in ``BoundedPublicationSession`` alone, the Member contact PUT that
 census publication sends (#528, BG-09).
 Each session lazily starts one persistent helper process and reuses it (and

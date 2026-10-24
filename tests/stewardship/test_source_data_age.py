@@ -16,7 +16,6 @@ from parishkit.stewardship.source.data_age import (
     Connection,
     DataAge,
     SourceFacts,
-    changed,
     connection_state,
     connection_threshold,
     first_overdue,
@@ -127,29 +126,9 @@ def test_a_configuration_without_parishsoft_schedules_nothing():
     assert first_overdue([(local(0, day=1), None)], ZONE, local(1), local(23)) is None
 
 
-@pytest.mark.parametrize(
-    "cursor,expected",
-    [
-        ({"changes": {"family": 1, "member": 0}}, True),
-        ({"changes": {"family": 0, "member": 0}}, False),
-        ({"changes": {}}, False),
-        ({}, False),
-        ({"changes": None}, False),
-        ({"changes": {"family": True}}, False),
-        (None, False),
-    ],
-)
-def test_only_a_counted_change_moves_data_as_of(cursor, expected):
-    """A quick update without counts, or with zero counts, changes nothing."""
-    assert changed(cursor) is expected
-
-
-def test_data_as_of_is_the_newer_of_full_and_changed_quick():
-    """An empty quick update does not move "data as of"; a changed one does."""
+def test_data_as_of_is_the_last_full_refresh():
+    """Only a full refresh moves "data as of" (quick updates were removed, #1147)."""
     assert SourceFacts(full_started_at=local(8)).data_as_of == local(8)
-    assert SourceFacts(
-        full_started_at=local(8), changed_delta_at=local(11)
-    ).data_as_of == local(11)
     assert SourceFacts().data_as_of is None
 
 
@@ -212,11 +191,11 @@ def test_a_go_live_hold_end_restarts_the_gap_and_is_read_lazily():
 
 
 def test_connection_threshold_is_the_longest_gap_plus_the_margin():
-    """With quick updates off, the gap is the longest wait between full times."""
-    off = refresh_settings({"nightly_time": "02:00", "delta_refresh": "off"})
-    assert connection_threshold(off, MARGIN) == timedelta(hours=24, minutes=30)
-    assert connection_threshold(NIGHTLY, MARGIN) == timedelta(hours=1, minutes=30)
-    # Listed quick times (#632) count toward the gap.
+    """The gap is the longest wait between full times; quick settings are ignored."""
+    assert connection_threshold(NIGHTLY, MARGIN) == timedelta(hours=24, minutes=30)
+    hourly = refresh_settings({"nightly_time": "02:00", "full_refresh": "hourly"})
+    assert connection_threshold(hourly, MARGIN) == timedelta(hours=1, minutes=30)
+    # A stored schedule's quick times (#632) no longer count (#1147).
     listed = refresh_settings(
         {
             "nightly_time": "02:00",
@@ -224,7 +203,7 @@ def test_connection_threshold_is_the_longest_gap_plus_the_margin():
             "quick_refresh_times": ["08:00", "14:00", "20:00"],
         }
     )
-    assert connection_threshold(listed, MARGIN) == timedelta(hours=6, minutes=30)
+    assert connection_threshold(listed, MARGIN) == timedelta(hours=24, minutes=30)
 
 
 def test_digest_line_states_data_age_and_connection_in_the_parish_zone():

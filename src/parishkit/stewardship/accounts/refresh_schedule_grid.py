@@ -4,8 +4,8 @@ The settings page draws the next seven days as a read-only grid: one row per
 local day of the refresh schedule's time zone and 96 quarter-hour cells
 (see the admin-portal spec, "Seven-day preview"). A cell carries:
 
-- the refreshes that run in it, full and quick (a kept off-quarter-hour time
-  is marked in the cell it falls in);
+- whether a full refresh runs in it (a kept off-quarter-hour time is marked
+  in the cell it falls in);
 - its shading: the Family email window that overlaps it, or "gap" for a
   wall time that does not exist because clocks go forward;
 - whether it holds the current time.
@@ -103,8 +103,6 @@ def _title(index, cell, repeated):
         words = [gettext("%(start)s to %(end)s") % times]
     if cell["full"]:
         words.append(gettext("full refresh"))
-    if cell["quick"]:
-        words.append(gettext("quick update"))
     if cell["shade"]:
         words.append(str(SHADE_LABELS[cell["shade"]]))
     if cell["now"]:
@@ -115,10 +113,10 @@ def _title(index, cell, repeated):
 def grid_rows(preview, *, timezone, now):
     """The grid's rows for a ``SchedulePreview``: one dict per preview day.
 
-    Each row has ``day``, ``change`` (as the list's day) and ``cells``: 96
-    dicts with ``full`` and ``quick`` (a refresh of that kind runs in the
-    cell), ``shade`` (a ``SHADE_LABELS`` key or None), ``now`` and ``title``
-    (empty for a blank cell, so the page stays small).
+    Each row has ``day``, ``change`` (as the list's day) and ``cells``: 96 dicts
+    with ``full`` (a full refresh runs in the cell), ``shade`` (a
+    ``SHADE_LABELS`` key or None), ``now`` and ``title`` (empty for a blank
+    cell, so the page stays small).
     """
     zone = ZoneInfo(timezone)
     windows = sorted(preview.windows, key=lambda item: (item.start, item.cause))
@@ -132,7 +130,6 @@ def grid_rows(preview, *, timezone, now):
             cells.append(
                 {
                     "full": False,
-                    "quick": False,
                     "shade": _shade(spans, windows),
                     "now": any(start <= now < start + QUARTER for start in spans),
                 }
@@ -142,9 +139,9 @@ def grid_rows(preview, *, timezone, now):
                 continue
             index = _cell_index(entry.due_at, day.day, zone)
             if index is not None:
-                cells[index][entry.kind] = True
+                cells[index]["full"] = True
         for index, cell in enumerate(cells):
-            marked = cell["full"] or cell["quick"] or cell["shade"] or cell["now"]
+            marked = cell["full"] or cell["shade"] or cell["now"]
             cell["title"] = _title(index, cell, index in repeated) if marked else ""
         rows.append({"day": day.day, "change": day.change, "cells": cells})
     return rows

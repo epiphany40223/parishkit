@@ -40,6 +40,7 @@ from parishkit.stewardship.source.snapshots import promote_snapshot
 
 from ..log_samples import sample as log_sample
 from .campaign_builders import add_draft, change, restored_runtime
+from .refresh_harness import delta_cursor
 from .test_bootstrap_postgresql import bootstrapped as bootstrap_fixture
 from .test_operational_collection_postgresql import consume, schedule
 from .test_source_attempts_postgresql import configured, stage
@@ -71,13 +72,17 @@ def publish(credential, *, kind="full"):
             phase=kind,
         )
     attempt = begin_refresh_attempt(execution, lease, credential)
-    cursor = refresh_cursor(
+    options = dict(
         snapshot_id=attempt.snapshot_id,
-        kind=kind,
         started_at=attempt.snapshot.started_at,
         window_digest=attempt.request.window_digest,
         evidence={},
-        base_cursor=base.cursor if base is not None else None,
+    )
+    # A delta stands for a quick update from before #1147 (refresh_harness).
+    cursor = (
+        refresh_cursor(**options)
+        if kind == "full"
+        else delta_cursor(**options, base_cursor=base.cursor)
     )
     stage(attempt, execution, lease, cursor_changes=cursor)
     with execution.effect():

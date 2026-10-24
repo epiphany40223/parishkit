@@ -29,9 +29,6 @@
 // (the refresh-schedule-basic JSON), so this script has no copy of them.
 // While Basic is shown with no choice chosen, Save is unavailable with the
 // Basic panel's reason in the line beside Save.
-// A stored quick rule (which the editor no longer offers) is a row without
-// controls; Remove quick updates takes every such row out at once, a change
-// reviewed like any other.
 // Once a change is applied in the review dialog (#750), the page redraws the
 // settings form's region with a fresh editor, and this script wires that one
 // (wireEditor runs again, on the region's parishkit:swap). Each wiring's
@@ -482,7 +479,6 @@
   const wireRow = (row) => {
     row.querySelector('select[name$="-shape"]')?.addEventListener("change",
       () => steady([row.querySelector(".schedule-row-fields")], () => applyShape(row)));
-    // A stored quick rule has no Remove of its own (Remove quick updates).
     row.querySelector("[data-row-remove]")?.addEventListener("click", () => {
       const scope = row.dataset.scheduleRow;
       steady([rowsOf(scope)], () => {
@@ -508,21 +504,12 @@
     if (fields) fields.wire(row);
     return row;
   };
-  // The note and Remove quick updates belong to the stored quick rules:
-  // once no quick row is left (removed, or replaced by a Basic choice or
-  // Edit as text), the note goes too. Called inside the change that removed
-  // them, so a steadied change includes [data-quick-region] in its regions.
-  const quickRegion = root.querySelector("[data-quick-region]");
-  const dropQuickNote = () => {
-    if (quickRegion && !rowsOf("rules").querySelector("[data-quick-rule]")) quickRegion.replaceChildren();
-  };
   const clearRows = (scope) => {
     rowList(scope).forEach((row) => {
       if (fields) fields.cancel(row);
       row.remove();
     });
     renumber(scope);
-    if (scope === "rules") dropQuickNote();
   };
   SCOPES.forEach((scope) => {
     rowList(scope).forEach(wireRow);
@@ -599,19 +586,6 @@
     },
   });
 
-  // Remove quick updates: every stored quick rule row goes at once, and the
-  // note with it; focus moves to Add a rule. Reviewed like any change.
-  root.querySelector("[data-remove-quick]")?.addEventListener("click", () => {
-    steady([quickRegion, rowsOf("rules")], () => {
-      rowList("rules").filter((row) => row.hasAttribute("data-quick-rule")).forEach((row) => row.remove());
-      renumber("rules");
-      dropQuickNote();
-    });
-    focusOn(root.querySelector('[data-row-add="rules"]'));
-    textEdited = false;
-    schedule(0);
-  });
-
   // "Edit as text": the list replaces the rules with one "at" rule per
   // time, and the skips with none, once the reader chooses Use this list.
   // Until then, each check refills it from the rows.
@@ -640,7 +614,7 @@
     }
     // The rows above change in number: with no pointer (a touch, which may
     // not focus the button), the button is what stays where it is.
-    steady([quickRegion, ...SCOPES.map(rowsOf), textError].filter(Boolean), () => {
+    steady([...SCOPES.map(rowsOf), textError].filter(Boolean), () => {
       textError.textContent = "";
       clearRows("rules");
       clearRows("skips");

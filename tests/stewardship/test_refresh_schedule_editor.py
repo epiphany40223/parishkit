@@ -45,7 +45,8 @@ from .schedule_rows import rows, shown
 ZONE = "America/New_York"
 NOW = datetime(2026, 10, 9, 16, tzinfo=UTC)
 # Production's schedule on 2026-10-09: listed full times and quarter-hour
-# quick updates, stored before the editor existed.
+# quick updates (which no longer run, #1147), stored before the editor
+# existed.
 PRODUCTION = {
     "organization_id": "1",
     "full_refresh": "daily",
@@ -93,7 +94,7 @@ def reader(document, *, now, timezone):
         timezone=timezone,
         today=now.astimezone(UTC).date(),
         windows=(),
-        measured=durations({}),
+        measured=durations([]),
         margin=timedelta(minutes=30),
     )
 
@@ -122,6 +123,17 @@ def quick_at(value):
 
 def every(kind, step, start, end):
     return {"kind": kind, "every": step, "from": start, "to": end}
+
+
+def add_rule(posted, value):
+    """``posted`` with one more "Full at ``value``" rule row after the others."""
+    count = int(posted["rules-TOTAL_FORMS"])
+    return posted | {
+        "rules-TOTAL_FORMS": str(count + 1),
+        f"rules-{count}-kind": "full",
+        f"rules-{count}-shape": "at",
+        f"rules-{count}-at": value,
+    }
 
 
 def page(stored):
@@ -170,9 +182,9 @@ def test_the_shown_rules_run_todays_times(stored):
 def test_rows_in_another_order_are_no_change():
     """Moving rows around changes nothing the schedule runs."""
     stored = stored_settings(
-        document(full_at("02:00"), every("quick", 60, "00:00", "23:00"))
+        document(full_at("02:00"), every("full", 60, "04:00", "23:00"))
     )
-    posted = rows([every("quick", 60, "00:00", "23:00"), full_at("02:00")])
+    posted = rows([every("full", 60, "04:00", "23:00"), full_at("02:00")])
     editor = ScheduleEditor(posted, stored=stored)
     assert not editor.changed
     assert editor.settings() == stored
@@ -195,7 +207,7 @@ def test_a_changed_schedule_is_derived_from_its_rules():
     new = document(
         full_at("02:00"),
         every("full", 120, "08:00", "18:00"),
-        every("quick", 60, "07:00", "19:00"),
+        every("full", 120, "09:00", "19:00"),
         skips=[{"at": "13:00"}],
         switch=True,
     )
@@ -208,10 +220,12 @@ def test_a_changed_schedule_is_derived_from_its_rules():
     settings = editor.settings()
     # Posted without a mode (no page): saved as Advanced (#1122).
     assert settings == stored_settings(new) | {"refresh_schedule_mode": "advanced"}
-    assert settings["quick_refresh_times"] == ["07:00", "09:00", "11:00", "15:00"] + [
-        "17:00",
-        "19:00",
+    assert settings["full_refresh_times"] == ["02:00"] + [
+        f"{hour:02d}:00" for hour in range(8, 20) if hour != 13
     ]
+    # Quick updates were removed (#1147): none is ever written.
+    assert settings["delta_refresh"] == "off"
+    assert "quick_refresh_times" not in settings
     assert check_schedule(settings) == []
     # The configuration schema accepts what the editor writes.
     _validate_cadence(settings)
@@ -229,16 +243,14 @@ def test_problems_on_an_unchanged_schedule_never_block_other_settings():
     assert line.status.startswith("Your current schedule has")
     assert "saving other settings keeps it as it is" in line.status
     # Changing the schedule now needs the problems fixed first.
-    changed = ScheduleEditor(posted | {"rules-0-at": "01:00"}, stored=stored)
+    changed = ScheduleEditor(add_rule(posted, "12:00"), stored=stored)
     assert changed.changed and changed.blocking and not changed.is_valid()
     assert view(changed).status.startswith("Fix ")
     with pytest.raises(ValueError):
         changed.settings()
     form = IntegrationForm(
         "parishsoft",
-        {"base_digest": "a" * 64, "organization_id": "1"}
-        | posted
-        | {"rules-0-at": "01:00"},
+        {"base_digest": "a" * 64, "organization_id": "1"} | add_rule(posted, "12:00"),
         stored=stored,
     )
     assert not form.is_valid()
@@ -250,9 +262,8 @@ def test_the_kept_time_is_labelled_and_allowed_only_as_a_full_time():
     html = page(stored)
     assert "Kept from the earlier schedule (not on the quarter hour)." in html
     posted = shown(html)
-    quick = posted | {"rules-1-kind": "quick"}
-    errors = [p.text for p in ScheduleEditor(quick, stored=stored).problems()]
-    assert "At: Use :00, :15, :30 or :45." in errors
+    errors = [p.text for p in ScheduleEditor(posted, stored=stored).problems()]
+    assert "At: Use :00, :15, :30 or :45." not in errors
     added = rows([full_at("02:00"), full_at("02:10")])
     errors = [p.text for p in ScheduleEditor(added, stored=stored).problems()]
     assert errors == ["At: Use :00, :15, :30 or :45."]
@@ -308,11 +319,25 @@ def test_a_blank_added_row_is_a_problem_not_dropped():
     """Every posted row is read: a blank one asks for its time."""
     posted = rows([full_at("02:00")]) | {
         "rules-TOTAL_FORMS": "2",
-        "rules-1-kind": "quick",
+        "rules-1-kind": "full",
         "rules-1-shape": "at",
     }
     editor = ScheduleEditor(posted, stored=PRODUCTION)
     assert [(p.index, p.text) for p in editor.problems()] == [(1, "At: Enter a time.")]
+
+
+def test_a_posted_quick_rule_is_refused_at_its_row():
+    """Quick updates were removed (#1147): a crafted quick row cannot be saved."""
+    posted = rows([full_at("02:00"), quick_at("03:00")])
+    editor = ScheduleEditor(posted, stored=PRODUCTION)
+    assert [(p.scope, p.index, p.text) for p in editor.problems()] == [
+        (
+            "rules",
+            1,
+            "Kind: Select a valid choice. quick is not one of the available choices.",
+        )
+    ]
+    assert editor.blocking and editor.document() is None
 
 
 def test_skip_rows_read_single_times_and_ranges():
@@ -331,7 +356,7 @@ def test_skip_rows_read_single_times_and_ranges():
 def test_validator_problems_are_placed_at_the_row_that_causes_them():
     """Spacing at the later time's row; skips at their own row."""
     posted = rows(
-        [full_at("02:00"), every("quick", 60, "00:00", "23:00")], [{"at": "12:30"}]
+        [full_at("02:00"), every("full", 60, "04:00", "23:00")], [{"at": "12:30"}]
     )
     editor = ScheduleEditor(posted, stored={"organization_id": "1"})
     problems = {(p.scope, p.index): p for p in editor.problems()}
@@ -343,8 +368,11 @@ def test_validator_problems_are_placed_at_the_row_that_causes_them():
     assert problem.text == (
         "This skips 02:00, the only full refresh; keep at least one full refresh a day."
     )
-    (general,) = ScheduleEditor(rows([quick_at("02:00")]), stored={}).problems()
-    assert general.scope is None and "keep at least one full refresh" in general.text
+    (general,) = ScheduleEditor(rows([]), stored={}).problems()
+    assert (general.scope, general.text) == (
+        None,
+        "Add a rule: keep at least one full refresh a day.",
+    )
 
 
 def test_too_close_names_both_times_at_the_later_row():
@@ -377,9 +405,6 @@ def test_the_switch_starts_off_for_an_existing_schedule_and_is_a_change():
         "Turns on skipping refreshes around Family emails: refreshes other than "
         "the nightly one are skipped while a reminder is being prepared and while "
         "a Family email is being sent.",
-        "Hourly and quarter-hour refreshes follow UTC today, so on the day clocks "
-        "go back the repeated hour runs twice. As listed parish times they run "
-        "once, at the earlier time.",
     ]
     # A saved rules schedule shows its own switch.
     saved = stored_settings(document(full_at("02:00"), switch=True))
@@ -391,7 +416,7 @@ def test_basic_choices_give_what_their_descriptions_say():
     keys = [choice.key for choice in BASIC_CHOICES]
     assert keys == ["nightly", "every", "business_hours"]
     nightly = daily_times(document(*basic_rules("nightly")))
-    assert nightly.full == ("02:00",) and not nightly.quick
+    assert nightly.full == ("02:00",)
     assert daily_times(document(*basic_rules("every", 4))).full == (
         "00:00",
         "04:00",
@@ -408,7 +433,6 @@ def test_basic_choices_give_what_their_descriptions_say():
         "16:00",
         "18:00",
     )
-    assert not business.quick
     payload = basic_payload()
     assert len(payload) == 2 + len(EVERY_HOURS)
     for item in payload:
@@ -432,31 +456,22 @@ def test_each_basic_choice_maps_to_one_rule_set_and_back():
             item["key"],
             item["hours"],
         )
-    # A skip, an extra rule, a quick rule or a custom time has no Basic
-    # equivalent.
+    # A skip, an extra rule or a custom time has no Basic equivalent.
     nightly = basic_rules("nightly")
     assert basic_choice(document(*nightly, skips=[{"at": "02:00"}])) is None
     assert basic_choice(document(*nightly, full_at("12:00"))) is None
-    assert (
-        basic_choice(document(*nightly, every("quick", 60, "00:00", "23:00"))) is None
-    )
     assert basic_choice(document(full_at("03:00"))) is None
     assert basic_choice(None) is None
 
 
 def test_the_review_lists_times_added_and_removed_in_words():
     """Decision 22: words, not the stored settings' diff."""
-    new = document(
-        every("full", 120, "00:00", "20:00"), every("quick", 15, "00:00", "23:45")
-    )
+    new = document(every("full", 120, "00:00", "20:00"))
     words = differences(PRODUCTION, new, timezone=ZONE)
-    assert words[0] == "Full refreshes added: 02:00, 04:00 and 06:00."
-    assert words[1] == "Quick updates removed: 02:00, 04:00 and 06:00."
-    assert "Full refreshes removed" not in " ".join(words)
+    # The stored quarter-hour quick updates no longer run: nothing to say.
+    assert words == ["Full refreshes added: 02:00, 04:00 and 06:00."]
     hourly = {"organization_id": "1", "full_refresh": "hourly"}
-    every_hour = document(
-        every("full", 60, "00:00", "23:00"), every("quick", 15, "00:00", "23:45")
-    )
+    every_hour = document(every("full", 60, "00:00", "23:00"))
     words = differences(
         hourly, every_hour | {"skips": [{"at": "03:00"}]}, timezone=ZONE
     )
@@ -501,7 +516,7 @@ def test_the_line_beside_save_is_the_cost_when_nothing_is_wrong():
     assert shown_view.preview["list"]["days"][0]["summary"].startswith(
         "1 full refresh, about"
     )
-    assert shown_view.preview["other_mark"] is None
+    assert "other_mark" not in shown_view.preview
     assert shown_view.preview["freshness"] == (
         "New ParishSoft data arrives at least every 1 day (02:00 to 02:00). If a "
         "full refresh is more than 30 minutes late, Administrators are alerted."
@@ -513,13 +528,12 @@ def test_the_line_beside_save_is_the_cost_when_nothing_is_wrong():
 def test_the_page_draws_rows_templates_and_the_switch():
     """Every row can be removed; new rows clone a ``__prefix__`` template."""
     html = page(PRODUCTION)
-    assert html.count('data-schedule-row="rules"') == 10  # 8 full, 1 quick, template
+    assert html.count('data-schedule-row="rules"') == 9  # 8 full, template
     assert 'id="rules-__prefix__"' in html and 'name="rules-__prefix__-kind"' in html
-    # Each full rule row, and the two templates; the stored quick rule has
-    # no Remove of its own (#1122).
+    # Each rule row, and the two templates.
     assert html.count("data-row-remove") == 10
     assert "Your current schedule, shown as rules." in html
-    assert 'name="rules-TOTAL_FORMS" value="9"' in html
+    assert 'name="rules-TOTAL_FORMS" value="8"' in html
     assert "schedule's time zone, America/New_York: the current campaign's" in html
     # The text lists are never posted.
     assert 'name="refresh-text' not in html and "data-schedule-text=" in html
@@ -530,7 +544,7 @@ def test_the_page_draws_rows_templates_and_the_switch():
 def test_the_check_answer_draws_each_row_and_the_verdict():
     """The live check's answer carries every row's messages and data-blocking."""
     stored = EXISTING[-1]
-    posted = shown(page(stored)) | {"rules-0-at": "01:00"}
+    posted = add_rule(shown(page(stored)), "12:00")
     editor = ScheduleEditor(posted, stored=stored)
     html = render_to_string(
         "stewardship/refresh-schedule-check.html", {"schedule": view(editor)}
@@ -567,7 +581,7 @@ def test_other_rows_keep_their_problems_while_one_is_half_typed():
     assert ("rules", 0, "too_close") in found
     assert ("skips", count, "") in found
     # An unread rule might be the full one: "no full refresh" waits for it.
-    half = rows([quick_at("03:00")]) | {
+    half = rows([full_at("03:00")], [{"at": "03:00"}]) | {
         "rules-TOTAL_FORMS": "2",
         "rules-1-kind": "full",
         "rules-1-shape": "at",
@@ -621,7 +635,7 @@ def test_more_rows_than_the_cap_are_refused_in_plain_words():
 def test_the_line_beside_save_says_whole_schedule_problems_in_full():
     """A problem without a row is said in the line beside Save, after the
     links, never drawn above the rows (#736)."""
-    editor = ScheduleEditor(rows([quick_at("02:00")]), stored=PRODUCTION)
+    editor = ScheduleEditor(rows([]), stored=PRODUCTION)
     shown_view = view(editor)
     assert shown_view.links == []
     line = render_to_string(
@@ -630,7 +644,7 @@ def test_the_line_beside_save_says_whole_schedule_problems_in_full():
     assert line == (
         "Fix 1 problem before saving: Add a rule: keep at least one full refresh a day."
     )
-    both = rows([quick_at("02:00")], [{"at": "12:30"}])
+    both = rows([], [{"from": "22:00", "to": "01:00"}])
     line = render_to_string(
         "stewardship/refresh-schedule-status.html",
         {"schedule": view(ScheduleEditor(both, stored=PRODUCTION))},
@@ -658,7 +672,7 @@ def test_the_editor_has_no_live_region_and_gives_the_script_its_words():
 
 
 # Basic and Advanced modes (#1122; ui-conventions spec, "Basic and Advanced
-# modes"), and the stored quick rules the editor no longer offers.
+# modes"), and the stored quick rules that are no longer shown (#1147).
 NIGHTLY = stored_settings(document(full_at("02:00")))
 
 
@@ -678,10 +692,17 @@ NIGHTLY = stored_settings(document(full_at("02:00")))
             "advanced",
         ),
         # A converted existing schedule opens in Advanced unless it equals a
-        # Basic choice; one with quick updates never does.
+        # Basic choice; its stored quick setting plays no part (#1147).
         (PRODUCTION, "advanced"),
         ({"organization_id": "1", "delta_refresh": "off"}, "basic"),
-        ({"organization_id": "1"}, "advanced"),
+        ({"organization_id": "1"}, "basic"),
+        # A stored quick rule is not shown, so it does not stop Basic.
+        (
+            stored_settings(
+                document(full_at("02:00"), every("quick", 60, "00:00", "23:00"))
+            ),
+            "basic",
+        ),
     ],
 )
 def test_the_editor_opens_in_the_mode_the_convention_names(stored, mode):
@@ -752,46 +773,38 @@ def test_a_malformed_or_orphan_mode_is_refused(settings):
         _validate_cadence(settings)
 
 
-def test_a_stored_quick_schedule_opens_in_advanced_read_only_with_remove():
-    """Quick rules are shown as words with hidden fields, never dropped;
-    posting the page back as drawn is no change (#1122)."""
-    stored = stored_settings(
-        document(full_at("02:00"), every("quick", 60, "00:00", "23:00"))
-    )
+def test_a_stored_quick_rule_is_not_shown_and_a_change_drops_it():
+    """A schedule saved with quick rules before #1147 shows its full rules only.
+
+    Posted back as drawn it is no change and keeps the stored keys exactly
+    (its quick settings run nothing); any change is derived from the full
+    rules alone, so the quick rules and settings are dropped, and the
+    review names only the full refreshes.
+    """
+    rules = document(full_at("02:00"), every("quick", 60, "00:00", "23:00"))
+    stored = stored_settings(rules) | {
+        "delta_refresh": "times",
+        "quick_refresh_times": [f"{hour:02d}:00" for hour in range(24) if hour != 2],
+    }
     editor = ScheduleEditor(stored=stored)
-    assert editor.mode == "advanced" and editor.has_quick
+    assert editor.shown == document(full_at("02:00"))
     html = page(stored)
-    assert "Remove quick updates" in html and "data-remove-quick" in html
-    assert "Quick update every hour from 00:00 to 23:00" in html
-    quick_row = html.split("data-quick-rule")[1].split("</fieldset>")[0]
-    assert "<select" not in quick_row and "data-row-remove" not in quick_row
+    for absent in ("Quick update", "quick update", "data-remove-quick", "data-quick"):
+        assert absent not in html
     posted = shown(html)
-    assert posted["rules-1-kind"] == "quick" and posted["rules-1-every"] == "60"
+    assert posted["rules-TOTAL_FORMS"] == "1" and posted["rules-0-kind"] == "full"
     back = ScheduleEditor(posted, stored=stored)
-    assert not back.changed and back.settings() == stored
-    assert back.has_quick
-    # Remove quick updates leaves the full rule: a change, reviewed in words.
-    removed = ScheduleEditor(rows([full_at("02:00")]), stored=stored)
-    assert removed.changed and removed.is_valid() and not removed.has_quick
-    assert differences(stored, removed.document(), timezone=ZONE)[0].startswith(
-        "Quick updates removed: "
-    )
-    assert "quick" not in removed.settings().get("delta_refresh", "")
-    # A full-only schedule shows no quick note.
-    assert "data-remove-quick" not in page(NIGHTLY)
-
-
-@pytest.mark.parametrize("interval", ["abc", "-1", "", "60.5"])
-def test_a_crafted_quick_interval_is_shown_not_a_crash(interval):
-    """A posted quick row is drawn from raw text: a value that is not a
-    number is refused as usual and shown as sent, never a server error."""
-    quick = every("quick", 60, "00:00", "23:00")
-    stored = stored_settings(document(full_at("02:00"), quick))
-    posted = shown(page(stored)) | {"rules-1-every": interval}
-    editor = ScheduleEditor(posted, stored=stored)
-    html = render_to_string(
-        "stewardship/refresh-schedule-editor.html",
-        {"schedule": view(editor)} | basic_context(),
-    )
-    assert "Quick update every" in html
-    assert editor.blocking
+    assert not back.changed and back.settings() == {
+        name: stored[name] for name in SCHEDULE_KEYS if name in stored
+    }
+    changed = ScheduleEditor(add_rule(posted, "12:00"), stored=stored)
+    assert changed.changed and changed.is_valid(), changed.problems()
+    settings = changed.settings()
+    assert settings == stored_settings(document(full_at("02:00"), full_at("12:00"))) | {
+        "refresh_schedule_mode": "advanced"
+    }
+    assert settings["delta_refresh"] == "off" and "quick_refresh_times" not in settings
+    _validate_cadence(settings)
+    assert differences(stored, changed.document(), timezone=ZONE) == [
+        "Full refreshes added: 12:00."
+    ]

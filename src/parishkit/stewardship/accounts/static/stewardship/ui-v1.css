@@ -2340,8 +2340,6 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
 .schedule-basic-list label { display: inline; margin: 0; }
 .schedule-basic-list select { width: auto; }
 .schedule-basic-list .help { flex-basis: 100%; margin: 0; padding-inline-start: 1.75rem; }
-/* A stored quick rule's row (#1122) reads as words, without controls. */
-.schedule-row-words { margin: 0; }
 .schedule-switch { margin-block: 1.25rem; }
 .schedule-switch label { display: inline; margin: 0; }
 .schedule-text textarea { min-height: 3.5rem; }
@@ -2360,10 +2358,10 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
    after them has one. The browser's scroll anchoring skips these regions,
    which the script steadies itself, but still anchors the page against
    changes elsewhere (the header's notes). */
-[data-schedule-part], [data-schedule-rows], [data-row-messages], [data-quick-region] { display: flow-root; }
-:is([data-schedule-part], [data-schedule-rows], [data-row-messages], [data-quick-region]) > :first-child { margin-top: 0; }
+[data-schedule-part], [data-schedule-rows], [data-row-messages] { display: flow-root; }
+:is([data-schedule-part], [data-schedule-rows], [data-row-messages]) > :first-child { margin-top: 0; }
 [data-schedule-part="summary"] > :last-child { margin-bottom: 0; }
-:is([data-schedule-part], [data-schedule-rows], .schedule-save, [data-schedule-stale], [data-quick-region], [data-schedule-text-error]) { overflow-anchor: none; }
+:is([data-schedule-part], [data-schedule-rows], .schedule-save, [data-schedule-stale], [data-schedule-text-error]) { overflow-anchor: none; }
 .schedule-day-times { list-style: none; padding: 0; margin: 0; columns: 14rem auto; }
 .schedule-day-times s { color: var(--muted); }
 .schedule-time-full { font-weight: 600; }
@@ -2371,8 +2369,8 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
    grid row: the day label, then 96 quarter-hour cells, with a faint line at
    each hour and a darker one every third hour. Marks and shadings are drawn
    by class (the page's policy forbids inline styles): a full refresh is a
-   tall bar, a stored quick rule's run (#1122) a ringed dot, so they differ in shape as well as
-   colour; Family email windows and the missing hour when clocks go forward
+   tall bar;
+   Family email windows and the missing hour when clocks go forward
    are patterns the legend names; the current quarter hour has a bar at its
    left edge. Below about 600 pixels the grid keeps its minimum width and
    scrolls inside its own box, with the day labels held at its left edge.
@@ -2389,7 +2387,6 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
 .schedule-grid-row > .schedule-grid-day { position: sticky; left: 0; z-index: 1; background: var(--paper); border: 0; padding-inline-end: .5rem; font-size: .85rem; line-height: 1.2; align-self: center; }
 .schedule-grid-day small { display: block; color: var(--muted); font-size: .75rem; }
 .grid-full::before { content: ""; position: absolute; inset: 15% 20%; background: var(--accent-strong); border-radius: 1px; }
-.grid-quick::after { content: ""; position: absolute; left: 50%; top: 50%; width: .4rem; height: .4rem; transform: translate(-50%, -50%); border-radius: 50%; background: var(--gold); box-shadow: 0 0 0 1px var(--paper); }
 :is(.schedule-grid-row > span, .grid-swatch).grid-reminder_preparing { background: repeating-linear-gradient(135deg, var(--warning-bg) 0 3px, var(--warning-border) 3px 4px); }
 :is(.schedule-grid-row > span, .grid-swatch).grid-reminder_sending { background: repeating-linear-gradient(0deg, var(--warning-border) 0 2px, var(--warning-bg) 2px 5px); }
 :is(.schedule-grid-row > span, .grid-swatch).grid-initial_sending { background: radial-gradient(var(--error-border) 1px, var(--error-bg) 1.5px) 0 0 / 4px 4px; }

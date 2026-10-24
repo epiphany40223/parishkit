@@ -20,14 +20,7 @@ from .auth_builders import signed_in
 from .campaign_builders import change
 from .source_builders import source_corpus
 from .test_background_grants_postgresql import task_login
-from .test_source_attempts_postgresql import setup
 from .test_source_compaction_postgresql import cleanup
-from .test_source_refreshing_postgresql import (
-    fake_provider,
-    next_delta,
-    run,
-    seed_full,
-)
 from .test_source_snapshots_postgresql import prepared, publish
 
 CAMPAIGN = UUID("00000000-0000-4000-8000-000000000342")
@@ -194,27 +187,6 @@ def test_the_admin_home_page_shows_catalog_changes(auth_service, google):
     assert "<li>Greeters" in body and "<li>Lectors" in body
     notice = body[body.index('id="ministry-catalog"') :]
     assert "DUID" not in notice[: notice.index("</section>")]
-
-
-def test_a_real_delta_refresh_never_compares_the_catalog(tmp_path, monkeypatch):
-    """A 15-minute update copies its base catalog, so it is not even read."""
-    credential, execution, lease, *_ = setup(tmp_path)
-    seed_full(credential, execution, lease)
-    execution, lease = next_delta()
-    fake_provider(
-        monkeypatch,
-        [[{"organizationID": 12345}], [], [{"famGroupID": 7, "famGroup": "Active"}]],
-    )
-    read = []
-    names = ministry_catalog.catalog_names
-    monkeypatch.setattr(
-        ministry_catalog,
-        "catalog_names",
-        lambda snapshot_id: read.append(snapshot_id) or names(snapshot_id),
-    )
-    result = run(credential, execution, lease)
-    assert result.kind == "delta" and result.state == "ready"
-    assert "ministry_catalog" not in result.cursor and read == []
 
 
 def test_the_notice_survives_compaction_of_its_snapshot():

@@ -166,7 +166,6 @@ def load_setup_source(execution, claim, *, exchange_id, credential):
             expected_counts=loaded.counts,
             cursor=refresh_cursor(
                 snapshot_id=snapshot.pk,
-                kind="full",
                 started_at=snapshot.started_at,
                 window_digest=window.digest,
                 evidence=loaded.evidence,

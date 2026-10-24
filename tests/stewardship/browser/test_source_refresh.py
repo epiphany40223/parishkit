@@ -56,7 +56,7 @@ def test_refresh_confirmation_is_accessible_and_states_what_happens(
 def test_data_age_connection_and_lateness_use_browser_local_times(
     page, component_origin
 ):
-    """Data as of, the last full refresh, the connection and the late refresh.
+    """Data as of, the connection and the late refresh.
 
     Every time is converted to the browser's zone (the fixture browser is
     Pacific), and no time is labeled UTC.
@@ -65,12 +65,13 @@ def test_data_age_connection_and_lateness_use_browser_local_times(
     main = page.locator("main")
     data = page.locator("section.panel p").filter(has_text="ParishSoft data as of")
     visible(data)
-    assert ", last full refresh" in data.inner_text()
+    # Every refresh is full (#1147): no separate last full refresh.
+    assert "last full refresh" not in data.inner_text()
     visible(page.get_by_text("Connection: failing since", exact=False))
     visible(page.get_by_text("is 45 minutes late", exact=False))
     times = page.locator("main time[data-local-instant]")
-    # Data as of, last full refresh, failing since and the late refresh.
-    assert times.count() == 4
+    # Data as of, failing since and the late refresh.
+    assert times.count() == 3
     for index in range(times.count()):
         assert "PDT" in times.nth(index).inner_text() or "PST" in (
             times.nth(index).inner_text()

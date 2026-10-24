@@ -141,12 +141,12 @@ def _schedule_problem(field, message, code="invalid"):
 def _row_problems(rows, scope, shapes, noun):
     """The problems of one list of schedule rows, in fixed words.
 
-    Each row must be an object with exactly one of ``shapes``' members, a
-    rule's ``kind`` "full" or "quick", its times ``HH:MM`` text (YAML reads
-    an unquoted 12:30 as a number) and a rule's ``every`` one of the
-    editor's intervals. Every value the page's form would quote back in its
-    own messages is checked here first, so a refusal never echoes the
-    input; the page's editor checks the rest (quarter hours, spacing, caps).
+    Each row must be an object with exactly one of ``shapes``' members, a rule's
+    ``kind`` "full" (quick rules were removed, #1147), its times ``HH:MM`` text
+    (YAML reads an unquoted 12:30 as a number) and a rule's ``every`` one of the
+    editor's intervals. Every value the page's form would quote back in its own
+    messages is checked here first, so a refusal never echoes the input; the
+    page's editor checks the rest (quarter hours, spacing, caps).
     """
     from parishkit.stewardship.source.refresh_rules import STEPS
 
@@ -155,8 +155,8 @@ def _row_problems(rows, scope, shapes, noun):
         field = f".{scope}[{index}]"
         if not isinstance(row, dict) or frozenset(row) not in shapes:
             message = f"This is not a {noun}."
-        elif "kind" in row and row["kind"] not in ("full", "quick"):
-            message = 'Give kind as "full" or "quick".'
+        elif "kind" in row and row["kind"] != "full":
+            message = 'Give kind as "full"; quick updates were removed.'
         elif not all(is_hhmm(row[name]) for name in set(row) & TIME_MEMBERS):
             message = 'Give each time as quoted HH:MM text, such as "02:00".'
         # Exactly an int: 60.0 equals a step but the form would echo it, and
@@ -270,24 +270,6 @@ def schedule_rows(document, editor):
     # The mode the page opens in, which its toggle posts when untouched.
     data[MODE] = editor.mode
     return data
-
-
-def quick_problems(document, editor):
-    """Refuse quick rules the shown schedule does not already have.
-
-    The page no longer offers quick updates (#1122): it shows a stored
-    quick rule read-only and posts it back, and can only remove it. So a
-    quick rule may be given only as ``integration show`` printed it.
-    """
-    return [
-        _schedule_problem(
-            f".rules[{index}]",
-            "Quick updates can't be added; keep only a quick rule the "
-            "schedule already has, or remove it.",
-        )
-        for index, rule in enumerate(document["rules"])
-        if rule["kind"] == "quick" and rule not in editor.shown["rules"]
-    ]
 
 
 def schedule_errors(editor):
@@ -441,11 +423,7 @@ def _review(
     names = setting_names(target)
     data = form_data(stored, names, fields, expected_version)
     if schedule is not None:
-        shown = ScheduleEditor(stored=stored)
-        problems = quick_problems(schedule, shown)
-        if problems:
-            raise InvalidChange(problems)
-        data |= schedule_rows(schedule, shown)
+        data |= schedule_rows(schedule, ScheduleEditor(stored=stored))
     form = _form(target, data, stored=record)
     review = review_settings(service, actor, configuration, target, form)
     if review is None:

@@ -31,6 +31,7 @@ from .auth_builders import signed_in, stale_sign_in
 from .campaign_builders import change
 from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_credential_isolation_postgresql import identity, isolated_roles  # noqa: F401
+from .test_refresh_frequency_postgresql import stored_before_1147
 
 pytestmark = pytest.mark.django_db(transaction=True)
 INDEX = "/admin/system/integrations/"
@@ -165,11 +166,6 @@ def full_at(value):
     return {"kind": "full", "at": value}
 
 
-def quick_every(step, start, end):
-    """A quick rule every ``step`` minutes."""
-    return {"kind": "quick", "every": step, "from": start, "to": end}
-
-
 def applied_settings(store):
     """The applied ParishSoft settings."""
     return store.active().document()["sections"]["integrations"][0]["values"][
@@ -217,9 +213,9 @@ def replace_settings(store, settings):
 def test_a_saved_rule_reaches_yaml_and_the_real_scheduler(auth_service, google):
     """The editor's rows become rules and lists the scheduler runs (#632).
 
-    The first writer of ``refresh_rules``: a full time typed as "3:15am" and
-    quick updates every 15 minutes are stored with their derived lists, and
-    the scheduler's full tick names 03:15 at 03:15 parish time.
+    The first writer of ``refresh_rules``: a full time typed as "3:15am" is
+    stored with its derived list and no quick updates (#1147), and the
+    scheduler's one tick names 03:15 at 03:15 parish time.
     """
     from zoneinfo import ZoneInfo
 
@@ -231,7 +227,7 @@ def test_a_saved_rule_reaches_yaml_and_the_real_scheduler(auth_service, google):
     SourceCurrent.objects.get_or_create(singleton=True)
     SourceMutationLease.objects.get_or_create(singleton=True)
     browser, _ = signed_in()
-    posted = rows([full_at("03:15"), quick_every(15, "00:00", "23:45")]) | {
+    posted = rows([full_at("03:15")]) | {
         "rules-0-at": "3:15am",
         "refresh_schedule_mode": "advanced",
     }
@@ -254,7 +250,7 @@ def test_a_saved_rule_reaches_yaml_and_the_real_scheduler(auth_service, google):
     ]["settings"]
     expected = stored_settings(
         {
-            "rules": [full_at("03:15"), quick_every(15, "00:00", "23:45")],
+            "rules": [full_at("03:15")],
             "skips": [],
             "skip_around_family_emails": False,
         }
@@ -264,18 +260,17 @@ def test_a_saved_rule_reaches_yaml_and_the_real_scheduler(auth_service, google):
         "refresh_schedule_mode": "advanced"
     }
     assert settings["nightly_time"] == "03:15"
-    assert settings["delta_refresh"] == "times"
-    assert "03:15" not in settings["quick_refresh_times"]
+    assert settings["full_refresh_times"] == ["03:15"]
+    assert settings["delta_refresh"] == "off"
+    assert "quick_refresh_times" not in settings
     with scheduler_session() as guard:
-        assert len(produce_refreshes(guard)) == 2
-    tick = SourceRefreshTick.objects.get(command__cause="nightly")
+        assert len(produce_refreshes(guard)) == 1
+    tick = SourceRefreshTick.objects.get()
+    assert tick.command.cause == "nightly"
     assert tick.configuration_id == configuration.pk
     assert tick.nightly_time == "03:15"
     local = tick.due_at.astimezone(ZoneInfo(tick.timezone))
     assert (local.hour, local.minute) == (3, 15)
-    quick = SourceRefreshTick.objects.get(command__cause="delta")
-    local = quick.due_at.astimezone(ZoneInfo(quick.timezone))
-    assert f"{local.hour:02d}:{local.minute:02d}" in settings["quick_refresh_times"]
     # The page now shows the saved rules, and saving them as shown is no change.
     page = browser.get(URL).content.decode()
     assert 'name="rules-0-at" value="03:15"' in page
@@ -417,41 +412,54 @@ def test_the_live_check_saves_nothing_and_needs_the_page_permission(
     assert browser.get(check).status_code == 405
 
 
-def rules_schedule():
-    """A schedule saved with its rules (#632): 13 full times, a quick time."""
-    from parishkit.stewardship.source.refresh_rules import stored_settings
+# A schedule saved with its rules (#632) before quick updates were removed
+# (#1147): 12 full times every hour from 00:00 to 12:00 less 06:00, and a
+# quick update at 18:00.
+FULL_RULE = {"kind": "full", "every": 60, "from": "00:00", "to": "12:00"}
+QUICK_RULE = {"kind": "quick", "at": "18:00"}
 
-    return stored_settings(
+
+def rules_schedule():
+    """The stored schedule's keys, as a schedule saved before #1147 has them."""
+    full = stored_settings(
         {
-            "rules": [
-                {"kind": "full", "every": 60, "from": "00:00", "to": "12:00"},
-                {"kind": "quick", "at": "18:00"},
-            ],
+            "rules": [FULL_RULE],
             "skips": [{"at": "06:00"}],
             "skip_around_family_emails": False,
         }
     )
+    return full | {
+        "refresh_rules": full["refresh_rules"] | {"rules": [FULL_RULE, QUICK_RULE]},
+        "delta_refresh": "times",
+        "quick_refresh_times": ["18:00"],
+    }
 
 
 def apply_rules_schedule(store):
-    """Store ``rules_schedule`` beside the integration's other settings."""
+    """Store ``rules_schedule`` beside the integration's other settings.
+
+    A new schedule may no longer hold a quick rule, so it is applied as a
+    version stored before #1147 (``stored_before_1147``).
+    """
     base = store.active()
     integration = base.document()["sections"]["integrations"][0]
-    change(
-        store,
-        base,
-        uuid4(),
-        [
-            {
-                "operation": "update",
-                "section": "integrations",
-                "id": integration["id"],
-                "values": {
-                    "settings": integration["values"]["settings"] | rules_schedule()
-                },
-            }
-        ],
-    )
+    with stored_before_1147():
+        applied = change(
+            store,
+            base,
+            uuid4(),
+            [
+                {
+                    "operation": "update",
+                    "section": "integrations",
+                    "id": integration["id"],
+                    "values": {
+                        "settings": integration["values"]["settings"] | rules_schedule()
+                    },
+                }
+            ],
+        )
+    assert applied.state == "applied"
 
 
 def stored_schedule(store):
@@ -465,10 +473,11 @@ def stored_schedule(store):
 
 
 def test_a_schedule_saved_with_its_rules_is_shown_as_saved(auth_service, google):
-    """The page shows a rules schedule's own rows; saved as shown, no change.
+    """The page shows a rules schedule's own full rows; saved as shown, no change.
 
-    The old frequency and time-list fields are gone (#632): posting them is
-    refused as an unknown field.
+    Its stored quick rule is not shown at all (#1147). The old frequency and
+    time-list fields are gone (#632): posting them is refused as an unknown
+    field.
     """
     apply_rules_schedule(auth_service.store)
     requests = ConfigurationChangeRequest.objects.count()
@@ -477,6 +486,9 @@ def test_a_schedule_saved_with_its_rules_is_shown_as_saved(auth_service, google)
     for name in ("full_refresh", "full_refresh_times", "delta_refresh"):
         assert f'name="{name}"' not in page
     assert 'name="rules-0-every" ' in page and 'name="skips-0-at" value="06:00"' in page
+    assert shown(page)["rules-TOTAL_FORMS"] == "1"
+    assert 'name="rules-1-' not in page
+    assert "18:00" not in shown(page).values()
     assert "Your current schedule, shown as rules." not in page
     unchanged = post(
         browser, URL, edit(auth_service.store, organization_id="12345") | shown(page)
@@ -560,26 +572,31 @@ def confirm_and_install(browser, store, review):
     ]
 
 
-def test_remove_quick_updates_is_reviewed_and_applied(auth_service, google):
-    """A stored quick rule is shown read-only and posted back as it is; taking
-    it out (Remove quick updates) is a reviewed change (#1122)."""
+def test_a_changed_schedule_drops_the_stored_quick_rule(auth_service, google):
+    """A stored quick rule is not shown and offers no action (#1147); changing
+    the schedule saves only its full rules, with quick updates off."""
     apply_rules_schedule(auth_service.store)
     browser, _ = signed_in()
     page = unescape(browser.get(URL).content.decode())
-    assert "Remove quick updates" in page and "Quick update at 18:00" in page
+    assert "Remove quick updates" not in page and "Quick update" not in page
     assert 'value="advanced" data-editor-mode-choice checked' in page
-    posted = {
-        name: value
-        for name, value in shown(page).items()
-        if not name.startswith("rules-1-")
-    } | {"rules-TOTAL_FORMS": "1", "refresh_schedule_mode": "advanced"}
+    posted = shown(page) | {"skips-0-at": "07:00", "refresh_schedule_mode": "advanced"}
     review = post(
         browser, URL, edit(auth_service.store, organization_id="12345") | posted
     )
-    assert "Quick updates removed: 18:00." in unescape(review.content.decode())
+    reviewed = unescape(review.content.decode())
+    assert "Quick updates removed" not in reviewed
+    assert "Full refreshes added: 06:00." in reviewed
+    assert "Full refreshes removed: 07:00." in reviewed
     settings = confirm_and_install(browser, auth_service.store, review)
     assert settings["delta_refresh"] == "off" and "quick_refresh_times" not in settings
-    assert [rule["kind"] for rule in settings["refresh_rules"]["rules"]] == ["full"]
+    assert settings["refresh_rules"] == {
+        "rules": [FULL_RULE],
+        "skips": [{"at": "07:00"}],
+        "skip_around_family_emails": False,
+    }
+    assert "06:00" in settings["full_refresh_times"]
+    assert "07:00" not in settings["full_refresh_times"]
     assert settings["refresh_schedule_mode"] == "advanced"
 
 

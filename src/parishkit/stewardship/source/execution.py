@@ -14,7 +14,6 @@ from time import monotonic
 
 from django.db import connection
 
-from parishkit.parishsoft_changes import ChangeFeedIncomplete
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.dispatch import Handler
 from parishkit.stewardship.jobs.lifetime import extend_lease
@@ -25,7 +24,7 @@ from parishkit.stewardship.jobs.storage import _status, change_run
 from parishkit.stewardship.observability import correlation
 from parishkit.stewardship.storage import StorageInvariantError
 
-from .attempts import source_step, verify_refresh_attempt
+from .attempts import begin_refresh_attempt, source_step, verify_refresh_attempt
 from .compaction import compact_before_refresh
 from .credentials import SourceCredential
 from .drop_acceptance import require_live
@@ -43,39 +42,26 @@ from .refresh_models import SourceRefreshAttempt
 from .refreshing import load_and_stage_attempt
 from .rejection import reject_snapshot
 from .snapshot_models import SourceCurrent, SourceSnapshot
-from .snapshots import promote_snapshot
+from .snapshots import mark_retired, promote_snapshot
 
 # The task and source leases committed before a promotion: longer than its
 # 120-second statement budget, as boundary work's 300 (#386, M4).
 PROMOTION_LEASE_SECONDS = 300
 
 
-def refresh_handler(*, credential_path, reconcile, unchanged=None):
+def refresh_handler(*, credential_path, reconcile):
     """Bind trusted startup dependencies, never caller-selected code or secrets.
 
     ``reconcile(snapshot, execution, source_claim)`` must apply every required
     owning-domain effect and return exactly True inside the promotion transaction.
     The service must not register this handler before those effects are wired.
-    ``unchanged(snapshot, corpus, execution, source_claim)``, when given,
-    returns exactly True when promoting an identical quick update would change
-    no owning-domain state, so it is recorded instead (#630); without it every
-    refresh promotes.
     """
-    if (
-        not isinstance(credential_path, Path)
-        or not callable(reconcile)
-        or (unchanged is not None and not callable(unchanged))
-    ):
+    if not isinstance(credential_path, Path) or not callable(reconcile):
         raise TypeError("Source handler requires its private path and real effects.")
     return Handler(
         queue=WorkQueue.SOURCE,
         admit=admit_refresh_metadata,
-        execute=partial(
-            _execute,
-            credential_path=credential_path,
-            reconcile=reconcile,
-            unchanged=unchanged,
-        ),
+        execute=partial(_execute, credential_path=credential_path, reconcile=reconcile),
         recover=recovery_plan,
         scope=work_transaction,
     )
@@ -135,7 +121,13 @@ def _existing_outcome(execution):
 
 
 def _park_fallback(execution, *, claim):
-    """Atomically reject an incomplete delta, link full work, release and wait.
+    """Atomically reject a delta's empty attempt, link full work, release and wait.
+
+    Quick updates (delta refreshes) were removed (#1147): nothing creates a
+    delta request any more, but one queued before the upgrade still runs
+    here. It reads nothing from ParishSoft: its attempt is rejected at once
+    and it waits for one full refresh, through the fallback edge the
+    database already guards, and completes when that full refresh promotes.
 
     This is new work, so it requires current admission. Configuration change
     rolls everything back and the caller can only use narrow failed-read cleanup.
@@ -147,10 +139,14 @@ def _park_fallback(execution, *, claim):
             )
 
             def admit(action, snapshot):
-                """Only this live concrete attempt may become a rejected delta."""
+                """Only this live concrete attempt may become a retired delta."""
                 current = verify_refresh_attempt(attempt.pk, execution, claim)
-                return action == "reject" and snapshot.pk == current.snapshot_id
+                return (
+                    action in ("stage", "reject") and snapshot.pk == current.snapshot_id
+                )
 
+            # Marked first, so data age never reads this as a failed read.
+            mark_retired(attempt.snapshot_id, claim, admit=admit)
             reject_snapshot(attempt.snapshot_id, claim, admit=admit)
             request_full_fallback(execution, attempt_id=attempt.pk)
             release_source(claim)
@@ -177,16 +173,10 @@ def _prepare(execution):
         return request
 
 
-def _observe(execution, claim, credential, reconcile, unchanged=None):
-    """Promote only a validated exact attempt and its required atomic effects.
-
-    A quick update recorded as ``unchanged`` has nothing to promote: the
-    current snapshot already holds its corpus and every effect is current.
-    """
-    snapshot = load_and_stage_attempt(execution, claim, credential, unchanged=unchanged)
+def _observe(execution, claim, credential, reconcile):
+    """Promote only a validated exact attempt and its required atomic effects."""
+    snapshot = load_and_stage_attempt(execution, claim, credential)
     _retire_drained_staging(execution, claim, snapshot)
-    if snapshot.state == "unchanged":
-        return snapshot
     prepared = _prepare_promotion(execution, claim, snapshot, reconcile)
     total = sum(snapshot.counts.values())
     execution.progress(total, total, phase=TaskPhase.PROMOTING)
@@ -301,7 +291,7 @@ def _retire_drained_staging(execution, claim, snapshot):
             return
 
 
-def _execute(execution, *, credential_path, reconcile, unchanged=None):
+def _execute(execution, *, credential_path, reconcile):
     """Run one maintained claim; uncertain faults remain for fenced recovery."""
     if connection.in_atomic_block or not execution.control.active:
         raise StorageInvariantError("Source execution requires a maintained lifetime.")
@@ -327,11 +317,12 @@ def _execute(execution, *, credential_path, reconcile, unchanged=None):
                     phase=request.kind,
                 )
             with execution.maintain_source(claim):
-                try:
-                    _observe(execution, claim, credential, reconcile, unchanged)
-                except ChangeFeedIncomplete:
+                if request.kind == "delta":
+                    # A delta request from before #1147 (see _park_fallback).
+                    begin_refresh_attempt(execution, claim, credential)
                     _park_fallback(execution, claim=claim)
                     return
+                _observe(execution, claim, credential, reconcile)
             # Renewal no longer includes the source lease before release.
             # A crash here preserves promoted proof for metadata-only recovery.
             _settle(execution, "complete", claim=claim)

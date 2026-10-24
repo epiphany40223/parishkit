@@ -7,7 +7,6 @@ import pytest
 from django.db import connection, connections
 
 from parishkit import parishsoft_transport
-from parishkit.parishsoft_changes import ChangeFeedIncomplete
 from parishkit.stewardship.jobs.lifetime import maintain_execution
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.source import loading, refreshing
@@ -352,7 +351,6 @@ def seed_full(credential, execution, lease, *, load=None):
             stage_entities(snapshot.pk, lease, kind=kind, entities=rows, admit=permit)
         cursor = refresh_cursor(
             snapshot_id=snapshot.pk,
-            kind="full",
             started_at=snapshot.started_at,
             window_digest=attempt.request.window_digest,
             evidence=evidence,
@@ -410,43 +408,8 @@ def next_delta():
     return execution, lease
 
 
-def test_delta_uses_only_promoted_base_and_preserves_full_provenance(
-    tmp_path, monkeypatch
-):
-    """No indications still yields a complete candidate, not partial truth."""
-    credential, execution, lease, *_ = setup(tmp_path)
-    first = seed_full(credential, execution, lease)
-    execution, lease = next_delta()
-    remaining, calls = fake_provider(
-        monkeypatch,
-        [[{"organizationID": 12345}], [], [{"famGroupID": 7, "famGroup": "Active"}]],
-    )
-    result = run(credential, execution, lease)
-    assert not remaining and len(calls) == 3
-    assert result.state == "ready" and result.base_id == first.pk
-    assert result.counts == first.counts
-    assert result.cursor["full_snapshot_id"] == str(first.pk)
-    assert SourceCurrent.objects.get().snapshot_id == first.pk
-
-
-def test_delta_changed_window_requires_full_without_any_provider_read(
-    tmp_path, monkeypatch
-):
-    """A new request cannot apply the previous campaign's delta coverage."""
-    credential, execution, lease, store, version, actor = setup(tmp_path)
-    first = seed_full(credential, execution, lease)
-    add_draft(store, version, actor)
-    execution, lease = next_delta()
-    _, calls = fake_provider(monkeypatch, [])
-    with pytest.raises(ChangeFeedIncomplete):
-        run(credential, execution, lease)
-    assert not calls and SourceCurrent.objects.get().snapshot_id == first.pk
-    assert SourceSnapshot.objects.exclude(pk=first.pk).get().state == "staging"
-
-
-@pytest.mark.parametrize("cause,phase", [("delta", "delta"), ("manual", "full")])
-def test_refresh_compares_eligibility_with_the_current_snapshot(tmp_path, cause, phase):
-    """#320: both refresh kinds compare eligibility with the current snapshot.
+def test_refresh_compares_eligibility_with_the_current_snapshot(tmp_path):
+    """#320: a refresh compares eligibility with the current snapshot.
 
     The seeded snapshot predates recorded derived counts, so they are counted
     from its rows; the last full snapshot (the same one) has none to add.
@@ -456,17 +419,13 @@ def test_refresh_compares_eligibility_with_the_current_snapshot(tmp_path, cause,
 
     credential, execution, lease, *_ = setup(tmp_path)
     first = seed_full(credential, execution, lease)
-    execution = claim_request(
-        command(cause=cause)
-        if cause == "manual"
-        else command(cause=cause, actor_id=None)
-    )
+    execution = claim_request(command())
     with execution.effect():
         lease = acquire_source(
             task_id=execution.claim.run_id,
             task_fence=execution.claim.fence,
             worker_id=execution.claim.worker_id,
-            phase=phase,
+            phase="full",
         )
     attempt = begin_refresh_attempt(execution, lease, credential)
     inputs = _inputs(attempt.pk, execution, lease)
@@ -474,7 +433,6 @@ def test_refresh_compares_eligibility_with_the_current_snapshot(tmp_path, cause,
     assert inputs.previous_derived_counts == expected
     assert expected["portal_eligible_families"] > 0
     assert expected["valid_email_contacts"] > 0
-    assert (inputs.base is None) == (phase == "full")
 
 
 def test_refresh_inputs_compare_with_the_full_refresh_trend(tmp_path, monkeypatch):
@@ -644,38 +602,3 @@ def test_ordinary_contact_list_variation_promotes_and_becomes_the_baseline(
     assert SourceCurrent.objects.get().snapshot_id == result.pk != first.pk
     current = SourceSnapshot.objects.get(pk=result.pk)
     assert loading.recorded_contact_missing(current.cursor) == 1
-
-
-def test_a_quick_update_after_the_last_full_is_not_the_contact_baseline(
-    tmp_path, monkeypatch
-):
-    """#387 M4: the baseline is the last promoted full, not the current snapshot.
-
-    A quick update does not read the contact list, so it records no count. If
-    a quick update promoted after the last full became the baseline, the next
-    full would see none and silently skip the check.
-    """
-    from parishkit.stewardship.source import transport
-
-    credential, execution, lease, *_ = setup(tmp_path)
-    first = seed_full(credential, execution, lease, load=listed_full(tmp_path))
-    execution, lease = next_delta()
-    fake_provider(
-        monkeypatch,
-        [[{"organizationID": 12345}], [], [{"famGroupID": 7, "famGroup": "Active"}]],
-    )
-    with monkeypatch.context() as patch:
-        # The faked calls reserve no HTTP safety window, so the next full
-        # can take the source at once; safety windows are tested elsewhere.
-        patch.setattr(transport, "reserve_source_request", lambda *a, **k: None)
-        quick = run(credential, execution, lease)
-    with execution.effect():
-        promote_snapshot(quick.pk, lease, admit=permit, reconcile=permit)
-        release_source(lease)
-    execution.transition("complete")
-    assert SourceCurrent.objects.get().snapshot_id == quick.pk != first.pk
-    promoted = SourceSnapshot.objects.get(pk=quick.pk)
-    assert loading.recorded_contact_missing(promoted.cursor) is None
-    execution, lease = next_full()
-    attempt = begin_refresh_attempt(execution, lease, credential)
-    assert _inputs(attempt.pk, execution, lease).previous_contact_missing == 0

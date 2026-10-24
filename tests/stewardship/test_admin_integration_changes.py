@@ -339,9 +339,10 @@ def test_the_page_editor_reads_the_posted_rows_back():
 def test_a_switch_left_out_keeps_the_shown_one_and_the_mode_is_the_pages():
     """No switch keeps the page's (off for an existing schedule). The mode is
     the one the page opens in: Advanced for an older schedule Basic cannot
-    show (here with quick updates), else the last saved, Basic when none."""
+    show (here two full times), else the last saved, Basic when none."""
     rules = {"rules": [{"kind": "full", "at": "02:00"}]}
-    read = editor(rules)
+    older = {"nightly_time": "02:00", "full_refresh_times": ["02:00", "13:00"]}
+    read = editor(rules, older)
     assert read.document()["skip_around_family_emails"] is False
     assert read.settings()["refresh_schedule_mode"] == "advanced"
     # Business hours, a Basic choice, saved with no mode.
@@ -394,20 +395,15 @@ def test_values_the_page_form_would_quote_are_refused_in_fixed_words(row):
         assert value not in problem["message"]
 
 
-def test_new_quick_rules_are_refused():
-    """Only a quick rule the shown schedule already has may be posted back
-    (#1122); the page never offers adding one."""
-    from parishkit.stewardship.accounts.refresh_schedule_forms import ScheduleEditor
-    from parishkit.stewardship.admin_integration_changes import quick_problems
-
-    shown = ScheduleEditor(stored={})
-    kept = {"rules": shown.shown["rules"]}
-    assert quick_problems(parse_schedule(json.dumps(kept)), shown) == []
-    added = {"rules": [*kept["rules"], {"kind": "quick", "at": "12:00"}]}
-    problems = quick_problems(parse_schedule(json.dumps(added)), shown)
-    assert [p["field"] for p in problems] == [
-        f"refresh_schedule.rules[{len(kept['rules'])}]"
-    ]
+def test_a_quick_rule_is_refused():
+    """Quick updates were removed (#1147): a quick rule is refused at its row."""
+    added = {
+        "rules": [{"kind": "full", "at": "02:00"}, {"kind": "quick", "at": "12:00"}]
+    }
+    with pytest.raises(InvalidChange) as raised:
+        parse_schedule(json.dumps(added))
+    assert [p["field"] for p in raised.value.fields] == ["refresh_schedule.rules[1]"]
+    assert "quick updates were removed" in raised.value.fields[0]["message"]
 
 
 def test_the_page_editors_problems_come_back_at_each_row():

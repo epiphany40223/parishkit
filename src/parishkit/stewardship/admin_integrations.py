@@ -388,17 +388,15 @@ def read_schedule_preview(caller, service, refresh_schedule=None):
 
     ``refresh_schedule`` is the proposed document's text, or None for the
     applied schedule. It is parsed as ``integration preview
-    --refresh-schedule`` parses it (a malformed document, or an added quick
-    rule, is ``invalid`` without echoing it) and posted as the page
+    --refresh-schedule`` parses it (a malformed document, or a quick rule,
+    is ``invalid`` without echoing it) and posted as the page
     editor's rows; the page's own problems are reported, never refused, as
     the live check reports them. ParishSoft not set up is ``not_available``.
     """
     from .accounts.integration_views import _schedule_context, _selected
     from .accounts.refresh_schedule_forms import ScheduleEditor
     from .admin_integration_changes import (
-        InvalidChange,
         parse_schedule,
-        quick_problems,
         schedule_rows,
     )
 
@@ -409,15 +407,8 @@ def read_schedule_preview(caller, service, refresh_schedule=None):
         stored = _selected(configuration, "parishsoft")["values"]["settings"]
         editor = ScheduleEditor(stored=stored)
         if document is not None:
-            # Raised as a result, after the recheck (``_read``).
-            problems = quick_problems(document, editor)
-            if problems:
-                return InvalidChange(problems)
             editor = ScheduleEditor(schedule_rows(document, editor), stored=stored)
         view = _schedule_context(configuration, editor)["schedule"]
         return schedule_model(configuration, view, proposed=document is not None)
 
-    model = _read(caller, service, read, missing="ParishSoft is not set up.")
-    if isinstance(model, InvalidChange):
-        raise model
-    return model
+    return _read(caller, service, read, missing="ParishSoft is not set up.")

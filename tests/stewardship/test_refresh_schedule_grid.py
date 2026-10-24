@@ -57,7 +57,7 @@ def preview(refresh_rules, today, windows=()):
         timezone=ZONE,
         today=today,
         windows=windows,
-        measured=durations({}),
+        measured=durations([]),
         margin=timedelta(minutes=30),
     )
 
@@ -71,9 +71,9 @@ def grid(refresh_rules, today, *, now=None, windows=()):
     )
 
 
-def marked(row, kind):
-    """The indexes of the cells in ``row`` where a refresh of ``kind`` runs."""
-    return [index for index, cell in enumerate(row["cells"]) if cell[kind]]
+def marked(row):
+    """The indexes of the cells in ``row`` where a full refresh runs."""
+    return [index for index, cell in enumerate(row["cells"]) if cell["full"]]
 
 
 def shaded(row):
@@ -84,7 +84,8 @@ def shaded(row):
 
 
 def test_each_day_has_96_cells_marking_the_refreshes_that_run():
-    """Seven rows; full at 00:00 and every 4 h from 08:00; quick hourly."""
+    """Seven rows; full at 00:00 and every 4 h from 08:00; a stored quick
+    rule (quick updates were removed, #1147) marks nothing."""
     shown = grid(
         document(
             at("full", "00:00"),
@@ -96,11 +97,12 @@ def test_each_day_has_96_cells_marking_the_refreshes_that_run():
     assert len(shown) == 7 and all(len(row["cells"]) == CELLS for row in shown)
     first = shown[0]
     assert first["day"] == ORDINARY and first["change"] is None
-    assert marked(first, "full") == [0, 32, 48, 64, 80]
-    # 08:00, 12:00, 16:00 and 20:00 quick times are covered by the full ones.
-    assert marked(first, "quick") == [
-        hour * 4 for hour in range(1, 24) if hour not in (8, 12, 16, 20)
-    ]
+    assert marked(first) == [0, 32, 48, 64, 80]
+    # A cell knows only full refreshes, its shading, now and its title.
+    assert {frozenset(cell) for row in shown for cell in row["cells"]} == {
+        frozenset({"full", "shade", "now", "title"})
+    }
+    assert first["cells"][4]["title"] == ""
     assert shaded(first) == {}
     assert legend(shown) == []
 
@@ -108,7 +110,7 @@ def test_each_day_has_96_cells_marking_the_refreshes_that_run():
 def test_a_kept_off_quarter_hour_time_is_marked_in_its_cell():
     """A converted 23:50 full time falls in the 23:45 cell."""
     row = grid(document(at("full", "00:00"), at("full", "23:50")), ORDINARY)[0]
-    assert marked(row, "full") == [0, 95]
+    assert marked(row) == [0, 95]
     assert row["cells"][95]["title"] == "23:45 to 00:00, full refresh"
 
 
@@ -117,7 +119,7 @@ def test_the_spring_day_shades_the_missing_hour_and_runs_it_at_three():
     row = grid(document(at("full", "02:30")), SPRING)[0]
     assert row["change"] == "forward"
     assert shaded(row) == {index: "gap" for index in range(8, 12)}
-    assert marked(row, "full") == [12]
+    assert marked(row) == [12]
     assert row["cells"][8]["title"] == (
         "02:00 to 02:15, Clocks go forward: this time does not exist"
     )
@@ -137,8 +139,8 @@ def test_the_fall_day_shades_a_window_in_either_repeated_hour():
 
 
 def test_windows_are_shaded_and_their_skipped_refreshes_not_marked():
-    """Preparing 06:00–08:00 then sending 08:00–09:10 (EDT): skipped quick
-    updates are not marked, the nightly runs even inside a window, and a
+    """Preparing 06:00–08:00 then sending 08:00–09:10 (EDT): skipped full
+    refreshes are not marked, the nightly runs even inside a window, and a
     window shades every cell it touches."""
     windows = (
         Window(utc(ORDINARY, 10), utc(ORDINARY, 12), "reminder_preparing"),
@@ -150,7 +152,7 @@ def test_windows_are_shaded_and_their_skipped_refreshes_not_marked():
         ),
     )
     row = grid(
-        document(at("full", "00:00"), every("quick", 60, "01:00", "23:00"), skip=True),
+        document(at("full", "00:00"), every("full", 60, "01:00", "23:00"), skip=True),
         ORDINARY,
         windows=windows,
     )[0]
@@ -161,9 +163,8 @@ def test_windows_are_shaded_and_their_skipped_refreshes_not_marked():
     # 09:00–09:15 holds the window's last ten minutes.
     assert [shading[i] for i in range(32, 37)] == ["reminder_sending"] * 5
     assert shading[0] == "initial_sending" and 37 not in shading
-    assert 0 in marked(row, "full")
-    assert not {24, 28, 32, 36} & set(marked(row, "quick"))
-    assert 40 in marked(row, "quick")
+    # 06:00, 07:00, 08:00 and 09:00 are skipped; the nightly 00:00 runs.
+    assert marked(row) == [hour * 4 for hour in range(24) if hour not in (6, 7, 8, 9)]
     assert [key for key, _ in legend([row])] == [
         "reminder_preparing",
         "reminder_sending",
@@ -205,7 +206,7 @@ def test_the_page_draws_the_grid_by_class_with_a_text_alternative():
 
     now = utc(ORDINARY, 16)
     editor = ScheduleEditor(
-        rows([at("full", "02:00"), every("quick", 60, "00:00", "23:00")]),
+        rows([at("full", "02:00")]),
         stored={"organization_id": "1"},
     )
     shown = editor_view(editor, timezone=ZONE, now=now, preview_reader=reader)
@@ -222,6 +223,7 @@ def test_the_page_draws_the_grid_by_class_with_a_text_alternative():
         == 7 * CELLS
     )
     assert grid_html.count("grid-full") == 7 + 1  # one a day, and the legend
+    assert "grid-quick" not in html and "Quick update" not in html
     assert "00:00</span>" in grid_html and "21:00</span>" in grid_html
     assert "Today" in grid_html and "Saturday" in grid_html
     assert "style=" not in html

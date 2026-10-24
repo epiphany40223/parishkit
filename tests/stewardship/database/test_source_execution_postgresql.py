@@ -21,6 +21,7 @@ from parishkit.stewardship.jobs.scanning import collect_hints
 from parishkit.stewardship.runtime_background import bind_authority
 from parishkit.stewardship.source import execution as worker
 from parishkit.stewardship.source.attempts import begin_refresh_attempt
+from parishkit.stewardship.source.data_age import source_facts
 from parishkit.stewardship.source.execution import refresh_handler
 from parishkit.stewardship.source.fallback import request_full_fallback
 from parishkit.stewardship.source.families import reconcile_source_families
@@ -36,6 +37,7 @@ from parishkit.stewardship.source.models import (
 )
 from parishkit.stewardship.source.refresh_models import SourceRefreshFallback
 from parishkit.stewardship.source.requests import TASK_TYPE
+from parishkit.stewardship.source.snapshots import RETIRED_CURSOR
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .activation_builders import activation_window, errors, recorded_holds
@@ -142,42 +144,33 @@ def test_no_base_delta_waits_without_reading_credential_or_provider(
     assert SourceMutationLease.objects.get().fence == 0
 
 
-def test_incompatible_delta_rejects_and_parks_full_dependency(tmp_path, monkeypatch):
-    """Full-fallback creation and parent waiting commit with rejected staging."""
-    credential, execution, claim, store, version, actor = setup(tmp_path)
-    base = seed_full(credential, execution, claim)
-    add_draft(store, version, actor)
-    receipt = command(cause="delta", actor_id=None)
-    compiled = handler(tmp_path, credential, reconcile=permit)
-    _, calls = fake_provider(monkeypatch, [])
-    assert run(receipt, compiled)
-    assert not calls and SourceCurrent.objects.get().snapshot_id == base.pk
-    assert SourceSnapshot.objects.exclude(pk=base.pk).get().state == "rejected"
-    dependency = SourceRefreshFallback.objects.get()
-    assert dependency.reason == "incomplete_delta" and dependency.attempt_id
-    assert TaskRun.objects.get(pk=receipt.task_root_id).state == "retry_wait"
-    assert SourceMutationLease.objects.get().owner_id is None
-
-
-def test_delta_execution_can_promote_complete_unchanged_base(tmp_path, monkeypatch):
-    """No change indications retain the whole corpus and full-observation provenance."""
+def test_a_delta_from_before_1147_is_retired_without_reading_parishsoft(
+    tmp_path, monkeypatch
+):
+    """Quick updates were removed (#1147): a delta request still queued from
+    before reads nothing. Its empty attempt is marked retired and rejected at
+    once, it waits for one full refresh through the fallback edge, and the
+    data age never reads the rejection as a failed attempt (no "Failing")."""
     credential, execution, claim, *_ = setup(tmp_path)
     base = seed_full(credential, execution, claim)
     receipt = command(cause="delta", actor_id=None)
     compiled = handler(tmp_path, credential, reconcile=permit)
-    fake_provider(
-        monkeypatch,
-        [
-            [{"organizationID": 12345}],
-            [],
-            [{"famGroupID": 7, "famGroup": "Active"}],
-        ],
-    )
+    _, calls = fake_provider(monkeypatch, [])
     assert run(receipt, compiled)
-    result = SourceSnapshot.objects.exclude(pk=base.pk).get()
-    assert result.state == "promoted" and result.counts == base.counts
-    assert result.cursor["full_snapshot_id"] == str(base.pk)
-    assert TaskRun.objects.get(pk=receipt.task_root_id).state == "succeeded"
+    assert calls == []
+    delta = SourceSnapshot.objects.exclude(pk=base.pk).get()
+    assert (delta.kind, delta.state, delta.base_id) == ("delta", "rejected", base.pk)
+    fallback = SourceRefreshFallback.objects.get()
+    assert fallback.reason == "incomplete_delta"
+    assert fallback.attempt.snapshot_id == delta.pk
+    assert fallback.command.request.kind == "full"
+    assert delta.cursor == RETIRED_CURSOR
+    assert TaskRun.objects.get(pk=receipt.task_root_id).state == "retry_wait"
+    assert SourceCurrent.objects.get().snapshot_id == base.pk
+    assert SourceMutationLease.objects.get().owner_id is None
+    facts = source_facts()
+    assert not facts.newest_failed and facts.failing_since is None
+    assert facts.success_at == base.started_at
 
 
 def test_scope_change_during_http_rejects_without_second_read(tmp_path, monkeypatch):

@@ -1,12 +1,11 @@
-"""Delta refreshes skipped while a bulk Family send is in progress (#440).
+"""Daytime refreshes held while a bulk Family send is in progress (#440, #465).
 
-The scheduler skips a 15-minute slot during a send and creates it once the
-send ends; the nightly full refresh and a manual refresh are never skipped. A
-full refresh at another listed daytime time waits like a delta (#465).
-The staleness alarm holds within the send's allowance and behaves as before
-past it. The send itself is counted from real (temporary, column-subset)
-message and Task tables, and the restricted scheduler and worker logins can
-read what the check needs.
+The scheduler holds a full refresh at a listed daytime time during a send
+and creates it once the send ends; the nightly full refresh, a frequent full
+refresh and a manual refresh are never held. The staleness alarm holds
+within the send's allowance and behaves as before past it. The send itself
+is counted from real (temporary, column-subset) message and Task tables, and
+the restricted scheduler and worker logins can read what the check needs.
 """
 
 import logging
@@ -65,13 +64,28 @@ def sending(monkeypatch, active=True):
     monkeypatch.setattr(send_hold, "family_send_active", lambda: active)
 
 
-def skipping_deltas(credential):
-    """Promote a full refresh and then a delta: the delta cadence is in use.
+def schedule_in_use(credential):
+    """Promote a full refresh the schedule requested: the schedule is in use.
 
-    No delta is requested after that, as when the scheduler skips them.
+    The scheduled request is recorded first and the promoted refresh joins
+    it. No scheduled refresh is requested after that, as when the scheduler
+    holds them.
     """
+    command(cause="nightly", actor_id=None)
     publish(credential)
-    publish(credential, kind="delta")
+
+
+def daytime(tmp_path, monkeypatch, *, promoted=True):
+    """Full refreshes at 02:00 and 12:00, at 13:23: the 12:00 one is due.
+
+    Unless ``promoted`` is False, a full refresh is promoted first, so a
+    send has current data to protect. Returns the source credential.
+    """
+    credential, *_ = with_schedule(tmp_path, full_refresh_times=["02:00", "12:00"])
+    monkeypatch.setattr(production, "database_now", lambda: NOW)
+    if promoted:
+        publish(credential)
+    return credential
 
 
 def causes():
@@ -91,51 +105,51 @@ def held_lines(caplog):
     return [r for r in caplog.records if r.msg is Event.SOURCE_HELD]
 
 
-def test_delta_slot_is_skipped_during_a_send_and_created_after_it(
+def test_daytime_slot_is_held_during_a_send_and_created_after_it(
     tmp_path, monkeypatch, caplog
 ):
-    """Only the full slot is created; the delta follows once the send ends."""
-    credential, *_ = configured(tmp_path)
-    publish(credential)
+    """The real send check holds the 12:00 slot; it is created once the send ends."""
+    daytime(tmp_path, monkeypatch)
     sending(monkeypatch)
     producer = SourceProducer(uuid4())
     caplog.set_level(logging.INFO, logger="parishkit.stewardship")
     with scheduler_session() as guard:
-        assert len(producer(guard)) == 1
-        assert len(producer(guard)) == 1
-    assert causes() == ["nightly"]
-    # One INFO line per skipped slot, however many loops skip it.
+        assert producer(guard) == ()
+        assert producer(guard) == ()
+    assert causes() == []
+    # One INFO line per held slot, however many loops hold it.
     (line,) = held_lines(caplog)
     assert line.levelno == logging.INFO
-    # A held quick slot writes no durable entry: quick updates no longer
-    # decide whether the data is current, so they are no catch-up evidence.
-    assert not durable_holds()
-    # Nothing records the skip as a failure.
+    assert len(durable_holds()) == 1
+    # Nothing records the hold as a failure.
     assert not TaskRun.objects.filter(state__in=("failed", "retry_wait")).exists()
     assert not OperationalIncident.objects.exists()
     sending(monkeypatch, active=False)
     with scheduler_session() as guard:
-        assert len(producer(guard)) == 2
-    assert causes() == ["delta", "nightly"]
+        assert len(producer(guard)) == 1
+    assert causes() == ["nightly"]
+    assert SourceRefreshTick.objects.get().nightly_time == "12:00"
 
 
-def test_both_slots_are_created_when_no_send_is_active(tmp_path, caplog):
-    """With no Family mail at all, the real check lets the delta run."""
-    credential, *_ = configured(tmp_path)
-    publish(credential)
+def test_the_daytime_slot_is_created_when_no_send_is_active(
+    tmp_path, monkeypatch, caplog
+):
+    """With no Family mail at all, the real check lets the daytime refresh run."""
+    daytime(tmp_path, monkeypatch)
     caplog.set_level(logging.INFO, logger="parishkit.stewardship")
     with scheduler_session() as guard:
-        assert len(produce_refreshes(guard)) == 2
-    assert causes() == ["delta", "nightly"]
+        assert len(produce_refreshes(guard)) == 1
+    assert causes() == ["nightly"]
+    assert SourceRefreshTick.objects.get().nightly_time == "12:00"
     assert not held_lines(caplog)
 
 
-def test_an_existing_delta_slot_is_kept_when_a_send_starts(tmp_path, monkeypatch):
+def test_an_existing_daytime_slot_is_kept_when_a_send_starts(tmp_path, monkeypatch):
     """A slot created before the send keeps its receipt; nothing is withdrawn."""
-    credential, *_ = configured(tmp_path)
-    publish(credential)
+    daytime(tmp_path, monkeypatch)
     with scheduler_session() as guard:
         first = produce_refreshes(guard)
+    assert len(first) == 1
     sending(monkeypatch)
     with scheduler_session() as guard:
         assert produce_refreshes(guard) == first
@@ -144,7 +158,7 @@ def test_an_existing_delta_slot_is_kept_when_a_send_starts(tmp_path, monkeypatch
 def test_full_and_manual_refreshes_are_not_skipped(tmp_path, monkeypatch):
     """A quarter-hour full slot and an Admin request still queue their work."""
     with_frequency(tmp_path, "quarter_hour")
-    monkeypatch.setattr(production, "delta_held", lambda now: True)
+    monkeypatch.setattr(production, "daytime_held", lambda now: True)
     with scheduler_session() as guard:
         assert len(produce_refreshes(guard)) == 1
     assert causes() == ["nightly"]
@@ -155,22 +169,22 @@ def test_full_and_manual_refreshes_are_not_skipped(tmp_path, monkeypatch):
 def test_daytime_full_refresh_waits_for_a_send_and_catches_up_after(
     tmp_path, monkeypatch, caplog
 ):
-    """A full refresh at a listed daytime time is held like a delta (#465).
+    """A full refresh at a listed daytime time is held (#465).
 
-    Nothing is created while the send runs; each held slot logs one INFO
-    line; the first loop after the send creates both slots, and the full one
-    records the daytime time it was due at.
+    Nothing is created while the send runs; the held slot logs one INFO
+    line; the first loop after the send creates it, and it records the
+    daytime time it was due at.
     """
     with_schedule(tmp_path, full_refresh_times=["02:00", "12:00"])
     monkeypatch.setattr(production, "database_now", lambda: NOW)
-    monkeypatch.setattr(production, "delta_held", lambda now: True)
+    monkeypatch.setattr(production, "daytime_held", lambda now: True)
     producer = SourceProducer(uuid4())
     caplog.set_level(logging.INFO, logger="parishkit.stewardship")
     with scheduler_session() as guard:
         assert producer(guard) == ()
         assert producer(guard) == ()
     assert causes() == []
-    assert len(held_lines(caplog)) == 2
+    assert len(held_lines(caplog)) == 1
     # The held full slot also wrote one durable INFO entry (#510), with the
     # task-free schedule schema, correlated to the slot's would-be command.
     (entry,) = durable_holds()
@@ -180,11 +194,11 @@ def test_daytime_full_refresh_waits_for_a_send_and_catches_up_after(
         assert SourceProducer(uuid4())(guard) == ()
     assert len(durable_holds()) == 2
     assert not TaskRun.objects.filter(task_type="source_refresh").exists()
-    monkeypatch.setattr(production, "delta_held", lambda now: False)
+    monkeypatch.setattr(production, "daytime_held", lambda now: False)
     with scheduler_session() as guard:
-        assert len(producer(guard)) == 2
-    assert causes() == ["delta", "nightly"]
-    tick = SourceRefreshTick.objects.get(command__cause="nightly")
+        assert len(producer(guard)) == 1
+    assert causes() == ["nightly"]
+    tick = SourceRefreshTick.objects.get()
     assert tick.nightly_time == "12:00"
     # Each durable entry is correlated to the held slot's command identity.
     assert {entry.correlation_id for entry in durable_holds()} == {tick.command_id}
@@ -194,7 +208,7 @@ def test_nightly_full_refresh_still_runs_during_a_send(tmp_path, monkeypatch):
     """The listed nightly time is the one full refresh a send never holds."""
     with_schedule(tmp_path, full_refresh_times=["02:00", "20:00"])
     monkeypatch.setattr(production, "database_now", lambda: NOW)
-    monkeypatch.setattr(production, "delta_held", lambda now: True)
+    monkeypatch.setattr(production, "daytime_held", lambda now: True)
     with scheduler_session() as guard:
         assert len(produce_refreshes(guard)) == 1
     assert causes() == ["nightly"]
@@ -203,10 +217,11 @@ def test_nightly_full_refresh_still_runs_during_a_send(tmp_path, monkeypatch):
 
 def test_without_promoted_source_nothing_is_skipped(tmp_path, monkeypatch):
     """Before the first promotion there is no current data to protect."""
-    configured(tmp_path)
+    daytime(tmp_path, monkeypatch, promoted=False)
     sending(monkeypatch)
     with scheduler_session() as guard:
-        assert len(produce_refreshes(guard)) == 2
+        assert len(produce_refreshes(guard)) == 1
+    assert SourceRefreshTick.objects.get().nightly_time == "12:00"
 
 
 def test_skipping_ends_before_the_send_allowance_runs_out(tmp_path, monkeypatch):
@@ -225,9 +240,9 @@ def test_skipping_ends_before_the_send_allowance_runs_out(tmp_path, monkeypatch)
         stale = timedelta(seconds=configured_policy().source_stale_seconds)
         limit = stale + send_hold.SEND_ALLOWANCE - send_hold.RESUME_LEAD
         # Nothing is overdue yet: the data is current, so holding is safe.
-        assert send_hold.delta_held(now)
-        assert send_hold.delta_held(overdue + limit - timedelta(seconds=1))
-        assert not send_hold.delta_held(overdue + limit)
+        assert send_hold.daytime_held(now)
+        assert send_hold.daytime_held(overdue + limit - timedelta(seconds=1))
+        assert not send_hold.daytime_held(overdue + limit)
 
 
 def quarter_hourly(tmp_path):
@@ -260,7 +275,7 @@ def read_earlier(monkeypatch, minutes):
 
 def test_stale_alarm_holds_within_the_send_allowance(tmp_path, monkeypatch, settings):
     """Held refreshes age the data on purpose: no alarm, no resolution."""
-    skipping_deltas(quarter_hourly(tmp_path))
+    schedule_in_use(quarter_hourly(tmp_path))
     settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=120)
     sending(monkeypatch)
     with monkeypatch.context() as patch:
@@ -277,7 +292,7 @@ def test_stale_alarm_holds_within_the_send_allowance(tmp_path, monkeypatch, sett
 
 def test_stale_alarm_is_unchanged_without_a_send(tmp_path, monkeypatch, settings):
     """With no send in progress, a late full refresh alarms at the margin."""
-    skipping_deltas(quarter_hourly(tmp_path))
+    schedule_in_use(quarter_hourly(tmp_path))
     settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=120)
     sending(monkeypatch, active=False)
     with monkeypatch.context() as patch:
@@ -290,7 +305,7 @@ def test_a_held_sample_does_not_resolve_an_open_stale_alarm(
     tmp_path, monkeypatch, settings
 ):
     """An alarm raised before the send stays open until a refresh succeeds."""
-    skipping_deltas(quarter_hourly(tmp_path))
+    schedule_in_use(quarter_hourly(tmp_path))
     settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=120)
     with monkeypatch.context() as patch:
         future_observation(patch, stale_offset())
@@ -301,9 +316,9 @@ def test_a_held_sample_does_not_resolve_an_open_stale_alarm(
     assert OperationalIncident.objects.get(kind="source_stale").resolved_at is None
 
 
-@pytest.mark.parametrize("deltas", ["requested", "unused"])
+@pytest.mark.parametrize("scheduled", ["requested", "unused"])
 def test_stale_alarm_is_unchanged_during_a_send_when_nothing_was_skipped(
-    tmp_path, monkeypatch, settings, deltas
+    tmp_path, monkeypatch, settings, scheduled
 ):
     """A refresh requested but not promoted, or no schedule in use, still alarms.
 
@@ -313,10 +328,10 @@ def test_stale_alarm_is_unchanged_during_a_send_when_nothing_was_skipped(
     requested within the last day.
     """
     credential = quarter_hourly(tmp_path)
-    if deltas == "requested":
-        skipping_deltas(credential)
+    if scheduled == "requested":
+        schedule_in_use(credential)
         overdue = read_earlier(monkeypatch, 40)
-        command(cause="delta", actor_id=None)
+        command(cause="nightly", actor_id=None)
     else:
         publish(credential)
         overdue = overdue_slot()
@@ -328,7 +343,7 @@ def test_stale_alarm_is_unchanged_during_a_send_when_nothing_was_skipped(
     assert OperationalIncident.objects.get(kind="source_stale")
 
 
-def test_catch_up_delta_keeps_the_alarm_held_until_the_allowance_ends(
+def test_the_catch_up_keeps_the_alarm_held_until_the_allowance_ends(
     tmp_path, monkeypatch, settings
 ):
     """The scheduler's own resume-point request does not sound a false alarm.
@@ -337,13 +352,13 @@ def test_catch_up_delta_keeps_the_alarm_held_until_the_allowance_ends(
     request made after it is the catch-up, as one made when holding ends
     would be. A sample then still holds; one past the allowance alarms.
     """
-    skipping_deltas(quarter_hourly(tmp_path))
+    schedule_in_use(quarter_hourly(tmp_path))
     settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=120)
     monkeypatch.setattr(
         send_hold, "RESUME_LEAD", send_hold.SEND_ALLOWANCE + timedelta(seconds=120)
     )
     overdue = read_earlier(monkeypatch, 40)
-    command(cause="delta", actor_id=None)
+    command(cause="nightly", actor_id=None)
     sending(monkeypatch)
     with monkeypatch.context() as patch:
         at_instant(patch, overdue + timedelta(seconds=121))
@@ -496,7 +511,7 @@ def test_send_activity_counts_remaining_family_work():
         assert send_hold.family_send_active()
 
 
-def test_messages_not_yet_due_do_not_hold_deltas():
+def test_messages_not_yet_due_do_not_hold_daytime_refreshes():
     """A reminder prepared ahead (BG-12) counts only once it is due."""
     with transaction.atomic(), shadow_work():
         add("message", [("reminder", "pending", False, False)] * 20)
@@ -505,7 +520,7 @@ def test_messages_not_yet_due_do_not_hold_deltas():
         assert send_hold.family_send_active()
 
 
-def test_long_retry_waits_do_not_hold_deltas():
+def test_long_retry_waits_do_not_hold_daytime_refreshes():
     """Throttled mail waiting hours to retry is not a send in progress (#868).
 
     Ten or more Families the provider throttled wait 15 minutes to 12 hours
@@ -522,8 +537,8 @@ def test_long_retry_waits_do_not_hold_deltas():
         assert send_hold.family_send_active()
 
 
-def test_a_send_stopped_by_a_sending_limit_does_not_hold_deltas():
-    """A bulk send at the daily cap leaves deltas running until it lifts (#868).
+def test_a_send_stopped_by_a_sending_limit_does_not_hold_daytime_refreshes():
+    """A bulk send at the daily cap leaves daytime refreshes running (#868).
 
     Over our own daily cap or the provider's mailbox-wide limit, the
     delivery Task is put off and the message stays pending.
@@ -544,11 +559,11 @@ def test_a_send_stopped_by_a_sending_limit_does_not_hold_deltas():
         assert send_hold.family_send_active()
 
 
-def test_throttled_stragglers_do_not_hold_quick_slots(tmp_path, monkeypatch):
-    """Twelve throttled Families waiting an hour leave quick slots unheld.
+def test_throttled_stragglers_do_not_hold_daytime_slots(tmp_path, monkeypatch):
+    """Twelve throttled Families waiting an hour leave daytime slots unheld.
 
-    ``delta_held`` is the scheduler's decision for a quick slot (see the
-    first test here for how it creates or skips the slot). The shadow tables
+    ``daytime_held`` is the scheduler's decision for a daytime full slot
+    (see the first test here for how it creates or holds the slot). The shadow tables
     replace the runtime configuration the data-age read needs, so that read
     is taken first, against the real tables, and pinned.
     """
@@ -561,10 +576,10 @@ def test_throttled_stragglers_do_not_hold_quick_slots(tmp_path, monkeypatch):
     monkeypatch.setattr(send_hold, "current_overdue", lambda _now: overdue)
     with transaction.atomic(), shadow_work():
         add("message", [("initial", "retry_wait", False)] * 12, timedelta(hours=1))
-        assert not send_hold.delta_held(now)
+        assert not send_hold.daytime_held(now)
         # The same Families about to be retried are a send in progress.
         add("message", [("initial", "retry_wait", False)] * 10, timedelta(minutes=1))
-        assert send_hold.delta_held(now)
+        assert send_hold.daytime_held(now)
 
 
 @pytest.mark.parametrize(
@@ -576,7 +591,7 @@ def test_throttled_stragglers_do_not_hold_quick_slots(tmp_path, monkeypatch):
     ],
 )
 def test_paused_production_counts_messages_only(mode, paused, active):
-    """Preparations held by a Production pause do not keep deltas skipped."""
+    """Preparations held by a Production pause do not keep refreshes held."""
     with transaction.atomic(), shadow_work(mode, paused):
         add("task", [(PREPARE, "queued")] * 20)
         assert send_hold.family_send_active() is active
@@ -594,11 +609,11 @@ def test_restricted_logins_can_read_the_send_check(tmp_path, monkeypatch, role):
     publish(credential)
     with task_login(role), transaction.atomic():
         assert not send_hold.family_send_active(minimum=1)
-        assert not send_hold.deltas_skipped(database_now(), database_now())
+        assert not send_hold.refreshes_skipped(database_now(), database_now())
         if role is ServiceRole.SCHEDULER:
             # With a send reported, the current source's age is read too.
             monkeypatch.setattr(send_hold, "family_send_active", lambda: True)
-            assert send_hold.delta_held(database_now())
+            assert send_hold.daytime_held(database_now())
 
 
 def test_a_go_live_hold_moves_the_stale_alarm_to_its_end(
@@ -611,7 +626,7 @@ def test_a_go_live_hold_moves_the_stale_alarm_to_its_end(
     attempt arithmetic itself is tested with real attempts in
     test_go_live_sequencing_postgresql.py.
     """
-    skipping_deltas(quarter_hourly(tmp_path))
+    schedule_in_use(quarter_hourly(tmp_path))
     settings.STEWARDSHIP_OPERATIONAL_POLICY = IncidentPolicy(source_stale_seconds=120)
     sending(monkeypatch, active=False)
     hold = timedelta(hours=1)

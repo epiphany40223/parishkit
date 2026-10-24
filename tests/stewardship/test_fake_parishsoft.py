@@ -10,8 +10,6 @@ import requests
 import yaml
 
 from parishkit.parishsoft import ParishSoftAPIError, ParishSoftConfig
-from parishkit.parishsoft_changes import load_family_changes
-from parishkit.parishsoft_households import load_family_slice
 from parishkit.parishsoft_source import CoherentParishSoftClient
 from parishkit.parishsoft_transport import ExactSourceResponse
 from parishkit.stewardship.cli import main
@@ -72,7 +70,7 @@ def served():
     """One fake, released-Family clock injectable, served on 127.0.0.1:0."""
     clock = [RELEASE - timedelta(days=1)]
     fake = FakeParishSoft(
-        configuration(release_at=RELEASE.isoformat(), change_feed="synthetic"),
+        configuration(release_at=RELEASE.isoformat()),
         now=lambda: clock[0],
     )
     server = start_server(fake)
@@ -194,104 +192,10 @@ def test_full_load_reads_scoped_giving(before_release, tmp_path):
     assert sample["family_key"] == str(contributions[0]["familyId"])
 
 
-def test_change_feed_is_empty_by_default_and_validates_the_window(tmp_path):
-    """The real feed has returned nothing in Production (#465); so does the fake.
-
-    Dates are still validated as the client sends them, and the fake applies
-    no window limit of its own beyond refusing an inverted window.
-    """
-    fake = FakeParishSoft(
-        configuration(release_at=RELEASE.isoformat()), now=lambda: RELEASE
-    )
-    assert fake.configuration.change_feed == "empty" and fake.released()
-    server = start_server(fake)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        source = client(server, tmp_path)
-        source.validate_organization()
-        for start, end in [
-            (ANCHOR - timedelta(days=31), ANCHOR),
-            (date(2026, 9, 30), date(2026, 10, 2)),
-            (date(2020, 1, 1), date(2020, 1, 31)),
-        ]:
-            result = load_family_changes(
-                source,
-                organization_id=LOCAL_ORGANIZATION_ID,
-                start_date=start,
-                end_date=end,
-            )
-            assert result.family_ids == () and result.indication_count == 0
-        wide = get(
-            server, "families/change/list", StartDate="2000-01-01", EndDate="2099-12-31"
-        )
-        assert wide.status_code == 200 and wide.json() == []
-        assert get(server, "families/change/list").status_code == 400
-        assert (
-            get(server, "families/change/list", StartDate="2026-09-01").status_code
-            == 400
-        )
-        assert (
-            get(server, "families/change/list", StartDate="x", EndDate="y").status_code
-            == 400
-        )
-        assert (
-            get(
-                server,
-                "families/change/list",
-                StartDate="2026-09-02",
-                EndDate="2026-09-01",
-            ).status_code
-            == 400
-        )
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
-
-
-def test_synthetic_change_feed_serves_only_the_release(before_release):
-    """In synthetic mode the feed holds exactly the late Family's release row."""
-    server, fake, clock = before_release
-    assert fake.configuration.change_feed == "synthetic"
-    wide = {"StartDate": "2000-01-01", "EndDate": "2099-12-31"}
-    assert get(server, "families/change/list", **wide).json() == []
-    clock[0] = RELEASE
-    rows = get(server, "families/change/list", **wide).json()
-    assert [row["family_DUID"] for row in rows] == [fake.parish.late_family_id]
-    assert (
-        get(
-            server, "families/change/list", StartDate="2026-09-01", EndDate="2026-09-30"
-        ).json()
-        == []
-    )
-
-
-def test_family_slice_reads_the_household(before_release, tmp_path):
-    """Detail reads return the Family, its Members and contact fallbacks."""
-    server, fake, _ = before_release
-    source = client(server, tmp_path)
-    source.validate_organization()
-    family = fake.parish.families[0]
-    expected = [
-        m for m in fake.parish.members if m["familyDUID"] == family["familyDUID"]
-    ]
-    result = load_family_slice(source, family_id=family["familyDUID"])
-    assert result.family["familyDUID"] == family["familyDUID"]
-    assert sorted(result.members) == sorted(m["memberDUID"] for m in expected)
-    for identifier, contact in result.contacts.items():
-        member = result.members[identifier]
-        assert contact["dateOfBirth"] == member["birthdate"]
-        assert contact["gender"] == member["sex"]
-        assert contact["emailAddress"] == member["emailAddress"]
-
-
 def test_late_added_family_appears_only_from_release_at(before_release, tmp_path):
-    """Held back before the instant, served after it, with its change-feed row."""
+    """Held back before the instant, served after it."""
     server, fake, clock = before_release
     late = fake.parish.late_family_id
-    assert get(server, f"families/{late}").status_code == 404
-    assert get(server, f"families/{late}/member/list").status_code == 404
     late_members = [
         m["memberDUID"] for m in fake.parish.members if m["familyDUID"] == late
     ]
@@ -300,47 +204,29 @@ def test_late_added_family_appears_only_from_release_at(before_release, tmp_path
         server, "families/search", {"organizationIDs": [LOCAL_ORGANIZATION_ID]}
     ).json()
     assert page[0]["totalResults"] == 100
-    window = {"StartDate": "2026-10-01", "EndDate": "2026-10-02"}
-    assert get(server, "families/change/list", **window).json() == []
 
     clock[0] = RELEASE
-    assert get(server, f"families/{late}").json()["familyDUID"] == late
-    assert len(get(server, f"families/{late}/member/list").json()) == 3
     assert get(server, f"members/{late_members[0]}").json()["familyDUID"] == late
     page = post(
         server, "families/search", {"organizationIDs": [LOCAL_ORGANIZATION_ID]}
     ).json()
     assert page[0]["totalResults"] == 101 and page[-1]["familyDUID"] == late
-    rows = get(server, "families/change/list", **window).json()
-    assert rows == [
-        {
-            "family_DUID": late,
-            "currentParishID": LOCAL_ORGANIZATION_ID,
-            "previousParishID": None,
-            "logDate": RELEASE.isoformat(),
-        }
-    ]
     source = client(server, tmp_path)
-    source.validate_organization()
-    assert load_family_changes(
-        source,
-        organization_id=LOCAL_ORGANIZATION_ID,
-        start_date=date(2026, 9, 30),
-        end_date=date(2026, 10, 2),
-    ).family_ids == (late,)
     result = load_full_source(source, window=RefreshWindow(None, ()), as_of=ANCHOR)
     assert result.counts["family"] == 101
 
     clock[0] = RELEASE - timedelta(seconds=1)
-    assert get(server, f"families/{late}").status_code == 404
+    assert get(server, f"members/{late_members[0]}").status_code == 404
 
 
 def test_release_at_null_never_releases():
     """Without a release instant the late Family is held back indefinitely."""
     fake = FakeParishSoft(configuration(), now=lambda: datetime(2999, 1, 1, tzinfo=UTC))
     assert not fake.released()
+    late = fake.parish.late_family_id
+    member = next(m for m in fake.parish.members if m["familyDUID"] == late)
     status, _ = fake.handle(
-        "GET", f"{BASE_PATH}families/{fake.parish.late_family_id}", headers=KEY
+        "GET", f"{BASE_PATH}members/{member['memberDUID']}", headers=KEY
     )
     assert status == 404
 
@@ -418,7 +304,9 @@ def test_unknown_paths_methods_and_tenants(before_release):
         ).status_code
         == 404
     )
+    # Quick updates' change feed and household reads were removed (#1147).
     assert get(server, "families/999999").status_code == 404
+    assert get(server, "families/change/list").status_code == 404
     assert get(server, "members/999999").status_code == 404
     assert get(server, "ministry/999999/minister/list").status_code == 404
     assert get(server, "members/workgroup/999999/list").status_code == 404
@@ -602,8 +490,7 @@ def test_handle_serves_without_http():
         {"release_at": "2026-10-01T12:00:00"},
         {"release_at": 5},
         {"extra": True},
-        {"change_feed": "history"},
-        {"change_feed": None},
+        {"change_feed": "empty"},
     ],
 )
 def test_configuration_rejects_malformed_files(document):
@@ -629,8 +516,7 @@ def test_configuration_reads_the_file_once(tmp_path):
         )
     )
     value = FakeConfiguration.read(path)
-    assert value == FakeConfiguration(42, 20, ANCHOR, RELEASE, "empty")
-    assert configuration(change_feed="synthetic").change_feed == "synthetic"
+    assert value == FakeConfiguration(42, 20, ANCHOR, RELEASE)
     fake = FakeParishSoft(value)
     assert fake.parish == generate(42, 20, ANCHOR)
     assert fake.parish.family_count == 20
@@ -734,7 +620,7 @@ def test_command_refuses_outside_local_before_binding(
                 "--profile",
                 "local",
                 "--fake-config",
-                fake_file(tmp_path, change_feed="history"),
+                fake_file(tmp_path, change_feed="empty"),
             ]
         )
         == 2

@@ -1,16 +1,16 @@
 """The refresh schedule's seven-day grid in real browsers (#632 slice 4).
 
 The grid is read-only and redrawn by the live check with the rest of the
-preview. These tests check what only a browser can: full refreshes and a
-stored quick rule's runs differ in shape (and a full-only schedule's legend
-names no quick updates, #1122), the current quarter hour is marked, the grid
-fits a laptop page, and on a phone it scrolls sideways inside its own box
-with the day labels held in place, never the page itself.
+preview. These tests check what only a browser can: a full refresh is drawn
+as a bar (and stored quick updates, removed by #1147, draw nothing), the
+current quarter hour is marked, the grid fits a laptop page, and on a phone
+it scrolls sideways inside its own box with the day labels held in place,
+never the page itself.
 """
 
 import pytest
 
-from .refresh_schedule_components import BASIC, PRODUCTION
+from .refresh_schedule_components import PRODUCTION
 from .test_components import axe_violations
 from .test_refresh_schedule_editor import answering
 from .waits import eventually, has_class, recorded, visible
@@ -34,10 +34,8 @@ def mark_size(page, selector, pseudo):
     )
 
 
-def test_the_grid_marks_full_and_quick_by_shape_and_fits_the_page(
-    page, component_origin
-):
-    """Seven day rows; a full refresh is a tall bar and a quick update a dot."""
+def test_the_grid_marks_full_refreshes_and_fits_the_page(page, component_origin):
+    """Seven day rows; a full refresh is drawn as a bar in its cell."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + "/refresh-schedule")
     grid = page.locator(GRID)
@@ -46,8 +44,7 @@ def test_the_grid_marks_full_and_quick_by_shape_and_fits_the_page(
     assert grid.get_attribute("role") == "img"
     assert "list below" in grid.get_attribute("aria-label")
     full_width, full_height = mark_size(page, f"{ROWS} .grid-full", "::before")
-    quick_width, quick_height = mark_size(page, f"{ROWS} .grid-quick", "::after")
-    assert full_height > 2 * quick_height and quick_width > 0 and full_width > 0
+    assert full_height > 0 and full_width > 0
     # Today's row holds the one "now" cell; the legend names it.
     assert page.locator(f"{ROWS} .grid-now").count() == 1
     assert page.locator(f"{ROWS}").first.locator(".grid-now").count() == 1
@@ -97,11 +94,11 @@ def test_the_live_check_redraws_the_grid(page, component_origin):
     )
 
 
-def test_a_full_only_schedule_shows_no_quick_mark(page, component_origin):
-    """The editor offers no quick updates (#1122): without a stored quick
-    rule the grid has no dot and its legend does not name one."""
-    answering(page, BASIC)
-    page.goto(component_origin + "/refresh-schedule-basic")
+def test_stored_quick_updates_draw_no_mark(page, component_origin):
+    """Production's stored quarter-hour quick updates no longer run (#1147):
+    the grid has no mark for them and its legend does not name one."""
+    answering(page, PRODUCTION)
+    page.goto(component_origin + "/refresh-schedule")
     visible(page.locator(GRID))
     assert page.locator(f"{ROWS} .grid-quick").count() == 0
     assert page.locator(".schedule-grid-legend .grid-quick").count() == 0
