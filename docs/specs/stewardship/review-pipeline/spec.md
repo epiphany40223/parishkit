@@ -1965,8 +1965,10 @@ Status: **proposed, for the Administrator's review**
 ([#2123](https://github.com/epiphany40223/parishkit/issues/2123)); the
 flow, behaviour and shared-code requirement below, and the page scope,
 waiting set, start page, Limitations pages, navigation rows, keyboard,
-menu and dashboard entries and replace-a-run rule, are the Administrator's
-decisions of 2026-10-24. Nothing of it is built yet.
+menu and dashboard entries, are the Administrator's decisions of
+2026-10-24, and the spec was approved on 2026-10-24 with three changes:
+Finish opens My review work, runs have no time limit, and a reader may
+have several runs (one per tab). Nothing of it is built yet.
 
 The review wizard is a third view of the same review data, beside each
 stream's [review worklist](#review-worklist) (bulk decisions over a table)
@@ -2006,7 +2008,8 @@ paragraph, that the pages show one Family or Member at a time, that acting
 is optional, and that the Review work tables remain for bulk decisions.
 
 A started run is one stream, its filters and sort, the fixed sequence of
-subjects and the reader's position in it
+subjects and the reader's position in it; a reader may have several runs
+at once, one per browser tab
 ([wizard run storage](#wizard-run-storage)).
 
 ### Wizard streams and access
@@ -2205,50 +2208,57 @@ stream.", and keeps Previous and Next.
   writes. A page reached by Previous or Next puts focus on the control that
   was used (in the top row or the bottom row), so pressing Enter again
   moves on.
-- **Finish** marks the run finished and opens the start page, whose status
-  line says "Finished: *stream*, *n* pages." Leaving by the menu or a link
+- **Finish** marks the run finished and opens **My review work**, whose
+  counts reflect what was done in the run. Leaving by the menu or a link
   keeps the run where it was.
 - **Keyboard.** The buttons are ordinary buttons in reading order. There
   are no keyboard shortcuts (Administrator decision, 2026-10-24).
 
 ### Wizard resume
 
-The server remembers each reader's last run per campaign: its stream,
-closed filters, sort, sequence and position. Opening **Review one at a
-time** with an unfinished run shows, above the choices, a panel with
-"*Stream*, *the run's filters in words*, started *date*" and two buttons:
-**Continue at Family 12 of 87** (primary; the progress words of
-[wizard pages](#wizard-pages)) and **Start over**. Start over removes the
-run and leaves the start page with the run's stream and closed filters
-chosen (not its search, which is never stored). Starting a new run from the
-start page replaces the previous one, and the panel above the choices is
-the reader's warning. Starting one from a table asks first
-([wizard entry points](#wizard-entry-points)).
+The server remembers each of a reader's unfinished runs, per campaign:
+each run's stream, closed filters, sort, sequence and position. A reader
+may have **several** at once, typically one per browser tab; a run started
+in a second tab never replaces the first. Runs have **no time limit**:
+one stays until it is finished, discarded or its campaign is purged.
 
-A page address whose `run` is not the reader's current run (another tab
-started a new one) says "This review was replaced by a newer one." with
-**Continue at …** for the current run; it is never an error page.
+The start page, **Review one at a time**, lists the reader's unfinished
+runs in a panel above the choices, one row each: "*Stream*, *the run's
+filters in words*, *progress words* (for example Family 12 of 87), last
+used *date and time*" (browser-local), with two buttons: **Continue**
+(primary; opens the run's current page) and **Discard** (removes the run
+after a confirmation
+([confirmation](../ui-conventions/spec.md#row-actions-and-confirmation))
+and redraws the list in place). The panel is absent when there are none.
+**Start** on the choices below always creates a new run, leaving the
+others as they are.
+
+A page address carries its run's id. A run that was discarded (in this
+or another tab) or finished says "This review is no longer open." with a
+link to the start page; it is never an error page.
 
 ### Wizard run storage
 
-One row per reader and campaign, `stewardship_review_run`, replaced by
-each new run:
+One row per run, `stewardship_review_run`; a reader and campaign may
+have many:
 
 - `id` (uuid), `user_id` (the portal user, on delete cascade),
   `campaign_id` (on delete cascade), `stream`, `filters` (jsonb: the
   stream's closed filter values and the Basic or Advanced mode; the
-  search text is never stored, only whether one was used, so the resume
-  panel can say "with a name search"), `sort`, `subjects` (jsonb array of
+  search text is never stored, only whether one was used, so the run's
+  row can say "with a name search"), `sort`, `subjects` (jsonb array of
   subject keys, each with the ids of its matched items, at most 5,000
   subjects), `position`, `finished_at`, `created_at`,
-  `updated_at`; unique `(user_id, campaign_id)`.
+  `updated_at`; indexed on `(user_id, campaign_id)`, not unique.
 - The keys and item ids are record ids and DUIDs only, never names or values, so the
   row holds nothing the stream tables do not already hold.
-- **Retention:** the latest run per reader and campaign only; Start over
-  and a new run delete the old row; removing the user or purging the
-  campaign deletes it by cascade. Nothing else expires it, since the rows
-  are bounded by users times campaigns.
-- **Migration: yes.** Resume must outlive the sign-in, so the Django
+- **Retention:** an unfinished run stays until finished or discarded, with
+  no time limit; Discard deletes its row. A finished run keeps its row
+  (it is not offered again) until the user or campaign is removed, which
+  deletes it by cascade. The rows are bounded by the runs readers start,
+  each at most 5,000 subjects of ids.
+- **Migration: yes**, number **0178** (assigned centrally; not yet
+  written). Resume must outlive the sign-in, so the Django
   session (`report_paging.remember_queue`'s store) cannot hold it. The
   table is one new forward migration with its frozen SQL file under the
   [post-launch schema policy](../operations/spec.md#post-launch-schema-policy),
@@ -2272,8 +2282,8 @@ each new run:
   first is refused with the stream's notice
   ([concurrency](#concurrency)), and the section is redrawn in place from
   the page's own address showing the live stage.
-- **Two tabs.** The position is last-write-wins; the replaced-run notice
-  above covers a run started in another tab.
+- **Two tabs.** Each tab has its own run, so positions do not collide; two
+  tabs on the same run are last-write-wins for the position.
 
 ### Wizard entry points
 
@@ -2286,15 +2296,16 @@ each new run:
   posts the table's current view fields (`Worklist.fields`, the search
   included, and the table's sort) to the wizard's start, which starts a
   run with them and opens page 1, skipping the choice steps. **When the
-  reader has an unfinished run, the button asks first**: a confirmation
+  reader has unfinished runs, the button asks first**: a confirmation
   dialog ([confirmation](../ui-conventions/spec.md#row-actions-and-confirmation))
-  says "You have an unfinished run (*stream*, *progress words*, for
-  example Census changes, Family 12 of 87). Replace it?" with **Replace**
-  (starts the new run), **Continue that run** (opens the run's current
-  page) and **Cancel** (closes the dialog, nothing changes). The server
-  makes the same check on the post, so a run started in another tab since
-  the table was drawn is asked about too; a finished run is not asked
-  about. The table's
+  asks to continue an existing run or start a new one: "You have
+  unfinished runs. Continue an existing run or start a new one?" lists
+  them (*stream*, *progress words*, for example Census changes, Family 12
+  of 87), each with **Continue**, and has **Start a new run** (starts the
+  run from the table's view, leaving the others) and **Cancel** (closes
+  the dialog, nothing changes). The server makes the same check on the
+  post, so a run started in another tab since the table was drawn is
+  listed too; finished runs are not. The table's
   sort maps to the wizard's: its name column ascending (or any column other
   than Submitted) to Name A–Z, Submitted ascending to Oldest submitted
   first, Submitted descending to Newest submitted first. The button is
@@ -2305,10 +2316,11 @@ each new run:
   time** link card, the **first** card, ahead of the stream panels (as the
   menu entry is first), in the same
   [overview card](../ui-conventions/spec.md#overview-pages) styling. It
-  opens the wizard's start page. When the reader has an unfinished run it
+  opens the wizard's start page. When the reader has exactly one unfinished run it
   reads "Continue: *stream*, *progress words*" (for example "Continue:
-  Ministry requests, 12 of 87") and opens that run's current page;
-  starting a different run is then the menu entry. The card shows no count
+  Ministry requests, 12 of 87") and opens that run's current page; with
+  several it keeps its plain label and opens the start page, which lists
+  them. The card shows no count
   of its own: the waiting set differs per stream, so a total would add
   unlike things and repeat the stream cards' numbers. It is shown to
   readers for whom the wizard is offered.
@@ -2395,7 +2407,7 @@ audit and notices; the wizard has no decision endpoint.
 
 **New, wizard-only.** `reports/review_wizard.py` (pure: the sequence from
 rows, progress words, sort mapping, run limits),
-`reports/review_wizard_views.py` (start, page, move, start over), the
+`reports/review_wizard_views.py` (start, page, move, discard), the
 `ReviewRun` model, the URLs `reports/review/` (`review_wizard`) and
 `reports/review/<position>/` (`review_wizard_page`) in
 `admin_urls/reports.py`, the templates `review-wizard-start.html` and
@@ -2426,7 +2438,7 @@ Four pull requests, after this spec's review:
    the sort mapping); view tests per stream and role (exact 200, 303, 400
    and 403 statuses; a leader offered only Ministry requests with the
    choice skipped; a stream the reader may not open refused); resume
-   (Continue, Start over, replaced run); concurrency (a page drawn after
+   (several runs per reader, Continue, Discard, a discarded run's page); concurrency (a page drawn after
    another reviewer's decision shows the live stage; a stale action gets
    the stream's refusal); only matched items shown with the filtered-out
    line; Limitations Family page only with the financial answer; the
@@ -2437,7 +2449,7 @@ Four pull requests, after this spec's review:
    returns to the control used. A pk-local check by the Administrator.
 4. **Table entry buttons**: Review these one at a time on the five
    tables. Tests: each table's button posts its view and opens page 1
-   with that view's sequence; the sort mapping; the replace-a-run dialog (Replace, Continue, Cancel; none for a finished run); the unavailable state on
+   with that view's sequence; the sort mapping; the existing-runs dialog (Continue per run, Start a new run, Cancel; finished runs not listed); the unavailable state on
    an empty table; the renamed-label sweep of every table test.
 
 ## Update phase
