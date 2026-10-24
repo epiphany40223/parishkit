@@ -11,7 +11,12 @@ import json
 
 import pytest
 
-from .campaign_create_components import FAMILIES, FAMILIES_PREVIEW, families_answer
+from .campaign_create_components import (
+    FAMILIES,
+    FAMILIES_PREVIEW,
+    families_answer,
+    posted_fields,
+)
 from .test_campaign_create import fill, watch
 from .test_in_place import MARKED
 from .waits import available, eventually, greyed, hidden, visible
@@ -29,11 +34,12 @@ def opened(page, origin):
 
     def answer(route):
         """Count the posted choice as the view does."""
-        posts.append(route.request.post_data or "")
+        posted = posted_fields(route.request)
+        posts.append(posted)
         route.fulfill(
             status=200,
             content_type="application/json",
-            body=json.dumps(families_answer(route.request.post_data)),
+            body=json.dumps(families_answer(posted)),
         )
 
     page.route(f"**{FAMILIES_PREVIEW}", answer)
@@ -49,8 +55,8 @@ def line_text(page):
 def test_basic_opens_on_active_parishioners_with_its_count(page, component_origin):
     """The section opens in Basic, Active parishioners chosen, its count
     from the page itself; choosing the Staff preset recounts in place."""
-    failures = watch(page)
     posts = opened(page, component_origin)
+    failures = watch(page)
     assert page.get_by_label("Active parishioners", exact=True).is_checked()
     assert line_text(page).startswith("3 Families match in the ParishSoft data as of")
     assert line_text(page).endswith("; 2 of them can be emailed.")
@@ -62,7 +68,7 @@ def test_basic_opens_on_active_parishioners_with_its_count(page, component_origi
         "document.querySelector('[data-families-count]').textContent",
         "4 Families match in the ParishSoft data as of",
     )
-    assert "families_preset=active_parishioners_and_staff" in posts[-1]
+    assert posts[-1]["families_preset"] == ["active_parishioners_and_staff"]
     assert abs(toggle.evaluate(TOP) - top) <= 1
     assert page.evaluate(MARKED)
     assert not failures
@@ -71,12 +77,13 @@ def test_basic_opens_on_active_parishioners_with_its_count(page, component_origi
 def test_advanced_holds_the_preset_and_counts_every_change(page, component_origin):
     """Basic → Advanced is lossless (registered Required, the preset's
     groups, Active); an Advanced change recounts; nothing above moves."""
-    failures = watch(page)
     opened(page, component_origin)
+    failures = watch(page)
     line = page.locator(LINE)
-    top = line.evaluate(TOP)
     page.locator("#families-mode-advanced").check()
     visible(page.get_by_label("Inactive (1 Family)"))
+    # Measured in Advanced: the shown panel itself is above the line.
+    top = line.evaluate(TOP)
     assert page.locator("#families-registered_0").is_checked()
     assert page.get_by_label("Active (3 Families)").is_checked()
     assert not page.get_by_label("Staff (1 Family)").is_checked()
@@ -130,7 +137,9 @@ def test_advanced_without_a_basic_equivalent_asks_first(page, component_origin):
     opened(page, component_origin)
     page.locator("#families-mode-advanced").check()
     page.get_by_label("Inactive (1 Family)").check()
-    page.locator("#families-mode-basic").check()
+    # A click, not check(): the toggle stays on Advanced while the dialog
+    # asks, which check() would report as a click that changed nothing.
+    page.locator("#families-mode-basic").click()
     dialog = page.locator("#families-mode-no-basic")
     visible(dialog)
     dialog.get_by_role("button", name="Keep Advanced").click()

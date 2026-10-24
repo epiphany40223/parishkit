@@ -177,14 +177,36 @@ def families_source():
     return choice.Source(None, datetime(2054, 9, 1, 6, 5, tzinfo=UTC), groups, facts)
 
 
-def families_answer(post_data):
-    """The count preview's JSON answer for a posted form (as the view)."""
+def posted_fields(request):
+    """A Playwright request's posted form fields, each name to its values.
+
+    The page script posts ``FormData``, which the browser sends as
+    multipart/form-data, so that is parsed as the view's request would be;
+    a urlencoded body is read too.
+    """
+    from email.parser import BytesParser
+    from email.policy import default
     from urllib.parse import parse_qs
 
+    body = request.post_data_buffer or b""
+    kind = request.headers.get("content-type", "")
+    if not kind.startswith("multipart/form-data"):
+        return parse_qs(body.decode(), keep_blank_values=True)
+    message = BytesParser(policy=default).parsebytes(
+        b"Content-Type: " + kind.encode() + b"\r\n\r\n" + body
+    )
+    fields = {}
+    for part in message.iter_parts():
+        name = part.get_param("name", header="content-disposition")
+        fields.setdefault(name, []).append(part.get_content())
+    return fields
+
+
+def families_answer(posted):
+    """The count preview's JSON answer for posted fields (as the view)."""
     from parishkit.stewardship.accounts import families_choice as choice
 
     data = families_source()
-    posted = parse_qs(post_data or "", keep_blank_values=True)
     form = choice.SectionForm(
         {
             name: values
