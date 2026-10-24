@@ -1,14 +1,14 @@
 """Skip scheduled refreshes while a bulk Family send is in progress (#440, #465).
 
-Under send load a delta refresh ran about five of every fifteen minutes and
-halved the send rate: its promotion and Family population rebuild compete for
-the global work-order lock with Family planning, preparation and delivery, and
-a promotion marks the population dirty until it is rebuilt. So while an
-initial invitation or reminder is being sent, the scheduler does not create
-the delta slot's refresh, nor a scheduled full refresh at any configured
-daytime time other than the nightly one (#465), which competes the same way.
-The nightly full refresh, an hourly or quarter-hour full refresh and every
-manual refresh still run.
+Under send load a quick update (delta refresh, removed by #1147) ran about
+five of every fifteen minutes and halved the send rate: its promotion and
+Family population rebuild compete for the global work-order lock with Family
+planning, preparation and delivery, and a promotion marks the population dirty
+until it is rebuilt. A scheduled full refresh at any configured daytime time
+other than the nightly one competes the same way (#465), so while an initial
+invitation or reminder is being sent, the scheduler does not create it. The
+nightly full refresh, an hourly or quarter-hour full refresh and every manual
+refresh still run.
 
 A send is in progress while at least ``ACTIVE_MINIMUM`` pieces of its work
 remain in durable state: Family messages pending (not paused), waiting to
@@ -16,21 +16,21 @@ retry or being submitted, whose occurrence is due, plus Family preparation
 tasks queued, running or waiting to retry. Something waiting to retry counts
 only once its retry is within ``RETRY_SOON`` (#868): a message the mail
 provider throttled waits up to 12 hours between attempts, and ten of those
-must not hold quick refreshes all day. Likewise a pending message whose
+must not hold daytime refreshes all day. Likewise a pending message whose
 delivery Task a sending limit (the mailbox's or our own daily cap) put off
 for longer: the message stays pending, but its Task waits to retry, so a
 bulk send stopped at the daily cap does not hold refreshes until the cap
 lifts. A reminder prepared ahead of its
-due time (BG-12, #447) does not count until it is due, so it holds deltas
-while it is being prepared, not for the rest of its lead window. A delta
-promoted during preparation marks the population dirty, and preparation
-waits for the rebuild; one promoted after preparation only makes the send
-re-render. The minimum keeps a few stragglers from holding refreshes
+due time (BG-12, #447) does not count until it is due, so it holds daytime
+refreshes while it is being prepared, not for the rest of its lead window. A
+refresh promoted during preparation marks the population dirty, and
+preparation waits for the rebuild; one promoted after preparation only makes
+the send re-render. The minimum keeps a few stragglers from holding refreshes
 back. Both reads are bounded by that
 minimum, use the existing state indexes and take no lock. While Production
 delivery is paused, preparation tasks wait for the pause to end, so only
-messages count: a paused send keeps its deltas, as source refresh is meant
-to continue through a pause.
+messages count: a paused send keeps its daytime refreshes, as source refresh
+is meant to continue through a pause.
 
 Holding is bounded by the data-age alarm's own point (#510): the **overdue
 full slot**, the first counted scheduled full due time after the newest
@@ -40,13 +40,12 @@ progress and scheduled refreshes are actually being held it allows
 ``SEND_ALLOWANCE`` beyond that, and the scheduler holds only until the
 resume point, ``RESUME_LEAD`` before the allowance ends, so a held full
 refresh can run and promote under send load before the alarm would sound.
-Quick updates no longer move that point, so the bound works with quick
-updates off, hourly or every 15 minutes. Sending itself never waits on
+Sending itself never waits on
 source age: Family preparation checks only that the population matches the
 current source generation, which a held refresh leaves unchanged.
 
 The relaxed alarm applies only while refreshes are actually being held: no
-scheduled refresh of either kind was requested at or after the overdue
+scheduled refresh was requested at or after the overdue
 slot's due time and before the resume point, though scheduled refreshes ran
 within the last day. A refresh requested in that span but not promoted (a
 refresh failing or stuck) alarms at the margin as before. Requests at or
@@ -62,7 +61,7 @@ that due time and the entry. A request in that span means the overdue slot
 ran rather than being held: with full refreshes at 08:00 and 08:15, an
 on-time 08:00 refresh that hangs is not excused by a send that then holds
 the 08:15 slot. A refresh task's own held retry (lease contention, ``task``
-schema) is never that evidence, and a held quick slot writes none.
+schema) is never that evidence.
 """
 
 from datetime import timedelta
@@ -95,7 +94,7 @@ ACTIVE_PREPARATION_STATES = ("queued", "running", "retry_wait")
 # longer, and nothing competes for the work-order lock during them.
 RETRY_SOON = timedelta(minutes=10)
 # Fewer remaining messages and preparations than this is a send's tail, not
-# a bulk send: deltas run again.
+# a bulk send: daytime refreshes run again.
 ACTIVE_MINIMUM = 10
 # How much later than the lateness margin a held full refresh may be while a
 # send holds scheduled refreshes. A launch-size send (about 1,100 messages at
@@ -105,16 +104,16 @@ SEND_ALLOWANCE = timedelta(hours=2)
 # held full refresh promotes before the alarm sounds. The spec keeps 30
 # minutes only if a full refresh under send load promotes within 20. The
 # measured inputs (October 2026, #440, #510): a full refresh takes a median
-# 437 s idle, and send load stretched a delta from about 2.2 to about 5
+# 437 s idle, and send load stretched a quick update from about 2.2 to about 5
 # minutes (x2.3), which puts a full refresh under load near 17 minutes.
 # That is an estimate; #653 measures a full refresh during a real send.
 RESUME_LEAD = timedelta(minutes=30)
 # Scheduled refreshes requested within this long mean the schedule is in use.
-DELTA_CADENCE_WINDOW = timedelta(days=1)
-# Scheduled refresh causes (a manual request is not the schedule running);
-# the full ones are a scheduled full slot and the schedule-change catch-up.
+SCHEDULE_IN_USE_WINDOW = timedelta(days=1)
+# Scheduled refresh causes (a manual request is not the schedule running): a
+# scheduled full slot and the schedule-change catch-up. Quick updates
+# ("delta") were removed (#1147).
 SCHEDULED_FULL_CAUSES = ("nightly", "catch_up")
-SCHEDULED_CAUSES = (*SCHEDULED_FULL_CAUSES, "delta")
 
 
 def _waits_long(path=""):
@@ -205,25 +204,24 @@ def within_allowance(overdue, now):
     return now - overdue < _margin() + SEND_ALLOWANCE
 
 
-def deltas_skipped(overdue, now):
+def refreshes_skipped(overdue, now):
     """Whether scheduled refreshes have been held since the slot due at ``overdue``.
 
-    Stateless: scheduled refreshes (full or quick) were requested within the
-    last day, but none at or after the overdue slot's due time and before
-    the resume point. Measuring from the due time, not from when the newest
-    full refresh was read, means quick updates that ran before it do not
-    cancel the allowance, and held daytime full slots count as well as quick
-    ones, so it works with quick updates off. A request at or after the
+    Stateless: scheduled refreshes were requested within the last day, but
+    none at or after the overdue slot's due time and before the resume
+    point. Measuring from the due time, not from when the newest full
+    refresh was read, means refreshes that ran before it do not cancel the
+    allowance. A request at or after the
     resume point is the scheduler's own catch-up, not a failing refresh. The
     command table is small (about 100 rows a day) and this runs only for an
     out-of-date sample during a send.
     """
-    scheduled = SourceRefreshCommand.objects.filter(cause__in=SCHEDULED_CAUSES)
+    scheduled = SourceRefreshCommand.objects.filter(cause__in=SCHEDULED_FULL_CAUSES)
     return (
         not scheduled.filter(
             created_at__gte=overdue, created_at__lt=resume_at(overdue)
         ).exists()
-        and scheduled.filter(created_at__gt=now - DELTA_CADENCE_WINDOW).exists()
+        and scheduled.filter(created_at__gt=now - SCHEDULE_IN_USE_WINDOW).exists()
     )
 
 
@@ -286,19 +284,20 @@ def allowance_applies(overdue, now, *, failed_since):
     """
     if not within_allowance(overdue, now):
         return False
-    if family_send_active() and deltas_skipped(overdue, now):
+    if family_send_active() and refreshes_skipped(overdue, now):
         return True
     return catch_up_held(overdue) and not failed_since(overdue)
 
 
-def delta_held(now):
-    """Whether the scheduler should hold a quick or daytime full slot due at ``now``.
+def daytime_held(now):
+    """Whether the scheduler should hold a daytime full slot due at ``now``.
 
     Only while a send is in progress and ``now`` is before the resume point
     measured from the overdue full slot; before any slot is overdue the data
     is current, so holding is safe. With no promoted full refresh yet there
-    is nothing to protect. The scheduler applies the answer to quick slots
-    and to full slots at a configured time other than the nightly one.
+    is nothing to protect. The scheduler applies the answer to full slots at
+    a configured time other than the nightly one, and to the schedule-change
+    catch-up.
     """
     if not family_send_active():
         return False

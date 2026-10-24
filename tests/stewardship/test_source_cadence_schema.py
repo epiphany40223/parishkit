@@ -240,7 +240,6 @@ def rules_schedule(**overrides):
         "rules": [
             {"kind": "full", "at": "02:00"},
             {"kind": "full", "every": 60, "from": "08:00", "to": "20:00"},
-            {"kind": "quick", "every": 15, "from": "06:00", "to": "07:45"},
         ],
         "skips": [{"from": "12:00", "to": "13:00"}],
         "skip_around_family_emails": False,
@@ -249,7 +248,7 @@ def rules_schedule(**overrides):
 
 
 def test_a_schedule_saved_with_its_rules_is_public_cadence():
-    """More than eight full times and listed quick times are stored with the rules."""
+    """More than eight full times are stored with the rules."""
     settings = rules_schedule()
     assert len(settings["full_refresh_times"]) == 13
     base = base_version()
@@ -296,7 +295,8 @@ def with_rows(kind, past=0):
         rules_schedule(refresh_rules={"rules": []}),
         rules_schedule(full_refresh="hourly"),
         rules_schedule(delta_refresh="quarter_hour"),
-        rules_schedule(delta_refresh="off"),
+        # A new or changed schedule lists no quick time (#1147).
+        rules_schedule(delta_refresh="times", quick_refresh_times=["06:00"]),
         rules_schedule(quick_refresh_times=["02:00", "06:00"]),
         rules_schedule(quick_refresh_times=["06:00", "06:05"]),
         rules_schedule(quick_refresh_times=[]),
@@ -399,3 +399,36 @@ def test_a_carried_schedule_past_the_cap_does_not_block_later_changes():
         build_candidate(
             version, schedule_patch(version, **settings), candidate_id=uuid4()
         )
+
+
+def stored_with_quick_updates():
+    """A version stored before #1147, with a quick rule and listed quick times.
+
+    Today's candidate path refuses it (quick updates were removed), so it is
+    built without them and its schedule widened, then parsed under full trust
+    as a stored version is.
+    """
+    base = base_version()
+    document = build_candidate(
+        base, schedule_patch(base, **rules_schedule()), candidate_id=uuid4()
+    ).candidate.document()
+    settings = document["sections"]["integrations"][0]["values"]["settings"]
+    rules = settings["refresh_rules"]
+    settings["refresh_rules"] = rules | {
+        "rules": [*rules["rules"], {"kind": "quick", "at": "06:00"}]
+    }
+    settings["delta_refresh"] = "times"
+    settings["quick_refresh_times"] = ["06:00"]
+    return document
+
+
+def test_a_stored_schedule_with_quick_updates_still_loads():
+    """Quick updates were removed (#1147), but a version that has them still
+    reads back; nothing schedules them. A new one with them is refused."""
+    document = stored_with_quick_updates()
+    with pytest.raises(ConfigError):
+        parse_version(document, validate_sections=validator_for(SCHEMA))
+    with trusted_content():
+        version = parse_version(document, validate_sections=validator_for(SCHEMA))
+    settings = version.document()["sections"]["integrations"][0]["values"]["settings"]
+    assert settings["quick_refresh_times"] == ["06:00"]

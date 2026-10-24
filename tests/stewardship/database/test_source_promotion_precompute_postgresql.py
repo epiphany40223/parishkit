@@ -259,7 +259,7 @@ def test_a_real_refresh_decodes_its_family_corpus_off_the_lock(tmp_path, monkeyp
 
     One decode per promotion, outside the work order; none under it.
     """
-    from .test_source_unchanged_postgresql import Refreshes
+    from .refresh_harness import Refreshes
 
     seen = decodes(monkeypatch)
     refreshes = Refreshes(tmp_path, monkeypatch)

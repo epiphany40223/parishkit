@@ -14,10 +14,9 @@ the preview functions (``schedule_preview``), for the live check and the
 save alike. The mode is presentation only: it is stored beside the rules
 (``MODE``) and chooses which panel the page opens in, never what runs.
 
-The editor offers full refreshes only. A stored rule of the "quick" kind
-(quick updates, which ParishSoft's empty change list makes useless, #1122)
-still runs and is shown read-only with one action that removes them all,
-through the usual review; the capability itself goes with #1147.
+The editor offers full refreshes only: quick updates were removed (#1147). A
+stored rule of the "quick" kind is not shown (``refresh_rules.full_rules``)
+and runs nothing; saving a changed schedule drops it.
 
 Two rules keep Production's refresh times unchanged until an Administrator
 changes the schedule itself:
@@ -103,9 +102,9 @@ STEP_LABELS = {
     720: _("12 hours"),
 }
 STEP_CHOICES = tuple((step, STEP_LABELS[step]) for step in STEPS)
-# The kind is a hidden field (#1122): its labels are never shown, so they
-# are plain and untranslated.
-KIND_CHOICES = (("full", "full"), ("quick", "quick"))
+# The kind is a hidden field (#1122): its label is never shown, so it is
+# plain and untranslated. Only full rules exist (#1147).
+KIND_CHOICES = (("full", "full"),)
 RULE_SHAPES = (("every", _("every")), ("at", _("at")))
 SKIP_SHAPES = (("at", _("at")), ("range", _("from")))
 QUARTER_HOUR_MESSAGE = _("Use :00, :15, :30 or :45.")
@@ -133,8 +132,6 @@ DEFAULT_EVERY_HOURS = 4
 # The Basic choices (#1122; admin-portal spec, "Schedule editor"), in their
 # order. Each is exactly one Advanced rule set of full refreshes: choosing
 # one replaces the rules and clears the skips; none changes the switch.
-# Quick updates are not offered while ParishSoft's change list returns
-# nothing (#1122, #1147).
 BASIC_CHOICES = (
     BasicChoice(
         "nightly",
@@ -188,8 +185,7 @@ def basic_choice(document):
     """The Basic choice equal to a schedule document, as ``(key, hours)``, or None.
 
     Equal means the same rules in any order and no skips; the switch is
-    outside both modes, so it does not matter. A document with a quick
-    rule never matches: Basic offers only full refreshes.
+    outside both modes, so it does not matter.
     """
     if document is None or document["skips"]:
         return None
@@ -292,8 +288,7 @@ class _Row(AdminForm):
 class RuleForm(_Row):
     """One rule row: "every [interval] from [time] to [time]" or "at [time]".
 
-    The kind is a hidden field: every row the page offers is a full refresh,
-    and a stored quick rule is shown read-only and posted back as it is.
+    The kind is a hidden field: every row is a full refresh (#1147).
     """
 
     kind = forms.ChoiceField(
@@ -591,11 +586,6 @@ def _generated(rule):
     return set(range(minutes(rule["from"]), minutes(rule["to"]) + 1, rule["every"]))
 
 
-def _noun(kind):
-    """ "full refresh" or "quick update"."""
-    return gettext("full refresh") if kind == "full" else gettext("quick update")
-
-
 def _skip_words(skip):
     """A skip row in words: "the skip at 12:30" or "the skip from 12:00 to 13:00"."""
     if "at" in skip:
@@ -616,16 +606,10 @@ def schedule_problems(document, *, kept):
     """
     result = daily_times(document)
     settings = stored_settings(document) if result.full else {"refresh_rules": document}
-    rules = document["rules"]
-    generated = [_generated(rule) for rule in rules]
-    full = {minutes(value) for value in result.full}
+    generated = [_generated(rule) for rule in document["rules"]]
 
     def giving(value):
-        """The first row giving the daily time ``value`` as its final kind."""
-        kind = "full" if minutes(value) in full else "quick"
-        for index, rule in enumerate(rules):
-            if rule["kind"] == kind and minutes(value) in generated[index]:
-                return index
+        """The first row giving the daily time ``value``."""
         return next(
             (i for i, times in enumerate(generated) if minutes(value) in times), None
         )
@@ -636,21 +620,15 @@ def schedule_problems(document, *, kept):
         if problem.code == "too_close":
             earlier, later = problem.times
             gap = (minutes(later) - minutes(earlier)) % DAY
-            kind = "full" if minutes(earlier) in full else "quick"
             found.append(
                 RowProblem(
                     RULES,
                     giving(later),
                     gettext(
                         "%(later)s is only %(gap)d minutes after the %(earlier)s "
-                        "%(noun)s; refreshes must be at least 15 minutes apart."
+                        "full refresh; refreshes must be at least 15 minutes apart."
                     )
-                    % {
-                        "later": later,
-                        "gap": gap,
-                        "earlier": earlier,
-                        "noun": _noun(kind),
-                    },
+                    % {"later": later, "gap": gap, "earlier": earlier},
                     gettext("%(later)s is too close to %(earlier)s")
                     % {"later": later, "earlier": earlier},
                 )
@@ -957,7 +935,7 @@ class ScheduleEditor:
         """The mode the editor is drawn in: "basic" or "advanced".
 
         Advanced whenever the schedule has no Basic equivalent (a custom
-        schedule, a quick rule, a row that cannot be read); else the mode
+        schedule, a row that cannot be read); else the mode
         posted (a refused save drawn again) or, unposted, the mode last
         saved, and Basic when none was saved (ui-conventions spec, "Which
         mode opens").
@@ -966,12 +944,6 @@ class ScheduleEditor:
             return "advanced"
         wanted = self.posted_mode if self.posted else self.stored.get(MODE)
         return "advanced" if wanted == "advanced" else "basic"
-
-    @property
-    def has_quick(self):
-        """Whether a rule row is a quick rule (shown read-only, with Remove)."""
-        formset = self.rules
-        return any(form["kind"].value() == "quick" for form in formset.forms)
 
     def row_problems(self, scope):
         """Each row's problems, but those its time fields show themselves."""
@@ -1042,11 +1014,8 @@ def _occurrence(entry, day):
     ``occurrence_preview.build`` adds from ``shift``. A struck time carries
     no instant, so the page adds no browser time beside it.
     """
-    noun = _noun(entry.kind)
+    noun = gettext("full refresh")
     struck = {
-        "covered": lambda: (
-            gettext("covered by the %(by)s full refresh") % {"by": entry.by}
-        ),
         "skipped": lambda: (
             gettext("skipped: %(cause)s") % {"cause": WINDOW_WORDS[entry.window]}
         ),
@@ -1069,23 +1038,14 @@ def _occurrence(entry, day):
     )
 
 
-def _day_counts(full, quick, spent, *, with_quick):
-    """One preview day's counts: "3 full refreshes, about 22 min of ParishSoft time".
-
-    Quick updates are counted only for a schedule that still has a quick
-    rule (``with_quick``); the editor offers none (#1122).
-    """
+def _day_counts(full, spent):
+    """One preview day's counts: "3 full refreshes, about 22 min of ParishSoft time"."""
     values = {
         "full": ngettext("%(count)d full refresh", "%(count)d full refreshes", full)
         % {"count": full},
         "time": _duration(spent),
     }
-    if not with_quick:
-        return gettext("%(full)s, about %(time)s of ParishSoft time") % values
-    values["quick"] = ngettext(
-        "%(count)d quick update", "%(count)d quick updates", quick
-    ) % {"count": quick}
-    return gettext("%(full)s, %(quick)s, about %(time)s of ParishSoft time") % values
+    return gettext("%(full)s, about %(time)s of ParishSoft time") % values
 
 
 def preview_context(preview, *, timezone, now, daily, rows):
@@ -1097,15 +1057,13 @@ def preview_context(preview, *, timezone, now, daily, rows):
     so the grid draws from the same days as the list.
     """
     days, occurrences = [], []
-    with_quick = bool(daily.quick)
     for index, (day, row) in enumerate(zip(preview.days, rows, strict=True)):
-        full, quick = len(day.runs("full")), len(day.runs("quick"))
         spent, _share = preview.cost.per_day[index]
         days.append(
             Day(
                 day.day,
                 change=day.change,
-                summary=_day_counts(full, quick, spent, with_quick=with_quick),
+                summary=_day_counts(len(day.runs("full")), spent),
                 extra={"cells": row["cells"]},
             )
         )
@@ -1124,17 +1082,9 @@ def preview_context(preview, *, timezone, now, daily, rows):
     )
     cost, durations = preview.cost, preview.cost.durations
     typical = gettext(" (typical; not yet measured)")
-    summary = (
-        gettext(
-            "About %(time)s of ParishSoft time a day (%(share)s of the day): "
-            "%(full)s of about %(full_length)s%(full_typical)s and %(quick)s of "
-            "about %(quick_length)s%(quick_typical)s."
-        )
-        if with_quick
-        else gettext(
-            "About %(time)s of ParishSoft time a day (%(share)s of the day): "
-            "%(full)s of about %(full_length)s%(full_typical)s."
-        )
+    summary = gettext(
+        "About %(time)s of ParishSoft time a day (%(share)s of the day): "
+        "%(full)s of about %(full_length)s%(full_typical)s."
     ) % {
         "time": _duration(cost.average),
         "share": f"{cost.share * 100:.1f}%",
@@ -1144,12 +1094,6 @@ def preview_context(preview, *, timezone, now, daily, rows):
         % {"count": len(daily.full)},
         "full_length": _length(durations.full),
         "full_typical": "" if durations.full_measured else typical,
-        "quick": ngettext(
-            "%(count)d quick update", "%(count)d quick updates", len(daily.quick)
-        )
-        % {"count": len(daily.quick)},
-        "quick_length": _length(durations.quick),
-        "quick_typical": "" if durations.quick_measured else typical,
     }
     fresh = preview.freshness
     margin = round(fresh.margin.total_seconds() / 60)
@@ -1271,11 +1215,7 @@ class EditorView:
         return self.editor.general_problems()
 
     def _rows(self, scope):
-        """Each row of ``scope`` with its number, messages and note.
-
-        A quick rule row also carries ``quick``: its words and the hidden
-        fields that post it back unchanged (``_quick_row``).
-        """
+        """Each row of ``scope`` with its number, messages and note."""
         formset = self.editor.rules if scope == RULES else self.editor.skips
         problems = self.editor.row_problems(scope)
         notes = self.editor.notes() if scope == RULES else {}
@@ -1286,7 +1226,6 @@ class EditorView:
                 "number": index + 1,
                 "problems": problems.get(index, []),
                 "note": notes.get(index),
-                "quick": _quick_row(form) if scope == RULES else None,
             }
             for index, form in enumerate(formset.forms)
         ]
@@ -1338,51 +1277,12 @@ class EditorView:
         return {"key": key, "hours": hours or DEFAULT_EVERY_HOURS}
 
     @property
-    def has_quick(self):
-        """Whether the rows include a stored quick rule (``ScheduleEditor``)."""
-        return self.editor.has_quick
-
-    @property
     def text_lists(self):
         """The full daily times as "Edit as text" shows them."""
         daily = self.editor.daily()
         if daily is None:
             return None
         return {"full": ", ".join(daily.full)}
-
-
-def _quick_row(form):
-    """A quick rule row's words and hidden fields, or None for a full rule.
-
-    The editor no longer offers quick updates (#1122), so a stored quick
-    rule is drawn read-only: its words ("Quick update every hour from 00:00
-    to 23:00") and ``(name, value)`` hidden fields that post it back as it
-    is, until "Remove quick updates" takes it out.
-    """
-    if form["kind"].value() != "quick":
-        return None
-    shape = form["shape"].value()
-    used = ("kind", "shape", "at") if shape == "at" else RULE_FIELDS[:5]
-    fields = [
-        (form[name].html_name, "" if form[name].value() is None else form[name].value())
-        for name in used
-    ]
-    values = dict(fields)
-    prefix = form.prefix + "-"
-    value = {name.removeprefix(prefix): text for name, text in values.items()}
-    if shape == "at":
-        words = gettext("Quick update at %(time)s") % {"time": value["at"]}
-    else:
-        # Raw posted text (a refused save drawn again): never trusted as a
-        # number, so a crafted value is shown as sent instead of failing.
-        every = str(value["every"])
-        step = STEP_LABELS.get(int(every), every) if every.isdecimal() else every
-        words = gettext("Quick update every %(step)s from %(start)s to %(end)s") % {
-            "step": step,
-            "start": value["start"],
-            "end": value["last"],
-        }
-    return {"words": words, "fields": fields}
 
 
 def editor_view(editor, *, timezone, now, preview_reader):
@@ -1403,13 +1303,6 @@ def editor_view(editor, *, timezone, now, preview_reader):
             preview, timezone=timezone, now=now, daily=daily, rows=rows
         )
         view.preview["legend"] = legend(rows)
-        # The dot of a stored quick rule is named only while one runs: the
-        # editor offers none (#1122).
-        view.preview["other_mark"] = (
-            gettext("Quick update")
-            if any(cell["quick"] for row in rows for cell in row["cells"])
-            else None
-        )
         view.preview["hours"] = HOURS
     view.links, view.status = status_line(
         editor, view.preview["line"] if view.preview else None
@@ -1440,7 +1333,7 @@ def _has_daylight_saving(timezone):
 def differences(stored, document, *, timezone):
     """The review's list of what a changed schedule changes, in words.
 
-    The full and quick times added and removed, the nightly time if it
+    The full times added and removed, the nightly time if it
     moves, the switch if it changes, and, for an existing schedule, each
     difference the background-processing spec's "Stored schedule and
     upgrade" names. Never the stored settings themselves.
@@ -1448,26 +1341,17 @@ def differences(stored, document, *, timezone):
     shown = converted_rules(stored)
     before, after = daily_times(shown), daily_times(document)
     found = []
-    for old, new, added_words, removed_words in (
-        (
-            before.full,
-            after.full,
-            gettext("Full refreshes added: %(times)s."),
-            gettext("Full refreshes removed: %(times)s."),
-        ),
-        (
-            before.quick,
-            after.quick,
-            gettext("Quick updates added: %(times)s."),
-            gettext("Quick updates removed: %(times)s."),
-        ),
-    ):
-        added = sorted(set(new) - set(old))
-        removed = sorted(set(old) - set(new))
-        if added:
-            found.append(added_words % {"times": _times_words(added)})
-        if removed:
-            found.append(removed_words % {"times": _times_words(removed)})
+    added = sorted(set(after.full) - set(before.full))
+    removed = sorted(set(before.full) - set(after.full))
+    if added:
+        found.append(
+            gettext("Full refreshes added: %(times)s.") % {"times": _times_words(added)}
+        )
+    if removed:
+        found.append(
+            gettext("Full refreshes removed: %(times)s.")
+            % {"times": _times_words(removed)}
+        )
     schedule = refresh_settings(stored)
     old_nightly = schedule["nightly_time"]
     if after.full and after.full[0] != old_nightly:
@@ -1506,7 +1390,7 @@ def differences(stored, document, *, timezone):
 def _upgrade_differences(schedule, timezone):
     """The differences of changing an existing schedule, per the upgrade spec."""
     found = []
-    frequency, delta = schedule["frequency"], schedule["delta_refresh"]
+    frequency = schedule["frequency"]
     if frequency in ("hourly", "quarter_hour"):
         found.append(
             gettext(
@@ -1521,8 +1405,7 @@ def _upgrade_differences(schedule, timezone):
                 else gettext("15 minutes")
             }
         )
-    hourly = "hourly" in (frequency, delta)
-    if hourly and not _whole_hour_offsets(timezone):
+    if frequency == "hourly" and not _whole_hour_offsets(timezone):
         found.append(
             gettext(
                 "The parish's time zone, %(zone)s, is not a whole number of hours "
@@ -1531,8 +1414,7 @@ def _upgrade_differences(schedule, timezone):
             )
             % {"zone": timezone}
         )
-    repeating = {"hourly", "quarter_hour"} & {frequency, delta}
-    if repeating and _has_daylight_saving(timezone):
+    if frequency in ("hourly", "quarter_hour") and _has_daylight_saving(timezone):
         found.append(
             gettext(
                 "Hourly and quarter-hour refreshes follow UTC today, so on the day "

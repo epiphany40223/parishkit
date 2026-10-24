@@ -57,7 +57,8 @@ def test_each_http_attempt_reserves_read_drain_margin_and_closes_sql(
             for timeout in (30, 40):
                 assert (
                     session.get(
-                        DEFAULT_API_BASE_URL + "/families/change/list", timeout=timeout
+                        DEFAULT_API_BASE_URL + "/families/group/lookup/list",
+                        timeout=timeout,
                     ).json()
                     == []
                 )
@@ -85,7 +86,9 @@ def test_transport_never_closes_caller_transaction_or_starts_http_inside_it(
         transaction.atomic(),
     ):
         with pytest.raises(StorageInvariantError, match="inside a transaction"):
-            session.get(DEFAULT_API_BASE_URL + "/families/change/list", timeout=30)
+            session.get(
+                DEFAULT_API_BASE_URL + "/families/group/lookup/list", timeout=30
+            )
         assert connection.in_atomic_block and not connection.needs_rollback
     assert not calls
     assert SourceMutationLease.objects.get().external_deadline is None
@@ -102,7 +105,7 @@ def test_transport_requires_source_lease_attached_to_live_renewer(owner, monkeyp
         maintain_execution(execution),
         pytest.raises(StorageInvariantError, match="maintained"),
     ):
-        session.get(DEFAULT_API_BASE_URL + "/families/change/list", timeout=30)
+        session.get(DEFAULT_API_BASE_URL + "/families/group/lookup/list", timeout=30)
     assert not calls
     assert SourceMutationLease.objects.get().external_deadline is None
 
@@ -121,11 +124,13 @@ def test_changed_campaign_denies_the_next_read_before_reserving_or_http(
 
     monkeypatch.setattr(parishsoft_transport, "_exchange", exchange)
     with maintain_execution(execution), execution.maintain_source(lease):
-        session.get(DEFAULT_API_BASE_URL + "/families/change/list", timeout=30)
+        session.get(DEFAULT_API_BASE_URL + "/families/group/lookup/list", timeout=30)
         before = SourceMutationLease.objects.get().external_deadline
         add_draft(store, version, actor)
         with pytest.raises(PermissionError):
-            session.get(DEFAULT_API_BASE_URL + "/families/change/list", timeout=30)
+            session.get(
+                DEFAULT_API_BASE_URL + "/families/group/lookup/list", timeout=30
+            )
         assert connection.connection is None
     assert len(calls) == 1
     assert SourceMutationLease.objects.get().external_deadline == before
@@ -141,7 +146,9 @@ def test_changed_session_key_cannot_use_another_keys_attempt(owner, monkeypatch)
     session.headers["x-api-key"] = "DIFFERENT-SYNTHETIC-KEY"
     with maintain_execution(execution), execution.maintain_source(lease):
         with pytest.raises(PermissionError, match="credential"):
-            session.get(DEFAULT_API_BASE_URL + "/families/change/list", timeout=30)
+            session.get(
+                DEFAULT_API_BASE_URL + "/families/group/lookup/list", timeout=30
+            )
         assert connection.connection is None
     assert not calls and SourceMutationLease.objects.get().external_deadline is None
 
@@ -161,7 +168,7 @@ def test_validated_attempt_cannot_resume_reading_provider(owner, monkeypatch):
         execution.maintain_source(lease),
         pytest.raises(PermissionError, match="stale"),
     ):
-        session.get(DEFAULT_API_BASE_URL + "/families/change/list", timeout=30)
+        session.get(DEFAULT_API_BASE_URL + "/families/group/lookup/list", timeout=30)
     assert not calls and SourceMutationLease.objects.get().external_deadline is None
 
 
@@ -186,7 +193,7 @@ def test_different_loaded_bytes_cannot_borrow_an_attempt(owner, monkeypatch):
         execution.maintain_source(lease),
         pytest.raises(PermissionError, match="credential"),
     ):
-        session.get(DEFAULT_API_BASE_URL + "/families/change/list", timeout=30)
+        session.get(DEFAULT_API_BASE_URL + "/families/group/lookup/list", timeout=30)
     assert not calls and SourceMutationLease.objects.get().external_deadline is None
 
 
@@ -204,14 +211,16 @@ def test_local_configuration_failure_during_read_is_not_invalid_provider_data(
     exchange = Mock(return_value=b"200\n[]")
     monkeypatch.setattr(parishsoft_transport, "_exchange", exchange)
     with maintain_execution(execution), execution.maintain_source(lease):
-        session.get(DEFAULT_API_BASE_URL + "/families/change/list", timeout=30)
+        session.get(DEFAULT_API_BASE_URL + "/families/group/lookup/list", timeout=30)
         monkeypatch.setattr(
             transport,
             "verify_refresh_attempt",
             Mock(side_effect=ConfigError("synthetic-private")),
         )
         with pytest.raises(StorageInvariantError) as raised:
-            session.get(DEFAULT_API_BASE_URL + "/families/change/list", timeout=30)
+            session.get(
+                DEFAULT_API_BASE_URL + "/families/group/lookup/list", timeout=30
+            )
     assert classify_read_failure(raised.value, has_source_claim=True) is None
     assert "synthetic-private" not in str(raised.value)
     assert exchange.call_count == 1

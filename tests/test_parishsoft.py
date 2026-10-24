@@ -1064,3 +1064,12 @@ def test_config_repr_never_shows_the_api_key(tmp_path):
     config = ParishSoftConfig(api_key="SECRET-KEY-VALUE", cache_dir=tmp_path)
     assert "SECRET-KEY-VALUE" not in repr(config)
     assert config.api_key == "SECRET-KEY-VALUE"
+
+
+def test_uncached_get_neither_reads_nor_updates_existing_cache(tmp_path):
+    """Explicit uncached reads preserve ordinary shared cache behavior."""
+    source = client(tmp_path, [Response({"version": 1}), Response({"version": 2})])
+    assert source.get("lookup") == {"version": 1}
+    assert source.get_uncached("lookup") == {"version": 2}
+    assert source.get("lookup") == {"version": 1}
+    assert len(source.session.calls) == 2

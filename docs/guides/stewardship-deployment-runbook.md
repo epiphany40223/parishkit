@@ -1296,7 +1296,11 @@ changed refresh schedule.
 After deploying, remove Production's stored quick updates: on the
 ParishSoft integration page the schedule opens in Advanced with a note
 about quick updates. Choose **Remove quick updates**, then Save, check that
-the review lists "Quick updates removed", and Apply.
+the review lists "Quick updates removed", and Apply. (From the release that
+removes quick updates,
+[#1147](https://github.com/epiphany40223/parishkit/issues/1147), this step
+is gone: the editor no longer shows stored quick rows or that action, and
+nothing schedules them.)
 
 Rolling back: until a schedule is saved on this release, the previous image
 runs on the configuration unchanged. Once one is saved (removing the quick
@@ -1305,6 +1309,19 @@ the previous release's configuration check refuses, so an image-only
 rollback is no longer possible: fail forward, as the general policy is, or
 restore the pre-upgrade backup together with the previous release
 ([Rollback](#rollback)).
+
+### Quick updates removed (#1147)
+
+The release that removes quick updates
+([#1147](https://github.com/epiphany40223/parishkit/issues/1147)) has no
+database migration, no grant change and no configuration change. What to
+expect after deploying: a quick update still queued at the upgrade runs
+once without calling ParishSoft and waits for one full refresh, which
+the worker requests at once; System health shows that full refresh
+running, the connection line is unaffected, and the quick update's task
+succeeds when the full refresh promotes (a few minutes). A stored schedule
+with quick rules keeps them, ignored, until the next schedule change saved
+on the ParishSoft page drops them.
 
 ## Rollback
 

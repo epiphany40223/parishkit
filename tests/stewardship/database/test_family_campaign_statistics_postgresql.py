@@ -22,10 +22,10 @@ from parishkit.stewardship.campaigns import family_identity
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.deployment import ServiceRole
 
+from .refresh_harness import Refreshes
 from .test_background_grants_postgresql import task_login
 from .test_source_refreshing_postgresql import source_singletons  # noqa: F401
 from .test_source_step_lock_postgresql import separate_session
-from .test_source_unchanged_postgresql import Refreshes
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -101,7 +101,7 @@ def test_a_first_load_analyzes_the_family_tables_once_it_commits(tmp_path, monke
     # campaign (the quadratic FAMILY_INPUTS plan).
     assert planned_families(seen_campaign(families)) == families
     # A later refresh of the same campaign adds no first load.
-    refreshes.quick()
+    refreshes.again()
     assert len(seen) == 1
 
 

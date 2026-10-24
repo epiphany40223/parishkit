@@ -1,6 +1,7 @@
 """Durable request coalescing and current source-window admission on PostgreSQL."""
 
 from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
 from uuid import uuid4
 
 import pytest
@@ -11,10 +12,12 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.dispatch import Handler, WorkQueue, claim_hint
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.storage import _status, enqueue
+from parishkit.stewardship.source import requests
 from parishkit.stewardship.source.canonical import canonical_payload
 from parishkit.stewardship.source.leases import acquire_source, release_source
 from parishkit.stewardship.source.models import SourceCurrent, SourceMutationLease
 from parishkit.stewardship.source.refresh_models import (
+    REFRESH_CAUSES,
     SourceRefreshCommand,
     SourceRefreshRequest,
 )
@@ -48,17 +51,24 @@ def source_singletons():
 
 
 def command(**overrides):
-    """Explicit synthetic producer admission, with no browser/provider authority."""
-    return request_refresh(
-        **dict(
-            command_id=uuid4(),
-            cause="manual",
-            actor_id=uuid4(),
-            correlation_id=uuid4(),
-            authorize=lambda scope: True,
+    """Explicit synthetic producer admission, with no browser/provider authority.
+
+    A ``delta`` cause stands for a request recorded before quick updates were
+    removed (#1147), which ``request_refresh`` now refuses; the records and
+    their guards remain, so these tests record one the old way, with the
+    removed cause allowed again for that one call.
+    """
+    with patch.object(requests, "NEW_CAUSES", REFRESH_CAUSES):
+        return request_refresh(
+            **dict(
+                command_id=uuid4(),
+                cause="manual",
+                actor_id=uuid4(),
+                correlation_id=uuid4(),
+                authorize=lambda scope: True,
+            )
+            | overrides
         )
-        | overrides
-    )
 
 
 def claim(receipt):
@@ -106,6 +116,20 @@ def test_manual_during_running_poll_queues_exactly_one_followup(tmp_path):
     assert followup.request_id == repeated.request_id != active.request_id
     assert SourceRefreshRequest.objects.count() == 2
     assert TaskRun.objects.get(pk=active.task_root_id).state == "running"
+
+
+def test_a_new_delta_request_is_refused(tmp_path):
+    """Quick updates were removed (#1147): nothing may request one now."""
+    initialized(tmp_path)
+    with pytest.raises(ValueError, match="Quick updates"):
+        request_refresh(
+            command_id=uuid4(),
+            cause="delta",
+            actor_id=None,
+            correlation_id=uuid4(),
+            authorize=lambda scope: True,
+        )
+    assert not SourceRefreshCommand.objects.exists()
 
 
 def test_delta_may_coalesce_into_full_but_not_the_reverse(tmp_path):

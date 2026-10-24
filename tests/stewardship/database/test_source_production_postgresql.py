@@ -13,7 +13,7 @@ from parishkit.stewardship.jobs.scheduler import (
     SchedulerOwnershipLost,
     scheduler_session,
 )
-from parishkit.stewardship.source import production
+from parishkit.stewardship.source import cadence, production
 from parishkit.stewardship.source.cadence import due_slots
 from parishkit.stewardship.source.models import SourceCurrent, SourceMutationLease
 from parishkit.stewardship.source.outcomes import scope_fingerprint
@@ -42,8 +42,12 @@ def source_singletons():
     SourceCurrent.objects.get_or_create(singleton=True)
 
 
-def test_two_due_slots_share_one_full_request_and_survive_restart(tmp_path):
-    """Repeated scans keep their exact commands even when no insertion hint survived."""
+def test_the_due_slot_keeps_its_full_request_and_survives_restart(tmp_path):
+    """Repeated scans keep the exact command even when no insertion hint survived.
+
+    Only the nightly full slot is due: no quick update (delta) slot is
+    created (#1147).
+    """
     configured(tmp_path)
     with scheduler_session() as guard:
         raw = connection.connection
@@ -53,19 +57,12 @@ def test_two_due_slots_share_one_full_request_and_survive_restart(tmp_path):
         guard.check()
     with scheduler_session() as guard:
         assert produce_refreshes(guard) == first
-    assert len(first) == SourceRefreshTick.objects.count() == 2
-    assert SourceRefreshCommand.objects.count() == 2
+    assert len(first) == SourceRefreshTick.objects.count() == 1
+    assert SourceRefreshCommand.objects.get().cause == "nightly"
     assert SourceRefreshRequest.objects.get().kind == "full"
     assert TaskRun.objects.get(task_type="source_refresh").state == "queued"
-    assert first[0].request_id == first[1].request_id
-    assert {tick.command.cause for tick in SourceRefreshTick.objects.all()} == {
-        "nightly",
-        "delta",
-    }
     with transaction.atomic():
-        assert all(
-            tick.due_at <= database_now() for tick in SourceRefreshTick.objects.all()
-        )
+        assert SourceRefreshTick.objects.get().due_at <= database_now()
 
 
 @pytest.mark.parametrize("zone", ["EET", "US/Eastern", "America/Indianapolis"])
@@ -104,7 +101,7 @@ def test_nightly_alias_uses_same_local_day_as_python_resolver(
     now = datetime(2026, 4, 15, 12, tzinfo=UTC)
     monkeypatch.setattr(production, "database_now", lambda: now)
     with scheduler_session() as guard:
-        assert len(produce_refreshes(guard)) == 2
+        assert len(produce_refreshes(guard)) == 1
     tick = SourceRefreshTick.objects.select_related("command__request").get(
         command__cause="nightly"
     )
@@ -132,7 +129,7 @@ def test_absent_configuration_and_restore_are_holds_not_consumed_slots(tmp_path)
         assert produce_refreshes(guard) == ()
     assert not SourceRefreshTick.objects.exists()
     with scheduler_session() as guard:
-        assert len(produce_refreshes(guard)) == 2
+        assert len(produce_refreshes(guard)) == 1
 
 
 def test_tick_insert_failure_rolls_back_all_commands_and_tasks(tmp_path, monkeypatch):
@@ -160,7 +157,7 @@ def test_changed_campaign_creates_new_scope_without_rebinding_old_ticks(tmp_path
     with scheduler_session() as guard:
         second = produce_refreshes(guard)
     assert first[0].request_id != second[0].request_id
-    assert SourceRefreshTick.objects.count() == 4
+    assert SourceRefreshTick.objects.count() == 2
     assert SourceRefreshRequest.objects.count() == 2
     # That new full refresh is the new campaign's load, which its Load
     # ParishSoft data step follows with no Administrator request (#1951).
@@ -206,28 +203,41 @@ def test_raw_tick_cannot_forge_schedule_inputs(tmp_path, field, value):
             SourceRefreshTick.objects.create(**values)
 
 
-def test_raw_tick_requires_scheduler_and_no_future_due_time(tmp_path):
-    """A known slot is not a grant to write future or unowned scheduled evidence."""
+@pytest.mark.parametrize("cause", ["nightly", "delta"])
+def test_raw_tick_requires_scheduler_and_no_future_due_time(tmp_path, cause):
+    """A known slot is not a grant to write future or unowned scheduled evidence.
+
+    The guard still refuses a future quick update (delta) tick, a cause from
+    before #1147 that the scheduler no longer creates.
+    """
     configured(tmp_path)
     with scheduler_session() as guard:
         produce_refreshes(guard)
-        tick = SourceRefreshTick.objects.select_related("command__request").get(
-            command__cause="delta"
-        )
+        tick = SourceRefreshTick.objects.select_related("command__request").get()
         request = tick.command.request
-        future = due_slots(
-            now=tick.due_at + timedelta(days=1),
-            timezone=tick.timezone,
-            nightly_time=tick.nightly_time,
-            scope_fingerprint=scope_fingerprint(
-                request.organization_id, request.window_digest
-            ),
-        )[1]
+        fingerprint = scope_fingerprint(request.organization_id, request.window_digest)
+        later = tick.due_at + timedelta(days=1)
+        future = (
+            due_slots(
+                now=later,
+                timezone=tick.timezone,
+                nightly_time=tick.nightly_time,
+                scope_fingerprint=fingerprint,
+            )[0]
+            if cause == "nightly"
+            else cadence._slot(
+                "delta",
+                later,
+                None,
+                timezone=tick.timezone,
+                scope_fingerprint=fingerprint,
+            )
+        )
         with (
             pytest.raises(IntegrityError, match="not due under its applied cadence"),
             work_transaction(),
         ):
-            receipt = command(cause="delta", actor_id=None)
+            receipt = command(cause=cause, actor_id=None)
             SourceRefreshTick.objects.create(
                 command_id=receipt.command_id,
                 configuration_id=tick.configuration_id,
@@ -240,7 +250,7 @@ def test_raw_tick_requires_scheduler_and_no_future_due_time(tmp_path):
         pytest.raises(IntegrityError, match="requires scheduler and work ownership"),
         work_transaction(),
     ):
-        receipt = command(cause="delta", actor_id=None)
+        receipt = command(cause="nightly", actor_id=None)
         SourceRefreshTick.objects.create(
             command_id=receipt.command_id,
             configuration_id=tick.configuration_id,
@@ -268,7 +278,7 @@ def test_tick_is_immutable_and_cannot_be_deleted(tmp_path):
             connection.cursor() as cur,
         ):
             cur.execute(sql, values)
-    assert SourceRefreshTick.objects.count() == 2
+    assert SourceRefreshTick.objects.count() == 1
 
 
 def test_supersession_scan_is_bounded_and_advances_past_current_work(tmp_path):
@@ -308,6 +318,6 @@ def test_compiled_producer_retires_stale_work_before_current_slots(tmp_path):
     producer = SourceProducer(uuid4())
     with scheduler_session() as guard:
         receipts = producer(guard)
-    assert len(receipts) == 2 and producer.cursor is None
+    assert len(receipts) == 1 and producer.cursor is None
     assert TaskRun.objects.get(pk=old.task_root_id).state == "cancelled"
     assert all(receipt.request_id != old.request_id for receipt in receipts)

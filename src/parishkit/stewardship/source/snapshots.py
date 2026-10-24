@@ -104,6 +104,30 @@ def _staging(snapshot_id, claim, admit):
     return snapshot
 
 
+# The cursor of a delta snapshot retired without reading ParishSoft (#1147).
+RETIRED_CURSOR = {"schema": "source-retired-v1"}
+
+
+def mark_retired(snapshot_id, claim, *, admit):
+    """Mark a delta's empty staging as retired before it is rejected (#1147).
+
+    Quick updates were removed, so a delta request left from before is
+    rejected without reading ParishSoft. Its cursor (which a real read sets
+    only when it finishes) becomes ``RETIRED_CURSOR``, so the data-age facts
+    (``data_age.FACTS_SQL``) can tell this rejection from a failed read: the
+    cursor is a column every login that reads those facts may already see,
+    and the snapshot guard lets the live owner change a staging snapshot.
+    """
+    with transaction.atomic():
+        snapshot = _staging(snapshot_id, claim, admit)
+        if snapshot.kind != "delta" or snapshot.cursor:
+            raise InvalidSourcePayload("Only an unread delta may be retired.")
+        snapshot.cursor = dict(RETIRED_CURSOR)
+        snapshot.version += 1
+        snapshot.save()
+        return snapshot
+
+
 def stage_entities(snapshot_id, claim, *, kind, entities, admit):
     """Write a bounded idempotent batch, reusing immutable identity/digest versions.
 
@@ -432,39 +456,6 @@ def finish_snapshot(snapshot_id, claim, *, expected_counts, cursor, admit):
             admit=admit,
         )
         return complete_snapshot(snapshot_id, claim, evidence, admit=admit)
-
-
-UNCHANGED_VALIDATION = {"schema": "source-unchanged-v1"}
-
-
-def finish_unchanged(snapshot_id, claim, *, cursor, admit):
-    """End a quick update whose corpus equals the current one, staging nothing.
-
-    The caller has compared the delta's whole corpus with the current
-    snapshot it was read against, and checked that promotion would change no
-    owning-domain state (#630). Instead of staging a full copy and promoting
-    it, which rewrites every Family row for no new data, the snapshot keeps
-    no membership rows, carries the current snapshot's counts and digest, and
-    ends in the terminal ``unchanged`` state. Its cursor counts no changes, so
-    the task page says none changed; it is a successful ParishSoft answer for
-    the connection line but never moves "data as of". The SQL guard requires
-    the base to still be the current snapshot, so a promotion that slipped in
-    between fails this attempt instead of recording a stale "unchanged".
-    """
-    cursor_text, _ = canonical_payload(cursor)
-    with transaction.atomic():
-        snapshot = _staging(snapshot_id, claim, admit)
-        base = SourceSnapshot.objects.get(pk=snapshot.base_id)
-        snapshot.counts = dict(base.counts)
-        snapshot.content_digest = base.content_digest
-        snapshot.validation = dict(UNCHANGED_VALIDATION)
-        snapshot.cursor = json.loads(cursor_text)
-        snapshot.cursor["changes"] = dict.fromkeys(ENTITY_MODELS, 0)
-        snapshot.completed_at = _now()
-        snapshot.state = "unchanged"
-        snapshot.version += 1
-        snapshot.save()
-        return snapshot
 
 
 def promote_snapshot(snapshot_id, claim, *, admit, reconcile):

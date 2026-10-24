@@ -23,6 +23,7 @@ from parishkit.stewardship.source import refreshing, snapshots
 from parishkit.stewardship.source.attempts import begin_refresh_attempt
 from parishkit.stewardship.source.models import SourceSnapshot
 
+from .refresh_harness import Refreshes
 from .test_background_grants_postgresql import task_login
 from .test_source_attempts_postgresql import setup, stage
 from .test_source_refreshing_postgresql import (  # noqa: F401
@@ -37,7 +38,6 @@ from .test_source_step_lock_postgresql import (
     own_pid,
     separate_session,
 )
-from .test_source_unchanged_postgresql import Refreshes
 
 pytestmark = pytest.mark.django_db(transaction=True)
 

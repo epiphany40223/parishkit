@@ -17,9 +17,8 @@ draws appears above the rows. The data-*-text attributes are the script's
 words, translated here. The Edit as text list is a shared time entry field
 (data-time-entry="list", ui-v1.js), so it shows how it reads as the Admin
 types, like every other Admin time (#1117); it is not posted.
-The editor offers full refreshes only. A stored schedule that still has
-quick rules opens in Advanced, shows them read-only and offers one action
-that removes them (data-remove-quick), reviewed like any change (#1122).
+The editor offers full refreshes only: quick updates were removed (#1147),
+and a stored quick rule is not shown.
 {% endcomment %}{% with editor=schedule.editor %}<section class="panel refresh-schedule" id="refresh-schedule" aria-labelledby="refresh-schedule-heading" data-refresh-schedule data-check-url="{% url 'admin:refresh_schedule_check' 'parishsoft' %}" data-schedule-zone="{{ schedule.timezone }}" data-blocking="{{ schedule.blocking|yesno:'true,false' }}" data-browser-zone-text="{% translate "Your browser is in {zone}, so the seven-day list also shows each time in your browser's time." %}" data-too-many-times-text="{% blocktranslate with most=editor.rules.max_num %}This list has {count} times, but a schedule has at most {{ most }} rules. Use rules that repeat (every …) instead.{% endblocktranslate %}">
 <h2 id="refresh-schedule-heading">{% translate "Refresh schedule" %}</h2>
 <p class="help">{% translate "A full refresh reloads all Families, Members, ministries and giving from ParishSoft and takes a few minutes." %}</p>
@@ -39,7 +38,6 @@ that removes them (data-remove-quick), reviewed like any change (#1122).
 <div class="editor-mode-panel schedule-advanced" data-editor-mode-panel="advanced"{% if schedule.mode != "advanced" %} hidden{% endif %}>
 <h3>{% translate "Rules" %}</h3>
 <p class="help">{% translate "Each rule gives full refreshes every so often between two times, or at one time. Use quarter-hour times (:00, :15, :30 or :45), at least 15 minutes apart." %} {% blocktranslate with most=editor.rules.max_num %}A schedule has at most {{ most }} rules.{% endblocktranslate %}</p>
-<div class="schedule-quick-region" data-quick-region>{% if schedule.has_quick %}<div class="notice" data-quick-notice><p id="refresh-quick-note">{% translate "This schedule still has quick updates, shown below without controls. ParishSoft's list of changed Families returns nothing, so they bring in no new data. Remove quick updates takes them out of the schedule; review and apply the change to stop them." %}</p><p>{% button type="button" variant="secondary" aria-describedby="refresh-quick-note" data-remove-quick %}{% translate "Remove quick updates" %}{% endbutton %}</p></div>{% endif %}</div>
 {{ editor.rules.management_form }}{{ editor.skips.management_form }}
 <div data-schedule-rows="rules">{% for row in schedule.rule_rows %}{% include 'stewardship/refresh-schedule-rule.html' %}{% endfor %}</div>
 <template data-row-template="rules">{% include 'stewardship/refresh-schedule-rule.html' with row=schedule.empty_rule_row %}</template>

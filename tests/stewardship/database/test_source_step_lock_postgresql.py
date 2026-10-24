@@ -248,16 +248,14 @@ def test_a_staging_batch_never_holds_the_work_order(tmp_path, monkeypatch, holde
     assert seen and not any(own for _, _, own in seen)
 
 
-@pytest.mark.parametrize("cause,phase", [("delta", "delta"), ("manual", "full")])
 def test_refresh_inputs_read_the_base_corpus_outside_the_work_order(
-    tmp_path, monkeypatch, holder, cause, phase
+    tmp_path, monkeypatch, holder
 ):
     """The current snapshot's corpus is read after the inputs' effect.
 
-    A quick update reads the whole current corpus as its base, and a refresh
-    whose current snapshot predates recorded derived counts (as the seeded
-    one does) counts them from its rows. Both reads used to run inside the
-    work-order effect, about 200 ms at 1,100 Families. Here each read
+    A refresh whose current snapshot predates recorded derived counts (as
+    the seeded one does) counts them from its rows. That read used to run
+    inside the work-order effect, about 200 ms at 1,100 Families. Here it
     starts without the lock and runs while a competing session holds it
     exclusively, so it neither holds nor waits for it; the inputs are
     unchanged.
@@ -267,17 +265,13 @@ def test_refresh_inputs_read_the_base_corpus_outside_the_work_order(
 
     credential, execution, lease, *_ = setup(tmp_path)
     first = seed_full(credential, execution, lease)
-    execution = claim_request(
-        command(cause=cause)
-        if cause == "manual"
-        else command(cause=cause, actor_id=None)
-    )
+    execution = claim_request(command(cause="manual"))
     with execution.effect():
         lease = acquire_source(
             task_id=execution.claim.run_id,
             task_fence=execution.claim.fence,
             worker_id=execution.claim.worker_id,
-            phase=phase,
+            phase="full",
         )
     attempt = begin_refresh_attempt(execution, lease, credential)
     seen = []
@@ -301,16 +295,13 @@ def test_refresh_inputs_read_the_base_corpus_outside_the_work_order(
 
     monkeypatch.setattr(refreshing, "reconstruct_snapshot", read)
     inputs = _inputs(attempt.pk, execution, lease)
-    # One read each: the whole base for a quick update (which also yields its
-    # counts), only the counted kinds for a full refresh.
-    expected_kinds = None if phase == "delta" else ("family", "contact")
+    # One read, of only the counted kinds.
     ((snapshot_id, kinds, outside, competing, elapsed),) = seen
-    assert snapshot_id == first.pk and kinds == expected_kinds
+    assert snapshot_id == first.pk and kinds == ("family", "contact")
     assert outside and competing and elapsed < 10
     assert not holds_work_order(own_pid())
     whole = reconstruct_snapshot(first.pk)
     assert inputs.previous_derived_counts == derived_counts(whole)
-    assert inputs.base == (whole if phase == "delta" else None)
 
 
 def separate_session():

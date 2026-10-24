@@ -145,8 +145,9 @@ explicit retry, only if its own code creates that type.
   requests and Admin retries.
 - The scheduler creates the types its producers queue.
 - The worker creates three types: delivery messages its preparation and fan-out
-  handlers build, the export an exact export hands to its renderer, and a full
-  source refresh after a rejected delta.
+  handlers build, the export an exact export hands to its renderer, and the
+  full source refresh that replaces a retired quick update (see
+  [quick updates removed](#quick-updates-removed)).
 - Mail dispatch creates no tasks.
 
 Every type that some service executes has at least one creator.
@@ -350,7 +351,7 @@ never delays short work queued behind it
 | Process | Queues | Work |
 | --- | --- | --- |
 | Main worker process | `general`, `restore-general` | Exports, report facts and verification, operational collection and alert fanout, report emails, campaign lifecycle and every other general task |
-| Source process | `general-source` | ParishSoft refresh (full, delta and manual), setup source load, final setup load and setup staging cleanup: every task that holds the `SourceMutationLease` |
+| Source process | `general-source` | ParishSoft refresh (scheduled and manual), setup source load, final setup load and setup staging cleanup: every task that holds the `SourceMutationLease` |
 
 The handler registered for a task type names its queue; the scheduler publishes
 each hint to that queue, and a process refuses a hint for a task type bound to
@@ -861,8 +862,9 @@ Admin-editable template or caller flag.
 
 ## ParishSoft refresh
 
-A singleton durable PostgreSQL `SourceMutationLease` covers full, delta, and
-manual refresh, ParishSoft publication execution, and the source retention
+A singleton durable PostgreSQL `SourceMutationLease` covers scheduled and
+manual refresh (and the retirement of a quick update queued before #1147),
+ParishSoft publication execution, and the source retention
 each refresh runs first (its `compaction` phase; see
 [temporary retention and housekeeping](../operations/spec.md#temporary-retention-and-housekeeping)).
 Its row stores owner task,
@@ -895,10 +897,13 @@ database lock while fetching data or awaiting human confirmation.
 ### Refresh schedule
 
 Scheduled refreshes follow one daily schedule of local times, in the refresh
-schedule's time zone (the current campaign's, else the parish's), each
-marked **Full** (a [full cycle](#full-cycle)) or **Quick** (a
-[delta cycle](#delta-cycle)) ([#632](https://github.com/epiphany40223/parishkit/issues/632)).
-The Administrator edits it on the
+schedule's time zone (the current campaign's, else the parish's), each a
+[full cycle](#full-cycle)
+([#632](https://github.com/epiphany40223/parishkit/issues/632)). Quick
+updates (delta refreshes) were removed in
+[#1147](https://github.com/epiphany40223/parishkit/issues/1147); see
+[quick updates removed](#quick-updates-removed). The Administrator edits
+it on the
 [ParishSoft refresh schedule settings](../admin-portal/spec.md#parishsoft-refresh-schedule-settings);
 the research behind this design, its open decisions and its delivery order
 are in the [refresh schedule plan](../../../plans/stewardship/refresh-schedule.md).
@@ -914,31 +919,24 @@ age is judged and what the bulk-send hold does change for every schedule.
 The schedule is built in layers, in this order, as an iCalendar recurrence
 set is built from rules, added times and excluded times:
 
-1. **Rules.** "Full or Quick, every N minutes from a start time to a last
-   time": N is 15, 30, 60, 120, 180, 240, 360, 480 or 720, the times run from
+1. **Rules.** "Full every N minutes from a start time to a last time": N is 15,
+   30, 60, 120, 180, 240, 360, 480 or 720, the times run from
    the start time in steps of N up to and including the last time, and the
    last time is at or after the start time (a schedule that crosses midnight
    uses two rules). Times are counted from the rule's start time, not from
    midnight.
-2. **Single times.** "Full or Quick at a time".
+2. **Single times.** "Full at a time".
 3. **Exceptions.** Times, or from–to ranges whose start is included and end
-   excluded and whose end is after the start, that remove any time of either
-   kind, for example "except 12:00" or "skip from 22:00 to 23:00".
-4. **Precedence.** A time that is both Full and Quick is Full: a full
-   refresh in the same slot replaces the quick one.
-5. **Coverage.** A quick time that a rule generated is left out when a full
-   time falls at or after it and less than one rule step after it (for the
-   rule's last time too, so the bound never depends on a next time that does
-   not exist), or less than 15 minutes before it: the full refresh covers
-   it. Coverage compares times on the same day and never wraps past
-   midnight, so a full refresh at 00:00 does not cover a quick update at
-   23:00. With hourly quick updates on the hour, an hour that has a full
-   refresh has no quick update
-   ([#630](https://github.com/epiphany40223/parishkit/issues/630)).
-6. **Automatic exclusions**, decided when each slot falls due (see
+   excluded and whose end is after the start, that remove any time, for
+   example "except 12:00" or "skip from 22:00 to 23:00".
+4. **Automatic exclusions**, decided when each slot falls due (see
    [skipped around Family emails](#skipped-around-family-emails)).
 
-Layers 1–5 give the **daily times**: at least one full time, and at most 96
+The precedence and coverage layers, which decided when a full time replaced
+a quick one ([#630](https://github.com/epiphany40223/parishkit/issues/630)),
+went with quick updates in #1147.
+
+Layers 1–3 give the **daily times**: at least one full time, and at most 96
 times in all, which the spacing rule already implies. There is no other cap;
 the [settings page](../admin-portal/spec.md#cost-and-freshness-summary) shows
 the cost instead. New times are on the quarter hour (:00, :15, :30 or :45);
@@ -946,17 +944,15 @@ a full time already stored off the quarter hour (say 02:10) is kept while the
 Administrator keeps it, but no new one can be added. The earliest full time
 is the **nightly refresh**, which never waits for a Family send; every other
 full time is a daytime refresh that
-[waits for a bulk Family send](#deltas-wait-for-a-bulk-family-send). The
-schedule is the same every day of the week.
+[waits for a bulk Family send](#daytime-refreshes-wait-for-a-bulk-family-send).
+The schedule is the same every day of the week.
 
-#### Spacing and coverage
+#### Spacing
 
 Any two daily times must be at least 15 minutes apart, measured on the wall
 clock around midnight (23:45 and 00:00 are 15 minutes apart and allowed; a
 kept 23:50 and 00:00 are 10 minutes apart and refused). Refusals name the two
-conflicting times. A rule's quick time that coverage leaves out is not a
-conflict: the preview shows it as covered by the named full refresh. Every
-other pair of daily times closer than 15 minutes is refused. On a
+conflicting times. On a
 daylight-saving day two times may resolve to instants closer than 15
 minutes, or to the same instant; refreshes still never overlap, because the
 mutation lease serializes them.
@@ -986,7 +982,7 @@ includes its start and excludes its end:
   at most that same allowance. A send that is retrying or stuck therefore
   cannot keep refreshes skipped: from the cap on, scheduled refreshes are
   decided as usual, the
-  [bulk-send hold](#deltas-wait-for-a-bulk-family-send) holds them while the
+  [bulk-send hold](#daytime-refreshes-wait-for-a-bulk-family-send) holds them while the
   send is still active, and the alarm applies with that hold's allowance.
 - **Active work for one occurrence:** the hold counts active work globally;
   the window counts the same states for this occurrence only, that is Family
@@ -1016,8 +1012,8 @@ undecided slot (one with no refresh and no decision, today or yesterday),
 including the slots that fell due while the scheduler was down, which are
 decided against the windows as they are when the scheduler returns. Inside a
 window such a slot is recorded as skipped, and held by the bulk-send hold it
-is recorded as held; otherwise only the latest full slot and the latest
-quick slot get a refresh, and older undecided slots stay undecided, with no
+is recorded as held; otherwise only the latest full slot gets a refresh,
+and older undecided slots stay undecided, with no
 row and no refresh. There is no backlog replay. A slot that is recorded as
 skipped is never created later, and a slot whose refresh exists is never
 skipped later. A slot recorded as held stays due: if a moved reminder's
@@ -1026,27 +1022,27 @@ as the catch-up. The
 [data-age alarm](../operations/spec.md#parishsoft-data-age-and-connection)
 treats a recorded skip as "not due", so a later change to the windows cannot
 turn a deliberate skip into a missed refresh. A skipped refresh is not moved,
-and nothing replaces it: when the latest due full (or quick) slot is
-skipped, the scheduler creates no full (or quick) slot for it, rather than
-falling back to an older one, and the next scheduled time runs as usual.
-The one exception is a held slot: when the hold ends and the latest due slot
-of its kind was skipped, the newest held slot of that kind is created as the
-catch-up, because it was due and the alarm is counting it.
+and nothing replaces it: when the latest due full slot is skipped, the
+scheduler creates no slot for it, rather than falling back to an older one,
+and the next scheduled time runs as usual. The one exception is a held
+slot: when the hold ends and the latest due slot was skipped, the newest
+held slot is created as the catch-up, because it was due and the alarm is
+counting it.
 
 **Skipped and held are different.** In each loop the scheduler first applies
 the windows, then the
-[bulk-send hold](#deltas-wait-for-a-bulk-family-send), to a slot that is
+[bulk-send hold](#daytime-refreshes-wait-for-a-bulk-family-send), to a slot that is
 due, undecided and not the nightly:
 
 1. inside a window: the skip is recorded, and the slot is **not due**: it
    never runs and the alarm ignores it;
 2. otherwise, held by the hold: the hold is recorded, and the slot **is
    due**: once the hold ends it runs as the catch-up if it is still the
-   latest due slot of its kind, or the newest held one after a skipped
-   latest slot, and is otherwise superseded by a later slot's refresh; the
-   alarm counts it with the hold's allowance;
-3. otherwise, and only for the latest due full slot and the latest due quick
-   slot, its refresh is created; an older slot stays undecided.
+   latest due slot, or the newest held one after a skipped latest slot, and
+   is otherwise superseded by a later slot's refresh; the alarm counts it
+   with the hold's allowance;
+3. otherwise, and only for the latest due full slot, its refresh is
+   created; an older slot stays undecided.
 
 **The slot decision record** is a table written only by the scheduler, its
 `slot_key` unique, so a slot has at most one decision and a held slot can
@@ -1056,8 +1052,6 @@ tick its slot would have, and its configured time follows the tick's rules:
 - a full slot at a listed time: that time, which is part of the slot key;
 - a legacy hourly or quarter-hour full slot: the nightly time, as its tick
   records, which is also part of the key;
-- a quick slot, listed or legacy: none in the key, as today; the row, like
-  the tick, stores the nightly time;
 - a schedule-change catch-up (see
   [ParishSoft data age and connection](../operations/spec.md#parishsoft-data-age-and-connection)):
   none, with cause `catch_up`.
@@ -1065,10 +1059,10 @@ tick its slot would have, and its configured time follows the tick's rules:
 A database guard on insert requires the same scheduler and work-order
 ownership as the refresh-tick guard, a `slot_key` that equals the identity
 derived from the row's inputs, the same cadence check the tick guard makes
-for the row's cause (a listed full or quick time resolved through the shared
+for the row's cause (a listed full time resolved through the shared
 daylight-saving rules; for a legacy schedule a UTC quarter hour or hour as
-`full_refresh` or `delta_refresh` says; for `catch_up` the instant the
-applied schedule took effect), and a due instant that is not in the future;
+`full_refresh` says; for `catch_up` the instant the applied schedule took
+effect), and a due instant that is not in the future;
 it refuses a skip for a slot that already has a tick, and the refresh-tick
 guard refuses a tick whose slot was recorded as skipped (a held slot's tick
 is admitted). Rows are removed by the
@@ -1079,7 +1073,7 @@ them.
 The nightly refresh is never skipped; when it falls inside a window the
 settings page says so and the existing lead-window WARNING still fires (see
 [preparing ahead of the due time](#preparing-ahead-of-the-due-time)). These
-windows are planning; the [bulk-send hold](#deltas-wait-for-a-bulk-family-send)
+windows are planning; the [bulk-send hold](#daytime-refreshes-wait-for-a-bulk-family-send)
 still applies on top of them to any send that is actually running.
 
 A schedule-change catch-up (see
@@ -1109,38 +1103,38 @@ run that day; the next day's runs as usual.
 
 #### Slots, identities and daylight saving
 
-Every daily time, Full or Quick, is a wall time in the refresh schedule's
-time zone, resolved for each day through the shared daylight-saving resolver
-of [schedules](../ui-conventions/spec.md#schedules): a repeated time (clocks
-go back) runs once, at its earlier instant, and a time in the missing hour
+Every daily time is a wall time in the refresh schedule's time zone,
+resolved for each day through the shared daylight-saving resolver of
+[schedules](../ui-conventions/spec.md#schedules): a repeated time (clocks go
+back) runs once, at its earlier instant, and a time in the missing hour
 (clocks go forward) runs at the first real instant after the gap. On the day
-clocks go back, quick times in the repeated hour therefore run once; on the
-day they go forward, times in the missing hour coincide, and a full time
-there runs as today (the nightly wins a tie, then the later wall time).
+clocks go forward, times in the missing hour coincide, and a full time there
+runs as today (the nightly wins a tie, then the later wall time).
 
-The scheduler still creates at most one full and one quick slot per loop:
-the latest full time and the latest quick time that have fallen due, today
-or yesterday, unless that latest slot is skipped (see
-[skipped around Family emails](#skipped-around-family-emails)); a quick slot
-due with a full one joins it. After downtime only those latest slots run. Slot identities
-keep their existing inputs (the source scope, time zone, cause, due instant
-and, for a full slot, the configured time), so:
+The scheduler creates at most one full slot per loop, the latest full time
+that has fallen due, today or yesterday, unless that latest slot is skipped
+(see [skipped around Family emails](#skipped-around-family-emails)), plus
+the schedule-change catch-up. It creates no quick slot (see
+[quick updates removed](#quick-updates-removed)). After downtime only that
+latest slot runs. Slot identities keep their existing inputs (the source
+scope, time zone, cause, due instant and the configured time), so a full
+slot's identity does not change while its configured time is kept.
 
-- a full slot's identity does not change while its configured time is kept;
-- a quick slot at a local quarter hour has the same identity as the old
-  quarter-hour slot at the same instant, which holds in every time zone
-  whose offset is a whole number of quarter hours.
-
-The database's refresh-tick guard accepts a quick tick only at a listed quick
-time when the schedule lists them, resolved the same way, as it already does
-for full times (#465). It finds when the current schedule took effect, for
-the schedule-change catch-up, by comparing each activation's schedule
-normalized with the same defaults as the scheduler
-(`stewardship_refresh_schedule_v1`, which a test keeps in step with
-`cadence.refresh_settings`). That change and the slot decision record are two
-forward migrations, the guard change first and the table with the
-exclusions, under the
+The database's refresh-tick guard accepts a full tick only at a listed time,
+resolved the same way (#465); its branches for quick ticks are unchanged and
+unused. It finds when the current schedule took effect, for the
+schedule-change catch-up, by comparing each activation's schedule normalized
+with the same defaults as the scheduler (`stewardship_refresh_schedule_v1`,
+which a test keeps in step with `cadence.refresh_settings`). That
+comparison still includes `delta_refresh` (default `quarter_hour`) and
+`quick_refresh_times`, so `cadence.schedule_identity`, which
+`data_age.schedule_runs` uses, compares them too: a change of only those
+settings still starts a new schedule run, though nothing schedules them.
+The guard's listed-time check and the slot decision record were two forward
+migrations, the guard change first and the table with the exclusions, under
+the
 [post-launch schema policy](../operations/spec.md#post-launch-schema-policy).
+Issue #1147 made no migration, so the guard stays as it is.
 
 #### Stored schedule and upgrade
 
@@ -1151,17 +1145,19 @@ every earlier document stays valid:
 - `full_refresh_times`: the sorted, unique daily full times, with no cap of
   eight beside `refresh_rules` (a document without them keeps the old
   limit of eight and no spacing rule); the earliest is also `nightly_time`;
-- `quick_refresh_times`: the sorted, unique daily quick times, none of them a
-  full time, present only when there is at least one;
-- `delta_refresh`: `times` when there are quick times, `off` when there are
-  none;
+- `quick_refresh_times`: before #1147, the sorted, unique daily quick times;
+  a new or changed schedule has none;
+- `delta_refresh`: `off` for a new or changed schedule (the v8
+  rules-schedule shape requires `times` or `off`); before #1147, `times`
+  when there were quick times;
 - `full_refresh`: `daily`;
 - `refresh_rules`: the rules, single times, exceptions and the skip setting
   as the Administrator entered them, so the page can show and edit them.
   It has exactly three fields: `rules`, a list of one to 64 rows, each
   either `{"kind", "at"}` or `{"kind", "every", "from", "to"}` (`kind` is
-  `full` or `quick`, `every` one of the rule intervals in minutes, and `to`
-  at or after `from`); `skips`, a list of up to 16 rows, each `{"at"}` or
+  `full`, or `quick` in a row stored before #1147; `every` one of the rule
+  intervals in minutes, and `to` at or after `from`); `skips`, a list of up to
+  16 rows, each `{"at"}` or
   `{"from", "to"}` with `to` after `from`; and `skip_around_family_emails`,
   a boolean. The row counts are the
   [schedule editor](../admin-portal/spec.md#schedule-editor)'s caps, one
@@ -1184,7 +1180,24 @@ unique lists, the nightly time as the earliest full time, no time in both
 lists, a closed set of rule fields and 15-minute spacing. Listed quick times
 and `delta_refresh: times` appear only beside `refresh_rules`, which in turn
 requires `full_refresh` `daily` (or absent) and `delta_refresh` `times` or
-`off`. Whether a document has `refresh_rules` is part of its schedule for
+`off`.
+
+**Stored quick settings after #1147.** No schema version change and no
+database migration: a stored `source-cadence-v8` document keeps any
+`delta_refresh` (`quarter_hour`, `hourly`, `off` or `times`),
+`quick_refresh_times` and `kind: quick` rule rows, and still validates when
+stored or carried unchanged into a new version (`valid_shape(stored=True)`).
+Nothing schedules them: the scheduler, the seven-day preview, the cost
+summary, the data age, the connection's "not checked" gap and the refresh
+status all ignore them. A new or changed schedule saved with its rules may
+contain only `kind: full` rows, with `delta_refresh: "off"` and no
+`quick_refresh_times`. The settings page and `integration show` present a
+stored schedule without its quick rows (`refresh_rules.full_rules`); saving
+the page with the schedule unchanged keeps the stored keys exactly as they
+are, so stored quick rows may remain, ignored, while a changed schedule
+drops them.
+
+Whether a document has `refresh_rules` is part of its schedule for
 the [data-age rule](../operations/spec.md#parishsoft-data-age-and-connection),
 but their content is not: turning `skip_around_family_emails` on or off
 does not start a new schedule run, and so never requests a
@@ -1206,13 +1219,13 @@ reads the cadence settings learns the new keys and values:
   integration key's scope;
 - `source/cadence.py`: `DELTA_REFRESHES` gains `times`, and
   `MAX_FULL_REFRESH_TIMES` and the cap in `canonical_times` go;
-- `source/refresh_status.py`, whose schedule reader returns nothing for a
-  frequency or quick setting it does not know, so it would hide the refresh
-  status of a schedule with `delta_refresh: times`;
+- `source/refresh_status.py`, whose schedule reader returned nothing for a
+  frequency or quick setting it did not know (since #1147 it ignores the
+  quick setting);
 - `accounts/integration_views.py`: `_with_defaults` and
   `_retain_unused_time`, which fill and keep the schedule settings on save;
 - `admin_reads.py`: the Home read model's refresh fields (`frequency`,
-  `delta_refresh`, `next_full_at`);
+  `next_full_at`; `delta_refresh` until #1147);
 - for the schedule-change catch-up's cause `catch_up`, every place that
   hard-codes refresh causes: `REFRESH_CAUSES` in `source/refresh_models.py`
   and its `source_refresh_command_cause` check (also in `schema/tables.sql`),
@@ -1230,40 +1243,25 @@ migration.
 
 No stored document is rewritten. A document without `refresh_rules` is an
 existing schedule, and its slots are created exactly as before: the listed
-full times, or a full refresh every UTC hour or quarter hour, and quick
-updates every UTC quarter hour, every UTC hour or none; a parity test proves
-identical slot keys, due times and commands. The settings page shows such a
-schedule converted to the equivalent rules, after filling the defaults
+full times, or a full refresh every UTC hour or quarter hour (its quick
+setting is ignored since #1147); a parity test proves identical full slot
+keys, due times and commands. The settings page shows such a schedule
+converted to the equivalent rules, after filling the defaults
 `cadence.refresh_settings` fills:
 
 - listed full times (`full_refresh` `daily`): one "Full at" row for each,
   kept off-quarter-hour times included, with no rule inferred from them;
 - `full_refresh` `hourly`: "Full every 60 minutes from 00:00 to 23:00";
   `quarter_hour`: "Full every 15 minutes from 00:00 to 23:45";
-- `delta_refresh` `quarter_hour`: "Quick every 15 minutes from 00:00 to
-  23:45"; `hourly`: "Quick every 60 minutes from 00:00 to 23:00"; `off`: no
-  quick rule;
+- no quick rule and no "Quick at" rows, whatever `delta_refresh` says;
 - no skips, and **skip refreshes around Family emails** off, since the
   schedule never skips today.
 
-The converted schedule keeps today's quick times exactly: its daily times
-are the times the old scheduler runs, a quick time that equals a full time
-excepted, which precedence removes as the old scheduler joined a quick slot
-due with a full one. Coverage (layer 5 of
-[schedule entries and rules](#schedule-entries-and-rules)) would also remove
-a rule's quick time when a full time falls at or after it and less than one
-rule step after it, or less than 15 minutes before it; with 15-minute quick
-updates that is only a time near a kept off-quarter-hour full time, but with
-hourly quick updates a full time at 08:30 would remove the 08:00 quick
-update that runs today. So for each quick time today's schedule runs that
-coverage would remove, the conversion adds a "Quick at" row, which coverage
-never removes. Changing an unrelated part of the schedule therefore never
-drops a refresh that runs today without the Administrator seeing it: a quick
-time within 15 minutes of a full time, or two kept full times less than 15
-minutes apart, which the old scheduler ran, shows as a spacing problem on
-its row for the Administrator to resolve (see
-[the settings page](../admin-portal/spec.md#schedule-editor)), not
-as a quietly covered time. The page
+Changing an unrelated part of the schedule therefore never drops a full
+refresh that runs today without the Administrator seeing it: two kept full
+times less than 15 minutes apart, which the old scheduler ran, show as a
+spacing problem on their row for the Administrator to resolve (see
+[the settings page](../admin-portal/spec.md#schedule-editor)). The page
 writes the new keys only when the Administrator changes the schedule itself;
 saving other settings keeps the stored keys as they are. When the schedule is
 changed, what differs from the old one is said before saving:
@@ -1287,60 +1285,56 @@ changed, what differs from the old one is said before saving:
   daytime refreshes inside each Family email's window, as
   [skipped around Family emails](#skipped-around-family-emails) describes.
 
-### Delta cycle
+### Quick updates removed
 
-At each scheduled quick time (see the [refresh schedule](#refresh-schedule)),
-the system calls the supported v2 Family changes feed using a durable
-watermark. Because that feed is not a complete Member/Ministry/giving change
-stream, it is an optimization, not the sole correctness path.
+Quick updates (delta refreshes) were removed in
+[#1147](https://github.com/epiphany40223/parishkit/issues/1147). A quick
+update read ParishSoft's v2 Family changes feed, `families/change/list`
+(FamilyChangeList), from a durable watermark and reloaded each changed
+Family. That feed logs only a fixed set of Family-level contact and
+registration fields, and in Production it returned an empty list for every
+query (494 of 494,
+[#465](https://github.com/epiphany40223/parishkit/issues/465)) while such
+edits were made in ParishSoft; nothing records a fix. ParishSoft changes
+therefore reach the application only through a full refresh, scheduled or
+**Refresh now**.
 
-That feed, `families/change/list` (FamilyChangeList), logs changes to a fixed
-set of Family-level contact and registration fields only: address, phone,
-email, registration status and registered parish. It does not report Family
-creation, Family group or participation status, Send No Mail, Members or
-Member emails, ministries or giving, so those reach the application only
-through a full refresh. In the first week of production every delta came back
-empty while such edits were made in ParishSoft
-([#465](https://github.com/epiphany40223/parishkit/issues/465); the
-[API analysis](../../../parishsoft-api-analysis.md) records the endpoint's
-contract). Administrators are told that ParishSoft changes appear after the
-next full refresh or **Refresh now**.
+Nothing creates a quick update now. The scheduler creates only full slots
+(the latest due full time and the schedule-change catch-up), and
+`request_refresh` refuses the cause `delta`. A configuration's quick
+settings are kept but ignored, as
+[stored schedule and upgrade](#stored-schedule-and-upgrade) describes.
 
-Every refresh, full and quick, also reads the campaign's
-[No-reminders WorkGroup](#family-invitations-and-reminders) when the campaign
-names one (#861): one paged list of the Family WorkGroups, then the members of
-only the WorkGroup with that name (matched ignoring case and surrounding
-spaces), recorded in the snapshot's load evidence. A refresh with no campaign,
-an archived one, or no name set reads nothing. A quick update whose corpus is
-unchanged still stages and promotes when the WorkGroup's recorded members
-differ from the current snapshot's, so planning sees the new membership. A
-name that matches no WorkGroup is recorded as not found, excludes nobody,
-logs a `task_started` WARNING with the failure category
-`reminder_workgroup_missing` (never the name), and shows a notice on
-[System health](../admin-portal/spec.md#system-health-page). Quick updates
-held for a bulk send (below) read nothing until they run.
+A quick update left queued from before the upgrade is retired without
+reading ParishSoft: the worker begins its attempt, rejects it at once and
+links a full fallback through the existing `SourceRefreshFallback` edge
+(reason `incomplete_delta`, or `no_base` when there is no current snapshot);
+the quick update completes when that full refresh promotes. Before the
+rejection its empty snapshot's cursor is set to the marker
+`{"schema": "source-retired-v1"}` (the snapshot guard lets the live owner
+change staging, so no migration is needed), and the
+[data-age facts](../operations/spec.md#parishsoft-data-age-and-connection)
+leave such a snapshot out, so the connection line never reads "Failing"
+for it; historic rejected quick updates, which did call ParishSoft, still
+count as failed attempts. The database
+keeps its `delta` kind and cause, the `unchanged` snapshot state, the
+`source_refresh_fallback` table and its guards, so historic rows stay valid
+and still display: past quick updates, `unchanged` snapshots, tasks named
+"Quick update" and their Activity log entries. Because the database still
+accepts delta rows, quick updates could be added back later (see #1147's
+"Re-adding later");
+[#2087](https://github.com/epiphany40223/parishkit/issues/2087) asks
+whether ParishSoft's 2025 change-list additions could replace full
+re-reads.
 
-For each delta indication, reload every affected Family and related Members/
-contacts available through supported endpoints. If the feed/cursor is
-ambiguous, discontinuous, unsupported, too large, or indicates relationship
-data that cannot be safely scoped, promote no delta and queue a full refresh.
-Ministry, roster, fund and giving data always remain from the coherent prior
-full snapshot (`source/delta.py`); no delta replaces them. A delta in which
-a reloaded Family's set of Members changed or a Member moved between
-Families, one that meets a changed Family group definition, or one whose
-counts fall past the
-[drop threshold](#full-cycle) is likewise not promoted and queues a full
-refresh. A delta that runs out of its time bound is retried as itself
-instead, since a full refresh would only take longer.
+#### Daytime refreshes wait for a bulk Family send
 
-#### Deltas wait for a bulk Family send
-
-Under send load a delta takes about five minutes and halves the Family send
-rate, because its promotion and population rebuild compete with the send for
-the global work-order lock (#440). So while an initial invitation or reminder
-is being sent, the scheduler holds the delta slots, and likewise a
-[scheduled full refresh](#full-cycle) at any configured time other than the
-nightly one (#465), which competes for the same lock. "Held" here always
+A [scheduled full refresh](#full-cycle) at any configured time other than
+the nightly one (#465) competes with a Family send for the global
+work-order lock (#440): its promotion and population rebuild slow the send.
+So while an initial invitation or reminder is being sent, the scheduler
+holds those daytime full slots and the schedule-change catch-up (it held
+quick update slots too before #1147). "Held" here always
 means "due, and run later as a catch-up"; "skipped" is kept for the
 [recorded skips around Family emails](#skipped-around-family-emails), which
 never run. A send is in progress
@@ -1355,10 +1349,10 @@ same way when a sending limit (the provider's mailbox-wide limit, or the
 deployment's own daily cap) put off its delivery task: the message stays
 pending, but the task waits 15 minutes or more to try again. Nothing
 competes for the lock during those waits, so ten throttled Families do not
-hold quick refreshes for the rest of the day, nor does a bulk send stopped
+hold daytime refreshes for the rest of the day, nor does a bulk send stopped
 at the daily cap until the cap lifts.
 While Production delivery is paused only messages count, so a paused send
-keeps its deltas.
+keeps its refreshes.
 The nightly full refresh, a legacy hourly or quarter-hour full refresh (see
 [stored schedule and upgrade](#stored-schedule-and-upgrade)) and every
 [manual request](#manual-request) still run.
@@ -1367,8 +1361,8 @@ A held slot creates no command, task or failure. Each scheduler loop decides
 again, so the first loop after the hold ends creates the current slots'
 refreshes, which catch up. The scheduler logs `source_refresh_held` at INFO
 to the process log once per held slot, correlated to the slot's command
-identity. For a held **full** slot (a daytime time or a `catch_up`),
-never a quick one, it also writes one durable operational entry through the shared
+identity. For every held slot (a daytime full time or a `catch_up`), it
+also writes one durable operational entry through the shared
 operational-log writer, inside the slot's command correlation: the event
 `source_refresh_held` at INFO with the task-free `schedule` context schema.
 "Once per held slot" is per scheduler process, so a restart during a hold
@@ -1397,15 +1391,12 @@ took effect), and the alarm would sound the lateness margin after its due
 time. While a send is in progress and scheduled refreshes are actually
 being held, the alarm allows two hours
 beyond that point. "Being held" is measured from the overdue full slot's due
-time, not from when the newest full refresh was read, so quick updates that
-ran before that due time do not cancel it: no scheduled refresh of either
-kind (held daytime full slots count as well as quick ones) was requested at
-or after the overdue slot's due time and before the resume point, though
-scheduled refreshes ran within the last day. So the allowance also applies
-when quick updates are off, which counting deltas alone would miss. The
+time, not from when the newest full refresh was read: no scheduled refresh
+was requested at or after the overdue slot's due time and before the resume
+point, though scheduled refreshes ran within the last day. The
 scheduler holds only until the resume point, `RESUME_LEAD` before the
 allowance ends. `RESUME_LEAD` must leave room for a held full refresh to run
-and promote under send load, not just a quick update; it stays 30 minutes
+and promote under send load; it stays 30 minutes
 only if a full refresh under send load is measured to promote within 20
 minutes, and is raised otherwise. A send that runs longer than that gets its
 refreshes back, and a held daytime full refresh then runs mid-send.
@@ -1432,7 +1423,7 @@ derived or matched, so a change of schedule, source scope or time zone
 during the hold does not lose the evidence. A `held` full or `catch_up`
 row of the slot decision record with a due instant in that span counts as
 well. A task's own `source_refresh_held` entry (`task` schema) is
-never evidence, and a quick slot's hold writes none. A full refresh with no
+never evidence. A full refresh with no
 evidence, such as an on-time refresh that hangs or one that waited for the
 source lease, gets no allowance. Unlike the allowance during the send, the
 catch-up rule does not require `family_send_active()`: the send has usually
@@ -1440,25 +1431,20 @@ ended by then. A catch-up that fails, or a scheduled full refresh
 requested in the held span that never promotes, alarms without the
 allowance. Without this rule a send ending before the resume point would
 raise `source_stale` at once and keep it up for the full refresh's run of
-about seven minutes. The old staleness check has the same, shorter gap
-for its two-minute quick catch-up; under data age quick updates no longer
-drive the alarm, and this rule covers the full catch-up, so neither gap
+about seven minutes; this rule covers the full catch-up, so no such gap
 remains.
 
-For example, take full refreshes at 08:00, 10:00 and 12:00, quick updates
-every 15 minutes, the default margin, and a send that starts at 09:30 and is
-not inside a [window](#skipped-around-family-emails) (say, the exclusion
-setting is off). The 09:30 quick update runs or is held as the send begins;
-either way it was due before 10:00 and does not count. The 09:45 quick
-update and the 10:00 full refresh are held. The overdue full slot is 10:00,
-so the alarm would sound at 10:30; nothing was requested from 10:00 on, so
-the hold's allowance applies and the alarm waits until 12:30, with the
-resume point at 12:00.
+For example, take full refreshes at 08:00, 10:00 and 12:00, the default
+margin, and a send that starts at 09:30 and is not inside a
+[window](#skipped-around-family-emails) (say, the exclusion setting is off).
+The 08:00 full refresh ran before the send. The 10:00 full refresh is held.
+The overdue full slot is 10:00, so the alarm would sound at 10:30; nothing
+was requested from 10:00 on, so the hold's allowance applies and the alarm
+waits until 12:30, with the resume point at 12:00.
 
-- If the send ends at 11:00, the next loop requests the latest due slots:
-  the 10:00 full refresh and the 11:00 quick update. The full refresh is the
-  catch-up, so the allowance holds until it promotes about seven minutes
-  later, and the alarm never sounds.
+- If the send ends at 11:00, the next loop requests the latest due slot,
+  the 10:00 full refresh, as the catch-up, so the allowance holds until it
+  promotes about seven minutes later, and the alarm never sounds.
 - If the send is still running at 12:00, the hold ends at the resume point.
   The latest due full slot is now 12:00, so the 12:00 full refresh runs
   mid-send as the catch-up and keeps the allowance until it promotes; the
@@ -1481,9 +1467,9 @@ unchanged.
 
 From the start of a go-live [attempt](../admin-portal/spec.md#go-live-page)
 (**Start go-live**, or **Refresh and prepare again**) until its hold end, the
-scheduler holds every scheduled ParishSoft refresh: the quick (delta) slots
-and every scheduled full slot, the nightly one included. Held means what it
-means for a [bulk send](#deltas-wait-for-a-bulk-family-send): the slot is due
+scheduler holds every scheduled ParishSoft refresh, the nightly one
+included. Held means what it
+means for a [bulk send](#daytime-refreshes-wait-for-a-bulk-family-send): the slot is due
 and runs later as a catch-up, and it creates no command, task or failure. A
 [manual request](#manual-request) still runs; the Go live page says that it
 makes the system [prepare the links again](#go-live-sequencing).
@@ -1522,32 +1508,29 @@ holds a refresh this way.
 ### Full cycle
 
 A scheduled full refresh runs at each full time of the
-[refresh schedule](#refresh-schedule); the settings page's default is the
-nightly refresh at 02:00 with quick updates every hour, while a document
-that names no schedule keeps today's defaults (02:00, quick updates every
-15 minutes). A scheduled full tick records the
-configured time it fell due at, and the database's refresh-tick guard
-accepts only a listed time (#465). An existing schedule saved before that
-form may still run a full refresh every UTC hour or quarter hour, which
-replaces the delta cycle. Quick updates no longer decide whether the data
-counts as current, so the settings page accepts any quick-update choice,
-including none (see
+[refresh schedule](#refresh-schedule); the settings page's default, like a
+document that names no schedule, is the nightly refresh at 02:00. A
+scheduled full tick records the configured time it fell due at, and the
+database's refresh-tick guard accepts only a listed time (#465). An existing
+schedule saved before that form may still run a full refresh every UTC hour
+or quarter hour. Whether the data counts as current follows from the full
+times alone (see
 [ParishSoft data age and connection](../operations/spec.md#parishsoft-data-age-and-connection)).
 A held daytime full refresh still runs mid-send once the send outlasts the
-[hold](#deltas-wait-for-a-bulk-family-send). A full refresh also runs on
+[hold](#daytime-refreshes-wait-for-a-bulk-family-send). A full refresh also runs on
 initial setup and manual request. Scheduled refreshes
 never overlap: the mutation lease serializes execution and a waiting full load
 absorbs later requests. The Admin home page, the ParishSoft page and
 the manual refresh page show the last successful full refresh, a newer failed
-one, whether one is running, the last incremental update and when the next
+one, whether one is running and when the next
 scheduled full refresh is due (skipping any
 [excluded window](#skipped-around-family-emails)), with the data age and
 connection wording that
 [ParishSoft data age and connection](../operations/spec.md#parishsoft-data-age-and-connection)
 defines. A failure notice links to the failed run's task
-details, says whether the incremental updates are still succeeding, says that
-new Families, status and Send No Mail changes, Members, Ministry rosters,
-Ministries and giving wait for the next full refresh, and
+details, says that ParishSoft changes (new Families, status and Send No
+Mail changes, Members, Ministry rosters, Ministries and giving among them)
+wait for the next full refresh, and
 disappears once a later full refresh succeeds. Admins who may change the
 configuration also get a "Run a full refresh now" button there, which submits
 the [manual refresh](../admin-portal/spec.md#manual-parishsoft-refresh). A scan that shifted between
@@ -1573,9 +1556,7 @@ accepts a larger rise and becomes the next baseline. A refusal logs these
 counts, the baseline and the allowance at WARNING in the process log (counts
 only), so an operator can tell a short read from a real change; see the
 [ParishSoft outage runbook](../../../guides/stewardship-launch-runbooks.md#parishsoft-outage).
-Quick updates take
-contacts from each reloaded Family's Member details and do not read the
-contact list. So is a load that ran out of its time budget (900 seconds),
+So is a load that ran out of its time budget (900 seconds),
 which is a slow provider, not bad data; each such stop is recorded in the
 [timeout log](../operations/spec.md#observability-and-health)
 ([#834](https://github.com/epiphany40223/parishkit/issues/834)).
@@ -1598,6 +1579,18 @@ single-campaign sequencing prohibits a successor until archive. Archived and
 older campaigns read their immutable retained snapshots and never expand the
 nightly source window.
 
+Every refresh also reads the campaign's
+[No-reminders WorkGroup](#family-invitations-and-reminders) when the campaign
+names one (#861): one paged list of the Family WorkGroups, then the members of
+only the WorkGroup with that name (matched ignoring case and surrounding
+spaces), recorded in the snapshot's load evidence. A refresh with no campaign,
+an archived one, or no name set reads nothing. A name that matches no
+WorkGroup is recorded as not found, excludes nobody, logs a `task_started`
+WARNING with the failure category `reminder_workgroup_missing` (never the
+name), and shows a notice on
+[System health](../admin-portal/spec.md#system-health-page). Refreshes held
+for a bulk send read nothing until they run.
+
 The cycle:
 
 1. Validates the expected ParishSoft organization without cache.
@@ -1612,8 +1605,8 @@ The cycle:
    value over those snapshots and the current snapshot. Both use the same
    drop threshold (25% by default). Every record can stay while the fields
    eligibility depends on disappear, so both are checked. The recent full
-   snapshots bound the loss accumulated over a series of deltas, or over
-   several full refreshes that each drop just under the threshold. A full
+   snapshots bound the loss accumulated over several full refreshes that each
+   drop just under the threshold. A full
    refresh accepted past the threshold by the operator's raised threshold
    starts this trend again: older full snapshots are not compared with after
    it. One accepted by an Administrator's
@@ -1632,7 +1625,7 @@ The cycle:
 5. Builds derived eligibility, roster, giving, and reconciliation data.
 6. Promotes all staged data atomically as defined by the
    [data specification](../data/spec.md#source-snapshot).
-7. Records counts/duration/deltas and releases the lease.
+7. Records counts and duration and releases the lease.
 
 Unexpected empty/large-loss data fails closed and emits CRITICAL rather than
 making it current. A load failure preserves the prior truth. Cache entries are
@@ -1684,7 +1677,7 @@ coalesces into the invitation. Everything else is unchanged: the invitation,
 receipts and confirmations still go out, the Family keeps its portal access,
 code and link, its eligibility flags do not change, and it stays in every
 count and report. Membership comes from the current snapshot's recorded read
-(see the [delta cycle](#delta-cycle)), which a refresh records for the name
+(see the [full cycle](#full-cycle)), which a refresh records for the name
 set when it ran. Clearing the setting stops every exclusion at once. A new
 name applies from the next refresh that reads it; until then a rename keeps
 excluding the Families the recorded read found for the previous name
@@ -2237,12 +2230,13 @@ campaign's configuration starts; this campaign has only reminders left.
   generation and credential epoch. The send build re-renders each message
   from current inputs, so content edited during the lead window is sent as
   edited.
-- **Refresh holds and deltas.** The
-  [delta wait](#deltas-wait-for-a-bulk-family-send) counts preparation tasks
-  as today, but counts only messages whose occurrence is already due, so a
-  prepared reminder does not hold deltas for the rest of its lead window.
-  Deltas are therefore held while preparation runs and resume once it ends,
-  until the send itself begins. If a delta does promote during preparation
+- **Refresh holds.** The
+  [bulk-send hold](#daytime-refreshes-wait-for-a-bulk-family-send) counts
+  preparation tasks as today, but counts only messages whose occurrence is
+  already due, so a prepared reminder does not hold daytime refreshes for
+  the rest of its lead window. They are therefore held while preparation
+  runs and resume once it ends, until the send itself begins. If a refresh
+  does promote during preparation
   (past the source-age allowance), the promotion marks the population dirty
   and preparation's guard refuses writes until the population is rebuilt, so
   preparation pauses for that rebuild; the lead window absorbs it.
@@ -2591,7 +2585,7 @@ including:
 - repeated source refresh failure, or ParishSoft data older than its
   [schedule allows](../operations/spec.md#parishsoft-data-age-and-connection)
   (allowing more time while a
-  [Family send holds refreshes](#deltas-wait-for-a-bulk-family-send));
+  [Family send holds refreshes](#daytime-refreshes-wait-for-a-bulk-family-send));
 - wrong ParishSoft organization or implausible destructive source change;
 - systemic mail failure during a due campaign occurrence;
 - scheduler/worker health preventing due work (judged for a
@@ -2683,7 +2677,7 @@ normal send raised the alarm (#634).
 
 So while a send is in progress, its waiting delivery tasks are judged by the
 send's own progress instead. "In progress" is the deployment-wide test the
-[delta wait](#deltas-wait-for-a-bulk-family-send) uses, not a per-send count:
+[bulk-send hold](#daytime-refreshes-wait-for-a-bulk-family-send) uses, not a per-send count:
 at least 10 pieces of Family send work remain across all sends, counting due
 messages pending, waiting to retry or being submitted and Family
 preparation tasks queued, running or waiting to retry, where a retry or a
@@ -2698,13 +2692,13 @@ is then judged on its own, and is late only when either:
   the due time (a reminder prepared ahead) does not count;
 - **it has overrun:** it is still in progress 2 hours after it fell due,
   however steadily it progresses. This is the same 2 hours a send may hold
-  deltas back for; a launch-size send takes 30 to 75 minutes.
+  daytime refreshes back for; a launch-size send takes 30 to 75 minutes.
 
 Every other task type, Family delivery tasks whose worker lease expired, other
 delivery tasks (receipts, report emails, tests and alerts) and a send's last few
 messages, once fewer than 10 remain, keep the 90-second rule. While Production
-delivery is paused only messages count towards "in progress", as for the delta
-wait.
+delivery is paused only messages count towards "in progress", as for the
+bulk-send hold.
 
 A late check records why, in the CRITICAL entry's closed `due_work` context
 (counts, seconds and identifiers only):

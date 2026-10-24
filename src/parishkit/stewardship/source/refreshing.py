@@ -1,4 +1,4 @@
-"""Bound one full/delta observation to its immutable attempt and staged manifest.
+"""Bound one full observation to its immutable attempt and staged manifest.
 
 The compiled worker owns lease acquisition/renewal, recovery, atomic domain
 effects and Task outcome. This pipeline never declares success or advances the
@@ -6,7 +6,7 @@ current pointer: validated staging is not a completed campaign refresh.
 """
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, timedelta
 from itertools import batched
 from pathlib import Path
@@ -28,9 +28,8 @@ from .attempts import (
     source_step,
     verify_refresh_attempt,
 )
-from .canonical import InvalidSourcePayload, canonical_payload
+from .canonical import InvalidSourcePayload
 from .cursors import refresh_cursor
-from .delta import load_delta_source
 from .drop_acceptance import ACCEPTANCE_KEY, acceptor
 from .loading import (
     DEFAULT_MAXIMUM_DROP_PERCENT,
@@ -47,7 +46,6 @@ from .snapshot_models import SourceCurrent, SourceSnapshot
 from .snapshots import (
     analyze_staging,
     complete_snapshot,
-    finish_unchanged,
     reconstruct_snapshot,
     stage_entities,
     validate_snapshot,
@@ -90,8 +88,6 @@ class RefreshInputs:
     as_of: date
     previous_full_counts: dict | None
     previous_derived_counts: dict | None
-    base_cursor: dict | None
-    base: dict | None = field(repr=False)
     # The campaign's Reminder WorkGroup name (#861), and what the current
     # snapshot recorded for it; see source.workgroups.
     workgroup_name: str | None = None
@@ -244,29 +240,6 @@ def _derived_baseline(trend, counted):
     return baseline
 
 
-def _base_cursor(current_id):
-    """The cursor a quick update reads on from: the newest read of the corpus.
-
-    That is the newest ``unchanged`` quick update read against the current
-    snapshot, else the current snapshot itself. An unchanged read saw the
-    same corpus as the current snapshot up to its own start, so its
-    watermark is as good a boundary as a promoted copy's would have been;
-    without it the change-list window would grow from the last promotion
-    until the next one, and a week of unchanged reads would force a full
-    refresh (#630). Its full-coverage fields were copied from the current
-    snapshot's, which the completion guard checks.
-    """
-    newest = (
-        SourceSnapshot.objects.filter(base_id=current_id, state="unchanged")
-        .order_by("-started_at")
-        .values_list("cursor", flat=True)
-        .first()
-    )
-    if newest is not None:
-        return newest
-    return SourceSnapshot.objects.values_list("cursor", flat=True).get(pk=current_id)
-
-
 def _inputs(attempt_id, execution, claim):
     """Read the actual current base and the permanent full-refresh count trend.
 
@@ -274,13 +247,13 @@ def _inputs(attempt_id, execution, claim):
     recent full refreshes (``_trend``), and derived counts with those
     refreshes and the current snapshot (#320, #387).
 
-    Only the scope and pointer checks run in the work-order effect. Reading
-    the base corpus (a quick update's whole current snapshot, about 200 ms
-    at 1,100 Families) runs after it, outside the global lock (#147): that
-    snapshot is promoted, so its rows are immutable, and
-    ``reconstruct_snapshot`` keeps it from compaction while it reads, or
-    refuses. Nothing here can go stale unseen, because promotion and an
-    unchanged update require this snapshot's base to still be the current one.
+    Only the scope and pointer checks run in the work-order effect. Counting
+    an older current snapshot's rows, when its manifest recorded no derived
+    counts, runs after it, outside the global lock (#147): that snapshot is
+    promoted, so its rows are immutable, and ``reconstruct_snapshot`` keeps
+    it from compaction while it reads, or refuses. Nothing here can go stale
+    unseen, because promotion requires this snapshot's base to still be the
+    current one.
     """
     with execution.effect():
         attempt = verify_refresh_attempt(attempt_id, execution, claim)
@@ -289,7 +262,6 @@ def _inputs(attempt_id, execution, claim):
         current = SourceCurrent.objects.get(singleton=True)
         if snapshot.state != "staging" or snapshot.base_id != current.snapshot_id:
             raise InvalidSourcePayload("Refresh requires its unchanged current base.")
-        cursor = None
         counts = None
         counted = None
         trend = None
@@ -311,8 +283,6 @@ def _inputs(attempt_id, execution, claim):
             trend = _trend(full, snapshot.started_at - timedelta(days=TREND_DAYS))
             contact_missing = recorded_contact_missing(full.cursor)
             counts = _largest_counts(trend)
-            if snapshot.kind == "delta":
-                cursor = _base_cursor(current.snapshot_id)
             # Eligibility is compared with both the last full and the current
             # snapshot (#320), from the derived counts each load records in its
             # manifest, so normally nothing is reconstructed for this.
@@ -337,20 +307,13 @@ def _inputs(attempt_id, execution, claim):
             else None
         )
     # The corpus reads, outside the work order (see above).
-    base = None
     derived = None
     if current.snapshot_id is not None:
-        if snapshot.kind == "delta":
-            base = reconstruct_snapshot(current.snapshot_id)
         if counted is None:
             # A snapshot promoted before these counts were recorded: count
-            # it once from its Family and contact rows (or the delta base).
+            # it once from its Family and contact rows.
             counted = derived_counts(
-                base
-                if base is not None
-                else reconstruct_snapshot(
-                    current.snapshot_id, kinds=("family", "contact")
-                )
+                reconstruct_snapshot(current.snapshot_id, kinds=("family", "contact"))
             )
         derived = _derived_baseline(trend, counted)
     return RefreshInputs(
@@ -358,57 +321,28 @@ def _inputs(attempt_id, execution, claim):
         as_of,
         counts,
         derived,
-        cursor,
-        base,
         workgroup_name,
         base_workgroup,
         contact_missing,
     )
 
 
-def same_corpus(corpus, base):
-    """Whether ``corpus`` stages exactly the payloads ``base`` already holds.
-
-    Compared as staging would store them: by canonical payload digest, so a
-    value that is equal in Python but canonically different (``True`` and
-    ``1``) counts as a change. A delta copies the base's row objects for
-    everything it did not reload, so only rows that are new objects need
-    hashing; usually that is just the re-evaluated roster.
-    """
-    if corpus.keys() != base.keys():
-        return False
-    for kind, rows in corpus.items():
-        before = base[kind]
-        if rows.keys() != before.keys():
-            return False
-        for key, row in rows.items():
-            old = before[key]
-            if row is not old and (
-                canonical_payload(row)[1] != canonical_payload(old)[1]
-            ):
-                return False
-    return True
-
-
-def load_and_stage_attempt(execution, claim, credential, *, unchanged=None):
+def load_and_stage_attempt(execution, claim, credential):
     """Observe once with finite private HTTP, then stage in small fenced batches.
 
     The caller must already maintain Task/source ownership. No SQL transaction
     spans provider I/O. Every attempt/retry repeats credential and current-scope
     validation, and every staging batch repeats it again. Exceptions preserve
     staging for the owning rejection/recovery workflow; none implies success.
-
-    ``unchanged(snapshot, corpus, execution, claim)``, when given, decides
-    whether promoting a quick update whose corpus equals the current one
-    would change any owning-domain state. When it would not, nothing is
-    staged and the snapshot ends ``unchanged`` (#630); the caller then skips
-    promotion. Otherwise, and always for a full refresh, staging is as before.
+    Only a full refresh observes ParishSoft; quick updates were removed (#1147).
     """
     if connection.in_atomic_block:
         raise StorageInvariantError("Source observation cannot hold a transaction.")
     execution.check()
     if not execution.control.active or execution.control.source_claim != claim:
         raise StorageInvariantError("Source observation requires maintained ownership.")
+    if claim.phase != "full":
+        raise StorageInvariantError("Only a full refresh observes ParishSoft.")
     attempt = begin_refresh_attempt(execution, claim, credential)
     inputs = _inputs(attempt.pk, execution, claim)
     session = source_session(
@@ -439,34 +373,20 @@ def load_and_stage_attempt(execution, claim, credential, *, unchanged=None):
                 task_id=execution.claim.run_id,
                 source_max_drop_percent=limit,
             )
-        options = dict(
+        loaded = load_full_source(
+            client,
             window=inputs.window,
             as_of=inputs.as_of,
             previous_full_counts=inputs.previous_full_counts,
             previous_derived_counts=inputs.previous_derived_counts,
             maximum_drop_percent=limit,
+            previous_contact_missing=inputs.previous_contact_missing,
+            # An Administrator's one-time acceptance of a refused large
+            # change (#530).
+            accept=acceptor(attempt.request.organization_id, execution.claim.run_id),
         )
-        if claim.phase == "full":
-            loaded = load_full_source(
-                client,
-                **options,
-                previous_contact_missing=inputs.previous_contact_missing,
-                # Only a full refresh may use an Administrator's one-time
-                # acceptance of a refused large change (#530).
-                accept=acceptor(
-                    attempt.request.organization_id, execution.claim.run_id
-                ),
-            )
-        else:
-            loaded = load_delta_source(
-                client,
-                **options,
-                base=inputs.base,
-                base_cursor=inputs.base_cursor,
-                started_at=attempt.snapshot.started_at,
-            )
-        # The Reminder WorkGroup (#861) is read on every refresh, full and
-        # quick, after the corpus: one list call plus the one WorkGroup's
+        # The Reminder WorkGroup (#861) is read on every refresh, after the
+        # corpus: one list call plus the one WorkGroup's
         # members, and nothing at all when the campaign names none.
         # A name ParishSoft does not have keeps the set applied before it
         # (#1305), so a misspelled rename skips the same Families until a
@@ -483,11 +403,9 @@ def load_and_stage_attempt(execution, claim, credential, *, unchanged=None):
         evidence = {**evidence, EVIDENCE_KEY: workgroup}
     cursor = refresh_cursor(
         snapshot_id=attempt.snapshot_id,
-        kind=claim.phase,
         started_at=attempt.snapshot.started_at,
         window_digest=inputs.window.digest,
         evidence=evidence,
-        base_cursor=inputs.base_cursor,
     )
 
     def admitted(action, snapshot):
@@ -503,24 +421,6 @@ def load_and_stage_attempt(execution, claim, credential, *, unchanged=None):
         if action != "stage" or current.snapshot_id != snapshot.pk:
             raise PermissionError("Staging belongs to another source attempt.")
         return True
-
-    # Most quick updates find nothing (#629): the change list is empty, so
-    # the corpus is the current one exactly (a day change that flips a
-    # roster's "current" flag is a difference and stages as before). Any
-    # doubt falls through to the ordinary staging path below. A changed
-    # Reminder WorkGroup membership (#861) is a change too: promotion records
-    # it, so planning reads the new membership from the current snapshot.
-    if (
-        claim.phase == "delta"
-        and unchanged is not None
-        and workgroup == inputs.base_workgroup
-        and same_corpus(loaded.corpus, inputs.base)
-    ):
-        with execution.effect():
-            if unchanged(attempt.snapshot, inputs.base, execution, claim) is True:
-                return finish_unchanged(
-                    attempt.snapshot_id, claim, cursor=cursor, admit=admitted
-                )
 
     total, done = sum(loaded.counts.values()), 0
     reported = done

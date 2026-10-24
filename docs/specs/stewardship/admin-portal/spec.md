@@ -2281,17 +2281,19 @@ conditional-field rules: nothing on the page reloads it. It follows the
 convention ([#1122](https://github.com/epiphany40223/parishkit/issues/1122))
 and the shared [schedules](../ui-conventions/spec.md#schedules) rules.
 
-**No quick updates in the Admin UI.** ParishSoft's list of changed
-Families returns nothing
+**No quick updates.** ParishSoft's list of changed Families returns nothing
 ([#465](https://github.com/epiphany40223/parishkit/issues/465)), so quick
-updates bring no data. Administrator decision (2026-10-12, #1122): no Admin
-page, help text or the editor offers or mentions them, except a stored
-schedule that still has quick rules (below) and history (the Activity log
-and task pages of past runs). The capability stays in the code until
-[#1147](https://github.com/epiphany40223/parishkit/issues/1147) removes it,
-and so do the `pk-admin refresh status` fields `delta_succeeded_at`,
-`delta_failed_at` and `delta_refresh`. Production's stored quick times are
-removed when this ships, with the editor's "Remove quick updates" action.
+updates brought no data. Administrator decision (2026-10-12, #1122): no
+Admin page, help text or the editor offers or mentions them, except history
+(the Activity log and task pages of past runs). Quick updates (delta
+refreshes) were removed in
+[#1147](https://github.com/epiphany40223/parishkit/issues/1147), with the
+`pk-admin refresh status` fields `delta_succeeded_at`, `delta_failed_at`
+and `delta_refresh` (see
+[quick updates removed](../background-processing/spec.md#quick-updates-removed)).
+The page presents a stored schedule without its quick rows; how stored
+quick settings are kept but ignored is in
+[stored schedule and upgrade](../background-processing/spec.md#stored-schedule-and-upgrade).
 
 **Time zone.** Schedule times are entered and shown in the refresh
 schedule's own time zone (the current campaign's, else the parish's, as the
@@ -2353,26 +2355,22 @@ each preview time in the browser's zone as well. See decision 18 in the
   shown converted (below), since such a schedule never skips today. Basic
   choices fill the rules and leave it as it is.
   The settings page always has a stored document to show: one with no
-  schedule settings at all runs the default schedule (02:00 and quick
-  updates every quarter hour) and is shown converted, with the switch off.
+  schedule settings at all runs the default schedule (a full refresh at
+  02:00) and is shown converted, with the switch off.
 - **Edit as text**: the resulting full times as one plain list, for
   pasting. Choosing "Use this list" replaces the rules with single times
   and clears the skips, and the page says so beside the list before it
   does. Since each time becomes a rule, the list holds at most 64 times,
   said beside it; a schedule with more is changed with its rules instead.
   The list and the rows stay in step: each check refills it from the rows.
-- **Stored quick rules.** A stored schedule that still has quick rules (the
-  default schedule, a converted one, or one saved before #1122) opens in
-  Advanced, since Basic offers only full refreshes. Its quick rules are
-  shown read-only, as words ("Quick update every 15 minutes from 00:00 to
-  23:45") with hidden fields that post them back unchanged, so nothing is
-  dropped silently and saving other settings keeps them. A note above the
-  rules says why they bring no data, with one **Remove quick updates**
-  action that takes every quick row out in place; the change goes through
-  the usual review ("Quick updates removed: …") and Apply. A Basic choice
-  or Use this list replaces them too, and the review says so the same way.
-  The seven-day preview, the cost summary and the grid's legend name quick
-  updates only while such a rule remains.
+- **Stored quick rows.** A schedule stored before
+  [#1147](https://github.com/epiphany40223/parishkit/issues/1147) may still
+  have quick rows; the editor shows only its full rows
+  (`refresh_rules.full_rules`), and the preview, cost summary and grid
+  ignore the quick ones. Saving the page with the schedule unchanged keeps
+  the stored keys as they are; a changed schedule drops them. (Until #1147
+  the editor showed such rows read-only, with a **Remove quick updates**
+  action.)
 - The page states which full time is the nightly refresh and that it runs
   even while Family emails are being sent.
 - A schedule saved before this page existed is shown converted to the
@@ -2420,7 +2418,7 @@ row.
 
 The rules are applied in one place, the server. The page script only adds
 and removes rows, writes the Basic choices and reads times through the shared
-[time entry](../ui-conventions/spec.md#time-entry); it has no copy of the rules, coverage or spacing.
+[time entry](../ui-conventions/spec.md#time-entry); it has no copy of the rules or spacing.
 
 - **Checking.** Once typing pauses (about half a second, as the time entry
   waits), or a row, Basic choice or switch changes, the page posts the editor's
@@ -2459,8 +2457,8 @@ and removes rows, writes the Basic choices and reads times through the shared
   pointer stays where it was on the screen, within half a pixel, except
   where it is itself removed or redrawn, and as far as the page can
   scroll: near the top or bottom of the page the scroll stops at the
-  page's edge. Moving focus (to Add a rule after Remove or Remove quick
-  updates) never scrolls the page under the pointer; with no pointer, a
+  page's edge. Moving focus (to Add a rule after Remove) never scrolls the page
+  under the pointer; with no pointer, a
   control off the screen is brought just into view. The browser's own
   scroll anchoring stays on for the page, so a note the header shows
   above the page moves nothing; the parts the script steadies opt out of
@@ -2480,8 +2478,7 @@ and removes rows, writes the Basic choices and reads times through the shared
   stored schedule, and a new key is never saved together with a schedule
   change. The review before applying, in the
   [review dialog](../ui-conventions/spec.md#review-dialog) (#750), lists, in words,
-  the full times added and removed (and the quick times, while a stored
-  quick rule is removed or kept), the switch if it changed, and
+  the full times added and removed, the switch if it changed, and
   each difference that
   [stored schedule and upgrade](../background-processing/spec.md#stored-schedule-and-upgrade)
   names for a converted schedule, rather than the stored settings.
@@ -2490,11 +2487,9 @@ and removes rows, writes the Basic choices and reads times through the shared
   schedule exactly as it is and writes no new keys. Problems on such an
   unchanged converted schedule are still shown at their rows, but they do
   not make Save unavailable for the page's other settings; they block only
-  a change to the schedule. For example, a stored full time at 23:50 with
-  quarter-hour quick updates converts to a quick time at 00:00 only 10
-  minutes after it, and two stored full times 10 minutes apart are too
-  close; both run today and keep running until the Administrator changes
-  the schedule.
+  a change to the schedule. For example, two stored full times 10 minutes
+  apart are too close; both run today and keep running until the
+  Administrator changes the schedule.
 
 Rejected: a copy of the rules in the page script, kept in step by a shared
 table of cases (as the mail repeat panel does). The preview needs the
@@ -2508,8 +2503,7 @@ Below the editor, updated live as it changes, the page shows the next seven
 days from today:
 
 - **A grid**: one row per day and 96 quarter-hour cells, with full refreshes
-  marked (and a stored quick rule's runs marked differently, by shape as
-  well as color, named in the legend only while one remains), excluded
+  marked, excluded
   windows shaded and labeled with their cause ("Reminder: preparing",
   "Reminder: sending", "Invitation: sending"), and the current time marked.
   A kept off-quarter-hour time is marked in the cell it falls in. The grid
@@ -2555,13 +2549,12 @@ component's days. Nothing in the list is removed.
 - **Cost**: the estimated daily ParishSoft time and its share of the day,
   per day of the preview and as an average, for example "About 1 h 34 min
   of ParishSoft time a day (5.1% of the day): 10 full refreshes of about 7.3
-  minutes." A stored quick rule's updates are counted too while one
-  remains. The durations are the
-  medians of the last seven days' successful runs of each kind (manual
+  minutes." The duration is the
+  median of the last seven days' successful full runs (manual
   refreshes included: the Admin pages cannot tell a run's cause, and a median
   absorbs the odd one), or
-  typical values (7.3 and 2.2 minutes, Production's medians in October
-  2026), labeled as such, until there are three runs of a kind. Above 25% of
+  a typical value (7.3 minutes, Production's median in October
+  2026), labeled as such, until there are three runs. Above 25% of
   the day the summary shows a warning; it never refuses.
 - **Freshness**: the longest wait for new ParishSoft data over the seven
   days, counting the excluded windows, with the day it falls on, and when
@@ -2649,9 +2642,11 @@ leaders' Ministries on their next request. It does not change any
 
 ### ParishSoft Ministry catalog changes
 
-Ministries are keyed by ParishSoft DUID, and only a full refresh re-reads the
-Ministry catalog; quick updates copy it unchanged (see the
-[delta cycle](../background-processing/spec.md#delta-cycle)). The system never
+Ministries are keyed by ParishSoft DUID, and every refresh is a full refresh
+that re-reads the Ministry catalog (quick updates, which copied it
+unchanged, were removed in #1147; see
+[quick updates removed](../background-processing/spec.md#quick-updates-removed)).
+The system never
 changes a campaign's Ministry selections because the catalog changed. This
 section covers telling Administrators about catalog changes and changing a
 live campaign's Ministries
@@ -2673,9 +2668,9 @@ a DUID with names cleaned by the display rule above:
 - **renamed**: in both, with the name before and after.
 
 A first load has no base and records nothing; a snapshot with no Ministry
-differences records nothing. A quick update copies its base's catalog, so
-it is not compared at all, which keeps the comparison off the global work lock
-for those runs. Each list keeps at most 50 entries, plus the full count. Like
+differences records nothing. A past quick update copied its base's catalog
+and was not compared. Each list keeps at most 50 entries, plus the full count.
+Like
 the change counts, the comparison is display-only: if it fails, staging omits
 it, logs a classified `report_shaping_failed` WARNING and the refresh
 continues. That process-log line carries `shaping: ministry_catalog` (the
@@ -4176,9 +4171,8 @@ requested after activation, because a refresh reads the current campaign when
 it is requested. The offer disappears once the campaign has its Families. It
 reads the campaign's giving window and creates the campaign's Families and
 Family codes, as a refresh does for any current
-draft. If no one presses the button, the next scheduled quick update cannot
-continue from its cursor, because the giving window changed, and runs as a
-full refresh instead. Go live, which already requires the
+draft. If no one presses the button, the next scheduled full refresh reads
+the new giving window. Go live, which already requires the
 population to match the current ParishSoft data, stays incomplete until a
 full refresh has finished.
 
@@ -4247,10 +4241,11 @@ live.
   height in every state, so nothing moves when the first stage starts
   ([#1916](https://github.com/epiphany40223/parishkit/issues/1916)).
   The step's state follows only the campaign's *full* refreshes, those
-  requested since the campaign was created. A quick (delta) refresh, such as
-  a scheduled one, is never "the load": it neither shows the step as
-  loading nor hides an earlier full load's failure or success
-  ([#1587](https://github.com/epiphany40223/parishkit/issues/1587)).
+  requested since the campaign was created. A past quick (delta) refresh
+  was never "the load": it neither showed the step as loading nor hid an
+  earlier full load's failure or success
+  ([#1587](https://github.com/epiphany40223/parishkit/issues/1587); quick
+  updates were removed in #1147).
   - *Not loaded* (no full refresh under way or finished since the campaign
     was created, and the campaign was created more than two minutes ago):
     "This campaign's ParishSoft data hasn't been loaded yet.", every stage
@@ -7519,9 +7514,9 @@ takes a few minutes; they say nothing of quick updates
 ([#1122](https://github.com/epiphany40223/parishkit/issues/1122), see
 [ParishSoft refresh schedule settings](#parishsoft-refresh-schedule-settings)).
 A refresh run's background task page,
-and its row in the background-work list, name the run as a "Full refresh" or a
-"Quick update" from its request kind (whatever the quick-update cadence, so the
-label never claims a 15-minute cadence that is not configured). The list
+and its row in the background-work list, name the run as a "Full refresh"
+from its request kind; a past quick update, from before #1147, is still
+named "Quick update". The list
 names the run's current phase in words ("Downloading from ParishSoft",
 "Saving the downloaded records", "Checking the new data", "Making the new
 data current"). The task page's Current status, which Refresh from
@@ -7552,7 +7547,7 @@ complete new copy and reuses unchanged records. Once a refresh has succeeded,
 its task page says how many records it checked and how many changed, by
 collection (for example, "Checked 30,639 records from ParishSoft; 12 changed
 (3 Families, 9 contacts)."); a refresh with no ParishSoft changes says 0
-changed, including a quick update recorded as
+changed, including a past quick update recorded as
 [unchanged](../data/spec.md#source-snapshot), which checked the current
 snapshot's records without copying them. A record changed when its identity was added, removed or has a
 different payload digest than in the previous promoted snapshot (the base
@@ -9725,10 +9720,9 @@ might be held back:
   wording Home and the refresh page use, defined in
   [ParishSoft data age and connection](../operations/spec.md#parishsoft-data-age-and-connection).
 - **Refreshes held during a send:** while a bulk send is in progress the
-  scheduler holds daytime full refreshes (and any stored quick updates),
-  which run as a
+  scheduler holds daytime full refreshes, which run as a
   catch-up once the send ends, as
-  [deltas wait for a bulk Family send](../background-processing/spec.md#deltas-wait-for-a-bulk-family-send)
+  [daytime refreshes wait for a bulk Family send](../background-processing/spec.md#daytime-refreshes-wait-for-a-bulk-family-send)
   describes. The panel says so and gives the latest time at which they start
   again. Refreshes skipped around a scheduled Family email, which do not run
   later, are listed separately with their window.
@@ -10097,7 +10091,7 @@ the backup login. Instead:
 5. **Held during a bulk send** ([decision 2](#system-health-decisions)).
    While a bulk Family send is in progress, request mode does not start the
    backup. "In progress" is the scheduler's own definition from
-   [deltas wait for a bulk Family send](../background-processing/spec.md#deltas-wait-for-a-bulk-family-send):
+   [daytime refreshes wait for a bulk Family send](../background-processing/spec.md#daytime-refreshes-wait-for-a-bulk-family-send):
    at least ten unpaused pieces of the send's work remain, read without a
    lock. Only that definition is shared; the scheduler's source-staleness
    bound does not apply to backups. One shared SQL helper should answer
@@ -10383,9 +10377,9 @@ requires today.
    `stewardship_source_drop_count` row per count, in the transaction that
    rejects the refused attempt; the rows are append-only, the web login
    reads them, and their SQL guard admits only the worker, only for a
-   rejected attempt, and only a failure flag that follows the loss rule. A
-   quick update that falls too far is not recorded: it falls back to a
-   full refresh, as before, which records its counts if it is refused too.
+   rejected attempt, and only a failure flag that follows the loss rule.
+   (A quick update, before #1147, that fell too far was not recorded: it
+   fell back to a full refresh.)
    A refresh refused because it has no Families or no Members records every
    count as well, each marked failed by the same rule as any other refusal.
 2. **Example Families** ([decision 4](#system-health-decisions)). When it
@@ -10425,9 +10419,10 @@ requires today.
    count's new value is at least the reviewed after value: no count falls
    below what the Administrator saw. The before values are recorded with
    the acceptance but not compared. The eligibility baselines come from the
-   current data as well as the recent full refreshes, so every quick update can
-   move them, and binding them would refuse almost every accepted refresh
-   while quick updates run every 15 minutes. A count that passed in the
+   current data as well as the recent full refreshes, so (when quick updates
+   still ran, before #1147) every quick update could move them, and binding
+   them would have refused almost every accepted refresh. A count that passed
+   in the
    refusal keeps the limit in effect. A load with no Families or no Members
    is still refused. Any other result is refused again, with a new refusal
    to review. A count that fails now must also have failed in the refusal,
@@ -10438,8 +10433,8 @@ requires today.
    when the Administrator confirms can use it.
 5. **Lifetime.** The acceptance ends when any full refresh is promoted,
    whether or not it used the acceptance, when a new refusal is recorded,
-   or 24 hours after it was given. Quick updates never use it and never end
-   it. The refresh that uses it records in its manifest the acceptance, who
+   or 24 hours after it was given. The refresh that uses it records in its
+   manifest the acceptance, who
    gave it and the counts that failed, as the environment override's limit
    is recorded today, and logs a WARNING line naming the acceptance. The
    lifetime is derived from these facts, never stored, by one SQL function
@@ -10550,7 +10545,7 @@ line says why.
 
 **Checks (server):** the [shared rules](#shared-rules-for-health-actions);
 the newest full refresh was refused for a drop and no full refresh has been
-promoted since (quick updates do not count, as #510 notes); the counts
+promoted since (past quick updates do not count, as #510 notes); the counts
 match the preview binding; the tick box was ticked; no other acceptance is
 active; and the refusal is not a tenant mismatch.
 

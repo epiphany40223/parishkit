@@ -66,6 +66,17 @@ def members(fake):
     )
 
 
+def families(fake):
+    """Every served Family search row, by Family DUID."""
+    rows = answer(
+        fake,
+        "POST",
+        "families/search",
+        {"organizationIDs": [LOCAL_ORGANIZATION_ID], "maximumRows": 500},
+    )
+    return {row["familyDUID"]: row for row in rows}
+
+
 def contacts(fake):
     """Every served contact-list row."""
     return answer(
@@ -117,7 +128,7 @@ def test_no_edits_serve_the_generated_parish_unchanged(parish):
     assert digest(again) == digest(parish)
 
 
-def test_a_member_edit_reaches_the_search_contact_and_household_reads(parish):
+def test_a_member_edit_reaches_the_search_contact_and_member_reads(parish):
     """Email, mobile phone and suffix change on every read that carries them."""
     member = adult(parish)
     duid = member["memberDUID"]
@@ -140,9 +151,6 @@ def test_a_member_edit_reaches_the_search_contact_and_household_reads(parish):
     contact = next(c for c in contacts(fake) if c["memberDUID"] == duid)
     assert contact["emailAddress"] == "new@example.test"
     assert contact["cellPhone"] == "555-000-1234"
-    household = answer(fake, "GET", f"families/{member['familyDUID']}/member/list")
-    served = next(m for m in household if m["memberDUID"] == duid)
-    assert served["cellPhone"] == "555-000-1234" and served["suffix"] == "Jr."
     assert answer(fake, "GET", f"members/{duid}")["emailAddress"] == "new@example.test"
 
 
@@ -160,7 +168,7 @@ def test_a_death_date_is_a_parishsoft_timestamp(parish):
 
 
 def test_moving_a_member_updates_both_families_and_the_rosters(parish):
-    """family=ID moves the Member; counts, household lists and rosters follow."""
+    """family=ID moves the Member; counts, Member reads and rosters follow."""
     member = adult(parish)
     old = member["familyDUID"]
     new = next(
@@ -176,12 +184,11 @@ def test_moving_a_member_updates_both_families_and_the_rosters(parish):
         )
     )
     sizes = {f["familyDUID"]: f["hasMembers"] for f in parish.families}
-    assert answer(fake, "GET", f"families/{old}")["hasMembers"] == sizes[old] - 1
-    assert answer(fake, "GET", f"families/{new}")["hasMembers"] == sizes[new] + 1
-    moved = [
-        m["memberDUID"] for m in answer(fake, "GET", f"families/{new}/member/list")
-    ]
-    assert member["memberDUID"] in moved
+    served = families(fake)
+    assert served[old]["hasMembers"] == sizes[old] - 1
+    assert served[new]["hasMembers"] == sizes[new] + 1
+    moved = answer(fake, "GET", f"members/{member['memberDUID']}")
+    assert moved["familyDUID"] == new
     rows = [r for r in roster(fake, ministry) if r["memberId"] == member["memberDUID"]]
     assert [r["familyId"] for r in rows] == [new]
 

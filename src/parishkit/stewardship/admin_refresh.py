@@ -6,7 +6,7 @@ refresh page's confirmation does, through the same function
 ``request_key``: repeating a key returns the original refresh, and a key
 crosses between the page and the command line. ``refresh status`` is the
 page's read (``read_refresh_page``): what is running or waiting, and the
-latest full and incremental outcomes.
+latest full refresh outcomes.
 
 The page asks for no typed value, so neither command prompts. ``refresh
 start`` admits as the page's form post does (``CONFIGURE``, recording
@@ -27,7 +27,7 @@ from .admin_reads import ReadModel, Unavailable, _admit, _held, _recheck
 
 
 def refresh_fields(refresh):
-    """The full/incremental refresh facts ``status`` and ``refresh status`` share.
+    """The full refresh facts ``status`` and ``refresh status`` share.
 
     ``refresh`` is ``source.refresh_status.full_refresh_status``'s result.
     """
@@ -36,11 +36,8 @@ def refresh_fields(refresh):
         "full_failed_at": refresh.failed_at,
         "full_failed_task_id": refresh.failed_task_id,
         "full_running": refresh.running,
-        "delta_succeeded_at": refresh.delta_succeeded_at,
-        "delta_failed_at": refresh.delta_failed_at,
         "frequency": refresh.frequency,
         "next_full_at": refresh.next_full_at,
-        "delta_refresh": refresh.delta_refresh,
         # Data age and connection (#510): the newest promoted full refresh's
         # start, "data as of", the connection line, and the overdue full slot
         # with whether it is past the margin.

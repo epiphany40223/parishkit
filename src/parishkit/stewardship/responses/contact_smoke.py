@@ -52,9 +52,8 @@ from .publication import (
 )
 from .publication_gateway import ContactGatewayError
 
-# Other spellings a Member record may use for a PUT field. The household
-# reader and the source corpus already read these from ParishSoft Member
-# records (parishsoft_households, source.corpus).
+# Other spellings a Member record may use for a PUT field. The source corpus
+# already reads these from ParishSoft Member records (source.corpus).
 READ_ALIASES = {
     "dateOfBirth": ("birthdate",),
     "gender": ("sex",),

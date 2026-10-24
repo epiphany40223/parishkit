@@ -3,7 +3,7 @@
 In real browsers: integration Save waits for a change (a pasted key counts),
 Off-site backups' Test access never does, Slack's Save is unavailable while
 its key can't be stored, ParishSoft's Save waits beside its schedule gate
-(removing its stored quick updates, hidden fields only, is a change), the
+(a rule's hidden kind field counts, as does removing a rule), the
 Pages and emails editor's Preview changes waits for a change (the visual
 editor's toolbar counts), New user's Add the user waits for an Email and a
 Name and for the Email check, the automation approval's user code and the
@@ -131,10 +131,11 @@ def test_parishsoft_save_waits_for_a_change_beside_its_schedule(page, component_
     assert not failures
 
 
-def test_removing_parishsoft_quick_updates_is_a_change(page, component_origin):
-    """Production's stored quick updates are rows of hidden fields only, so
-    the change gate counts hidden fields too: Remove quick updates makes
-    Save available, as removing a rule with controls does (#1334 review)."""
+def test_removing_a_parishsoft_rule_is_a_change(page, component_origin):
+    """Save waits beside the schedule gate until the schedule changes:
+    removing a rule makes it available. Each rule's hidden kind field is
+    marked for the change gate (#1334 review), so the gate counts the rows'
+    hidden fields too."""
     from playwright.sync_api import expect
 
     from .refresh_schedule_components import PRODUCTION
@@ -145,31 +146,19 @@ def test_removing_parishsoft_quick_updates_is_a_change(page, component_origin):
     page.goto(component_origin + "/refresh-schedule-gated")
     save = page.locator(".schedule-save button[type=submit]")
     expect(save).to_be_disabled()
-    page.get_by_role("button", name="Remove quick updates").click()
-    expect(page.locator("[data-quick-rule]")).to_have_count(0)
+    kinds = page.locator('[data-schedule-rows="rules"] input[name$="-kind"]')
+    assert kinds.count() == len(PRODUCTION["full_refresh_times"])
+    for index in range(kinds.count()):
+        kind = kinds.nth(index)
+        assert kind.get_attribute("type") == "hidden"
+        assert kind.get_attribute("value") == "full"
+        assert kind.get_attribute("data-change-setting") is not None
+    rule_rows(page).first.get_by_role("button", name="Remove").click()
     expect(save).to_be_enabled()
     # The check runs from a timer; wait for the route to record it.
     recorded(page, requests, 1)
-    assert "kind=quick" not in requests[0]
     # Shown again from history, the removal still counts.
     page.evaluate(RESTORE)
-    expect(save).to_be_enabled()
-    # A rewritten hidden setting is a change; written back, it is none.
-    page.goto(component_origin + "/refresh-schedule-gated")
-    expect(save).to_be_disabled()
-    write = (
-        "value => { const field = document.querySelector("
-        "'[data-quick-rule] input[type=hidden][name$=\"-every\"]');"
-        " field.value = value;"
-        " field.dispatchEvent(new Event('change', {bubbles: true})); return true; }"
-    )
-    saved = page.locator('[data-quick-rule] input[name$="-every"]').input_value()
-    page.evaluate(write, "30")
-    expect(save).to_be_enabled()
-    page.evaluate(write, saved)
-    expect(save).to_be_disabled()
-    # A rule with controls removed is a change too.
-    rule_rows(page).first.get_by_role("button", name="Remove").click()
     expect(save).to_be_enabled()
     assert not failures
 
@@ -396,5 +385,5 @@ def test_every_hidden_setting_is_marked(page, component_origin):
             unknown[path] = missed
     assert unknown == {}
     # The marks are there to find (the share and schedule rows' identities,
-    # the refresh rules' kind, ParishSoft's stored quick updates).
+    # the refresh rules' kind).
     assert marked > 0

@@ -111,7 +111,7 @@ def read_refresh_page(service):
     configuration = editable_configuration(service)
     return configuration, {
         "pending": _pending(),
-        # The same full/incremental status the dashboard shows; this page is
+        # The same full refresh status the dashboard shows; this page is
         # itself the "run a full refresh now" action, so no link.
         "full_refresh": full_refresh_status(
             refresh_schedule(configuration), timezone.now()

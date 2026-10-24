@@ -25,6 +25,7 @@ from parishkit.stewardship.source.requests import TASK_TYPE
 from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSnapshot
 from parishkit.stewardship.source.snapshots import reconstruct_snapshot
 
+from .refresh_harness import compiled_handler, short_drain
 from .test_background_grants_postgresql import task_login
 from .test_setup_loading_postgresql import fake_parishsoft_exchange
 from .test_source_attempts_postgresql import configured
@@ -32,7 +33,6 @@ from .test_source_execution_postgresql import run
 from .test_source_families_postgresql import source_singletons  # noqa: F401
 from .test_source_leases_postgresql import delay
 from .test_source_requests_postgresql import command
-from .test_source_unchanged_postgresql import compiled_handler, short_drain
 
 pytestmark = pytest.mark.django_db(transaction=True)
 

@@ -16,20 +16,21 @@ SLOT_NAMESPACE = UUID("ec9c1e19-b158-454d-96fd-1cfe6e721d11")
 # times; the others use UTC hour or quarter-hour boundaries. The scheduled full
 # cause stays "nightly" in stored commands and slot identities.
 FREQUENCIES = ("daily", "hourly", "quarter_hour")
-# How often the incremental ("delta", or quick) refresh runs between full
-# refreshes: on UTC quarter-hour or hour boundaries, or not at all (#465), or
-# at the listed local ``quick_refresh_times`` (``times``, #632).
+# The values a stored ``delta_refresh`` may hold. Quick updates (delta
+# refreshes) ran on UTC quarter hours or hours, not at all (#465), or at the
+# listed local ``quick_refresh_times`` (``times``, #632). They were removed
+# (#1147): stored documents keep these settings and stay valid, but nothing
+# schedules a quick update. Only ``schedule_identity`` still reads them.
 DELTA_REFRESHES = ("quarter_hour", "hourly", "off", "times")
-# At most this many daily times, full and quick together: one every quarter
-# hour. The 15-minute spacing rule already implies it; there is no other cap
-# (#632), the settings page shows the cost instead.
+# At most this many daily times in a stored schedule (full and, in an older
+# document, quick together): one every quarter hour. The 15-minute spacing
+# rule already implies it; there is no other cap (#632), the settings page
+# shows the cost instead.
 MAX_DAILY_TIMES = 96
 # A schedule saved without its rules (every schedule before #632) keeps the
-# old limit of eight full times and no listed quick times: it behaves as it
-# always has.
+# old limit of eight full times: it behaves as it always has.
 MAX_LEGACY_FULL_TIMES = 8
 DEFAULT_TIME = "02:00"
-DEFAULT_DELTA_REFRESH = "quarter_hour"
 QUARTER_HOUR = timedelta(minutes=15)
 HOUR = timedelta(hours=1)
 
@@ -39,8 +40,8 @@ class RefreshSlot:
     """An exact due slot; its request may coalesce but its provenance does not.
 
     ``nightly_time`` is the configured local time a full slot fell due at (the
-    tick stores it, and the SQL guard checks it is a configured time); a delta
-    slot has none.
+    tick stores it, and the SQL guard checks it is a configured time); a
+    schedule-change catch-up has none.
     """
 
     cause: str
@@ -80,13 +81,11 @@ def refresh_settings(settings):
 
     Each setting is optional in the stored document, so the defaults live
     here, once, for the scheduler and the Admin pages alike: the nightly time
-    alone when no list is stored, quarter-hour deltas, and no listed quick
-    times. Of ``refresh_rules`` (#632), how the Administrator entered the
-    schedule, only its presence is read (``rules``): it decides which limits
-    the lists are held to. Equal results here mean an unchanged schedule
-    (``data_age.schedule_runs``, and the tick guard's own copy of this
-    normalization, ``stewardship_refresh_schedule_v1``, for the
-    schedule-change catch-up).
+    alone when no list is stored. Of ``refresh_rules`` (#632), how the
+    Administrator entered the schedule, only its presence is read
+    (``rules``): it decides which limits the lists are held to. A stored
+    ``delta_refresh`` or ``quick_refresh_times`` is ignored: quick updates
+    were removed (#1147), so a schedule runs only full refreshes.
     """
     nightly_time = settings.get("nightly_time", DEFAULT_TIME)
     return {
@@ -95,9 +94,24 @@ def refresh_settings(settings):
         "full_refresh_times": tuple(
             settings.get("full_refresh_times") or (nightly_time,)
         ),
-        "delta_refresh": settings.get("delta_refresh", DEFAULT_DELTA_REFRESH),
-        "quick_refresh_times": tuple(settings.get("quick_refresh_times") or ()),
         "rules": "refresh_rules" in settings,
+    }
+
+
+def schedule_identity(settings):
+    """What makes two stored schedules the same, as the tick guard decides it.
+
+    Equal results mean an unchanged schedule (``data_age.schedule_runs``)
+    for the schedule-change catch-up, whose due instant the tick guard
+    checks with its own copy of this normalization in SQL
+    (``stewardship_refresh_schedule_v1``). That copy still compares the
+    removed quick settings, with their old quarter-hour default, so this one
+    does too: a change of only those settings starts a new schedule there,
+    and must here, or the guard would refuse the catch-up's due instant.
+    """
+    return refresh_settings(settings) | {
+        "delta_refresh": settings.get("delta_refresh", "quarter_hour"),
+        "quick_refresh_times": tuple(settings.get("quick_refresh_times") or ()),
     }
 
 
@@ -111,36 +125,19 @@ def skips_around_emails(settings):
     return type(rules) is dict and rules.get("skip_around_family_emails") is True
 
 
-def _validate(
-    *,
-    nightly_time,
-    frequency,
-    full_refresh_times,
-    delta_refresh,
-    quick_refresh_times=(),
-    rules=False,
-):
+def _validate(*, nightly_time, frequency, full_refresh_times, rules=False):
     """Refuse non-canonical cadence inputs; return the effective times tuple.
 
-    Listed quick times (``delta_refresh`` "times") need a schedule saved
-    with its rules (``rules``), daily full times and at least one quick
-    time, none of them also a full time; any other quick setting lists
-    none. Without rules, at most ``MAX_LEGACY_FULL_TIMES`` full times, as
-    before #632.
+    Without rules, at most ``MAX_LEGACY_FULL_TIMES`` full times, as before
+    #632.
     """
     if full_refresh_times is None:
         full_refresh_times = (nightly_time,)
-    quick = tuple(quick_refresh_times or ())
-    listed = delta_refresh == "times"
     if (
         not is_hhmm(nightly_time)
         or not canonical_times(nightly_time, full_refresh_times)
-        or (not rules and (listed or len(full_refresh_times) > MAX_LEGACY_FULL_TIMES))
+        or (not rules and len(full_refresh_times) > MAX_LEGACY_FULL_TIMES)
         or frequency not in FREQUENCIES
-        or delta_refresh not in DELTA_REFRESHES
-        or (listed and (frequency != "daily" or not canonical_list(quick)))
-        or (quick and not listed)
-        or set(quick) & set(full_refresh_times)
     ):
         raise ValueError("Refresh scheduling requires canonical cadence inputs.")
     return tuple(full_refresh_times)
@@ -149,7 +146,7 @@ def _validate(
 def local_instant(day, value, timezone):
     """The instant the ``HH:MM`` wall time ``value`` falls at on local ``day``.
 
-    The one place every daily time, full or quick, is resolved through the
+    The one place every daily time is resolved through the
     shared daylight-saving resolver: a repeated time (clocks go back) at its
     earlier instant, a time in the missing hour (clocks go forward) at the
     first real instant after the gap. The scheduler's slots and the settings
@@ -184,24 +181,12 @@ def _floor(now, step):
     return now.replace(minute=now.minute // minutes * minutes, second=0, microsecond=0)
 
 
-def covered_by_full(frequency, delta_refresh):
-    """Whether every delta slot coincides with a full refresh, so none is needed.
-
-    A full refresh every quarter hour covers quarter-hour and hourly deltas;
-    an hourly full refresh covers hourly deltas.
-    """
-    return frequency == "quarter_hour" or (
-        frequency == "hourly" and delta_refresh == "hourly"
-    )
-
-
 def _latest(now, timezone, times, nightly_time):
     """The latest configured local time due at or before ``now`` and that time.
 
     Every configured time is resolved for the local day and the day before,
     through the shared DST resolver, and the latest by ``precedence`` among
-    those not after ``now`` wins. Listed quick times use the same rule with
-    no nightly time.
+    those not after ``now`` wins.
     """
     day = now.astimezone(ZoneInfo(timezone)).date()
     candidates = [
@@ -229,9 +214,7 @@ def _slot(cause, due, value, *, timezone, scope_fingerprint):
 
     The identity's inputs are the source scope, time zone, cause, due
     instant and, for a scheduled full slot, the configured time it fell due
-    at (``value``; None otherwise). They have not changed since #465, so a
-    quick slot at a listed local quarter hour has the identity the old
-    quarter-hour delta slot had at the same instant.
+    at (``value``; None otherwise). They have not changed since #465.
     """
     _, key = canonical_payload(
         {
@@ -254,26 +237,22 @@ def due_slots(
     scope_fingerprint,
     frequency="daily",
     full_refresh_times=None,
-    delta_refresh=DEFAULT_DELTA_REFRESH,
-    quick_refresh_times=(),
     rules=False,
 ):
-    """Select the latest full-refresh and delta slot, never an unbounded backlog.
+    """Select the latest full-refresh slot, never an unbounded backlog.
 
-    ``frequency`` chooses the full refresh's slot: for "daily" the latest of
-    the configured local ``full_refresh_times`` (the nightly time alone by
-    default), else the latest UTC hour or quarter hour. ``delta_refresh``
-    chooses the delta slot: the latest UTC quarter hour or hour, none, or
-    ("times", #632) the latest of the listed local ``quick_refresh_times``,
-    resolved like the full times. ``rules`` says the schedule was saved with
-    its rules (``refresh_settings``), which allows listed quick times and
-    more than eight full times.
+    ``frequency`` chooses the slot: for "daily" the latest of the configured
+    local ``full_refresh_times`` (the nightly time alone by default), else
+    the latest UTC hour or quarter hour. ``rules`` says the schedule was
+    saved with its rules (``refresh_settings``), which allows more than
+    eight full times. A tuple, as it was when a quick-update slot could
+    join it (removed by #1147).
 
-    Full comes first so a simultaneously due delta can coalesce into it. After
-    downtime, one current coherent observation covers stale refresh slots;
-    unlike delivery obligations, missed read-only polls need no individual replay.
-    Identities ignore unrelated configuration edits but include the actual source
-    scope, timezone and cadence. Persist them before emitting broker hints.
+    After downtime, one current coherent observation covers stale refresh
+    slots; unlike delivery obligations, missed read-only polls need no
+    individual replay. Identities ignore unrelated configuration edits but
+    include the actual source scope, timezone and cadence. Persist them
+    before emitting broker hints.
     """
     if type(now) is not datetime or now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("Refresh scheduling requires canonical scope and time inputs.")
@@ -282,8 +261,6 @@ def due_slots(
         nightly_time=nightly_time,
         frequency=frequency,
         full_refresh_times=full_refresh_times,
-        delta_refresh=delta_refresh,
-        quick_refresh_times=quick_refresh_times,
         rules=rules,
     )
     now = now.astimezone(UTC)
@@ -294,42 +271,33 @@ def due_slots(
         # time, as it always has; the time plays no part in its slot.
         full = _floor(now, HOUR if frequency == "hourly" else QUARTER_HOUR)
         chosen = nightly_time
-    slots = [("nightly", full, chosen)]
-    if delta_refresh == "times":
-        quick, _ = _latest(now, timezone, tuple(quick_refresh_times), None)
-        slots.append(("delta", quick, None))
-    elif delta_refresh != "off" and not covered_by_full(frequency, delta_refresh):
-        step = HOUR if delta_refresh == "hourly" else QUARTER_HOUR
-        slots.append(("delta", _floor(now, step), None))
-    return tuple(
-        _slot(cause, due, value, timezone=timezone, scope_fingerprint=scope_fingerprint)
-        for cause, due, value in slots
+    return (
+        _slot(
+            "nightly",
+            full,
+            chosen,
+            timezone=timezone,
+            scope_fingerprint=scope_fingerprint,
+        ),
     )
 
 
 def listed_due_slots(
-    *,
-    now,
-    timezone,
-    nightly_time,
-    scope_fingerprint,
-    full_refresh_times,
-    quick_refresh_times=(),
+    *, now, timezone, nightly_time, scope_fingerprint, full_refresh_times
 ):
-    """Every listed full and quick slot due today or yesterday, oldest first.
+    """Every listed full slot due today or yesterday, oldest first.
 
     For a schedule saved with its rules (#632) that skips refreshes around
     Family emails: the scheduler decides each due, undecided slot, not only
-    the latest of each kind (see ``production``). Each listed time is
-    resolved on the local day and the day before through the shared
-    daylight-saving resolver, exactly as ``due_slots`` resolves the latest
-    one, so the latest slot of each kind here is the one ``due_slots``
-    returns. Slots with the same identity (a repeated wall time) appear once.
-    On the spring-forward day two full times in the missing hour resolve to
-    the same instant with different identities (each names its own time):
-    both appear, ``due_slots`` picks one as the latest (the nightly wins,
-    then the later wall time), and the other may be decided on its own, a
-    harmless twin.
+    the latest (see ``production``). Each listed time is resolved on the
+    local day and the day before through the shared daylight-saving
+    resolver, exactly as ``due_slots`` resolves the latest one, so the
+    latest slot here is the one ``due_slots`` returns. Slots with the same
+    identity (a repeated wall time) appear once. On the spring-forward day
+    two full times in the missing hour resolve to the same instant with
+    different identities (each names its own time): both appear,
+    ``due_slots`` picks one as the latest (the nightly wins, then the later
+    wall time), and the other may be decided on its own, a harmless twin.
     """
     if type(now) is not datetime or now.tzinfo is None or now.utcoffset() is None:
         raise ValueError("Refresh scheduling requires canonical scope and time inputs.")
@@ -338,26 +306,23 @@ def listed_due_slots(
         nightly_time=nightly_time,
         frequency="daily",
         full_refresh_times=full_refresh_times,
-        delta_refresh="times" if quick_refresh_times else "off",
-        quick_refresh_times=quick_refresh_times,
         rules=True,
     )
     now = now.astimezone(UTC)
     day = now.astimezone(ZoneInfo(timezone)).date()
     slots = {}
-    for cause, values in (("nightly", times), ("delta", tuple(quick_refresh_times))):
-        for value in values:
-            for due in _occurrences(day, value, timezone)[:2]:
-                if due > now:
-                    continue
-                slot = _slot(
-                    cause,
-                    due,
-                    value if cause == "nightly" else None,
-                    timezone=timezone,
-                    scope_fingerprint=scope_fingerprint,
-                )
-                slots[slot.slot_key] = slot
+    for value in times:
+        for due in _occurrences(day, value, timezone)[:2]:
+            if due > now:
+                continue
+            slot = _slot(
+                "nightly",
+                due,
+                value,
+                timezone=timezone,
+                scope_fingerprint=scope_fingerprint,
+            )
+            slots[slot.slot_key] = slot
     return tuple(sorted(slots.values(), key=lambda slot: (slot.due_at, slot.cause)))
 
 
@@ -404,7 +369,6 @@ def next_full_at(
         nightly_time=nightly_time,
         frequency=frequency,
         full_refresh_times=full_refresh_times,
-        delta_refresh=DEFAULT_DELTA_REFRESH,
         rules=rules,
     )
     now = now.astimezone(UTC)
@@ -425,27 +389,20 @@ def _minutes(value):
     return int(value[:2]) * 60 + int(value[3:])
 
 
-def longest_gap(
-    *, frequency, full_refresh_times, delta_refresh, quick_refresh_times=()
-):
-    """The longest wait between scheduled refreshes of any kind, as a timedelta.
+def longest_gap(*, frequency, full_refresh_times):
+    """The longest wait between scheduled refreshes, as a timedelta.
 
-    With UTC-cadence deltas on, their interval; otherwise the longest interval
-    between consecutive listed times, full and quick, around the clock
+    With a frequent full refresh, its interval; otherwise the longest
+    interval between consecutive listed full times, around the clock
     (daylight-saving shifts ignored). Plus the lateness margin, it is how
     long without a successful attempt the connection line waits before it
     reads "not checked" (``data_age.connection_threshold``, #510).
     """
     if frequency == "quarter_hour":
         return QUARTER_HOUR
-    if delta_refresh == "quarter_hour":
-        return QUARTER_HOUR
-    if frequency == "hourly" or delta_refresh == "hourly":
+    if frequency == "hourly":
         return HOUR
-    listed = tuple(full_refresh_times)
-    if delta_refresh == "times":
-        listed += tuple(quick_refresh_times)
-    minutes = sorted(_minutes(value) for value in listed)
+    minutes = sorted(_minutes(value) for value in full_refresh_times)
     gaps = [b - a for a, b in zip(minutes, minutes[1:], strict=False)]
     gaps.append(24 * 60 - minutes[-1] + minutes[0])
     return timedelta(minutes=max(gaps))

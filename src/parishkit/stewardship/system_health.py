@@ -1608,7 +1608,6 @@ def _refresh_document(status):
         "full_succeeded_at": status.succeeded_at,
         "full_failed_at": status.failed_at,
         "full_running": status.running,
-        "delta_succeeded_at": status.delta_succeeded_at,
         "full_started_at": status.full_started_at,
         "data_as_of": status.data_as_of,
         "connection": None if connection is None else connection.state,

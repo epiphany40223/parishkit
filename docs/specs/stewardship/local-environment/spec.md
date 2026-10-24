@@ -627,8 +627,8 @@ deployment sends:
 ## Fake ParishSoft service
 
 A stand-in for ParishSoft's v2 API serves the [synthetic parish](#synthetic-parish)
-to the unmodified source loaders, so setup loading, delta and full refreshes,
-giving and household reads all run through their real code.
+to the unmodified source loaders, so setup loading, full refreshes and
+giving reads all run through their real code.
 
 - **Code.** `stewardship/local/fake_parishsoft.py` is a standard-library HTTP
   server (no new dependency); `stewardship/local/synthetic_parish.py` is the
@@ -679,8 +679,6 @@ containing:
   deployment; and
 - `release_at`: the instant from which the
   [late-added Family](#response-pattern) is served, or `null` (held back); and
-- `change_feed` (optional): `empty` (the default) or `synthetic`, the
-  [change feed's](#change-feed) behaviour; and
 - `edits` (optional): the operator's changes to the generated parish, in
   order (see [fake ParishSoft edits](#fake-parishsoft-edits)); absent or
   empty serves the parish as generated.
@@ -703,9 +701,7 @@ The fake MUST satisfy the strict contracts that the application already
 enforces; those code constants, not this table, are authoritative:
 `POST_CONTRACTS` and `GET_CONTRACTS` in `parishkit/parishsoft_source.py`, the
 envelope parser in `parishkit/parishsoft_pagination.py`, the allowlist in
-`parishkit/parishsoft_http_worker.py`, the change feed in
-`parishkit/parishsoft_changes.py`, and the detail reads in
-`parishkit/parishsoft_households.py`. Paths are relative to the base URL.
+`parishkit/parishsoft_http_worker.py`. Paths are relative to the base URL.
 
 | Method and path | Paging fields (size, position) | Response shape | Identity field |
 | --- | --- | --- | --- |
@@ -723,9 +719,6 @@ envelope parser in `parishkit/parishsoft_pagination.py`, the allowlist in
 | `GET offering/{organization}/funds` | none | bare array | `fundId` |
 | `GET offering/pledge/list` | `PageSize`, `PageNumber` | envelope | `pledgeID` |
 | `GET offering/contributiondetail/list` | `PageSize`, `PageNumber` | envelope | `contributionID` |
-| `GET families/change/list` | `StartDate`, `EndDate` (no paging) | bare array, fewer rows than the caller's ceiling; see [change feed](#change-feed) | `family_DUID` with `currentParishID`, `previousParishID`, `logDate` |
-| `GET families/{id}` | none | one Family object | `familyDUID` |
-| `GET families/{id}/member/list` | none | bare array | `memberDUID` |
 | `GET members/{id}` | none | one Member object | `memberDUID` |
 | `PUT members/{id}/contact` | none | empty body (200); see [publication writes](#fake-parishsoft-writes) | `memberDUID` |
 
@@ -736,40 +729,25 @@ Further rules:
   on every page, as the envelope parser requires. Page numbers start at 1.
 - Embedded row ordinals (`rowNumber`, `rowNum`) are contiguous across pages,
   and embedded totals are constant within a scan.
-- Member rows and Member objects carry the `familyDUID` of their Family, and a
-  Family's member list returns exactly the Members whose `familyDUID` matches.
+- Member rows and Member objects carry the `familyDUID` of their Family.
 - Tenant parameters are validated: an organization ID in a search body or path
   other than the synthetic organization's gets 404.
 - Malformed parameters get 400: a page size outside 1 to 500, a page position
-  below the first page, a non-numeric paging field, a change-feed request
-  missing either date or with `StartDate` after `EndDate`, or a POST body that
-  is not a JSON object.
-- A Family's member list uses Member-object field names (`birthdate`, `sex`)
-  plus `cellPhone`, as the household reader copies them; the contact list uses
-  its own (`dateOfBirth`, `gender`, `cellPhone`).
+  below the first page, a non-numeric paging field, or a POST body that is
+  not a JSON object.
+- The contact list uses its own field names (`dateOfBirth`, `gender`,
+  `cellPhone`).
 
-### Change feed
-
-The real `FamilyChangeList` has returned an empty array for every query made
-from Production so far (494 of 494; a bug report to ParishSoft is pending, see
-[#465](https://github.com/epiphany40223/parishkit/issues/465) and the
-[API analysis](../../../parishsoft-api-analysis.md)), so the fake matches
-reality by default. The configuration file's `change_feed` selects:
-
-- `empty` (default): `families/change/list` always returns `[]`. Delta
-  refreshes therefore reload nothing, and the late-added Family reaches the
-  application through the next full refresh, as it would in Production.
-- `synthetic`: the feed holds exactly one row, the late-added Family's, with
-  `logDate` equal to `release_at`, served only once that instant has passed.
-  A delta refresh whose window covers the release picks the Family up; the
-  seeder can use this mode to exercise the delta path. There is no other
-  history: the generator writes no change rows.
-
-In both modes the fake validates `StartDate` and `EndDate` as the client's
-rules require (both present, ISO dates, not inverted) and filters by the
-request's window alone; the clock decides only whether the late Family's row
-exists (`synthetic`), never which rows a window selects. It enforces no
-server-side window limit, since the real API documents none.
+The change feed (`GET families/change/list`), its `change_feed`
+configuration option and the household detail reads (`GET families/{id}`
+and `GET families/{id}/member/list`) served only quick updates, which were
+removed in [#1147](https://github.com/epiphany40223/parishkit/issues/1147)
+(see
+[quick updates removed](../background-processing/spec.md#quick-updates-removed)).
+The fake no longer serves them, the HTTP worker's read allowlist no longer
+admits those paths, and a configuration file that still sets `change_feed`
+is refused as an unexpected field. The late-added Family reaches the
+application through the next full refresh, as it would in Production.
 
 ### Fake ParishSoft edits
 
@@ -843,8 +821,7 @@ does.
 The [operator script](#operator-script)'s `fake-parishsoft` command runs it
 and, for an edit, rewrites the file and recreates only the `fake-parishsoft`
 service (a container keeps a bind mount on the inode it started with).
-Delta refreshes do not see an edit, since the [change feed](#change-feed)
-stays empty as Production's is; a full refresh does. Snapshots carry the
+The next full refresh sees an edit. Snapshots carry the
 file, so a `reset` or `switch` restores that snapshot's edits.
 
 ### Fake ParishSoft writes
@@ -970,9 +947,7 @@ few data-quality cases such as a blank mailing name or envelope number 0, and
 exactly one held-back late-added Family at every size. That Family is in
 addition to `families`, so the initial load sees exactly `families` Families.
 It is a couple with one child, new to the parish: it has no giving, workgroup
-or Ministry rows, and it is the only record the fake's
-[change feed](#change-feed) can ever report. The generator writes no
-change-feed history (see that section for why).
+or Ministry rows.
 At very small sizes (fewer volunteers than Ministries) the first roster round,
 which gives every Ministry a leader, puts more volunteers on two or more
 Ministries than the stated share.

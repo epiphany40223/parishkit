@@ -37,7 +37,7 @@ def request(**overrides):
     return (
         dict(
             method="GET",
-            url=DEFAULT_API_BASE_URL + "/families/change/list",
+            url=DEFAULT_API_BASE_URL + "/families/group/lookup/list",
             parameters={"StartDate": "2026-09-10"},
             api_key="SYNTHETIC-PRIVATE-KEY",
             timeout=30,
@@ -66,9 +66,6 @@ def session(**overrides):
 @pytest.mark.parametrize(
     "path",
     [
-        "families/change/list",
-        "families/5",
-        "families/5/member/list",
         "families/group/lookup/list",
         "families/workgroup/list",
         "families/workgroup/5/list",
@@ -83,8 +80,17 @@ def session(**overrides):
     ],
 )
 def test_only_compiled_get_vocabulary_is_accepted(path):
-    """The bounded transport supports the actual shared full/delta read paths."""
+    """The bounded transport supports the actual shared full refresh read paths."""
     assert helper.validate_request(request(url=DEFAULT_API_BASE_URL + "/" + path))
+
+
+@pytest.mark.parametrize(
+    "path", ["families/change/list", "families/5", "families/5/member/list"]
+)
+def test_removed_quick_update_reads_are_refused(path):
+    """The change feed and household reads went with quick updates (#1147)."""
+    with pytest.raises(ValueError):
+        helper.validate_request(request(url=DEFAULT_API_BASE_URL + "/" + path))
 
 
 @pytest.mark.parametrize("path", sorted(helper.READ_POSTS))
@@ -114,7 +120,7 @@ def test_search_post_vocabulary_does_not_enable_provider_writes(path):
         {"profile": None},
         {"profile": "private-profile"},
         {"profile": "LOCAL"},
-        {"url": LOCAL_SOURCE_BASE_URL + "/families/change/list"},
+        {"url": LOCAL_SOURCE_BASE_URL + "/families/group/lookup/list"},
         {"base_url": None},
         {"base_url": "https://other.example/api/v2"},
         {"base_url": DEFAULT_API_BASE_URL + "/"},
@@ -135,7 +141,8 @@ def test_local_fake_base_url_is_refused_for_every_non_local_profile(profile):
     with pytest.raises(ValueError, match="endpoint"):
         helper.validate_request(
             request(
-                profile=profile, url=LOCAL_SOURCE_BASE_URL + "/families/change/list"
+                profile=profile,
+                url=LOCAL_SOURCE_BASE_URL + "/families/group/lookup/list",
             )
         )
     with pytest.raises(ValueError, match="base URL"):
@@ -143,7 +150,7 @@ def test_local_fake_base_url_is_refused_for_every_non_local_profile(profile):
             request(
                 profile=profile,
                 base_url=LOCAL_SOURCE_BASE_URL,
-                url=LOCAL_SOURCE_BASE_URL + "/families/change/list",
+                url=LOCAL_SOURCE_BASE_URL + "/families/group/lookup/list",
             )
         )
 
@@ -166,7 +173,7 @@ def test_helper_profiles_match_the_deployment_profiles():
         helper.default_base_url("LOCAL")
 
 
-@pytest.mark.parametrize("path", ["families/change/list", "families/5", "members/5"])
+@pytest.mark.parametrize("path", ["families/group/lookup/list", "members/5"])
 @pytest.mark.parametrize("base_url", [LOCAL_SOURCE_BASE_URL, DEFAULT_API_BASE_URL])
 def test_local_request_admits_only_its_one_chosen_base_url(path, base_url):
     """A local request reaches the one base URL it names (the fake or, #1399,
@@ -202,18 +209,18 @@ def test_session_requires_a_profile_and_sends_it_in_every_frame(monkeypatch):
 
     monkeypatch.setattr(transport, "_exchange", exchange)
     current = session(profile="local", base_url=LOCAL_SOURCE_BASE_URL)
-    current.get(LOCAL_SOURCE_BASE_URL + "/families/change/list", timeout=30)
+    current.get(LOCAL_SOURCE_BASE_URL + "/families/group/lookup/list", timeout=30)
     assert frames[0]["profile"] == "local"
     assert frames[0]["base_url"] == LOCAL_SOURCE_BASE_URL
     assert frames[0]["url"].startswith(LOCAL_SOURCE_BASE_URL)
     with pytest.raises(ValueError):
-        session().get(LOCAL_SOURCE_BASE_URL + "/families/change/list", timeout=30)
+        session().get(LOCAL_SOURCE_BASE_URL + "/families/group/lookup/list", timeout=30)
     with pytest.raises(ValueError):
-        current.get(DEFAULT_API_BASE_URL + "/families/change/list", timeout=30)
+        current.get(DEFAULT_API_BASE_URL + "/families/group/lookup/list", timeout=30)
     assert len(frames) == 1
     # A LOCAL deployment that chose the real API (#1399) reaches only it.
     real = session(profile="local")
-    real.get(DEFAULT_API_BASE_URL + "/families/change/list", timeout=30)
+    real.get(DEFAULT_API_BASE_URL + "/families/group/lookup/list", timeout=30)
     assert frames[1]["base_url"] == DEFAULT_API_BASE_URL
 
 
@@ -317,7 +324,7 @@ def test_shared_client_uses_bounded_session_without_changing_ordinary_defaults(
     source = ParishSoftClient(
         ParishSoftConfig(api_key="SYNTHETIC", cache_dir=tmp_path), session=session()
     )
-    assert source.get_uncached("families/change/list") == []
+    assert source.get_uncached("families/group/lookup/list") == []
     assert source.post_uncached("organizations/search") == []
 
 
@@ -680,7 +687,7 @@ def test_shared_client_retries_drained_transport_with_fresh_preflight(
         session=session(before_request=reservations.append),
         retry_policy=RetryPolicy(attempts=3, initial_delay=0),
     )
-    assert source.get("families/change/list") == []
+    assert source.get("families/group/lookup/list") == []
     assert reservations == [35, 35, 35] and exchange.call_count == 3
 
 
@@ -694,7 +701,7 @@ def test_shared_transport_retries_have_a_finite_exhaustion_bound(tmp_path, monke
         retry_policy=RetryPolicy(attempts=3, initial_delay=0),
     )
     with pytest.raises(RetryError) as caught:
-        source.get("families/change/list")
+        source.get("families/group/lookup/list")
     assert isinstance(caught.value.last_exception, SourceTransportError)
     assert exchange.call_count == 3
 
@@ -714,7 +721,7 @@ def test_shared_retry_never_retries_admission_loss_or_unknown_drain(
         retry_policy=RetryPolicy(attempts=3, initial_delay=0),
     )
     with pytest.raises(error):
-        source.get("families/change/list")
+        source.get("families/group/lookup/list")
     assert exchange.call_count == 1
 
 

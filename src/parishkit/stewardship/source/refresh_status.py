@@ -4,13 +4,12 @@ A successful full load is a promoted full snapshot; this includes the load that
 finished setup. A failed full refresh leaves its task failed or cancelled,
 often before any snapshot exists, so failures come from the refresh tasks.
 
-The incremental ("delta") refreshes are reported beside it: a failed full
-reload is far less alarming when the incremental updates are still arriving,
-and the banner says which data waits for the next full reload.
+The incremental ("delta") refreshes, or quick updates, were reported beside
+it until they were removed (#1147).
 
 The pages also state the data age and connection (#510, ``data_age``):
-"ParishSoft data as of" (with the last full refresh when they differ), the
-connection line, and which scheduled full refresh is late and by how long.
+"ParishSoft data as of", the connection line, and which scheduled full
+refresh is late and by how long.
 """
 
 from dataclasses import dataclass
@@ -21,13 +20,7 @@ from django.db import connection
 
 from parishkit.stewardship.jobs.operational_sources import configured_policy
 
-from .cadence import (
-    DELTA_REFRESHES,
-    FREQUENCIES,
-    covered_by_full,
-    next_full_at,
-    refresh_settings,
-)
+from .cadence import FREQUENCIES, next_full_at, refresh_settings
 from .data_age import (
     FACTS_COLUMNS,
     FACTS_SQL,
@@ -50,17 +43,11 @@ class FullRefreshStatus:
     running: bool
     # The failed run's task, so the banner links straight to its details.
     failed_task_id: UUID | None = None
-    # The latest successful incremental refresh (promoted, or recorded as
-    # unchanged), and a failed one since it.
-    delta_succeeded_at: datetime | None = None
-    delta_failed_at: datetime | None = None
     # The configured schedule, when known: "daily", "hourly" or "quarter_hour".
     frequency: str | None = None
     next_full_at: datetime | None = None
-    # The configured local full-refresh times (daily frequency) and the
-    # incremental cadence: "quarter_hour", "hourly" or "off" (#465).
+    # The configured local full-refresh times (daily frequency, #465).
     full_refresh_times: tuple | None = None
-    delta_refresh: str | None = None
     # Data age and connection (#510): when the newest promoted full refresh
     # started, what "data as of" shows, and the connection line.
     full_started_at: datetime | None = None
@@ -93,39 +80,9 @@ class FullRefreshStatus:
         return self.out_of_date and not self.held_for_send and not self.running
 
     @property
-    def shows_full_separately(self):
-        """Whether "data as of" differs from the last full refresh's start."""
-        return (
-            self.full_started_at is not None
-            and self.data_as_of is not None
-            and self.data_as_of != self.full_started_at
-        )
-
-    @property
-    def has_deltas(self):
-        """Whether separate incremental updates run under this schedule.
-
-        "off" turns them off; otherwise the scheduler's own rule says when
-        full refreshes cover every delta slot.
-        """
-        return self.delta_refresh != "off" and not covered_by_full(
-            self.frequency, self.delta_refresh
-        )
-
-    @property
     def nightly_only(self):
         """Whether the schedule is one full refresh a day, at the nightly time."""
         return self.frequency == "daily" and len(self.full_refresh_times or ()) <= 1
-
-    @property
-    def deltas_healthy(self):
-        """Incremental updates arrive; unknown (None) before any has run."""
-        if not self.has_deltas:
-            # Every run is full, or deltas are off: no incremental updates.
-            return None
-        if self.delta_failed_at is not None:
-            return False
-        return True if self.delta_succeeded_at is not None else None
 
 
 def refresh_schedule(configuration):
@@ -154,15 +111,12 @@ def refresh_schedule(configuration):
         if campaign is not None
         else sections["parish"][0]["values"]["timezone"]
     )
-    if (
-        settings["frequency"] not in FREQUENCIES
-        or settings["delta_refresh"] not in DELTA_REFRESHES
-    ):
+    if settings["frequency"] not in FREQUENCIES:
         return None
     return {"timezone": timezone, **settings}
 
 
-# The latest full and incremental refresh outcomes: the first half of the
+# The latest full refresh outcomes: the first half of the
 # combined status row, ahead of the ``FACTS_COLUMNS`` data-age facts.
 OUTCOMES_SQL = (
     "WITH runs AS (SELECT t.id, t.state, t.updated_at, r.kind "
@@ -175,14 +129,7 @@ OUTCOMES_SQL = (
     "WHERE kind='full' AND state='promoted'), "
     "(SELECT updated_at FROM failures), "
     "EXISTS(SELECT 1 FROM runs WHERE kind='full' AND state='running'), "
-    "(SELECT id FROM failures), "
-    # A quick update recorded as unchanged (#630) succeeded too.
-    "(SELECT max(coalesce(promoted_at, completed_at)) "
-    "FROM stewardship_source_snapshot "
-    "WHERE kind='delta' AND state IN ('promoted','unchanged')), "
-    # Only a failed delta counts: deltas superseded by a newer or full
-    # refresh are cancelled routinely and are not a health problem.
-    "(SELECT max(updated_at) FROM runs WHERE kind='delta' AND state='failed')"
+    "(SELECT id FROM failures)"
 )
 
 
@@ -196,7 +143,7 @@ def _facts(row):
 
 
 def full_refresh_status(schedule=None, now=None, *, health=False):
-    """Read the latest full and incremental outcomes and the data age.
+    """Read the latest full refresh outcomes and the data age.
 
     The Admin home page has a fixed query budget, so the outcomes and the
     data age and connection facts (``data_age.FACTS_SQL``) come from one
@@ -221,16 +168,10 @@ def full_refresh_status(schedule=None, now=None, *, health=False):
         cursor.execute("SELECT * FROM " + " CROSS JOIN ".join(parts), parameters)
         row = cursor.fetchone()
     succeeded_at, failed_at, running, failed_task_id = row[:4]
-    delta_succeeded_at, delta_failed_at = (tuple(row[4:6]) + (None, None))[:2]
     if failed_at is not None and succeeded_at is not None and failed_at < succeeded_at:
         # A later successful full load supersedes an older failure, so the
         # failure banner disappears after the next success of the same kind.
         failed_at = failed_task_id = None
-    # Any later successful load, incremental or full, supersedes an older
-    # incremental failure: a full reload also carries every recent change.
-    latest = max((t for t in (delta_succeeded_at, succeeded_at) if t), default=None)
-    if delta_failed_at is not None and latest is not None and delta_failed_at < latest:
-        delta_failed_at = None
     facts = _facts(row)
     found_health = None
     if health:
@@ -240,7 +181,7 @@ def full_refresh_status(schedule=None, now=None, *, health=False):
         found_health = health_facts(
             row[-FACTS_COLUMNS - HEALTH_COLUMNS : -FACTS_COLUMNS]
         )
-    frequency = next_due = times = delta_refresh = None
+    frequency = next_due = times = None
     found = overdue = late = resumes = None
     out_of_date = held = catching_up = False
     if schedule is not None and now is not None:
@@ -284,7 +225,6 @@ def full_refresh_status(schedule=None, now=None, *, health=False):
         )
         frequency = schedule["frequency"]
         times = tuple(schedule["full_refresh_times"])
-        delta_refresh = schedule["delta_refresh"]
         next_due = next_full_at(
             now=now,
             timezone=schedule["timezone"],
@@ -298,12 +238,9 @@ def full_refresh_status(schedule=None, now=None, *, health=False):
         failed_at,
         running,
         failed_task_id,
-        delta_succeeded_at,
-        delta_failed_at,
         frequency,
         next_due,
         times,
-        delta_refresh,
         facts.full_started_at,
         facts.data_as_of,
         found,

@@ -1304,8 +1304,9 @@ whose fields count instead), and plain text generated from the HTML, which is
 not sent. A row a page script adds or removes counts, and a hidden field
 counts only when it is marked as carrying a setting
 (`data-change-setting`): a saved row's identity, or a saved setting the page
-shows only as words, such as ParishSoft's stored quick updates, whose
-removal is a change (#1334 review). Every other hidden field is no change:
+shows only as words, whose removal is a change (#1334 review, where the
+example was ParishSoft's stored quick updates, removed in #1147). Every other
+hidden field is no change:
 the version and security tokens, a formset's row counts, a one-time request
 key or signed intent, the browser's time zone, a table's filters, size and
 sort (so a form redrawn with the table at other view settings still waits),
@@ -3864,7 +3865,9 @@ time as the server does. The
 ([#632](https://github.com/epiphany40223/parishkit/issues/632)) uses this entry
 for its rule and skip times, and its Edit as text list holds only full
 refresh times, since quick updates left the Admin UI
-([#1122](https://github.com/epiphany40223/parishkit/issues/1122)).
+([#1122](https://github.com/epiphany40223/parishkit/issues/1122)) and were
+then removed
+([#1147](https://github.com/epiphany40223/parishkit/issues/1147)).
 
 ### Schedules
 
@@ -4099,7 +4102,7 @@ its feature spec: the
   Each occurrence is one line: its time, then what runs ("Full refresh",
   "Reminder 2", "Daily report for Monday, October 19"). An
   occurrence that will not run stays listed, struck through, with its
-  reason in words ("covered by the 06:00 full refresh"), so a struck line
+  reason in words ("skipped: reminder being prepared"), so a struck line
   never relies on the strike alone.
 - **Days.** Occurrences are grouped by their calendar day in the zone the
   list is shown in. The day is named with its weekday and its date in the
@@ -4219,7 +4222,7 @@ daylight-saving sentence (`dst_note` is false), which speaks of sends.
 - Each occurrence is an `Occurrence(day, at, what, kind, wall=None,
   struck=False, reason=None, shift=None)`. `day` is its local date in the
   shown zone, which places it even when `at`, the UTC instant, is None (a
-  time that will not run, such as a covered quick time); a zone-less list
+  time that will not run); a zone-less list
   passes None. `wall` is the
   schedule-zone wall time for a schedule-zone list, `kind` a class hook,
   and `shift` "forward" or "back" from the daylight-saving rule.

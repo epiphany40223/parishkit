@@ -80,7 +80,7 @@ def test_restricted_scheduler_produces_and_cancels_only_waiting_source_work(tmp_
         matching_authority(store)
         receipts = producer(guard)
         assert producer(guard) == receipts
-    assert len(receipts) == 2
+    assert len(receipts) == 1
     assert TaskRun.objects.get(pk=old.task_root_id).state == "cancelled"
 
 
@@ -152,7 +152,7 @@ def test_restricted_scheduler_can_scan_before_any_campaign_exists(tmp_path):
     """Timezone access is limited to the one parish column the scheduler needs."""
     configured(tmp_path)
     with task_login(ServiceRole.SCHEDULER), scheduler_session() as guard:
-        assert len(SourceProducer(uuid4())(guard)) == 2
+        assert len(SourceProducer(uuid4())(guard)) == 1
 
 
 def test_background_liveness_pulse_follows_committed_restricted_renewal(tmp_path):

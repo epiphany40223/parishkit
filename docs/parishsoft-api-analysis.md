@@ -196,10 +196,17 @@ v2 (see `parishsoft.py` loaders):
 Additional v2 capabilities, in priority order:
 
 1. **`families/change/list` (FamilyChanges)** — an incremental "what changed
-   since X" feed. ParishKit currently pages the entire census on every run; this
-   can provide delta indications. The shared `parishsoft_changes` adapter now
-   exposes validated, uncached Family identities; the operational Stewardship
-   refresh workflow remains in progress.
+   since X" feed. ParishKit pages the entire census on every run. Stewardship's
+   quick updates used this feed through a shared `parishsoft_changes` adapter
+   (and `parishsoft_households` for the detail reads), but in Production it
+   returned an empty list for every query (494 of 494,
+   [#465](https://github.com/epiphany40223/parishkit/issues/465)), so quick
+   updates and both adapters were removed in
+   [#1147](https://github.com/epiphany40223/parishkit/issues/1147); no other
+   tool used them.
+   [#2087](https://github.com/epiphany40223/parishkit/issues/2087) asks
+   whether ParishSoft's 2025 change-list additions could replace full
+   re-reads.
 2. **`PUT members/{id}/contact` + `PUT families/{id}/contact`** — would let
    ParishKit *write back* corrected emails/phones/addresses instead of only
    reporting discrepancies. The package client already anticipates this:
@@ -232,9 +239,10 @@ last resort gated on a v1-exclusive requirement.**
 
 v2 is the modern, actively-named ("Family Suite 2.0"), API-key-authenticated,
 paginated generation, and is effectively a superset of v1 for everything
-ParishKit needs. The near-term wins live entirely within v2: add
-`families/change/list` for incremental sync, and (optionally) enable
-contact write-back through new `PUT` helpers.
+ParishKit needs. The near-term wins live entirely within v2: (optionally)
+enable contact write-back through new `PUT` helpers. Incremental sync through
+`families/change/list` was tried and removed (see
+[section 4](#4-what-parishkit-uses-today-vs-what-is-available)).
 
 ### 5.3 Consider a narrow hybrid only if a v1-exclusive feature is required
 
@@ -263,11 +271,12 @@ The September 11, 2026 contract check against the
 confirmed `FamilyChangeList` is an unpaginated GET with required date-only
 `StartDate` and `EndDate`, returning `family_DUID`, `logDate` and organization
 fields alongside private contact detail. It has no server cursor or upper-event
-watermark. The shared adapter returns only distinct sorted Family IDs, checks
-the tenant uncached, and requires full refresh for malformed/oversized responses,
-unscoped organization changes or ambiguous timestamps. Consumers must overlap
-date windows and commit their own poll boundary only after successful atomic
-reconciliation. This feed does not replace full Member/Ministry/giving refresh.
+watermark. The shared adapter (removed in #1147) returned only distinct sorted
+Family IDs, checked the tenant uncached, and required full refresh for
+malformed/oversized responses, unscoped organization changes or ambiguous
+timestamps. Consumers had to overlap date windows and commit their own poll
+boundary only after successful atomic reconciliation. This feed does not
+replace full Member/Ministry/giving refresh.
 
 The same contract check confirms heterogeneous full-load pagination:
 

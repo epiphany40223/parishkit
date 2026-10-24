@@ -71,16 +71,3 @@ def test_the_longer_lease_is_committed_before_the_promotion_effect(monkeypatch):
     ]
     assert not owned()
     assert source_execution.PROMOTION_LEASE_SECONDS == 300
-
-
-def test_an_unchanged_refresh_promotes_nothing_and_extends_nothing(monkeypatch):
-    """A quick update recorded as unchanged returns before any lease work."""
-    snapshot = SimpleNamespace(state="unchanged")
-    monkeypatch.setattr(
-        source_execution, "load_and_stage_attempt", lambda *a, **k: snapshot
-    )
-    monkeypatch.setattr(source_execution, "_retire_drained_staging", lambda *a: None)
-    extended = []
-    monkeypatch.setattr(source_execution, "extend_lease", lambda *a: extended.append(a))
-    assert source_execution._observe(None, "claim", "cred", None) is snapshot
-    assert extended == []

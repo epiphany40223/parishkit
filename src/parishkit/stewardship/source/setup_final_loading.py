@@ -136,7 +136,6 @@ def load_final_setup_source(execution, claim, *, store, credential_path):
             expected_counts=loaded.counts,
             cursor=refresh_cursor(
                 snapshot_id=snapshot.pk,
-                kind="full",
                 started_at=snapshot.started_at,
                 window_digest=scope.window.digest,
                 evidence=loaded.evidence,
