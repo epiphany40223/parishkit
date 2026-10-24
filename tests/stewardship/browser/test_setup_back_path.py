@@ -14,6 +14,7 @@ import pytest
 from .conftest import SETUP_LOAD_STATUS
 from .setup_back_path_components import (
     CREDENTIAL_LOADED,
+    FAILED_ORGANIZATION,
     PROGRESS_DONE,
     PROGRESS_FAILED,
     PROGRESS_VOIDED,
@@ -42,16 +43,25 @@ NOT_RESTORED = "window.dispatchEvent(new PageTransitionEvent('pageshow'))"
 def test_a_failed_load_links_back_to_the_connection(
     page, component_origin, axe_source, width
 ):
-    """The failed panel says the likely cause and links to the two steps that
-    fix it; Back goes to ParishSoft connection; nothing says to cancel."""
+    """The failed panel names the organization that could not be loaded and
+    the likely causes, and links to the two steps that fix it (choosing
+    another organization or key, and loading again); Back goes to
+    ParishSoft connection; nothing says to cancel."""
     from .test_components import axe_violations
 
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + PROGRESS_FAILED)
     panel = page.locator("[data-progress-failed]")
     visible(panel)
-    assert "A wrong ParishSoft API key is the most common cause." in panel.inner_text()
-    connection = panel.get_by_role("link", name="Go to “ParishSoft connection”")
+    text = panel.inner_text()
+    assert (
+        f"The parish data of {FAILED_ORGANIZATION} could not be loaded from "
+        "ParishSoft." in text
+    )
+    assert "a wrong ParishSoft API key, or an organization that is not" in text
+    connection = panel.get_by_role(
+        "link", name="Choose another organization or enter a different key"
+    )
     load = panel.get_by_role("link", name="Go to “Load parish data”")
     assert connection.get_attribute("href") == "/admin/setup/credentials/parishsoft"
     assert load.get_attribute("href") == "/admin/setup/source"
@@ -63,6 +73,27 @@ def test_a_failed_load_links_back_to_the_connection(
     assert page.locator("[data-live-status][data-live-pending]").count() == 0
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
+
+
+def test_a_failed_load_goes_back_to_choose_another_organization(page, component_origin):
+    """Following the failed panel's way back opens ParishSoft connection,
+    where the key pasted again lists its organizations (#1554)."""
+    opened = []
+
+    def connection(route):
+        """Answer the ParishSoft connection page the link opens."""
+        opened.append(route.request.url)
+        route.fulfill(content_type="text/html", body="<h1>ParishSoft connection</h1>")
+
+    page.route(
+        lambda url: url.endswith("/admin/setup/credentials/parishsoft"), connection
+    )
+    page.goto(component_origin + PROGRESS_FAILED)
+    page.locator("[data-progress-failed]").get_by_role(
+        "link", name="Choose another organization or enter a different key"
+    ).click()
+    visible(page.get_by_role("heading", name="ParishSoft connection"))
+    assert opened == [component_origin + "/admin/setup/credentials/parishsoft"]
 
 
 # Review, the step after the load (#1578), opens only while the load is valid.

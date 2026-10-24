@@ -412,3 +412,43 @@ def test_a_finished_load_counts_the_organizations_a_key_reaches(organizations):
             in html
         )
         assert "left out by that load: 9." in html
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        (
+            "Neighboring Parish 1 (1002)",
+            "The parish data of Neighboring Parish 1 (1002) could not be loaded "
+            "from ParishSoft.",
+        ),
+        # No organization chosen (a setup from before #1554).
+        (None, "The load did not finish."),
+        # The name is ParishSoft's text, so it is escaped.
+        ("<b>Parish</b> (7)", "The parish data of &lt;b&gt;Parish&lt;/b&gt; (7)"),
+    ],
+)
+def test_a_failed_load_names_its_organization_and_the_way_back(label, expected):
+    """The failed panel says which organization could not be loaded and
+    offers choosing another organization or key (#1554)."""
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.accounts.setup_progress_views import _status_context
+
+    progress = observation("validating", active=False) | {
+        "task_state": "failed",
+        "setup_state": "collecting",
+        "bound": True,
+        "loaded": False,
+        "organization_label": label,
+        "started_at": "2026-09-10T11:58:30+00:00",
+        "heartbeat_at": "2026-09-10T11:59:57+00:00",
+    }
+    html = render_to_string(
+        "stewardship/setup-source-progress-status.html", _status_context(progress)
+    )
+    assert expected in html
+    assert (
+        '<a href="/admin/setup/credentials/parishsoft">Choose another organization '
+        "or enter a different key</a>"
+    ) in html

@@ -556,10 +556,19 @@ shows as loaded. Each discard is audited as
 staging is never used again: finalization and campaign staging bind only to
 the current load. It is disposed of with the attempt's other source staging
 when setup ends, and the time zone the load fixed can change again.
-The progress page of a load that failed for good names the most common cause
-(a wrong key) and links to ParishSoft connection and to
+The progress page of a load that failed for good names the organization it
+was for, as the [organization name rule](../ui-conventions/spec.md#parishsoft-organization-names)
+writes it: "The parish data of St. Example Parish (1234) could not be loaded
+from ParishSoft." (only "The load did not finish." when no organization is
+chosen). It names the most common causes (a wrong key, or an organization
+that is not the parish's) and offers the way back to choose another: a link
+**Choose another organization or enter a different key** to ParishSoft
+connection, where pasting the key again lists the organizations it reaches
+([organization choice](#parishsoft-organization-choice); the failed load is
+discarded when a different organization or key is chosen), and a link to
 Load parish data, whose Load again starts a new load; Back goes to ParishSoft
-connection. Only a load that ended with the setup attempt itself (expired)
+connection (pk-local finding of 2026-10-24,
+[#1554](https://github.com/epiphany40223/parishkit/issues/1554)). Only a load that ended with the setup attempt itself (expired)
 still says to cancel setup and start again. A discarded load's progress page
 stays readable, passively only (it is never renewed), and says the load is no
 longer used, with a link to Load parish data and no Continue; a bound load
@@ -816,7 +825,7 @@ today, to change to the choice above or to the
 | ParishSoft connection saved notice (`setup-credential.html`) | "A ParishSoft API key is saved (organization 1234)." | "A ParishSoft API key is saved for Name (1234)." |
 | ParishSoft connection form (`setup_credential_views.py`) | "Expected ParishSoft organization ID" field, its whole-number error and "To change the organization ID, enter the ParishSoft API key again as well." | removed (the choice above) |
 | Field help (`setup_help.py`) | `organization_id` help and its "For example 1234." hint | removed; the key's help says the organization is chosen next |
-| Setup load failure (`setup-source-progress-status.html`, two places) | "A wrong ParishSoft API key or organization ID is the most common cause." | "A wrong ParishSoft API key is the most common cause." |
+| Setup load failure (`setup-source-progress-status.html`, two places) | "A wrong ParishSoft API key or organization ID is the most common cause." | "A wrong ParishSoft API key is the most common cause." where setup cannot resume; a failed load that returns to collecting names its organization and offers choosing another ([setup load](#bootstrap-and-first-admin-wizard)) |
 | ParishSoft settings form (`integration_forms.py`) | "Expected ParishSoft organization ID" field, locked, with "Locked: ParishSoft data for this organization is loaded." and its tip | the text line "ParishSoft organization: Name (1234)", with no field, lock or tip |
 | ParishSoft settings refusal (`integration_forms.py`) | "The organization ID can't change after ParishSoft data has been loaded … Keep 1234 here." | removed with the field; a posted organization is refused as unexpected input |
 | ParishSoft key help (`integration_forms.py`) | "It must be a key for the organization above; a key for another organization is refused." | "It must be a key that reaches Name (1234); any other key is refused." |
