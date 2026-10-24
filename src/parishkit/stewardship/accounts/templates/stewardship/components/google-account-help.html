@@ -1,11 +1,9 @@
 {% comment %}
   Google Account guidance for an address that is not Gmail (#1593), from the
   google_account_help tag; the wording is in accounts/google_account_help.py
-  so the login page, the Admin not-authorized page and the Users About panel
-  show the same text. Google's help opens in a new tab so the sign-in page
-  stays open behind it.
+  so the Admin not-authorized page and the Users About panel show the same
+  text: which address to use, then whom to ask (#2115).
 {% endcomment %}<div class="google-account-help" data-google-account-help>
   <p>{{ which_address }}</p>
-  <p>{{ no_account }} <a href="{{ help_url }}" target="_blank" rel="noopener noreferrer">{{ link_label }}</a></p>
   <p>{{ still_stuck }}</p>
 </div>

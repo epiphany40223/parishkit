@@ -6,13 +6,31 @@ from parishkit.stewardship.accounts import google_account_help
 from parishkit.stewardship.accounts.user_views import never_signed_in
 
 
-def test_the_login_page_shows_the_guidance_once_from_the_shared_wording():
-    """The sign-in page renders the one copy of the wording, with Google's help."""
+def test_the_login_page_is_only_the_button_and_the_family_portal_link():
+    """The sign-in page carries no Google Account guidance (#2115).
+
+    The guidance is on the not-authorized page, where a refused leader lands,
+    and in the Users page About panel; the sign-in page keeps the heading,
+    the Sign in with Google button and the Family campaign portal link.
+    """
     html = render_to_string("stewardship/login.html", {})
-    assert html.count("data-google-account-help") == 1
-    assert str(google_account_help.NO_ACCOUNT).replace("'", "&#x27;") in html
-    assert f'href="{google_account_help.HELP_URL}"' in html
-    assert 'rel="noopener noreferrer"' in html
+    assert "data-google-account-help" not in html
+    assert str(google_account_help.WHICH_ADDRESS) not in html
+    assert "Use your authorized Google account" not in html
+    assert "Sign in with Google" in html
+    assert '<a href="/">Family campaign portal</a>' in html
+
+
+def test_the_guidance_is_which_address_then_whom_to_ask():
+    """No create-an-account paragraph or Google help link remains (#2115)."""
+    html = render_to_string(
+        "stewardship/components/google-account-help.html", google_account_help.context()
+    )
+    which = str(google_account_help.WHICH_ADDRESS).replace("'", "&#x27;")
+    stuck = str(google_account_help.STILL_STUCK).replace("'", "&#x27;")
+    assert html.count("<p>") == 2
+    assert html.index(which) < html.index(stuck)
+    assert "<a " not in html
 
 
 def test_never_signed_in_counts_only_ministry_leaders_without_a_sign_in():

@@ -172,9 +172,7 @@ def test_only_the_generic_admin_sign_in_refusal_carries_the_google_account_guida
     The guidance is the same for every reason, so it reveals no check; the
     temporary-unavailability page and Family refusals do not show it.
     """
-    from parishkit.stewardship.accounts.google_account_help import HELP_URL
-
-    marker = f'href="{HELP_URL}"'.encode()
+    marker = b"data-google-account-help"
     assert marker in login_denial(admin=True, status=403, sign_in=True).content
     unavailable = login_denial(admin=True, status=503, kind="unavailable", sign_in=True)
     assert marker not in unavailable.content
