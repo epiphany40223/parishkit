@@ -1212,7 +1212,7 @@ keep typed text). With `clear` true, give no `subject`, `html`,
 | `version`, `campaign_id` | The configuration version the change was built against, and the current campaign |
 | `edit.kind`, `edit.slot`, `edit.revision_id`, `edit.name` | The page or email, and its name on the page |
 | `edit.before`, `edit.after` | The fictional sample of the current and the proposed content: `subject`, `html` and `text`, or null when empty |
-| `edit.schedules` | The schedules the new text switches at once, in sending order: `id`, `kind`, `name` (as Dates and mail schedules names it, such as Reminder 2), `subject`, `due_at` (null for a recurring digest) and `sent` (true when it already sent: it switches too, but Families who got it are not sent it again) |
+| `edit.schedules` | The schedules the new text switches at once, in sending order: `id`, `kind`, `name` (as Dates and mail schedules names it, such as Reminder 2), `subject`, `due_at` (its send time) and `sent` (true when it already sent: it switches too, but Families who got it are not sent it again) |
 | `preview.token` | What `content confirm --edit --token` takes, valid for fifteen minutes |
 | `created`, `request` (`content confirm`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
 
