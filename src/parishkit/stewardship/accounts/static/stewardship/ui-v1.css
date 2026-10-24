@@ -2140,10 +2140,6 @@ details.by-ministry > section { display: block; margin-block: 0 .5rem; }
 .heading-row > details:not(.about-page) > summary { grid-area: other; justify-self: start; }
 .heading-row > details:not(.about-page)::details-content { grid-area: other-body; }
 .heading-row > details::details-content { align-self: start; }
-/* A link on the heading's row (Pledges' Financial stewardship, #1950) takes
-   the row's last cell, as By Ministry's control does, with no block margin
-   so the row keeps the heading's height, and a gap after About. */
-.heading-row > p.heading-link { grid-area: other; justify-self: start; margin: 0 0 0 1rem; }
 @media (max-width: 40rem) { .heading-row { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "heading heading" "about other" "about-body about-body" "other-body other-body"; } }
 .button-danger { background: var(--error-border); border-color: var(--error-border); color: var(--paper); }
 .button-danger:not(:disabled):hover { background: var(--error-ink); border-color: var(--error-ink); }

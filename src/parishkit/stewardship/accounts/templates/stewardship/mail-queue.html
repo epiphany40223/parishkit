@@ -2,8 +2,8 @@
 {% block title %}{% translate "Mail queue" %}{% endblock %}
 {% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
-{# The cross-links sit above the heading, as on Sent mail (#938): an Admin who keeps the About panel open would otherwise find them pushed below the fold. #}
-<p>{% menu_link "deliveries" _("Sent mail") %} · {% menu_link "family_email_sends" _("Family email history") %} · {% menu_link "system_health" _("Why sends are waiting (System health)") query="#health-mail" %}{% if campaign and not testing %} · {% menu_link "delivery_control" _("Pause and resume mail") %}{% endif %}</p>
+{# The one link above the heading leads to a section of System health the menu does not reach (navigation rule 11, #2143); it sits above the heading, as on Sent mail (#938), so an About panel left open never pushes it below the fold. #}
+<p>{% menu_link "system_health" _("Why sends are waiting (System health)") query="#health-mail" %}</p>
 <h1>{% translate "Mail queue" %}</h1>
 {% aboutpage "mail-queue" %}<p>{% translate "Every email waiting to go out, of every kind: Family invitations, reminders and receipts, test sends, Administrator reports, operational and security notices, and Ministry leader emails. Sent mail keeps the record of every email once it is sent. The page updates by itself." %}</p>
 <p>{% translate "The counts are for the system's current mode: Testing until Production is activated, then Production. A line under the figures says when the other mode also has emails waiting." %}</p>

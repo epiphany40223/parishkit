@@ -16,7 +16,6 @@
 <dt>{% translate "Held" %}</dt><dd>{% translate "A reminder waiting because the Family's invitation failed or may not have arrived." %}</dd></dl>
 <p>{# Greyed out, as the menu greys it, on an archived campaign (#521). #}{% translate "Reminders are numbered by their current scheduled time, in every mode, so Reminder 1 is the earliest reminder on" %} {% menu_link "schedule_settings" _("Dates and mail schedules") %}. {% translate "A reminder that was removed has no number." %}</p>
 <p>{% translate "A send still in progress says so. The one the Mail queue's Family send panel is showing links to it, and that panel follows it live. This page does not update by itself, does not slow any send down, and does not extend your sign-in." %}</p>{% endaboutpage %}
-<p><a href="{% url 'admin:mail_queue' %}">{% translate "See the mail queue" %}</a> · <a href="{% url 'admin:deliveries' %}">{% translate "Sent mail" %}</a></p>
 {% if not campaign %}<p>{% translate "There is no current campaign." %}</p>
 {% else %}{% include "stewardship/family-email-sends-table.html" %}
 {% endif %}

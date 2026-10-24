@@ -9,7 +9,6 @@
 <p>{% translate "Update writes the newest check's changes once you confirm it, within an hour of the check. Its progress shows under the summary, and the Outcome column then says what happened to each change: Updated in ParishSoft (and Confirmed once a refresh shows it), Not written because something changed since the check, or Failed with the reason. After an update that wrote something, ParishSoft is refreshed so Census changes shows the new values. If an update stops before it finishes, Run again tries the Members it did not finish." %}</p>
 <p>{% translate "The page shows the newest check, whoever made it; times use your computer's time zone. Values are shown in full, as on Census changes, and opening this page is recorded." %}</p>
 {% if not enabled %}<p>{% translate "Updating ParishSoft is switched off, so nothing is read or written here. Ready to update changes wait on Census changes." %}</p>{% endif %}{% endaboutpage %}
-<p><a href="{% url 'admin:census_changes' %}">{% translate "Census changes" %}</a></p>
 {% if not enabled %}<p class="notice" id="publication-off">{% translate "Updating ParishSoft is switched off, so nothing is read or written here. Ready to update changes wait on Census changes." %}</p>
 {% else %}
 {# What waits, in a region of its own, so the in-place re-read when a check ends updates it; data-keep-height keeps that re-read from moving the button below. #}<div id="publication-waiting" data-in-place-region data-keep-height>
