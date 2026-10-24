@@ -133,9 +133,7 @@ SORTING = Sorting.by_column(
     },
     default="family",
     descending_first={"submitted"},
-    then=lambda row: name_order(
-        row["family_name"], "", row["family_duid"], str(row["id"])
-    ),
+    then=lambda row: name_order(row["family_name"], row["family_duid"], str(row["id"])),
 )
 # The queued complete export's own sort for each table sort, so the file
 # lists the requests in the table's order.

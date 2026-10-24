@@ -130,8 +130,9 @@ def _text(value):
 # The worklist reads every row whole and orders it here, with the follow-up
 # selection's sort tokens, so its headings and its download keep their
 # vocabulary. Rows equal in the chosen column keep the default order (UX
-# conventions, "Default row order", #2124): the Member's name, then the
-# Ministry's, the Member DUID and the request's own id. The Member column
+# conventions, "Default row order", #2124): the Member's name, the Member
+# DUID (so a Member's rows stay together), the Ministry's name and the
+# request's own id. The Member column
 # heading's token is ``name``, the default.
 WORKLIST_SORTING = Sorting(
     SORTING.tokens,
@@ -142,7 +143,10 @@ WORKLIST_SORTING = Sorting(
         "ministry": lambda row: _text(row["ministry_name"]),
     },
     then=lambda row: name_order(
-        row["member_label"], row["ministry_name"], row["member_duid"], str(row["id"])
+        row["member_label"],
+        row["member_duid"],
+        _text(row["ministry_name"]),
+        str(row["id"]),
     ),
 )
 

@@ -238,9 +238,7 @@ SORTING = Sorting.by_column(
     },
     default="family",
     descending_first={"submitted"},
-    then=lambda row: name_order(
-        row["family_name"], "", row["family_duid"], str(row["id"])
-    ),
+    then=lambda row: name_order(row["family_name"], row["family_duid"], str(row["id"])),
 )
 
 

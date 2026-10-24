@@ -92,23 +92,18 @@ def _present_first(rows, key, descending):
     return sorted(present, key=key, reverse=descending) + missing
 
 
-def name_order(name, secondary, duid, *rest):
+def name_order(name, duid, *rest):
     """The default order key of a review work table's row (#2124).
 
     UX conventions, "Default row order": the shown name (casefolded), then
-    the secondary name (the Member on a Family's row, or the item), then
-    the DUID (rows with none after those with one), then ``rest``: any
-    further parts the table orders by, ending with the row's own unique,
-    stable id. The id is unique, so equal names always come out in the same
-    order, across pages and refreshes.
+    that name's DUID (rows with none after those with one), so every row of
+    one Family (or Member) stays together even when another has the same
+    name, then ``rest``: any further parts the table orders by (casefolded
+    by the caller), ending with the row's own unique, stable id. The id is
+    unique, so equal names always come out in the same order, across pages
+    and refreshes.
     """
-    return (
-        (name or "").casefold(),
-        (secondary or "").casefold(),
-        duid is None,
-        duid or 0,
-        *rest,
-    )
+    return ((name or "").casefold(), duid is None, duid or 0, *rest)
 
 
 @dataclass(frozen=True)

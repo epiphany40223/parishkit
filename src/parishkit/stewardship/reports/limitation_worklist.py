@@ -109,9 +109,9 @@ def _text(value):
 
 # The list is complete in memory, so every column sorts here. Rows equal in
 # the chosen column keep the default order (UX conventions, "Default row
-# order", #2124): the Family's name, then the Member's, the Family DUID and
-# the answer's own id (a Family's own answer names no Member, so it comes
-# before its Members').
+# order", #2124): the Family's name, its DUID (so a Family's rows stay together), the
+# Member's name and the answer's own id (a Family's own answer names no
+# Member, so it comes before its Members').
 SORTING = Sorting.by_column(
     {
         "family": lambda row: _text(row["family_name"]),
@@ -129,8 +129,8 @@ SORTING = Sorting.by_column(
     descending_first={"submitted"},
     then=lambda row: name_order(
         row["family_name"],
-        row.get("member_name"),
         row["family_duid"],
+        _text(row.get("member_name")),
         str(row["id"]),
     ),
 )
