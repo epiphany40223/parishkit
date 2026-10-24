@@ -470,6 +470,10 @@ ENTRY_COUNT = "ministry_entry"
 # or archived). A draft or a scheduled campaign has no resolved live request
 # to enter yet, so its Home pays nothing for it.
 ROSTER_STATES = frozenset({"active", "closed", "archived"})
+# Not yet read in this request: a view that has already read the To enter by
+# hand count leaves it on ``request._stewardship_entry_count`` (None when the
+# read answers no number), so the chrome's statement skips that selection.
+UNREAD = object()
 # Every count in one statement, each only when asked for (NULL otherwise).
 # Census changes reads its rows grouped by the columns its status depends on
 # (census_changes.OPEN_GROUPS); Python then keeps the groups at To review
@@ -626,6 +630,12 @@ def _open_counts(request, actor, items, campaign):
     request reuses it.
     A count is never cached longer: a stale number misleads in a work queue.
 
+    A view that already read the To enter by hand count for this request
+    (Data to fix in ParishSoft, #2113) leaves it on
+    ``request._stewardship_entry_count``; the statement then skips the
+    roster selection and the menu reuses that number, so a page load runs
+    each follow-up selection once.
+
     The counts only decorate the menu, so they must never take an Admin page
     down: a database error in their statement (for example inside the
     follow-up selection) is logged and the menu renders without numbers,
@@ -651,6 +661,7 @@ def _open_counts(request, actor, items, campaign):
     review = getattr(request, "_stewardship_review_flags", None) or {}
     if not any(review.values()):
         review = None
+    known = getattr(request, "_stewardship_entry_count", UNREAD)
     counts = {}
     if offered & COUNTED or review:
         # Inside a view's transaction the statement gets a savepoint, so a
@@ -662,18 +673,29 @@ def _open_counts(request, actor, items, campaign):
         )
         try:
             with isolate():
-                counts, reviewed = _read_open_counts(offered, actor, campaign, review)
+                counts, reviewed = _read_open_counts(
+                    offered, actor, campaign, review, roster=known is UNREAD
+                )
         except DatabaseError as error:
             _record_open_counts_failure(error)
             reviewed = review and review_work.unread(review)
         if review:
             request._stewardship_review_counts = reviewed
+    if known is not UNREAD and known is not None and "ministry_report" in offered:
+        counts[ENTRY_COUNT] = known
     request._stewardship_open_counts = counts
     return counts
 
 
-def _read_open_counts(offered, actor, campaign, review=None):
+def _read_open_counts(
+    offered, actor, campaign, review=None, *, followup=True, roster=True
+):
     """Run ``OPEN_COUNTS`` for the ``offered`` entries; see ``_open_counts``.
+
+    ``followup`` and ``roster`` switch off Ministry requests' To review
+    selection and its To enter by hand selection even when Ministry
+    requests is offered: each runs the follow-up function, so a caller that
+    needs only one of the two pays only for that one.
 
     With ``review`` (``review_work.read_flags``), Admin Home's
     ``review_work.COUNTS`` runs in the same statement, cross-joined to the
@@ -696,7 +718,8 @@ def _read_open_counts(offered, actor, campaign, review=None):
     # Likewise the To enter by hand count, which only Administrators and
     # Staff see (can_tick), and only past go-live (ROSTER_STATES).
     roster = (
-        "ministry_report" in offered
+        roster
+        and "ministry_report" in offered
         and can_tick(actor)
         and getattr(campaign, "state", None) in ROSTER_STATES
     )
@@ -711,7 +734,7 @@ def _read_open_counts(offered, actor, campaign, review=None):
             {
                 "census": census,
                 "information": "information_queue" in offered,
-                "ministry": "ministry_report" in offered,
+                "ministry": followup and "ministry_report" in offered,
                 "roster": roster,
                 # The page admits CAMPAIGN_REPORT; checked again here, as
                 # for Census changes.
@@ -776,12 +799,13 @@ def roster_entry_count(actor, campaign):
     """Ministry requests' To enter by hand count (``ENTRY_COUNT``), or None.
 
     The same ``OPEN_COUNTS`` read the menu runs for Home's Next steps and My
-    review work, asked for Ministry requests alone, so Data to fix in
+    review work, asked for Ministry requests alone and for its roster
+    selection only (the To review selection is not run), so Data to fix in
     ParishSoft (#2113) shows the number those cards show. None when the
     actor may not enter roster changes, the campaign is not past go-live,
     or the selection refuses (see ``_read_open_counts``).
     """
-    counts = _read_open_counts({"ministry_report"}, actor, campaign)[0]
+    counts = _read_open_counts({"ministry_report"}, actor, campaign, followup=False)[0]
     return counts.get(ENTRY_COUNT)
 
 

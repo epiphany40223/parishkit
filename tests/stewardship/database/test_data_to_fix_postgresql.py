@@ -340,3 +340,40 @@ def test_the_roster_count_is_ministry_requests_to_enter_by_hand(response_service
     assert counts() == [(0, 0), (0, 0)]
     tick(harness, admin, join, False)
     assert counts() == [(1, 1), (1, 1)]
+
+
+def follow_up_runs(queries):
+    """How many times the captured statements ran each follow-up selection.
+
+    The menu's statement (``admin_context.OPEN_COUNTS``) always carries both
+    laterals; each runs only when its ``WHERE`` flag, bound as a literal in
+    the captured SQL, is true. Returns (To review runs, To enter by hand
+    runs).
+    """
+    sql = [query["sql"] for query in queries]
+    return tuple(
+        sum(len(re.findall(rf"WHERE true\s*\) {alias} ON true", text)) for text in sql)
+        for alias in ("f", "t")
+    )
+
+
+def test_a_page_load_runs_each_follow_up_selection_once(response_service, google):
+    """The roster section reads only the To enter by hand selection, and the
+    chrome reuses its number, so a full page load runs the To review
+    selection once (the menu's Ministry requests count) and the roster
+    selection once (#2113 review finding 1). The status fragment, which
+    draws no chrome, runs the roster selection alone."""
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    resolved(response_service)
+    browser, login = signed_in()
+    assert login.status_code == 302
+    with CaptureQueriesContext(connection) as page:
+        response, body = get(browser, PAGE)
+    assert response.status_code == 200
+    assert "1 accepted Ministry request is still to be entered" in body.decode()
+    assert follow_up_runs(page.captured_queries) == (1, 1)
+    with CaptureQueriesContext(connection) as fragment:
+        assert browser.get(STATUS).status_code == 200
+    assert follow_up_runs(fragment.captured_queries) == (0, 1)
