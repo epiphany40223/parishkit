@@ -10,6 +10,7 @@ times and results only, never report data.
 import re
 from datetime import UTC, date, datetime
 from types import SimpleNamespace
+from urllib.parse import urlencode
 from uuid import UUID
 
 from django.template.loader import render_to_string
@@ -18,7 +19,9 @@ from parishkit.stewardship.reports.report_email_list import (
     ATTENTION_REASON,
     IN_PROGRESS_REASON,
     STATUS_LABELS,
+    sends_prefix,
 )
+from parishkit.stewardship.web.tables import paginate
 
 PAGE = "/report-emails"
 STAFF = "/report-emails-staff"
@@ -42,6 +45,11 @@ def _send(index, *, result="sent", kind="report", how="scheduled", count=None):
     }
 
 
+def _past(identifier, sends):
+    """A report's first page of past sends, as ``paged_sends`` draws it."""
+    return paginate(sends, {}, prefix=sends_prefix(identifier), default=25)
+
+
 def _row(identifier, name, status, *, actions, sends, schedule, paused=None, **extra):
     """One report's row, as ``report_email_list.report_rows`` draws it."""
     return {
@@ -56,6 +64,7 @@ def _row(identifier, name, status, *, actions, sends, schedule, paused=None, **e
         "status": status,
         "status_label": STATUS_LABELS[status],
         "paused_since": paused,
+        "past": _past(identifier, sends),
         "sends": sends,
         "actions": actions,
         "send_with": f"revision={UUID(int=7)}",
@@ -135,12 +144,21 @@ def rows():
     ]
 
 
-def _page(context, admin, *, administrator):
-    """The page for an Administrator, or for Staff (no recipients or actions)."""
+def _page(context, admin, *, administrator, paging=None):
+    """The page for an Administrator, or for Staff (no recipients or actions).
+
+    ``paging`` is a Past sends navigator's choice for the Weekly report
+    (``WEEKLY_50``'s), drawn as ``paged_sends`` draws it.
+    """
     shown = rows()
     if not administrator:
         for row in shown:
             row |= {"recipients": None, "actions": {}}
+    if paging:
+        weekly = next(row for row in shown if row["id"] == str(WEEKLY))
+        weekly["past"] = paginate(
+            weekly["sends"], paging, prefix=sends_prefix(WEEKLY), default=25
+        )
     return render_to_string(
         "stewardship/report-emails.html",
         context
@@ -148,9 +166,17 @@ def _page(context, admin, *, administrator):
             "admin_chrome": admin,
             "campaign": SimpleNamespace(pk=UUID(int=5)),
             "administrator": administrator,
-            "refresh_url": "/admin/mail/report-emails/",
+            "refresh_url": "/admin/mail/report-emails/"
+            + (f"?{urlencode(sorted(paging.items()))}" if paging else ""),
             "rows": shown,
-            "deleted": [{"id": str(GONE), "name": "Old report", "sends": [_send(4)]}],
+            "deleted": [
+                {
+                    "id": str(GONE),
+                    "name": "Old report",
+                    "past": _past(GONE, [_send(4)]),
+                    "sends": [_send(4)],
+                }
+            ],
             "archived": False,
             "requested": None,
             "base_digest": "0" * 64,
@@ -164,10 +190,20 @@ def _page(context, admin, *, administrator):
     )
 
 
+# The Weekly report's Past sends at 50 rows per page, as its navigator's
+# Rows per page choice reads them (the size, then page 1).
+WEEKLY_50 = {f"{sends_prefix(WEEKLY)}size": "50", f"{sends_prefix(WEEKLY)}page": "1"}
+
+
 def components(context, admin):
-    """The Report emails page for an Administrator and for Staff."""
+    """The Report emails page for an Administrator and for Staff, and the
+    Administrator's page with the Weekly report's Past sends at 50 a page."""
     return {
         PAGE: ("text/html", _page(context, admin, administrator=True)),
+        f"{PAGE}?{urlencode(sorted(WEEKLY_50.items()))}": (
+            "text/html",
+            _page(context, admin, administrator=True, paging=WEEKLY_50),
+        ),
         STAFF: ("text/html", _page(context, admin, administrator=False)),
     }
 
