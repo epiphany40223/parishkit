@@ -888,6 +888,12 @@ finishes it, so its checks and backup see a running database:
   inspect` and `docker inspect` for the named one, fix it, and repeat.
 - The hba check fails (`The hba check failed: ...`): fix forward with a
   release that corrects the rules, or roll back.
+- `Could not render the hba check in IMAGE`, `Could not reload
+  PostgreSQL's configuration` or `TIMEOUT: the wait for the hba reload
+  stopped after Ns (limit 30s)`: the target image or PostgreSQL did not
+  answer (a `TIMEOUT:` line above names a killed step). Look at `docker
+  compose ... logs postgres`, then repeat with the same digest, or roll
+  back.
 - The run ends with `Upgraded to IMAGE, but NOT healthy:` and a line
   `SERVICE: database sources differ from the rendered rules`. The source
   check's output above it names the login, the source address and the

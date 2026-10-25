@@ -535,13 +535,17 @@ after `retarget-image` and the pull and before `revoke-automation-sessions`
 and `restore-begin` need the `admin-recovery` network: a set rendered
 before this change (whose step 5 or running deployment started PostgreSQL
 on the old networks), or a restore with an image from before it, gets
-PostgreSQL and Valkey recreated on the rendered networks first. When the
-networks already match, PostgreSQL keeps running and `pk-restore` reloads
-its configuration (`pg_reload_conf()` over the socket), since
-`retarget-image` may have rewritten the rules. After web's
-health check it runs the source check from web and from `admin-recovery`
-when the image has the command (a drill starts nothing else); a difference
-fails the run with web still up, and the Restore review waits for a fix.
+PostgreSQL and Valkey recreated on the rendered networks first. Recreated
+or not, since `retarget-image` may have rewritten the rules, it then runs
+the upgrade's reload and hba check (a second shared block, also kept
+identical by that test): the hba check must answer `t` before any one-off
+connects, and a failure stops the restore in step 7. After web's health
+check it runs the hba check again and the source check from web and from
+`admin-recovery` (a drill starts nothing else): the probes alone cannot
+tell the rendered method from another, which the hba check's digest of the
+rendered file proves. An image whose rendering has no rules (one from
+before this change) runs neither. A difference fails the run with web
+still up, and the Restore review waits for a fix.
 The local laptop environment's `deploy` and `deploy --rollback` run the
 upgrade's host half, full stop included; its `reset` and
 `snapshot restore` remove the containers and networks (never a volume)

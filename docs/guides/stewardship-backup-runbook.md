@@ -948,11 +948,17 @@ the networks `caddy` is not on, never a volume, and starts `postgres` and
 `valkey` on the rendered networks before any one-off runs, as the
 [deployment runbook](stewardship-deployment-runbook.md#database-connection-sources-2111)
 describes for the upgrade; the log says `the database networks change`.
-It refuses while a one-off container of the project still runs. After
-web's health check, an image with the `database-sources` command runs the
-source check from `web` and from `admin-recovery`; a difference (the
-output names the login, the source and the service) fails the run with
-`web` still up, and the Restore review waits for a fix.
+It refuses while a one-off container of the project still runs. Then,
+when the retargeted file renders the source rules, it reloads them and
+runs the image's hba check, which must answer `t` before any one-off
+connects (the log says `the rendered source rules are in force`); a failure
+names the condition (for example `the mounted pg_hba.conf differs from the
+rendered one`) and stops the restore in step 7, to be repeated with
+`--from 7` once fixed. After web's health check it runs the hba check
+again (`the hba check answers t`) and the source check from `web` and from
+`admin-recovery`; a difference (the output names the condition, or the
+login, the source and the service) fails the run with `web` still up, and
+the Restore review waits for a fix.
 
 ### Scripted replacement and drill restore
 

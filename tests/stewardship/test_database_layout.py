@@ -37,17 +37,30 @@ HOST = ROOT / "tools" / "stewardship-upgrade-host.sh"
 RESTORE = ROOT / "tools" / "stewardship-ops" / "pk-restore"
 BEGIN = "# BEGIN database network layout (#2111)."
 END = "# END database network layout (#2111).\n"
+HBA_BEGIN = "# BEGIN PostgreSQL source rules check (#2111)."
+HBA_END = "# END PostgreSQL source rules check (#2111).\n"
 
 
-def layout_block(path):
-    """The shared block's text in one script."""
+def layout_block(path, begin=BEGIN, end=END):
+    """One shared block's text in one script (the layout block by default)."""
     text = path.read_text()
-    return text[text.index(BEGIN) : text.index(END) + len(END)]
+    return text[text.index(begin) : text.index(end) + len(end)]
+
+
+def hba_block(path):
+    """The shared source rules check block's text in one script."""
+    return layout_block(path, HBA_BEGIN, HBA_END)
 
 
 def test_both_scripts_carry_the_same_layout_block():
     """The upgrade and pk-restore must decide and stop the same way."""
     assert layout_block(HOST) == layout_block(RESTORE)
+    # And reload and check the source rules the same way, after the layout.
+    assert hba_block(HOST) == hba_block(RESTORE)
+    for path in (HOST, RESTORE):
+        text = path.read_text()
+        call = text.index("hba_reload", text.index(HBA_END))
+        assert text.rindex("changes=$(layout_changes)") < call
     # Called after the retarget in both; the upgrade also finishes an
     # earlier run's full stop before its step 1 needs PostgreSQL.
     call = "changes=$(layout_changes)"

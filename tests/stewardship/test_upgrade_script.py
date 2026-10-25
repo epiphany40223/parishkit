@@ -2647,6 +2647,18 @@ def test_a_source_difference_fails_the_run_with_the_site_up(tmp_path):
     assert "web was down for" in output
 
 
+def test_a_rendering_that_hangs_is_logged_and_stops_before_reloading(tmp_path):
+    """Rendering the hba check runs under a time limit; its kill is logged."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", status=1, hba_rules=1, timeout="hba-check"
+    )
+    log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    assert "TIMEOUT: rendering the hba check killed after " in log
+    assert "(limit 300s)" in log
+    assert "Could not render the hba check in" in output
+    assert not any("pg_reload_conf" in call for call in calls)
+
+
 def test_a_reload_that_hangs_is_logged_and_stops_before_step_4(tmp_path):
     """The reload runs under a time limit like every other step."""
     calls, output, _ = run_host(

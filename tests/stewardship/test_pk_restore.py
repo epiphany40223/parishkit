@@ -84,6 +84,22 @@ if [[ " $* " == *" exec -T "* ]]; then
     case ${cmd[0]} in
         psql)
             case "$*" in
+                *"SELECT pg_reload_conf()"*)
+                    printf "%s\n" "2026-10-25 04:00:00.000001+00" t ;;
+                *" -v since=infinity"*)
+                    # The hba check of the file alone, before the reload:
+                    # FAKE_HBA_FILE, or what every good file answers.
+                    cat >/dev/null
+                    echo "${FAKE_HBA_FILE:-hba_reload_pending}" ;;
+                *" -v since="*)
+                    # FAKE_HBA: the hba check's answers after the reload,
+                    # one per call, the last repeated (the query on stdin).
+                    cat >/dev/null
+                    read -r -a answers <<<"${FAKE_HBA:-t}"
+                    echo x >>"$FAKE_STATE/hba"
+                    n=$(wc -l <"$FAKE_STATE/hba")
+                    [ "$n" -le "${#answers[@]}" ] || n=${#answers[@]}
+                    echo "${answers[$((n - 1))]}" ;;
                 *"shobj_description"*)
                     echo "${FAKE_MARKER-parishkit-stewardship:$FAKE_UUID}" ;;
                 *"obj_description"*)
@@ -188,6 +204,7 @@ case "$*" in
             echo "$FAKE_RENDER_LAYOUT" >"$FAKE_STATE/rendered"
         fi ;;
     *" collect-static --destination "*) echo collected >"$last/app.js" ;;
+    *" hba-check --config "*) echo "SELECT 'hba';" ;;
 esac
 exit 0
 """
@@ -1678,7 +1695,7 @@ def test_a_source_difference_fails_the_restore_but_leaves_web_up(host):
     help_text = HELP.replace("restore-begin}", "restore-begin,database-sources}")
     result, calls = restore(host, FAKE_HELP=help_text, FAKE_FAIL="database-sources")
     assert result.returncode == 1, output(result)
-    assert "the database sources differ from the rendered rules" in output(result)
+    assert "or the database sources differ from the rendered ones" in output(result)
     assert "do not release the Restore review" in output(result)
     assert "Stopped in step" not in output(result)
     assert not any(c.startswith(("rm ", "stop ")) for c in calls)
@@ -1693,17 +1710,89 @@ def test_a_stopped_caddy_keeps_its_networks(host):
     assert removed == ["net-backend"]
 
 
-def test_matching_networks_reload_the_rendered_rules(host):
-    """postgres keeps running, so the rules retarget-image wrote are reloaded."""
+HELP_HBA = HELP.replace("restore-begin}", "restore-begin,database-sources,hba-check}")
+
+
+def rules(running, rendered):
+    """A layout whose retargeted file renders PostgreSQL's source rules."""
     from .test_upgrade_script import _rendered
 
-    rendered = _rendered(True)
-    rendered["services"]["postgres"]["command"] = ["postgres", "-c", "hba_file=/x"]
-    fake = layout("NEW", "NEW")
-    fake["FAKE_COMPOSE_NEW"] = json.dumps(rendered)
-    result, calls = restore(host, **fake)
+    fake = layout(running, rendered)
+    document = _rendered(rendered == "NEW")
+    document["services"]["postgres"]["command"] = ["postgres", "-c", "hba_file=/x"]
+    fake[f"FAKE_COMPOSE_{rendered}"] = json.dumps(document)
+    return fake
+
+
+@pytest.mark.parametrize("running", ["NEW", "OLD"], ids=["matching", "recreated"])
+def test_the_rendered_rules_are_reloaded_and_checked_before_any_one_off(host, running):
+    """Recreated or not, postgres reloads the rules and the check answers t."""
+    result, calls = restore(host, FAKE_HELP=HELP_HBA, **rules(running, "NEW"))
     assert result.returncode == 0, output(result)
+    retarget = next(i for i, c in enumerate(calls) if " retarget-image " in c)
+    render = next(i for i, c in enumerate(calls) if " hba-check --config " in c)
+    pending = next(i for i, c in enumerate(calls) if " -v since=infinity" in c)
     reload = next(i for i, c in enumerate(calls) if "pg_reload_conf()" in c)
-    assert reload < next(i for i, c in enumerate(calls) if " restore-begin " in c)
-    assert "reloaded PostgreSQL's source rules" in output(result)
-    assert not any(c.endswith(" stop postgres valkey") for c in calls)
+    checks = [i for i, c in enumerate(calls) if " -v since=2026-10-25" in c]
+    begin = next(i for i, c in enumerate(calls) if " restore-begin " in c)
+    web = next(
+        i
+        for i, c in enumerate(calls)
+        if " exec -T web " in c and "database-sources" in c
+    )
+    # Rendered offline and read-only, like the retarget.
+    assert "--network none" in calls[render] and "readonly" in calls[render]
+    assert retarget < render < pending < reload < checks[0] < begin
+    # The source check repeats the hba check, since the probes cannot tell
+    # the rendered method from another.
+    assert begin < checks[-1] < web
+    assert "the rendered source rules are in force" in output(result)
+    assert "the hba check answers t" in output(result)
+    stopped = any(c.endswith(" stop postgres valkey") for c in calls)
+    assert stopped is (running == "OLD")
+
+
+@pytest.mark.parametrize(
+    ("answers", "why"),
+    [
+        ({"FAKE_HBA_FILE": "hba_file_differs"}, "the mounted pg_hba.conf differs"),
+        ({"FAKE_HBA": "hba_file_invalid"}, "pg_hba.conf has errors"),
+        ({"FAKE_HBA": "hba_file_not_mounted"}, "PostgreSQL does not use the mounted"),
+    ],
+)
+def test_rules_not_in_force_stop_the_restore_before_any_one_off(host, answers, why):
+    """Nothing connects to a database on rules the check did not prove."""
+    result, calls = restore(host, FAKE_HELP=HELP_HBA, **rules("NEW", "NEW"), **answers)
+    assert result.returncode == 1, output(result)
+    assert f"The hba check failed: {why}" in output(result)
+    assert "source rules are not in force" in output(result)
+    assert not any(" restore-begin " in c for c in calls)
+
+
+def test_an_image_with_rules_but_no_hba_check_is_refused(host):
+    """A rendering with rules needs the image's check to prove them."""
+    help_text = HELP.replace("restore-begin}", "restore-begin,database-sources}")
+    result, calls = restore(host, FAKE_HELP=help_text, **rules("NEW", "NEW"))
+    assert result.returncode == 1, output(result)
+    assert "renders source rules but has no hba-check" in output(result)
+    assert not any(" restore-begin " in c for c in calls)
+
+
+def test_a_failed_hba_check_at_the_source_check_fails_with_web_up(host):
+    """Rules that stop being the rendered ones after step 7 fail the run."""
+    result, calls = restore(
+        host, FAKE_HELP=HELP_HBA, FAKE_HBA="t hba_file_differs", **rules("NEW", "NEW")
+    )
+    assert result.returncode == 1, output(result)
+    assert "The hba check failed: the mounted pg_hba.conf differs" in output(result)
+    assert "do not release the Restore review" in output(result)
+    assert any(" restore-begin " in c for c in calls)
+    assert not any(c.startswith(("rm ", "stop ")) for c in calls)
+
+
+def test_a_rendering_without_rules_reloads_and_checks_nothing(host):
+    """A restore with an image from before #2111 has no rules to prove."""
+    result, calls = restore(host, FAKE_HELP=HELP_HBA, **layout("NEW", "NEW"))
+    assert result.returncode == 0, output(result)
+    for fragment in ("hba-check", "pg_reload_conf", " -v since="):
+        assert not any(fragment in c for c in calls), fragment

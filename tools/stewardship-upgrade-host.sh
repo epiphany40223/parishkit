@@ -458,6 +458,116 @@ layout_full_stop() {
 }
 # END database network layout (#2111).
 
+# BEGIN PostgreSQL source rules check (#2111). This block is kept identical
+# in tools/stewardship-upgrade-host.sh and tools/stewardship-ops/pk-restore
+# (tests/stewardship/test_database_layout.py compares the two copies and
+# runs it on real Docker). It reads `compose`, `dc`, `database`, `isolated`,
+# `image`, `root`, `yaml` and `work`, prints what failed on stderr, and
+# leaves what to say about the site to its caller. Operations
+# specification, "When PostgreSQL reads the rules": PostgreSQL reads its
+# hba_file only when it starts or reloads, so after a retarget wrote the
+# rendered file the rules are reloaded as the operator over the socket,
+# and the hba check (rendered by the target image, run read-only) must
+# answer t: the mounted path is in force, the mounted file is the rendered
+# one, it parses, and it was loaded after it was written.
+hba_rendered() {
+    # The hba_file setting the Compose file starts PostgreSQL with, or
+    # nothing when it renders none (a release before the source rules).
+    jq -r '.services.postgres.command // [] | map(select(startswith("hba_file="))) | .[0] // empty' "$compose"
+}
+hba_sql() {
+    # hba_sql SECONDS WHAT MODE [PSQL ARGS...]: psql as the operator in the
+    # running postgres service under a time limit, in a read-only session
+    # when MODE is read-only, with this shell's stdin as its input unless
+    # the arguments give commands; prints the output. An expired limit is
+    # logged on stderr (what, limit, elapsed) and fails.
+    local limit=$1 what=$2 started rc=0 out
+    local options=()
+    [ "$3" != read-only ] || options=(-e PGOPTIONS='-c default_transaction_read_only=on')
+    shift 3
+    started=$(date -u +%s)
+    out=$(timeout --kill-after=10 "$limit" "${dc[@]}" exec -T ${options[@]+"${options[@]}"} postgres \
+        psql -U pk_stewardship_operator -d "$database" -At -v ON_ERROR_STOP=1 "$@" 2>&1) || rc=$?
+    if [ "$rc" -eq 124 ] || { [ "$rc" -eq 137 ] && [ $(( $(date -u +%s) - started )) -ge "$limit" ]; }; then
+        echo "TIMEOUT: $what killed after $(( $(date -u +%s) - started ))s (limit ${limit}s)" >&2
+    fi
+    printf '%s\n' "$out"
+    return "$rc"
+}
+hba_render() {
+    # Render the hba check's query with the target image into
+    # $work/hba-check.sql: offline, read-only, the root mounted read-only.
+    # A time limit like every other step; an expiry is logged.
+    local started rc=0
+    started=$(date -u +%s)
+    timeout --kill-after=10 300 "${isolated[@]}" \
+        --mount "type=bind,source=$root,target=$root,readonly" \
+        --mount "type=bind,source=$yaml,target=/run/operator.yaml,readonly" \
+        "$image" hba-check --config /run/operator.yaml >"$work/hba-check.sql" || rc=$?
+    if [ "$rc" -eq 124 ] || { [ "$rc" -eq 137 ] && [ $(( $(date -u +%s) - started )) -ge 300 ]; }; then
+        echo "TIMEOUT: rendering the hba check killed after $(( $(date -u +%s) - started ))s (limit 300s)" >&2
+    fi
+    return "$rc"
+}
+hba_answer() {
+    # hba_answer SINCE: the check's answer, read-only; SINCE is the
+    # PostgreSQL time the load must be later than.
+    hba_sql 10 "the hba check" read-only -v since="$1" <"$work/hba-check.sql" || true
+}
+hba_why() {
+    # hba_why ANSWER: the failed condition, in plain words.
+    case "$1" in
+        hba_file_not_mounted) echo "PostgreSQL does not use the mounted rules (it was not recreated with the new command)" ;;
+        hba_file_differs) echo "the mounted pg_hba.conf differs from the rendered one" ;;
+        hba_file_invalid) echo "pg_hba.conf has errors, so PostgreSQL keeps its previous rules" ;;
+        hba_reload_pending) echo "PostgreSQL has not loaded the rules since they were last written" ;;
+        *) echo "the hba check did not answer: $(head -3 <<<"$1")" ;;
+    esac
+}
+hba_reload() {
+    # Reload the rendered rules and wait until the check answers t. Sets
+    # hba_since, PostgreSQL's time just before the reload, so a later
+    # `hba_answer "$hba_since"` proves the same rules are still in force.
+    # Prints what failed on stderr and returns 1 otherwise.
+    local answer reload started elapsed=0 attempt
+    # Before the reload, the file must already be the rendered one and
+    # parse (pg_hba_file_rules reads the file on disk): only the load may
+    # be pending, which it always is against `infinity`. A reload of a bad
+    # file would keep the old rules anyway.
+    answer=$(hba_answer infinity)
+    if [ "$answer" != hba_reload_pending ]; then
+        echo "The hba check failed: $(hba_why "$answer")." >&2
+        return 1
+    fi
+    # The moment the load must follow, read from PostgreSQL's own clock just
+    # before the signal (a LOCAL fake clock shifts both alike); the file was
+    # written before it, by the retarget.
+    reload=$(hba_sql 30 "the PostgreSQL configuration reload" write \
+        -c "SELECT clock_timestamp()" -c "SELECT pg_reload_conf()") ||
+        { echo "Could not reload PostgreSQL's configuration." >&2; return 1; }
+    hba_since=$(head -1 <<<"$reload")
+    # pg_reload_conf() only signals the postmaster: wait, bounded, for the
+    # load to take effect, polling about once a second for at most 30
+    # seconds (and at most 30 polls).
+    started=$(date -u +%s)
+    for attempt in $(seq 1 30); do
+        answer=$(hba_answer "$hba_since")
+        elapsed=$(( $(date -u +%s) - started ))
+        [ "$answer" = hba_reload_pending ] && [ "$attempt" -lt 30 ] && [ "$elapsed" -lt 30 ] || break
+        sleep 1
+    done
+    case "$answer" in
+        t) echo "    the rendered source rules are in force (the reload took ${elapsed}s)" ;;
+        hba_reload_pending)
+            echo "TIMEOUT: the wait for the hba reload stopped after ${elapsed}s (limit 30s)" >&2
+            return 1 ;;
+        *)
+            echo "The hba check failed: $(hba_why "$answer")." >&2
+            return 1 ;;
+    esac
+}
+# END PostgreSQL source rules check (#2111).
+
 # The project keeps whichever Compose file it already runs under; an upgrade
 # or a rollback changes images and the documents rendered for them (once,
 # #2111, the database networks too: the full stop after step 3).
@@ -951,95 +1061,22 @@ if [ -n "$changes" ]; then
     echo "    postgres and valkey run on the rendered networks"
 fi
 
-# PostgreSQL's per-login source rules (#2111; operations specification,
-# "When PostgreSQL reads the rules"). PostgreSQL reads its hba_file only when
-# it starts or reloads, so after the retarget wrote the rendered file the
-# rules are reloaded as the operator over the socket, and the hba check
-# (rendered by the target image, run read-only) must answer t before step 4:
-# the mounted path is in force, the mounted file is the rendered one, it
-# parses, and it was loaded after it was written. A retarget whose Compose
+# PostgreSQL's per-login source rules (#2111): with the full stop above
+# done, the retargeted rules are reloaded and checked before step 4 (the
+# shared block, "PostgreSQL source rules check"). A retarget whose Compose
 # file renders no hba_file (a rollback to a release before #2111) has no
-# rules to reload. The first rollout's full stop just above recreated
-# PostgreSQL with the new command and on the offline-* networks.
-hba_rules=$(jq -r '.services.postgres.command // [] | map(select(startswith("hba_file="))) | .[0] // empty' "$compose")
-operator_sql() {
-    # operator_sql SECONDS WHAT MODE [PSQL ARGS...]: psql as the operator in
-    # the running postgres service under a time limit, in a read-only
-    # session when MODE is read-only, with this shell's stdin as its input
-    # unless the arguments give commands; prints the output. An expired
-    # limit is logged on fd 3 (what, limit, elapsed) and fails.
-    local limit=$1 what=$2 started rc=0 out
-    local options=()
-    [ "$3" != read-only ] || options=(-e PGOPTIONS='-c default_transaction_read_only=on')
-    shift 3
-    started=$(date -u +%s)
-    out=$(timeout --kill-after=10 "$limit" "${dc[@]}" exec -T ${options[@]+"${options[@]}"} postgres \
-        psql -U pk_stewardship_operator -d "$database" -At -v ON_ERROR_STOP=1 "$@" 2>&1) || rc=$?
-    if [ "$rc" -eq 124 ] || { [ "$rc" -eq 137 ] && [ $(( $(date -u +%s) - started )) -ge "$limit" ]; }; then
-        echo "TIMEOUT: $what killed after $(( $(date -u +%s) - started ))s (limit ${limit}s). The maintenance page" >&3
-        echo "    stays up." >&3
-    fi
-    printf '%s\n' "$out"
-    return "$rc"
-}
+# rules to reload.
+hba_rules=$(hba_rendered)
 if [ -z "$hba_rules" ]; then
     step "3. PostgreSQL source rules: none rendered for $image; nothing to reload"
 else
     step "3. Reloading PostgreSQL's source rules"
-    "${isolated[@]}" \
-        --mount "type=bind,source=$root,target=$root,readonly" \
-        --mount "type=bind,source=$yaml,target=/run/operator.yaml,readonly" \
-        "$image" hba-check --config /run/operator.yaml >"$work/hba-check.sql" ||
+    hba_render ||
         { echo "Could not render the hba check in $image; the maintenance page stays up." >&2; exit 1; }
-    hba_check() {
-        # hba_check SINCE: the check's answer, read-only; SINCE is the
-        # PostgreSQL time the load must be later than.
-        operator_sql 10 "the hba check" read-only -v since="$1" <"$work/hba-check.sql" || true
-    }
-    hba_failed() {
-        # hba_failed ANSWER: name the failed condition and stop, page up.
-        local why
-        case "$1" in
-            hba_file_not_mounted) why="PostgreSQL does not use the mounted rules (it was not recreated with the new command)" ;;
-            hba_file_differs) why="the mounted pg_hba.conf differs from the rendered one" ;;
-            hba_file_invalid) why="pg_hba.conf has errors, so PostgreSQL keeps its previous rules" ;;
-            *) why="the hba check did not answer: $(head -3 <<<"$1")" ;;
-        esac
-        echo "The hba check failed: $why. The maintenance page stays up; fix forward or roll" >&2
-        echo "back ($runbook#rollback)." >&2
+    if ! hba_reload; then
+        echo "The maintenance page stays up; fix forward or roll back ($runbook#rollback)." >&2
         exit 1
-    }
-    # Before the reload, the file must already be the rendered one and parse
-    # (pg_hba_file_rules reads the file on disk): only the load may be
-    # pending, which it always is against `infinity`. A reload of a bad file
-    # would keep the old rules anyway.
-    answer=$(hba_check infinity)
-    [ "$answer" = hba_reload_pending ] || hba_failed "$answer"
-    # The moment the load must follow, read from PostgreSQL's own clock just
-    # before the signal (a LOCAL fake clock shifts both alike); the file was
-    # written before it, by the retarget.
-    reload=$(operator_sql 30 "the PostgreSQL configuration reload" write \
-        -c "SELECT clock_timestamp()" -c "SELECT pg_reload_conf()") ||
-        { echo "Could not reload PostgreSQL's configuration; the maintenance page stays up." >&2; exit 1; }
-    since=$(head -1 <<<"$reload")
-    # pg_reload_conf() only signals the postmaster: wait, bounded, for the
-    # load to take effect, polling about once a second for at most 30
-    # seconds (and at most 30 polls).
-    started=$(date -u +%s)
-    for attempt in $(seq 1 30); do
-        answer=$(hba_check "$since")
-        elapsed=$(( $(date -u +%s) - started ))
-        [ "$answer" = hba_reload_pending ] && [ "$attempt" -lt 30 ] && [ "$elapsed" -lt 30 ] || break
-        sleep 1
-    done
-    case "$answer" in
-        t) echo "    the rendered source rules are in force (the reload took ${elapsed}s)" ;;
-        hba_reload_pending)
-            echo "TIMEOUT: the wait for the hba reload stopped after ${elapsed}s (limit 30s). The maintenance" >&3
-            echo "    page stays up." >&3
-            exit 1 ;;
-        *) hba_failed "$answer" ;;
-    esac
+    fi
 fi
 
 if [ "$mode" = upgrade ]; then
