@@ -1035,6 +1035,12 @@ CLOSURE_CREATED = {
         "stewardship_jobs",
         "0038_probe_settings_changed",
     ),
+    # 0178 (#2123) creates the review wizard's run table (in CLOSURE_TABLES)
+    # and its invoker-rights guard; its file, whole, puts both back.
+    "public.stewardship_review_run_guard_v1()": (
+        "stewardship_reports",
+        "0048_review_run",
+    ),
 }
 
 

@@ -2304,8 +2304,8 @@ have many:
   schema, so the database itself does not cascade, and nothing deletes a
   portal user or campaign row in SQL). The rows are bounded by the runs
   readers start, each at most 5,000 subjects of ids.
-- **Migration: yes**, frozen file **0177** (`0177_review_run.sql`,
-  assigned centrally; renumbered from 0178), whose guard keeps a started
+- **Migration: yes**, frozen file **0178** (`0178_review_run.sql`,
+  assigned centrally), whose guard keeps a started
   run's user, campaign, stream, filters, sort and sequence fixed, its
   position inside the sequence, and a finished run unchanged. Resume
   must outlive the sign-in, so the Django session (`report_paging.remember_queue`'s store) cannot hold it. The
@@ -2473,7 +2473,7 @@ flow, since the menu entry and the card open pages whose sections arrive
 in slices 2 and 3:
 
 1. **Run storage, start page, page frame, menu entry and card**:
-   `ReviewRun` and frozen file 0177, its grants, schema inventory and
+   `ReviewRun` and frozen file 0178, its grants, schema inventory and
    users-swap entries; `review_streams.py` (each stream's label, access,
    query class, filter template, read and audit) and
    `pledge_review_views.PledgeQuery`; `review_wizard.py` (the sequence,
