@@ -45,6 +45,7 @@ from parishkit.stewardship.web.contracts import (
     FieldError,
     validation_response,
 )
+from parishkit.stewardship.web.error_pages import GENERIC_DENIAL
 from parishkit.stewardship.web.namespaces import ADMIN_HOME, admin_return_path
 from parishkit.stewardship.web.refusals import (
     UserFacingDenied,
@@ -121,8 +122,10 @@ def denial(*, status=403, retry=None, admin=True, sign_in=False, account=None):
     used or expired OAuth state, a recovery-epoch change) reads "Sign-in
     didn't finish". Google does the authentication, so only the person who
     just proved control of an address learns whether it has access.
-    Signed-in refusals, such as the report views', keep the original
-    generic text.
+    Any other refusal keeps the generic "Access unavailable" text for a
+    reader without a current session; a browser's page load by a signed-in
+    reader is drawn by the browser-error middleware without the sign-in
+    wording instead (``web.error_pages.GENERIC_DENIAL``, #2165).
 
     Every report view sends a ``PermissionError`` here, including the
     ``UserFacingGone`` refusal of a campaign that is not the current one
@@ -169,6 +172,9 @@ def denial(*, status=403, retry=None, admin=True, sign_in=False, account=None):
         kind = ""
     response = login_denial(admin=admin, status=status, kind=kind, **extra)
     response.stewardship_safe_error = True
+    if admin and not kind:
+        # Its sign-in wording suits only a signed-out reader (#2165).
+        setattr(response, GENERIC_DENIAL, True)
     if retry:
         response["Retry-After"] = str(min(3600, max(1, int(retry))))
     # The exception being handled, if any, names the refusal in its log;

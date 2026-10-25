@@ -29,6 +29,10 @@ from .refusals import Refusal
 # text.
 ENDED_FLAG = "ended"
 
+# Set by ``accounts.authentication.denial()`` on its generic Admin denial,
+# which the middleware redraws for a signed-in reader (#2165).
+GENERIC_DENIAL = "stewardship_generic_denial"
+
 # Headers that choose between the JSON and HTML representations.
 NEGOTIATION_HEADERS = ("Accept", "Sec-Fetch-Mode", "X-Requested-With")
 
@@ -77,6 +81,17 @@ _GUIDANCE = {
         _("This page or action no longer works. Use the menu to find the page."),
     ),
 }
+# The generic denial a signed-in Admin sees instead (#2165): the sign-in
+# wording above fits only a reader without a current session, and signing in
+# again cannot help someone already signed in. The fix is the role
+# refusal's (accounts.role_refusal.role_denied_for, #1924).
+_SIGNED_IN_DENIED = (
+    _("Your access doesn't include this page."),
+    _(
+        "Choose a page from the menu, or ask a parish administrator if you "
+        "need this one."
+    ),
+)
 _NOT_FOUND = (
     _("Page unavailable"),
     _("This item may have been removed, or the link may be incomplete."),
@@ -153,11 +168,23 @@ def _admit_for_chrome(request):
     check, too, and keeps the menu-less layout rather than offering a menu
     whose every link is closed. It reads the same flag the gate reads.
     """
-    if getattr(request, "principal", None) is not None:
-        return
+    if getattr(request, "principal", None) is None:
+        _read_only_admission(request)
+
+
+def _read_only_admission(request):
+    """The request's current Admin principal by a read-only check, or None.
+
+    ``authenticated_admin(read_only=True)`` renews no idle time, rotates
+    nothing and revokes no ended session; when it admits, it marks the
+    request with the principal (and session) it finds. A request with no
+    session cookie costs no query, and during a restore review nothing is
+    checked (see ``_admit_for_chrome``). Any failure is None: presentation
+    must never turn a refusal or a 404 into a different error.
+    """
     session = getattr(request, "session", None)
     if session is None or not session.session_key:
-        return
+        return None
     from parishkit.config import ConfigError
     from parishkit.stewardship.accounts.authentication import runtime
     from parishkit.stewardship.accounts.limiting import LimiterUnavailable
@@ -170,7 +197,8 @@ def _admit_for_chrome(request):
         ConfigError, LimiterUnavailable, DatabaseError, PermissionError
     ):
         if not _restore_review():
-            authenticated_admin(request, store=runtime().store, read_only=True)
+            return authenticated_admin(request, store=runtime().store, read_only=True)
+    return None
 
 
 def page_request(request):
@@ -228,6 +256,17 @@ def _back_path(request):
 ERROR_PAGE_ATTRIBUTE = "_stewardship_error_page"
 
 
+def _signed_in(request):
+    """Whether the view admitted a current Admin session for this request.
+
+    ``AdminCaller.admitted`` marks the request with its principal; a request
+    refused before that (no session, an ended one, a CSRF failure) has none.
+    Nothing clears it when a later recheck refuses the session, so a redraw
+    of ``denial()``'s page also rechecks (``_signed_in_denial``).
+    """
+    return is_admin(request) and getattr(request, "principal", None) is not None
+
+
 def _is_local():
     """Whether this process serves the LOCAL laptop environment (#476)."""
     value = getattr(settings, "STEWARDSHIP_DEPLOYMENT_PROFILE", None)
@@ -249,7 +288,11 @@ def error_page(request, response):
     # explanation, fix and link (see web.refusals); still never raw text.
     refusal = getattr(response, "stewardship_refusal", None)
     signed_out = admin and refusal is not None and refusal.signed_out
+    # A signed-in reader is never told to sign in again (#2165).
+    signed_in = code == ErrorCode.DENIED and not signed_out and _signed_in(request)
     messages = list(dict.fromkeys(str(MESSAGES[e.code]) for e in errors))
+    if signed_in:
+        messages, guidance = [str(_SIGNED_IN_DENIED[0])], _SIGNED_IN_DENIED[1]
     if refusal is not None:
         messages = [str(refusal.message)]
         # The page answering a form's POST shows the full-page fix: Reload
@@ -259,9 +302,10 @@ def error_page(request, response):
         title = refusal.title or title
     home = ADMIN_HOME if admin else "/"
     sign_in = ("/admin/login" if admin else "/") if code == ErrorCode.DENIED else None
-    if refusal is not None and not refusal.sign_in:
+    if signed_in or (refusal is not None and not refusal.sign_in):
         # A refusal that signing in cannot fix (a role that lacks the page,
-        # #1924) offers no Sign in again (Refusal.sign_in).
+        # #1924; any refusal of a signed-in reader, #2165) offers no Sign in
+        # again (Refusal.sign_in).
         sign_in = None
     fix_link = refusal.link if refusal else None
     if fix_link == home:
@@ -384,6 +428,9 @@ class BrowserErrorMiddleware:
         it is negotiated like every other refusal.
         """
         response = self.get_response(request)
+        redrawn = self._signed_in_denial(request, response)
+        if redrawn is not None:
+            return redrawn
         if _untyped_not_found(request, response):
             response.close()
             response = not_found_response()
@@ -396,3 +443,39 @@ class BrowserErrorMiddleware:
         if _ended_session_load(request, response):
             return sign_in_redirect(request, response)
         return error_page(request, response)
+
+    def _signed_in_denial(self, request, response):
+        """Redraw a signed-in reader's generic sign-in denial as its error page.
+
+        ``accounts.authentication.denial()`` answers a plain refusal (a
+        report view's ``PermissionError``) with the sign-in page's default
+        text, which suits only a reader without a current session. It has
+        no request, so it marks the response (``GENERIC_DENIAL``) and this
+        draws a browser's page load for a signed-in reader as the typed
+        ``denied`` page instead, with the menu and no Sign in link (#2165).
+        Scripts, signed-out readers and a session that ended after its
+        admission keep the original response.
+        """
+        if not getattr(response, GENERIC_DENIAL, False):
+            return None
+        # Its page and script answers now differ by these headers.
+        patch_vary_headers(response, NEGOTIATION_HEADERS)
+        if not (page_request(request) and _signed_in(request)):
+            return None
+        # The principal the view admitted is no proof the session is still
+        # live: a later recheck (Admin home's, a report's authorize) may have
+        # refused it as revoked, disabled or changed in role, and the chrome
+        # would then show that session's old menu and counts. Only a
+        # session that passes a fresh read-only check gets the signed-in
+        # page, drawn from its current principal; any other keeps the
+        # sign-in page (#2165).
+        principal = _read_only_admission(request)
+        if principal is None or not principal.roles:
+            return None
+        request.principal = principal
+        response.close()
+        typed = validation_response(
+            [FieldError(ErrorCode.DENIED)], status=response.status_code
+        )
+        typed.cookies = response.cookies
+        return error_page(request, typed)

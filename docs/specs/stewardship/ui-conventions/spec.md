@@ -2720,6 +2720,31 @@ page-level role checks; `web/error_pages.py` drops Sign in again for a
 refusal that says signing in cannot fix it (`Refusal.sign_in`).
 **Precedent.** #1924.
 
+**Any other refusal of a signed-in person.** Once a page has admitted a
+current Admin session, its 403 page never says to sign in again. A refusal
+with no reviewed wording of its own (a report a Ministry leader may not
+read, a plain access check) keeps the "Access unavailable" heading and says
+"Your access doesn't include this page." then "Choose a page from the menu,
+or ask a parish administrator if you need this one.", with the left menu,
+the usual Return to the previous page and Administration home links, and no
+Sign in link. A refusal that has its own sentence (a Ministry leader who
+leads no Ministry, the role refusal above) keeps it, still without a Sign in
+link. A request refused before any session is admitted (no session, an
+ended one, a form that fails its CSRF check) keeps the sign-in wording and
+link, and an ended session's page load still goes straight to sign-in. So
+does a session that ends after its admission, when a later recheck in the
+same request refuses it as revoked, disabled or changed in role: the
+signed-in page is drawn only after a fresh read-only session check passes,
+with the menu of that check's current roles, never the ones first admitted.
+Status codes, the `denied` code, refusal-log reasons and what scripts
+receive are unchanged. **Why.** The sign-in hint fits only a signed-out
+reader; a signed-in one cannot fix the refusal by signing in, and the old
+text read like an outage. **Shared code.** `web/error_pages.py`
+(`error_page`, and `BrowserErrorMiddleware`, which redraws
+`accounts.authentication.denial()`'s generic page for a signed-in reader's
+page load). **Precedent.**
+[#2165](https://github.com/epiphany40223/parishkit/issues/2165).
+
 ### Navigation rules
 
 **Rule.** Every Admin page follows the numbered rules below: it is

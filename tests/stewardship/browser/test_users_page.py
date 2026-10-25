@@ -527,7 +527,7 @@ def test_google_account_guidance_shows_where_sign_in_fails(page, component_origi
         "/login",
         "/denied",
         "/denied-admin",
-        "/denied-admin-signed-in",
+        "/denied-admin-default",
         "/denied-admin-unfinished",
         "/denied-admin-limited",
     ):

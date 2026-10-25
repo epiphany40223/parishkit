@@ -336,6 +336,52 @@ def test_dashboard_render_releases_work_lock_and_rechecks_authority(
         assert b"test@example.org" not in response.content
 
 
+@pytest.mark.parametrize("revoke", [False, True])
+def test_a_dashboard_page_load_revoked_after_render_keeps_sign_in(
+    auth_service, google, monkeypatch, revoke
+):
+    """A browser's page load refused by home's recheck is not drawn signed in.
+
+    Home admitted the session, so its principal is still on the request when
+    its post-render recheck refuses and answers ``denial()``. A session
+    revoked in between keeps the sign-in wording and draws no menu from its
+    old roles. Only a session that passes the middleware's fresh read-only
+    check (here, a recheck refused for another reason) gets the signed-in
+    refusal, with its menu (#2165).
+    """
+    from parishkit.stewardship.accounts import authentication
+
+    browser, _ = signed_in()
+    original = authentication.authenticated_admin
+
+    def recheck(caller, **kwargs):
+        """Admit as usual; at home's post-render recheck, refuse."""
+        if not kwargs.get("read_only"):
+            return original(caller, **kwargs)
+        if revoke:
+            PortalUser.objects.update(disabled=True, version=F("version") + 1)
+            return original(caller, **kwargs)
+        return None
+
+    monkeypatch.setattr(authentication, "authenticated_admin", recheck)
+    response = browser.get(
+        "/admin/", headers={"Accept": "text/html", "Sec-Fetch-Mode": "navigate"}
+    )
+    body = response.content.decode()
+    assert response.status_code == 403
+    assert AuditEvent.objects.filter(event_type="dashboard_viewed").count() == 0
+    menu = 'href="/admin/system/background/"'
+    if revoke:
+        assert "Sign-in is unavailable. Please try again." in body
+        assert 'href="/admin/login">Try signing in again</a>' in body
+        assert "Your access doesn&#x27;t include" not in body
+        assert menu not in body
+    else:
+        assert "Your access doesn&#x27;t include this page." in body
+        assert "Sign-in is unavailable" not in body
+        assert menu in body
+
+
 def test_restricted_web_role_can_read_dashboard_and_status_pages(auth_service, google):
     """Dashboard reads use the same real grants as container startup admission."""
     browser, _ = signed_in()

@@ -394,6 +394,10 @@ def test_a_ruled_leader_who_leads_nothing_is_told_so(response_service, google):
         assert response.status_code == 403, name
         assert "You don't lead any Ministry in the current ParishSoft data" in body
         assert "Sign-in is unavailable" not in body
+        # Signed in, so no sign-in hint or link either (#2165).
+        assert "Your session may have ended" not in body
+        assert '<p><a href="/admin/login">Sign in again</a></p>' not in body
+        assert 'href="/admin/">Administration home</a>' in body
 
 
 def test_the_leader_roles_stay_editable_on_a_live_campaign(response_service):

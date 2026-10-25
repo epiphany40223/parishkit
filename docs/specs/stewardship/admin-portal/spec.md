@@ -69,8 +69,10 @@ rejected: it still could not tell a leader the one useful thing, that they
 used the wrong address. Family code and link refusals keep their deliberate
 sameness, because there the portal *is* the authenticator. A refusal of a
 person who is already signed in (such as a report view they may not read)
-keeps the generic "Access unavailable" page. Status codes, limiter
-accounting, the audit entries and the `next` handling are unchanged.
+keeps the generic "Access unavailable" page, without the sign-in wording
+([refusals of a signed-in person](../ui-conventions/spec.md#pages-the-role-may-not-open)).
+Status codes, limiter accounting, the audit entries and the `next` handling
+are unchanged.
 Rate-limit and suspicious-login events are logged.
 Concrete per-IP, verified-identity, proxy, and deployment-wide limits are
 defined by the

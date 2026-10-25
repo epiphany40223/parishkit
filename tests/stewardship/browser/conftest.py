@@ -1833,9 +1833,10 @@ def component_responses():
             "denied",
             {"retry_path": "/admin/login", "admin": True, "kind": "rate_limited"},
         ),
-        # A signed-in person's refusal (a report view) gets no guidance.
+        # The default Admin refusal (a report view, for a reader without a
+        # current session; a signed-in one gets the error page, #2165).
         (
-            "/denied-admin-signed-in",
+            "/denied-admin-default",
             "denied",
             {"retry_path": "/admin/login", "admin": True},
         ),
