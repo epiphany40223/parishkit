@@ -123,7 +123,7 @@ def test_the_section_component_draws_parts_and_the_filtered_out_line(monkeypatch
         filtered_out=2,
     )
     drawn = render(listed=True, member_page=False, section=section)
-    assert f'<tr id="review-family-census-row-{HOME_ID}">' in drawn
+    assert f'<tr id="review-family-census-row-{HOME_ID}"' in drawn
     assert 'id="review-family-changed-caption"' in drawn
     assert 'id="review-family-census-decide-dialog"' in drawn
     assert (
@@ -328,7 +328,7 @@ def test_a_census_member_page_keeps_only_its_matched_changes(monkeypatch):
     (dialogs,) = section.dialogs
     assert [row["id"] for row in dialogs.rows] == [DECEASED]
     drawn = render(listed=True, member_page=True, section=section)
-    assert f'<tr id="review-member-census-row-{DECEASED}">' in drawn
+    assert f'<tr id="review-member-census-row-{DECEASED}"' in drawn
     assert "1 more in this stream for this Member is filtered out." in drawn
 
 
@@ -426,7 +426,7 @@ def test_a_ministry_page_draws_only_what_the_scoped_read_lists(monkeypatch):
     assert section.filtered_out == 1 and section.count == 1
     drawn = render(listed=True, member_page=True, section=section)
     assert 'id="review-ministry-ministry-caption"' in drawn
-    assert f'<tr id="review-ministry-row-{JOIN}">' in drawn and "Choir" not in drawn
+    assert f'<tr id="review-ministry-row-{JOIN}"' in drawn and "Choir" not in drawn
     section, members, _entity = ministry_page(
         monkeypatch,
         [JOIN, LEAVE],
