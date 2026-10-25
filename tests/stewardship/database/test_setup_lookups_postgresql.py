@@ -629,11 +629,19 @@ def check_block():
 
     The block compares the replaced functions' grants with the snapshot the
     file takes first, in a transaction-local setting; both run together.
+    0177 (#2163) later made the setup load's organization check SECURITY
+    DEFINER, so the block first puts back 0174's caller's rights (each
+    caller runs it in a transaction that rolls back), or every run would
+    fail on that alone and the refusals below would prove nothing.
     """
     text = FROZEN.read_text(encoding="utf-8")
     start = text.index("SELECT set_config('stewardship.migration_0174_acl'")
     snapshot = text[start : text.index(";\n", start) + 1]
-    return snapshot + "\n" + text[text.index("DO $check$") :]
+    invoker = (
+        "ALTER FUNCTION public.stewardship_setup_load_organization_v1() "
+        "SECURITY INVOKER;"
+    )
+    return invoker + "\n" + snapshot + "\n" + text[text.index("DO $check$") :]
 
 
 def test_the_do_block_passes_installed_and_refuses_each_missing_part(db):
@@ -641,6 +649,8 @@ def test_the_do_block_passes_installed_and_refuses_each_missing_part(db):
     block = check_block()
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(block)
+        # The block's first statement put back 0174's rights; keep 0177's.
+        transaction.set_rollback(True)
     for undo in (
         "DROP TRIGGER stewardship_setup_scrub_lookups "
         "ON public.stewardship_setup_attempt",

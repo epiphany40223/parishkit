@@ -561,6 +561,9 @@ FROZEN = {
     "0176_backup_probe_recheck.sql": (
         "7296bc4c8dd4990c3d8fe0ad7feebe32b74eec2b781a7d256ddc463d260b38cb"
     ),
+    "0177_setup_load_definer.sql": (
+        "2b9a25ecf6a2cb80e7896c8cd7fea761c31b1ecb07d48be79323f9da1ab2705e"
+    ),
 }
 
 
