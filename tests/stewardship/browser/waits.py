@@ -124,6 +124,33 @@ def focused(locator):
     expect(locator).to_be_focused()
 
 
+def closes(dialog, action, *, timeout=5000):
+    """Run ``action`` and wait until the ``<dialog>`` ``dialog`` has fired
+    its ``close`` event; the dialog is hidden too.
+
+    Closing a dialog hides it at once, and Chromium also puts focus back on
+    the element that had it before ``showModal``, so neither ``hidden`` nor
+    ``focused(opener)`` shows the page has handled the close. The page's own
+    ``close`` handler runs in a later task and focuses the opener again: a
+    test that moves focus as soon as the dialog hides can have that focus
+    taken back, and its next key press then lands on the previous button
+    (#2160). The listener is armed before ``action``, so a close that comes
+    at once is not missed. If no close comes within ``timeout`` ms, the
+    wait fails saying so.
+    """
+    dialog.evaluate(
+        """(node, limit) => { node.__parishkitClosed = new Promise((done, fail) => {
+            node.addEventListener("close", () => done(true), {once: true});
+            setTimeout(() => fail(new Error(
+                `no close event within ${limit} ms`)), limit);
+        }); }""",
+        timeout,
+    )
+    action()
+    dialog.evaluate("node => node.__parishkitClosed")
+    hidden(dialog)
+
+
 def has_class(locator, name):
     """Assert that ``locator`` comes to carry the CSS class ``name``, waiting."""
     import re
