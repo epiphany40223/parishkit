@@ -180,6 +180,23 @@ def view(harness, principal, **values):
     return {row["id"]: row for row in result["rows"]}
 
 
+def drawn(harness, principal):
+    """The worklist page's drawn rows for ``principal``, every stage, by id."""
+    query = WorklistQuery.parse({"stage": "all"})
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True), transaction.atomic():
+        result = read_rows(harness.campaign.pk, query, principal)
+        context = worklist_context(
+            harness.campaign.pk,
+            query,
+            principal,
+            result,
+            token="",
+            mutable=True,
+            action="/admin/reports/ministries/",
+        )
+    return {row["id"]: row for row in context["worklist"].rows}
+
+
 def test_accept_ignore_and_back_to_review(response_service):
     """Staff decide in one step and undo it; reopening an ignored one takes
     an optional note (#1889), and undoing Entered by hand, which keeps the
@@ -449,7 +466,7 @@ def test_the_sql_guard_refuses_unpaired_reopens(response_service):
 def test_staff_add_a_request_in_place_of_an_ignored_one(response_service):
     """Add puts an accepted request on the Family's latest response, named in
     place of the ignored one; a replay writes nothing more, a second Add is
-    refused, and Back to review withdraws it."""
+    refused, and Back to review returns it to To review (#2173)."""
     harness = setup(response_service)
     staff = actor(harness, {"staff"}, ())
     pantry = actor(harness, {"ministry_leader"}, (9,))
@@ -514,17 +531,118 @@ def test_staff_add_a_request_in_place_of_an_ignored_one(response_service):
         decide(harness, staff, "add", fields=fields)
     assert refused.value.code == "add_exists"
     assert MinistryRequest.objects.count() == count
-    # Back to review withdraws an added request; the same post replays.
+    # Back to review returns an added request to To review, still listed
+    # with the parish's value (#2173); the same post replays.
     key = uuid4()
     decide(harness, staff, "back_to_review", added, key=key)
-    assert added.state == "cancelled"
-    assert str(added.pk) not in view(harness, staff)
+    assert (added.state, added.outcome) == ("in_progress", None)
+    row = drawn(harness, staff)[str(added.pk)]
+    assert row["placement"].stage is Stage.TO_REVIEW
+    assert row["family_answer"] == ""
+    assert row["reviewer_value"].startswith("Join ")
     added.version -= 1
     decide(harness, staff, "back_to_review", added, key=key)
-    # Withdrawn on that response, it cannot be added there again.
+    added.refresh_from_db()
+    assert added.state == "in_progress"
+    # Still current, so it cannot be added a second time.
     with pytest.raises(DecisionRefusal) as refused:
         decide(harness, staff, "add", fields=fields)
-    assert refused.value.code == "add_withdrawn"
+    assert refused.value.code == "add_exists"
+
+
+def added_request(harness, staff):
+    """Member 3's leave of Ministry 4 (the Member is in it), added by
+    ``staff`` and accepted.
+
+    The Family first answers again without its own leave of Ministry 4,
+    which withdraws it, so the Member has no current request for that
+    Ministry.
+    """
+    form = revisit(harness)
+    answers = answers_for(form)
+    answers["ministries"]["members"]["3"] = {"join": [9], "leave": []}
+    respond(harness, form, answers)
+    fields = {
+        "value_member": ["3"],
+        "value_ministry": ["4"],
+        "value_action": ["leave"],
+    }
+    decide(harness, staff, "add", fields=fields)
+    return MinistryRequest.objects.get(parish_added=True)
+
+
+def test_ignore_drops_an_added_request_and_is_reversible(response_service):
+    """Staff drop an added request with Ignore once it is back To review: it
+    is Ignored, keeps the parish's value, and choosing Ignore again (Back to
+    review) returns it to To review, as for a Family's request (#2173)."""
+    harness = setup(response_service)
+    staff = actor(harness, {"staff"}, ())
+    added = added_request(harness, staff)
+    decide(harness, staff, "back_to_review", added)
+    decide(harness, staff, "ignore", added)
+    assert (added.state, added.outcome) == ("resolved", "declined")
+    row = drawn(harness, staff)[str(added.pk)]
+    assert row["placement"].stage is Stage.IGNORED
+    assert row["family_answer"] == ""
+    assert row["reviewer_value"].startswith("Leave ")
+    decide(harness, staff, "back_to_review", added)
+    assert (added.state, added.outcome) == ("in_progress", None)
+    assert view(harness, staff)[str(added.pk)]["placement"].stage is Stage.TO_REVIEW
+    # Accepted again, it reads Added by the parish once more.
+    decide(harness, staff, "accept", added)
+    assert view(harness, staff)[str(added.pk)]["placement"].decision is Decision.ADDED
+    # No revision withdraws an added request, even straight in SQL.
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(DatabaseError, match="not valid for this request"),
+        work_transaction(),
+    ):
+        MinistryWorkflowRevision.objects.create(
+            request=added,
+            actor_id=staff.identity,
+            request_key=uuid4(),
+            expected_version=added.version,
+            state="cancelled",
+            decision_note="Withdraw it",
+        )
+
+
+def test_the_family_never_withdraws_or_replaces_an_added_request(response_service):
+    """An added request back To review that the Family unticks stays To
+    review, with the row saying so; an Ignored one the Family chooses again
+    stays Ignored, and the Family's new request is listed (#2173)."""
+    harness = setup(response_service)
+    staff = actor(harness, {"staff"}, ())
+    added = added_request(harness, staff)
+    decide(harness, staff, "back_to_review", added)
+    form = revisit(harness)
+    answers = answers_for(form)
+    assert 4 in answers["ministries"]["members"]["3"]["leave"]
+    answers["ministries"]["members"]["3"]["leave"].remove(4)
+    respond(harness, form, answers)
+    added.refresh_from_db()
+    assert added.state == "in_progress"
+    row = drawn(harness, staff)[str(added.pk)]
+    assert row["placement"].stage is Stage.TO_REVIEW
+    assert "Family chose to continue" in row["decision_label"]
+    # Ignored, it is shown as the roster has it; chosen again, the Family
+    # makes a request of its own.
+    decide(harness, staff, "ignore", added)
+    form = revisit(harness)
+    answers = answers_for(form)
+    assert 4 not in answers["ministries"]["members"]["3"]["leave"]
+    answers["ministries"]["members"]["3"]["leave"].append(4)
+    respond(harness, form, answers)
+    added.refresh_from_db()
+    assert (added.state, added.outcome) == ("resolved", "declined")
+    family = MinistryRequest.objects.get(
+        ministry_duid=4, action="leave", parish_added=False, state="new"
+    )
+    # The Family's request, the latest for the Member and Ministry, is the
+    # one listed; the Ignored one stays in its history.
+    rows = view(harness, staff)
+    assert str(added.pk) not in rows
+    assert rows[str(family.pk)]["placement"].stage is Stage.TO_REVIEW
 
 
 # The rule before the reviewed Family form (#1705): forms drawn before

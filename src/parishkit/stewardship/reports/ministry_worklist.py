@@ -550,10 +550,19 @@ def _asked_again(rows):
     showed the request chosen (on the Ministry it carries forward) and that
     no longer chooses it "undid" it, which keeps the request in force only
     when the parish added it or Staff entered it in ParishSoft (Family
-    unticked, Family chose to continue). One statement, for the rows shown.
+    unticked, Family chose to continue). A request the parish added that
+    Staff sent back to review (#2173) is read too, since an untick keeps it
+    as well: after its latest revision, as it has no decision in force.
+    One statement, for the rows shown.
     """
     ids = [
-        row["id"] for row in rows if row["state"] in ("resolved", "closed_no_response")
+        row["id"]
+        for row in rows
+        if row["state"] in ("resolved", "closed_no_response")
+        or (
+            row.get("parish_added")
+            and row["state"] in ("new", "assigned", "in_progress")
+        )
     ]
     if not ids:
         return {}
@@ -579,7 +588,10 @@ def _asked_again(rows):
             "JOIN stewardship_submission later ON later.family_id=s.family_id "
             "AND later.campaign_id=s.campaign_id AND later.mode='live' "
             "AND later.family_version>s.family_version "
-            "WHERE r.id=ANY(%s::uuid[]) AND later.submitted_at>r.resolved_at "
+            "WHERE r.id=ANY(%s::uuid[]) AND later.submitted_at>CASE WHEN "
+            "r.state IN ('resolved','closed_no_response') THEN r.resolved_at "
+            "ELSE (SELECT max(v.created_at) FROM stewardship_ministry_revision v "
+            "WHERE v.request_id=r.id) END "
             "GROUP BY r.id",
             [ids],
         )
@@ -745,7 +757,8 @@ def _decision_line(row, leader, asked, replaced_by, reader_leads):
     if undone:
         # A request the parish added, or Staff entered in ParishSoft, that a
         # Family's reviewed form showed chosen and the Family undid (#1705):
-        # it keeps its decision for Staff to decide.
+        # it keeps its decision (or, sent back to review, its stage, #2173)
+        # for Staff to decide.
         undid = UNTICKED if row["action"] == "join" else CONTINUED
         parts.append(format_html("{} {}", undid, _time(undone)))
     if not leader and row.get("latest") is False:

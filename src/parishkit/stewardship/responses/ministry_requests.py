@@ -139,6 +139,10 @@ def derive_ministry_requests(submission, validated):
                         # submission's completeness guard admits the decided
                         # request in this choice's place.
                         continue
+                    # Before the reviewed form, an open request the parish
+                    # added (sent back to review, #2173) that the Family
+                    # chooses is replaced by the Family's own, as any open
+                    # request is: the Family now asks for it itself.
                     same = bool(
                         old and old.state in ACTIONABLE_STATES and old.action == action
                     )
@@ -189,6 +193,10 @@ def derive_ministry_requests(submission, validated):
         # not an instruction to discard an older local Member's workflow.
         if old.entity_kind == "proposed_member" and old.entity_key not in proposed:
             continue
+        # An open request the parish added (Staff sent it back to review,
+        # #2173) is never withdrawn by the Family: it is parish work.
+        if old.parish_added:
+            continue
         MinistryRequest.objects.filter(pk=old.pk).update(
             state="cancelled", version=F("version") + 1
         )
@@ -238,11 +246,13 @@ def _derive_reviewed(submission, previous, created):
        it as a new request To review that replaces it. A carried-forward
        Ministry still chosen beside it is a request of its own (rule 4). A
        request already Entered in ParishSoft is not replaced: it stays for
-       the refresh to judge, beside the new one.
+       the refresh to judge, beside the new one; nor is one the parish
+       added, which stays as Staff left it (#2173).
     3. Withdrawn: unticking a chosen request (or choosing to continue)
        withdraws it, whatever its stage, except one Entered in ParishSoft,
        which the refresh judges, and one the parish added, which keeps its
-       decision until Staff decide. Both rows say the Family undid it
+       stage until Staff decide, To review included (#2173). Both rows say
+       the Family undid it
        (``reports.ministry_worklist``).
 
     A Member the response does not answer (a terminal request, a Member
@@ -292,8 +302,10 @@ def _derive_reviewed(submission, previous, created):
             )
             created.append(new)
             # One Staff entered in ParishSoft stays in the history for the
-            # refresh to judge; only the new request is To review.
-            if str(request.pk) not in entered:
+            # refresh to judge, and one the parish added (an Ignored one
+            # chosen again, #2173) stays as Staff left it, since the Family
+            # never replaces parish work; only the new request is To review.
+            if str(request.pk) not in entered and not request.parish_added:
                 _close(request, "superseded", new)
         elif shown is None:
             continue

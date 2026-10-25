@@ -9,8 +9,9 @@ decision a row icon, the bulk bar or Add sends (``web.review_worklist``'s
   as declined (a leave's "Stayed in the Ministry").
 - Edit accepts with another Ministry carried forward
   (``reviewed_ministry_duid``); the Family's stays as answered.
-- Back to review returns an accepted or ignored request to In progress, or
-  withdraws (cancels) a request the parish added. On a terminal stage it
+- Back to review returns an accepted or ignored request to In progress, a
+  request the parish added too (#2173: Ignore, not Back to review, is how
+  Staff drop one, so it never leaves the lists). On a terminal stage it
   undoes only the terminal step, with a required note (#1840): Entered by
   hand or Confirmed keeps the decision (the tick, if set, is cleared, and
   the request's version moves past any refresh check), so the request is To
@@ -25,7 +26,7 @@ Every decision is one revision of its request, written through
 order with the requests locked first; a bulk decision is all or none. What
 each reader may do is the pipeline's role-action table
 (``pipeline.allowed_actions``) at the request's current stage, and the SQL
-guards (migrations 0131 and 0148) check it all again. The stage is the pipeline's
+guards (migrations 0131, 0148 and 0180) check it all again. The stage is the pipeline's
 mapping (``ministry_placement``) of the locked row, so a decision against a
 row someone else changed first is a ``StaleDecision``, never a guess.
 """
@@ -430,8 +431,8 @@ class MinistryDecisions:
 
         Notes carry forward unchanged (they are the request page's); the
         decision's own note is ``decision_note``. Back to review reopens a
-        request as In progress, or withdraws one the parish added (its note
-        is optional, #1889); ``kept`` is Back to review of a terminal step,
+        request as In progress, one the parish added included (#2173; its
+        note is optional, #1889); ``kept`` is Back to review of a terminal step,
         which keeps the decision in force (``undo_intent``).
         """
         action = decision.action
@@ -448,7 +449,7 @@ class MinistryDecisions:
             if reviewed == target.ministry_duid:
                 raise ValueError("Choose another Ministry to edit into.")
         elif action is Action.BACK_TO_REVIEW:
-            state = "cancelled" if target.parish_added else "in_progress"
+            state = "in_progress"
         else:
             raise ValueError("Ministry requests do not take that decision.")
         return {
