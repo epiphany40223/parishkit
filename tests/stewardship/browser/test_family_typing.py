@@ -63,7 +63,7 @@ def test_typing_and_ticking_keep_the_page_still(phone, component_origin):
     # Long Admin text, so the pledge field sits well down a scrolled page.
     form["content"]["financial"] = "<p>Thank you for your generosity.</p>" * 30
     begin(page, component_origin, form, None)
-    annual = show(page, page.get_by_label("Annual pledge (USD)"))
+    annual = show(page, page.get_by_label("Annual pledge in dollars"))
     expect(annual).to_be_visible()
     top = centered(page, annual)
     assert top > 0
@@ -117,7 +117,7 @@ def test_typing_and_ticking_keep_the_page_still(phone, component_origin):
 def pledged(page, origin):
     """Open the form and enter a full pledge; return the Annual pledge field."""
     begin(page, origin, financial_form(), None)
-    annual = show(page, page.get_by_label("Annual pledge (USD)"))
+    annual = show(page, page.get_by_label("Annual pledge in dollars"))
     annual.fill("1200")
     page.get_by_label("Pledge frequency (required)").select_option("monthly")
     page.locator(f"#financial-option-{CHECK}").check()
@@ -198,7 +198,7 @@ def test_zero_with_an_open_changed_record_choice_rebuilds(phone, component_origi
     final_submit(page)
     conflict = page.locator('[data-conflict="financial.frequency"]')
     expect(show(page, conflict)).to_be_visible()
-    annual = page.get_by_label("Annual pledge (USD)")
+    annual = page.get_by_label("Annual pledge in dollars")
     assert page.evaluate(SAME_NODES, CONTROLS) == []
     annual.fill("0")
     # Rebuilt: the choice is gone, the field is new and still has focus.

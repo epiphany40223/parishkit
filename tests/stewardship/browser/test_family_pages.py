@@ -105,7 +105,7 @@ def test_pages_navigate_with_buttons_steps_and_browser_history(
             expect(page.get_by_text("Jeff Squyres")).to_have_count(0)
         if title == "Financial stewardship":
             # The annual pledge is required; zero is a valid answer.
-            page.get_by_label("Annual pledge (USD)").fill("0")
+            page.get_by_label("Annual pledge in dollars").fill("0")
         if index == 1:
             # The first page with Back beside Next, like the last page.
             earlier_next = page.evaluate(NAV_BUTTON_LOOK)
@@ -168,11 +168,11 @@ def test_zero_pledge_hides_and_omits_frequency_and_sharing(
         route.fulfill(json={"accepted": True})
 
     begin(page, component_origin, paged_form(), submit)
-    annual = show(page, page.get_by_label("Annual pledge (USD)"))
+    annual = show(page, page.get_by_label("Annual pledge in dollars"))
     annual.fill("250")
     page.get_by_label("Pledge frequency").select_option("monthly")
     page.locator(f"#financial-option-{CHECK}").check()
-    annual = page.get_by_label("Annual pledge (USD)")
+    annual = page.get_by_label("Annual pledge in dollars")
     annual.fill(pledge)
     expect(page.get_by_label("Pledge frequency")).to_be_hidden()
     expect(page.get_by_text("How would you like to share", exact=False)).to_be_hidden()
@@ -198,10 +198,10 @@ def test_positive_pledge_requires_frequency_and_a_share_method(page, component_o
     begin(page, component_origin, paged_form(), submit)
     # Next checks each page it leaves, so go through every page with a valid
     # pledge first; the incomplete answers are then left for Review to catch.
-    annual = show(page, page.get_by_label("Annual pledge (USD)"))
+    annual = show(page, page.get_by_label("Annual pledge in dollars"))
     annual.fill("0")
     visit_every_page(page)
-    annual = show(page, page.get_by_label("Annual pledge (USD)"))
+    annual = show(page, page.get_by_label("Annual pledge in dollars"))
     annual.fill("1200")
     frequency = page.get_by_label("Pledge frequency (required)")
     expect(frequency).to_be_visible()
@@ -220,8 +220,8 @@ def test_positive_pledge_requires_frequency_and_a_share_method(page, component_o
     assert not submissions
     page.locator(f"#financial-option-{CHECK}").check()
     # A zero pledge clears the hidden answers; they do not come back.
-    page.get_by_label("Annual pledge (USD)").fill("0")
-    page.get_by_label("Annual pledge (USD)").fill("1200")
+    page.get_by_label("Annual pledge in dollars").fill("0")
+    page.get_by_label("Annual pledge in dollars").fill("1200")
     expect(page.get_by_label("Pledge frequency (required)")).to_have_value("")
     expect(page.locator(f"#financial-option-{CHECK}")).not_to_be_checked()
     page.get_by_label("Pledge frequency (required)").select_option("annual")
@@ -254,7 +254,7 @@ def test_ministry_rows_state_each_choice_once(page, component_origin):
         page.locator(".ministry-joining li", has_text="Food pantry").first
     ).to_be_visible()
     capture(page, "member-ministries")
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("0")
     review(page)
     expect(page.get_by_text("Continuing: None", exact=True)).to_be_visible()
     # Stopping and joining are bulleted, one ministry per line.
@@ -299,7 +299,7 @@ def test_new_member_submits_every_field_including_blank_phones(page, component_o
     form = paged_form()
     begin(page, component_origin, form, submit)
     identifier = fill_new(page)
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("0")
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(page.get_by_role("heading", name="Thank you!", exact=True)).to_be_visible()
@@ -336,7 +336,7 @@ def test_enter_on_the_last_page_opens_review(page, component_origin):
     expect(
         page.get_by_role("heading", name="Financial stewardship", level=3)
     ).to_be_visible()
-    pledge = page.get_by_label("Annual pledge (USD)")
+    pledge = page.get_by_label("Annual pledge in dollars")
     pledge.fill("0")
     pledge.press("Enter")
     expect(page.get_by_role("button", name="Back to edit")).to_be_visible()
@@ -429,9 +429,9 @@ def test_step_bar_names_each_step_and_never_jumps_ahead(page, component_origin):
     # Once every page has been seen, every segment moves freely. Next checks
     # each page it leaves, so the required pledge is answered on the way and
     # cleared again afterwards for Review to catch.
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("0")
     visit_every_page(page)
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("")
     for index in range(total):
         assert not locked(segments.nth(index)), index
     first.click()
@@ -443,11 +443,13 @@ def test_step_bar_names_each_step_and_never_jumps_ahead(page, component_origin):
     # page is for screen readers only (#295).
     review_segment.click()
     assert step_text(page).endswith(": Financial stewardship")
-    expect(page.get_by_label("Annual pledge (USD)")).to_be_focused()
+    expect(page.get_by_label("Annual pledge in dollars")).to_be_focused()
     error = page.locator("#financial-annual-hint")
     expect(error).to_have_text("Enter an annual pledge.")
     assert unseen(note)
-    expect(page.get_by_label("Annual pledge (USD)")).to_have_accessible_description(
+    expect(
+        page.get_by_label("Annual pledge in dollars")
+    ).to_have_accessible_description(
         re.compile("“Annual pledge” on the “Financial stewardship” page")
     )
     expect(review_segment).not_to_have_attribute("aria-current", "step")
@@ -463,7 +465,7 @@ def test_review_needs_every_page_even_from_browser_history(
         form["last_submitted_at"] = "2026-09-28T11:15:00+00:00"
         form["last_submitted_display"] = "September 28, 2026 at 7:15 AM EDT"
     begin(page, component_origin, form, None)
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("0")
     review_segment = page.locator("[data-step-review]")
     expect(review_segment).to_have_attribute("aria-disabled", "true")
     review_segment.click(force=True)
@@ -524,14 +526,14 @@ def test_returning_family_sees_when_they_last_submitted(page, component_origin):
 def test_review_page_step_bar_jumps_back_into_editing(page, component_origin):
     """From Review, a page segment reopens that page with the answers intact."""
     begin(page, component_origin, paged_form(), None)
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("0")
     review(page)
     review_segment = page.locator("[data-step-review]")
     expect(review_segment).to_have_attribute("aria-current", "step")
     expect(page.locator("[data-step-link]")).to_have_count(0)
     page.locator('[data-step-jump="financial"]').click()
     assert step_text(page).endswith(": Financial stewardship")
-    expect(page.get_by_label("Annual pledge (USD)")).to_have_value("0")
+    expect(page.get_by_label("Annual pledge in dollars")).to_have_value("0")
 
 
 def viewport_top(page):
@@ -581,7 +583,7 @@ def test_share_option_checkboxes_line_up_with_their_labels(
         "many": long,
     }
     begin(page, component_origin, form, None)
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("100")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("100")
     boxes = page.locator('input[id^="financial-option-"]')
     expect(boxes.first).to_be_visible()
     offsets = boxes.evaluate_all(
@@ -623,7 +625,7 @@ def test_optional_closing_page_sits_between_financial_and_additional(
     )
     assert titles[-3:] == ["Financial stewardship", "Closing", "Additional information"]
     # Next checks each page it leaves; the annual pledge is required.
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("0")
     show(page, page.locator('[data-page="closing"]'))
     # The parish text's own heading is the visible title; "Closing" stays for
     # screen readers and focus only.
@@ -709,7 +711,7 @@ def test_blocked_next_says_which_question_needs_an_answer(
     form = paged_form()
     form["additional_enabled"] = True
     begin(page, component_origin, form, None)
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("1200")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("1200")
     page.get_by_label("Pledge frequency (required)").select_option("monthly")
     before = step_text(page)
     next_page(page)
@@ -753,7 +755,7 @@ def test_member_section_is_not_outlined_by_an_invalid_field(page, component_orig
 def test_blocked_review_opens_a_question_on_another_page(page, component_origin):
     """An added Member's missing name stops Review and opens that page."""
     begin(page, component_origin, paged_form(), None)
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("0")
     add = show(
         page,
         page.get_by_role("button", name="Add a household member", include_hidden=True),
@@ -982,7 +984,7 @@ def test_button_row_keeps_back_left_action_centered_next_right(
         form["parish_name"] = parish
     submit = "Submit to " + form["parish_name"]
     begin(page, component_origin, form, None)
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("0")
     page.locator('[data-step-link="intro"]').click()
     narrow = width <= 640
     seen = {}
@@ -1081,7 +1083,7 @@ def test_button_row_is_always_at_the_bottom_of_the_screen(
         assert place["scroll"] == 0 and place["column"], (height, place)
         assert place["content"] <= place["top"], (height, place)
     page.set_viewport_size({"width": width, "height": 900})
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("0")
     assert review(page)
     expect(page.get_by_role("button", name="Back to edit")).to_be_visible()
     assert page.evaluate(BAR_PLACE)["scroll"] > 900

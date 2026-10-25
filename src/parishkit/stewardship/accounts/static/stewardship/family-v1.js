@@ -404,7 +404,7 @@
         input.setAttribute("aria-invalid", "true");
         const errorId = (id || input.id) + "-error";
         const label = document.querySelector('label[for="' + (id || input.id) + '"]');
-        const link = node("a", (label?.textContent || "Field") + ": " + text, item, {href: "#" + (id || input.id)});
+        const link = node("a", (shownText(label) || "Field") + ": " + text, item, {href: "#" + (id || input.id)});
         link.addEventListener("click", (event) => {
           // Look the field up again: an address region's id moves to the
           // control for the country now chosen (#1777).
@@ -1393,8 +1393,13 @@
     pledge.hidden = pledge.disabled = answers.financial.cannot_give;
     // Inside the pledge fieldset, so it hides with the pledge it describes.
     pledgePeriod(pledge);
-    node("label", "Annual pledge (USD)", pledge, {for: "financial-annual_pledge"});
-    const annual = node("input", null, pledge, {id: "financial-annual_pledge", type: "text", inputmode: "decimal",
+    // A money field (#2192): a plain label whose unit only screen readers
+    // hear, and a "$" before the field that they skip, so it is said once.
+    const money = node("div", null, pledge, {class: "money-input"});
+    const annualLabel = node("label", "Annual pledge ", money, {for: "financial-annual_pledge"});
+    node("span", "in dollars", annualLabel, {class: "visually-hidden"});
+    node("span", "$", money, {class: "money-prefix", "aria-hidden": "true"});
+    const annual = node("input", null, money, {id: "financial-annual_pledge", type: "text", inputmode: "decimal",
       required: "", maxlength: "24", autocomplete: "off", "aria-describedby": "financial-annual-hint"});
     annual.value = answers.financial.annual_pledge;
     const annualError = node("p", null, pledge, {id: "financial-annual-hint", class: "error"});
@@ -2116,12 +2121,19 @@
         line.textContent.trim() && line.getClientRects().length);
     });
   }
+  function shownText(element) {
+    // An element's text as drawn: a label's visually hidden unit ("in
+    // dollars", #2192) is for its field's accessible name, so sighted text
+    // built from the label (error links, question names) leaves it out.
+    return element ? [...element.childNodes].filter((child) => !child.classList?.contains("visually-hidden"))
+      .map((child) => child.textContent).join("").trim() : "";
+  }
   function questionName(input) {
     // The question as the Family sees it: a share group's legend for its
     // "choose at least one" check, otherwise the field's own label.
     const legend = input.dataset.groupCheck !== undefined &&
       input.closest("fieldset")?.querySelector(":scope > legend");
-    const text = (legend || input.labels?.[0])?.textContent.trim();
+    const text = shownText(legend || input.labels?.[0]);
     return text ? "“" + text.replace(/\s*\(.*\)$/, "") + "”" : "the highlighted question";
   }
   function pageValid(page) {

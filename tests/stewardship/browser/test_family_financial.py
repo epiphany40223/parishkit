@@ -85,7 +85,7 @@ def test_retained_terminal_ministry_eligibility_without_census(
             route.fulfill(json={"accepted": True})
 
     begin(page, component_origin, form, submit)
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("25")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("25")
     show(page, page.get_by_label("Pledge frequency")).select_option("annual")
     show(page, page.locator(f"#financial-option-{CHECK}")).check()
     if stale_edit:
@@ -149,7 +149,7 @@ def test_concurrent_terminal_request_requires_explicit_ministry_discard(
             route.fulfill(json={"accepted": True})
 
     begin(page, component_origin, form, submit)
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("0")
     if action == "join":
         show(
             page, page.get_by_text("Click here to join more ministries", exact=True)
@@ -220,7 +220,7 @@ def test_financial_modules_mobile_final_only_and_accessible(
     begin(
         page, component_origin, financial_form(census=census, ministry=ministry), submit
     )
-    expect(page.get_by_label("Annual pledge (USD)")).to_have_value("")
+    expect(page.get_by_label("Annual pledge in dollars")).to_have_value("")
     # One sentence of giving history, in whole dollars (#256); the prior
     # pledge and the refresh time are not repeated (#267).
     history = page.get_by_text("you have contributed", exact=False)
@@ -229,7 +229,7 @@ def test_financial_modules_mobile_final_only_and_accessible(
     )
     assert "Parish records for" not in page.locator("main").inner_text()
     assert "Giving records last refreshed" not in page.locator("main").inner_text()
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("1,000.01")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("1,000.01")
     show(page, page.get_by_label("Pledge frequency")).select_option("monthly")
     expect(page.locator("#financial-installment")).to_contain_text("$83.33")
     show(page, page.get_by_label("I will send a check", exact=True)).check()
@@ -296,18 +296,18 @@ def test_financial_validation_zero_and_unavailable(page, component_origin):
     ).to_be_visible()
     assert "$0.00" not in page.locator("main").inner_text()
     for invalid in ("", "-1", "1e2", "1.001", "1,23", "1000000000"):
-        show(page, page.get_by_label("Annual pledge (USD)")).fill(invalid)
+        show(page, page.get_by_label("Annual pledge in dollars")).fill(invalid)
         assert not review(page)
         assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
-        expect(page.get_by_label("Annual pledge (USD)")).to_have_attribute(
+        expect(page.get_by_label("Annual pledge in dollars")).to_have_attribute(
             "aria-invalid", "true"
         )
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("1")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("1")
     assert not review(page)
     expect(page.get_by_label("Pledge frequency")).to_have_attribute(
         "aria-invalid", "true"
     )
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("0")
     final_submit(page)
     expect(
         show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
@@ -332,7 +332,7 @@ def test_terminal_and_proposed_counts_preserve_financial_answers(
         financial_form(census=True, ministry=True),
         lambda route: route.fulfill(json={"accepted": True}),
     )
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("25.00")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("25.00")
     show(page, page.get_by_label("Pledge frequency")).select_option("annual")
     show(page, page.get_by_label("I will send a check", exact=True)).check()
     show(
@@ -349,7 +349,7 @@ def test_terminal_and_proposed_counts_preserve_financial_answers(
     expect(
         page.get_by_label("This household will send a check", exact=True)
     ).to_be_checked()
-    expect(page.get_by_label("Annual pledge (USD)")).to_have_value("25.00")
+    expect(page.get_by_label("Annual pledge in dollars")).to_have_value("25.00")
     fill_new(page)
     expect(page.get_by_label("I will send a check", exact=True)).to_be_checked()
     fill_new(page)
@@ -388,7 +388,7 @@ def test_financial_stale_response_preserves_edits_and_requires_resolution(
         ) if len(submissions) == 1 else route.fulfill(json={"accepted": True})
 
     begin(page, component_origin, form, submit)
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("25.00")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("25.00")
     show(page, page.get_by_label("I will share another way", exact=True)).check()
     show(page, page.get_by_label("Details for I will share another way")).fill(
         "Keep this note"
@@ -464,7 +464,7 @@ def test_deselected_removed_method_cannot_create_an_unresolvable_conflict(
 
     begin(page, component_origin, form, submit)
     # Share methods apply to a positive pledge; replace the old note's method.
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("10")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("10")
     show(page, page.get_by_label("Pledge frequency")).select_option("annual")
     show(page, page.locator(f"#financial-option-{CHECK}")).check()
     show(page, page.get_by_label("I will share another way", exact=True)).uncheck()
@@ -492,7 +492,7 @@ def test_financial_only_uses_private_effective_count(
         lambda route: route.fulfill(json={"accepted": True}),
     )
     # Share methods appear only for a positive pledge.
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("10")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("10")
     expect(
         show(page, page.get_by_label(label + " will send a check", exact=True))
     ).to_be_visible()
@@ -503,16 +503,16 @@ def test_exact_payments_are_not_called_approximate(page, component_origin, width
     """$6,000 monthly is exactly $500; only uneven splits say "Approximately"."""
     page.set_viewport_size({"width": width, "height": 900})
     begin(page, component_origin, financial_form(), None)
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("6000")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("6000")
     page.get_by_label("Pledge frequency").select_option("monthly")
     installment = page.locator("#financial-installment")
     expect(installment).to_have_text("$500 per month.")
-    page.get_by_label("Annual pledge (USD)").fill("1000.01")
-    page.get_by_label("Annual pledge (USD)").dispatch_event("input")
+    page.get_by_label("Annual pledge in dollars").fill("1000.01")
+    page.get_by_label("Annual pledge in dollars").dispatch_event("input")
     expect(installment).to_contain_text("Approximately $83.33 per month.")
     expect(installment).to_contain_text("the final payment may differ slightly")
-    page.get_by_label("Annual pledge (USD)").fill("6000")
-    page.get_by_label("Annual pledge (USD)").dispatch_event("input")
+    page.get_by_label("Annual pledge in dollars").fill("6000")
+    page.get_by_label("Annual pledge in dollars").dispatch_event("input")
     page.get_by_label("I will send a check", exact=True).check()
     review(page)
     expect(
@@ -520,7 +520,7 @@ def test_exact_payments_are_not_called_approximate(page, component_origin, width
     ).to_be_visible()
     # Fields and their lines don't overlap: each starts below the previous.
     page.get_by_role("button", name="Back to edit").click()
-    show(page, page.get_by_label("Annual pledge (USD)"))
+    show(page, page.get_by_label("Annual pledge in dollars"))
     boxes = [
         page.locator(selector).bounding_box()
         for selector in (
@@ -536,7 +536,7 @@ def test_exact_payments_are_not_called_approximate(page, component_origin, width
 def test_uneven_weekly_payments_are_approximate(page, component_origin):
     """$1,000 a year weekly doesn't divide evenly, so it says "Approximately"."""
     begin(page, component_origin, financial_form(), None)
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("1000")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("1000")
     page.get_by_label("Pledge frequency").select_option("weekly")
     installment = page.locator("#financial-installment")
     expect(installment).to_contain_text("Approximately $19.23 per week.")
@@ -558,7 +558,7 @@ def test_zero_pledge_has_no_start_date_and_history_names_the_year(
     begin(page, component_origin, form, None)
     history = page.get_by_text("you have contributed", exact=False)
     expect(history).to_contain_text(re.compile(r"you have contributed \$500 in \d{4}"))
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("0")
     review(page)
     expect(page.get_by_text(re.compile(r"^Your \S+ pledge: \$0$"))).to_be_visible()
     assert page.get_by_text("This pledge starts on", exact=False).count() == 0
@@ -570,7 +570,7 @@ def test_blank_pledge_asks_plainly_and_bad_input_shows_the_format(
 ):
     """Empty: "Enter an annual pledge."; not an amount: how to write one."""
     begin(page, component_origin, financial_form(), None)
-    pledge = show(page, page.get_by_label("Annual pledge (USD)"))
+    pledge = show(page, page.get_by_label("Annual pledge in dollars"))
     error = page.locator("#financial-annual-hint")
     pledge.fill("")
     assert not review(page)
@@ -602,7 +602,7 @@ def test_financial_page_reads_history_checkbox_period_then_pledge(
         "This pledge is for the stewardship period of January 1, 2055 – "
         "December 31, 2055. This form records your intention only. It does not "
         "take a payment or request bank or card credentials.",
-        "Annual pledge (USD)",
+        "Annual pledge",
     ]
     positions = [text.index(part) for part in order]
     assert positions == sorted(positions), text
