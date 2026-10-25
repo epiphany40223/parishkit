@@ -1785,7 +1785,7 @@ layer, in the wizard's page order (`pk-stewardship local-seed --step wizard`
 under `web`: the parish, mail and Testing-recipient settings, the
 mail-catcher document, the Slack setting, a generated logo through the real
 branding staging, the access lists, the fake ParishSoft key and organization,
-the source load, the setup test mail and the final
+the parish data check, the setup test mail and the final
 confirmation), then follows the deployment runbook's post-wizard
 step: once the credential installers report `awaiting_ack`, it recreates
 `worker` and `mail-dispatch` from `compose.json` and acknowledges each

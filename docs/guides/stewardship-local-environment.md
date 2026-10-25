@@ -467,7 +467,7 @@ tools/stewardship-local.sh fake-parishsoft refresh
 
 The fake then also answers with a few records of the other organizations,
 which the load leaves out. The ParishSoft settings page, System health's
-ParishSoft refresh panel and a setup load's result say how many organizations
+ParishSoft refresh panel say how many organizations
 the key reaches and how many records were left out; the parish data is the
 same as before. `fake-parishsoft organizations 0` and a refresh go back to a
 key for the parish alone.
