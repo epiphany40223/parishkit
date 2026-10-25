@@ -59,6 +59,18 @@ BAR = """() => [...document.querySelectorAll(
   return Math.round(box.top + box.height / 2);
 })"""
 
+# How many of the first row's action icons sit on each of its lines
+# (Pledges holds its four decision toggles two to a line, #2131).
+PAIRS = """() => {
+  const lines = new Map();
+  const icons = '#table tbody tr:first-child .icon-button';
+  for (const node of document.querySelectorAll(icons)) {
+    const top = Math.round(node.getBoundingClientRect().top);
+    lines.set(top, (lines.get(top) || 0) + 1);
+  }
+  return [...lines.values()];
+}"""
+
 
 def first_row_bottom(page):
     """The first table row's bottom edge, in window pixels, unscrolled."""
@@ -83,7 +95,8 @@ def hold_filters(page, held):
 def test_the_first_row_ends_inside_a_laptop_window(page, component_origin):
     """At 1366×768 each worklist's whole first row is inside the window
     before any scroll, and its bulk bar keeps its buttons, Select all and
-    the selected count on one line."""
+    the selected count on one line; Pledges' four decision toggles sit two
+    to a line, which leaves its Family's answer the room it needs."""
     page.set_viewport_size({"width": 1366, "height": 768})
     for path in PAGES:
         page.goto(component_origin + path)
@@ -93,6 +106,8 @@ def test_the_first_row_ends_inside_a_laptop_window(page, component_origin):
         assert len(centres) >= 3, path
         assert max(centres) - min(centres) <= 2, (path, centres)
         assert no_sideways_scroll(page), path
+        if path == PLEDGES:
+            assert page.evaluate(PAIRS) == [2, 2]
 
 
 def test_narrow_windows_never_scroll_sideways(page, component_origin):

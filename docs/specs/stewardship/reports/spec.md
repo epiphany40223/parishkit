@@ -335,7 +335,7 @@ the axis names the campaign's zone.
 
 ## Population and calculation rules
 
-"Active" means current promoted ParishSoft eligibility: the Families that currently match the campaign's [Families rule](../data/spec.md#campaign-families), which pages call campaign Families ([wording](../ui-conventions/spec.md#campaign-families-wording); #1393, not built). Current participation
+"Active" means current promoted ParishSoft eligibility: the Families that currently match the campaign's [Families rule](../data/spec.md#campaign-families), which pages call campaign Families ([wording](../ui-conventions/spec.md#campaign-families-wording); #1393). Current participation
 and financial cards/tables exclude Families that later left the campaign.
 Historical event views retain a submission made while the Family was eligible.
 
@@ -938,7 +938,7 @@ The five response list pages (`/admin/reports/responses/<list>/` and their
 invited but never opened, submitted more than once, and ParishSoft data to
 check) were removed
 ([#933](https://github.com/epiphany40223/parishkit/issues/933)). The
-[active parishioner family directory's Response filters](#response-filters)
+[Campaign Family directory's Response filters](#response-filters)
 are the only way to list those Families, in Production and (for
 Administrators) Testing, with Family codes, contact details and the queued
 CSV, XLSX and PDF export (the Response dashboard's Lists of Families links
@@ -999,7 +999,7 @@ Admin table that names a Family links the name to this page through one
 shared helper (the `{% family_link %}` template tag), drawn only for roles
 that may open the page (the shared rule is in
 [Family and Member names](../ui-conventions/spec.md#family-and-member-names)):
-the [active parishioner family directory](#active-parishioner-family-directory)
+the [Campaign Family directory](#campaign-family-directory)
 (each row), the header's Find a Family box (each match; see
 [Admin navigation](../admin-portal/spec.md#admin-navigation)), the
 [Financial stewardship](#financial-stewardship-detail) Family table, Census
@@ -1018,7 +1018,7 @@ that recipient was sent, in place
 [Sent mail](../admin-portal/spec.md#sent-mail) for which), and the Mail
 message page follows
 [#1563](https://github.com/epiphany40223/parishkit/issues/1563). Its breadcrumb
-parent is the active parishioner family directory. The page reads the
+parent is the Campaign Family directory. The page reads the
 Family's records at the database's current instant (**Counted at**).
 
 Data comes first: the heading with the Family's name (the directory's
@@ -1080,7 +1080,7 @@ Production or Testing control (the Administrator's decision on #1570), and a
 rehearsal is active, an Administrator sees Testing responses with
 Responses shown set to Testing rehearsal on the
 [response dashboard](#response-dashboard) and, per Family, on the
-[Active parishioner family directory](#response-filters). Emails,
+[Campaign Family directory](#response-filters). Emails,
 submissions, form opens and the engagement record carry their mode. A
 sign-in is the durable `family_login` audit event, which
 carries no mode, so it is shown only when the system was in Production at
@@ -1492,7 +1492,7 @@ this section adds only what is particular to the stream. One row per
 `AdditionalInformationItem` shows, in the Admin table
 [column order](../admin-portal/spec.md#table-column-order): Family (surname,
 then heads, as on the
-[active parishioner family directory](#active-parishioner-family-directory);
+[Campaign Family directory](#campaign-family-directory);
 the name opens the Family's Timeline), Family DUID, the Family's answer (its
 text, shortened, as a link to the request's own page, which shows it in
 full), Stage, Submitted, Last decision (who, when, the note) and the row's
@@ -1576,7 +1576,7 @@ operational contact, as Administrators and Staff see it on Ministry requests
 ([Ministry change summary](#ministry-change-summary)): ParishSoft's publish
 flags do not hide them. Source text that is not a valid address is shown
 with "not a valid address; fix in ParishSoft", as the
-[directory](#active-parishioner-family-directory) shows it, and a detail
+[directory](#campaign-family-directory) shows it, and a detail
 with no value reads "None recorded". A Family the data no longer has shows
 no details and says so. If the data is replaced while the page is read,
 the section says the details appear by themselves once the newer ParishSoft
@@ -1656,16 +1656,16 @@ request someone else changed first is left as it is and the notice says so
 the source for report emails'
 [open additional information requests block](../report-emails/spec.md#open-additional-information-requests-block).
 
-## Active parishioner family directory
+## Campaign Family directory
 
 **Access:** Admin and Staff.
 
-One **Active parishioner family directory** page serves both Family-code
+One **Campaign Family directory** page serves both Family-code
 lookup and postal outreach; they were separate pages until
 [#202](https://github.com/epiphany40223/parishkit/issues/202). The page lists
 the campaign's Families: those that match the campaign's [Families rule](../data/spec.md#campaign-families)
 (portal-eligible). Families the rule does not select
-are left out by design, and the page's name says so (it becomes "Campaign Family directory", [wording](../ui-conventions/spec.md#campaign-families-wording))
+are left out by design, and the page's name says so ("Campaign Family directory", [wording](../ui-conventions/spec.md#campaign-families-wording))
 ([#870](https://github.com/epiphany40223/parishkit/issues/870)). The page
 shows no population summary or separate code-privacy line above its filters;
 the page's About help covers code privacy. Each row has the Family's name,
@@ -1715,8 +1715,8 @@ Include mailing columns and no other filter, nothing is wrong: "No active
 Family needs a postal invitation: each one has a Family head email that
 campaign mail can reach, or no usable mailing address. Turn off Include
 mailing columns to list every Family." With any other filter: "No Families
-match these filters. Select Clear filters to list every active Family."
-With none: "No active Families in the ParishSoft data yet. Families are
+match these filters. Select Clear filters to list every campaign Family."
+With none: "No campaign Families in the ParishSoft data yet. Families are
 listed here once a ParishSoft refresh loads them; an Administrator starts
 one from Refresh from ParishSoft." Include response columns adds columns
 and lists the same Families, so it does not count as a filter here, though
@@ -2064,7 +2064,7 @@ and stay on the "Can't be reached by email or mail" list. Families without
 deliverable email are the complement of the deliverable-email statistics
 card, not of the syntactic eligible-email card. The Addressee column names
 the Family as the mail-merge file does. Mailing columns show nothing the
-active parishioner family directory's contact details do not already show
+Campaign Family directory's contact details do not already show
 Admin and Staff, and Ministry leaders are denied either way. Viewing with
 mailing columns is audited as postal outreach, and its export is a
 `postal_outreach` export request. An export captured before #951 keeps its
@@ -2079,7 +2079,7 @@ The export is a mail merge for envelope labels and cover letters: one header
 row plus one row per Family, with the columns ParishSoft DUID, Family,
 Addressee, Family heads, Address line 1–3 (empty optional lines omitted), City,
 State, ZIP (with its +4 extension when present), Family code and Family head
-emails (as in the [active parishioner family directory](#active-parishioner-family-directory) export). Addressee and
+emails (as in the [Campaign Family directory](#campaign-family-directory) export). Addressee and
 Family heads join the active heads' names naturally ("Aaron and Isabelle
 Williams" when they share a surname, "Aaron Williams and Isabelle Smith"
 otherwise); Addressee falls back to the Family name. The file has exactly the
@@ -2601,7 +2601,7 @@ the [pipeline vocabulary](../review-pipeline/spec.md#pipeline-vocabulary):
 One row per change. The columns follow the shared
 [column order](../ui-conventions/spec.md#table-column-order): Family (the row
 header: surname, then heads, as on the
-[active parishioner family directory](#active-parishioner-family-directory);
+[Campaign Family directory](#campaign-family-directory);
 the search, sort and downloads use the same name, and a Family the data no
 longer has shows the
 [Not in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
@@ -2832,7 +2832,8 @@ or the bulk bar, each decision with an optional note, acting
   part of bulk review.
 - **Ignore** (an eye struck through): decision *ignored*, leaving ParishSoft
   as it is.
-- **Back to review** (an arrow turning back): decision *unreviewed*, on an
+- **Back to review** (choosing the pressed Accept or Ignore again,
+  [decision toggles](../ui-conventions/spec.md#decision-toggles); the bulk bar's own button): decision *unreviewed*, on an
   accepted change not yet in its update or entered, or on an ignored one,
   with an optional note either way
   ([#1889](https://github.com/epiphany40223/parishkit/issues/1889)). Back to review
@@ -2978,16 +2979,17 @@ would read as if it had been in review
 enter by hand it offers **Entered by hand** and **Withdraw** (dialog
 "Withdraw the added Nickname for David Taylor? The Family will no longer
 see it."): it moves to *History*, and the field may be added again. Once
-Entered by hand it offers **Not entered yet**, which undoes the mark with a
+Entered by hand it offers **Not entered yet** (its pressed Entered by hand
+chosen again), which undoes the mark with a
 required note, as on every terminal stage
 ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)),
 so the added change is *To enter by hand* again, at its next version, and
 **Withdraw**, which undoes the mark and withdraws it in one action, with the
 same required note (its two steps, `reopened` then `withdrawn`, each with
-its own audit event). An entered one's row draws Accept (selected, Added
-by the parish), Withdraw, Entered by hand (selected), then Not entered yet,
-the undo just right of the mark it undoes
-([row actions](../ui-conventions/spec.md#row-actions-and-confirmation)).
+its own audit event). Its row draws Accept (selected, Added by the parish), Withdraw and Entered
+by hand in both states, Entered by hand pressed once entered: choosing it
+again is Not entered yet
+([decision toggles](../ui-conventions/spec.md#decision-toggles)).
 Every step stays in its history. Entered by hand, Not entered yet (the
 bulk bar's Back to review, whose dialog says so while the
 page lists an entered addition) and Withdraw are in the bulk bar too,
@@ -3435,7 +3437,7 @@ pledges. One row per currently effective live Family response. Every export
 format (CSV, XLSX, PDF) has, in the Admin table
 [column order](../admin-portal/spec.md#table-column-order), the
 Family name first (surname, then heads, as on the
-[active parishioner family directory](#active-parishioner-family-directory);
+[Campaign Family directory](#campaign-family-directory);
 search matches that name and the Family sort orders by surname, then that
 name), Family DUID in its own sortable column
 ([#960](https://github.com/epiphany40223/parishkit/issues/960)), Annual
@@ -3508,7 +3510,12 @@ On the page the same marker is the Latest response cell's Staff chip.
 A file captured before frozen migration 0066 added the marker to
 the projection leaves the column blank, never No (#794).
 
-Filters include active/inactive, first/latest submission dates, pledge range,
+Filters include Family status (In this campaign, No longer in this campaign
+or Status unavailable, the same test as the Family's
+[badge](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft):
+under a [Families rule](../data/spec.md#campaign-families) whether the
+Family still matches it, and for the legacy rule whether ParishSoft lists it
+as active, #1393), first/latest submission dates, pledge range,
 zero/nonzero/cannot contribute, frequency, and share method (its choices,
 like the "Share methods chosen" bars below, name each method by its short
 label where one is set, else its full label). The first and
@@ -3534,7 +3541,7 @@ figures, so the charts have no exact-values table
 choose more than one share method, so those shares can add up past 100%. The
 summary follows the applied filters in place, and its charts keep their space
 until they are drawn again. Exports are CSV, XLSX, and PDF, queued as an
-[active parishioner family directory](#active-parishioner-family-directory) export is. No
+[Campaign Family directory](#campaign-family-directory) export is. No
 Ministry leader receives aggregate or Family financial detail.
 
 The page checks its date and pledge filters before Apply (a date, each
@@ -3610,6 +3617,11 @@ section is the page.
   Reviewer's value, is ParishSoft's upcoming-year amount the latest refresh
   found, shown on a Conflict, Entered incorrectly or Not seen in ParishSoft
   row, as on every worklist; a page with no such row has no such column.
+  The Actions cell holds its four
+  [decision toggles](../ui-conventions/spec.md#decision-toggles) two to a
+  line: on one line they took the room the Family's answer needs, which
+  then wrapped onto one more line and pushed the first row below a laptop's
+  first screen (#2131).
 - **Row and bulk actions** are the role table's for the stream: a To review or
   Conflict row offers Accept, Edit and Ignore (a Conflict's earlier decision
   reads "Earlier: Accepted, not in force." under its stage, and the decision
@@ -3699,7 +3711,7 @@ Family that cannot attend Mass or prayer services (see
 Its columns follow the
 [column order](../admin-portal/spec.md#table-column-order): Family (the row
 header, named as the
-[active parishioner family directory](#active-parishioner-family-directory)
+[Campaign Family directory](#campaign-family-directory)
 names it, surname then heads, the name opening the Family's Timeline),
 Family DUID, Member, Member DUID (blank for a Family's row and for a
 proposed Member, who has no DUID yet), the Family's answer ("Cannot

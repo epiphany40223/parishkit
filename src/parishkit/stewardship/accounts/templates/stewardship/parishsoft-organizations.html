@@ -3,9 +3,11 @@
   the last load from ParishSoft found, and how many records of other
   organizations that load left out, shown only while that is more than none.
   ``organizations`` is source.loading.snapshot_organizations's answer
-  ({reached, skipped}); the caller includes this only when it is set, so a
+  ({reached, skipped, organization}); the caller includes this only when it is set, so a
   key that reaches just the configured organization draws nothing, as
-  before. Counts only: no other organization's ID or name. A neutral
+  before. The loaded organization is named "Name (ID)" (ui-conventions,
+  ParishSoft organization names); the others by counts only, never their
+  ID or name. A neutral
   information notice (ui-conventions, Notices), drawn with the page, so
   nothing moves when it is read.
-{% endcomment %}<p class="notice notice-info" data-parishsoft-organizations>{% blocktranslate trimmed with reached=organizations.reached|number %}At the last load from ParishSoft, this key reached {{ reached }} organizations. Only the configured organization's data is loaded; the other organizations' data is left out.{% endblocktranslate %}{% if organizations.skipped %} {% blocktranslate trimmed with skipped=organizations.skipped|number %}Records of other organizations left out by that load: {{ skipped }}.{% endblocktranslate %}{% endif %}</p>
+{% endcomment %}<p class="notice notice-info" data-parishsoft-organizations>{% blocktranslate trimmed with reached=organizations.reached|number organization=organizations.organization %}At the last load from ParishSoft, this key reached {{ reached }} organizations. Only the data of {{ organization }} is loaded; the other organizations' data is left out.{% endblocktranslate %}{% if organizations.skipped %} {% blocktranslate trimmed with skipped=organizations.skipped|number %}Records of other organizations left out by that load: {{ skipped }}.{% endblocktranslate %}{% endif %}</p>

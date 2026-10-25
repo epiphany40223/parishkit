@@ -32,9 +32,9 @@
 <p>{% translate "The load finished successfully." %}</p>
 {% if progress.organizations %}{% include 'stewardship/parishsoft-organizations.html' with organizations=progress.organizations %}{% endif %}
 </div>{% elif status_key == 'failed' %}<div class="notice notice-error" data-progress-failed>
-<p>{% translate "The load did not finish. A wrong ParishSoft API key or organization ID is the most common cause." %}</p>
-<p>{% translate "What to do: check the ParishSoft connection and correct it if it is wrong, then load the parish data again. If the load keeps failing, ask the operator to check the service logs for the task reference under Technical details." %}</p>
-<p><a href="{% url 'admin:setup_credential' 'parishsoft' %}">{% translate "Go to “ParishSoft connection”" %}</a></p>
+<p data-progress-organization>{% if progress.organization_label %}{% blocktranslate trimmed with organization=progress.organization_label %}The parish data of {{ organization }} could not be loaded from ParishSoft.{% endblocktranslate %}{% else %}{% translate "The load did not finish." %}{% endif %} {% translate "The most common causes are a wrong ParishSoft API key, or an organization that is not your parish's." %}</p>
+<p>{% translate "What to do: go back to ParishSoft connection and choose another organization (paste the key again to see the ones it reaches) or enter a different key, then load again. If it keeps failing, ask the operator to check the service logs for the task reference under Technical details." %}</p>
+<p><a href="{% url 'admin:setup_credential' 'parishsoft' %}">{% translate "Choose another organization or enter a different key" %}</a></p>
 <p><a href="{% url 'admin:setup_source' %}">{% translate "Go to “Load parish data”" %}</a></p>
 </div>{% elif status_key == 'voided' %}<div class="notice" data-progress-voided>
 <p>{% translate "This load is no longer used, because the ParishSoft connection was changed or the parish data was loaded again." %}</p>
@@ -42,7 +42,7 @@
 </div>{% elif status_key == 'ended' %}<div class="notice notice-error" data-progress-ended>
 <p>{% translate "The load did not finish, and this setup attempt cannot resume or accept a replacement credential." %}</p>
 <p>{% translate "What to do: open the setup overview and cancel setup, then sign out. Ask the operator to check the service logs for the task reference under Technical details." %}</p>
-<p>{% translate "A wrong ParishSoft API key or organization ID is the most common cause. After the problem is corrected, sign in again to start a new setup attempt. Cancelling clears the temporary settings; it does not change any applied configuration." %}</p>
+<p>{% translate "A wrong ParishSoft API key is the most common cause. After the problem is corrected, sign in again to start a new setup attempt. Cancelling clears the temporary settings; it does not change any applied configuration." %}</p>
 <p><a href="{% url 'admin:setup' %}">{% translate "Setup overview and cancellation" %}</a></p>
 </div>{% endif %}
 <section class="panel" data-setup-progress>

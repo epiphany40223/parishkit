@@ -60,7 +60,7 @@ def test_dashboard_renders_one_summary_and_the_daily_chart_cleanly(
     assert page.locator("section.panel .stat-tiles").count() == 2
     assert summary.locator(".stat-tiles").count() == 2
     assert page.locator(POPULATION + " .stat-label").all_inner_texts() == [
-        "Active Families",
+        "Campaign Families",
         "Active Members",
         "Current annual pledges",
         "Last year's pledges (all Families)",

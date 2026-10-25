@@ -53,7 +53,7 @@
 <p data-go-live-impact>{% if preview.target_state == 'scheduled' %}{% translate "The campaign is scheduled to start" %} <time data-local-instant datetime="{{ campaign.active_configuration.starts_at|instant }}">{{ campaign.active_configuration.starts_at|instant }}</time>{% translate "; nothing is sent until then." %}{% else %}{% blocktranslate trimmed with count_text=counts.messages|number count counter=counts.messages %}The campaign becomes active at once and about {{ count_text }} Family email is sent.{% plural %}The campaign becomes active at once and about {{ count_text }} Family emails are sent.{% endblocktranslate %}{% endif %}</p>
 <details class="go-live-counts" data-keep-open><summary>{% translate "Mail and Testing data counts" %}</summary>
 <h3>{% translate "Family mail" %}</h3>
-<dl><dt>{% translate "Active Families" %}</dt><dd>{{ counts.active|number }}</dd>
+<dl><dt>{% translate "Campaign Families" %}</dt><dd>{{ counts.active|number }}</dd>
 <dt>{% translate "Families with an eligible email address" %}</dt><dd>{{ email_eligibility|out_of }}</dd>
 <dt>{% translate "Families without an eligible email address" %}</dt><dd>{{ no_email|out_of }}</dd>
 <dt>{% translate "Family emails due at once" %}</dt><dd>{{ counts.messages|number }}</dd>

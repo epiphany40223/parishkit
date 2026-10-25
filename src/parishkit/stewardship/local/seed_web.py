@@ -757,7 +757,7 @@ def run_wizard(
         # Confirmed already; only the installer's finish is outstanding.
         return None
     if row is None or row.source_task_id is None:
-        attempt_id = wizard_collect(request, service, fake_key=fake_key)
+        attempt_id = wizard_collect(request, service, fake_key=fake_key, wait=wait)
 
     def loaded():
         """The attempt collects again once the worker's load has finished.
@@ -780,15 +780,18 @@ def run_wizard(
     return wizard_confirm(request, service, attempt_id, wait=wait)
 
 
-def wizard_collect(request, service, *, fake_key=LOCAL_PARISHSOFT_KEY):
+def wizard_collect(request, service, *, fake_key=LOCAL_PARISHSOFT_KEY, wait):
     """The wizard's data-entry pages, in page order, ending with the source load.
 
     The order follows ``setup_wizard.PAGES`` (#1353, #1578): ParishSoft
     connection and Load parish data come last, after the logo and access
     pages, so the load is the only step left to wait for before the review.
-    The email test, which belongs right after Google Workspace connection,
-    is sent by ``wizard_confirm`` after the load: it needs only the mail
-    settings, so where it is sent does not change what it proves.
+    The ParishSoft connection page asks only for the key, then confirms the
+    organization once the installer's lookup answers (#1554,
+    ``wizard_organization``). The email test, which belongs right after
+    Google Workspace connection, is sent by ``wizard_confirm`` after the
+    load: it needs only the mail settings, so where it is sent does not
+    change what it proves.
     """
     from parishkit.stewardship.accounts.setup_credentials import stage_credential
     from parishkit.stewardship.accounts.setup_drafts import save_section
@@ -834,10 +837,44 @@ def wizard_collect(request, service, *, fake_key=LOCAL_PARISHSOFT_KEY):
         target="parishsoft",
         candidate=fake_key.encode() + b"\n",
         expected_version=status.version,
-        organization_id=LOCAL_ORGANIZATION_ID,
     )
+    status = wizard_organization(request, service, attempt_id, wait=wait)
     start_source_load(request, service, attempt_id, expected_version=status.version)
     return attempt_id
+
+
+def wizard_organization(request, service, attempt_id, *, wait):
+    """Choose the fake's organization once the installer's lookup answers.
+
+    As the Administrator would on the ParishSoft connection page (#1554):
+    the lookup lists the organizations the fake key reaches, and the
+    synthetic parish's is chosen. A failed lookup stops the run.
+    """
+    from parishkit.stewardship.accounts.setup_drafts import view_draft
+    from parishkit.stewardship.accounts.setup_lookups import (
+        choose_organization,
+        current_lookup,
+    )
+
+    def answered():
+        """The lookup is ready; a failed or missing one stops the run."""
+        lookup = current_lookup(attempt_id)
+        if lookup is None or lookup.state == "failed":
+            raise SeedWebRefused(
+                "The ParishSoft organization lookup ended in "
+                f"{'nothing' if lookup is None else lookup.error_code}."
+            )
+        return lookup.state == "ready" or "the ParishSoft organization lookup"
+
+    wait("the ParishSoft organization lookup", answered)
+    return choose_organization(
+        request,
+        service,
+        attempt_id,
+        lookup_id=current_lookup(attempt_id).identifier,
+        organization_id=LOCAL_ORGANIZATION_ID,
+        expected_version=view_draft(request, service, attempt_id).status.version,
+    )
 
 
 def wizard_branding(request, service, attempt_id):
@@ -888,6 +925,11 @@ def campaign_fields(form, campaign_dates):
         "comparison_fund_duids": funds[1:2] or funds[:1],
         "additional_information": "on",
         "base_digest": form.initial["base_digest"],
+        # Families in this campaign (#1393): the page's default, Active
+        # parishioners.
+        "families_mode": "basic",
+        "families_preset": "active_parishioners",
+        "families_registered": "required",
     }
 
 

@@ -145,7 +145,7 @@ def test_member_ministry_rows_follow_the_ministry_mapping(response_service, goog
     # Each request offers Ministry requests' own row actions, posting there.
     assert f'id="hub-{member.key}-ministry-decide-dialog"' in drawn
     assert f'action="{reverse("admin:ministry_report")}"' in drawn
-    assert 'data-row-action="back_to_review"' in drawn
+    assert "decide=back_to_review" in drawn
     assert viewed() == before + 2
 
     # ParishSoft moves Member 3 to another Family: Ministry requests leaves

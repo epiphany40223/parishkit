@@ -70,6 +70,12 @@ patterns = [
         campaign_create_views.campaign_create,
         name="campaign_create",
     ),
+    # Its Families count preview (#1393), which the page posts to.
+    path(
+        "campaign/first/families/",
+        campaign_create_views.campaign_create_families,
+        name="campaign_create_families",
+    ),
     # A Campaign setup step's Continue (#1404), a POST that records the step
     # kept as is and redirects to the next step.
     path(

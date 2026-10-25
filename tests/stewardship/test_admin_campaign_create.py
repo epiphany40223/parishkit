@@ -36,6 +36,7 @@ def test_the_catalog_entries():
         "version",
         "settings",
         "content",
+        "families",
         "preview",
     ]
     options = {option["name"]: option for option in preview["options"]}

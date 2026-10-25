@@ -383,7 +383,10 @@ def test_continue_sits_in_the_bottom_action_row_from_the_start(key):
         assert ("The notice above says what to do." in row) is (key != "fetching")
 
 
-@pytest.mark.parametrize("organizations", [None, {"reached": 3, "skipped": 9}])
+@pytest.mark.parametrize(
+    "organizations",
+    [None, {"reached": 3, "skipped": 9, "organization": "St. Example Parish (12)"}],
+)
 def test_a_finished_load_counts_the_organizations_a_key_reaches(organizations):
     """#1554: the result notice says how many organizations the key reaches,
     from the load's own evidence, and nothing for a one-organization key."""
@@ -412,3 +415,44 @@ def test_a_finished_load_counts_the_organizations_a_key_reaches(organizations):
             in html
         )
         assert "left out by that load: 9." in html
+        assert "Only the data of St. Example Parish (12) is loaded;" in html
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        (
+            "Neighboring Parish 1 (1002)",
+            "The parish data of Neighboring Parish 1 (1002) could not be loaded "
+            "from ParishSoft.",
+        ),
+        # No organization chosen (a setup from before #1554).
+        (None, "The load did not finish."),
+        # The name is ParishSoft's text, so it is escaped.
+        ("<b>Parish</b> (7)", "The parish data of &lt;b&gt;Parish&lt;/b&gt; (7)"),
+    ],
+)
+def test_a_failed_load_names_its_organization_and_the_way_back(label, expected):
+    """The failed panel says which organization could not be loaded and
+    offers choosing another organization or key (#1554)."""
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.accounts.setup_progress_views import _status_context
+
+    progress = observation("validating", active=False) | {
+        "task_state": "failed",
+        "setup_state": "collecting",
+        "bound": True,
+        "loaded": False,
+        "organization_label": label,
+        "started_at": "2026-09-10T11:58:30+00:00",
+        "heartbeat_at": "2026-09-10T11:59:57+00:00",
+    }
+    html = render_to_string(
+        "stewardship/setup-source-progress-status.html", _status_context(progress)
+    )
+    assert expected in html
+    assert (
+        '<a href="/admin/setup/credentials/parishsoft">Choose another organization '
+        "or enter a different key</a>"
+    ) in html

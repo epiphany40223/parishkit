@@ -161,7 +161,7 @@ def test_status_read_leaves_the_home_only_values_out(response_service):
 def test_active_families_with_a_response_leave_out_an_inactive_family(
     response_service,
 ):
-    """Home's "Active Families with a response" tile (#1673) counts only
+    """Home's "Campaign Families responded" tile (#1673) counts only
     active Families: a Family made inactive (and so no longer eligible, as
     the table's constraint requires) keeps its response in the all-Families
     count but leaves this one."""

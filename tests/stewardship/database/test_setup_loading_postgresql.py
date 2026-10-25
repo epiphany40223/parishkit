@@ -65,10 +65,15 @@ from .test_source_refreshing_postgresql import fake_provider
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def prepared(service, *, with_request=False):
-    """Set up original-login public input and a real target-isolated key exchange."""
+def prepared(service, *, with_request=False, organization_id=1):
+    """Set up original-login public input and a real target-isolated key exchange.
+
+    The key's chosen organization is ``organization_id`` (#1554).
+    """
     SourceCurrent.objects.get_or_create(singleton=True)
-    request, attempt, receipt, private = staged(service)
+    request, attempt, receipt, private = staged(
+        service, organization_id=organization_id
+    )
     with web_login():
         save_section(
             request,
@@ -210,13 +215,16 @@ def test_setup_load_requires_maintained_lifetime(setup_service):
     assert not SourceSnapshot.objects.exists()
 
 
-def queued(service):
-    """Use real web intake, not a synthetic Task/attempt binding fixture."""
+def queued(service, *, organization_id=1):
+    """Use real web intake, not a synthetic Task/attempt binding fixture.
+
+    The key's chosen organization is ``organization_id`` (#1554).
+    """
     SourceCurrent.objects.get_or_create(singleton=True)
     from parishkit.stewardship.source.models import SourceMutationLease
 
     SourceMutationLease.objects.get_or_create(singleton=True)
-    request, attempt, _, private = staged(service)
+    request, attempt, _, private = staged(service, organization_id=organization_id)
     with web_login():
         attempt = save_section(
             request,
@@ -470,3 +478,37 @@ def test_setup_load_reads_the_synthetic_parish_from_the_fake(
     assert SetupSourceResult.objects.get().snapshot_id == snapshot.pk
     assert SourceCurrent.objects.get().snapshot_id is None
     assert any(is_child(m, anchor) for m in members)
+
+
+def test_setup_load_reads_another_reachable_organization_whole(
+    setup_service, monkeypatch
+):
+    """Chosen in setup, the fake's other organization with Families loads
+    whole on the real pipeline: every collection it reads answers (pk-local
+    R51 found its Members answering 404), and none of the parish's (#1554)."""
+    configuration = FakeConfiguration.parse(
+        {
+            "seed": 1,
+            "families": 20,
+            "anchor_date": "2026-09-16",
+            "release_at": None,
+            "other_organizations": 2,
+        }
+    )
+    fake = FakeParishSoft(
+        configuration, parish=generate(1, 20, date(2026, 9, 16), organization_id=1)
+    )
+    tenant = fake.others.tenants[2]
+    prepared_values = prepared(setup_service, organization_id=2)
+    calls = fake_parishsoft_exchange(monkeypatch, fake)
+    snapshot = run(*prepared_values)
+    assert snapshot.state == "ready" and snapshot.organization_id == 2
+    assert snapshot.counts["family"] == len(tenant.families)
+    assert snapshot.counts["member"] == len(tenant.members)
+    assert snapshot.counts["ministry"] == len(tenant.ministries)
+    assert snapshot.counts["fund"] == len(tenant.funds)
+    assert snapshot.counts["roster"] == sum(
+        len(rows) for rows in tenant.rosters["ministry_rosters"].values()
+    )
+    assert snapshot.cursor["load"]["organization"] == {"name": "Neighboring Parish 1"}
+    assert len(calls) > 30

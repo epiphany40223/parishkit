@@ -73,9 +73,20 @@ def row(page, index):
     return page.locator(f"#census-row-{index}")
 
 
+# The row action each test names an icon by; "Send" is the row's undo, its
+# pressed icon (#2131), whose name says what choosing it does.
+ACTIONS = {
+    "Accept": '[data-row-action="accept"]',
+    "Edit": '[data-row-action="edit"]',
+    "Ignore": '[data-row-action="ignore"]',
+    "Mark": '[data-row-action="entered_by_hand"]',
+    "Send": "[data-row-undo]",
+}
+
+
 def icon(page, index, label):
-    """Row ``index``'s icon whose name is ``label`` followed by the row."""
-    return row(page, index).get_by_role("button", name=f"{label} {name(index)}")
+    """Row ``index``'s ``label`` icon (Accept, Edit, Ignore, Mark or Send)."""
+    return row(page, index).locator(f"button{ACTIONS[label]}").first
 
 
 def posts(page, origin, answer):
@@ -120,8 +131,8 @@ def test_filters_page_and_sort_in_place(page, component_origin):
 
 def test_staff_accept_an_automatic_change_in_place(page, component_origin):
     """Accept asks in the shared dialog, posts the row's decision with the
-    page's filters, and the redrawn row shows Accept selected beside Back to
-    review, with the notice announced."""
+    page's filters, and the redrawn row shows Accept pressed, its undo
+    (#2131), with the notice announced."""
     page.goto(component_origin + PATH)
     page.evaluate(MARK)
     sent = posts(page, component_origin, ACCEPTED)
@@ -140,23 +151,30 @@ def test_staff_accept_an_automatic_change_in_place(page, component_origin):
 
 
 def test_entered_by_hand_follows_an_accept(page, component_origin):
-    """A To review By hand row offers Accept, Edit and Ignore but no Entered
-    by hand (#1890, decision 2 reversed); once accepted, in place, it offers
-    Entered by hand, whose dialog says to check ParishSoft first and that
-    Back to review undoes the mark, and the redrawn row is Entered by hand
-    with its mark selected and Back to review its box's one kind (#1840)."""
+    """A To review By hand row offers Accept, Edit and Ignore, its Entered by
+    hand unavailable (#1890, decision 2 reversed; drawn, #2131); once
+    accepted, in place, it offers Entered by hand, whose dialog says to
+    check ParishSoft first and that choosing it again undoes the mark, and
+    the redrawn row is Entered by hand with its mark pressed and Back to
+    review its box's one kind (#1840)."""
     page.goto(component_origin + PATH)
     page.evaluate(MARK)
     sent = posts(page, component_origin, ACCEPTED_BY_HAND)
-    assert [name for name, _ in actions(page, 1)] == ["accept", "edit", "ignore"]
-    assert row(page, 1).locator('[data-row-action="entered_by_hand"]').count() == 0
+    assert [name for name, _ in actions(page, 1)] == [
+        "accept",
+        "edit",
+        "ignore",
+        "entered_by_hand",
+    ]
+    assert icon(page, 1, "Mark").get_attribute("aria-disabled") == "true"
     icon(page, 1, "Accept").click()
     page.locator("#census-decide-dialog").get_by_role("button", name="Record").click()
     has_text(page.locator("#census-notice"), ACCEPTED_BY_HAND_NOTICE)
     assert "decide=accept" in sent[-1] and "item=1" in sent[-1]
     assert actions(page, 1) == [
         ("accept", "true"),
-        ("back_to_review", None),
+        ("edit", None),
+        ("ignore", "false"),
         ("entered_by_hand", "false"),
     ]
     sent = posts(page, component_origin, ENTERED)
@@ -166,7 +184,7 @@ def test_entered_by_hand_follows_an_accept(page, component_origin):
     has_text(
         dialog.locator("[data-confirm-body]"),
         "Record that you typed this into ParishSoft. Check ParishSoft first; "
-        "Back to review undoes the mark.",
+        "choose Entered by hand again to undo the mark.",
     )
     dialog.get_by_role("button", name="Record").click()
     has_text(page.locator("#census-notice"), ENTERED_NOTICE)
@@ -178,19 +196,21 @@ def test_entered_by_hand_follows_an_accept(page, component_origin):
 
 
 def test_back_to_review_undoes_entered_by_hand_with_a_note(page, component_origin):
-    """An Entered by hand row offers Back to review (#1840): its dialog says
+    """An Entered by hand row offers Back to review (#1840), its pressed mark
+    chosen again (#2131): its dialog says
     the mark is undone and where the change goes, the note is required
     before Record is available, and the redrawn row is To enter by hand,
     Accepted, in place."""
     page.goto(component_origin + ENTERED)
     page.evaluate(MARK)
     sent = posts(page, component_origin, UNDONE)
-    # The undo sits just right of the mark it undoes (R45 W, #2041).
+    # The mark is the undo, so it carries no Back to review beside it.
     assert actions(page, 1) == [
         ("accept", "true"),
+        ("ignore", "false"),
         ("entered_by_hand", "true"),
-        ("back_to_review", None),
     ]
+    assert icon(page, 1, "Send").get_attribute("data-row-action") == ("entered_by_hand")
     icon(page, 1, "Send").click()
     dialog = page.locator("#census-decide-dialog")
     has_text(dialog.locator("h2"), f"Send {name(1)} back to review?")
@@ -449,7 +469,7 @@ def test_entered_by_hand_again_on_an_entered_incorrectly_row(page, component_ori
     visible(row(page, 3).get_by_text(WRONG, exact=True))
     assert actions(page, 3) == [
         ("accept", "true"),
-        ("back_to_review", None),
+        ("ignore", "false"),
         ("entered_by_hand", "false"),
     ]
     # Both fixes are bulk kinds of its box.
@@ -478,7 +498,8 @@ def test_entered_by_hand_again_on_an_entered_incorrectly_row(page, component_ori
 
 
 def test_back_to_review_on_an_entered_incorrectly_row(page, component_origin):
-    """Back to review on an Entered incorrectly row undoes the mark (#1840):
+    """Back to review on an Entered incorrectly row (its pressed Accept,
+    #2131) undoes the mark (#1840):
     its dialog says the change goes back to To enter by hand with its
     decision kept, the note is required, and the redrawn row is To enter by
     hand, in place."""
@@ -608,7 +629,7 @@ def test_a_new_members_entered_by_hand_asks_for_its_member_id(
     has_text(
         dialog.locator("[data-confirm-body]"),
         "Record that you typed this into ParishSoft. Check ParishSoft first; "
-        "Back to review undoes the mark.",
+        "choose Entered by hand again to undo the mark.",
     )
     member_id = dialog.get_by_label("ParishSoft Member ID (optional)")
     assert member_id.input_value() == ""

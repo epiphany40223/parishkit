@@ -192,8 +192,10 @@ def trail():
 def test_a_failed_switch_is_shown_reviewed_and_finished(keys):
     """The status page's offer, the page's review of the switch, a prompt
     naming only the setting, and the request with its trail; a repeat
-    returns the same request and records nothing new."""
-    row = failed_switch(keys.working)
+    returns the same request and records nothing new. The key's save is
+    forged with another organization (#1554), so the switch has a setting
+    to name while nothing is loaded."""
+    row = failed_switch(keys.working, organization="54321")
     _, secret, _ = paired(keys.service)
     code, document, _ = status(keys, secret)
     assert code == 0, document
@@ -321,7 +323,7 @@ def test_a_changed_loaded_organization_is_invalid(keys, monkeypatch):
     """The page refuses a switch that would change the loaded organization."""
     from parishkit.stewardship.accounts import integration_selection
 
-    failed_switch(keys.working)
+    failed_switch(keys.working, organization="54321")
     monkeypatch.setattr(integration_selection, "loaded_organization", lambda: 12345)
     _, secret, _ = paired(keys.service)
     code, document, _ = preview(keys, secret)
@@ -329,7 +331,11 @@ def test_a_changed_loaded_organization_is_invalid(keys, monkeypatch):
     refused(document, "invalid")
     [problem] = document["error"]["fields"]
     assert problem["field"] == "organization_id"
-    assert "organization ID can't change" in problem["message"]
+    # The page's words, naming the organization (#1554).
+    assert problem["message"] == (
+        "The ParishSoft organization is ParishSoft organization 12345 and "
+        "can't change after setup."
+    )
 
 
 def test_refused_sessions(keys, monkeypatch):
@@ -474,7 +480,7 @@ def test_a_loaded_organization_found_on_confirm_is_invalid(keys, monkeypatch):
     """Reviewed before the first load, confirmed after it: the confirmation
     repeats the page's check under the lock and refuses at
     ``organization_id`` (the page answers a 503 refusal page instead)."""
-    failed_switch(keys.working)
+    failed_switch(keys.working, organization="54321")
     _, secret, _ = paired(keys.service)
     code, document, _ = preview(keys, secret)
     assert code == 0, document

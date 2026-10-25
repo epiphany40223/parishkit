@@ -2067,6 +2067,7 @@ none.
 | `campaign_work_status` | `campaign show` ([#1619](https://github.com/epiphany40223/parishkit/issues/1619)): the passive campaign work status that Campaign settings and Home poll while campaign work holds changes; `campaign show` reports the same locks, each with its reason |
 | `configuration_request` | `config request show --watch` (PR 4); `config request cancel` ([#944](https://github.com/epiphany40223/parishkit/pull/944)), an operator recovery with no page button |
 | `campaign_settings`, `campaign_create`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), Campaign settings' read, Review and Apply, a live campaign's Ministries included (#1119); `campaign create-preview`, `campaign create` ([#1899](https://github.com/epiphany40223/parishkit/issues/1899)), [Create the campaign](../admin-portal/spec.md#create-the-campaign)'s Review and Apply for the first campaign (#142); `campaign_clone` is deferred on #145: until then creating or copying a campaign is refused, except the first campaign ([navigation rule 10](../ui-conventions/spec.md#navigation-rules)), and Copy campaign refuses every request before reading anything, so a command could only repeat that refusal. Commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
+| `campaign_create_families` | `campaign create-preview` prints the same two counts: Create the campaign's passive count preview of its [Families in this campaign](../admin-portal/spec.md#families-in-this-campaign) choice (#1393) |
 | `share_settings` | `campaign shares`, `campaign shares-preview`, `campaign shares-confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), Share options' read, Review and Apply |
 | `reminder_workgroup` (its review and apply, #750) | `workgroup show`, `workgroup preview`, `workgroup confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
 | `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content history`, `content preview` (the editor's Preview changes, the Delete and the plain-text preview), `content confirm` (the review dialog's Apply and the Delete's) ([#463](https://github.com/epiphany40223/parishkit/issues/463), [#1873](https://github.com/epiphany40223/parishkit/issues/1873)) |
@@ -2605,7 +2606,7 @@ loads the campaign's Families, as the page's status offers. The command
 names and the document shape are defaults, pending Administrator
 confirmation. The
 [operator guide](../../../guides/stewardship-admin-automation.md#create-the-campaign)
-lists the fields. The document also takes the campaign's Families rule, `campaign_families`, and the preview prints its counts, as [Families in this campaign](../admin-portal/spec.md#families-in-this-campaign) says (#1393, not built); `campaign preview` refuses any change to it.
+lists the fields. The document also takes the campaign's Families rule, `campaign_families`, and the preview prints its counts, as [Families in this campaign](../admin-portal/spec.md#families-in-this-campaign) says (#1393): `campaign create-preview` takes it as `campaign_families` in the stored shapes (left out: Active parishioners) and prints `families` (the rule, its description, `matching` and `emailable`); `campaign show` prints `families` (the rule, null for the legacy rule, and its description); `campaign preview` refuses any change to it as `invalid` at `campaign.campaign_families`.
 
 `parish show`, `ministries list`, `branding show` and `campaign shares
 [--campaign ID]` are the reads of Parish settings, Ministries, Parish
@@ -4298,6 +4299,18 @@ lists them.
 | Finish switching through `integration_settings` (its review dialog; the separate `select_credential` page is retired, #1568) | `integration key finish-switching-preview TARGET` and `integration key finish-switching TARGET` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
 | Backup encryption key change, through `integration_settings` with proof of possession | `integration backup-key challenge`, `integration backup-key preview` and `integration backup-key confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see [secret replacement](#secret-replacement) and below) |
 
+ParishSoft's organization is read-only for these commands
+([#1554](https://github.com/epiphany40223/parishkit/issues/1554)):
+`integration show parishsoft` prints `organization_id` and
+`organization_name`, and a `--changes` document (for `integration preview`
+or `integration key replace`) may carry `organization_id` back unchanged,
+which changes nothing; another value is `invalid` at
+`settings.organization_id`, in the words the page's Finish switching uses
+("The ParishSoft organization is St. Example Parish (1234) and can't change
+after setup."), as
+[Parish and integration configuration](../admin-portal/spec.md#parish-and-integration-configuration)
+describes.
+
 The refresh schedule is given to `integration preview parishsoft` as
 `--refresh-schedule DOCUMENT` (`-` reads standard input), with or without
 `--changes` and never with `--remove`: a YAML or JSON document in the
@@ -4998,7 +5011,7 @@ exactly the commands that exist.
   `report-email` in #1786). **PR 8e:** the Family-level exports that
   create an export record without the Family keys (`export financial`,
   `export information`, `export ministry`, `export ministry-packet`).
-  **PR 8f:** the Active parishioner family directory's exports (`export
+  **PR 8f:** the Campaign Family directory's exports (`export
   directory`, `export postal`). **PR 8g:** the one-Family timeline
   export (`export
   family-timeline`, with the page's export form and migration 0063), and

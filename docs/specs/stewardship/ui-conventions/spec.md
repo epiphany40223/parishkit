@@ -81,6 +81,7 @@ when it lands.
 - Tables: [Admin tables](#admin-tables),
   [empty tables and lists](#empty-tables-and-lists),
   [row actions](#row-actions-and-confirmation),
+  [decision toggles](#decision-toggles),
   [new pages and in-page panes](#new-pages-and-in-page-panes),
   [column order](#table-column-order),
   [default row order](#default-row-order),
@@ -2119,7 +2120,7 @@ Testing rehearsal.
 - **Where.** The Response dashboard's Responses shown (Production |
   Testing rehearsal) and Chart population (Historical as of day | Current
   population), the
-  [family directory](../reports/spec.md#active-parishioner-family-directory)'s Responses shown
+  [family directory](../reports/spec.md#campaign-family-directory)'s Responses shown
   (Production | Testing rehearsal), above its Filters panel, and the
   [Campaign calendar](../admin-portal/spec.md#campaign-calendar)'s
   Show (Upcoming emails | Include past emails), above Every email by date,
@@ -3270,17 +3271,16 @@ Families registered elsewhere, so "active parishioner" stopped being true
 (Administrator, 2026-10-24,
 [#1393](https://github.com/epiphany40223/parishkit/issues/1393); the
 Administrator approved these words, including the Family badge, the same
-day). Status:
-specified, not built; the implementing PR changes the strings, their tests
-and the specification text together, and renames the reports
-specification's "Active parishioner family directory" heading (with its
-links and traceability entry).
+day). Status: built (#1393): the strings, their tests and the
+specification text changed together, and the reports specification's
+heading is now "Campaign Family directory" (with its links and traceability
+entry). The table records what each string was.
 
 | Today | Becomes |
 | --- | --- |
 | Active parishioner family directory (menu, page title and heading, error page, Return link, table and navigator labels, links on Find a Family, Deliveries, Delivery refusals, Timeline, Choose Families to test and the Response dashboard, audit descriptions, CLI help) | Campaign Family directory |
 | Active Families (Home and Go live tiles, participation summary, Past campaigns column and review, confirmation progress) | Campaign Families |
-| Active Families with a response | Campaign Families with a response |
+| Active Families with a response | Campaign Families responded (shortened so the label stays on one line at the Home fold) |
 | Percent of active Families (comparison metric and chart) | Percent of campaign Families |
 | Active Families counted from | Campaign Families counted from |
 | Active parishioner Families, the percentage denominator (archive workbook) | Campaign Families, the percentage denominator |
@@ -3291,7 +3291,7 @@ links and traceability entry).
 | None: every active Family can be reached by email or postal mail. | None: every campaign Family can be reached by email or postal mail. |
 | Not available: ParishSoft no longer lists this Family as active and registered, so it can't use the Family form. | Not available: in the latest ParishSoft data this Family is no longer in this campaign, so it can't use the Family form. |
 | Historical as of day counts … including Families that later became inactive. | … including Families that later left this campaign. |
-| Check that ParishSoft has active Parishioner Families, then load again. | Check that ParishSoft has Families that match this campaign's Families choice, then load again. |
+| Check that ParishSoft has active Parishioner Families, then load again. | Check that ParishSoft has matching Families, then load again. (kept short so the load summary's reserved height does not grow at 320 px) |
 | Every eligible Family that has not responded gets the Reminders (Reminder WorkGroup page and review) | Every campaign Family that has not responded gets the Reminders |
 | an imported year counts the active Families its archive file names | an imported year counts the campaign Families its archive file names |
 | Active Family heads and emails (directory detail) | Active heads and emails |
@@ -4689,8 +4689,9 @@ inventory on #879 lists.
   item's own page, and Delete. Each has an accessible name and a matching
   tooltip that name the row ("Edit Reminder 2", "Delete Reminder 2"). An
   icon's tooltip is one short phrase, never more than one sentence, with
-  no full stop, as these are; a selected icon's names its state and undo
-  in one phrase ("Accepted; choose Back to review to change it"), and a
+  no full stop, as these are; a selected icon's names its state and what
+  choosing it does in one phrase ("Accepted; select to send Pat back to
+  review", [decision toggles](#decision-toggles)), and a
   guard checks every review worklist tooltip (R38). The
   icons are drawn inline, so they need no request and stay inside the
   content security policy. A destructive action with another name uses its
@@ -4698,17 +4699,17 @@ inventory on #879 lists.
   Revoke ("Revoke nightly export") on Automation access. An action that
   records rather than removes, and that the row's other action undoes, also
   takes an icon of its own and acts [in place](#in-place-controls) without a
-  dialog; so far only the request page's tick, "Mark … entered in
-  ParishSoft" (a check mark), whose undo is the review worklist's own
-  Back to review (its undo arrow, name and dialog, with the required note),
-  like every undo of a terminal step (below). An action that carries a note opens the confirmation dialog
+  dialog; so far only the Ministry request page's Entered by hand tick, a
+  [decision toggle](#decision-toggles) whose pressed state's undo is the
+  review worklist's own Back to review (its dialog, with the required
+  note), like every undo of a terminal step (below). An action that carries a note opens the confirmation dialog
   instead, which holds the note, with an ordinary confirm button unless the
   action cannot be undone: Census changes ([#879](https://github.com/epiphany40223/parishkit/issues/879)), whose
   decisions take an optional note, Reopen of an Ignore included
   ([#1889](https://github.com/epiphany40223/parishkit/issues/1889)); every review
   worklist's Back to review on a terminal stage, which needs a note
   ([#1840](https://github.com/epiphany40223/parishkit/issues/1840)); and the
-  Ministry request page's Back to review, the same undo. A note field
+  Ministry request page's undo of its tick, the same undo. A note field
   shared by several actions is labelled by the action chosen: "Note
   (optional)", and "Note (required)" only while that action needs one,
   changing in place as the dialog opens (the review worklist, R38). An
@@ -4719,31 +4720,28 @@ inventory on #879 lists.
   the parish's addition, #2041) is its own paragraph under the dialog's
   words, in the error notice's look, never run on from them.
   A row
-  shows only the actions that apply to it; a row with none shows nothing
-  there.
+  shows only the actions that can apply to it; a row with none shows
+  nothing there. On a table whose actions record decisions, a row keeps
+  the same icons at every stage, an action its stage does not allow drawn
+  unavailable ([decision toggles](#decision-toggles)).
 - **Selected state.** On a table whose row actions record a state (a
   review decision, a mark), the icon of the state in force is drawn
   **selected**: filled with that state's status colour, with the glyph in
   `--paper` (white on the light scheme, and dark on the dark scheme, where
   white on the lighter status colours would fail the 3:1 icon contrast),
   and `aria-pressed="true"`; the row's other icons are drawn
-  unselected (outline, `aria-pressed="false"`). Choosing the selected icon
-  again is not an undo; the row's own undo action (the review pipeline's
-  Back to review) is, so the selected icon is unavailable
-  (`aria-disabled="true"`) and its tooltip names the state and the undo
-  in one phrase. Every recorded state has that undo, a final-looking mark
-  (Entered by hand, Handled, Updated in ParishSoft, Confirmed) included,
-  and undoing such a mark needs a note saying why
+  unselected (outline, `aria-pressed="false"`). The icons are
+  [decision toggles](#decision-toggles): choosing the selected icon again
+  is its undo, and there is no separate undo icon beside it. Every
+  recorded state has that undo, a final-looking mark (Entered by hand,
+  Handled, Updated in ParishSoft, Confirmed) included, and undoing such a
+  mark needs a note saying why
   ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
   [#1840](https://github.com/epiphany40223/parishkit/issues/1840)): no row's state is left with no way back.
   So the decision shows on the icons, not only in a
   status column ([review pipeline](../review-pipeline/spec.md#selected-state-icons),
   [#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
-  The icons keep one order from row to row, except the undo: it is drawn
-  just right of the selected icon it undoes (the last one, when a decision
-  and a mark are both in force), so a row Entered by hand reads Accepted,
-  Entered by hand, Back to review (the Administrator, R45 W,
-  [#2041](https://github.com/epiphany40223/parishkit/issues/2041)).
+  The icons keep one order from row to row.
   An action that amends the mark in force rather than undoing it comes
   after the selected icon, is never a toggle (no `aria-pressed`), acts on
   one row at a time (no bulk), and returns focus to the selected icon; so
@@ -4825,6 +4823,72 @@ inventory on #879 lists.
   POST body, and focus returns to the same row's icon after it filters. So
   far only [System logs](../admin-portal/spec.md#logs) has them: related
   entries, same actor, same subject, same campaign and the task's page.
+
+### Decision toggles
+
+**Rule.** Every decision or mark button in the Admin portal (Accept, Edit's
+Accepted, Ignore, Entered by hand, Handled, and any later one) is a toggle:
+the decision in force is its own button drawn pressed, and choosing it
+again undoes it. No separate "Back to review", "Return to …", "Not entered
+yet" or other undo button is drawn beside a decision, and no button
+appears or disappears when a decision is made. **Why.** An undo button that
+appears beside the decision just made is an extra control under the
+pointer ([no layout shift](#no-layout-shift)); the pressed button already
+says what is in force, so it is the natural place to undo it
+(Administrator decision, 2026-10-24,
+[#2131](https://github.com/epiphany40223/parishkit/issues/2131)). **Shared
+code.** `web/review_worklist.py` (`row_icons`) and
+`components/review-worklist-actions.html`, drawn by every review worklist
+and the Family hub's changed rows (and later the review wizard, #2123);
+the Ministry request page's Entered by hand tick (`roster-tick.html`) is
+the one text-label toggle. `test_decision_toggles.py` guards that no row
+draws an undo button beside a decision.
+
+- **Toggle buttons.** Each decision button carries `aria-pressed`; the
+  chosen one is filled ([selected state](#row-actions-and-confirmation)).
+  A row draws the same buttons at every stage: every action some stage of
+  its item offers and the reader's role allows
+  ([by role](#row-actions-and-confirmation) still leaves out what the role
+  never allows). Only colours change when a decision is made, so the row's
+  controls never move; a test checks their bounding boxes are unchanged
+  after acting.
+- **Discoverable undo.** A pressed button's tooltip and accessible name say
+  what choosing it does, in one phrase with no full stop: "Accepted;
+  select to send Pat back to review", or on a terminal step "Entered by
+  hand; select to undo Entered by hand for Pat". Screen readers announce
+  it as a pressed toggle, and it takes the pointer and a hover ring drawn
+  outside it.
+- **Same safeguards.** Choosing a pressed button opens the confirmation the
+  old undo button opened, with the same words, the same required note
+  where one is required (undoing a terminal step,
+  [#1840](https://github.com/epiphany40223/parishkit/issues/1840)) and the
+  same audit and history; the server's undo endpoint and its checks are
+  unchanged. A double click cannot undo silently: the first click opens
+  the dialog.
+- **Latest step first.** When a decision and a mark are both in force
+  (Accepted, then Entered by hand), the mark is the undo, since undo goes
+  back one step at a time; the decision's pressed button is unavailable,
+  its tooltip saying "Accepted; undo Entered by hand first".
+- **Switching decisions.** Choosing a different decision while one is
+  pressed switches directly through that decision's own confirmation
+  when the stage machine ([role-specific actions](../review-pipeline/spec.md#role-specific-actions))
+  allows the move. Where it does not, the button is unavailable
+  (`aria-disabled`, focusable) with a tooltip saying why in one phrase
+  ("Ignore Pat; send it back to review first", "Mark Pat entered by hand;
+  accept it first"), per the [prerequisite gates](#prerequisite-gates)
+  rule.
+- **No decision behind a step.** An item confirmed with no decision
+  behind it (a census change or pledge ParishSoft already held, a
+  Ministry request a ParishSoft refresh confirmed, and the like on every
+  stream) draws its Accept pressed, the outcome Accept would have
+  reached, named "Already in ParishSoft; select to send Pat back to
+  review". No row on any stream draws a Back to review button of its own.
+- **Bulk actions are the one exception.** A toggle cannot express a mixed
+  selection, so the bulk bar keeps its explicit undo action (Back to
+  review, and on Census changes Withdraw) for the ticked rows.
+- **Focus.** After a decision or its undo, focus returns to the same
+  button in the redrawn row, now pressed or unpressed, so the reader hears
+  the new state. Space and Enter press it, as any button.
 
 ### New pages and in-page panes
 
@@ -5090,7 +5154,7 @@ Family, or marks one inactive or deceased:
 - **Not in ParishSoft**: the data has no such Member or Family (deleted or
   merged there), or the Member now belongs to another Family.
 - **Inactive in ParishSoft**: a Member present, but marked inactive. For a
-  Family the words are **No longer in this campaign**: present, but no longer matching the campaign's [Families rule](../data/spec.md#campaign-families) (until #1393 is built, "Inactive in ParishSoft": no longer active and registered).
+  Family the words are **No longer in this campaign**: present, but no longer matching the campaign's [Families rule](../data/spec.md#campaign-families) (its status key is `left`, #1393). Under the legacy rule (a campaign created before #1393) the test stays ParishSoft's active flag, exactly as before.
 - **Deceased in ParishSoft**: present, but marked deceased.
 - **Name not recorded in ParishSoft**: present, but with no usable name. This
   is a gap in the data, not a removal, so it is worded as the name and has

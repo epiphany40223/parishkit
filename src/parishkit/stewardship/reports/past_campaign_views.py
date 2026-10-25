@@ -203,7 +203,7 @@ def note_rows(archive):
     """
     rows = [
         (
-            _("Active Families counted from"),
+            _("Campaign Families counted from"),
             archive.active_families_provenance,
             note_flagged(archive.active_families_provenance),
         ),

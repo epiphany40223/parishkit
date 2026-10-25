@@ -127,16 +127,13 @@ def test_locked_report_actions_name_the_notice_that_says_why(
 
 @pytest.mark.parametrize("entered", [False, True])
 def test_a_held_roster_tick_is_shown_unavailable_with_why(entered):
-    """While other campaign work holds follow-up, the request page's Mark
-    Entered by hand or Back to review is drawn disabled, named by the
-    locked notice; otherwise it is the plain enabled button. (Back to review
-    opens its dialog, so it is no submit button and has no
-    data-server-disabled; since #1893 it carries the worklist's undo icon.)"""
-    label = (
-        r'<svg class="action-icon"[^>]*>.*?</svg>\s+Back to review'
-        if entered
-        else "Mark Entered by hand"
-    )
+    """While other campaign work holds follow-up, the request page's
+    Entered by hand toggle (#2131) is drawn disabled, named by the locked
+    notice; otherwise it is the plain enabled button. Pressed, it opens Back
+    to review's dialog, so it is no submit button and has no
+    data-server-disabled."""
+    pressed = f'aria-pressed="{"true" if entered else "false"}"'
+    label = "Entered by hand"
     row = {
         "id": uuid4(),
         "roster_eligible": True,
@@ -144,8 +141,7 @@ def test_a_held_roster_tick_is_shown_unavailable_with_why(entered):
         "roster_sequence": 1,
     }
     undo = {
-        "label": "Back to review",
-        "title": "Send Anne — Choir back to review",
+        "title": "Entered by hand; select to undo Entered by hand for Anne — Choir",
         "dialog_title": "Send Anne — Choir back to review?",
         "body": "Entered by hand is undone.",
         "done": "Anne — Choir sent back to review.",
@@ -163,6 +159,7 @@ def test_a_held_roster_tick_is_shown_unavailable_with_why(entered):
         rf' aria-describedby="followup-locked"[^>]*>{label}</button>',
         held,
     )
+    assert re.search(rf"<button[^>]*{pressed}[^>]*>{label}</button>", held)
     open_ = render_to_string(template, context | {"mutable": True})
     assert re.search(rf"<button(?![^>]*disabled)[^>]*>{label}</button>", open_)
     assert "followup-locked" not in open_

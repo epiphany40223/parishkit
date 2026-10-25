@@ -265,7 +265,7 @@ PAGES = {
     # menu entry of its own in Review work, in the Administrator's order
     # (R39 finding 1).
     "pledges_to_enter": Page("review", _("Pledges")),
-    "family_directory": Page("reports", _("Active parishioner family directory")),
+    "family_directory": Page("reports", _("Campaign Family directory")),
     # One Family's summary and timeline (#477; the Timeline since #1570),
     # opened from every Family name the shared family_link tag draws.
     "timeline": Page("reports", _("Timeline"), "family_directory"),
@@ -768,6 +768,9 @@ NON_PAGES = frozenset(
         # The campaign work status Campaign settings and Home poll while
         # campaign work holds their controls (#1619), a fragment.
         "campaign_work_status",
+        # Create the campaign's Families count preview (#1393), a POST the
+        # page script makes.
+        "campaign_create_families",
         # New and Edit scheduled email's test of an unsaved edit (#446), a
         # POST the page script makes.
         "schedule_email_test",

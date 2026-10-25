@@ -324,7 +324,7 @@ def test_empty_reports_still_include_source_and_request_provenance():
     [
         ({}, ("=Sample <Family>", "")),
         ({"active": True}, ("=Sample <Family>", "")),
-        ({"active": False}, ("=Sample <Family>", "Inactive in ParishSoft")),
+        ({"active": False}, ("=Sample <Family>", "No longer in this campaign")),
         ({"family_name": None, "active": None}, ("", "Not in ParishSoft")),
     ],
 )

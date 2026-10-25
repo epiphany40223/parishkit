@@ -166,9 +166,14 @@ def test_parishsoft_prints_the_refresh_facts_of_refresh_status():
         key=None,
         refresh=status,
         backup=None,
+        organization_name="St. Example Parish",
     )
     assert model.source == refresh_fields(status)
-    assert document(model)["settings"] == {"organization_id": "12"}
+    # The recorded name, read-only beside the ID (#1554).
+    assert document(model)["settings"] == {
+        "organization_id": "12",
+        "organization_name": "St. Example Parish",
+    }
     # An existing schedule (the defaults) as the editor shows it (#632),
     # with no quick rule (#1147).
     assert document(model)["refresh_schedule"] == {

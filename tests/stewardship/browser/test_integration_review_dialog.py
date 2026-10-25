@@ -266,11 +266,11 @@ def test_a_pasted_key_is_confirmed_and_installed_in_place(page, component_origin
 
 
 def test_parishsofts_key_sits_before_its_schedule(page, component_origin):
-    """ParishSoft draws the organization ID, the new key, then the refresh
-    schedule editor, Save, and the schedule's outlook below the form, so the
-    key never splits the schedule's entry from its display; its key's
-    confirmation names the key by its last four characters and lists the
-    other setting saved with it (#1568)."""
+    """ParishSoft draws its organization line (text, #1554), the new key,
+    then the refresh schedule editor, Save, and the schedule's outlook below
+    the form, so the key never splits the schedule's entry from its display;
+    its key's confirmation names the key by its last four characters
+    (#1568)."""
     reviews, _ = answer_key(
         page, component_origin, PARISHSOFT_KEY, PARISHSOFT_KEY_REVIEW, PARISHSOFT_KEY
     )
@@ -282,7 +282,7 @@ def test_parishsofts_key_sits_before_its_schedule(page, component_origin):
             "node => node.getBoundingClientRect().top + window.scrollY"
         )
         for selector in (
-            "#id_organization_id",
+            "[data-parishsoft-organization]",
             "input[name=candidate]",
             "[data-schedule-part=status]",
             "#refresh-schedule-outlook",
@@ -294,7 +294,6 @@ def test_parishsofts_key_sits_before_its_schedule(page, component_origin):
     dialog = dialog_of(page, "Replace the ParishSoft key?")
     text = dialog.inner_text()
     assert "ending in 9876" in text and "synthetic-parishsoft" not in text
-    assert "Expected ParishSoft organization ID:" in text
     assert "checked with ParishSoft in the background" in text
     assert len(reviews) == 1 and "candidate" not in reviews[0][0]
     assert not failures

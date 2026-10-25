@@ -19,6 +19,7 @@ from parishkit.parishsoft_source import (
     CoherentParishSoftClient,
     SourceOrganizationMismatch,
 )
+from parishkit.stewardship.campaigns import campaign_families
 from parishkit.stewardship.observability import debug_logging_enabled
 
 from .canonical import InvalidSourcePayload
@@ -47,6 +48,10 @@ CONTACT_COVERAGE_KEY = "member_contacts"
 # configured organization records nothing here, so its evidence is exactly as
 # before.
 ORGANIZATIONS_KEY = "other_organizations"
+# Where every full load's evidence records the configured organization's
+# cleaned ParishSoft name (#1554): ``{"name": "..."}``, or ``{"name": null}``
+# when ParishSoft reports none. Display text only; the ID stays the identity.
+ORGANIZATION_KEY = "organization"
 # The closed collection names a skip count may name: the collections whose
 # records name their organization, and the contact rows dropped with them.
 ORGANIZATION_COLLECTIONS = frozenset(
@@ -75,6 +80,51 @@ def organization_evidence(client):
             "families_without_members": client.families_without_members,
         }
     }
+
+
+def organization_name_evidence(client):
+    """The load evidence naming the configured organization (#1554).
+
+    ``client`` has validated the organization, which set its cleaned
+    ``organization_name`` (``parishsoft_source.organization_name``).
+    """
+    name = getattr(client, "organization_name", None)
+    return {ORGANIZATION_KEY: {"name": name if type(name) is str else None}}
+
+
+def recorded_organization_name(cursor):
+    """The organization name a snapshot cursor recorded, or None (#1554).
+
+    None too for a snapshot recorded before the name was (no
+    ``ORGANIZATION_KEY``) and for any malformed value.
+    """
+    load = cursor.get("load") if type(cursor) is dict else None
+    value = load.get(ORGANIZATION_KEY) if type(load) is dict else None
+    name = value.get("name") if type(value) is dict and set(value) == {"name"} else None
+    return name if type(name) is str and name else None
+
+
+def snapshot_organization(snapshot_id=None):
+    """``(organization ID, name)`` of a snapshot's load, or None (#1554).
+
+    ``snapshot_id`` names the snapshot (a setup load's); None reads the
+    current one. The name is None when the load recorded none. One query.
+    """
+    from .snapshot_models import SourceCurrent, SourceSnapshot
+
+    field = f"cursor__load__{ORGANIZATION_KEY}"
+    if snapshot_id is None:
+        rows = SourceCurrent.objects.values_list(
+            "snapshot__organization_id", f"snapshot__{field}"
+        )
+    else:
+        rows = SourceSnapshot.objects.filter(pk=snapshot_id).values_list(
+            "organization_id", field
+        )
+    row = rows.first()
+    if row is None or row[0] is None:
+        return None
+    return row[0], recorded_organization_name({"load": {ORGANIZATION_KEY: row[1]}})
 
 
 def log_organizations(evidence, *, task_id):
@@ -126,24 +176,42 @@ def snapshot_organizations(snapshot_id=None):
     """What a snapshot's load recorded about other organizations, or None.
 
     ``snapshot_id`` names the snapshot (a setup load's); None reads the
-    current one. Returns ``{"reached": N, "skipped": total}``, the counts the
-    Integrations page, the setup load's result and System health show
-    (#1554), or None for a key that reaches only the configured
-    organization, a snapshot recorded before this, or no snapshot. One query.
+    current one. Returns ``{"reached": N, "skipped": total, "organization":
+    label}``, the counts the Integrations page, the setup load's result and
+    System health show (#1554), with the loaded organization named as
+    ``organization_names.organization_label`` names it; or None for a key
+    that reaches only the configured organization, a snapshot recorded
+    before this, or no snapshot. One query.
     """
+    from .organization_names import organization_label
     from .snapshot_models import SourceCurrent, SourceSnapshot
 
-    field = f"cursor__load__{ORGANIZATIONS_KEY}"
+    fields = (
+        f"cursor__load__{ORGANIZATIONS_KEY}",
+        "organization_id",
+        f"cursor__load__{ORGANIZATION_KEY}",
+    )
     if snapshot_id is None:
-        rows = SourceCurrent.objects.values_list(f"snapshot__{field}", flat=True)
-    else:
-        rows = SourceSnapshot.objects.filter(pk=snapshot_id).values_list(
-            field, flat=True
+        rows = SourceCurrent.objects.values_list(
+            *(f"snapshot__{field}" for field in fields)
         )
-    value = recorded_organizations({"load": {ORGANIZATIONS_KEY: rows.first()}})
-    if value is None:
+    else:
+        rows = SourceSnapshot.objects.filter(pk=snapshot_id).values_list(*fields)
+    row = rows.first()
+    if row is None:
         return None
-    return {"reached": value["reached"], "skipped": sum(value["skipped"].values())}
+    others, organization, name = row
+    value = recorded_organizations({"load": {ORGANIZATIONS_KEY: others}})
+    if value is None or organization is None:
+        return None
+    return {
+        "reached": value["reached"],
+        "skipped": sum(value["skipped"].values()),
+        "organization": organization_label(
+            organization,
+            recorded_organization_name({"load": {ORGANIZATION_KEY: name}}),
+        ),
+    }
 
 
 def _families_left_without_members(data, client):
@@ -594,7 +662,7 @@ def load_full_source(
         data.funds.update(load_funds(client, data.organization_id))
         if progress is not None:
             progress("funds", len(data.funds))
-        corpus = normalize_core(data, as_of=as_of)
+        corpus = normalize_core(data, as_of=as_of, families=window.families)
         giving = load_giving(client, corpus=corpus, window=window, as_of=as_of)
         corpus.update(pledge=giving.pledges, contribution=giving.contributions)
     except (
@@ -654,7 +722,20 @@ def load_full_source(
         "derived_counts": derived,
         # The next full refresh's contact list baseline (#387 M4).
         CONTACT_COVERAGE_KEY: coverage,
+        # The Family group lookup this load read (#1393), which Create the
+        # campaign offers and its count preview reads.
+        campaign_families.GROUPS_KEY: campaign_families.group_lookup_evidence(
+            data.family_groups
+        ),
     }
+    # The configured organization's name, for display (#1554).
+    evidence.update(organization_name_evidence(client))
+    # The Families rule this load applied, its digest (the drop check's
+    # comparison key) and any chosen group the lookup lacks; nothing for the
+    # legacy rule.
+    applied = campaign_families.evidence(window.families, data.family_groups)
+    if applied is not None:
+        evidence[campaign_families.KEY] = applied
     # Only for a key that reaches several organizations (#1554).
     evidence.update(organization_evidence(client))
     if accepted is not None:

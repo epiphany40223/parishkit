@@ -396,10 +396,12 @@ retain all relationships. Exceptional purge is defined by the
 
 ### Campaign Families
 
-Status: specified, not built
+Status: built
 ([#1393](https://github.com/epiphany40223/parishkit/issues/1393),
-Administrator redesign 2026-10-24). Until it is built, every campaign uses
-the [legacy rule](#the-existing-campaigns-rule).
+Administrator redesign 2026-10-24): the rule's storage, its configuration
+guard (frozen migration 0175), refreshes that apply it and the choice on
+Create the campaign. Every campaign created before it keeps the
+[legacy rule](#the-existing-campaigns-rule).
 
 A campaign is sent to its **campaign Families** ("Families in this
 campaign"): the Families its **Families rule** selects from the promoted
@@ -468,6 +470,8 @@ active registered Families before (below).
   evidence and raises an Admin alert naming it; the drop check stops a refresh
   that would lose many Families that way, and the Administrator decides with
   [accept a large ParishSoft change once](../admin-portal/spec.md#accept-a-large-parishsoft-change-once).
+  Until the Admin alert is built, the refresh logs a WARNING with the
+  failure category `campaign_family_group_missing` (never the name).
 
 One parish-neutral predicate in `parishkit/parishsoft.py` (for example
 `family_matches_rule(family, rule, organization_id)`) evaluates every rule,
@@ -488,10 +492,25 @@ emailed through a head whose status the rule does not accept; such a Family
 is reached by postal mail, as a Family with no email is today. The legacy
 rule keeps today's email test exactly (any head not Inactive or Deceased,
 with a valid email address), so nothing changes for the
-[existing campaign](#the-existing-campaigns-rule), and
-`active_head_duids` keeps today's meaning. Under an Advanced rule a Family can be a campaign Family while
-`active` is false (for example one in a chosen "Inactive" group); the status
-reason then reads as a campaign Family, not as inactive.
+[existing campaign](#the-existing-campaigns-rule). The snapshot's
+`active_head_duids` lists the heads the email test accepts: under the
+legacy rule exactly today's list, and under a preset or Advanced rule only
+the heads whose status the rule accepts, so every reader that reaches a
+Family through its heads (the SQL that chooses the email addresses, mail
+names, the directory and reports) follows the rule with no change of its
+own. Under a preset or Advanced rule each Family row also carries the rule's
+digest (`campaign_families`), which the Families check compares with the
+rule its load recorded; a legacy row carries none, so it is byte for byte
+the row it was before rules existed.
+
+Under an Advanced rule a Family can be a campaign Family while the
+snapshot's `active` is false (for example one in a chosen "Inactive"
+group). Its `FamilyCampaign` row then records `active` true: on the
+campaign's own row `active` means active in this campaign, ParishSoft's flag
+or a campaign Family, because delivery reads that row's `active` with its
+eligibility. Under the legacy rule every campaign Family is active, so the
+row's flag is ParishSoft's, as before; the status reason reads as a campaign
+Family, not as inactive.
 
 **Storage.** The rule is a campaign configuration value,
 `values.campaign_families`, materialized and versioned like the campaign's
@@ -513,26 +532,54 @@ digested, so the existing campaign's versions are not rewritten to add one.
 One frozen forward migration (number assigned centrally) per the
 [post-launch schema policy](../operations/spec.md#post-launch-schema-policy):
 
-1. Replaces the configuration pointer guard
-   (`stewardship_campaign_pointer_v1`) with the same body plus two checks: a
-   configuration that creates a campaign must carry a well-formed
-   `campaign_families` value (the shapes above); and a configuration for a
-   campaign that already exists must carry exactly the value that campaign's
-   current configuration carries, absent staying absent, in every campaign
-   state, so the rule is fixed from creation for the existing campaign and
-   every later one. `campaign_families` is not added to the live structural
-   exemptions. The migration repeats any `ALTER … SECURITY DEFINER` and ends
-   with a self-verifying `DO` block.
-2. Replaces the `stewardship_family_campaign` check
-   `family_eligible_has_code_cohort` with one that no longer requires
-   `active` (a campaign Family still needs its code and first-eligibility
-   pair), so an Advanced campaign Family whose `active` is false can be
-   stored.
+Frozen migration 0175 replaces the configuration pointer guard
+(`stewardship_campaign_pointer_v1`) with 0166's body plus two checks: a
+configuration for a campaign that already exists must carry exactly the
+value that campaign's current configuration carries, absent staying absent,
+in every campaign state, so the rule is fixed from creation for the
+existing campaign and every later one; and a configuration that creates a
+campaign may carry a `campaign_families` value only in one of the canonical
+shapes above. `campaign_families` is not added to the live structural
+exemptions. The function stays an invoker function and the file ends with a
+self-verifying `DO` block. The Admin portal and the CLI always write a rule
+when they create a campaign; the guard does not require one, because a
+campaign created without one simply keeps the legacy rule, and the
+disposable test campaigns that prove the legacy behaviour are created that
+way. The `family_eligible_has_code_cohort` check is unchanged: a campaign
+Family's row is always `active` (above), so the check still holds.
+
+The same file replaces four functions in place, none of them `SECURITY
+DEFINER`, keeping their grants, owners and settings, and its `DO` block
+checks each. The campaign's exact source scope
+(`stewardship_source_current_window_v1`) names the campaign's
+`campaign_families` value when it has one, exactly as `source/windows.py`
+writes a refresh request's window, because the request guard requires the
+two to be equal; without one its text, and so the legacy campaign's window
+digest, is unchanged. The Financial stewardship selection (which pledge
+review also reads) and both Additional information selections (the page's,
+and the one older export captures use) give a Family
+row's `active`, which draws its
+[No longer in this campaign](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
+badge and the Financial Active filter, from the row's `portal_eligible`
+when the row was loaded under a rule (it carries `campaign_families`), and
+from ParishSoft's `active` otherwise, so the legacy campaign's rows read
+exactly as before.
+
+Setup completion's check for a setup that also created its campaign (an
+attempt confirmed before
+[#142](https://github.com/epiphany40223/parishkit/issues/142)) still
+compares each `FamilyCampaign` row's `active` with the snapshot's. Only a
+campaign with a rule can differ (an Advanced Family in a chosen "Inactive"
+group, above), and such a campaign is only ever created on Create the
+campaign, after setup, so the check is unchanged.
 
 It rewrites no rows: no `FamilyCampaign`, code, link token, lookup digest,
 schedule occurrence or outbox message changes.
 
-**How refreshes apply it.** A refresh reads the current campaign's rule when
+**How refreshes apply it.** The rule travels in the refresh's campaign
+window (`source/windows.py`, and SQL's exact scope, above), whose document
+names it only when the campaign has one, so a legacy campaign's window
+digest is unchanged. A refresh reads the current campaign's rule when
 it is requested, as it reads the giving window, and records it in its
 snapshot cursor's load evidence, `cursor.load.campaign_families = {rule,
 digest, missing_groups}`, beside the Family group lookup it read
@@ -542,8 +589,8 @@ read. With no current campaign the snapshot uses the legacy rule. The
 Families check (`source/families.py`) evaluates the recorded rule against the
 row's own facts, as it cross-checks today's flags. The [drop
 check](../background-processing/spec.md#full-cycle) compares the
-Portal-eligible and email-eligible counts only with snapshots recorded under
-the same rule digest; the first load after creation, whose rule the
+Portal-eligible, email-eligible and active-head counts only with snapshots
+recorded under the same rule digest (legacy snapshots record none); the first load after creation, whose rule the
 Administrator approved with its count, starts their trend again (the other
 counts keep theirs).
 

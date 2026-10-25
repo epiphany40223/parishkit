@@ -440,7 +440,7 @@ def test_review_is_unavailable_without_a_campaign_year(page, component_origin):
 
 
 def test_the_provenance_tip_opens_from_the_keyboard(page, component_origin):
-    """Each Active Families count explains where it was counted from."""
+    """Each Campaign Families count explains where it was counted from."""
     page.goto(component_origin + PAGE)
     button = page.locator("#table .toggletip-button").first
     button.focus()

@@ -47,7 +47,7 @@ COUNT_LABELS = (
     ("daily_messages", _("Daily Admin messages created")),
     ("weekly_messages", _("Weekly Admin messages created")),
     ("coalesced_slots", _("Coalesced semantic slots")),
-    ("active_families", _("Active Families when their groups were prepared")),
+    ("active_families", _("Campaign Families when their groups were prepared")),
     ("eligible_families", _("Email-eligible Families when their groups were prepared")),
     (
         "no_email_families",

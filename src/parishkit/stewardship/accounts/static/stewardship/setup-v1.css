@@ -76,3 +76,10 @@
 .setup-saved-state { display: grid; }
 .setup-saved-state > * { grid-area: 1 / 1; }
 .setup-saved-state > [hidden] { display: block !important; visibility: hidden; }
+/* ParishSoft connection's organization choice (#1554): one radio per line,
+   with no bullets; an organization with no Families is greyed (its radio
+   is disabled), and its "No Families in ParishSoft" note stays readable. */
+.organization-choices { list-style: none; padding: 0; margin-block: .5rem 1rem; }
+.organization-choices li { margin-block: .375rem; }
+.organization-choices li > label { display: inline; margin: 0; }
+.organization-choices li > label:has(input:disabled) { color: var(--muted); }

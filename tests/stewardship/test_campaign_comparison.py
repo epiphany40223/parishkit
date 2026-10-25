@@ -430,7 +430,7 @@ def test_data_notes_show_the_shared_notes_once_then_each_years_own():
     from parishkit.stewardship.reports.comparison import data_notes
 
     source = ("Source system", "Old system")
-    counted = ("Active Families counted from", "A snapshot")
+    counted = ("Campaign Families counted from", "A snapshot")
     years = [
         replace(year(2054, None), notes=(source, counted, ("note.a", "Late file"))),
         replace(year(2053, None), notes=(counted, source)),
@@ -446,12 +446,12 @@ def test_data_notes_show_the_shared_notes_once_then_each_years_own():
             (2052, (("Repeat submissions", "Kept the last"),)),
         ),
     )
-    other = replace(years[1], notes=(source, ("Active Families counted from", "B")))
+    other = replace(years[1], notes=(source, ("Campaign Families counted from", "B")))
     assert data_notes([years[0], other]) == (
         (source,),
         (
             (2054, (counted, ("note.a", "Late file"))),
-            (2053, (("Active Families counted from", "B"),)),
+            (2053, (("Campaign Families counted from", "B"),)),
         ),
     )
     assert data_notes(years[:1]) == ((), ((2054, years[0].notes),))
