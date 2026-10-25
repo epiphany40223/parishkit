@@ -36,6 +36,12 @@ checks need no database:
   its Review answers with the review of The whole series at 10:30 AM, its
   series lines drawn by the view's own ``_edit_notes`` from
   ``series_edits.plan``.
+  ``EDIT_SERIES_RULE``: Edit for Reminder 2 (October 20) of the same
+  series, for Change the repeat (#1808): This and following starts there
+  (Reminder 1 stays), The whole series on October 10. Its Review answers
+  with the review of The whole series every day October 10–25, its lines
+  drawn by the view's own ``_edit_notes`` from ``series_edits.plan`` with
+  that rule.
   ``EDIT_SERIES_GATED``: the same Edit with The whole series drawn
   unavailable (``GATED_REASON``), whose Review answers 400 with the page
   drawn again with "This and following" refused at the choice
@@ -162,6 +168,9 @@ from parishkit.stewardship.accounts.schedule_entry_views import (
     _summary,
     entry_form,
     entry_times,
+    rule_initial,
+    rule_mailings,
+    rule_scopes,
     series_context,
 )
 from parishkit.stewardship.accounts.schedule_forms import (
@@ -203,6 +212,7 @@ EDIT_INITIAL = "/schedule-edit-initial"
 EDIT_CLOSED = "/schedule-edit-closed"
 EDIT_SERIES = "/schedule-edit-series"
 EDIT_SERIES_GATED = "/schedule-edit-series-gated"
+EDIT_SERIES_RULE = "/schedule-edit-series-rule"
 EDIT_PASSED = "/schedule-edit-passed"
 APPLY_PASSED = "/schedule-list/apply-passed"
 # The refusal of an Apply whose reviewed send time has passed (#1464), in
@@ -562,7 +572,27 @@ def _entry(
     """
     entry = entry_form(None, emails, rows, schedule_row, on=on)
     scope_data = QueryDict("series-scope=following") if scope_error else None
-    part_of = series_context(entry, series, scope_data, refusals)
+    # Change the repeat (#1808), drawn as the view draws it: nothing sent.
+    rule, scopes, listed = None, None, ""
+    if series is not None:
+        scopes = rule_scopes(series, rows, schedule_row, set())
+        start = next(
+            (
+                scopes[name]["from"]
+                for name in ("following", "series")
+                if name in scopes
+            ),
+            series["values"]["rule"]["start"],
+        )
+        rule = RepeatRule(
+            scope_data,
+            prefix="repeat",
+            initial=rule_initial(series["values"]["rule"], start),
+        )
+        listed = rule_mailings(rows, series, set(), owner["values"]["timezone"], NOW)
+    part_of = series_context(
+        entry, series, scope_data, refusals, rule=rule, scopes=scopes, mailings=listed
+    )
     errors = {}
     if scope_error:
         part_of["form"].is_valid()
@@ -1115,6 +1145,16 @@ def components(context, admin):
             series=series,
             delete_url=SERIES_DELETE,
         ),
+        EDIT_SERIES_RULE: _entry(
+            values,
+            owner,
+            emails,
+            rows,
+            schedule_row=_second,
+            post_url=f"{EDIT_SERIES_RULE}/review",
+            series=series,
+            delete_url=SERIES_DELETE,
+        ),
         EDIT_SERIES_GATED: _entry(
             values,
             owner,
@@ -1244,6 +1284,25 @@ def components(context, admin):
             outcome, first["values"]["date"], time(10, 30), changed_email=False
         ),
     )
+    # Change the repeat (#1808): The whole series, every day October 10-25,
+    # its lines drawn by the view's own words from the command line's plan
+    # with that rule.
+    new_rule = SERIES_RULE | {"start": "2054-10-10", "end": "2054-10-25"}
+    ruled = plan(
+        series,
+        {row["id"]: row["values"] for row in rows},
+        set(),
+        scope="series",
+        rule=new_rule,
+    )
+    rule_review = _review(
+        owner,
+        [_added(owner, reminders[0]["values"] | row) for row in ruled["add"]],
+        new=False,
+        series_notes=_edit_notes(
+            ruled, first["values"]["date"], None, changed_email=False, rule=new_rule
+        ),
+    )
     # Edit's Delete (#1656): Reminder 1 removed, or its whole series, with
     # the view's own line on the series.
     removed = [
@@ -1328,6 +1387,7 @@ def components(context, admin):
                 _invalid(values, owner, emails, rows),
             ),
             f"{EDIT_SERIES}/review": (200, None, series_review),
+            f"{EDIT_SERIES_RULE}/review": (200, None, rule_review),
             f"{EDIT_PASSED}/review": (200, None, edit_review),
             APPLY_PASSED: (
                 409,

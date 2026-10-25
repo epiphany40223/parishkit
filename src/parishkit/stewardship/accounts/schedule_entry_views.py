@@ -24,7 +24,11 @@ views act on them:
   series (``_remember``), and Edit of a series' reminder offers "this and
   following" and "the whole series" for a time or email change
   (``SeriesScope``, ``_series_edit``), planned by the command line's own
-  ``series_edits.plan``. Delivery never reads a series.
+  ``series_edits.plan``. With those two, **Change the repeat** (#1808) also
+  gives the series a new rule (``RepeatRule`` on Edit, ``rule_scopes``,
+  ``_new_rule``), checked by the command line's own
+  ``admin_changes.checked_rule`` and planned by the same plan. Delivery
+  never reads a series.
 - **Delete** answers the list's confirmation dialog: it removes the chosen
   schedules in one configuration change. Edit's own Delete (#1656) posts
   the same route with ``action=preview`` instead and is answered with the
@@ -63,7 +67,9 @@ from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.formats import date_format
 from django.utils.translation import gettext_lazy as _
+from django.utils.translation import ngettext
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
@@ -247,6 +253,50 @@ TIME_PASSED = _(
     "later time, or change that reminder on its own."
 )
 SERIES_REFUSED = _("This change can't be made to the series. Reload the page.")
+# Change the repeat (#1808): the rule fields an Edit of a series' reminder
+# posts, as ``repeat-<name>`` (RepeatRule's, without New's Sends and dates).
+RULE_FIELDS = (
+    "frequency",
+    "weekdays",
+    "by",
+    "day",
+    "ordinal",
+    "month_weekday",
+    "start",
+    "until",
+)
+# The page's words for a new rule the command line's own check refuses
+# (admin_changes.RuleRefused), and for one starting before the reminders it
+# changes (series_edits.plan's ``rule_start``), each at the rule's field.
+RULE_SKIPS = _(
+    "The day of the month is not in %(months)s, so the series would skip a "
+    "month. Choose a day every month in the range has, or a shorter range."
+)
+RULE_COUNT = _(
+    "A series repeats on 1 to %(limit)s dates; this rule gives %(count)s. "
+    "Change its dates or how often it repeats."
+)
+RULE_START = _(
+    "Start the new repeat on or after %(date)s, the first reminder it "
+    "changes; the earlier reminders stay in this series."
+)
+# A new rule's date whose send time has already passed (#1808): the page
+# holds such a rule, so only a crafted post meets this; said at From.
+RULE_PASSED = _(
+    "The reminder on %(date)s at %(time)s would send at a time that has "
+    "already passed, so it would send at once. Start the new repeat later."
+)
+# Edit's refusal of a Change the repeat that changes nothing (the page holds
+# Review then; only a request that bypasses the page script meets it).
+UNCHANGED_RULE = _(
+    "Nothing has changed. Change the time, email or repeat, then choose Review changes."
+)
+# A Change the repeat posted with This reminder only (an old or crafted
+# page: the box is drawn only for the other two).
+RULE_SCOPE = _(
+    "Choose \u201cThis and following\u201d or \u201cThe whole series\u201d to "
+    "change the repeat."
+)
 # A repeat on New whose date's send time has already passed (#1948). The page
 # script never offers such a date, so only an old page or a crafted post
 # meets this; an added reminder in the past would send at once.
@@ -548,9 +598,21 @@ class SeriesScope(AdminForm):
         ],
         widget=forms.RadioSelect,
         help_text=_(
-            "\u201cThis reminder only\u201d changes just this one; "
-            "\u201cThis and following\u201d and \u201cThe whole series\u201d "
-            "change only the send time and email."
+            "\u201cThis reminder only\u201d changes just this one; the other "
+            "two change the send time, email or repeat."
+        ),
+    )
+    # Change the repeat (#1808): drawn only while another scope than This
+    # reminder only is chosen (schedule-series-scope.html), and then the
+    # repeat rule's fields (``RepeatRule``, prefix ``repeat``) give the
+    # series' new rule.
+    rule = forms.BooleanField(
+        required=False,
+        label=_("Change the repeat"),
+        help_text=_(
+            "With \u201cThis and following\u201d or \u201cThe whole series\u201d, "
+            "change the days this series sends on. Sent or prepared reminders "
+            "stay."
         ),
     )
     # The rest of the help, in the "i" beside the legend (#2130;
@@ -583,17 +645,25 @@ def _series_of(configuration, campaign, schedule):
     )
 
 
-def series_context(entry, record, data=None, refusals=None):
+def series_context(
+    entry, record, data=None, refusals=None, *, rule=None, scopes=None, mailings=""
+):
     """Edit's "Part of" and scope for a series' reminder, or None (#469).
 
     ``record`` is the reminder's series (``_series_of``), ``data`` the post
     and ``refusals`` the scopes already known to be unavailable
-    (``scope_refusals``). Returns ``{"text", "form", "options"}``: the rule
-    in plain words, the bound ``SeriesScope`` and each choice to draw
-    (``value``, ``label``, ``checked`` and the ``reason`` it is
-    unavailable, or None). The send date is the reminder's own only for
-    This reminder only, so the other scopes grey ``entry``'s date in place,
-    unsent (conditional fields, ``data-enabled-when``); its help says so.
+    (``scope_refusals``). Returns ``{"text", "form", "options", "rule",
+    "scoped", "changing", "mailings"}``: the rule in plain words, the bound
+    ``SeriesScope`` and each choice to draw (``value``, ``label``,
+    ``checked``, the ``reason`` it is unavailable, or None, and for Change
+    the repeat its ``rule_scopes`` entry as ``scope``); Change the repeat's
+    rule form (``rule``, a ``RepeatRule``), whether a scope other than This
+    reminder only is chosen (``scoped``) and the box is ticked
+    (``changing``), so a page drawn again shows them at once, and the saved
+    mailings its date list checks against (``mailings``, JSON). The send
+    date is the reminder's own only for This reminder only, so the other
+    scopes grey ``entry``'s date in place, unsent (conditional fields,
+    ``data-enabled-when``); its help says so.
     """
     if record is None:
         return None
@@ -614,10 +684,89 @@ def series_context(entry, record, data=None, refusals=None):
                 "label": label,
                 "checked": value == chosen,
                 "reason": (refusals or {}).get(value),
+                "scope": (scopes or {}).get(value),
             }
             for value, label in form.fields["scope"].choices
         ],
+        "rule": rule,
+        "scoped": chosen != "this",
+        "changing": chosen != "this" and bool(form["rule"].value()),
+        "mailings": mailings,
     }
+
+
+def rule_scopes(record, saved, schedule, read_only):
+    """Each series scope's first date and room for Change the repeat (#1808).
+
+    Returns ``{scope: {"from", "min", "min_hint", "room"}}`` for each scope
+    ``series_edits.cut`` admits from ``schedule``. ``from`` is the date the
+    scope's changes start on (its cut date), which the rule's From starts
+    at; ``min`` is that date again when earlier reminders stay in the
+    series, since the plan refuses a new rule starting before it then
+    (``rule_start``), with its words in ``min_hint``, else empty; ``room``
+    is how many schedules are still free once the unsent reminders the
+    change replaces (from the cut date on) are removed, for the page's date
+    list. The server plans and checks again on Review.
+    """
+    schedules = {row["id"]: row["values"] for row in saved}
+    members = record["values"]["schedules"]
+    result = {}
+    for scope in SCOPES:
+        try:
+            _anchor, cut_date = cut(
+                record, schedules, read_only, scope=scope, start=schedule["id"]
+            )
+        except SeriesEditError:
+            continue
+        stays = any(schedules[member]["date"] < cut_date for member in members)
+        replaced = sum(
+            1
+            for member in members
+            if member not in read_only and schedules[member]["date"] >= cut_date
+        )
+        result[scope] = {
+            "from": cut_date,
+            "min": cut_date if stays else "",
+            "min_hint": RULE_START % {"date": parish_date(date.fromisoformat(cut_date))}
+            if stays
+            else "",
+            "room": SCHEDULE_LIMIT - len(saved) + replaced,
+        }
+    return result
+
+
+def rule_initial(rule, start):
+    """A saved series rule as Change the repeat's fields start (#1808).
+
+    ``rule`` is the canonical rule; ``start`` the From the page fills in
+    (the first date the scope changes, ``rule_scopes``), never the rule's
+    own start, which may be a date long past that a New repeat left out.
+    The monthly choice the rule does not use starts as New's would.
+    """
+    monthly = rule.get("monthly") or {}
+    return {
+        "frequency": rule["frequency"],
+        "weekdays": [str(day) for day in rule.get("weekdays", [])],
+        "by": "weekday" if "ordinal" in monthly else "day",
+        "day": monthly.get("day", 1),
+        "ordinal": str(monthly.get("ordinal", 1)),
+        "month_weekday": str(monthly.get("weekday", 0)),
+        "start": start,
+        "until": rule["end"],
+    }
+
+
+def rule_mailings(saved, record, read_only, campaign_zone, now):
+    """The saved mailings Change the repeat's dates are checked against (#1808).
+
+    Every saved invitation and reminder (``mailings``) except the series'
+    own unsent reminders, which the change replaces, as JSON.
+    """
+    replaced = {
+        member for member in record["values"]["schedules"] if member not in read_only
+    }
+    kept = [row for row in saved if row["id"] not in replaced]
+    return json.dumps(mailings(kept, None, campaign_zone, now))
 
 
 def _saved(state, campaign):
@@ -927,7 +1076,9 @@ def _fields(new):
     if new:
         names.update(f"repeat-{name}" for name in REPEAT_FIELDS)
     else:
-        names.update({SCOPE, MOVE})
+        # Change the repeat (#1808) posts its box and the rule's fields.
+        names.update({SCOPE, MOVE, "series-rule"})
+        names.update(f"repeat-{name}" for name in RULE_FIELDS)
     return names
 
 
@@ -1074,6 +1225,49 @@ def _remember(repeat, entries, document):
     return [{"rule": rule, "added": list(range(len(entries)))}]
 
 
+def _refuse_at(form, field, message, code):
+    """Refuse Change the repeat's rule at one of its fields (#1808).
+
+    The field is marked by its own line, as ``RepeatRule.refuse_rule``
+    marks a rule ``expand`` refuses, so the summary links to it.
+    """
+    form.add_error(field, forms.ValidationError(message, code=code))
+    form.rule_marks = ((field, field),)
+
+
+def _new_rule(form):
+    """Change the repeat's new rule, checked as the command line checks one.
+
+    ``form`` is the posted ``RepeatRule`` (#1808). A rule ``expand``
+    refuses is refused at its fields (``refuse_rule``); then the command
+    line's own repeat check (``admin_changes.checked_rule``: no month
+    skipped for want of its day, 1 to REPEAT_LIMIT dates) decides, in the
+    page's words at the day of the month or Until. Returns the canonical
+    rule, or None with the refusal on ``form``.
+    """
+    from parishkit.stewardship.admin_changes import RuleRefused, checked_rule
+
+    if form.refuse_rule():
+        return None
+    try:
+        return checked_rule(_rule_fields(form.cleaned_data))[0]
+    except RuleRefused as error:
+        if error.reason == "missing":
+            months = ", ".join(
+                date_format(date.fromisoformat(f"{month}-01"), "F Y")
+                for month in error.months
+            )
+            _refuse_at(form, "day", RULE_SKIPS % {"months": months}, "repeat_skips")
+        else:
+            _refuse_at(
+                form,
+                "until",
+                RULE_COUNT % {"limit": REPEAT_LIMIT, "count": error.count},
+                "repeat_count",
+            )
+        return None
+
+
 def _page_refusal(error):
     """The page's own translated words for a refused series edit (#469).
 
@@ -1141,7 +1335,16 @@ def _repeat_passed(entries, campaign_zone, zone, now):
 
 
 class TimePassed(ValueError):
-    """A series edit's new time would put another reminder in the past (#469)."""
+    """A series edit's new time would put another reminder in the past (#469).
+
+    ``shown`` is that reminder's date and time in the browser's words
+    (``{"date", "time"}``), so Change the repeat (#1808) can say it at From.
+    """
+
+    def __init__(self, message, shown):
+        """Keep the message and the reminder's date and time."""
+        super().__init__(message)
+        self.shown = shown
 
 
 def _refuse_passed(added, schedule, campaign_zone, zone, now):
@@ -1164,17 +1367,26 @@ def _refuse_passed(added, schedule, campaign_zone, zone, now):
         moment = schedule_local.instant(row, campaign_zone, now)
         if moment <= now:
             shown = moment.astimezone(browser_zone(zone))
-            raise TimePassed(
-                TIME_PASSED
-                % {
-                    "date": parish_date(shown.date()),
-                    "time": format_time(shown.time()),
-                }
-            )
+            words = {
+                "date": parish_date(shown.date()),
+                "time": format_time(shown.time()),
+            }
+            raise TimePassed(TIME_PASSED % words, words)
 
 
 def _series_edit(
-    entry, schedule, record, saved, campaign, *, scope, zone, now, email, read_only
+    entry,
+    schedule,
+    record,
+    saved,
+    campaign,
+    *,
+    scope,
+    zone,
+    now,
+    email,
+    read_only,
+    rule=None,
 ):
     """The change document for "this and following" or "the whole series" (#469).
 
@@ -1186,8 +1398,11 @@ def _series_edit(
     time is converted on each date the edit changes (the unsent members from
     the cut date on), as a repeat's dates are, and one that would move such a
     reminder to another campaign day is refused (``DAY_MOVED``). Members
-    before the cut date keep their times, so they are not checked. The plan
-    itself is the command line's (``series_edits.plan``). Returns
+    before the cut date keep their times, so they are not checked. With
+    Change the repeat's new ``rule`` (#1808, canonical and already checked
+    by ``_new_rule``) the changed dates are the rule's instead: each is a
+    calendar day, and a changed time is converted on it and must keep it.
+    The plan itself is the command line's (``series_edits.plan``). Returns
     ``(entries, series, series_changes, notes)``: the schedules to delete
     and add, the series to remember (``build_preview``'s ``series``), the
     operations on the existing record and the review's lines on the series
@@ -1201,23 +1416,24 @@ def _series_edit(
     )
     clock = entry.cleaned_data["time"]
     times = None
-    if clock != schedule_local.in_browser(schedule["values"], zone, campaign_zone, now):
+    retimed = clock != schedule_local.in_browser(
+        schedule["values"], zone, campaign_zone, now
+    )
+    # A new rule's dates are calendar days, so the time (changed or not) is
+    # converted on each, as a New repeat's is: a browser whose day differs
+    # from the campaign's is then refused (DAY_MOVED) rather than saving
+    # other moments than the page's date list showed (#1808 review).
+    if retimed or rule is not None:
         times = {}
-        for member in record["values"]["schedules"]:
-            values = schedules[member]
-            if member in read_only or values["date"] < cut_date:
-                continue
-            day = (
-                schedule_local.instant(values, campaign_zone, now)
-                .astimezone(browser_zone(zone))
-                .date()
-            )
+        for day, wanted in _changed_days(
+            record, schedules, read_only, cut_date, rule, zone, campaign_zone, now
+        ):
             moved, converted, _weekday = schedule_local.to_campaign(
                 day, clock, None, zone=zone, campaign_zone=campaign_zone, now=now
             )
-            if moved.isoformat() != values["date"]:
+            if moved.isoformat() != wanted:
                 raise SeriesEditError(str(DAY_MOVED), "day_moved")
-            times.setdefault(values["date"], converted.isoformat(timespec="seconds"))
+            times.setdefault(wanted, converted.isoformat(timespec="seconds"))
     changed_email = email != schedule["values"]["template_version"]
     outcome = plan(
         record,
@@ -1225,6 +1441,7 @@ def _series_edit(
         read_only,
         scope=scope,
         start=schedule["id"],
+        rule=rule,
         times=times,
         template_version=email if changed_email else None,
     )
@@ -1239,18 +1456,50 @@ def _series_edit(
     )
     _refuse_passed(outcome["add"], schedule, campaign_zone, zone, now)
     notes = _edit_notes(
-        outcome, cut_date, clock if times is not None else None, changed_email
+        outcome,
+        cut_date,
+        clock if retimed else None,
+        changed_email,
+        rule=rule,
     )
     return entries, series, outcome["changes"], notes
 
 
-def _edit_notes(outcome, cut_date, clock, changed_email):
+def _changed_days(
+    record, schedules, read_only, cut_date, rule, zone, campaign_zone, now
+):
+    """The days a series edit's new time is converted on, as ``(day, date)``.
+
+    ``day`` is the browser-local day the time is typed for and ``date`` the
+    campaign date (ISO) the converted time must keep. Without a new rule
+    they are the unsent members from the cut date, each on the day it shows
+    in the browser's ``zone``; with Change the repeat's ``rule`` (#1808)
+    they are the rule's dates, calendar days read in both zones alike.
+    """
+    if rule is not None:
+        return [(date.fromisoformat(text), text) for text in expand(rule)["dates"]]
+    return [
+        (
+            schedule_local.instant(schedules[member], campaign_zone, now)
+            .astimezone(browser_zone(zone))
+            .date(),
+            schedules[member]["date"],
+        )
+        for member in record["values"]["schedules"]
+        if member not in read_only and schedules[member]["date"] >= cut_date
+    ]
+
+
+def _edit_notes(outcome, cut_date, clock, changed_email, rule=None):
     """The review's plain lines on what a series edit does to its series.
 
     ``clock`` is the new send time as typed (this computer's time), or None
     when the time is unchanged; ``changed_email`` says whether the email
-    changed. A split names both parts: the reminders before the cut date
-    that stay in the series, and the changed ones that become a new series.
+    changed; ``rule`` is Change the repeat's new rule (#1808), or None. A
+    split names both parts: the reminders before the cut date that stay in
+    the series, and the changed ones that become a new series. A new rule
+    also says how many reminders stay as they are and, without a split,
+    the series' new rule.
     """
     if outcome["series"] is None:
         return []
@@ -1278,6 +1527,21 @@ def _edit_notes(outcome, cut_date, clock, changed_email):
         notes.append(
             _("From %(date)s, the changed reminders are a new series: %(rule)s.")
             % {"date": day, "rule": rule_text(outcome["series"]["rule"])}
+        )
+    elif rule is not None:
+        notes.append(
+            _("This series now repeats: %(rule)s.")
+            % {"rule": rule_text(outcome["series"]["rule"])}
+        )
+    if rule is not None and outcome["series"]["keep"]:
+        count = len(outcome["series"]["keep"])
+        notes.append(
+            ngettext(
+                "%(count)s reminder of this series stays as it is.",
+                "%(count)s reminders of this series stay as they are.",
+                count,
+            )
+            % {"count": count}
         )
     return notes
 
@@ -1344,7 +1608,7 @@ def _series_notes(reviewed):
     ]
 
 
-def _summary(entry, repeat, email=None, scope=None):
+def _summary(entry, repeat, email=None, scope=None, rule=None):
     """The page's error summary: every message, linked to its field.
 
     The shared summary (components/errors.html) takes focus when the refused
@@ -1355,22 +1619,23 @@ def _summary(entry, repeat, email=None, scope=None):
     rule's controls are drawn with their own ids (``RULE_IDS``, not Django's
     ``id_repeat-...``); the weekdays link to their first box, and an error
     that marks several fields (a last date before the first) to the first
-    of them (#1915).
+    of them (#1915). ``rule`` is Edit's Change the repeat rule (#1808),
+    drawn with the same controls.
     """
     errors = []
-    for form in (entry, repeat, email, scope):
+    for form in (entry, repeat, email, scope, rule):
         if form is None or not form.is_bound:
             continue
         for field, messages in form.errors.items():
             target = None if field == "__all__" else form[field].auto_id
             # A choice group links to its first choice: Edit's scope, and
             # New's Sends (components/choice-pair.html's radio ids).
-            if form is scope and target:
+            if form is scope and field == "scope" and target:
                 target = f"{target}_0"
             if form is repeat and field == "sends":
                 target = "repeat-sends_0"
-            if form is repeat and field in RULE_IDS:
-                marked = [name for name, line in repeat.rule_marks if line == field]
+            if form in (repeat, rule) and field in RULE_IDS:
+                marked = [name for name, line in form.rule_marks if line == field]
                 target = RULE_IDS[marked[0] if marked else field]
                 if target == RULE_IDS["weekdays"]:
                     target = "repeat-weekday-0"
@@ -1389,6 +1654,7 @@ def _entry_page(request, context, *, status=200):
                 context["repeat"],
                 context.get("email"),
                 (context.get("series") or {}).get("form"),
+                (context.get("series") or {}).get("rule"),
             )
         }
     response = render(
@@ -1513,7 +1779,10 @@ def _entry(request, campaign_id, schedule_id=None):
     rule is remembered as a series (``_remember``). On Edit of a series'
     reminder, "this and following" or "the whole series" (``SeriesScope``)
     plans the series edit instead (``_series_edit``); the send date is not
-    posted then, so the date the page showed stands in for it. New opened by
+    posted then, so the date the page showed stands in for it. With Change
+    the repeat ticked (#1808), its rule fields give the new rule, checked as
+    the command line checks one (``_new_rule``) and planned with it; a
+    refused rule is the page again with the refusal at its field. New opened by
     the Campaign calendar's Add on a day (``?date=``, ``added_on``, #1521)
     has that send date filled in, and its Cancel and Apply return to the
     calendar on that day's month; Edit opened from the calendar
@@ -1546,7 +1815,8 @@ def _entry(request, campaign_id, schedule_id=None):
         form_action(
             request.POST,
             preview_fields=_fields(new),
-            multiple_fields=REPEAT_MULTIPLE if new else frozenset(),
+            # Change the repeat (#1808) posts its weekdays as New does.
+            multiple_fields=REPEAT_MULTIPLE if new else frozenset({"repeat-weekdays"}),
             direct=True,
         )
         if request.method == "POST"
@@ -1614,7 +1884,33 @@ def _entry(request, campaign_id, schedule_id=None):
             on=on,
         )
         repeat = RepeatRule(posted, prefix="repeat") if new else None
-        part_of = series_context(entry, record, posted, refusals)
+        # Change the repeat (#1808): the series' rule as its fields start,
+        # with From at the first date the default scope changes.
+        scopes, rule_form, rule_list = {}, None, ""
+        if record is not None:
+            scopes = rule_scopes(record, saved, schedule, read_only)
+            saved_rule = record["values"]["rule"]
+            start = next(
+                (
+                    scopes[name]["from"]
+                    for name in ("following", "series")
+                    if name in scopes
+                ),
+                saved_rule["start"],
+            )
+            rule_form = RepeatRule(
+                posted, prefix="repeat", initial=rule_initial(saved_rule, start)
+            )
+            rule_list = rule_mailings(saved, record, read_only, values["timezone"], now)
+        part_of = series_context(
+            entry,
+            record,
+            posted,
+            refusals,
+            rule=rule_form,
+            scopes=scopes,
+            mailings=rule_list,
+        )
         scope = part_of["form"] if part_of else None
         # The schedule's own email (#446): on New, of the posted mail type.
         toggle, email, sources = schedule_email.editor(
@@ -1654,6 +1950,7 @@ def _entry(request, campaign_id, schedule_id=None):
             entry.is_valid()
             & (repeat is None or repeat.is_valid())
             & (scope is None or scope.is_valid())
+            & (rule_form is None or rule_form.is_valid())
             & (not email.is_bound or email.is_valid())
         )
         if valid:
@@ -1736,6 +2033,18 @@ def _entry(request, campaign_id, schedule_id=None):
                 forms.ValidationError(refusals[chosen], code="series_edit_refused"),
             )
             return _entry_page(request, context, status=400)
+        new_rule = None
+        if scope is not None and scope.cleaned_data["rule"]:
+            if chosen == "this":
+                # The box is drawn only for the other scopes (an old page).
+                scope.add_error(
+                    "scope", forms.ValidationError(RULE_SCOPE, code="rule_scope")
+                )
+                return _entry_page(request, context, status=400)
+            # The command line's own rule check, at the rule's fields.
+            new_rule = _new_rule(rule_form)
+            if new_rule is None:
+                return _entry_page(request, context, status=400)
         if chosen != "this":
             try:
                 entries, series, series_changes, notes = _series_edit(
@@ -1751,13 +2060,35 @@ def _entry(request, campaign_id, schedule_id=None):
                     if added is not None
                     else entry.cleaned_data["template_version"],
                     read_only=read_only,
+                    rule=new_rule,
                 )
             except TimePassed as error:
-                entry.add_error(
-                    "time", forms.ValidationError(str(error), code="series_time_passed")
-                )
+                if new_rule is not None:
+                    # A new rule's date already past: said at From (#1808).
+                    _refuse_at(
+                        rule_form,
+                        "start",
+                        RULE_PASSED % error.shown,
+                        "repeat_time_passed",
+                    )
+                else:
+                    entry.add_error(
+                        "time",
+                        forms.ValidationError(str(error), code="series_time_passed"),
+                    )
                 return _entry_page(request, context, status=400)
             except SeriesEditError as error:
+                if error.reason == "rule_start" and new_rule is not None:
+                    # A new rule from before the cut date while earlier
+                    # reminders stay: said at From (#1808).
+                    day = parish_date(date.fromisoformat(scopes[chosen]["from"]))
+                    _refuse_at(
+                        rule_form,
+                        "start",
+                        RULE_START % {"date": day},
+                        "repeat_rule_start",
+                    )
+                    return _entry_page(request, context, status=400)
                 scope.add_error(
                     "scope",
                     forms.ValidationError(
@@ -1795,7 +2126,10 @@ def _entry(request, campaign_id, schedule_id=None):
             # Review unavailable then, so this is a safeguard for a request
             # that bypasses the page script: a plain refusal, which the
             # review dialog shows (UX conventions, "Review dialog", #750).
-            raise UserFacingError(UNCHANGED, fix=_("Nothing was changed."))
+            raise UserFacingError(
+                UNCHANGED_RULE if new_rule is not None else UNCHANGED,
+                fix=_("Nothing was changed."),
+            )
         if reviewed is None and str(EMAIL_DOES_NOT_FIT) in _messages(
             window.non_field_errors()
         ):

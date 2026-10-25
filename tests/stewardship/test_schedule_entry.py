@@ -19,6 +19,7 @@ from parishkit.stewardship.accounts.schedule_entry_views import (
     INITIAL_SCHEDULED,
     INITIAL_SENT,
     MISSING_HINTS,
+    RULE_FIELDS,
     SCHEDULE_LIMIT,
     RepeatRule,
     SeriesScope,
@@ -41,6 +42,7 @@ from parishkit.stewardship.accounts.schedule_entry_views import (
     initial_taken,
     mailings,
     return_url,
+    rule_initial,
     year_month,
 )
 from parishkit.stewardship.accounts.schedule_forms import (
@@ -205,10 +207,15 @@ def test_entry_times_carry_moments_for_the_browser_to_show():
 
 
 def test_fields_allow_repeat_only_on_new():
-    """Edit posts the schedule's fields; New adds the repeat rule."""
+    """Edit posts the schedule's fields; New adds the repeat rule. Edit's
+    Change the repeat (#1808) posts the rule's fields only, never New's
+    Sends and dates."""
     assert "zone" in _fields(True) and "zone" in _fields(False)
     assert "repeat-dates" in _fields(True)
-    assert not any(name.startswith("repeat-") for name in _fields(False))
+    edit = {name for name in _fields(False) if name.startswith("repeat-")}
+    assert edit == {f"repeat-{name}" for name in RULE_FIELDS}
+    assert "repeat-sends" not in edit and "repeat-dates" not in edit
+    assert "series-rule" in _fields(False) and "series-rule" not in _fields(True)
     assert "schedule-id" not in _fields(True)
     # Edit may post a series reminder's scope (#469); New never does.
     assert "series-scope" in _fields(False) and "series-scope" not in _fields(True)
@@ -871,3 +878,49 @@ def test_a_refusal_at_sends_links_to_its_first_choice():
     assert {"message": "Only reminders repeat.", "field_id": "repeat-sends_0"} in (
         _summary(invitation, repeat)
     )
+
+
+@pytest.mark.parametrize(
+    ("rule", "expected"),
+    [
+        (
+            {
+                "frequency": "weekly",
+                "start": "2054-10-02",
+                "end": "2054-10-31",
+                "weekdays": [2, 6],
+            },
+            {"frequency": "weekly", "weekdays": ["2", "6"], "by": "day", "day": 1},
+        ),
+        (
+            {
+                "frequency": "monthly",
+                "start": "2054-10-02",
+                "end": "2054-12-31",
+                "monthly": {"ordinal": -1, "weekday": 4},
+            },
+            {
+                "frequency": "monthly",
+                "weekdays": [],
+                "by": "weekday",
+                "ordinal": "-1",
+                "month_weekday": "4",
+            },
+        ),
+        (
+            {
+                "frequency": "monthly",
+                "start": "2054-10-02",
+                "end": "2054-12-31",
+                "monthly": {"day": 15},
+            },
+            {"by": "day", "day": 15, "ordinal": "1", "month_weekday": "0"},
+        ),
+    ],
+)
+def test_change_the_repeat_starts_from_the_saved_rule(rule, expected):
+    """Change the repeat's fields are the series' rule (#1808), with From the
+    date the page passes (never the rule's own start) and Until its end."""
+    initial = rule_initial(rule, "2054-10-18")
+    assert initial["start"] == "2054-10-18" and initial["until"] == rule["end"]
+    assert initial.items() >= expected.items()
