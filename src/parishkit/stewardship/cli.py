@@ -35,6 +35,10 @@ _COMMAND_OPTIONS = {
     "provision-runtime": {"config", "image", "checkout", "bind_source_root"},
     "retarget-image": {"config", "image"},
     "upgrade-check": {"config", "confirm_deployment"},
+    # PostgreSQL's per-login source rules (#2111): the password-free probe
+    # from inside one service, and the reload check the upgrade runs.
+    "database-sources": {"config"},
+    "hba-check": {"config"},
     "prepare-development": {"runtime_root"},
     "bootstrap": {"config", "phase", "deployment_id", "admin_email"},
     "migrate": {"config", "users_upgrade_base"},
@@ -507,6 +511,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         print(query, end="")
         return 0
+    if args.command in {"database-sources", "hba-check"}:
+        from .database_sources import execute
+
+        return execute(args)
     if args.command == "service":
         if args.bind_all_interfaces and (
             args.profile != DeploymentProfile.DEVELOPMENT

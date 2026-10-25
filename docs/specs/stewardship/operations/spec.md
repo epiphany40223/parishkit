@@ -382,15 +382,21 @@ swaps only PostgreSQL's image and keeps the mount and the command.
 
 `pg_reload_conf()` only signals the postmaster and returns before the
 reload happens, so the upgrade then waits, bounded, for the reload to take
-effect: it polls `pg_conf_load_time()` about once a second until it is later
-than the file's modification time from `pg_stat_file`, for at most 30
-seconds. A timeout stops the run (see the hba check below) and, per the
+effect: it reads PostgreSQL's own `clock_timestamp()` just before it sends
+the reload, after the retarget wrote the file, and polls about once a second
+until `pg_conf_load_time()` is later than that moment, for at most 30
+seconds. Both times come from PostgreSQL's clock, with microsecond
+precision, so LOCAL's fake clock shifts them alike; the file's
+`pg_stat_file` modification time would come from the writer's clock and has
+whole-second precision, so it is not used. A timeout stops the run (see the hba check below) and, per the
 timeout-logging rule, writes one persistent line to the upgrade log with
 what timed out (the wait for the hba reload), the limit (30 seconds) and the
 elapsed seconds; a wait that succeeds logs its elapsed seconds too. Both
 conditions are needed: `pg_conf_load_time()` advances even when the hba part
 of a reload fails and the old rules stay, so only the pairing with "no error
-row" proves the rules in force were loaded from this file.
+row" proves the rules in force were loaded from this file. Before it reloads,
+the upgrade runs the same check against no moment at all, so a file that is
+not the rendering or does not parse stops the run without a reload.
 
 ### Checks, rollout and rollback
 
@@ -405,15 +411,20 @@ step 4 runs migrations and grants, which cannot fix hba drift. The upgrade
 check keeps only what can hold before the reload (the database, extension
 and identity checks).
 
-The hba conditions are their own **hba check**, run by
-`stewardship-upgrade-host.sh` after step 3's reload (or, when the first
+The hba conditions are their own **hba check**, a read-only query that
+the target image renders (`pk-stewardship hba-check`, which, like
+`upgrade-check`, opens no database and re-renders the file from the
+provisioning record as `retarget-image` does) and that answers `t` or the
+name of the first failed condition. `stewardship-upgrade-host.sh` runs it
+once before the reload, when only the load may still be pending, and again
+after step 3's reload (or, when the first
 rollout or the full stop recreated PostgreSQL, after that restart) and
 before step 4, as the operator over the socket. It requires that
 `SHOW hba_file` is the mounted path, that the mounted file's digest matches
 the rendered one, that `pg_hba_file_rules` reports no error row (so the
 last load did not keep older rules), and that `pg_conf_load_time()` is later
-than the file's `pg_stat_file` modification time (after the bounded wait
-above), so the rules in force were loaded from this file. A failure stops the
+than the moment the upgrade read just before its reload (after the bounded
+wait above), so the rules in force were loaded from this file. A failure stops the
 run before step 4 with the maintenance page still up, names the failed
 condition, and leaves the fixed-forward or rollback decision to the operator.
 This is still indirect; only `database-sources` below proves which rules are
@@ -430,13 +441,22 @@ login, which libpq reports as `fe_sendauth: no password supplied`) or with
 the server's refusal (SQLSTATE `28000`). Because the file ends in an
 explicit `host all all all reject`, every refusal matches a line, so the
 server's message is `pg_hba.conf rejects connection for host ...`, never
-`no pg_hba.conf entry`; both are `28000`, and the command classifies by the
-SQLSTATE and that message. Each probe forces an empty password: it sets no
-`PGPASSWORD` and points `PGPASSFILE` at an empty file, so a mounted
-password can never turn a probe into a real sign-in. The command tries every
-login from where it runs and prints, per login, `allowed` or `refused`,
-then compares with the rendered matrix and exits non-zero on any
-difference. The scripted upgrade runs it by `docker exec` in every running
+`no pg_hba.conf entry`; both are `28000`. libpq reports a failed
+connection without its SQLSTATE (as
+[online service startup](#online-service-startup) also relies on), so the
+command classifies by those two messages, which only this refusal and
+libpq's own password prompt produce; any other answer is reported as
+unknown and fails the check. Each probe forces an empty password: it
+clears every `PG*` variable (no `PGPASSWORD`, `PGPASSFILE` or `PGSERVICE`)
+and points libpq's password file at an empty file, so a mounted password
+can never turn a probe into a real sign-in; a connection that succeeds
+anyway was accepted without a password and is a security failure. The
+command tries every login from where it runs and prints, per login,
+`allowed` or `refused` with the source address (the local address the
+kernel routes to PostgreSQL from) and the service, then compares with the
+rendered matrix and exits non-zero on any difference. The expected row is
+the logins the service's own document holds, from the same function the
+renderer derives that service's rules from. The scripted upgrade runs it by `docker exec` in every running
 online service and by `compose run` in each one-shot profile, after step 6
 starts the services; restores, drills and pk-local run the same check. A
 login allowed from a source the matrix does not list is reported as a
