@@ -7,9 +7,14 @@ network a running container is on nor attach a stopped container to the
 recreated one, so the upgrade (and the rollback, in the other direction)
 removes every container but caddy and starts postgres and valkey again on
 the rendered networks. ``tools/stewardship-upgrade-host.sh`` and
-``tools/stewardship-ops/pk-restore`` share that code as one block; the
-first test keeps the two copies identical, and the opted-in one runs the
-block for a rollout and then a rollback on the real Production topology.
+``tools/stewardship-ops/pk-restore`` share that code as one block, and
+the reload and hba check that follow it as a second; the first test keeps
+both pairs of copies identical. The opted-in ones run the blocks on real
+Docker: a rollout and then a rollback on the real Production topology
+with stand-ins for the services, and the combined upgrade path with the
+application image, from a root it provisions: the full stop, the hba
+check in its isolated container against a real reload, and
+``database-sources`` from every service, in both directions.
 """
 
 import ipaddress
@@ -24,6 +29,7 @@ from uuid import uuid4
 
 import pytest
 
+from parishkit.stewardship.deployment import DeploymentProfile
 from parishkit.stewardship.runtime_hba import HBA_FILE
 from parishkit.stewardship.runtime_network import RuntimeNetwork
 from parishkit.stewardship.runtime_paths import RuntimeLayout
@@ -130,9 +136,11 @@ def old_rendering(new):
         networks = {
             k: v for k, v in service["networks"].items() if not k.startswith("offline-")
         }
-        if "backend" in networks:
+        # A one-shot (the backup worker keeps application-egress too) was
+        # on backend before it had its own network.
+        if "backend" in networks or len(networks) < len(service["networks"]):
             networks["backend"] = {}
-        service["networks"] = networks or {"backend": {}}
+        service["networks"] = networks
     postgres = old["services"]["postgres"]
     command = postgres["command"]
     at = command.index(f"hba_file={HBA_FILE}")
@@ -459,3 +467,244 @@ def test_a_rollout_then_a_rollback_keeps_the_data(tmp_path):
                 check=False,
             )
         shutil.rmtree(root, ignore_errors=True)
+
+
+# The combined upgrade path (#2111 slices a, b and c) with the application
+# image: a deployment provisioned by the image itself, the full stop, then
+# the hba check rendered in its isolated container and a real reload, then
+# `database-sources` from every service. The image is the development one
+# CI's runtime step builds; PARISHKIT_RUNTIME_TEST_IMAGE names another
+# local build.
+APPLICATION_IMAGE = os.environ.get(
+    "PARISHKIT_RUNTIME_TEST_IMAGE", "parishkit-stewardship:development"
+)
+
+
+def isolated_definition():
+    """The upgrade host's `isolated=(...)` array, as the script defines it."""
+    text = HOST.read_text()
+    start = text.index("isolated=(docker run")
+    return text[start : text.index(")\n", start) + 2]
+
+
+def provisioned_root(volume, networks):
+    """Provision a Production root in a fresh native volume with the image.
+
+    The volume is mounted at its own daemon-side path, so the runtime root,
+    every rendered bind source and the host scripts' `source=$root` mounts
+    are all one path, as on a Production host. Returns that root, the
+    operator document's path, the rendered Compose document and every path
+    provisioning created.
+    """
+    from parishkit.stewardship.deployment import load_deployment
+    from parishkit.stewardship.deployment_documents import deployment_document
+
+    docker("volume", "create", "--label", "parishkit.test=2111", volume)
+    mountpoint = docker(
+        "volume", "inspect", "--format", "{{.Mountpoint}}", volume
+    ).stdout.strip()
+    root = Path(mountpoint) / "runtime"
+    backend, proxy, offline = networks
+    configuration = load_deployment(environ={"PARISHKIT_ROOT": str(root)})
+    configuration = replace(
+        configuration,
+        profile=DeploymentProfile.PRODUCTION,
+        public_origin="https://parish.example",
+        trusted_proxy_hops=1,
+        runtime_network=RuntimeNetwork(backend=backend, proxy=proxy, offline=offline),
+    )
+    document = json.dumps(deployment_document(configuration))
+    at_volume = ("--mount", f"type=volume,source={volume},target={mountpoint}")
+    docker(
+        "run", "--rm", "--network", "none", "--user", "0", "--entrypoint", "sh",
+        *at_volume, "-e", "DOCUMENT=" + document, APPLICATION_IMAGE, "-c",
+        f'cd "{mountpoint}" && printf %s "$DOCUMENT" >operator.json && mkdir runtime'
+        " && chown -R 10001:10001 . && chmod 700 . runtime && chmod 600 operator.json",
+    )  # fmt: skip
+    yaml = f"{mountpoint}/operator.json"
+    isolated = isolated_definition()
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            f'set -euo pipefail\n{isolated}"${{isolated[@]}}" "$@"',
+            "provision",
+            *at_volume,
+            APPLICATION_IMAGE,
+            "provision-runtime",
+            "--config",
+            yaml,
+            "--image",
+            PRODUCTION_IMAGE,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    compose = json.loads(
+        docker(
+            "run", "--rm", "--network", "none", "--user", "10001:10001",
+            "--entrypoint", "cat", *at_volume, APPLICATION_IMAGE,
+            f"{root}/config/services/compose.json",
+        ).stdout
+    )  # fmt: skip
+    present = docker(
+        "run", "--rm", "--network", "none", "--user", "10001:10001",
+        "--entrypoint", "find", *at_volume, APPLICATION_IMAGE, str(root),
+    ).stdout.splitlines()  # fmt: skip
+    return root, yaml, compose, set(present)
+
+
+def probe_rendering(compose, present):
+    """The rendered Compose document, as the probes can start it.
+
+    PostgreSQL and Valkey are the rendered services. Every application
+    service keeps its rendered networks (so its fixed addresses), user,
+    hardening and every mount whose source provisioning created (`present`),
+    and runs the local image; the provider credentials and stores that
+    bootstrap and the installers create later are not here. Caddy is left
+    out (the other runtime test keeps it).
+    """
+    services = {}
+    for name, service in compose["services"].items():
+        if name in ("postgres", "valkey"):
+            services[name] = service
+        elif service.get("command", [None, None])[1:2] == ["--config"]:
+            service = dict(service, image=APPLICATION_IMAGE)
+            service.pop("depends_on", None)
+            service["volumes"] = [
+                mount for mount in service["volumes"] if mount["source"] in present
+            ]
+            services[name] = service
+    used = {key for service in services.values() for key in service["networks"]}
+    return {
+        "services": services,
+        "networks": {k: v for k, v in compose["networks"].items() if k in used},
+    }
+
+
+@runtime
+def test_the_upgrade_path_proves_the_rules_from_every_service(tmp_path):
+    """Rollout and rollback: hba check, real reload, then every service's probe."""
+    from parishkit.stewardship.database_sources import inventory
+
+    volume = f"pk-2111c-{uuid4().hex[:8]}"
+    project = volume
+    try:
+        root, yaml, rendered, present = provisioned_root(volume, free_networks())
+        new = probe_rendering(rendered, present)
+        old = old_rendering(new)
+        database = new["services"]["postgres"]["environment"]["POSTGRES_DB"]
+        files = {name: tmp_path / f"{name}.json" for name in ("old", "new")}
+        files["old"].write_text(json.dumps(old))
+        files["new"].write_text(json.dumps(new))
+        work = tmp_path / "work"
+        work.mkdir()
+        driver = tmp_path / "driver.sh"
+        driver.write_text(
+            "set -euo pipefail\n"
+            + isolated_definition()
+            + layout_block(HOST)
+            + hba_block(HOST)
+            + "project=$1 compose=$2 work=$3 database=$4 root=$5 yaml=$6 image=$7\n"
+            + 'dc=(docker compose -f "$compose" -p "$project")\n'
+            + "case $8 in\n"
+            + "    changes) layout_changes ;;\n"
+            + "    full-stop) layout_full_stop ;;\n"
+            + "    rendered) hba_rendered ;;\n"
+            + '    reload) hba_render && hba_reload && echo "since=$hba_since" ;;\n'
+            + '    answer) hba_answer "$9" ;;\n'
+            + "esac\n"
+        )
+
+        def shared(name, action, *extra, status=0):
+            """One shared-block action against one rendering."""
+            result = subprocess.run(
+                ["bash", str(driver), project, str(files[name]), str(work)]
+                + [database, str(root), yaml, APPLICATION_IMAGE, action, *extra],
+                capture_output=True,
+                text=True,
+                timeout=900,
+                check=False,
+            )
+            assert result.returncode == status, result.stdout + result.stderr
+            return result.stdout
+
+        def sources(name):
+            """`database-sources` from every application service, by `run`.
+
+            `compose run` gives each container its service's networks and
+            fixed addresses, as the upgrade host's one-shot checks have.
+            """
+            outcomes = {}
+            for service, value in json.loads(files[name].read_text())[
+                "services"
+            ].items():
+                if service in ("postgres", "valkey"):
+                    continue
+                result = docker(
+                    "compose", "-f", str(files[name]), "-p", project, "run",
+                    "--rm", "--no-deps", "-T", service, "database-sources",
+                    "--config", value["command"][2], check=False, timeout=180,
+                )  # fmt: skip
+                outcomes[service] = result
+            return outcomes
+
+        docker(
+            "compose", "-f", str(files["old"]), "-p", project, "up", "--detach",
+            "--wait", "postgres", "valkey", timeout=300,
+        )  # fmt: skip
+        assert shared("old", "changes") == ""
+        assert shared("old", "rendered") == ""
+
+        # The rollout: the full stop, then the hba check rendered by the
+        # image in its isolated container, a real reload, a real wait.
+        assert "ip_range" in shared("new", "changes")
+        shared("new", "full-stop")
+        assert shared("new", "rendered").strip() == f"hba_file={HBA_FILE}"
+        reloaded = shared("new", "reload")
+        assert "the rendered source rules are in force" in reloaded
+        since = reloaded.strip().splitlines()[-1].removeprefix("since=")
+        assert shared("new", "answer", since).strip() == "t"
+        for service, result in sources("new").items():
+            assert result.returncode == 0, service + result.stdout + result.stderr
+            assert "database sources match the rendered rules" in result.stdout
+            assert f"({service})" in result.stdout
+        # The check reads the mounted file: a changed byte is found.
+        hba = f"{root}/config/services/pg-hba/pg_hba.conf"
+        docker(
+            "run", "--rm", "--network", "none", "--user", "10001:10001",
+            "--entrypoint", "sh", "--mount",
+            f"type=volume,source={volume},target={root.parent}",
+            APPLICATION_IMAGE, "-c", f'echo "# changed" >>"{hba}"',
+        )  # fmt: skip
+        assert shared("new", "answer", since).strip() == "hba_file_differs"
+
+        # The rollback to a release before the rules: the same full stop
+        # puts PostgreSQL back on its stock rules, which admit every login
+        # from everywhere, so every service's probe finds the difference.
+        assert "ip_range" in shared("old", "changes")
+        shared("old", "full-stop")
+        assert shared("old", "changes") == ""
+        assert shared("old", "rendered") == ""
+        logins = inventory()
+        for service, result in sources("old").items():
+            assert result.returncode == 1, service + result.stdout + result.stderr
+            for login in logins:
+                assert f"{login} allowed from " in result.stdout, (service, login)
+            assert " refused from " not in result.stdout
+    finally:
+        ids = docker(
+            "ps", "--all", "--quiet", "--filter",
+            f"label=com.docker.compose.project={project}", check=False,
+        ).stdout.split()  # fmt: skip
+        if ids:
+            docker("rm", "--force", "--volumes", *ids, check=False)
+        for network in docker(
+            "network", "ls", "--quiet", "--filter",
+            f"label=com.docker.compose.project={project}", check=False,
+        ).stdout.split():  # fmt: skip
+            docker("network", "rm", network, check=False)
+        docker("volume", "rm", volume, check=False)
