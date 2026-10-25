@@ -250,14 +250,19 @@ def test_accept_on_a_family_page_redraws_its_section_in_place(page, component_or
     assert_clean(page, errors)
 
 
-def test_accept_on_a_member_page_keeps_both_rows_in_place(page, component_origin):
+@pytest.mark.parametrize("width", [320, 1366])
+def test_accept_on_a_member_page_keeps_both_rows_in_place(
+    page, component_origin, width
+):
     """A Member page's section is the hub Member tab's: Accept opens Census
     changes' own dialog and posts there, the section is redrawn in place
     from the page's own address with Accept pressed and focused, and
-    neither navigation row moves, on a page taller than the screen."""
+    neither navigation row moves nor the page scrolls, on a page taller
+    than the screen, scrolled to the change."""
     errors = watch(page)
-    page.set_viewport_size({"width": 1366, "height": 600})
+    page.set_viewport_size({"width": width, "height": 600})
     page.goto(component_origin + PAGE_PATHS[1])
+    assert page.evaluate("document.documentElement.scrollHeight > innerHeight")
     page.evaluate(MARK)
     sent = []
 
@@ -279,8 +284,10 @@ def test_accept_on_a_member_page_keeps_both_rows_in_place(page, component_origin
     page.route("**/admin/reports/census/", census)
     page.route("**" + page_url(RUN, 2), here)
     section = page.locator("#review-section")
-    before = page.evaluate(SLOTS)
     row = section.locator(f"#review-member-census-row-{DECEASED}")
+    row.scroll_into_view_if_needed()
+    scrolled = page.evaluate("scrollY")
+    before = page.evaluate(SLOTS)
     accept = row.locator("[data-row-action='accept']")
     has_attribute(accept, "aria-pressed", "false")
     accept.click()
@@ -296,20 +303,50 @@ def test_accept_on_a_member_page_keeps_both_rows_in_place(page, component_origin
     assert "decide=accept" in sent[-1]
     assert page.evaluate(MARKED) == "kept"
     assert page.url.endswith(PAGE_PATHS[1])
+    assert page.evaluate("scrollY") == scrolled
     assert page.evaluate(SLOTS) == before
     assert_clean(page, errors)
 
 
+@pytest.mark.parametrize("width", [320, 1366])
 @pytest.mark.parametrize(
     ("path", "row", "name"),
     [(FOCUS_PATH, "bottom", "Next"), (BACK_PATH, "top", "Previous")],
 )
-def test_a_move_puts_focus_on_the_control_used(page, component_origin, path, row, name):
+def test_a_move_puts_focus_on_the_control_used(
+    page, component_origin, path, row, name, width
+):
     """The page Next or Previous opens puts focus on that control, in the
-    row it was used in, so Enter moves on again."""
-    page.set_viewport_size({"width": 1366, "height": 700})
+    row it was used in, so Enter moves on again; the page opens at its top,
+    with the control on screen and both rows where an unfocused page has
+    them (an autofocus would scroll a phone's page to the bottom)."""
+    page.set_viewport_size({"width": width, "height": 700})
+    page.goto(component_origin + PAGE_PATHS[1])
+    unfocused = page.evaluate(SLOTS)
     page.goto(component_origin + path)
     control = page.locator(f'[data-review-nav="{row}"]').get_by_role(
         "button", name=name
     )
     focused(control)
+    assert page.evaluate("scrollY") == 0
+    box = control.bounding_box()
+    assert box["y"] >= 0 and box["y"] + box["height"] <= 700
+    assert page.evaluate(SLOTS) == unfocused
+
+
+def test_phone_rows_never_overlap_with_larger_text(page, component_origin):
+    """With text a quarter larger on a 320 px phone, Previous, Finish and
+    Next stay side by side: the side columns never shrink below their
+    labels, so the buttons never overlap."""
+    page.set_viewport_size({"width": 320, "height": 700})
+    page.goto(component_origin + PAGE_PATHS[1])
+    page.evaluate("document.documentElement.style.fontSize = '125%'")
+    for row in ("top", "bottom"):
+        boxes = [
+            page.locator(
+                f'[data-review-nav="{row}"] [data-review-move="{move}"]'
+            ).bounding_box()
+            for move in ("previous", "finish", "next")
+        ]
+        for left, right in zip(boxes, boxes[1:], strict=False):
+            assert left["x"] + left["width"] <= right["x"], (row, boxes)

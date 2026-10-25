@@ -9309,4 +9309,11 @@
   document.addEventListener("submit", (event) => maskSecrets(event.target), true);
   window.addEventListener("pagehide", () => maskSecrets(document));
   window.addEventListener("pageshow", () => maskSecrets(document));
+
+  // The review wizard (#2123, review pipeline spec "Wizard navigation"):
+  // the page Previous or Next opens puts focus on the control used
+  // (data-review-focus), without scrolling. An autofocus would scroll the
+  // page, on a phone in Chromium down to the bottom row's sticky spot, so
+  // both rows would leave the screen spots they keep on every page.
+  document.querySelector("[data-review-focus]")?.focus({preventScroll: true});
 })();

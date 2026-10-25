@@ -108,12 +108,12 @@ def test_a_census_run_starts_moves_and_finishes(response_service, google):
         # is on the bottom row's Next slot, the control the move came from.
         assert 'data-review-move="next"' not in page
         bottom = page.split('data-review-nav="bottom"')[1]
-        assert re.search(r'data-review-move="finish"[^>]*autofocus', bottom)
-        assert "autofocus" not in page.split('data-review-nav="bottom"')[0]
+        assert re.search(r'data-review-move="finish"[^>]*data-review-focus', bottom)
+        assert "data-review-focus" not in page.split('data-review-nav="bottom"')[0]
         response, _ = move(browser, f"{START}1/?run={run.pk}", "previous-top")
         _, body = read(browser, response["Location"])
         # Page 1 has no Previous to take focus.
-        assert "autofocus" not in body.decode()
+        assert "data-review-focus" not in body.decode()
         # Back to page 2 in the browser (a GET records nothing), then Finish
         # there: it finishes from any page, last write wins.
         run.refresh_from_db()

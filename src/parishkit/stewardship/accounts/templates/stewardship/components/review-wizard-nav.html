@@ -13,14 +13,17 @@
   this page with finish=1. They never ask, save or discard anything. The
   page a move opens puts focus on the control used (``focus_previous`` or
   ``focus_next``, from the view's ``focus``; on the last page Next's slot
-  is Finish, which takes it), so Enter moves on again.
+  is Finish, which takes it), so Enter moves on again. The control is
+  marked data-review-focus and ui-v1.js focuses it without scrolling: an
+  autofocus would scroll a phone's page down to the bottom row's sticky
+  spot (Chromium), moving both rows off their screen spots.
 {% endcomment %}<div class="review-wizard-nav review-wizard-nav-{{ where }}" data-review-nav="{{ where }}">
 <p class="review-wizard-progress" data-review-progress>{{ progress }}</p>
 <progress class="review-wizard-bar" max="{{ size }}" value="{{ position }}" aria-hidden="true"></progress>
 <div class="review-wizard-actions">
-{% if previous_url %}<form method="post" action="{{ previous_url }}" data-nav-slot="back">{% csrf_token %}<input type="hidden" name="from" value="previous-{{ where }}">{% button type="submit" variant="secondary" data-review-move="previous" autofocus=focus_previous %}{% translate "Previous" %}{% endbutton %}</form>{% else %}<span data-nav-slot="back"></span>{% endif %}
+{% if previous_url %}<form method="post" action="{{ previous_url }}" data-nav-slot="back">{% csrf_token %}<input type="hidden" name="from" value="previous-{{ where }}">{% button type="submit" variant="secondary" data-review-move="previous" data-review-focus=focus_previous %}{% translate "Previous" %}{% endbutton %}</form>{% else %}<span data-nav-slot="back"></span>{% endif %}
 {% if next_url %}<form method="post" action="{{ here_url }}" data-nav-slot="action">{% csrf_token %}<input type="hidden" name="finish" value="1">{% button type="submit" variant="secondary" data-review-move="finish" %}{% translate "Finish" %}{% endbutton %}</form>
-<form method="post" action="{{ next_url }}" data-nav-slot="next">{% csrf_token %}<input type="hidden" name="from" value="next-{{ where }}">{% button type="submit" data-review-move="next" autofocus=focus_next %}{% translate "Next" %}{% endbutton %}</form>{% else %}<span data-nav-slot="action"></span>
-<form method="post" action="{{ here_url }}" data-nav-slot="next">{% csrf_token %}<input type="hidden" name="finish" value="1">{% button type="submit" data-review-move="finish" autofocus=focus_next %}{% translate "Finish" %}{% endbutton %}</form>{% endif %}
+<form method="post" action="{{ next_url }}" data-nav-slot="next">{% csrf_token %}<input type="hidden" name="from" value="next-{{ where }}">{% button type="submit" data-review-move="next" data-review-focus=focus_next %}{% translate "Next" %}{% endbutton %}</form>{% else %}<span data-nav-slot="action"></span>
+<form method="post" action="{{ here_url }}" data-nav-slot="next">{% csrf_token %}<input type="hidden" name="finish" value="1">{% button type="submit" data-review-move="finish" data-review-focus=focus_next %}{% translate "Finish" %}{% endbutton %}</form>{% endif %}
 </div>
 </div>
