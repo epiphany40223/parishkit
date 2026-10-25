@@ -66,7 +66,7 @@ def finishing_status(context):
 
 
 def load_status(progress, wizard):
-    """The Load parish data status fragment for one progress observation."""
+    """The Loading parish data status fragment for one progress observation."""
     return render_to_string(
         "stewardship/setup-source-progress-status.html",
         progress_views._status_context(progress) | {"wizard": wizard},

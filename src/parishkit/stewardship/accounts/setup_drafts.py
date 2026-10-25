@@ -31,14 +31,14 @@ class DraftView:
     idle_at: datetime
     absolute_at: datetime
     watchdog_at: datetime | None
+    # A load an attempt bound before #2201 and its Task state; the web no
+    # longer starts one (Check parish data replaced it).
     source_task_id: UUID | None = None
-    # The bound load's Task state (#1353): a failed load leaves setup
-    # collecting, so only "succeeded" means the parish data is loaded.
     source_task_state: str | None = None
-    # Whether that load's staged data is still valid (staged_load): a load
-    # that succeeded can go stale when its credential changes, and then
-    # needs loading again (#1353).
-    source_loaded: bool = False
+    # Whether the newest parish data check is ready and checked the staged
+    # ParishSoft key and organization saved now (setup_checks.checked_source,
+    # #2201): what completes the Check parish data step.
+    source_checked: bool = False
 
 
 def staged_load(attempt):
@@ -47,9 +47,11 @@ def staged_load(attempt):
     Valid means: the bound load succeeded, its exchange is unscrubbed and
     on the Task's fence, the staged ParishSoft credential still has the
     version and fingerprint the load read, and its snapshot is ready on the
-    same fences. Finish setup, campaign staging and the wizard's Load parish data
-    step all use this one predicate (#1353), and the attempt's audit trigger
-    repeats it in SQL to refuse a Load again of a still-valid load.
+    same fences. Since #2201 the web starts no load and Finish setup needs the
+    parish data check instead (``setup_checks.checked_source``); this stays
+    for a load an attempt bound earlier, whose progress page and discard
+    (#1353) still read it, and the attempt's audit trigger repeats it in SQL
+    to refuse a Load again of a still-valid load.
     """
     from .setup_exchange_models import SetupSourceResult
 
@@ -94,6 +96,8 @@ def _owned(request, service, attempt_id=None):
 
 def view_draft(request, service, attempt_id=None):
     """A passive GET cannot extend idle expiry, create staging or resume new logins."""
+    from .setup_checks import checked_source
+
     with work_transaction():
         row = _owned(request, service, attempt_id)[1]
         if row is None:
@@ -122,7 +126,7 @@ def view_draft(request, service, attempt_id=None):
             window.watchdog_at,
             row.source_task_id,
             row.source_task.state if row.source_task_id else None,
-            row.state == SetupState.COLLECTING and staged_load(row) is not None,
+            row.state == SetupState.COLLECTING and checked_source(row) is not None,
         )
 
 

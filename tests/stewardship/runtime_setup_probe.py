@@ -155,26 +155,28 @@ def main():
                 },
             )
     draft = get("/admin/setup").context["draft"]
-    progress = post(
+    # Check parish data (#2201): the ParishSoft installer answers the check,
+    # and the page shows it once it is ready.
+    post(
         "/admin/setup",
         {
-            "action": "load",
+            "action": "check",
             "attempt": str(draft.status.attempt_id),
             "version": draft.status.version,
         },
-    )["Location"]
+    )
     deadline = time.monotonic() + 180
     while True:
-        data = get(progress + "?format=json").json()
-        if data["task_state"] == "succeeded":
+        check = get("/admin/setup/source").context["check"]
+        if not check.waiting:
             break
-        assert data["task_state"] not in {"failed", "cancelled"}, data
-        assert time.monotonic() < deadline, data
+        assert time.monotonic() < deadline, check.state
         time.sleep(0.5)
+    assert check.checked, (check.state, check.error_code)
     assert not runtime().configured() and not SetupCompletion.objects.exists()
     # Setup collects no campaign (#142). The email test belongs right after
     # Google Workspace connection (#1578) but needs only those settings, so
-    # sending it after the load proves the same; Finish setup follows
+    # sending it after the check proves the same; Finish setup follows
     # (#1476; no Review page, #2145).
     mail = get("/admin/setup/mail-test")
     post("/admin/setup/mail-test", fields(mail.context["form"]))

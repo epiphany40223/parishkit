@@ -32,7 +32,7 @@ def wizard(current, *, slack=False, tests=frozenset()):
     }
     credentials = {"parishsoft": True, "google_workspace": True, "slack": True}
     return build(
-        draft(sections, source=uuid4()),
+        draft(sections, checked=True),
         current,
         credentials=credentials,
         tests=tests,
@@ -178,7 +178,7 @@ def test_finish_checks_readiness_as_its_primary_action():
         "Check readiness and finish setup</button>" in row
     )
     assert "setup-continue" not in row
-    # No Review page comes before it (#2145): Back is Load parish data.
+    # No Review page comes before it (#2145): Back is Check parish data.
     source = reverse("admin:setup_source")
     assert f'class="setup-back" data-nav-slot="back" href="{source}"' in row
 
@@ -397,7 +397,7 @@ def test_test_slack_while_slack_is_off_opens_the_next_step_needing_work(
         "branding": {"bundle_id": str(uuid4())},
         "slack": {"enabled": False, "channel_id": ""},
     }
-    setup_draft = draft(sections, source=uuid4())
+    setup_draft = draft(sections, checked=True)
     credentials = {"parishsoft": True, "google_workspace": True}
     monkeypatch.setattr(views, "runtime", object)
     monkeypatch.setattr(views, "view_draft", lambda request, service: setup_draft)

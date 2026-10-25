@@ -522,6 +522,10 @@ def test_credential_service_publishes_only_after_admission(
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.setup_lookups.run_pending", lookup
     )
+    source_check = Mock()
+    monkeypatch.setattr(
+        "parishkit.stewardship.accounts.setup_checks.run_pending", source_check
+    )
     probes = Mock()
     monkeypatch.setattr(
         "parishkit.stewardship.backup_probes.run_pending_probes", probes
@@ -573,10 +577,18 @@ def test_credential_service_publishes_only_after_admission(
                 profile=configuration.profile,
                 base_url=configuration.parishsoft_base_url,
             )
-            assert lease.check.call_count == 4
+            # The setup wizard's parish data check (#2201).
+            source_check.assert_called_once_with(
+                installer.files.private,
+                check=lease.check,
+                profile=configuration.profile,
+                base_url=configuration.parishsoft_base_url,
+            )
+            assert lease.check.call_count == 5
         else:
             relay.assert_not_called()
             lookup.assert_not_called()
+            source_check.assert_not_called()
         if target == "google_workspace":
             mail_relay.assert_called_once_with(installer.files.private)
             # Off-site backup access checks use this key and its egress.
@@ -604,7 +616,7 @@ def test_credential_service_publishes_only_after_admission(
             # Idle steps report no work; a recorded installation's receipt
             # counts only while its request is still pending (#639).
             installer.run_once.return_value = None
-            for step in (relay, mail_relay, slack_send, lookup):
+            for step in (relay, mail_relay, slack_send, lookup, source_check):
                 step.return_value = False
             probes.return_value = 0
             stage_initial.return_value = SimpleNamespace(state="applied")

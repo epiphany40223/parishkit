@@ -90,6 +90,16 @@ def main():
             "elapsed": 0.0,
         }
 
+    def source_check(value, *, organization, check, profile, base_url=None):
+        """ParishSoft answers the quick parish data check (#2201).
+
+        The real check runs an isolated helper that talks to ParishSoft; the
+        finite fixture answers in its place, as it does for the lookup.
+        """
+        check()
+        assert value and profile and organization == 1
+        return {"outcome": "ok", "name": "Example Parish", "families": 2, "members": 3}
+
     def send(value, settings, mail, *, seconds, check):
         """Provider acceptance is synthetic; persisted submission ownership is not."""
         check()
@@ -102,6 +112,7 @@ def main():
     parishsoft_transport._exchange = exchange
     provider_checks.check_candidate = validate
     provider_checks.lookup_organizations = lookup
+    provider_checks.check_source = source_check
     readiness_delivery_process.submit_sample = send
     from parishkit.stewardship.cli import main as cli
 

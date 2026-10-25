@@ -1,6 +1,6 @@
 """Setup's stage boxes hold their place as the work moves on (#1903).
 
-Load parish data's status sentence above its boxes, and Finishing setup's
+Loading parish data's status sentence above its boxes, and Finishing setup's
 boxes themselves, change their words on every state. Each sits in one grid
 cell over invisible copies of its other running forms (ui-conventions,
 "Stage boxes"), so from the first rendering on, every box keeps its place

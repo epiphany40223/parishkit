@@ -1,4 +1,4 @@
-"""Load parish data and Finishing setup update in place (#1354).
+"""Loading parish data and Finishing setup update in place (#1354).
 
 Each page watches its passive status fragment (live-status-v1.js) and swaps
 in the fresh region while the work runs, then stops. Each test marks the

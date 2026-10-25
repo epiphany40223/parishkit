@@ -37,17 +37,18 @@ class Page:
 # fixes it (#1578): Outgoing email settings, Testing recipient and Google
 # Workspace connection (whose key is staged with those two as its public
 # scope), then Test email; then the one Slack step (switch, channel and bot
-# token), then Test Slack. A test needs only those inputs, never the loaded
+# token), then Test Slack. A test needs only those inputs, never ParishSoft's
 # data, the logos or the access lists. A credential step accepts a sign-in
 # of any age (#1547). Logos and access come next. ParishSoft
-# connection and Load parish data are the last data-entry pages and next to
-# each other (#1353): the load can take a few minutes, so everything else is
-# done before the wait, and a load that fails on a wrong key or organization
-# is one step after the page that fixes it. No data-entry page needs the
-# loaded data. Finish setup comes last; it checks the tests' results itself
-# (#1476), and no separate Review page comes before it (#2145). Setup
-# collects nothing about a campaign (#142): an Administrator creates it
-# afterwards from Home, with Create the campaign.
+# connection and Check parish data are the last data-entry pages and next to
+# each other (#1353, #2201): a check that fails on a wrong key or
+# organization is one step after the page that fixes it. The check reads
+# only the organization's name and ParishSoft's Family and Member totals;
+# the final load at Finish setup is the only full load, and no data-entry
+# page needs ParishSoft's data. Finish setup comes last; it checks the
+# tests' results itself (#1476), and no separate Review page comes before it
+# (#2145). Setup collects nothing about a campaign (#142): an Administrator
+# creates it afterwards from Home, with Create the campaign.
 PAGES = (
     Page("parish", _("Parish profile"), "admin:setup_step", ("parish",)),
     Page("mail", _("Outgoing email settings"), "admin:setup_step", ("mail",)),
@@ -69,7 +70,7 @@ PAGES = (
         "admin:setup_credential",
         ("parishsoft",),
     ),
-    Page("source", _("Load parish data"), "admin:setup_source"),
+    Page("source", _("Check parish data"), "admin:setup_source"),
     Page("finish", _("Finish setup"), "admin:setup_confirmation"),
 )
 BY_KEY = {page.key: page for page in PAGES}
@@ -168,11 +169,10 @@ def _done(key, draft, credentials, tests):
             not sections[key]["enabled"] or credentials.get("slack") is True
         )
     if key == "source":
-        # Bound to a load whose staged data is still valid, by Finish setup's own
-        # predicate (#1353): a failed load returns setup to collecting too,
-        # and a successful one goes stale when its credential changes; both
-        # show as not done, with Load again.
-        return draft.source_loaded
+        # The newest parish data check is ready and checked the staged key
+        # and organization saved now (#2201): a failed check, or one of an
+        # earlier key or organization, shows as not done, with Check again.
+        return draft.source_checked
     if key in {"mail_test", "slack_test"}:
         return key in tests
     if key == "finish":

@@ -1,25 +1,25 @@
 """Setup's way back from a failed or discarded parish data load (#1353).
 
-A load that fails for good returns setup to collecting, so its progress page
-links back to ParishSoft connection and to Load parish data (Load again)
-instead of saying to cancel setup. A load discarded from another tab (a
-changed key or organization, or Load again) must not keep showing Continue:
-an open progress page reads its settled status once more whenever it is
-shown again, and a restored Load parish data page re-reads its panel, both
-in place, without a reload.
+A load (bound before #2201) that fails for good returns setup to collecting,
+so its progress page links back to ParishSoft connection and to Check parish
+data instead of saying to cancel setup. A load discarded from another tab
+must not keep showing Continue: an open progress page reads its settled
+status once more whenever it is shown again. A restored Check parish data
+page re-reads its panel (#2201), so a check of an earlier connection never
+shows as current; both in place, without a reload.
 """
 
 import pytest
 
 from .conftest import SETUP_LOAD_STATUS
 from .setup_back_path_components import (
-    CREDENTIAL_LOADED,
+    CREDENTIAL_CHECKED,
     FAILED_ORGANIZATION,
     PROGRESS_DONE,
     PROGRESS_FAILED,
     PROGRESS_VOIDED,
-    SOURCE_LOADED,
-    SOURCE_RELOAD,
+    SOURCE_CHECKED,
+    SOURCE_STALE,
     progress_status,
 )
 from .test_in_place import MARK, MARKED
@@ -45,7 +45,7 @@ def test_a_failed_load_links_back_to_the_connection(
 ):
     """The failed panel names the organization that could not be loaded and
     the likely causes, and links to the two steps that fix it (choosing
-    another organization or key, and loading again); Back goes to
+    another organization or key, and checking the parish data); Back goes to
     ParishSoft connection; nothing says to cancel."""
     from .test_components import axe_violations
 
@@ -62,7 +62,7 @@ def test_a_failed_load_links_back_to_the_connection(
     connection = panel.get_by_role(
         "link", name="Choose another organization or enter a different key"
     )
-    load = panel.get_by_role("link", name="Go to “Load parish data”")
+    load = panel.get_by_role("link", name="Go to “Check parish data”")
     assert connection.get_attribute("href") == "/admin/setup/credentials/parishsoft"
     assert load.get_attribute("href") == "/admin/setup/source"
     back = page.locator(".setup-actions a.setup-back")
@@ -153,7 +153,7 @@ def test_an_open_progress_page_shows_a_discarded_load_in_place(page, component_o
     voided = page.locator("[data-progress-voided]")
     visible(voided)
     hidden(continuing)
-    assert voided.get_by_role("link", name="Go to “Load parish data”").count() == 1
+    assert voided.get_by_role("link", name="Go to “Check parish data”").count() == 1
     has_text(page.locator("[data-live-announcer]"), str(SUMMARIES["voided"]))
     # The step bar makes Finish setup unavailable.
     has_attribute(page.locator(FINISH), "aria-disabled", "true")
@@ -240,38 +240,42 @@ def test_a_settled_region_elsewhere_is_not_read_again(page, component_origin):
 
 
 @pytest.mark.parametrize("event", [SHOWN, RESTORED])
-def test_a_load_page_shown_again_is_read_again(page, component_origin, event):
-    """Load parish data shown again (its tab, or the back/forward cache)
-    re-reads its panel and step bar, so "Parish data is loaded" gives way to
-    Load again in place. A first load's pageshow reads nothing."""
-    reads = answer_reads(page, component_origin, SOURCE_LOADED, SOURCE_RELOAD)
-    page.goto(component_origin + SOURCE_LOADED)
+def test_a_check_page_shown_again_is_read_again(page, component_origin, event):
+    """Check parish data shown again (its tab, or the back/forward cache)
+    re-reads its panel and step bar, so a check whose connection changed
+    elsewhere gives way to Check parish data in place (#2201). A first
+    load's pageshow reads nothing."""
+    reads = answer_reads(page, component_origin, SOURCE_CHECKED, SOURCE_STALE)
+    page.goto(component_origin + SOURCE_CHECKED)
     page.evaluate(MARK)
-    loaded = page.get_by_text("Parish data is loaded.")
-    visible(loaded)
+    checked = page.locator("[data-source-checked]")
+    visible(checked)
+    assert "ParishSoft answered for St. Example Parish (4321)" in checked.inner_text()
     assert page.locator(FINISH).get_attribute("href")
     page.evaluate(NOT_RESTORED)
     page.wait_for_timeout(300)
     assert reads == []
     page.evaluate(event)
-    visible(page.get_by_role("button", name="Load again"))
-    hidden(loaded)
+    visible(page.get_by_role("button", name="Check parish data"))
+    visible(page.locator("[data-source-stale]"))
+    hidden(checked)
     has_attribute(page.locator(FINISH), "aria-disabled", "true")
     assert len(reads) == 1
     assert page.evaluate(MARKED) == "kept"
 
 
-def test_the_connection_page_says_a_changed_key_discards_the_load(
+def test_the_connection_page_says_a_changed_key_needs_a_new_check(
     page, component_origin, axe_source
 ):
-    """While a still-valid load exists, the saved-key notice says a different
-    key or organization discards it; typing a key moves nothing."""
+    """While a current parish data check exists, the saved-key notice says a
+    different key or organization means checking again (#2201); typing a key
+    moves nothing."""
     from .test_components import axe_violations
 
-    page.goto(component_origin + CREDENTIAL_LOADED)
-    note = page.locator("[data-source-loaded-note]")
+    page.goto(component_origin + CREDENTIAL_CHECKED)
+    note = page.locator("[data-source-checked-note]")
     visible(note)
-    assert "discards the loaded data" in note.inner_text()
+    assert "means checking it again" in note.inner_text()
     save = page.get_by_role("button", name="Save and continue")
     before = place(page, ".setup-actions button")
     page.get_by_label("ParishSoft API key").fill("another-synthetic-key")

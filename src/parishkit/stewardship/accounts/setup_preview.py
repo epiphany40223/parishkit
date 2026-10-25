@@ -10,7 +10,7 @@ from parishkit.stewardship.web.refusals import load_preview
 from .branding_staging import staged_bundle
 from .configuration_requests import policy_operation_id
 from .request_patch import PatchedConfiguration
-from .setup_campaign import require_staged_load
+from .setup_campaign import require_source_check
 from .setup_candidate import CandidateCredential, compile_candidate
 from .setup_drafts import DraftView, view_draft
 from .setup_forms import FORMS
@@ -57,7 +57,7 @@ def prepare_preview(request, service):
             raise ConfigError("Complete the setup sections before final preview.")
         identifier = draft.status.attempt_id
         # The exact, current source load is still required.
-        require_staged_load(request, service, identifier)
+        require_source_check(request, service, identifier)
         _, assets = staged_bundle(
             request,
             service,

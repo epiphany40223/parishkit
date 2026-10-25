@@ -66,6 +66,7 @@ from parishkit.stewardship.accounts.setup_notification_views import (
     SetupNotificationForm,
 )
 from parishkit.stewardship.accounts.setup_slack_step import SetupSlackStepForm
+from parishkit.stewardship.accounts.setup_views import check_page
 from parishkit.stewardship.accounts.setup_wizard import BY_KEY as SETUP_STEPS
 from parishkit.stewardship.accounts.setup_wizard import build as setup_wizard
 from parishkit.stewardship.accounts.share_forms import (
@@ -191,6 +192,7 @@ from .send_progress_components import components as send_progress_components
 from .settings_components import POSTS as SETTINGS_POSTS
 from .settings_components import components as settings_components
 from .setup_back_path_components import components as setup_back_path_components
+from .setup_check_components import components as setup_check_components
 from .setup_live_components import POSTS as SETUP_LIVE_POSTS
 from .setup_live_components import components as setup_live_components
 from .setup_order_components import POSTS as SETUP_ORDER_POSTS
@@ -673,7 +675,7 @@ def component_responses():
         "watchdog_at": None,
         "source_task_id": None,
         "source_task_state": None,
-        "source_loaded": False,
+        "source_checked": False,
     }
     # A stepper with done, current, open and blocked steps for axe/layout checks.
     wizard = setup_wizard(
@@ -687,10 +689,10 @@ def component_responses():
                 }
             },
             source_task_id=None,
-            # No load yet, so Load parish data is not done (#1353): the
-            # stepper reads whether a still-valid staged load exists.
+            # No check yet, so Check parish data is not done (#2201): the
+            # stepper reads whether a current parish data check exists.
             source_task_state=None,
-            source_loaded=False,
+            source_checked=False,
         ),
         "testing",
     )
@@ -1066,8 +1068,12 @@ def component_responses():
                 ),
             },
         ),
-        # Load parish data before the load starts (#227: its time-zone caution).
-        ("/setup-source", "setup-source", {"draft": setup_draft}),
+        # Check parish data before any check (#2201).
+        (
+            "/setup-source",
+            "setup-source",
+            {"draft": setup_draft} | check_page(None, "St. Example Parish (1234)"),
+        ),
         (
             "/setup-slack-test",
             "setup-notification",
@@ -2313,6 +2319,7 @@ def component_responses():
         setup_live_components(context, admin, NOW, SETUP_MAIL_STATUS, setup_draft)
     )
     responses.update(setup_back_path_components(context, admin, NOW, SETUP_LOAD_STATUS))
+    responses.update(setup_check_components(context, admin, NOW))
     responses.update(in_place_commands_components(context, admin))
     responses.update(campaign_test_components(context, admin))
     responses.update(

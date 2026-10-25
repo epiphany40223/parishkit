@@ -236,11 +236,12 @@ def cleanup_completed_setup():
         produce_setup_cleanup,
     )
     from parishkit.stewardship.source.snapshots import snapshot_manifest
-    from parishkit.stewardship.source.version_models import ENTITY_MODELS
 
     current = SourceCurrent.objects.get().snapshot_id
     before = snapshot_manifest(current)
-    catalog = SourceSnapshot.objects.exclude(pk=current).get()
+    # Setup has no catalog load since #2201: the promoted final load is the
+    # only snapshot, and cleanup leaves it as it is.
+    assert not SourceSnapshot.objects.exclude(pk=current).exists()
     wait_for_source()
     with task_login(ServiceRole.SCHEDULER, exact=True), scheduler_session() as guard:
         identifiers = produce_setup_cleanup(guard)
@@ -256,8 +257,5 @@ def cleanup_completed_setup():
     assert TaskRun.objects.get(pk=identifiers[0]).state == "succeeded"
     assert SourceCurrent.objects.get().snapshot_id == current
     assert snapshot_manifest(current) == before
-    catalog.refresh_from_db()
-    assert catalog.state == "rejected" and catalog.generation is None
-    for _, membership in ENTITY_MODELS.values():
-        assert not membership.objects.filter(snapshot=catalog).exists()
+    assert SourceSnapshot.objects.get().pk == current
     assert setup_is_complete()

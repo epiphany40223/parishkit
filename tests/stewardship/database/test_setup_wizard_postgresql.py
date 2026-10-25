@@ -144,15 +144,15 @@ def test_unavailable_wizard_pages_explain_the_missing_step_in_html(setup_http, g
         assert posted["Content-Type"] == "application/json"
 
 
-def test_source_step_offers_the_load_only_after_its_prerequisites(setup_http, google):
-    """The load form appears once the Parish profile and ParishSoft key are saved."""
+def test_source_step_offers_the_check_only_after_its_prerequisites(setup_http, google):
+    """The check form appears once the Parish profile and key are saved (#2201)."""
     publish("parishsoft")
     with web_login():
         browser = started()
         blocked = browser.get("/admin/setup/source")
         assert blocked.status_code == 200
         assert b"Save the Parish profile and ParishSoft connection" in blocked.content
-        assert b'value="load"' not in blocked.content
+        assert b'value="check"' not in blocked.content
         save(browser, "parish", VALUES["parish"])
         staged = post(
             browser,
@@ -165,7 +165,7 @@ def test_source_step_offers_the_load_only_after_its_prerequisites(setup_http, go
         # The key's organization is chosen first, on the same page (#1554).
         assert staged["Location"] == "/admin/setup/credentials/parishsoft"
         waiting = browser.get("/admin/setup/source")
-        assert b'value="load"' not in waiting.content
+        assert b'value="check"' not in waiting.content
     answer_lookup()
     with web_login():
         lookup = current_lookup(SetupAttempt.objects.get().pk)
@@ -179,10 +179,10 @@ def test_source_step_offers_the_load_only_after_its_prerequisites(setup_http, go
                 "version": str(SetupAttempt.objects.get().version),
             },
         )
-        # The load is the page right after ParishSoft connection (#1353).
+        # The check is the page right after ParishSoft connection (#1353).
         assert chosen["Location"] == "/admin/setup/source"
         ready = browser.get("/admin/setup/source")
-        assert b'value="load"' in ready.content
+        assert b'value="check"' in ready.content
 
 
 def test_credential_prerequisites_and_format_are_inline_form_errors(setup_http, google):

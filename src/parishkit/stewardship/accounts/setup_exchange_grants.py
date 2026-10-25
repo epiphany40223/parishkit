@@ -37,6 +37,10 @@ def extend_installer_permissions(target, tables, metadata):
     tables["stewardship_setup_source_exchange"] = {"SELECT", "UPDATE"}
     # The setup wizard's organization lookup (#1554).
     extend_lookup_permissions(tables)
+    # The setup wizard's parish data check (#2201).
+    from .setup_check_grants import extend_check_permissions
+
+    extend_check_permissions(tables)
     tables["stewardship_setup_sealed_credential"] = {"SELECT"}
     for table, names in (
         ("stewardship_setup_attempt", ATTEMPT_COLUMNS),

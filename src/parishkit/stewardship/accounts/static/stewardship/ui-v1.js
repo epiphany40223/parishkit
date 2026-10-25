@@ -3827,12 +3827,12 @@
   // a test settles, re-reads this address's panel in place, so the panel is
   // drawn again from the server's current state; if a test is in flight
   // again, the fresh region is watched anew. A pending region is already
-  // polled. Load parish data does the same with its hidden
-  // a[data-reread-on-show] link (#1353), since its load may have been
-  // discarded from another tab while the page was away; it also re-reads
-  // when its tab is shown again, as its progress page's status does
-  // (live-status-v1.js). Each re-read refreshes every in-place region on
-  // the page, the step bar included.
+  // polled. Check parish data does the same with its hidden
+  // a[data-reread-on-show] link (#1353, #2201), since its ParishSoft
+  // connection may have changed in another tab while the page was away;
+  // it also re-reads when its tab is shown again, as a Loading parish data
+  // page's status does (live-status-v1.js). Each re-read refreshes every
+  // in-place region on the page, the step bar included.
   const reread = (selector) => {
     const follow = document.querySelector(selector);
     const id = follow?.getAttribute("href").replace(/^#/, "");
