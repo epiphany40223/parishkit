@@ -263,7 +263,7 @@ def test_a_saved_pledge_edit_shows_no_not_kept_line(page, component_origin, redr
     table.locator("[data-row-action='edit']").click()
     editor = page.locator("dialog[open]")
     visible(editor)
-    editor.get_by_label("Annual pledge, in dollars").fill("1,300")
+    editor.get_by_label("Annual pledge in dollars").fill("1,300")
     editor.get_by_label("Frequency").select_option("monthly")
     editor.get_by_role("button", name="Save").click()
     hidden(editor)
