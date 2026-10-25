@@ -46,6 +46,10 @@ EMPHASIS_ALLOWED = {
     # notice, each with one action row and one primary button; session-v1.js
     # shows one panel at a time, which a text scan cannot see.
     "admin-banners.html": 2,
+    # The review wizard's row draws Finish as the primary only when there is
+    # no Next ({% if next_url %} ... {% else %}), and Next only when there
+    # is; the two tests are separate blocks, so the scan counts both.
+    "components/review-wizard-nav.html": 1,
 }
 
 # Containers that hold one group's controls, beside forms and dialogs.
