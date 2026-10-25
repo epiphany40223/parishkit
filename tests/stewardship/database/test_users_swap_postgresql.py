@@ -2257,6 +2257,10 @@ def provisioned_logins(monkeypatch):
     for name in ("_password", "_admit_operator", "role_limit"):
         monkeypatch.setattr(provisioning, name, lambda *a, **k: None)
     monkeypatch.setattr(provisioning, "_check_role", lambda *a, **k: True)
+    # The inspection login (#2148) is cluster-wide and has its own Docker
+    # provisioning test; this shared cluster never gets it.
+    for name in ("ensure_inspect_login", "grant_inspect"):
+        monkeypatch.setattr(provisioning, name, lambda *a: None)
     connection.ensure_connection()
     monkeypatch.setattr(
         provisioning, "_connection", lambda *a: nullcontext(connection.connection)
