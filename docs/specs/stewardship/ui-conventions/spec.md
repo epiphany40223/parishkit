@@ -87,7 +87,8 @@ when it lands.
   [default row order](#default-row-order),
   [Family and Member names](#family-and-member-names),
   [Members and Families no longer in ParishSoft](#members-and-families-no-longer-in-parishsoft),
-  [table fit and row height](#table-fit-and-row-height).
+  [table fit and row height](#table-fit-and-row-height),
+  [short labels in tables](#short-labels-in-tables).
 - [Downloaded files](#downloaded-files) and the
   [Family portal](#family-portal).
 
@@ -5292,6 +5293,41 @@ cell's text for screen readers. Since
 other cells do not wrap, so a row is one line, or two where a Ministry name
 wraps, and the table scrolls sideways in its own box when it is wider than
 the page.
+
+### Short labels in tables
+
+**Rule.** Every Admin table cell that names a share method names it by its
+short label when the Administrator has set one (Share options), otherwise by
+its full label: a chip, a list of methods in a text cell, and a Timeline line
+alike. Where a cell shows a short label, the full label is the method's
+tooltip (`title`) and its accessible name, so a screen reader hears the full
+label, never the short one. This bare `title` is a recorded exception to
+the rule that help never sits in a hover-only tooltip
+([Table fit and row height](#table-fit-and-row-height)): the short label is
+itself the Administrator's name for the method, not cut-off text, and the
+full label is also in the downloads and the pledge editor's choices, so a
+toggletip on every chip would add a control per method for little gain.
+Other text a Family gave a method follows the
+name as it does with the full label ("Online: weekly"). Forms keep the full
+labels, worded as the Family form words them: the Family form and the
+pledge editor's choices. Downloaded files keep the full labels too
+([Downloaded files](#downloaded-files)). One exception: a
+Timeline line is one sentence that the page, its PDF and `pk-admin` share,
+so it names a method by its short label in all three, as plain text without
+a tooltip; a reader finds the methods in force on the Family hub's
+Financial tab or on Pledges, and their full labels in Pledges' downloads.
+**Why.** A method's full label is the sentence the
+Family read, often long; the short label is the Administrator's compact name
+for it, so cells stay short ([Table fit and row height](#table-fit-and-row-height))
+and every table names a method alike. **Shared code.** `share_name` and
+`share_cell` in `reports/financial.py` (with the `share_name` template
+filter), which word each method; `share_text` words them in full for files
+and tips. **Precedent.**
+[#1569](https://github.com/epiphany40223/parishkit/issues/1569) (short
+labels, first on Financial stewardship's chips) and
+[#2198](https://github.com/epiphany40223/parishkit/issues/2198) (every
+table: Pledges, the Family hub's Financial tab, the Timeline and Financial
+stewardship detail).
 
 ### Empty tables and lists
 

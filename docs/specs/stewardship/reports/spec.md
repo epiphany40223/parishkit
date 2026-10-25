@@ -1236,7 +1236,9 @@ none, even with the same answer as the change it replaced (#2028). **Details** n
 - a pledge: "Pledge", and on an **Accepted (edited)** line the Reviewer's
   value as [Pledges](#pledges) shows it ("Pledge; Reviewer's value:
   $1,300.00, Quarterly"), with the reviewer's share methods when the Edit
-  changed them, each by its full label with any Other text ("Pledge;
+  changed them, each by its short label where one is set
+  ([short labels in tables](../ui-conventions/spec.md#short-labels-in-tables),
+  [#2198](https://github.com/epiphany40223/parishkit/issues/2198)) with any Other text ("Pledge;
   Reviewer's value: $1,300.00, Quarterly; share methods: Online giving",
   [#2177](https://github.com/epiphany40223/parishkit/issues/2177));
 - a Limitations answer: the answer in [Limitations](#limitations)' words
@@ -3470,7 +3472,8 @@ Share methods, ParishSoft, and Latest response. Money on the page is in
 whole dollars, rounded half away from zero; a screen reader hears the exact
 amount, and the exports and the summary keep the cents. Share methods shows
 every chosen method as its own chip, in order, each named by its short label
-(or its full label when it has none,
+(or its full label when it has none; a short label's full label is its
+tooltip and accessible name, [short labels in tables](../ui-conventions/spec.md#short-labels-in-tables),
 [#1569](https://github.com/epiphany40223/parishkit/issues/1569)); a method
 with Other text has an "i" toggletip beside its chip with the full label and
 that text ("Other: stock gift"). The chips may wrap onto a second line inside
@@ -3672,9 +3675,11 @@ section is the page.
   [#1747](https://github.com/epiphany40223/parishkit/issues/1747)).
 - **Columns**, in the shared order: Family (the Family-name link), Family DUID,
   Family's answer (the annual pledge, then its frequency, or "Cannot
-  contribute", then the share methods chosen), Reviewer's value (an Edit's
+  contribute", then the share methods chosen, each by its short label where
+  one is set: [short labels in tables](../ui-conventions/spec.md#short-labels-in-tables),
+  [#2198](https://github.com/epiphany40223/parishkit/issues/2198)), Reviewer's value (an Edit's
   annual pledge and frequency, then, under them as the Family's answer has
-  them, its share methods when the Edit changed them,
+  them, its share methods when the Edit changed them, named alike,
   [#2177](https://github.com/epiphany40223/parishkit/issues/2177)), Stage,
   Submitted (the Family's latest
   response), Last decision and Actions. There is no Baseline column: A is

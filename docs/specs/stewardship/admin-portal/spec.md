@@ -9183,7 +9183,9 @@ Actions cells are drawn once, spanning the pledge's rows:
   installment ("No frequency", "Cannot contribute"). The Baseline is "(not
   read)": ParishSoft's pledge frequency is not compared yet (the financial
   stream's frequency rule).
-- **Share methods**: each chosen method with the Family's own words for any
+- **Share methods**: each chosen method by its short label where one is set
+  ([short labels in tables](../ui-conventions/spec.md#short-labels-in-tables),
+  [#2198](https://github.com/epiphany40223/parishkit/issues/2198)), with the Family's own words for any
   Other method, or "None chosen". The Baseline is "(not read)": ParishSoft
   holds no share method.
 
