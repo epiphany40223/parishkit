@@ -8474,9 +8474,11 @@ shared confirmation dialog and its optional note):
 - **Back to review** returns an accepted or ignored request to To review
   (In progress), clearing an edited Ministry, until Staff tick it Entered in
   ParishSoft; reopening an ignored request takes an optional note
-  ([#1889](https://github.com/epiphany40223/parishkit/issues/1889)). On a
-  request the parish added it withdraws it instead: the request leaves every
-  list and stays in its history.
+  ([#1889](https://github.com/epiphany40223/parishkit/issues/1889)). A
+  request the parish added goes back to To review the same way and stays
+  listed; Staff drop it with Ignore, which keeps its Added by the parish
+  value, and choosing Ignore again undoes that
+  ([#2173](https://github.com/epiphany40223/parishkit/issues/2173)).
 - **Entered by hand** (Staff and Administrators only, one row or in bulk,
   at To enter by hand) ticks Entered in ParishSoft
   ([roster entry](#roster-entry-on-ministry-requests)); its dialog has no

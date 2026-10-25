@@ -1717,8 +1717,12 @@ ignored one takes an optional note since forward migration 0158,
 [#1889](https://github.com/epiphany40223/parishkit/issues/1889)), one that undoes a terminal step (the Entered in
 ParishSoft tick, a Confirmed refresh check or a refresh resolution; with a
 required note,
-[undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)),
-or that withdraws (cancels) a request the parish added;
+[undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage));
+a request the parish added goes back to In progress like any other, and
+no revision withdraws (cancels) one since forward migration 0180
+([#2173](https://github.com/epiphany40223/parishkit/issues/2173)), whose
+submission completeness check also lets a Family response leave an open
+request the parish added in force;
 an Edit only by someone who may follow up both the request's Ministry and
 the one chosen, which must be another of the campaign's Ministries; and an
 added request only from a current Staff member or Administrator, for a

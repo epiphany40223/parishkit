@@ -145,10 +145,18 @@ creates a new item that starts Reviewed (Accepted) under its creator's name,
 shown as **Added by the parish**, and goes through the rest of the pipeline
 like any other item; it may name the item it was added in place of, so the
 history reads "Ignored; Added in its place: …". **Back to review** undoes a
-decision while the item has not started its update (for an Added item, it
-withdraws the item; a census addition names it **Withdraw** instead, below),
-and undoes a terminal step after it
-([undoing a terminal stage](#undoing-a-terminal-stage)). Every decision
+decision while the item has not started its update, and undoes a terminal
+step after it ([undoing a terminal stage](#undoing-a-terminal-stage)). An
+Added item behaves exactly like a submitted one: undoing its decision
+returns it to To review, where it stays listed, and staff drop it with
+**Ignore**, which keeps it, marked Added by the parish, as Ignored; choosing
+Ignore again undoes that, as for any item (Administrator decision,
+2026-10-25, [#2173](https://github.com/epiphany40223/parishkit/issues/2173);
+until then Back to review withdrew an Added item, which then left every
+list; the requests it withdrew stay withdrawn). There is no separate
+Remove action and no withdrawn stage for reviewers. A census addition
+starts To enter by hand, has no decision to undo, and is taken back with
+its own **Withdraw** ([below](#role-specific-actions)). Every decision
 takes an optional note; only undoing a terminal step requires one.
 Reopening an ignored item takes an optional note like any other decision
 (Administrator decision, 2026-10-21,
@@ -733,8 +741,14 @@ stream, as the table above says. Notes on the table:
   is not a withdrawal (rule 3 does not apply to an Added item): the request
   keeps its decision and its row says "Family unticked" (a join) or "Family
   chose to continue" (a leave) with the date, as "Family asked again" does,
-  so Staff see it and can use Back to review, which withdraws an Added
-  item. A change the parish added stays parish work until Staff decide.
+  so Staff see it and can use Back to review and Ignore to drop it
+  ([Reviewed stage](#reviewed-stage)). A change the parish added stays
+  parish work until Staff decide: one sent back to To review is shown the
+  same way and is not withdrawn by an untick either, and one Staff ignored
+  is shown as the roster has it, so the Family choosing it again makes a
+  new request of its own, To review, which the lists show in its place;
+  the Ignored one is not replaced and stays Ignored in its history
+  ([#2173](https://github.com/epiphany40223/parishkit/issues/2173)).
 - **A moved, deceased or death-date request already entered** (Entered by
   hand or Updated in ParishSoft, not yet Confirmed) is presented in its
   state on the reviewed form, and an unchanged resubmission is rule 1. This
@@ -1090,7 +1104,13 @@ derivation), where the design leaves a choice:
   changed answer adds a new request beside it, and the refresh judges the
   entered one. An undo of a
   request the parish added or Staff ticked Entered in ParishSoft is kept and
-  shown on the row ("Family unticked", "Family chose to continue"). An
+  shown on the row ("Family unticked", "Family chose to continue"), at any
+  stage, To review included; the submission's completeness check admits an
+  open request the parish added left in force. An Ignored request the
+  parish added that the Family chooses again is not replaced: it stays
+  Ignored, and the Family's new request, the latest for that Member and
+  Ministry, is the one the lists show (frozen file 0180,
+  [#2173](https://github.com/epiphany40223/parishkit/issues/2173)). An
   Ignored New Member's Ministry requests are judged as before the reviewed
   form, since the New Member itself is not shown.
 - **Pledge.** The pledge stage selection treats a response that sent back
