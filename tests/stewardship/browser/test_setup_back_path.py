@@ -96,8 +96,9 @@ def test_a_failed_load_goes_back_to_choose_another_organization(page, component_
     assert opened == [component_origin + "/admin/setup/credentials/parishsoft"]
 
 
-# Review, the step after the load (#1578), opens only while the load is valid.
-REVIEW = '.setup-track a[data-tip*="Review"]'
+# Finish setup, the step after the load (#1578), opens only while the load
+# is valid.
+FINISH = '.setup-track a[data-tip*="Finish setup"]'
 
 
 def test_an_open_progress_page_shows_a_discarded_load_in_place(page, component_origin):
@@ -122,8 +123,8 @@ def test_an_open_progress_page_shows_a_discarded_load_in_place(page, component_o
     page.evaluate(MARK)
     continuing = page.get_by_role("link", name="Continue to the next step")
     visible(continuing)
-    review = page.locator(REVIEW)
-    assert review.get_attribute("href")
+    finish = page.locator(FINISH)
+    assert finish.get_attribute("href")
     summary = page.locator("details", has_text="Technical details").locator("summary")
     summary.focus()
     above = place(page, "h1")
@@ -153,8 +154,8 @@ def test_an_open_progress_page_shows_a_discarded_load_in_place(page, component_o
     hidden(continuing)
     assert voided.get_by_role("link", name="Go to “Load parish data”").count() == 1
     has_text(page.locator("[data-live-announcer]"), str(SUMMARIES["voided"]))
-    # The step bar no longer offers Review.
-    has_attribute(page.locator(REVIEW), "aria-disabled", "true")
+    # The step bar makes Finish setup unavailable.
+    has_attribute(page.locator(FINISH), "aria-disabled", "true")
     assert len(reads) == 2
     assert page.evaluate(MARKED) == "kept"
     focused(summary)
@@ -247,14 +248,14 @@ def test_a_load_page_shown_again_is_read_again(page, component_origin, event):
     page.evaluate(MARK)
     loaded = page.get_by_text("Parish data is loaded.")
     visible(loaded)
-    assert page.locator(REVIEW).get_attribute("href")
+    assert page.locator(FINISH).get_attribute("href")
     page.evaluate(NOT_RESTORED)
     page.wait_for_timeout(300)
     assert reads == []
     page.evaluate(event)
     visible(page.get_by_role("button", name="Load again"))
     hidden(loaded)
-    has_attribute(page.locator(REVIEW), "aria-disabled", "true")
+    has_attribute(page.locator(FINISH), "aria-disabled", "true")
     assert len(reads) == 1
     assert page.evaluate(MARKED) == "kept"
 
