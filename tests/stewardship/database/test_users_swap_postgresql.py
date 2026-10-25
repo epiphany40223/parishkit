@@ -524,6 +524,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # (runtime_grants.CLOSURE_FUNCTIONS), and drops and adds the access check's
 # failure kind CHECK again; its file installs whole again (the CHECK is
 # still there, so dropping and adding it again is harmless).
+# 0177 (#2163) creates nothing: it replaces 0174's setup load organization
+# check in place as SECURITY DEFINER, which 0174's whole rerun brings back
+# as its caller's, so ``CLOSURE_REPLACED_ONLY`` puts 0177's body back last.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -1481,6 +1484,14 @@ CLOSURE_REPLACED_ONLY = {
     "stewardship_setup_secret_guard_v1": (
         ("stewardship_accounts", "0035_parishsoft_organization_choice"),
         "(#1554)",
+    ),
+    # 0177 (#2163) replaces 0174's setup load organization check with the
+    # same checks as SECURITY DEFINER (named in its replacement statement,
+    # so that statement alone restores the rights); 0174's whole rerun
+    # brings back the caller's-rights body, which lacks 0177's comment.
+    "stewardship_setup_load_organization_v1": (
+        ("stewardship_accounts", "0036_setup_load_definer"),
+        "SECURITY DEFINER (#2163)",
     ),
     # 0124 (#1762) rewords four of 0114's guards again, and 0104's setup
     # credential audit (which 0104's rerun above brings back); each body is
