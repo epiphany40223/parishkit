@@ -102,6 +102,18 @@ DECIDED_NOTICE = "Example <Member> — Example <Ministry> accepted."
 # Ignored: each a page of every stage, so the tests answer a decision's POST
 # with the next.
 ADDED_REQUEST = UUID(int=130)
+# Ministry requests' History (#2180): a request the Family replaced, one it
+# withdrew and one the parish withdrew before #2173, beside one To review,
+# for Staff and for a leader of Ministry 9 only.
+HISTORY, HISTORY_LEADER = (
+    "/ministry-requests-history",
+    "/ministry-requests-history-leader",
+)
+REPLACED_REQUEST, WITHDRAWN_REQUEST, PARISH_WITHDRAWN = (
+    UUID(int=140),
+    UUID(int=141),
+    UUID(int=142),
+)
 ADDED_ACCEPTED, ADDED_TO_REVIEW, ADDED_IGNORED = (
     "/ministry-requests-added-accepted",
     "/ministry-requests-added-to-review",
@@ -505,6 +517,34 @@ def components(context, admin):
         ),
     ]
     ticked = {str(UUID(int=121)): {"entered": True, "sequence": 1}}
+    history = WorklistQuery(stage="history")
+    past = [
+        row,
+        row
+        | dict(
+            id=str(REPLACED_REQUEST),
+            member_name="Replaced <Member>",
+            state="superseded",
+            state_label="Replaced by Family",
+        ),
+        row
+        | dict(
+            id=str(WITHDRAWN_REQUEST),
+            member_name="Withdrawn <Member>",
+            state="cancelled",
+            state_label="Withdrawn by Family",
+        ),
+        row
+        | dict(
+            id=str(PARISH_WITHDRAWN),
+            member_name="Parish <Member>",
+            state="cancelled",
+            state_label="Withdrawn by the parish",
+            parish_added=True,
+            ministry_duid=12,
+            ministry_name="Another Ministry",
+        ),
+    ]
     added = accepted | dict(
         id=str(ADDED_REQUEST),
         member_name="Added <Member>",
@@ -570,6 +610,10 @@ def components(context, admin):
         )
         | dict(notice=DECIDED_NOTICE),
         STAGES: requests_page | _worklist(staged, query=every, marks=ticked),
+        HISTORY: requests_page | _worklist(past, query=history),
+        HISTORY_LEADER: requests_page
+        | _worklist(past[:3], query=history, principal=LEADS)
+        | dict(show_marks=False, campaign_marks=False),
         **{
             path: requests_page | _worklist([added | changes], query=every)
             for path, changes in (

@@ -180,23 +180,6 @@ def view(harness, principal, **values):
     return {row["id"]: row for row in result["rows"]}
 
 
-def drawn(harness, principal):
-    """The worklist page's drawn rows for ``principal``, every stage, by id."""
-    query = WorklistQuery.parse({"stage": "all"})
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True), transaction.atomic():
-        result = read_rows(harness.campaign.pk, query, principal)
-        context = worklist_context(
-            harness.campaign.pk,
-            query,
-            principal,
-            result,
-            token="",
-            mutable=True,
-            action="/admin/reports/ministries/",
-        )
-    return {row["id"]: row for row in context["worklist"].rows}
-
-
 def test_accept_ignore_and_back_to_review(response_service):
     """Staff decide in one step and undo it; reopening an ignored one takes
     an optional note (#1889), and undoing Entered by hand, which keeps the
@@ -536,7 +519,7 @@ def test_staff_add_a_request_in_place_of_an_ignored_one(response_service):
     key = uuid4()
     decide(harness, staff, "back_to_review", added, key=key)
     assert (added.state, added.outcome) == ("in_progress", None)
-    row = drawn(harness, staff)[str(added.pk)]
+    row = drawn_at(harness, staff, "all")[str(added.pk)]
     assert row["placement"].stage is Stage.TO_REVIEW
     assert row["family_answer"] == ""
     assert row["reviewer_value"].startswith("Join ")
@@ -581,7 +564,7 @@ def test_ignore_drops_an_added_request_and_is_reversible(response_service):
     decide(harness, staff, "back_to_review", added)
     decide(harness, staff, "ignore", added)
     assert (added.state, added.outcome) == ("resolved", "declined")
-    row = drawn(harness, staff)[str(added.pk)]
+    row = drawn_at(harness, staff, "all")[str(added.pk)]
     assert row["placement"].stage is Stage.IGNORED
     assert row["family_answer"] == ""
     assert row["reviewer_value"].startswith("Leave ")
@@ -610,7 +593,8 @@ def test_ignore_drops_an_added_request_and_is_reversible(response_service):
 def test_the_family_never_withdraws_or_replaces_an_added_request(response_service):
     """An added request back To review that the Family unticks stays To
     review, with the row saying so; an Ignored one the Family chooses again
-    stays Ignored, and the Family's new request is listed (#2173)."""
+    stays Ignored, under History, and the Family's new request is listed
+    (#2173, #2180)."""
     harness = setup(response_service)
     staff = actor(harness, {"staff"}, ())
     added = added_request(harness, staff)
@@ -622,7 +606,7 @@ def test_the_family_never_withdraws_or_replaces_an_added_request(response_servic
     respond(harness, form, answers)
     added.refresh_from_db()
     assert added.state == "in_progress"
-    row = drawn(harness, staff)[str(added.pk)]
+    row = drawn_at(harness, staff, "all")[str(added.pk)]
     assert row["placement"].stage is Stage.TO_REVIEW
     assert "Family chose to continue" in row["decision_label"]
     # Ignored, it is shown as the roster has it; chosen again, the Family
@@ -639,10 +623,47 @@ def test_the_family_never_withdraws_or_replaces_an_added_request(response_servic
         ministry_duid=4, action="leave", parish_added=False, state="new"
     )
     # The Family's request, the latest for the Member and Ministry, is the
-    # one listed; the Ignored one stays in its history.
-    rows = view(harness, staff)
+    # one the stages list; the Ignored one is listed under History (#2180).
+    rows = drawn_at(harness, staff, "all")
     assert str(added.pk) not in rows
     assert rows[str(family.pk)]["placement"].stage is Stage.TO_REVIEW
+    past = drawn_at(harness, staff, "history")[str(added.pk)]
+    assert past["decision_label"] == "Replaced by a later response"
+    assert not past["icons"]
+
+
+# The rule before the reviewed Family form (#1705).
+@pytest.mark.usefixtures("earlier_rule")
+def test_before_the_reviewed_form_the_family_replaces_an_open_added_request(
+    response_service,
+):
+    """On a form drawn before the reviewed form, an added request back To
+    review is drawn as an open choice; leaving it chosen replaces it with
+    the Family's own request (the Family now asks for it), and unticking it
+    leaves it To review (#2173)."""
+    harness = setup(response_service)
+    staff = actor(harness, {"staff"}, ())
+    added = added_request(harness, staff)
+    decide(harness, staff, "back_to_review", added)
+    form = revisit(harness)
+    answers = answers_for(form)
+    assert 4 in answers["ministries"]["members"]["3"]["leave"]
+    answers["ministries"]["members"]["3"]["leave"].remove(4)
+    respond(harness, form, answers)
+    added.refresh_from_db()
+    assert added.state == "in_progress"
+    form = revisit(harness)
+    answers = answers_for(form)
+    assert 4 in answers["ministries"]["members"]["3"]["leave"]
+    respond(harness, form, answers)
+    added.refresh_from_db()
+    assert added.state == "superseded"
+    family = MinistryRequest.objects.get(pk=added.superseded_by_id)
+    assert (family.parish_added, family.state, family.action) == (
+        False,
+        "in_progress",
+        "leave",
+    )
 
 
 # The rule before the reviewed Family form (#1705): forms drawn before
@@ -723,3 +744,61 @@ def test_the_page_records_a_decision_in_place(response_service, google):
     join.refresh_from_db()
     assert (join.state, join.outcome) == ("resolved", "joined")
     assert MinistryWorkflowRevision.objects.get(request=join).actor_id == head
+
+
+def test_history_lists_past_requests_in_each_readers_scope(response_service):
+    """Stage History (#2180) lists the superseded and cancelled requests,
+    read-only; a leader's only for the Ministries that leader leads. Every
+    stage leaves them out."""
+    harness = setup(response_service)
+    staff = actor(harness, {"staff"}, ())
+    pantry = actor(harness, {"ministry_leader"}, (9,))
+    join, leave = requests()
+    # The join is ignored; the Family answers again choosing it once more,
+    # which replaces it with a new request (superseded), and without the
+    # leave of Ministry 4, which withdraws it (cancelled).
+    decide(harness, staff, "ignore", join)
+    successor = withdraw_leave(harness)
+    join.refresh_from_db()
+    leave.refresh_from_db()
+    assert (join.state, leave.state) == ("superseded", "cancelled")
+    staff_rows = drawn_at(harness, staff, "history")
+    assert set(staff_rows) == {str(join.pk), str(leave.pk)}
+    assert staff_rows[str(join.pk)]["decision_label"] == "Replaced by Family"
+    assert staff_rows[str(leave.pk)]["decision_label"] == "Withdrawn by Family"
+    assert all(not row["icons"] for row in staff_rows.values())
+    assert set(drawn_at(harness, pantry, "history")) == {str(join.pk)}
+    every = drawn_at(harness, staff, "all")
+    assert str(successor.pk) in every
+    assert not {str(join.pk), str(leave.pk)} & set(every)
+    choices = dict(stage_choices_of(harness, staff))
+    assert choices["history"] == "History (2)"
+    assert dict(stage_choices_of(harness, pantry))["history"] == "History (1)"
+
+
+def drawn_at(harness, principal, stage):
+    """The worklist page's drawn rows at ``stage`` for ``principal``, by id."""
+    return {
+        row["id"]: row for row in context_at(harness, principal, stage)["worklist"].rows
+    }
+
+
+def stage_choices_of(harness, principal):
+    """The Stage filter's (value, label) choices ``principal`` is offered."""
+    return context_at(harness, principal, "to_review")["worklist"].stage_choices
+
+
+def context_at(harness, principal, stage):
+    """The worklist page's context at ``stage`` for ``principal``."""
+    query = WorklistQuery.parse({"stage": stage})
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True), transaction.atomic():
+        result = read_rows(harness.campaign.pk, query, principal)
+        return worklist_context(
+            harness.campaign.pk,
+            query,
+            principal,
+            result,
+            token="",
+            mutable=True,
+            action="/admin/reports/ministries/",
+        )

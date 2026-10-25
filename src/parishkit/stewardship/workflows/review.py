@@ -578,7 +578,8 @@ class MinistryDecisions:
                     "add_withdrawn",
                     "A request for this Member and Ministry was added on the "
                     "Family's latest response and withdrawn, so it cannot be "
-                    "added there again. Record it in ParishSoft directly.",
+                    "added there again; it is listed under History. Record it "
+                    "in ParishSoft directly.",
                 ) from None
             (target,) = _targets(self.store, actor, {request.pk: request.version})
             write_revision(
@@ -738,7 +739,9 @@ def _current_request(target, ministry, exclude=None):
     Family's Ministry and its Edit's (Back to review returns it to the
     first), so an Edit, an Add or a Back to review never leaves two
     requests about one Member and Ministry (#1684). The migration's guards
-    check the same.
+    check the same. The one exception is the Family's: an Ignored request
+    the parish added that the Family then chooses itself stays beside the
+    Family's new request, in History (#2173, #2180).
     """
     found = MinistryRequest.objects.filter(
         submission__family_id=target.submission.family_id,
