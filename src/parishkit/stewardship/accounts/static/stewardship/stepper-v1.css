@@ -150,6 +150,18 @@
    is (#2063), so Previous and Next sit at the same screen spots on every
    page whatever the section's height. */
 .review-wizard-actions { grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr); grid-template-areas: "back action next"; }
+/* On a phone, Previous, Finish and Next with the buttons' usual inline
+   padding are wider than the row, so a middle page's row overflowed and
+   put Next past the screen's gutter, away from its spot on page 1 (#2123).
+   A small inline padding and gap leave all three well inside the row from
+   320 px up, so the side columns get equal shares and Finish stays at the
+   center whether Previous's slot is empty or not. The side columns still
+   never shrink below their labels: with a much larger text size the row
+   may then sit a little off center, but its buttons never overlap. */
+@media (max-width: 30rem) {
+  .review-wizard-actions { column-gap: .5rem; }
+  .review-wizard-actions button { padding-inline: .5rem; }
+}
 /* The heading and the line under it (the Member's Family, empty on a Family
    page) are one line each, so the top row never moves: a long name is cut
    with an ellipsis, and its whole text stays the heading's. */
