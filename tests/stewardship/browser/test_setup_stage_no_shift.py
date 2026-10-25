@@ -191,7 +191,13 @@ def test_finishing_setup_boxes_keep_their_place(page, component_origin, width):
     steps = "[data-finishing-step]"
     boxes = places(page, steps)
     assert len(boxes) == 6
+    # Every row of the list has one height, so a wrapped second row is never
+    # shorter than the first (#2145).
+    assert len({round(height) for _x, _y, _w, height in boxes}) == 1, boxes
     elapsed = places(page, "[data-finishing-elapsed]")
+    # The line on what happens next stays in every running state (#2145).
+    after = places(page, "[data-finishing-next]")
+    assert len(after) == 1
     for count, (key, state, _credentials, _source) in enumerate(states, start=1):
         next_poll(page, polls, count)
         has_attribute(
@@ -199,9 +205,23 @@ def test_finishing_setup_boxes_keep_their_place(page, component_origin, width):
         )
         assert same_place(places(page, steps), boxes), (key, state)
         assert same_place(places(page, "[data-finishing-elapsed]"), elapsed)
+        assert same_place(places(page, "[data-finishing-next]"), after)
     # The running final load, its reserved forms included, names no task.
     final = page.locator('[data-finishing-step="source"]')
     assert "1,234" in final.inner_text()
     html = final.evaluate("node => node.outerHTML")
     assert "Task reference" not in html and str(load["id"]) not in html
     assert page.evaluate(MARKED) == "kept"
+
+
+def test_a_failed_box_makes_only_its_own_row_taller(page, component_origin):
+    """A failure's long explanation is never reserved (#1903), so a list with
+    a failed box keeps natural rows: the row below it is not stretched to
+    the failure's height (#2145)."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + "/setup-credential-rejected")
+    boxes = places(page, "[data-finishing-step]")
+    failed = places(page, '[data-finishing-step][data-stage-state="failed"]')
+    assert len(failed) == 1
+    last_row = [box for box in boxes if box[1] == boxes[-1][1]]
+    assert all(box[3] < failed[0][3] for box in last_row), boxes
