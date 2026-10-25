@@ -1297,9 +1297,6 @@ td > :last-child { margin-bottom: 0; }
    Continue after the words. */
 .bulk-bar .wizard-entry { display: contents; }
 .wizard-entry-reason { flex-basis: 100%; order: 1; margin: 0; }
-.wizard-runs { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: .5rem; }
-.wizard-runs li { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; }
-.wizard-runs .button { margin: 0; }
 main nav.table-nav { justify-content: space-between; margin-block: .75rem; font-size: .925rem; }
 .table-nav .table-count { margin: 0; }
 main nav.table-nav form { gap: .5rem .75rem; }

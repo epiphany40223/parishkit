@@ -6,13 +6,13 @@ the stream's items through ``review_streams`` and call this module, which
 holds no database access, so its rules are unit-tested from plain values:
 
 - ``sequence`` turns the matching items into the run's subjects, in the
-  run's sort: Name A–Z (the tables' shared default order,
+  run's sort: Last name (A–Z) (the tables' shared default order,
   ``web.tables.name_order``), Oldest or Newest submitted first. In the
   grouped streams (Census changes, Limitations) the sort orders Families,
   and each Family's pages are adjacent: its Family page first, when the
   Family itself has a matching item, then one page per Member with a
   matching item, in the Family hub's Member tab order.
-- ``progress`` words a page's place ("Family 12 of 87, Member 2 of 3").
+- ``progress`` words a page's place ("Family 12 of 87").
 - ``waiting`` is Basic's stage set: every stage at which a person still has
   something to do (a Ministry leader: To review).
 """
@@ -46,7 +46,7 @@ WAITING_STAGES = frozenset(
 LEADER_WAITING = frozenset({Stage.TO_REVIEW.value})
 # The run's sorts, in the start page's order, with their words.
 SORTS = (
-    ("name", "Name A–Z"),
+    ("name", "Last name (A–Z)"),
     ("oldest", "Oldest submitted first"),
     ("newest", "Newest submitted first"),
 )
@@ -149,7 +149,7 @@ def _member_order(subject):
 
 
 def _ordered(subjects, sort):
-    """``subjects`` in the run's sort; equal submitted times fall back to Name A–Z.
+    """``subjects`` in the run's sort; equal submitted times fall back to name order.
 
     A subject with no submitted time sorts after those with one, in either
     direction.
@@ -212,8 +212,9 @@ def progress(subjects, position, *, grouped, member_stream):
     """The words of page ``position`` (from 1) of a run's stored ``subjects``.
 
     "Family 12 of 87" in a Family stream, "Member 12 of 87" in Ministry
-    requests, and in a grouped stream the Family's place and, on a Member
-    page, the Member's place in it: "Family 12 of 87, Member 2 of 3".
+    requests, and in a grouped stream the Family's place only, on its
+    Family page and its Member pages alike (R52 Part W: a Member count
+    could read as the Family's number of Members).
     """
     total = len(subjects)
     if not grouped:
@@ -229,19 +230,7 @@ def progress(subjects, position, *, grouped, member_stream):
             families.append(subject["family"])
     current = subjects[position - 1]
     place = families.index(current["family"]) + 1
-    words = _("Family %(place)s of %(total)s") % {
+    return _("Family %(place)s of %(total)s") % {
         "place": f"{place:,}",
         "total": f"{len(families):,}",
-    }
-    if current["kind"] == FAMILY:
-        return words
-    members = [
-        subject
-        for subject in subjects
-        if subject["family"] == current["family"] and subject["kind"] != FAMILY
-    ]
-    return _("%(family)s, Member %(place)s of %(total)s") % {
-        "family": words,
-        "place": f"{members.index(current) + 1:,}",
-        "total": f"{len(members):,}",
     }

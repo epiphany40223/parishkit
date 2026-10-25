@@ -35,13 +35,15 @@ EVERY = "all"
 NOT_SEEN = "not_seen"
 
 
-def _stage_list(*stages, not_seen=False, history=False):
-    """A Stage filter's (value, label) choices, after Waiting, before Every stage."""
+def _stage_list(*stages, not_seen=False):
+    """A Stage filter's (value, label) choices, after Waiting, before Every stage.
+
+    Never History: the wizard leaves History out (R52 Part W; the tables'
+    own Stage filters still offer it).
+    """
     choices = [(stage.value, stage.label) for stage in stages]
     if not_seen:
         choices.append((NOT_SEEN, TERMS["not_seen"]))
-    if history:
-        choices.append((Stage.HISTORY.value, Stage.HISTORY.label))
     return choices
 
 
@@ -57,9 +59,10 @@ def _read_stage(values):
 
 
 def _keep(items, stage, *, leader=False):
-    """``items`` narrowed to the run's Stage: Waiting's set, else as read."""
+    """``items`` narrowed to the run's Stage: Waiting's set, else as read,
+    and never a History item, which is never a wizard page (R52 Part W)."""
     if stage != WAITING:
-        return items
+        return [item for item in items if item.stage != Stage.HISTORY.value]
     return [item for item in items if waiting(item.stage, leader=leader)]
 
 
@@ -429,7 +432,7 @@ def _census_stages(principal):
     """Census changes' Stage choices, as the table's."""
     from .census_changes import STAGES
 
-    return _stage_list(*STAGES, not_seen=True, history=True)
+    return _stage_list(*STAGES, not_seen=True)
 
 
 def _pledges_stages(principal):
@@ -443,7 +446,7 @@ def _information_stages(principal):
     """Additional information's Stage choices, as the table's."""
     from .information_worklist import STAGES
 
-    return _stage_list(*STAGES, history=True)
+    return _stage_list(*STAGES)
 
 
 def _limitations_stages(principal):
@@ -451,37 +454,6 @@ def _limitations_stages(principal):
     from .limitations import STAGES
 
     return _stage_list(*STAGES)
-
-
-def closed_words(stream_key, name, value):
-    """A run's closed filter choice in the table's own words.
-
-    "How it reaches ParishSoft: By hand only", "Request: Join"; a Ministry
-    is named only as "one Ministry" (its name is not stored with the run).
-    """
-    from .census_change_views import KIND_LABELS, ROUTE_LABELS
-    from .ministry_worklist import MEMBERS
-
-    words = {
-        ("census", "route"): (_("How it reaches ParishSoft"), ROUTE_LABELS),
-        ("census", "kind"): (_("Kind of change"), KIND_LABELS),
-        ("ministry", "kind"): (_("Request"), {"join": _("Join"), "leave": _("Leave")}),
-        ("ministry", "members"): (_("Members"), MEMBERS),
-        (
-            "limitations",
-            "show",
-        ): (
-            _("Show"),
-            {
-                "cannot_serve": _("Cannot participate in ministries"),
-                "cannot_attend": _("Families that cannot attend Mass"),
-            },
-        ),
-    }
-    if name == "ministry":
-        return str(_("one Ministry"))
-    label, choices = words[(stream_key, name)]
-    return f"{label}: {choices.get(value, value)}"
 
 
 @dataclass(frozen=True)
@@ -498,7 +470,9 @@ class ReviewStream:
     ``Item`` rows; ``principal(request, store, read_only=...)`` is the
     stream page's own check; ``audit(principal, campaign_id, outcome,
     count, values)`` records the stream page's view event; ``context`` and
-    ``stages`` draw the Advanced filters.
+    ``stages`` draw the Advanced filters. ``search_help`` is Basic's help
+    under Search name: what the stream's search matches (its table's own
+    search) and that a blank search means every waiting item.
     """
 
     key: str
@@ -509,6 +483,7 @@ class ReviewStream:
     audit: object
     context: object
     stages: object
+    search_help: str = ""
     grouped: bool = False
     member: bool = False
     closed: tuple = ()
@@ -531,6 +506,11 @@ STREAMS = (
         _census_audit,
         _census_context,
         _census_stages,
+        # census_changes.select's search: names and Family DUID.
+        _(
+            "Family name, a Member's name, or the Family DUID. Leave blank for "
+            "every waiting change."
+        ),
         grouped=True,
         closed=(("route", "any"), ("kind", "any")),
     ),
@@ -543,6 +523,8 @@ STREAMS = (
         _ministry_audit,
         _ministry_context,
         _ministry_stages,
+        # The Ministry follow-up search (0131): Member and Ministry names.
+        _("Member's name or the Ministry. Leave blank for every waiting request."),
         member=True,
         closed=(("ministry", ""), ("kind", "any"), ("members", "current")),
     ),
@@ -555,6 +537,8 @@ STREAMS = (
         _pledges_audit,
         _pledges_context,
         _pledges_stages,
+        # The pledge rows' search (0175): Family name and DUID.
+        _("Family name or the Family DUID. Leave blank for every waiting pledge."),
     ),
     ReviewStream(
         "information",
@@ -565,6 +549,11 @@ STREAMS = (
         _information_audit,
         _information_context,
         _information_stages,
+        # The information queue's search (0175): Family, DUID and the text.
+        _(
+            "Family name, the Family DUID, or words in the information or notes. "
+            "Leave blank for every waiting item."
+        ),
     ),
     ReviewStream(
         "limitations",
@@ -575,6 +564,11 @@ STREAMS = (
         _limitations_audit,
         _limitations_context,
         _limitations_stages,
+        # The Limitations search (0126): names and Family DUID.
+        _(
+            "Family name, a Member's name, or the Family DUID. Leave blank for "
+            "every waiting answer."
+        ),
         grouped=True,
         closed=(("show", "any"),),
     ),

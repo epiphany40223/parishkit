@@ -14,19 +14,9 @@
     gates; ui-v1.css orders it after them), so it never moves Add or the
     bulk buttons along their line. It is always drawn, so
     it never moves anything; it changes only when the table is redrawn.
-  - While the reader has unfinished runs, the button asks first in a
-    modal dialog (ui-v1.js, data-wizard-ask): Continue for each run, Start
-    a new run (the same post, with new=1) and Cancel, which closes it and
-    returns focus to the button. The server asks the same on a post
-    without new=1, so a run started in another tab is offered too.
-{% endcomment %}{% with form_id=entry.prefix|add:"-wizard" reason_id=entry.prefix|add:"-wizard-reason" dialog_id=entry.prefix|add:"-wizard-dialog" %}<form method="post" action="{% url 'admin:review_wizard' %}" id="{{ form_id }}" class="wizard-entry" data-wizard-entry>{% csrf_token %}{% for name, value in entry.fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}</form>
+  - It never asks about unfinished runs (R52 Part W): the start replaces
+    the reader's earlier open runs.
+{% endcomment %}{% with form_id=entry.prefix|add:"-wizard" reason_id=entry.prefix|add:"-wizard-reason" %}<form method="post" action="{% url 'admin:review_wizard' %}" id="{{ form_id }}" class="wizard-entry" data-wizard-entry>{% csrf_token %}{% for name, value in entry.fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}</form>
 {% if entry.reason %}{% button type="submit" variant="secondary" form=form_id enabled=False aria-describedby=reason_id %}{% translate "Review these one at a time" %}{% endbutton %}<span class="help wizard-entry-reason" id="{{ reason_id }}">{{ entry.reason }}</span>
-{% elif entry.runs %}{% button type="submit" variant="secondary" form=form_id data-wizard-ask=dialog_id %}{% translate "Review these one at a time" %}{% endbutton %}
-<dialog id="{{ dialog_id }}" class="confirm-dialog" aria-labelledby="{{ dialog_id }}-title" aria-describedby="{{ dialog_id }}-body" data-wizard-dialog>
-<h2 id="{{ dialog_id }}-title">{% translate "Review these one at a time" %}</h2>
-<p id="{{ dialog_id }}-body">{% translate "You have unfinished runs. Continue an existing run or start a new one?" %}</p>
-{% include "stewardship/components/review-wizard-runs.html" with runs=entry.runs more=entry.more %}
-<div class="dialog-actions">{% button type="submit" form=form_id name="new" value="1" %}{% translate "Start a new run" %}{% endbutton %}{% button type="button" variant="secondary" data-confirm-cancel %}{% translate "Cancel" %}{% endbutton %}</div>
-</dialog>
 {% else %}{% button type="submit" variant="secondary" form=form_id %}{% translate "Review these one at a time" %}{% endbutton %}
 {% endif %}{% endwith %}

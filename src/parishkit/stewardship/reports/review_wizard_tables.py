@@ -8,8 +8,8 @@ it through the start page's own parsing, access check and read, so the
 table and the run never disagree on what the filters mean.
 
 This module only works out what the button posts and whether it is
-available; it reads nothing but the reader's latest unfinished runs
-(``review_wizard_views.listed_runs``).
+available; it reads nothing. The button never asks about unfinished runs
+(R52 Part W): a start replaces the reader's earlier open runs.
 """
 
 from dataclasses import dataclass
@@ -19,7 +19,6 @@ from django.utils.translation import gettext_lazy as _
 from parishkit.stewardship.pipeline import Stream
 
 from .review_streams import BY_KEY
-from .review_wizard_views import listed_runs
 
 # Each table's pipeline stream (``Worklist.stream``), as the wizard names it.
 TABLE_STREAMS = {
@@ -38,23 +37,18 @@ class TableEntry:
     """What the table's button draws.
 
     ``fields`` are the ``(name, value)`` pairs its form posts; ``reason``
-    says why it is unavailable (an empty table), else None; ``runs`` are the
-    reader's latest unfinished runs, ``(words, url)`` each ("Census changes,
-    Family 12 of 87" and its current page), which its dialog offers to
-    continue, and ``more`` whether the start page lists more of them.
+    says why it is unavailable (an empty table), else None.
     """
 
     prefix: str
     fields: list
     reason: str | None = None
-    runs: tuple = ()
-    more: bool = False
 
 
 def table_sort(table):
     """The wizard's sort for a table's: Submitted ascending is Oldest
     submitted first, Submitted descending Newest submitted first, and any
-    other column (or none) Name A–Z (the spec's sort mapping)."""
+    other column (or none) Last name (A–Z) (the spec's sort mapping)."""
     tokens = table.sorting.tokens if table.sorting else {}
     column, descending = tokens.get(table.sort, (None, False))
     if column != "submitted":
@@ -84,11 +78,10 @@ def table_fields(stream, worklist, table):
     ]
 
 
-def table_entry(principal, worklist, table):
-    """The table's button for this reader, or None for a table that has none.
+def table_entry(worklist, table):
+    """The table's button, or None for a table that has none.
 
-    Unavailable, with its reason, while the table lists nothing; the runs
-    are read only while it is available, since only then can it ask.
+    Unavailable, with its reason, while the table lists nothing.
     """
     key = TABLE_STREAMS.get(worklist.stream)
     if key is None:
@@ -97,5 +90,4 @@ def table_entry(principal, worklist, table):
     fields = table_fields(stream, worklist, table)
     if not table.rows:
         return TableEntry(worklist.prefix, fields, reason=str(EMPTY))
-    found, more = listed_runs(principal)
-    return TableEntry(worklist.prefix, fields, runs=found, more=more)
+    return TableEntry(worklist.prefix, fields)

@@ -36,7 +36,9 @@ def review_wizard_entry(context, worklist, table):
     """
     from parishkit.stewardship.reports.review_wizard_tables import table_entry
 
+    # Only a signed-in reader gets the button (a unit render of the table,
+    # with no principal, draws none); the entry itself needs no reader.
     principal = getattr(getattr(context, "request", None), "principal", None)
     if principal is None:
         return None
-    return table_entry(principal, worklist, table)
+    return table_entry(worklist, table)

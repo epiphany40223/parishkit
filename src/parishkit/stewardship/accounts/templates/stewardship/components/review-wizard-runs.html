@@ -1,8 +1,0 @@
-{% load i18n stewardship %}{% comment %}
-  The reader's unfinished review wizard runs, one line each ("Census
-  changes, Family 12 of 87") with Continue, which opens the run's current
-  page (#2123): in a review table's ask dialog
-  (components/review-wizard-entry.html) and on the start's ask page
-  (review-wizard-ask.html). `runs` are (words, url) pairs, the latest
-  used; with `more`, a line says the start page lists the rest.
-{% endcomment %}<ul class="wizard-runs" data-wizard-runs>{% for words, url in runs %}<li><span>{{ words }}</span> {% blocktranslate asvar label with name=words %}Continue {{ name }}{% endblocktranslate %}{% button href=url variant="secondary" aria-label=label %}{% translate "Continue" %}{% endbutton %}</li>{% endfor %}</ul>{% if more %}<p class="help" data-wizard-more>{% url 'admin:review_wizard' as start %}{% blocktranslate %}You have more unfinished runs. <a href="{{ start }}">Review one at a time</a> lists them all.{% endblocktranslate %}</p>{% endif %}

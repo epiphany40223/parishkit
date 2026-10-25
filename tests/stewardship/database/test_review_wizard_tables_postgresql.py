@@ -3,8 +3,8 @@
 Review pipeline spec, "Wizard entry points": each review table's button
 posts the table's current view, and the run it starts is the run the start
 page gives for the same filters and sort. An empty table draws it
-unavailable with its reason; while the reader has unfinished runs it asks
-first, in the table's dialog and again on the server.
+unavailable with its reason; it never asks about unfinished runs, which
+the start replaces (R52 Part W).
 """
 
 import html
@@ -137,58 +137,32 @@ def test_an_empty_table_draws_the_button_unavailable(response_service, google):
         assert not ReviewRun.objects.exists()
 
 
-def test_unfinished_runs_are_asked_about_first(response_service, google):
-    """With a run, the table's button opens its dialog listing it; a post
-    without the answer gets the same question from the server (a run from
-    another tab), Start a new run starts one, and finished runs are not
-    listed."""
+def test_a_table_start_never_asks_about_earlier_runs(response_service, google):
+    """With an unfinished run, the table's button still posts at once (no
+    dialog) and the server starts the new run, replacing the earlier one;
+    a tampered post is refused (R52 Part W)."""
     prepared(response_service)
     browser = staff_browser(google)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         _, body = search(browser, CENSUS, {"stage": "all"})
         _, fields = entry(body.decode())
-        # A run started in another tab after this table was drawn.
-        first = run_of(search(browser, START, fields | {"new": "1"})[0])
-        response, body = search(browser, START, fields)
-        assert response.status_code == 200
+        first = run_of(search(browser, START, fields)[0])
+        _, body = search(browser, CENSUS, {"stage": "all"})
         page = body.decode()
-        assert "Continue an existing run or start a new one?" in page
-        assert f'href="{START}1/?run={first.pk}"' in page
-        assert "Census changes, Family 1 of 1" in page
-        assert f'href="{CENSUS}"' in page  # Cancel returns to the table.
-        assert ReviewRun.objects.count() == 1
-        # Start a new run posts the same view again, with its answer.
-        again = dict(
-            re.findall(
-                r'<input type="hidden" name="([^"]+)" value="([^"]*)">',
-                page.split("data-wizard-ask-page")[1],
-            )
-        )
-        again.pop("csrfmiddlewaretoken")
+        prefix, again = entry(page)
         assert again == fields
-        second = run_of(search(browser, START, again | {"new": "1"})[0])
+        assert (
+            "data-wizard-ask" not in button(page, prefix)
+            and "<dialog id="
+            not in (page.split('class="bulk-bar"')[1].split("</form>")[0])
+        )
+        second = run_of(search(browser, START, fields)[0])
         assert second.pk != first.pk and second.subjects == first.subjects
-        # The table now asks in its own dialog, listing both runs.
-        _, body = search(browser, CENSUS, {"stage": "all"})
-        page = body.decode()
-        prefix, _ = entry(page)
-        assert f'data-wizard-ask="{prefix}-wizard-dialog"' in button(page, prefix)
-        dialog = page.split(f'<dialog id="{prefix}-wizard-dialog"')[1].split(
-            "</dialog>"
-        )[0]
-        assert dialog.count("?run=") == 2
-        # A tampered table post is refused before anything is drawn, even
-        # while there are runs to ask about.
-        response, _ = search(browser, START, fields | {"page": "2"})
-        assert response.status_code == 400
-        response, _ = search(browser, START, fields | {"mode": "other"})
-        assert response.status_code == 400
-        # A finished run is not offered again.
-        search(browser, f"{START}1/?run={first.pk}", {"finish": "1"})
-        _, body = search(browser, CENSUS, {"stage": "all"})
-        dialog = body.decode().split(f'<dialog id="{prefix}-wizard-dialog"')[1]
-        assert str(first.pk) not in dialog.split("</dialog>")[0]
-        assert str(second.pk) in dialog.split("</dialog>")[0]
+        assert list(ReviewRun.objects.values_list("pk", flat=True)) == [second.pk]
+        # A tampered table post is refused, and the old answer field too.
+        for extra in ({"page": "2"}, {"mode": "other"}, {"new": "1"}):
+            assert search(browser, START, fields | extra)[0].status_code == 400, extra
+        assert ReviewRun.objects.count() == 1
 
 
 def test_a_leaders_ministry_run_holds_only_their_ministries(response_service, google):
@@ -208,8 +182,8 @@ def test_a_leaders_ministry_run_holds_only_their_ministries(response_service, go
         assert fields["stream"] == "ministry" and fields["stage"] == "all"
         run = run_of(search(browser, START, fields)[0])
         assert [s["items"] for s in run.subjects] == [[str(mine.pk)]]
-        # A stream the leader's menu does not offer is refused, also on the
-        # path that asks about unfinished runs (the leader now has one).
+        # A stream the leader's menu does not offer is refused, and the
+        # leader's run is kept.
         census = fields | {"stream": "census"}
         census.pop("ministry", None)
         assert search(browser, START, census)[0].status_code == 400
@@ -255,7 +229,7 @@ def test_information_and_limitations_tables(response_service, google):
             assert response.status_code == 200
             _, fields = entry(body.decode())
             assert fields["stream"] == stream and fields["stage"] == "all"
-            run = run_of(search(browser, START, fields | {"new": "1"})[0])
+            run = run_of(search(browser, START, fields)[0])
             assert run.stream == stream and run.subjects
             assert same_run(browser, fields).subjects == run.subjects
 

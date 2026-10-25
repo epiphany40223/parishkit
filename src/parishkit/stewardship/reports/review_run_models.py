@@ -4,10 +4,11 @@ A run is one reader's pass through one stream's waiting work, one subject
 (a Family or a Member) per page: its stream, its closed filters, its sort,
 the sequence of subjects fixed when it started (each with the ids of the
 items that matched) and the reader's position in it. A reader may have
-several runs at once, one per browser tab. Runs have no time limit: an
-unfinished run stays until it is finished or discarded, and a finished one
-keeps its row (it is never offered again) until its user or campaign is
-removed, which deletes it by the model's cascade (``on_delete``).
+only one open run in a campaign: starting a run deletes the reader's
+earlier unfinished ones (R52 Part W), which are never listed or offered.
+A finished run keeps its row (it is never offered again) until its user
+or campaign is removed, which deletes it by the model's cascade
+(``on_delete``).
 
 The row holds record ids and DUIDs only, never a name, a value or the
 search text (only whether a search was used), so it holds nothing the
@@ -27,7 +28,7 @@ from parishkit.stewardship.storage import UTCDateTimeField
 # The streams a run may follow, in the Review work menu's order
 # (``review_streams.STREAMS`` holds their words and reads).
 STREAMS = ("census", "ministry", "pledges", "information", "limitations")
-# A run's sort: Name A–Z, Oldest submitted first, Newest submitted first.
+# A run's sort: Last name (A–Z), Oldest submitted first, Newest submitted first.
 SORTS = ("name", "oldest", "newest")
 # Most subjects one run holds (the spec's 5,000 pages).
 MAX_SUBJECTS = 5000

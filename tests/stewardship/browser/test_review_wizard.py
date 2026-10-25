@@ -37,6 +37,14 @@ SLOTS = """() => Object.fromEntries([...document.querySelectorAll(
     return [row + ':' + slot.dataset.navSlot,
       [Math.round(box.x), Math.round(box.y), Math.round(box.width)]];
   }))"""
+# Each row's Finish button box, to compare across pages (R52 Part W).
+FINISH = """() => Object.fromEntries([...document.querySelectorAll(
+  '[data-review-nav] [data-review-move="finish"]')].map(button => {
+    const box = button.getBoundingClientRect();
+    return [button.closest('[data-review-nav]').dataset.reviewNav,
+      [Math.round(box.x), Math.round(box.y), Math.round(box.width),
+       Math.round(box.height)]];
+  }))"""
 # The Review work split's parts, each its box as {x, y, width, height,
 # bottom, right}, or null when it is not drawn (review-work-split.html).
 SPLIT = """() => Object.fromEntries(Object.entries({
@@ -85,26 +93,24 @@ def test_start_page_choices_show_only_the_chosen_streams_filters(
     page, component_origin, axe_source, width
 ):
     """The stream and the mode show their own filters in place, and only the
-    shown ones are sent; a greyed stream says why; runs list Continue and
-    Discard; nothing scrolls sideways on a phone."""
+    shown ones are sent; Basic's search says what it matches, per stream; a
+    greyed stream says why; no runs are listed (R52 Part W); nothing scrolls
+    sideways on a phone."""
     page.set_viewport_size({"width": width, "height": 800})
     page.goto(component_origin + START_PATH)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
     expect(page.get_by_role("heading", level=1)).to_have_text("Review one at a time")
-    runs = page.get_by_role("table", name="Your unfinished reviews")
-    expect(runs.get_by_role("row")).to_have_count(3)
-    continue_ = runs.get_by_role(
-        "link", name="Continue Census changes, Family 12 of 87, Member 2 of 3"
+    expect(page.get_by_role("table")).to_have_count(0)
+    expect(page.get_by_text("Unfinished reviews")).to_have_count(0)
+    expect(page.locator("#review-sort option").first).to_have_text("Last name (A–Z)")
+    # Basic's help, under the search and naming it, is the stream's own.
+    search = page.locator("#census-basic-search")
+    expect(search).to_have_accessible_description(
+        "Family name, a Member's name, or the Family DUID. Leave blank for every "
+        "waiting change."
     )
-    expect(continue_).to_have_attribute(
-        "href",
-        "/admin/reports/review/40/?run=" + ("00000000-0000-0000-0000-00000000084b"),
-    )
-    expect(
-        runs.get_by_role("button", name="Discard Ministry requests, Member 3 of 9")
-    ).to_be_visible()
     pledges = page.get_by_role("radio", name="Pledges")
     expect(pledges).to_be_disabled()
     expect(page.get_by_text("Pledges: This campaign does not include")).to_be_visible()
@@ -138,6 +144,11 @@ def test_start_page_choices_show_only_the_chosen_streams_filters(
     expect(page.locator("#filter-ministry")).to_be_visible()
     assert "members" in visible_names(page)
     expect(page.get_by_role("button", name="Start")).to_be_enabled()
+    page.get_by_role("radio", name="Basic").check()
+    expect(page.locator("#ministry-basic-search-help")).to_have_text(
+        "Member's name or the Ministry. Leave blank for every waiting request."
+    )
+    expect(page.locator("#census-basic-search-help")).to_be_hidden()
 
 
 @pytest.mark.parametrize("width", [320, 1366])
@@ -147,14 +158,16 @@ def test_the_navigation_rows_keep_their_place_on_every_page(
     """Previous, Finish and Next sit in the same spots on a Family page, a
     Member page and the last page (a New Member's), whose sections differ in
     height, in both rows, on a phone and a desktop; page 1 keeps Previous's
-    slot empty and the last page's Next slot is Finish; the bottom row is at
+    slot empty, the last page keeps Next's empty and Finish stays in the
+    middle, at the same box on all three pages (R52 Part W); the bottom row is at
     the bottom of the screen; every page passes axe and scrolls no wider
     than the screen."""
     page.set_viewport_size({"width": width, "height": 700})
-    found, heights = [], set()
+    found, heights, finishes = [], set(), []
     for path in PAGE_PATHS:
         page.goto(component_origin + path)
         found.append(page.evaluate(SLOTS))
+        finishes.append(page.evaluate(FINISH))
         heights.add(page.locator("#review-section").bounding_box()["height"])
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         page.evaluate(axe_source)
@@ -162,21 +175,30 @@ def test_the_navigation_rows_keep_their_place_on_every_page(
     # The pages' sections differ in height, so equal spots mean something.
     assert len(heights) == len(PAGE_PATHS), heights
 
-    # Every control's spot, wherever its slot shows one: Finish and Next on
-    # the first two pages, Previous on the last two, the Next slot on all.
+    # Finish: one button per row, at the same box on the first, a middle
+    # and the last page, and centred in its row.
+    assert all(sorted(f) == ["bottom", "top"] for f in finishes), finishes
+    assert finishes[0] == finishes[1] == finishes[2], finishes
+    for row in ("top", "bottom"):
+        bar = page.locator(f'[data-review-nav="{row}"] .review-wizard-actions')
+        left = bar.bounding_box()
+        x, _y, w, _h = finishes[2][row]
+        assert abs((x + w / 2) - (left["x"] + left["width"] / 2)) <= 1, row
+
+    # Every control's spot, wherever its slot shows one: Finish on every
+    # page, Next on the first two, Previous on the last two.
     def spot(slots, name):
         """A slot's (x, y), ignoring its width (an empty slot has none)."""
         return slots[name][:2]
 
     for row in ("top", "bottom"):
-        # The Next slot is right-aligned: Next, or Finish on the last page,
-        # ends at the same spot.
+        # The Next slot is right-aligned: Next ends at the same spot.
         ends = {
             (f[f"{row}:next"][0] + f[f"{row}:next"][2], f[f"{row}:next"][1])
-            for f in found
+            for f in found[:2]
         }
         assert len(ends) == 1, (row, ends)
-        assert spot(found[0], f"{row}:action") == spot(found[1], f"{row}:action")
+        assert len({tuple(spot(f, f"{row}:action")) for f in found}) == 1, row
         assert spot(found[1], f"{row}:back") == spot(found[2], f"{row}:back")
     first, middle, last = (component_origin + path for path in PAGE_PATHS)
     page.goto(first)
@@ -185,26 +207,48 @@ def test_the_navigation_rows_keep_their_place_on_every_page(
     expect(top.get_by_role("button", name="Finish")).to_be_visible()
     expect(top.get_by_role("button", name="Next")).to_be_visible()
     expect(top.locator("[data-review-progress]")).to_have_text("Family 1 of 1")
+    # The header: the Family's line, the Member line's place kept empty.
+    heading = page.locator("[data-review-heading]")
+    expect(heading).to_have_text(
+        "Family: Squyres, Jeff and Tracy (DUID 4123, envelope 312)"
+    )
+    # (The fixture has no signed-in request, so its Family name is plain
+    # text; the database tests check the hub link.)
+    expect(page.locator("[data-review-member]")).to_have_text("")
     bottom = page.locator('[data-review-nav="bottom"]').bounding_box()
     assert abs(bottom["y"] + bottom["height"] - 700) <= 1
     page.goto(last)
     top = page.locator('[data-review-nav="top"]')
     expect(top.get_by_role("button", name="Next")).to_have_count(0)
     expect(top.get_by_role("button", name="Finish")).to_have_count(1)
-    expect(page.locator("[data-review-heading]")).to_contain_text("New Member")
+    # Finish stays in the middle slot; Next's slot is kept, empty.
+    expect(
+        top.locator('[data-nav-slot="action"] [data-review-move="finish"]')
+    ).to_have_count(1)
+    expect(top.locator('[data-nav-slot="next"]')).to_be_empty()
+    member = page.locator("[data-review-member]")
+    expect(member).to_contain_text("New Member")
+    expect(member).not_to_contain_text("DUID")
     expect(page.locator("#review-section")).to_contain_text("Adding this Member:")
     page.goto(middle)
-    expect(page.locator("[data-review-family]")).to_contain_text(
-        "Member of Squyres, Jeff and Tracy"
+    member = page.locator("[data-review-member]")
+    expect(member).to_have_text("Member: Squyres, Jeff (DUID 77001)")
+    # No envelope: the parenthetical names the DUID alone.
+    expect(page.locator("[data-review-heading]")).to_have_text(
+        "Family: Squyres, Jeff and Tracy (DUID 4123)"
     )
-    expect(page).to_have_title(
-        "Review one at a time: Census changes, Family 1 of 1, Member 1 of 2"
+    expect(member.get_by_role("link", name="Squyres, Jeff")).to_have_attribute(
+        "href",
+        "/admin/reports/families/00000000-0000-0000-0000-000000000007/?tab=member-2",
     )
+    expect(page.locator("[data-review-heading]")).to_contain_text("Family: ")
+    # Only the Family's place: no "Member 1 of 2" suffix (R52 Part W).
+    expect(page).to_have_title("Review one at a time: Census changes, Family 1 of 1")
 
 
 def test_phone_rows_stay_one_line(page, component_origin, axe_source):
     """On a phone the three slots stay on one line, so the last page (Finish
-    in Next's slot) is no shorter, and the page passes axe."""
+    in the middle, Next's slot empty) is no shorter, and the page passes axe."""
     page.set_viewport_size({"width": 320, "height": 640})
     heights = []
     for path in PAGE_PATHS:
@@ -235,7 +279,9 @@ def test_review_work_puts_one_at_a_time_beside_the_tables(
         assert parts["pane"]["y"] - parts["heading"]["bottom"] >= 8
     pane = page.locator("[data-review-wizard-card]")
     expect(pane).to_contain_text("One at a time")
-    expect(pane).to_contain_text("Every stream's waiting items")
+    expect(pane.locator(".review-work-wizard-help")).to_have_text(
+        "Every stream's waiting items, one Family or Member per page."
+    )
     link = pane.get_by_role("link", name="Review one at a time")
     expect(link).to_have_class("button")
     expect(link).to_have_attribute("href", "/admin/reports/review/")

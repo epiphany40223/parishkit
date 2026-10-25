@@ -1,7 +1,7 @@
 """Review one at a time's pages with the real templates (#2123).
 
-``START_PATH`` is a Staff member's start page with two unfinished runs,
-every stream offered and Pledges greyed out with the menu's reason.
+``START_PATH`` is a Staff member's start page, every stream offered and
+Pledges greyed out with the menu's reason (it lists no runs, R52 Part W).
 ``PAGE_PATHS`` are one run's three pages, each of a different height, so
 the navigation rows can be compared across pages: a Family page first, a
 Member page and the last page, a New Member's. Each draws its census
@@ -13,12 +13,10 @@ Member page its addition and the Family's answers for the Member.
 pages once a change is accepted (a test serves each at its page's
 address, which the section redraws from). ``FOCUS_PATH`` is the Member
 page opened by the bottom row's Next, ``BACK_PATH`` by the top row's
-Previous. ``CARD_PATH`` is My review work with one unfinished run, whose
-card continues it; ``GREYED_CARD_PATH`` is My review work while the menu
-greys the wizard out, and ``NO_CARD_PATH`` while it has no wizard entry.
+Previous. ``GREYED_CARD_PATH`` is My review work while the menu greys
+the wizard out, and ``NO_CARD_PATH`` while it has no wizard entry.
 """
 
-from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -52,7 +50,6 @@ from .timeline_components import HOME_CHANGE
 
 START_PATH = "/review-wizard"
 PAGE_PATHS = ("/review-wizard-1", "/review-wizard-2", "/review-wizard-3")
-CARD_PATH = "/review-wizard-card"
 GREYED_CARD_PATH = "/review-wizard-card-greyed"
 NO_CARD_PATH = "/review-wizard-card-none"
 # The menu's reason while it greys Review one at a time out.
@@ -128,36 +125,14 @@ def start_context():
                 "stages": [
                     (WAITING, "Waiting"),
                     *stream.stages(STAFF),
-                    (EVERY, "Every stage"),
+                    (EVERY, "Every stage except History"),
                 ],
                 "stage": WAITING,
                 "search": "",
                 "context": CONTEXTS[stream.key] if available else {},
             }
         )
-    used = datetime(2054, 10, 12, 18, 30, tzinfo=UTC)
-    runs = [
-        {
-            "id": RUN,
-            "stream": "Census changes",
-            "filters": "Waiting",
-            "progress": "Family 12 of 87, Member 2 of 3",
-            "updated_at": used,
-            "url": "/admin/reports/review/40/?run=" + str(RUN),
-            "label": "Census changes, Family 12 of 87, Member 2 of 3",
-        },
-        {
-            "id": UUID(int=2124),
-            "stream": "Ministry requests",
-            "filters": "Every stage, with a name search",
-            "progress": "Member 3 of 9",
-            "updated_at": used,
-            "url": "/admin/reports/review/3/?run=" + str(UUID(int=2124)),
-            "label": "Ministry requests, Member 3 of 9",
-        },
-    ]
     return {
-        "runs": runs,
         "streams": streams,
         "chosen": "census",
         "single": False,
@@ -237,40 +212,43 @@ def page_context(position, focus=None, **values):
     """One of the run's three pages: a Family page, a Member page, the last.
 
     ``values`` decorate the page's first change (its decision, say), and
-    ``focus`` names the navigation control the page was opened by.
+    ``focus`` names the navigation control the page was opened by. The
+    Family has envelope 312; the Member page's name links to the hub's tab.
     """
     census = STREAMS[0]
     family = {
         "family_id": UUID(int=7),
         "family_name": "Squyres, Jeff and Tracy",
         "family_duid": 4123,
+        "envelope": 312,
         "member": None,
     }
     heading = family
     if position > 1:
+        # The Member pages' Family has no envelope: none is shown.
         heading = family | {
-            "member": {"name": "Squyres, Jeff", "duid": 77001, "new": position == 3}
+            "envelope": None,
+            "member": {
+                "name": "Squyres, Jeff",
+                "duid": 77001 if position == 2 else None,
+                "new": position == 3,
+                "tab": f"member-{position}",
+            },
         }
-        if position == 3:
-            heading["member"]["duid"] = None
-    words = (
-        "Family 1 of 1",
-        "Family 1 of 1, Member 1 of 2",
-        "Family 1 of 1, Member 2 of 2",
-    )
+    timeline = "/admin/reports/families/" + str(UUID(int=7)) + "/"
     return {
         "run": SimpleNamespace(pk=RUN),
         "stream": census,
         "heading": heading,
-        "progress": words[position - 1],
+        "member_url": f"{timeline}?tab=member-{position}" if position > 1 else None,
+        # A grouped stream names only the Family's place (R52 Part W).
+        "progress": "Family 1 of 1",
         "position": position,
         "size": 3,
         "previous_url": views.page_url(RUN, position - 1) if position > 1 else None,
         "next_url": views.page_url(RUN, position + 1) if position < 3 else None,
         "here_url": views.page_url(RUN, position),
         "focus": {key.replace("-", "_"): key == focus for key in views.FROM},
-        "stream_url": "/admin/reports/census/",
-        "timeline_url": "/admin/reports/families/" + str(UUID(int=7)) + "/",
         "start_url": "/admin/reports/review/",
         "listed": True,
         "member_page": position > 1,
@@ -283,7 +261,7 @@ def page_context(position, focus=None, **values):
 
 
 def components(context, admin):
-    """The start page, a run's three pages and My review work's card."""
+    """The start page, a run's three pages and My review work's pane."""
     configuration, page_chrome = chrome(admin, STAFF, {})
     base = context | {
         "admin_chrome": page_chrome,
@@ -327,15 +305,7 @@ def components(context, admin):
                 base | page_context(2, focus=focus),
             ),
         )
-    runs = [("Census changes, Family 12 of 87", views.page_url(RUN, 12))]
-    pages[CARD_PATH] = (
-        "text/html",
-        render_to_string(
-            "stewardship/my-review-work.html",
-            base | {"review": {"campaign": CAMPAIGN, "counts": COUNTS, "runs": runs}},
-        ),
-    )
-    review = {"campaign": CAMPAIGN, "counts": COUNTS, "runs": []}
+    review = {"campaign": CAMPAIGN, "counts": COUNTS}
     greyed = SimpleNamespace(
         label="Review one at a time", url=None, reason=GREYED_REASON
     )

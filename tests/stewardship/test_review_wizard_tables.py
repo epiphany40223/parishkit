@@ -3,7 +3,7 @@
 Review pipeline spec, "Wizard entry points": what each table's button posts
 (its view, narrowed to the wizard start's fields, and its sort mapped to the
 wizard's), and how it is drawn: unavailable with its reason on an empty
-table, asking first in a dialog while the reader has unfinished runs.
+table, and never asking about unfinished runs (R52 Part W).
 """
 
 from dataclasses import dataclass, field
@@ -13,7 +13,6 @@ import pytest
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.pipeline import Stream
-from parishkit.stewardship.reports import review_wizard_tables
 from parishkit.stewardship.reports.review_streams import BY_KEY
 from parishkit.stewardship.reports.review_wizard_tables import (
     EMPTY,
@@ -61,12 +60,12 @@ class FakeTable:
 )
 def test_the_table_sort_maps_to_the_wizard_sort(sort, expected):
     """Submitted ascending and descending are Oldest and Newest submitted
-    first; any other column is Name A–Z."""
+    first; any other column is Last name (A–Z)."""
     assert table_sort(FakeTable(sort=sort)) == expected
 
 
 def test_a_table_with_no_sorting_maps_to_name_order():
-    """A table drawn without a sort choice starts in Name A–Z."""
+    """A table drawn without a sort choice starts in Last name (A–Z)."""
     assert table_sort(FakeTable(sort="anything", sorting=None)) == "name"
 
 
@@ -120,26 +119,17 @@ def test_a_ministry_tables_empty_filters_are_left_out():
         (Stream.CANNOT_PARTICIPATE, "limitations"),
     ],
 )
-def test_every_review_table_starts_its_own_stream(monkeypatch, stream, key):
+def test_every_review_table_starts_its_own_stream(stream, key):
     """Each of the five tables posts its own wizard stream."""
-    monkeypatch.setattr(
-        review_wizard_tables, "listed_runs", lambda principal: ((), False)
-    )
-    entry = table_entry(object(), FakeWorklist(stream, {"stage": "all"}), FakeTable())
+    entry = table_entry(FakeWorklist(stream, {"stage": "all"}), FakeTable())
     assert ("stream", key) in entry.fields
     assert entry.reason is None
 
 
-def test_an_empty_table_is_unavailable_and_reads_no_runs(monkeypatch):
-    """Nothing listed: the reason, and no read of the reader's runs."""
-
-    def unread(principal):
-        """Fail the test if the runs are read."""
-        raise AssertionError("runs read for an empty table")
-
-    monkeypatch.setattr(review_wizard_tables, "listed_runs", unread)
+def test_an_empty_table_is_unavailable():
+    """Nothing listed: the button names its reason."""
     entry = table_entry(
-        object(), FakeWorklist(Stream.CENSUS, {"stage": "all"}), FakeTable(rows=[])
+        FakeWorklist(Stream.CENSUS, {"stage": "all"}), FakeTable(rows=[])
     )
     assert entry.reason == str(EMPTY)
 
@@ -160,49 +150,6 @@ def test_an_unavailable_button_names_its_reason():
     assert "<dialog" not in html
 
 
-def test_a_reader_with_runs_is_asked_first():
-    """The button opens the dialog: each run's Continue, Start a new run, Cancel."""
-    runs = (("Census changes, Family 2 of 9", "/admin/reports/review/2/?run=x"),)
-    html = render(TableEntry("census", [("search", "Smith")], runs=runs))
-    assert 'data-wizard-ask="census-wizard-dialog"' in html
-    assert '<dialog id="census-wizard-dialog"' in html
-    assert "Continue an existing run or start a new one?" in html
-    assert 'href="/admin/reports/review/2/?run=x"' in html
-    assert 'aria-label="Continue Census changes, Family 2 of 9"' in html
-    assert 'form="census-wizard" name="new" value="1"' in html
-    assert "data-confirm-cancel" in html
-    # The search travels only in the form's body, never in an address.
-    assert '<input type="hidden" name="search" value="Smith">' in html
-    assert "?search" not in html
-
-
-def test_more_runs_than_listed_point_to_the_start_page():
-    """Past the listed runs, the dialog says the start page lists the rest."""
-    runs = (("Pledges, Family 1 of 2", "/admin/reports/review/1/?run=y"),)
-    html = render(TableEntry("census", [], runs=runs, more=True))
-    assert "You have more unfinished runs." in html
-    assert '<a href="/admin/reports/review/">Review one at a time</a>' in html
-    assert "You have more" not in render(TableEntry("census", [], runs=runs))
-
-
-def test_listed_runs_are_bounded(monkeypatch):
-    """At most ``LISTED_RUNS`` are read and listed, with ``more`` past them."""
-    from parishkit.stewardship.reports import review_wizard_views as views
-
-    asked = {}
-
-    def unfinished(principal, campaign_id, *, limit=None):
-        """Record the limit; return one run more than are listed."""
-        asked["limit"] = limit
-        return list(range(limit))
-
-    monkeypatch.setattr(views, "unfinished", unfinished)
-    monkeypatch.setattr(views, "run_choice", lambda run: (str(run), "/"))
-    found, more = views.listed_runs(object(), "campaign")
-    assert asked["limit"] == views.LISTED_RUNS + 1
-    assert len(found) == views.LISTED_RUNS and more is True
-
-
 @pytest.mark.parametrize(
     ("module", "name"),
     [
@@ -215,7 +162,7 @@ def test_listed_runs_are_bounded(monkeypatch):
 )
 def test_every_tables_own_sort_maps(module, name):
     """Each real table's tokens: its Submitted ones map to Oldest and Newest,
-    every other one to Name A–Z."""
+    every other one to Last name (A–Z)."""
     from importlib import import_module
 
     sorting = getattr(import_module(f"parishkit.stewardship.reports.{module}"), name)
@@ -226,9 +173,12 @@ def test_every_tables_own_sort_maps(module, name):
     assert any(column == "submitted" for column, _ in sorting.tokens.values())
 
 
-def test_a_reader_without_runs_starts_at_once():
-    """No runs: the button submits its form, with no dialog."""
-    html = render(TableEntry("census", [("stream", "census")]))
+def test_the_button_starts_at_once():
+    """The button submits its form, with no dialog; the search travels only
+    in the form's body, never in an address."""
+    html = render(TableEntry("census", [("stream", "census"), ("search", "Smith")]))
+    assert '<input type="hidden" name="search" value="Smith">' in html
+    assert "?search" not in html
     assert 'form="census-wizard"' in html
     assert "data-wizard-ask" not in html
     assert "<dialog" not in html

@@ -167,7 +167,7 @@
    with an ellipsis, and its whole text stays the heading's. */
 .review-wizard-heading, .review-wizard-of { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .review-wizard-heading { height: 1.3em; line-height: 1.3em; }
-.review-wizard-heading .status-badge { line-height: 1.2; vertical-align: .15em; }
+.review-wizard-of .status-badge { line-height: 1.2; vertical-align: .1em; }
 .review-wizard-of { height: 1.5em; line-height: 1.5em; margin-block: 0; }
 .review-wizard-nav { margin-block: .5rem 1rem; }
 .review-wizard-progress { margin: 0; height: 1.5em; line-height: 1.5em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }

@@ -399,21 +399,8 @@ def observe(principal, store):
         review = {
             "campaign": campaign,
             "counts": counts,
-            "runs": runs(principal, campaign),
         }
         return config, review, database_now()
-
-
-def runs(principal, campaign):
-    """The reader's unfinished review wizard runs, for the wizard's card (#2123).
-
-    ``review_wizard_views.card_runs``' rows, or none without a campaign.
-    """
-    if campaign is None:
-        return []
-    from parishkit.stewardship.reports.review_wizard_views import card_runs
-
-    return card_runs(principal, campaign.pk)
 
 
 def wizard_cards(chrome, review):
@@ -422,19 +409,14 @@ def wizard_cards(chrome, review):
     A one-card list, drawn as the One at a time pane's button beside the
     stream groups (review-work-split.html, R52 Part W). Shown while the
     viewer's menu has the wizard's entry (some stream is offered), with the
-    menu's reason instead while the menu greys it out. It opens the start
-    page; with exactly one unfinished run it reads "Continue: *stream*,
-    *progress*" and opens that run's current page. It has no count: the
-    waiting set differs per stream, so a total would add unlike things.
+    menu's reason instead while the menu greys it out. It always opens the
+    start page: unfinished runs are never offered (R52 Part W). It has no
+    count: the waiting set differs per stream, so a total would add unlike
+    things.
     """
     item = (chrome.get("entries") or {}).get("review_wizard")
     if item is None or not (review or {}).get("campaign"):
         return []
-    found = (review or {}).get("runs") or []
-    if item.url and len(found) == 1 and found[0]:
-        words, url = found[0]
-        label = _("Continue: %(run)s") % {"run": words}
-        return [Card(label, url)]
     return [Card(item.label, item.url, item.reason)]
 
 

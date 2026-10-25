@@ -258,7 +258,7 @@ def summary(actor, configuration, now, *, home=False):
             )
         )
     if home and campaign is not None and "administrator" in actor.roles:
-        from .review_work import read_flags, runs
+        from .review_work import read_flags
 
         # Home's Review work panel: the panels Staff and Ministry leaders see
         # on My review work (#1690), plus Ready to update. Home is the
@@ -271,8 +271,6 @@ def summary(actor, configuration, now, *, home=False):
             "campaign": campaign,
             "flags": read_flags(actor),
             "leader": None,
-            # Review one at a time's card (#2123): the unfinished runs.
-            "runs": runs(actor, campaign),
         }
     if "administrator" in actor.roles:
         from .security_events import open_events

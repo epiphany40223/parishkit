@@ -38,7 +38,8 @@ def keys(subjects):
 
 
 def test_name_order_breaks_ties_by_duid_then_record_id():
-    """Name A–Z folds accents and case; equal names keep one order by DUID, id."""
+    """Last name (A–Z) folds accents and case; equal names keep one order by
+    DUID, id."""
     items = [
         item("1", "f-b", "Smith, Ann", 20),
         item("2", "f-a", "smith, ann", 10),
@@ -53,7 +54,7 @@ def test_name_order_breaks_ties_by_duid_then_record_id():
 
 
 def test_submitted_sorts_use_the_newest_item_and_fall_back_to_names():
-    """A subject's time is its newest item's; equal times keep Name A–Z."""
+    """A subject's time is its newest item's; equal times keep name order."""
     items = [
         item("1", "f-a", "Adams", 1, at=T0),
         item("2", "f-a", "Adams", 1, at=T0 + timedelta(days=3)),
@@ -134,7 +135,7 @@ def test_more_than_the_limit_is_refused(monkeypatch):
 
 
 def test_progress_words():
-    """Family, Member, and a grouped stream's Family and Member places."""
+    """Family, Member, and a grouped stream's Family place alone (R52 Part W)."""
     flat = [{"family": f, "kind": "family", "key": ""} for f in "abc"]
     assert progress(flat, 2, grouped=False, member_stream=False) == "Family 2 of 3"
     assert progress(flat, 3, grouped=False, member_stream=True) == "Member 3 of 3"
@@ -145,11 +146,7 @@ def test_progress_words():
         {"family": "b", "kind": "member", "key": "3"},
     ]
     words = [progress(grouped, n, grouped=True, member_stream=False) for n in (1, 3, 4)]
-    assert words == [
-        "Family 1 of 2",
-        "Family 1 of 2, Member 2 of 2",
-        "Family 2 of 2, Member 1 of 1",
-    ]
+    assert words == ["Family 1 of 2", "Family 1 of 2", "Family 2 of 2"]
 
 
 def test_waiting_is_every_stage_a_person_still_acts_on():
@@ -163,53 +160,22 @@ def test_waiting_is_every_stage_a_person_still_acts_on():
     assert not waiting("to_enter_by_hand", leader=True)
 
 
-def test_the_card_follows_the_menu_entry_and_the_runs():
-    """No entry, no card; greyed with the menu's reason; one run continues it."""
+def test_the_card_follows_the_menu_entry():
+    """No entry, no card; greyed with the menu's reason; never a Continue."""
     from types import SimpleNamespace
 
     from parishkit.stewardship.accounts.review_work import wizard_cards
 
-    review = {"campaign": object(), "runs": []}
+    review = {"campaign": object()}
     assert wizard_cards({"entries": {}}, review) == []
     item = SimpleNamespace(label="Review one at a time", url="/start/", reason=None)
     chrome = {"entries": {"review_wizard": item}}
     [card] = wizard_cards(chrome, review)
     assert (card.label, card.url) == ("Review one at a time", "/start/")
-    [card] = wizard_cards(chrome, review | {"runs": [("Pledges, Family 2 of 5", "/r")]})
-    assert (card.label, card.url) == ("Continue: Pledges, Family 2 of 5", "/r")
-    two = [("a", "/a"), ("b", "/b")]
-    [card] = wizard_cards(chrome, review | {"runs": two})
-    assert card.url == "/start/"
     greyed = SimpleNamespace(label="Review one at a time", url=None, reason="No")
     [card] = wizard_cards({"entries": {"review_wizard": greyed}}, review)
     assert (card.url, card.reason) == (None, "No")
     assert wizard_cards(chrome, {"campaign": None}) == []
-
-
-def test_a_runs_filters_in_words():
-    """The Stage, the closed choices other than their default, and a search."""
-    from uuid import UUID
-
-    from parishkit.stewardship.accounts.policy import Principal
-    from parishkit.stewardship.reports.review_streams import BY_KEY
-    from parishkit.stewardship.reports.review_wizard_views import filter_words
-
-    staff = Principal(UUID(int=1), frozenset({"staff"}))
-    census = BY_KEY["census"]
-    assert filter_words(census, {"stage": "waiting"}, staff) == "Waiting"
-    words = filter_words(
-        census,
-        {"stage": "all", "route": "by_hand", "kind": "any", "search_used": True},
-        staff,
-    )
-    assert words == (
-        "Every stage, How it reaches ParishSoft: By hand only, with a name search"
-    )
-    assert filter_words(census, {"stage": "conflict"}, staff) == "Conflict"
-    ministry = BY_KEY["ministry"]
-    assert filter_words(ministry, {"ministry": "9", "kind": "join"}, staff) == (
-        "Waiting, one Ministry, Request: Join"
-    )
 
 
 @pytest.mark.parametrize(
@@ -240,3 +206,36 @@ def test_start_with_nothing_offered_is_the_plain_refusal(monkeypatch, roles, say
     assert response.status_code == 403
     assert ("You don't lead any Ministry" in body.replace("&#x27;", "'")) is bool(says)
     assert "Try signing in again" not in body or not says
+
+
+def test_the_header_shows_an_envelope_only_when_set_and_not_zero():
+    """ "envelope e" is in the header only for a set, non-zero number."""
+    from parishkit.stewardship.reports.review_wizard_views import envelope_shown
+    from parishkit.stewardship.source.snapshot_names import FamilyFacts
+
+    assert envelope_shown(FamilyFacts("A", 312, "")) == 312
+    assert envelope_shown(FamilyFacts("A", 0, "")) is None
+    assert envelope_shown(FamilyFacts("A", None, "")) is None
+    assert envelope_shown(None) is None
+
+
+def test_the_wizard_offers_no_history():
+    """No stream's Stage list offers History (the tables' filters still do),
+    and an Every stage read keeps no History item, so a History item is
+    never a page (R52 Part W)."""
+    from uuid import UUID
+
+    from parishkit.stewardship.accounts.policy import Principal
+    from parishkit.stewardship.reports import review_streams
+    from parishkit.stewardship.reports.review_wizard import Item
+
+    staff = Principal(UUID(int=1), frozenset({"staff"}))
+    for stream in review_streams.STREAMS:
+        assert "history" not in dict(stream.stages(staff)), stream.key
+    items = [
+        Item(str(n), "f", "family", "", "A", 1, stage)
+        for n, stage in enumerate(("history", "to_review", "confirmed"))
+    ]
+    kept = review_streams._keep(items, review_streams.EVERY)
+    assert [item.stage for item in kept] == ["to_review", "confirmed"]
+    assert [i.stage for i in review_streams._keep(items, "waiting")] == ["to_review"]

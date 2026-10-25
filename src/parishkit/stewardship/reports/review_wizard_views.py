@@ -3,25 +3,24 @@
 Review pipeline spec, "Review wizard". Two addresses, both under Review
 work and both for the current campaign:
 
-- ``reports/review/`` (``start``): the start page. A GET draws the reader's
-  unfinished runs (Continue, Discard) and the choices: the stream (only
-  the streams the reader's menu offers), Basic or Advanced filters (the
-  stream table's own), the sort and Start. A POST either starts a run
-  (``start``): the stream's items are read as its table reads them, fixed
-  as the run's sequence of subjects, stored, and page 1 opens (303); or
-  discards one of the reader's runs (``discard``) and answers with the
-  start page again (303), which the confirmation dialog redraws in place.
-  A review table's Review these one at a time posts a start too, with the
-  table's view (``table``, ``review_wizard_tables``); while the reader has
-  unfinished runs and the post does not say ``new``, it first answers with
-  a page asking to continue one of them or start a new run.
+- ``reports/review/`` (``start``): the start page. A GET draws the
+  choices: the stream (only the streams the reader's menu offers), Basic
+  or Advanced filters (the stream table's own), the sort and Start. A POST
+  starts a run: the stream's items are read as its table reads them, fixed
+  as the run's sequence of subjects, stored, and page 1 opens (303). A
+  review table's Review these one at a time posts a start too, with the
+  table's view (``table``, ``review_wizard_tables``). Unfinished runs are
+  never listed or offered (R52 Part W): starting a run deletes the
+  reader's earlier open runs in the campaign, so a run lives only while
+  its pages are in use.
 - ``reports/review/<position>/?run=<id>`` (``page``): one page of a run.
   A GET draws the subject's heading and the two navigation rows; a POST is
   Previous or Next (the address names the target position), which records
   the position in its own short transaction and answers 303 with the
   page's address, or Finish, which marks the run finished and opens My
-  review work. A run that was finished or discarded says "This review is
-  no longer open." with a link to the start page, never an error page.
+  review work. A run that was finished, or replaced by a newer start,
+  says "This review is no longer open." with a link to the start page,
+  never an error page.
 
 Every request re-checks the stream page's own access (its ``_principal``),
 so a role change mid-run takes effect on the next page; a run's start and
@@ -35,11 +34,11 @@ subject's items mid-run (a Ministry leader no longer leading a Ministry)
 never sees a name stored with the run (#2123).
 """
 
+from urllib.parse import urlencode
 from uuid import UUID
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, IntegrityError, transaction
-from django.db.models import Subquery
 from django.db.models.functions import Now
 from django.http import HttpResponseRedirect
 from django.template.loader import render_to_string
@@ -55,6 +54,7 @@ from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Outcome
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, emit_failure
+from parishkit.stewardship.pipeline import Stage
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.contracts import (
     ErrorCode,
@@ -65,17 +65,17 @@ from parishkit.stewardship.web.contracts import (
 from parishkit.stewardship.web.refusals import with_default_code
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
+from parishkit.stewardship.web.tabs import PARAMETER as TAB
 
 from .export_views import SAFE_FAILURES
 from .ministries import unscoped
 from .read_admission import admit_report_read
 from .review_run_models import ReviewRun
-from .review_streams import BY_KEY, EVERY, STREAMS, closed_words
+from .review_streams import BY_KEY, EVERY, STREAMS
 from .review_wizard import FAMILY, SORTS, WAITING, TooManyPages, progress, sequence
 
 START_TEMPLATE = "stewardship/review-wizard-start.html"
 PAGE_TEMPLATE = "stewardship/review-wizard-page.html"
-ASK_TEMPLATE = "stewardship/review-wizard-ask.html"
 # The refusals and notes the start page says in place of starting a run.
 NOTHING = "Nothing matches these filters."
 TOO_MANY = (
@@ -135,105 +135,6 @@ def page_url(run_id, position, came_from=None):
     return f"{url}&from={came_from}" if came_from else url
 
 
-def unfinished(principal, campaign_id, *, limit=None):
-    """The reader's unfinished runs in this campaign, the latest used first
-    (at most ``limit`` of them when given)."""
-    runs = ReviewRun.objects.filter(
-        user_id=principal.identity, campaign_id=campaign_id, finished_at=None
-    ).order_by("-updated_at", "-created_at")
-    return list(runs if limit is None else runs[:limit])
-
-
-def run_choice(run):
-    """One run as ``(words, url)``: "*stream*, *progress words*" and its
-    current page, as the card, the start page and the tables name it."""
-    stream = BY_KEY[run.stream]
-    words = progress(
-        run.subjects, run.position, grouped=stream.grouped, member_stream=stream.member
-    )
-    return f"{stream.label}, {words}", page_url(run.pk, run.position)
-
-
-# How many unfinished runs a review table's question lists: the latest used.
-# Each run's sequence (up to 5,000 subjects) is read for its progress words,
-# and a table is drawn again after every decision, so the read is bounded;
-# the start page lists them all.
-LISTED_RUNS = 5
-
-
-def listed_runs(principal, campaign_id=None):
-    """The reader's latest unfinished runs as ``(words, url)``, and whether
-    there are more than ``LISTED_RUNS``.
-
-    In ``campaign_id``, else in the current campaign, which the review
-    tables show (read in the same statement, so a table pays one read).
-    """
-    if campaign_id is None:
-        campaign_id = Subquery(
-            SystemConfiguration.objects.values("current_campaign_id")[:1]
-        )
-    found = unfinished(principal, campaign_id, limit=LISTED_RUNS + 1)
-    return tuple(map(run_choice, found[:LISTED_RUNS])), len(found) > LISTED_RUNS
-
-
-def card_runs(principal, campaign_id):
-    """The reader's unfinished runs for My review work's card.
-
-    One ``(words, url)`` ("*stream*, *progress words*" and the run's current
-    page) when the reader has exactly one; otherwise a placeholder per run
-    found (at most two), which is all the card needs to know.
-    """
-    # The card needs a run's progress only when there is exactly one, so the
-    # sequences (up to 5,000 subjects each) are read for that one alone.
-    runs = list(
-        ReviewRun.objects.filter(
-            user_id=principal.identity, campaign_id=campaign_id, finished_at=None
-        ).values_list("pk", flat=True)[:2]
-    )
-    if len(runs) != 1:
-        return [None] * len(runs)
-    return [run_choice(run) for run in ReviewRun.objects.filter(pk=runs[0])]
-
-
-def filter_words(stream, filters_, principal):
-    """A run's filters in words: its Stage, the closed choices and a search.
-
-    "Waiting", "Every stage, Request: Join, with a name search". Only
-    choices other than their default are named; the search text is never
-    stored, only that one was used.
-    """
-    stages = dict(stream.stages(principal)) | {
-        WAITING: _("Waiting"),
-        EVERY: _("Every stage"),
-    }
-    parts = [str(stages.get(filters_.get("stage", WAITING), _("Waiting")))]
-    for name, default in stream.closed:
-        value = filters_.get(name, default)
-        if value != default:
-            parts.append(closed_words(stream.key, name, value))
-    if filters_.get("search_used"):
-        parts.append(_("with a name search"))
-    return ", ".join(parts)
-
-
-def run_row(run, principal):
-    """One unfinished run as the start page's table lists it."""
-    stream = BY_KEY[run.stream]
-    words = progress(
-        run.subjects, run.position, grouped=stream.grouped, member_stream=stream.member
-    )
-    label, url = run_choice(run)
-    return {
-        "id": run.pk,
-        "stream": stream.label,
-        "filters": filter_words(stream, run.filters, principal),
-        "progress": words,
-        "updated_at": run.updated_at,
-        "url": url,
-        "label": label,
-    }
-
-
 def parse_start(parameters, offered):
     """The posted start: ``(stream, mode, sort, values, stored filters)``.
 
@@ -245,10 +146,10 @@ def parse_start(parameters, offered):
     values = filters(
         parameters,
         allowed={"csrfmiddlewaretoken", "start", "stream", "mode", "sort", "stage"}
-        | {"search", "table", "new"}
+        | {"search", "table"}
         | {name for stream in STREAMS for name, _default in stream.closed},
     )
-    for name in ("csrfmiddlewaretoken", "start", "table", "new"):
+    for name in ("csrfmiddlewaretoken", "start", "table"):
         values.pop(name, None)
     available = {stream.key: stream for stream, item in offered if item.url}
     stream = available.get(values.pop("stream", ""))
@@ -262,6 +163,10 @@ def parse_start(parameters, offered):
     if set(values) - allowed:
         raise ValueError("Invalid review wizard filters.")
     values.setdefault("stage", WAITING)
+    if values["stage"] == Stage.HISTORY.value:
+        # The wizard offers no History (R52 Part W): a History item is never
+        # a page.
+        raise ValueError("The review wizard has no History stage.")
     stored = {
         "mode": mode,
         "stage": values["stage"],
@@ -272,13 +177,12 @@ def parse_start(parameters, offered):
 
 
 def _start_context(principal, campaign_id, offered, *, chosen=None, mode="basic"):
-    """The start page's context: the runs, the streams' choices and filters.
+    """The start page's context: the streams' choices and filters.
 
     ``chosen`` is ``(stream key, values, sort)`` of a refused start, drawn
     again as it was posted; else the page opens on the reader's last
     stream, else the first one offered, in Basic with the default sort.
     """
-    runs = unfinished(principal, campaign_id)
     last = (
         ReviewRun.objects.filter(user_id=principal.identity, campaign_id=campaign_id)
         .order_by("-updated_at")
@@ -301,7 +205,7 @@ def _start_context(principal, campaign_id, offered, *, chosen=None, mode="basic"
                 "stages": [
                     (WAITING, _("Waiting")),
                     *stream.stages(principal),
-                    (EVERY, _("Every stage")),
+                    (EVERY, _("Every stage except History")),
                 ],
                 "stage": mine.get("stage", WAITING),
                 "search": mine.get("search", ""),
@@ -312,7 +216,6 @@ def _start_context(principal, campaign_id, offered, *, chosen=None, mode="basic"
             }
         )
     return {
-        "runs": [run_row(run, principal) for run in runs],
         "streams": streams,
         "chosen": key,
         "single": len(streams) == 1,
@@ -373,9 +276,12 @@ def _start_run(request, campaign_id, store, offered):
     """Start a run from the posted choices; see the module docstring.
 
     The stream page's own check admits the reader; the stream's items are
-    read and fixed as the sequence in one transaction with the run's insert.
-    A selection with nothing in it, or with more than 5,000 pages, draws
-    the start page again with its words and starts nothing.
+    read and fixed as the sequence in one transaction with the run's insert,
+    which first deletes the reader's earlier open runs in the campaign
+    (unfinished runs are never offered again, R52 Part W; an open tab on
+    one says it is no longer open). A selection with nothing in it, or with
+    more than 5,000 pages, draws the start page again with its words and
+    starts nothing, leaving the earlier runs as they are.
     """
     stream, mode, sort, values, stored = parse_start(request.POST, offered)
     principal = stream.principal(request, store)
@@ -391,6 +297,9 @@ def _start_run(request, campaign_id, store, offered):
         if subjects == []:
             note = NOTHING
         if subjects:
+            ReviewRun.objects.filter(
+                user_id=principal.identity, campaign_id=campaign_id, finished_at=None
+            ).delete()
             run = ReviewRun.objects.create(
                 user_id=principal.identity,
                 campaign_id=campaign_id,
@@ -421,69 +330,12 @@ def _start_run(request, campaign_id, store, offered):
     )
 
 
-def _ask(request, campaign_id, store, offered):
-    """A review table's start while the reader has unfinished runs: ask first.
-
-    The table's button asks in its own dialog when the reader had runs as
-    the table was drawn; this is the same question for a post that came
-    without the answer (``new``), so a run started in another tab since is
-    offered too. Returns None, to start the run, when there is none to ask
-    about. The post's fields, stream and access are checked as a start's
-    are (``parse_start``, the stream page's own check) before anything is
-    drawn; its filter values are checked by the stream's read when Start a
-    new run posts it again, with ``new``, as it came (escaped hidden fields,
-    its search only in the POST body). Cancel opens the table's plain
-    address: the table's view is not kept, since its search is POST-only.
-    """
-    stream = parse_start(request.POST, offered)[0]
-    principal = stream.principal(request, store)
-    found, more = listed_runs(principal, campaign_id)
-    if not found:
-        return None
-    posted = [
-        (name, value)
-        for name, value in request.POST.items()
-        if name not in {"csrfmiddlewaretoken", "new"}
-    ]
-    return _render(
-        request,
-        campaign_id,
-        lambda: stream.principal(request, store, read_only=True),
-        lambda: {
-            "runs": found,
-            "more": more,
-            "posted": posted,
-            "stream": stream,
-            "start_url": start_url(),
-            "table_url": reverse(f"admin:{stream.entry}"),
-        },
-        template=ASK_TEMPLATE,
-    )
-
-
 def _audit(stream, principal, campaign_id, count, stored, *, outcome=Outcome.SUCCEEDED):
     """Audit a read as the stream page's view; a failed audit is logged."""
     try:
         stream.audit(principal, campaign_id, outcome, count, stored)
     except (DatabaseError, StorageInvariantError) as error:
         emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
-
-
-def _discard(request, campaign_id, principal):
-    """Delete one of the reader's own unfinished runs; then the start page.
-
-    A run already gone (discarded in another tab) or finished is left as
-    it is: the answer is the same start page, whose list is current.
-    """
-    values = filters(request.POST, allowed={"csrfmiddlewaretoken", "discard"})
-    run_id = UUID(values.get("discard", ""))
-    ReviewRun.objects.filter(
-        pk=run_id,
-        user_id=principal.identity,
-        campaign_id=campaign_id,
-        finished_at=None,
-    ).delete()
-    return HttpResponseRedirect(start_url() + "#review-runs", status=303)
 
 
 def _invalid():
@@ -493,7 +345,7 @@ def _invalid():
 
 @require_http_methods(["GET", "POST"])
 def start(request, campaign_id):
-    """The start page; a POST starts a run or discards one (module docstring)."""
+    """The start page; a POST starts a run (module docstring)."""
     try:
         service = runtime()
         principal = _reader(request, service.store)
@@ -506,12 +358,6 @@ def start(request, campaign_id):
             # generic sign-in denial.
             raise unscoped(principal, "Review one at a time is unavailable.")
         if request.method == "POST":
-            if "discard" in request.POST:
-                return _discard(request, campaign_id, principal)
-            if "table" in request.POST and "new" not in request.POST:
-                asked = _ask(request, campaign_id, service.store, offered)
-                if asked is not None:
-                    return asked
             return _start_run(request, campaign_id, service.store, offered)
         if request.GET:
             raise ValueError("The start page takes no query.")
@@ -553,15 +399,26 @@ def _run(request, principal, campaign_id):
     )
 
 
-def heading(family, subject, census, *, census_on):
-    """The page's heading: the Family's name and DUID, and a Member's.
+def envelope_shown(facts):
+    """The envelope number the header shows: the Family's ``FamilyFacts``
+    envelope when it is set and not 0, else None (ParishSoft's "no
+    envelope" is often 0 rather than blank; R52 Part W)."""
+    return (facts.envelope or None) if facts else None
 
-    ``family`` is the subject's ``FamilyCampaign`` and ``census`` the hub's
-    census read (``hub_census.read_hub_census``) the section made, or None
-    (then it is read here, with census answers when ``census_on``).
-    A Member is named as the Family hub's tab names them, a New Member with
-    the hub's badge. Drawn only while the subject is listed for the reader
-    (``review_sections.Section.listed``).
+
+def heading(family, subject, census, *, census_on):
+    """The page's header: the Family's line and, on a Member page, the Member's.
+
+    "Family: *name* (DUID *n*, envelope *e*)", the envelope only when the
+    Family's ParishSoft record has one other than 0, and on a Member page
+    "Member: *name* (DUID *n*)" (R52 Part W). ``family`` is the subject's
+    ``FamilyCampaign`` and ``census`` the hub's census read
+    (``hub_census.read_hub_census``) the section made, or None (then it is
+    read here, with census answers when ``census_on``). A Member is named
+    as the Family hub's tab names them, a New Member with the hub's badge
+    and no DUID; ``tab`` is that Member's hub tab key, for the Member's
+    link, or None when the hub has no tab for them. Drawn only while the
+    subject is listed for the reader (``review_sections.Section.listed``).
     """
     from parishkit.stewardship.source.snapshot_models import SourceCurrent
     from parishkit.stewardship.source.snapshot_names import snapshot_family_facts
@@ -576,6 +433,7 @@ def heading(family, subject, census, *, census_on):
         "family_id": family.pk,
         "family_name": found.name if found else None,
         "family_duid": family.family_duid,
+        "envelope": envelope_shown(found),
         "member": None,
     }
     if subject["kind"] == FAMILY:
@@ -587,6 +445,7 @@ def heading(family, subject, census, *, census_on):
         "name": member.label if member else _("This Member"),
         "duid": int(subject["key"]) if subject["kind"] == "member" else None,
         "new": subject["kind"] == "proposed_member",
+        "tab": member.key if member else None,
     }
     return words
 
@@ -595,8 +454,9 @@ def _page_context(request, run, position, came_from, principal, campaign_id):
     """A run page's context: the heading, the progress, the rows and the section.
 
     The section is read live through the stream's scoped read
-    (``review_sections.read_section``); the subject's name, DUID and
-    Timeline link are drawn only while it lists one of the subject's items.
+    (``review_sections.read_section``); the subject's header (names, DUIDs
+    and hub links) is drawn only while it lists one of the subject's items.
+    The page has no footer links (R52 Part W).
     """
     from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
     from parishkit.stewardship.responses.census_review import campaign_today
@@ -639,17 +499,23 @@ def _page_context(request, run, position, came_from, principal, campaign_id):
 
         timeline = timeline_url(subject["family"])
     here = page_url(run.pk, position)
+    header = (
+        heading(family, subject, section.census, census_on="census" in modules)
+        if listed
+        else None
+    )
+    member_url = None
+    if timeline and header and header["member"] and header["member"]["tab"]:
+        # The Member's name opens their tab of the Family hub (the Timeline).
+        member_url = f"{timeline}?{urlencode([(TAB, header['member']['tab'])])}"
     return {
         "run": run,
         "stream": stream,
         "subject": subject,
         "listed": listed,
         "member_page": subject["kind"] != FAMILY,
-        "heading": (
-            heading(family, subject, section.census, census_on="census" in modules)
-            if listed
-            else None
-        ),
+        "heading": header,
+        "member_url": member_url,
         "section": section,
         "progress": words,
         # The last crumb names the stream and progress, as the browser title
@@ -662,8 +528,6 @@ def _page_context(request, run, position, came_from, principal, campaign_id):
         "here_url": here,
         # The control a move came from takes focus on the page it opened.
         "focus": {control.replace("-", "_"): control == came_from for control in FROM},
-        "stream_url": reverse(f"admin:{stream.entry}"),
-        "timeline_url": timeline,
         "start_url": start_url(),
         # What the shared row dialogs' editors read, as on the hub: the
         # latest date a census Edit may give, and a pledge Edit's choices.
@@ -675,8 +539,8 @@ def _page_context(request, run, position, came_from, principal, campaign_id):
 def _move(request, run_id, position, principal, campaign_id):
     """Record Previous, Next or Finish in its own short transaction.
 
-    Returns the run as saved, or None when it is no longer open (finished or
-    discarded meanwhile). Two tabs on one run are last-write-wins.
+    Returns the run as saved, or None when it is no longer open (finished, or
+    replaced by a newer start, meanwhile). Two tabs on one run are last-write-wins.
     """
     values = filters(request.POST, allowed={"csrfmiddlewaretoken", "finish", "from"})
     with transaction.atomic():

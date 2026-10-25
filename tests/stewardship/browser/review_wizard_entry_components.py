@@ -4,9 +4,7 @@ Each of the five review tables (Census changes, Ministry requests, Pledges,
 Additional information, Limitations) is its own module's fixture page,
 rendered again here for a signed-in Staff reader: the button's template tag
 reads the reader from the request, which the other fixture pages do not
-have, and the reader's unfinished runs (``review_wizard_tables.listed_runs``) are
-fixed, since the fixture server has no database. Every page but the
-"no runs" and empty ones has two runs, so its button asks first.
+have. The button never asks about unfinished runs (R52 Part W).
 """
 
 from unittest.mock import patch
@@ -18,7 +16,6 @@ from django.test import RequestFactory
 
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.reports import review_wizard_tables
-from parishkit.stewardship.reports.review_wizard_views import page_url
 
 from . import (
     census_components,
@@ -29,15 +26,9 @@ from . import (
 )
 
 STAFF = Principal(UUID(int=2124), frozenset({"staff"}))
-RUN = UUID(int=2125)
-RUNS = (
-    ("Census changes, Family 12 of 87", page_url(RUN, 12)),
-    ("Pledges, Family 3 of 9", page_url(UUID(int=2126), 3)),
-)
 # Each table's page, by the wizard stream it starts.
 PATHS = {stream: f"/wizard-entry/{stream}" for stream in review_wizard_tables.BY_KEY}
-# Census changes with no unfinished run, and Ministry requests listing nothing.
-NO_RUNS = "/wizard-entry/census-no-runs"
+# Ministry requests listing nothing.
 EMPTY = "/wizard-entry/ministry-empty"
 # The table page of each module, by the stream it draws.
 SOURCES = (
@@ -58,26 +49,18 @@ def _render(name, context=None, request=None, using=None):
     return get_template(name).template.render(rendered)
 
 
-def _built(module, context, admin, runs):
-    """``module``'s fixture pages, drawn for the reader with ``runs``."""
-    with (
-        patch.object(module, "render_to_string", _render),
-        patch.object(
-            review_wizard_tables, "listed_runs", lambda principal: (runs, False)
-        ),
-    ):
+def _built(module, context, admin):
+    """``module``'s fixture pages, drawn for the signed-in reader."""
+    with patch.object(module, "render_to_string", _render):
         return module.components(context, admin)
 
 
 def components(context, admin):
-    """Each table with runs, Census changes without, and an empty table."""
+    """Each table, and an empty table."""
     pages = {}
     for stream, module, path in SOURCES:
-        built = _built(module, context, admin, RUNS)
+        built = _built(module, context, admin)
         pages[PATHS[stream]] = built[path]
         if module is followup_components:
             pages[EMPTY] = built[followup_components.NOTHING]
-    pages[NO_RUNS] = _built(census_components, context, admin, ())[
-        census_components.PATH
-    ]
     return pages

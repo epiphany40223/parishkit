@@ -1,20 +1,18 @@
 """Review these one at a time on each review table (#2123 slice 4).
 
 Review pipeline spec, "Wizard entry points": the button sits first in each
-table's selection bar; with unfinished runs it asks first in a dialog
-(Continue per run, Start a new run, Cancel) and moves nothing; Start a new
-run posts the table's view to the wizard's start; with no runs it posts at
-once; on an empty table it is unavailable with its reason.
+table's selection bar and posts the table's view to the wizard's start
+at once, never asking about unfinished runs (R52 Part W); on an empty
+table it is unavailable with its reason.
 """
 
 from urllib.parse import parse_qs
 
 import pytest
 
-from .review_wizard_entry_components import EMPTY, NO_RUNS, PATHS, RUN
+from .review_wizard_entry_components import EMPTY, PATHS
 from .test_family_response import expect
 from .test_review_wizard import AXE
-from .waits import focused
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -45,25 +43,11 @@ def captured(page):
     return posts
 
 
-def box(locator):
-    """A control's place on the page (not the window, which may scroll to
-    it), rounded."""
-    return tuple(
-        locator.evaluate(
-            """node => { const b = node.getBoundingClientRect();
-              return [b.x + scrollX, b.y + scrollY, b.width, b.height]
-                .map(Math.round); }"""
-        )
-    )
-
-
 @pytest.mark.parametrize("width", [320, 1366])
 @pytest.mark.parametrize("stream", sorted(PATHS))
-def test_each_table_asks_first_then_starts_a_new_run(
-    page, component_origin, axe_source, stream, width
-):
-    """The button opens its dialog without moving; Cancel and Escape close it
-    with focus back on the button; Start a new run posts the table's view."""
+def test_each_table_starts_at_once(page, component_origin, axe_source, stream, width):
+    """The button is first in the selection bar, and one click posts the
+    table's view to the wizard's start, with no dialog (R52 Part W)."""
     page.set_viewport_size({"width": width, "height": 800})
     posts = captured(page)
     page.goto(component_origin + PATHS[stream])
@@ -74,60 +58,17 @@ def test_each_table_asks_first_then_starts_a_new_run(
     assert button.evaluate(
         "node => node.closest('.bulk-bar').querySelector('button') === node"
     )
+    expect(page.locator("dialog[data-wizard-dialog]")).to_have_count(0)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-    before = box(button)
-    button.click()
-    dialog = page.get_by_role("dialog", name=LABEL)
-    expect(dialog).to_be_visible()
-    expect(
-        dialog.get_by_text(
-            "You have unfinished runs. Continue an existing run or start a new one?"
-        )
-    ).to_be_visible()
-    cancel = dialog.get_by_role("button", name="Cancel")
-    expect(cancel).to_be_focused()
-    expect(
-        dialog.get_by_role("link", name="Continue Census changes, Family 12 of 87")
-    ).to_have_attribute("href", f"/admin/reports/review/12/?run={RUN}")
-    expect(
-        dialog.get_by_role("link", name="Continue Pledges, Family 3 of 9")
-    ).to_be_visible()
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
-    # The dialog is inside the window at either width.
-    found = dialog.bounding_box()
-    assert found["x"] >= 0 and found["x"] + found["width"] <= width
-    cancel.click()
-    expect(dialog).to_be_hidden()
-    focused(button)
-    assert box(button) == before
     button.click()
-    expect(dialog).to_be_visible()
-    page.keyboard.press("Escape")
-    expect(dialog).to_be_hidden()
-    focused(button)
-    assert posts == []
-    button.click()
-    dialog.get_by_role("button", name="Start a new run").click()
     page.wait_for_url("**/admin/reports/review/")
     assert len(posts) == 1
     sent = {name: values[0] for name, values in posts[0].items()}
-    assert sent["stream"] == stream
-    assert (sent["mode"], sent["table"], sent["new"]) == ("advanced", "1", "1")
+    assert sent["stream"] == stream and "new" not in sent
+    assert (sent["mode"], sent["table"]) == ("advanced", "1")
     assert sent["sort"] in {"name", "oldest", "newest"} and "stage" in sent
-
-
-def test_without_runs_the_button_starts_at_once(page, component_origin):
-    """No unfinished run: one click posts the table's view, with no dialog."""
-    page.set_viewport_size({"width": 1366, "height": 800})
-    posts = captured(page)
-    page.goto(component_origin + NO_RUNS)
-    expect(page.locator("dialog[data-wizard-dialog]")).to_have_count(0)
-    page.get_by_role("button", name=LABEL).click()
-    page.wait_for_url("**/admin/reports/review/")
-    assert len(posts) == 1
-    sent = {name: values[0] for name, values in posts[0].items()}
-    assert sent["stream"] == "census" and "new" not in sent
 
 
 @pytest.mark.parametrize("width", [320, 1366])

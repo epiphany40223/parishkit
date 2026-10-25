@@ -1,10 +1,10 @@
 """Review one at a time over HTTP under the real web login (#2123).
 
 The start page starts a run from a stream's own read, fixed as its
-sequence; a run's pages move with Previous, Next and Finish posts; the
-start page lists a reader's unfinished runs with Continue and Discard;
-My review work's card leads to the wizard. The run table's guard keeps a
-started run's sequence fixed.
+sequence; a run's pages move with Previous, Next and Finish posts; a new
+start replaces the reader's earlier open runs, which nothing lists or
+offers (R52 Part W); My review work's card leads to the wizard. The run
+table's guard keeps a started run's sequence fixed.
 """
 
 import re
@@ -58,6 +58,13 @@ def test_a_census_run_starts_moves_and_finishes(response_service, google):
         page = body.decode()
         assert "<h1>Review one at a time</h1>" in page
         assert 'id="review-stream-census"' in page and "Unfinished reviews" not in page
+        # Basic's help says what the stream's search matches.
+        assert (
+            '<p class="help" id="census-basic-search-help" data-review-search-help>'
+            "Family name, a Member&#x27;s name, or the Family DUID. Leave blank "
+            "for every waiting change.</p>"
+        ) in page
+        assert 'aria-describedby="census-basic-search-help"' in page
         response, _ = start(browser)
         assert response.status_code == 303
         path, query = location(response)
@@ -93,8 +100,13 @@ def test_a_census_run_starts_moves_and_finishes(response_service, google):
         assert 'data-review-move="previous"' not in page
         assert page.count('data-review-move="next"') == 2
         assert page.count('data-review-move="finish"') == 2
-        assert "Open Census changes" in page
-        assert "Open this Family" in page and "/admin/reports/families/" in page
+        # No footer links (R52 Part W): the header's Family name opens the hub.
+        assert "data-review-links" not in page and "Open Census changes" not in page
+        assert "Open this Family" not in page
+        # The header: the Family's line, and an empty Member line.
+        heading = re.search(r"data-review-heading>(.*?)</h1>", page, re.S)[1]
+        assert heading.startswith("Family: <a href=") and "(DUID " in heading
+        assert re.search(r"<p [^>]*data-review-member></p>", page)
         response, _ = move(browser, f"{START}2/?run={run.pk}", "next-bottom")
         assert response.status_code == 303
         assert response["Location"] == f"{START}2/?run={run.pk}&from=next-bottom"
@@ -102,13 +114,25 @@ def test_a_census_run_starts_moves_and_finishes(response_service, google):
         assert run.position == 2
         _, body = read(browser, response["Location"])
         page = body.decode()
-        assert "Family 1 of 1, Member 1 of 1" in page
-        assert "Member of" in page
-        # The last page: Next's slot is Finish, the middle slot empty; focus
-        # is on the bottom row's Next slot, the control the move came from.
+        # A grouped stream's Member page names only the Family's place.
+        assert page.count("Family 1 of 1</p>") == 2 and "Member 1 of" not in page
+        member = re.search(r"data-review-member>(.*?)</p>", page, re.S)[1]
+        assert member.startswith("Member: <a href=") and "?tab=" in member
+        assert "(DUID 3)" in member
+        heading = re.search(r"data-review-heading>(.*?)</h1>", page, re.S)[1]
+        assert heading.startswith("Family: ")
+        # The last page: Finish stays in the middle slot, Next's slot is
+        # empty; focus is on Finish in the bottom row, where the move's Next
+        # was.
         assert 'data-review-move="next"' not in page
         bottom = page.split('data-review-nav="bottom"')[1]
-        assert re.search(r'data-review-move="finish"[^>]*data-review-focus', bottom)
+        assert re.search(
+            r'data-nav-slot="action">.{0,400}?data-review-move="finish"[^>]*'
+            r"data-review-focus",
+            bottom,
+            re.S,
+        )
+        assert '<span data-nav-slot="next"></span>' in bottom
         assert "data-review-focus" not in page.split('data-review-nav="bottom"')[0]
         response, _ = move(browser, f"{START}1/?run={run.pk}", "previous-top")
         _, body = read(browser, response["Location"])
@@ -135,41 +159,41 @@ def test_a_census_run_starts_moves_and_finishes(response_service, google):
         assert b"Unfinished reviews" not in body
 
 
-def test_several_runs_are_listed_continued_and_discarded(response_service, google):
-    """Each Start makes a new run; the start page lists them with Continue
-    and Discard, and a discarded run's page is no longer open."""
+def test_a_new_start_replaces_the_earlier_open_runs(response_service, google):
+    """Starting a run deletes the reader's earlier unfinished runs, whose
+    pages then say they are no longer open; a refused start leaves them; a
+    finished run keeps its row; the start page never lists runs (R52 Part W)."""
     prepared(response_service)
     browser = staff_browser(google)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         first = location(start(browser)[0])[1]["run"]
         second = location(start(browser, sort="newest")[0])[1]["run"]
-        assert first != second and ReviewRun.objects.count() == 2
-        _, body = read(browser, START)
-        page = body.decode()
-        assert page.count("data-review-run=") == 2
-        assert f'href="{START}1/?run={first}"' in page
-        assert "Census changes, Family 1 of 1" in page
-        response, _ = search(browser, START, {"discard": second})
-        assert response.status_code == 303
-        assert response["Location"] == f"{START}#review-runs"
         assert [str(pk) for pk in ReviewRun.objects.values_list("pk", flat=True)] == [
-            first
+            second
         ]
-        _, body = read(browser, f"{START}1/?run={second}")
+        response, body = read(browser, f"{START}1/?run={first}")
+        assert response.status_code == 200
         assert b"This review is no longer open." in body
-        # Discarding it again changes nothing; the answer is the same list.
-        assert search(browser, START, {"discard": second})[0].status_code == 303
-        assert ReviewRun.objects.count() == 1
-        # Once the last run is discarded the list's region is still drawn,
-        # empty, so the dialog redraws it in place.
-        assert search(browser, START, {"discard": first})[0].status_code == 303
+        assert f'<a href="{START}">Start a review</a>'.encode() in body
         _, body = read(browser, START)
-        assert b'id="review-runs" data-table-region' in body
-        assert b"Unfinished reviews" not in body
+        assert b"Unfinished reviews" not in body and b"Discard" not in body
+        # A refused start (nothing matches) starts nothing and keeps the run.
+        assert b"Nothing matches" in start(browser, search="no such family")[1]
+        assert ReviewRun.objects.filter(pk=second).exists()
+        response, _ = search(browser, f"{START}1/?run={second}", {"finish": "1"})
+        assert response.status_code == 303
+        third = location(start(browser)[0])[1]["run"]
+        assert set(map(str, ReviewRun.objects.values_list("pk", flat=True))) == {
+            second,
+            third,
+        }
+        # The old Discard post is no longer a start page field.
+        assert search(browser, START, {"discard": third})[0].status_code == 400
 
 
 def test_a_reader_never_sees_another_readers_run(response_service, google):
-    """Another reader's run reads as no longer open, and Discard leaves it."""
+    """Another reader's run reads as no longer open, and their own start
+    leaves it."""
     prepared(response_service)
     admin = staff_browser(google)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -183,8 +207,9 @@ def test_a_reader_never_sees_another_readers_run(response_service, google):
         assert b"This review is no longer open." in body
         response, _ = search(other, f"{START}2/?run={run}", {"from": "next-top"})
         assert response.status_code == 303
-        assert search(other, START, {"discard": run})[0].status_code == 303
+        assert start(other)[0].status_code == 303
     assert ReviewRun.objects.get(pk=run).position == 1
+    assert ReviewRun.objects.count() == 2
 
 
 def test_start_refusals(response_service, google, monkeypatch):
@@ -202,6 +227,8 @@ def test_start_refusals(response_service, google, monkeypatch):
             {"stream": "nope"},
             {"stage": "to_review"},
             {"mode": "advanced", "stage": "nope"},
+            # The wizard offers no History (R52 Part W).
+            {"mode": "advanced", "stage": "history"},
             {"route": "any"},
         ):
             assert start(browser, **fields)[0].status_code == 400, fields
@@ -257,8 +284,8 @@ def test_the_run_guard_keeps_the_sequence_fixed(response_service, google):
 
 
 def test_my_review_work_card_leads_to_the_wizard(response_service, google):
-    """The pane's button opens the start page; with one unfinished run it
-    continues it."""
+    """The pane's button opens the start page, with an unfinished run too
+    (never a Continue, R52 Part W)."""
     prepared(response_service)
     browser = staff_browser(google)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -268,11 +295,11 @@ def test_my_review_work_card_leads_to_the_wizard(response_service, google):
         assert f'<a class="button" href="{START}"' in card
         assert ">Review one at a time</a>" in card
         assert page.index("data-review-wizard-card") < page.index("data-review-stream=")
-        run = location(start(browser)[0])[1]["run"]
+        assert start(browser)[0].status_code == 303
         page = browser.get("/admin/").content.decode()
         card = page.split("data-review-wizard-card")[1].split("</section>")[0]
-        assert f'href="{START}1/?run={run}"' in card
-        assert "Continue: Census changes, Family 1 of 1" in card
+        assert f'<a class="button" href="{START}"' in card
+        assert ">Review one at a time</a>" in card and "Continue" not in card
         # The menu lists Review one at a time first in Review work.
         group = re.search(r'data-menu-group="review".*?</ul>', page, re.S).group(0)
         assert re.findall(r"<li><a [^>]*>([^<]*)</a>", group)[:2] == [
@@ -309,7 +336,9 @@ def test_a_leader_reviews_only_the_ministries_they_lead(response_service, google
         _, body = read(browser, response["Location"])
         page = body.decode()
         assert "Ministry requests, Member 1 of 1" in page
-        assert "Open Ministry requests" in page and "Timeline" not in page
+        # A leader's header names the Family in plain text: no hub link.
+        assert "/admin/reports/families/" not in page
+        assert "Open Ministry requests" not in page
 
 
 def test_staff_review_every_ministry_request(response_service, google):
