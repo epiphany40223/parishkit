@@ -2980,10 +2980,10 @@ match.
    its Continue (**Continue without schedules for now**), and the wizard's
    final readiness check names what is still missing. A step whose purpose is
    a check (a test email) continues only once its check has passed. A
-   wizard's tests come before its final Review, so Review is the last step
-   before finishing and shows their results, and fixing a failed test never
-   passes through Review first
-   ([#1476](https://github.com/epiphany40223/parishkit/issues/1476)).
+   wizard's tests come before its final step, which checks their results,
+   and fixing a failed test never passes through the final step first
+   ([#1476](https://github.com/epiphany40223/parishkit/issues/1476),
+   [#2145](https://github.com/epiphany40223/parishkit/issues/2145)).
 10. **Sub-pages stay in the wizard.** A page opened from a step (an editor, a
     new or edited item, a calendar, a history) draws the same stepper with
     its parent step current, and its action row starts with **Return to
@@ -3919,12 +3919,24 @@ the same words differently. The forms reserved are the ones the page can
 show while it still updates itself; a failed step's explanation, which
 comes with a failure notice above the boxes and stops the updates, is not
 reserved, so a running box is not drawn tall enough for a long failure.
+Because every form is reserved, each one is a short line, so the box is
+not drawn much taller than what it shows. Every row of one list of boxes
+has the same height, the tallest row's, so a list that wraps onto a second
+row never shows a short row under a tall one. A list with a failed box
+drops the equal rows, so the failure's long explanation makes only its own
+row taller; updates have stopped by then, so nothing moves under the
+reader.
 **Precedent.** The Administrator's pk-local check of R40a (2026-10-21,
 [#1903](https://github.com/epiphany40223/parishkit/issues/1903)): Load
 parish data's status sentence grew from one line to three and pushed the
 boxes down by about 52 pixels when the load started, and Finishing
 setup's boxes changed height as their words changed; Load ParishSoft
-data's summary line already worked this way (#1618).
+data's summary line already worked this way (#1618). The Administrator's
+pk-local R51 fresh setup (2026-10-24,
+[#2145](https://github.com/epiphany40223/parishkit/issues/2145)): Finishing
+setup's top row of boxes was much taller than its content, reserved for
+long per-step explanations, and its second row was a different, short
+height.
 
 ### Time entry
 

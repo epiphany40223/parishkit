@@ -157,9 +157,10 @@ authority lets the initial Google Admin reach the pre-wizard state; the complete
 parish/campaign setup UX is Phase 2. Existing application data without a matching
 initialized authority is not imported or silently adopted.
 
-On the original Admin login's setup preview, select **Check readiness and
-finish setup**, review the pinned settings and explicitly confirm. Its progress
-page displays installation checkpoints and the final source Task.
+On the original Admin login's **Finish setup** step, tick the confirmation and
+select **Check readiness and finish setup**. Its progress page, Finishing
+setup, shows each step and, while the operator's steps below are pending, how
+many services have acknowledged each key; it does not repeat these steps.
 
 Once the initial target installers report `awaiting_ack`, use `compose.json`
 (without Slack) or `compose-slack.json` (with Slack) to recreate the entire
