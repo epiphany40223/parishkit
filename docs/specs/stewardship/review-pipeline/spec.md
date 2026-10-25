@@ -1993,7 +1993,7 @@ a Confirmed or Conflict the reader was not shown.
 
 ## Review wizard
 
-Status: **approved; slices 1 to 3 built**
+Status: **approved; slices 1 to 4 built**
 ([#2123](https://github.com/epiphany40223/parishkit/issues/2123)); the
 flow, behaviour and shared-code requirement below, and the page scope,
 waiting set, start page, Limitations pages, navigation rows, keyboard,
@@ -2004,8 +2004,8 @@ have several runs (one per tab). Its first three slices are built: the
 run storage, the start page, the page frame with its navigation, the menu
 entry and the dashboard card (#2123, slice 1 of the
 [delivery plan](#wizard-delivery-plan)), the shared section component and
-the Family pages (slice 2), then the Member pages (slice 3); the tables'
-entry buttons come next.
+the Family pages (slice 2), then the Member pages (slice 3), and the
+tables' entry buttons (slice 4).
 
 The review wizard is a third view of the same review data, beside each
 stream's [review worklist](#review-worklist) (bulk decisions over a table)
@@ -2363,7 +2363,7 @@ have many:
   while at least one stream is offered (a new `Entry` whose availability is any of the five pages'),
   and named in the trail and every "Return to".
 - **From each table.** Each review worklist's selection bar gets
-  **Review these one at a time** (a secondary button, beside Add). It
+  **Review these one at a time** (a secondary button, first, beside Add). It
   posts the table's current view fields (`Worklist.fields`, the search
   included, and the table's sort) to the wizard's start, which starts a
   run with them and opens page 1, skipping the choice steps. **When the
@@ -2380,8 +2380,23 @@ have many:
   sort maps to the wizard's: its name column ascending (or any column other
   than Submitted) to Name A–Z, Submitted ascending to Oldest submitted
   first, Submitted descending to Newest submitted first. The button is
-  unavailable, with its reason, while the table lists nothing
+  unavailable, with its reason ("Nothing is listed to review one at a
+  time.") on its own line under the bar's buttons, while the table lists
+  nothing
   ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)).
+  The shared table component draws the button
+  (`components/review-wizard-entry.html`, from
+  `review_wizard_tables.table_entry`) inside the table's region, so every
+  in-place redraw of the table gives it the view the table then shows. It
+  posts the table's Stage, the stream's own closed filters and the search,
+  in Advanced mode, to the start, which parses, checks and reads them as a
+  start from the start page does. When the server's check finds
+  unfinished runs the table did not show, it answers with a page asking
+  the same question with the same choices: its Start a new run posts the
+  table's view again, and its Cancel returns to the table. The dialog and
+  that page list the five runs used last (each run's sequence is read for
+  its progress words, on every draw of the table), and say when the start
+  page lists more.
 - **Dashboard card.** My review work (for Staff and Ministry leaders) and
   Administrators' Home Review work panel each get a **Review one at a
   time** link card, the **first** card, ahead of the stream panels (as the
@@ -2574,10 +2589,10 @@ in slices 2 and 3:
    Next, in both rows, keep their screen position across pages of
    different heights and after an in-place action, and that focus
    returns to the control used.
-4. **Table entry buttons**: Review these one at a time on the five
-   tables. Tests: each table's button posts its view and opens page 1
+4. **Table entry buttons** (built): Review these one at a time on the
+   five tables. Tests: each table's button posts its view and opens page 1
    with that view's sequence; the sort mapping; the existing-runs dialog (Continue per run, Start a new run, Cancel; finished runs not listed); the unavailable state on
-   an empty table; the renamed-label sweep of every table test.
+   an empty table (no label is renamed, so no table test needed a sweep).
 
 ## Update phase
 
