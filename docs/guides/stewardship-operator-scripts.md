@@ -125,6 +125,19 @@ A refusal or failure exits with 1, a usage error with 2, and Ctrl-C with
   Docker, `openssl` and the standard tools. See the
   [Admin automation guide](stewardship-admin-automation.md).
 
+## Database inspection
+
+- [`tools/stewardship-ops/pk-inspect`](../../tools/stewardship-ops/pk-inspect)
+  also runs on the deployment host: it opens `psql` in the PostgreSQL
+  container as the SELECT-only inspection login, which can write no table and
+  cannot read credential material. Use it for ad hoc inspection instead of
+  the operator login. It is POSIX `sh` and needs only Docker. See the
+  [deployment runbook](stewardship-deployment-runbook.md#database-inspection-login-2148)
+  and the
+  [operations spec](../specs/stewardship/operations/spec.md#database-inspection-login).
+  The scripts above keep the operator login until the release with the
+  inspection login is deployed.
+
 ## Deferred
 
 The py-spy profiling aggregation helpers used for #447 are not kept here

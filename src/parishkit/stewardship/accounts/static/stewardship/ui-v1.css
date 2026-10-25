@@ -1914,6 +1914,9 @@ th[aria-sort] .sort-link { color: var(--ink); }
 th:not([aria-sort]) .sort-indicator { opacity: .45; }
 /* While ui-v1.js re-sorts or re-pages a table in place (#478), the rows dim but stay readable. */
 [data-table-region][aria-busy="true"], [data-in-place-region][aria-busy="true"] { cursor: progress; }
+/* A repeat rule's date list awaiting a newer answer (#2092): muted in place,
+   in the help text's color, which keeps its contrast (no opacity). */
+[data-repeat-preview][aria-busy="true"], [data-repeat-preview][aria-busy="true"] * { color: var(--muted); cursor: progress; }
 [data-table-region][aria-busy="true"] table { opacity: .55; }
 /* A review withdrawn by a later edit stays in place (#532, #736), greyed
    out through a colour that still meets contrast (never opacity), except
@@ -2003,6 +2006,24 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .schedule-pane .time-reading { min-height: 3.2em; min-height: 2lh; }
 @media (min-width: 48rem) {
   .schedule-pane div:has(> input[data-time-entry=time]) > .time-reading { max-width: none; }
+}
+/* Repeating (New scheduled email, the date-change review's New schedule;
+   pk-local R48): on desktop From, Until and Send time share one row, as
+   other short fields do (the row rule above). From and Until are the repeat
+   rule's, inside its panel, and Send time is the schedule row's own field,
+   so the panel and rule boxes are dissolved (display: contents) while shown
+   and the three boxes sit in one line, wrapping where they do not fit; the
+   hidden Send date between them takes no place. The markup is unchanged,
+   so labels, help, errors and tab order (From, Until, Send time) stay as
+   they were. Below 48rem everything stacks as before. While Repeating, the
+   time's reading wraps inside its box (it never widens it, which would push
+   it to a line of its own as a refusal appears) and reserves three lines,
+   so a refusal moves nothing. */
+@media (min-width: 48rem) {
+  [data-schedule-row] :is([data-repeat-panel], [data-repeat-rule]):not([hidden]) { display: contents; }
+  [data-schedule-row] .field:has(> input:is([data-repeat=from], [data-repeat=until])) { display: inline-flex; flex-direction: column; vertical-align: top; min-width: 12rem; margin-inline-end: 1.5rem; }
+  [data-schedule-row] .field > input:is([data-repeat=from], [data-repeat=until]) { max-width: 14rem; }
+  [data-schedule-row]:has([data-repeat-panel]:not([hidden]) [data-repeat=from]):not(:has([data-repeat-rule][hidden])) [data-schedule-field=time] .time-reading { width: 0; min-width: 100%; max-width: none; min-height: 4.8em; min-height: 3lh; }
 }
 /* The repeat summary reserves two lines, so its text appearing, changing or
    wrapping on a phone never moves the Add button below it (#469). */

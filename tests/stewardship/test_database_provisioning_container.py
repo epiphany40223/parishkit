@@ -2,10 +2,12 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
 from dataclasses import replace
+from pathlib import Path
 from uuid import uuid4
 
 import psycopg
@@ -22,6 +24,15 @@ from parishkit.stewardship.database_provisioning import (
 )
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.deployment_documents import deployment_document
+from parishkit.stewardship.inspect_login import (
+    CREDENTIAL_NAME,
+    EXCLUDED_COLUMNS,
+    EXCLUDED_TABLES,
+    INSPECT_LOGIN,
+    REVIEWED_COLUMNS,
+    REVIEWED_VIEWS,
+    expected_selects,
+)
 from parishkit.stewardship.runtime_identities import database_identities
 from parishkit.stewardship.runtime_paths import RuntimeLayout
 from parishkit.stewardship.runtime_topology import POSTGRES_IMAGE
@@ -34,6 +45,9 @@ pytestmark = pytest.mark.skipif(
     reason="Requires explicitly opted-in disposable Docker runtime validation",
 )
 PASSWORD = "disposable-test-only"
+INSPECT_WRAPPER = (
+    Path(__file__).resolve().parents[2] / "tools/stewardship-ops/pk-inspect"
+)
 
 
 def docker(*arguments):
@@ -46,8 +60,18 @@ def docker(*arguments):
 
 
 @pytest.fixture
-def empty_operator_database(tmp_path):
-    """Stock PostgreSQL proves arbitrary non-root UID with no capability grants."""
+def empty_operator_database(operator_container):
+    """The disposable database's operator configuration alone."""
+    return operator_container[1]
+
+
+@pytest.fixture
+def operator_container(tmp_path):
+    """Stock PostgreSQL proves arbitrary non-root UID with no capability grants.
+
+    Yields the container's name, for tests that reach its socket by
+    ``docker exec``, and the operator configuration.
+    """
     name = "parishkit-phase1c-provision-" + uuid4().hex
     docker(
         "run",
@@ -109,7 +133,7 @@ def empty_operator_database(tmp_path):
                 if time.monotonic() >= deadline:
                     pytest.fail("Disposable PostgreSQL did not become ready")
                 time.sleep(0.2)
-        yield configuration
+        yield name, configuration
     finally:
         # This exact UUID container owns tmpfs only, never host persistent data.
         docker("stop", "--time", "10", name)
@@ -673,6 +697,46 @@ def test_upgrade_check_proves_migration_and_grants_are_no_ops(
             "VALUES ('accounts','9999_future',now())",
             "DELETE FROM django_migrations WHERE name='9999_future'",
         ),
+        # The inspection login (#2148): a write, an excluded column, a
+        # missing SELECT, a lifted read-only default, a password, a SET ROLE
+        # path and another membership each make database-grants necessary
+        # (or refuse it).
+        (
+            "GRANT INSERT ON stewardship_campaign TO pk_stewardship_inspect",
+            "REVOKE INSERT ON stewardship_campaign FROM pk_stewardship_inspect",
+        ),
+        (
+            "GRANT SELECT (session_id) ON stewardship_portal_session "
+            "TO pk_stewardship_inspect",
+            "REVOKE SELECT (session_id) ON stewardship_portal_session "
+            "FROM pk_stewardship_inspect",
+        ),
+        (
+            "REVOKE SELECT ON stewardship_campaign FROM pk_stewardship_inspect",
+            "GRANT SELECT ON stewardship_campaign TO pk_stewardship_inspect",
+        ),
+        (
+            "ALTER ROLE pk_stewardship_inspect SET default_transaction_read_only=off",
+            "ALTER ROLE pk_stewardship_inspect SET default_transaction_read_only=on",
+        ),
+        (
+            "ALTER ROLE pk_stewardship_inspect PASSWORD 'disposable'",
+            "ALTER ROLE pk_stewardship_inspect PASSWORD NULL",
+        ),
+        (
+            "GRANT pg_read_all_stats TO pk_stewardship_inspect WITH SET TRUE",
+            "GRANT pg_read_all_stats TO pk_stewardship_inspect WITH SET FALSE",
+        ),
+        (
+            "GRANT pg_signal_backend TO pk_stewardship_inspect",
+            "REVOKE pg_signal_backend FROM pk_stewardship_inspect",
+        ),
+        (
+            "REVOKE CONNECT ON DATABASE stewardship_provision_tests "
+            "FROM pk_stewardship_inspect",
+            "GRANT CONNECT ON DATABASE stewardship_provision_tests "
+            "TO pk_stewardship_inspect",
+        ),
     ]
     for change, undo in changes:
         with connect(configuration) as database:
@@ -688,3 +752,345 @@ def test_upgrade_check_proves_migration_and_grants_are_no_ops(
         ).fetchone()
     assert row is not None
     assert upgrade_noop(configuration, deployment, tmp_path) is False
+
+
+def migrate(configuration, tmp_path):
+    """Migrate as the isolated schema owner in a fresh process, as migrate runs."""
+    layout = RuntimeLayout(configuration)
+    migration = replace(
+        configuration,
+        service_role=ServiceRole.MIGRATION,
+        postgres=replace(
+            configuration.postgres,
+            user="pk_stewardship_migration",
+            password_file=layout.database_password("migration"),
+        ),
+    )
+    config_file = tmp_path / "migration.json"
+    config_file.write_text(json.dumps(deployment_document(migration)))
+    script = tmp_path / "migrate_fixture.py"
+    script.write_text(
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from parishkit.stewardship.deployment import load_deployment\n"
+        "from parishkit.stewardship import operator_commands as commands\n"
+        "configuration = load_deployment(Path(sys.argv[1]), environ={})\n"
+        "commands.configure_operator_database(configuration)\n"
+        "from django.core.management import call_command\n"
+        "call_command('migrate', interactive=False, verbosity=0)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, str(script), str(config_file)],
+        text=True,
+        capture_output=True,
+        timeout=300,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def inspect(container, *arguments):
+    """Run the real pk-inspect wrapper against the disposable container's socket."""
+    return subprocess.run(
+        [str(INSPECT_WRAPPER), "-At", "-v", "ON_ERROR_STOP=1", *arguments],
+        env={**os.environ, "PK_INSPECT_CONTAINER": container},
+        stdin=subprocess.DEVNULL,
+        text=True,
+        capture_output=True,
+        timeout=60,
+    )
+
+
+def answer(container, *statements):
+    """The output of ``statements`` (each its own ``-c``); they must succeed."""
+    arguments = [part for statement in statements for part in ("-c", statement)]
+    result = inspect(container, *arguments)
+    assert result.returncode == 0, (statements, result.stderr)
+    return result.stdout.strip()
+
+
+def refused(container, message, *statements):
+    """The last of ``statements`` (each its own transaction) fails with ``message``.
+
+    psql exits 1 when a ``-c`` statement fails under ON_ERROR_STOP.
+    """
+    arguments = [part for statement in statements for part in ("-c", statement)]
+    result = inspect(container, *arguments)
+    assert result.returncode == 1, (statements, result.stdout, result.stderr)
+    assert message in result.stderr, (statements, result.stderr)
+
+
+def expected(configuration):
+    """The ``(relname, attname)`` SELECT grants the catalog rule gives now."""
+    with connect(configuration) as database:
+        return set(database.execute(expected_selects()).fetchall())
+
+
+def test_inspection_login_reads_but_never_writes(operator_container, tmp_path):
+    """The SELECT-only login (#2148), through its real host wrapper.
+
+    It exists after database-roles and holds its grants after
+    database-grants; it cannot sign in over TCP (no password); it reads
+    tables, views and statistics; every write and DDL is refused by the
+    read-only default and, with that lifted, by the grants; it cannot
+    change identity; credential tables, columns and views over them are
+    refused; and database-grants creates it on a deployment that lacks it
+    and refuses one that drifted.
+    """
+    container, configuration = operator_container
+    deployment = uuid4()
+    provision_roles(configuration, deployment)
+    migrate(configuration, tmp_path)
+    provision_grants(configuration, deployment)
+    with pytest.raises(psycopg.OperationalError):
+        connect(configuration, INSPECT_LOGIN).close()
+    assert answer(container, "SELECT current_user") == INSPECT_LOGIN
+    assert answer(container, "SHOW default_transaction_read_only") == "on"
+    assert answer(container, "SELECT count(*)>0 FROM django_migrations") == "t"
+    assert answer(container, "SELECT count(*) FROM stewardship_campaign") == "0"
+    assert answer(container, "SELECT count(id) FROM stewardship_portal_session") == "0"
+    assert (
+        answer(
+            container, "SELECT pg_has_role(current_user,'pg_read_all_stats','USAGE')"
+        )
+        == "t"
+    )
+    rows = expected(configuration)
+    with connect(configuration) as database:
+        views = {
+            name
+            for (name,) in database.execute(
+                "SELECT relname FROM pg_class WHERE relkind='v' "
+                "AND relnamespace='public'::regnamespace"
+            )
+        }
+    readable_views = sorted({name for name, _ in rows} & views)
+    assert readable_views
+    answer(container, f"SELECT count(*) FROM {readable_views[0]}")
+
+    # Writes and DDL: refused by the read-only default, then by the grants.
+    denied = "permission denied for table"
+    writes = {
+        "INSERT INTO stewardship_campaign DEFAULT VALUES": denied,
+        "UPDATE stewardship_campaign SET version=version": denied,
+        "DELETE FROM stewardship_campaign": denied,
+        "TRUNCATE stewardship_campaign": denied,
+        "CREATE TABLE public.inspect_probe (i integer)": "permission denied for schema",
+        "CREATE TEMP TABLE inspect_probe (i integer)": "permission denied to create",
+        "DROP TABLE stewardship_campaign": "must be owner of table",
+        "ALTER TABLE stewardship_campaign ADD COLUMN probe integer": (
+            "must be owner of table"
+        ),
+    }
+    for statement, message in writes.items():
+        refused(container, "read-only transaction", statement)
+        refused(
+            container, message, "SET default_transaction_read_only = off", statement
+        )
+    refused(
+        container,
+        "permission denied for table",
+        "START TRANSACTION READ WRITE; DELETE FROM stewardship_campaign",
+    )
+    for statement in (
+        "SET ROLE pk_stewardship_web",
+        "SET ROLE pk_stewardship_operator",
+        "SET ROLE pg_read_all_stats",
+    ):
+        refused(container, "permission denied to set role", statement)
+    refused(
+        container,
+        "permission denied to set session authorization",
+        "SET SESSION AUTHORIZATION pk_stewardship_operator",
+    )
+
+    # Credential material: excluded tables, row-security tables and columns.
+    with connect(configuration) as database:
+        secured = {
+            name
+            for (name,) in database.execute(
+                "SELECT relname FROM pg_class WHERE relrowsecurity "
+                "AND relnamespace='public'::regnamespace"
+            )
+        }
+    assert "stewardship_sealed_credential_staging" in secured
+    for table in sorted(EXCLUDED_TABLES | secured):
+        refused(container, "permission denied", f"SELECT 1 FROM {table} LIMIT 1")
+    for table, columns in sorted(EXCLUDED_COLUMNS.items()):
+        for column in sorted(columns):
+            refused(container, "permission denied", f"SELECT {column} FROM {table}")
+            assert (table, column) not in rows
+
+    # A view reads with its owner's privileges, so one over an excluded
+    # column, a whole row of such a table or a hidden table gets no grant;
+    # one over readable columns does.
+    # A whole-row reference beside a named column leaves only the column's
+    # dependency, so any unreviewed view over such a table is hidden; so is
+    # an inheritance child of one.
+    probes = {
+        "inspect_probe_secret": "SELECT session_id FROM stewardship_portal_session",
+        "inspect_probe_row": "SELECT p FROM stewardship_portal_session p",
+        "inspect_probe_mixed": "SELECT p.id, p FROM stewardship_portal_session p",
+        "inspect_probe_json": "SELECT t.id,to_jsonb(t) FROM stewardship_family_token t",
+        "inspect_probe_column": "SELECT id FROM stewardship_portal_session",
+        "inspect_probe_hidden": "SELECT count(*) FROM stewardship_secret_request",
+        "inspect_probe_nested": "SELECT * FROM inspect_probe_column",
+        "inspect_probe_open": "SELECT id, version FROM stewardship_campaign",
+    }
+    with connect(configuration) as database:
+        for name, query in probes.items():
+            database.execute(f"CREATE VIEW public.{name} AS {query}")
+            database.execute(
+                f"ALTER VIEW public.{name} OWNER TO pk_stewardship_migration"
+            )
+        database.execute(
+            "CREATE TABLE public.inspect_probe_child () "
+            "INHERITS (stewardship_portal_session)"
+        )
+    try:
+        names = {name for name, _ in expected(configuration)}
+        assert names & {*probes, "inspect_probe_child"} == {"inspect_probe_open"}
+        # A granted view replaced to read a secret keeps its grant, so
+        # database-grants revokes it (that only narrows what is read).
+        provision_grants(configuration, deployment)
+        assert answer(container, "SELECT count(*) FROM inspect_probe_open") == "0"
+        with connect(configuration) as database:
+            database.execute(
+                "CREATE OR REPLACE VIEW public.inspect_probe_open AS "
+                "SELECT c.id, c.version, s.session_id FROM stewardship_campaign c "
+                "CROSS JOIN stewardship_portal_session s"
+            )
+        # Until then the kept grant shows the secret column.
+        answer(container, "SELECT session_id FROM inspect_probe_open")
+        provision_grants(configuration, deployment)
+        refused(container, "permission denied", "SELECT id FROM inspect_probe_open")
+    finally:
+        with connect(configuration) as database:
+            database.execute("DROP TABLE public.inspect_probe_child")
+            for name in reversed(list(probes)):
+                database.execute(f"DROP VIEW public.{name}")
+
+    # Repeatable; a read the rule does not give is revoked.
+    provision_grants(configuration, deployment)
+    provision_roles(configuration, deployment)
+    with connect(configuration) as database:
+        database.execute(
+            "GRANT SELECT (session_id) ON stewardship_portal_session "
+            "TO pk_stewardship_inspect"
+        )
+        database.execute("GRANT SELECT ON django_session TO pk_stewardship_inspect")
+    provision_grants(configuration, deployment)
+    refused(
+        container,
+        "permission denied",
+        "SELECT session_id FROM stewardship_portal_session",
+    )
+    refused(container, "permission denied", "SELECT 1 FROM django_session")
+    assert answer(container, "SELECT count(id) FROM stewardship_portal_session") == "0"
+
+    # A large object the login creates once its read-only default is lifted
+    # (PUBLIC may run lo_create) is an owned object: the isolation drift
+    # every login is refused for, so the next database-grants stops.
+    assert (
+        answer(
+            container,
+            "SET default_transaction_read_only = off",
+            "SELECT lo_create(0) > 0",
+        ).splitlines()[-1]
+        == "t"
+    )
+    with pytest.raises(ConfigError, match="inspection login differs"):
+        provision_grants(configuration, deployment)
+    with connect(configuration) as database:
+        database.execute(
+            "SELECT lo_unlink(oid) FROM pg_largeobject_metadata "
+            "WHERE lomowner='pk_stewardship_inspect'::regrole"
+        )
+    provision_grants(configuration, deployment)
+
+    # Other drift is refused rather than repaired.
+    for change, undo, command in (
+        (
+            "GRANT INSERT ON stewardship_campaign TO pk_stewardship_inspect",
+            "REVOKE INSERT ON stewardship_campaign FROM pk_stewardship_inspect",
+            provision_grants,
+        ),
+        (
+            "REVOKE CONNECT ON DATABASE stewardship_provision_tests "
+            "FROM pk_stewardship_inspect",
+            "GRANT CONNECT ON DATABASE stewardship_provision_tests "
+            "TO pk_stewardship_inspect",
+            provision_grants,
+        ),
+        (
+            "ALTER ROLE pk_stewardship_inspect CONNECTION LIMIT 9",
+            "ALTER ROLE pk_stewardship_inspect CONNECTION LIMIT 3",
+            provision_roles,
+        ),
+        (
+            "ALTER ROLE pk_stewardship_inspect PASSWORD 'disposable'",
+            "ALTER ROLE pk_stewardship_inspect PASSWORD NULL",
+            provision_grants,
+        ),
+    ):
+        with connect(configuration) as database:
+            database.execute(change)
+        with pytest.raises(ConfigError, match="inspection login"):
+            command(configuration, deployment)
+        with connect(configuration) as database:
+            database.execute(undo)
+        command(configuration, deployment)
+
+    # An existing deployment without the login gets it from database-grants.
+    with connect(configuration) as database:
+        database.execute("DROP OWNED BY pk_stewardship_inspect")
+        database.execute("DROP ROLE pk_stewardship_inspect")
+    provision_grants(configuration, deployment)
+    assert answer(container, "SELECT count(*)>0 FROM django_migrations") == "t"
+    refused(
+        container,
+        "permission denied",
+        "SELECT ciphertext FROM stewardship_family_token",
+    )
+
+
+def test_credential_looking_columns_are_classified(operator_container, tmp_path):
+    """No column that looks like credential material is readable unreviewed.
+
+    Every migrated column whose name matches CREDENTIAL_NAME is excluded,
+    under row-level security or in an excluded table, or reviewed as not a
+    credential; and every excluded name still exists, so a rename cannot
+    quietly make a credential readable.
+    """
+    _, configuration = operator_container
+    provision_roles(configuration, uuid4())
+    migrate(configuration, tmp_path)
+    with connect(configuration) as database:
+        columns = database.execute(
+            "SELECT c.relname::text,a.attname::text,c.relrowsecurity "
+            "FROM pg_class c JOIN pg_attribute a ON a.attrelid=c.oid "
+            "WHERE c.relnamespace='public'::regnamespace "
+            "AND c.relkind IN('r','p','v','m') AND a.attnum>0 AND NOT a.attisdropped"
+        ).fetchall()
+        rows = set(database.execute(expected_selects()).fetchall())
+    present = {(table, column) for table, column, _ in columns}
+    unclassified = sorted(
+        (table, column)
+        for table, column, secured in columns
+        if re.search(CREDENTIAL_NAME, column, re.IGNORECASE)
+        and not secured
+        and table not in EXCLUDED_TABLES
+        and column not in EXCLUDED_COLUMNS.get(table, ())
+        and (table, column) not in REVIEWED_COLUMNS
+        # A view showing such a column is hidden by the rule, or reviewed.
+        and ((table, None) in rows or (table, column) in rows)
+    )
+    assert unclassified == []
+    assert {table for table, _ in present} >= EXCLUDED_TABLES
+    assert {
+        (table, column) for table, names in EXCLUDED_COLUMNS.items() for column in names
+    } <= present
+    assert present >= REVIEWED_COLUMNS
+    assert {table for table, _ in present} >= REVIEWED_VIEWS
+    # Today's schema has no partitions or inheritance children.
+    with connect(configuration) as database:
+        assert database.execute("SELECT count(*) FROM pg_inherits").fetchone() == (0,)

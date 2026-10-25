@@ -273,10 +273,19 @@ def test_role_creation_preflights_all_identities_and_never_emits_plaintext(
 
     monkeypatch.setattr(provisioning, "_check_role", role_check)
     monkeypatch.setattr(provisioning, "_connection", connect)
-    assert provisioning.provision_roles(configuration, uuid4())[
+    inspected = []
+    monkeypatch.setattr(
+        provisioning, "ensure_inspect_login", lambda *args: inspected.append(args)
+    )
+    deployment = uuid4()
+    assert provisioning.provision_roles(configuration, deployment)[
         "database_roles_provisioned"
     ]
     assert len(admissions) == len(database_identities())
+    # The inspection login (#2148) is ensured on the same operator cursor.
+    assert inspected == [
+        (cursor, f"parishkit-stewardship:{deployment}", configuration.postgres.name)
+    ]
     sql = "\n".join(cursor.statements)
     assert "private-password" not in sql
     assert ("CREATE ROLE" in sql) is (not existing)
@@ -301,6 +310,9 @@ def grant_statements(tmp_path, monkeypatch, applied):
     monkeypatch.setattr(provisioning, "_admit_existing_grants", lambda *args: None)
     monkeypatch.setattr(provisioning, "_admit_reader", lambda *args: None)
     monkeypatch.setattr(provisioning, "_admit_writer_guard", lambda *args: None)
+    # The inspection login's own SQL is covered by test_inspect_login.py.
+    monkeypatch.setattr(provisioning, "ensure_inspect_login", lambda *args: None)
+    monkeypatch.setattr(provisioning, "grant_inspect", lambda *args: None)
     assert provisioning.provision_grants(configuration, uuid4())[
         "database_grants_provisioned"
     ]
@@ -425,6 +437,8 @@ def test_grants_tolerate_a_closure_revoke_only_until_it_applies(
     monkeypatch.setattr(provisioning, "_connection", lambda *args: Database(cursor))
     monkeypatch.setattr(provisioning, "_admit_reader", lambda *args: None)
     monkeypatch.setattr(provisioning, "_admit_writer_guard", lambda *args: None)
+    monkeypatch.setattr(provisioning, "ensure_inspect_login", lambda *args: None)
+    monkeypatch.setattr(provisioning, "grant_inspect", lambda *args: None)
     provisioning.provision_grants(configuration, uuid4())
     mail = admitted[login_name(ServiceRole.MAIL_DISPATCH)]
     assert ("ciphertext" in mail["stewardship_family_token"]["SELECT"]) is not applied
