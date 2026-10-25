@@ -1663,8 +1663,11 @@ The share methods have no ParishSoft read, so they change no refresh
 outcome: C is still the annual amount carried forward. Cannot contribute is
 not edited here; Staff change it through Open form.
 [Financial stewardship detail](../reports/spec.md#financial-stewardship-detail)
-and its exports stay the Family's own answers, Edits' amounts and share
-methods alike: that report is the statistics of what Families answered.
+and its exports show the values in force, an Edit's amount, frequency and
+share methods while it is in force and the Family's own answer otherwise,
+marking each edited pledge
+([values in force](../reports/spec.md#values-in-force-on-financial-stewardship),
+[#2196](https://github.com/epiphany40223/parishkit/issues/2196)).
 
 The item is one per Family: its current pledge answer. Its stage is derived
 from its latest row and its latest refresh check (below), by one SQL
