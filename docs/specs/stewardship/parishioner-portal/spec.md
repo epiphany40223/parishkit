@@ -493,7 +493,9 @@ When enabled, the page reads, below the Admin's Financial text:
    This form records your intention only. It does not take a payment or
    request bank or card credentials.", shown with the pledge fields and hidden
    with them; and
-4. the Annual pledge (USD) field and the rest of the pledge.
+4. the Annual pledge field, with its "$" prefix
+   ([money inputs](../ui-conventions/spec.md#numbers-and-money)), and the
+   rest of the pledge.
 
 Dates use the parish date format. Money on Family pages omits zero cents
 ("$1,200").

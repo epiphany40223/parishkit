@@ -157,6 +157,27 @@ Y" also show a percentage; percentages use one fractional digit unless they
 are exact integers. A zero denominator displays an em dash rather than a
 misleading percentage.
 
+**Money inputs.** Every field that takes an amount of money shows a "$"
+attached before it: a visual prefix the field sits beside, not text the reader
+types or the field holds. The label is the plain name ("Annual pledge", "At
+least"), with no ", in dollars" or "(USD)" and no help line under it; a group
+of money fields is named the same way ("Annual pledge"). Screen readers still
+hear the unit: the label ends in visually hidden "in dollars", so the
+field's accessible name carries it ("Annual pledge in dollars"), and the "$"
+itself is hidden from them so it is not read twice. Text built from the label
+for sighted readers, such as an error link, uses the shown name only. The
+field's own hint for a missing or invalid amount is unchanged. The prefix
+takes no extra width a narrow screen lacks: the field still fits a 320 px
+window and its dialog without sideways scrolling. The "$" box takes its
+field's border color when the field is hovered or refused. **Why.**
+One look tells the reader the unit, the same way on every page, without
+lengthening the label (Administrator decision, 2026-10-25). **Shared code.**
+The `money-input` field container and its `money-prefix` element
+(`ui-v1.css`), used by the pledge editor (`pledges-edit.html`), Financial
+stewardship's At least and At most (`financial-report.html`) and the Family
+form's annual pledge (`family-v1.js`). **Precedent.**
+[#2192](https://github.com/epiphany40223/parishkit/issues/2192).
+
 ### Dates and times
 
 **Rule.** Every Admin page shows and takes dates and times in the browser's
