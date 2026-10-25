@@ -113,7 +113,41 @@ if [[ " $* " == *" exec -T "* ]]; then
     esac
     exit 0
 fi
+# The database network layout (#2111), as in test_upgrade_script: when
+# FAKE_LAYOUT_RUNNING names the layout Docker runs (OLD or NEW),
+# FAKE_NETWORKS_<layout> is what `network inspect` answers and
+# FAKE_POSTGRES_<layout> the networks postgres is on; retarget-image renders
+# FAKE_COMPOSE_<FAKE_RENDER_LAYOUT>, and starting postgres and valkey after it
+# moves Docker to it.
+layout=$(cat "$FAKE_STATE/layout" 2>/dev/null || echo "${FAKE_LAYOUT_RUNNING:-}")
+networks_var=FAKE_NETWORKS_$layout
+postgres_var=FAKE_POSTGRES_$layout
 case "$*" in
+    "network ls --quiet --filter "*)
+        [ -z "$layout" ] || jq -r '.[].Id' <<<"${!networks_var}" ;;
+    "network inspect --format {{.Name}}"*)
+        jq -r --arg id "$last" '.[] | select(.Id == $id) | .Name' \
+            <<<"${!networks_var}" ;;
+    "network inspect net-"*) echo "${!networks_var}" ;;
+    "network rm "*) echo "$last" >>"$FAKE_STATE/networks_removed" ;;
+    "inspect --format "*"NetworkSettings.Networks"*" id-caddy")
+        echo "stewardship_proxy " ;;
+    "ps --all --quiet --filter "*"service=postgres"*) echo id-postgres ;;
+    "inspect id-postgres")
+        # Without a layout, postgres runs on the networks the file renders.
+        on=${!postgres_var:-$(jq -c '.services.postgres.networks // {}
+            | with_entries(.key |= "stewardship_" + .)' "$FAKE_COMPOSE")}
+        echo '[{"State": {"Running": true},' \
+            '"NetworkSettings": {"Networks": '"$on"'}}]' ;;
+    "ps --all --filter "*"{{.ID}} {{.State}}"*)
+        printf '%s\n' "id-postgres running postgres False" \
+            "id-valkey running valkey False"
+        # FAKE_LAYOUT_CADDY: a same-host restore's caddy, stopped in step 1.
+        [ -z "${FAKE_LAYOUT_CADDY:-}" ] || echo "id-caddy exited caddy False" ;;
+    *" up --detach --wait postgres valkey")
+        # Before the retarget (step 5) the set's own rendering starts.
+        [ ! -e "$FAKE_STATE/rendered" ] ||
+            cp "$FAKE_STATE/rendered" "$FAKE_STATE/layout" ;;
     *" --entrypoint pg_restore "*)
         # The set's runtime row, as pg_restore --data-only prints it.
         printf 'COPY public.stewardship_system_configuration %s FROM stdin;\n' \
@@ -146,7 +180,13 @@ case "$*" in
     *" restore-check "*)
         echo '{"result": "match"}'
         exit "${FAKE_CHECK:-0}" ;;
-    *" retarget-image "*) echo '{"image": "'"$last"'"}' >"$FAKE_RECORD" ;;
+    *" retarget-image "*)
+        echo '{"image": "'"$last"'"}' >"$FAKE_RECORD"
+        if [ -n "${FAKE_RENDER_LAYOUT:-}" ]; then
+            rendered_var=FAKE_COMPOSE_$FAKE_RENDER_LAYOUT
+            echo "${!rendered_var}" >"$FAKE_COMPOSE"
+            echo "$FAKE_RENDER_LAYOUT" >"$FAKE_STATE/rendered"
+        fi ;;
     *" collect-static --destination "*) echo collected >"$last/app.js" ;;
 esac
 exit 0
@@ -1550,3 +1590,120 @@ def test_a_drill_host_with_no_address_is_refused(new_host):
     assert result.returncode == 1, output(result)
     assert "lists no address" in output(result)
     assert not changed(new_host, calls)
+
+
+# --- PostgreSQL's connection sources (#2111) --------------------------------
+
+
+def layout(running, rendered):
+    """The stand-in's FAKE_* settings for a database network layout change."""
+    from .test_upgrade_script import LAYOUT
+
+    return {
+        "FAKE_LAYOUT_RUNNING": running,
+        "FAKE_RENDER_LAYOUT": rendered,
+        **{"FAKE_" + name.upper(): value for name, value in LAYOUT.items()},
+    }
+
+
+@pytest.mark.parametrize("drill", [False, True], ids=["same host", "drill"])
+def test_a_set_from_before_the_source_rules_recreates_the_stores_first(request, drill):
+    """postgres and valkey move to the rendered networks before any one-off.
+
+    postgres runs on the networks of the set's (older) rendering, from the
+    current deployment or from step 5; once retarget-image renders the
+    source rules, every container is removed and postgres and valkey start
+    again on the rendered networks, before revoke-automation-sessions and
+    restore-begin need the admin-recovery network.
+    """
+    if drill:
+        result, calls = new(
+            request.getfixturevalue("new_host"), "--drill", **layout("OLD", "NEW")
+        )
+    else:
+        result, calls = restore(request.getfixturevalue("host"), **layout("OLD", "NEW"))
+    assert result.returncode == 0, output(result)
+    retarget = next(i for i, c in enumerate(calls) if " retarget-image " in c)
+    stop = next(i for i, c in enumerate(calls) if c.endswith(" stop postgres valkey"))
+    remove = calls.index("rm id-postgres id-valkey")
+    start = max(
+        i
+        for i, c in enumerate(calls)
+        if c.endswith(" up --detach --wait postgres valkey")
+    )
+    recovery = next(i for i, c in enumerate(calls) if " restore-begin " in c)
+    assert retarget < stop < remove < start < recovery
+    assert "the database networks change; recreating postgres and valkey" in output(
+        result
+    )
+    assert "network backend differs from the rendered one (ip_range)" in output(result)
+
+
+def test_an_unchanged_layout_restores_without_recreating_the_stores(host):
+    """A set rendered with the same networks needs no restart of postgres."""
+    result, calls = restore(host, **layout("NEW", "NEW"))
+    assert result.returncode == 0, output(result)
+    assert not any(c.endswith(" stop postgres valkey") for c in calls)
+    assert "the database networks change" not in output(result)
+
+
+def test_the_database_sources_are_checked_from_web_and_admin_recovery(host):
+    """An image with the source check runs it from both services after health."""
+    help_text = HELP.replace("restore-begin}", "restore-begin,database-sources}")
+    result, calls = restore(host, FAKE_HELP=help_text)
+    assert result.returncode == 0, output(result)
+    health = next(i for i, c in enumerate(calls) if "pk-stewardship health" in c)
+    web = next(
+        i
+        for i, c in enumerate(calls)
+        if " exec -T web " in c and "database-sources" in c
+    )
+    oneoff = next(
+        i for i, c in enumerate(calls) if " admin-recovery database-sources " in c
+    )
+    assert health < web < oneoff
+    assert calls[web].endswith(
+        f"database-sources --config {host['root']}/config/services/web.yaml"
+    )
+    # Without the command (a release before #2111) nothing is checked; the
+    # set is loaded already, so the repeat resumes at step 7.
+    result, calls = restore(host, "--from", "7")
+    assert result.returncode == 0, output(result)
+    assert not any("database-sources" in c for c in calls)
+    assert "has no database source check" in output(result)
+
+
+def test_a_source_difference_fails_the_restore_but_leaves_web_up(host):
+    """The login and source were printed by the check; the review must wait."""
+    help_text = HELP.replace("restore-begin}", "restore-begin,database-sources}")
+    result, calls = restore(host, FAKE_HELP=help_text, FAKE_FAIL="database-sources")
+    assert result.returncode == 1, output(result)
+    assert "the database sources differ from the rendered rules" in output(result)
+    assert "do not release the Restore review" in output(result)
+    assert "Stopped in step" not in output(result)
+    assert not any(c.startswith(("rm ", "stop ")) for c in calls)
+
+
+def test_a_stopped_caddy_keeps_its_networks(host):
+    """Step 1 stopped caddy; the full stop must not take its networks away."""
+    result, calls = restore(host, FAKE_LAYOUT_CADDY="1", **layout("OLD", "NEW"))
+    assert result.returncode == 0, output(result)
+    assert any(c.endswith(" id-caddy") and "NetworkSettings" in c for c in calls)
+    removed = (host["tmp"] / "state" / "networks_removed").read_text().split()
+    assert removed == ["net-backend"]
+
+
+def test_matching_networks_reload_the_rendered_rules(host):
+    """postgres keeps running, so the rules retarget-image wrote are reloaded."""
+    from .test_upgrade_script import _rendered
+
+    rendered = _rendered(True)
+    rendered["services"]["postgres"]["command"] = ["postgres", "-c", "hba_file=/x"]
+    fake = layout("NEW", "NEW")
+    fake["FAKE_COMPOSE_NEW"] = json.dumps(rendered)
+    result, calls = restore(host, **fake)
+    assert result.returncode == 0, output(result)
+    reload = next(i for i, c in enumerate(calls) if "pg_reload_conf()" in c)
+    assert reload < next(i for i, c in enumerate(calls) if " restore-begin " in c)
+    assert "reloaded PostgreSQL's source rules" in output(result)
+    assert not any(c.endswith(" stop postgres valkey") for c in calls)

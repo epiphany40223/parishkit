@@ -756,6 +756,158 @@ oneoff() {
     limited "$LIMIT_OFFLINE" "$what" "${dc[@]}" run --name "$oneoff_name" --rm -T "$@"
     oneoff_name=""
 }
+# BEGIN database network layout (#2111). This block is kept identical in
+# tools/stewardship-upgrade-host.sh and tools/stewardship-ops/pk-restore
+# (tests/stewardship/test_database_layout.py compares the two copies and
+# runs it on real Docker). It reads `project`, `compose`, `dc` and `work`.
+layout_limited() {
+    # layout_limited SECONDS WHAT COMMAND...: run COMMAND under a time limit
+    # and print its standard output. On a failure its last error lines are
+    # printed too; an expired limit is logged with what ran, the limit and
+    # the elapsed time. Returns the command's status.
+    local limit=$1 what=$2 started rc=0
+    shift 2
+    started=$(date -u +%s)
+    timeout --kill-after=30 "$limit" "$@" 2>"$work/layout.err" || rc=$?
+    if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+        echo "TIMEOUT: $what killed after $(( $(date -u +%s) - started ))s (limit ${limit}s)" >&2
+    elif [ "$rc" -ne 0 ]; then
+        echo "FAILED: $what (exit $rc):" >&2
+        tail -5 "$work/layout.err" | sed 's/^/    | /' >&2
+    fi
+    return "$rc"
+}
+layout_changes() {
+    # Print one line per difference between the database networks the
+    # Compose file renders and what Docker runs; nothing when they agree.
+    # Compared: every rendered network that exists (its internal flag and,
+    # when its address block is rendered, its subnet and ip_range, and its
+    # gateway when one is rendered: Docker reports the subnet and gateway it
+    # chose for a network that renders none), and the set of networks the
+    # running postgres container is on. A missing or stopped postgres
+    # differs too, so a run that stopped partway repeats the full stop, and
+    # so do several postgres containers. A file without a postgres service
+    # compares nothing. The inspections go to files, not jq's arguments,
+    # where any local user could read them.
+    local ids id
+    jq -e '.services.postgres' "$compose" >/dev/null 2>&1 || return 0
+    echo '[]' >"$work/layout-networks.json"
+    echo '[]' >"$work/layout-postgres.json"
+    ids=$(layout_limited 60 "listing the project's networks" docker network ls --quiet \
+        --filter "label=com.docker.compose.project=$project") || return 1
+    if [ -n "$ids" ]; then
+        # shellcheck disable=SC2086 # one network id per word
+        layout_limited 60 "inspecting the project's networks" docker network inspect $ids \
+            >"$work/layout-networks.json" || return 1
+    fi
+    id=$(layout_limited 60 "finding postgres" docker ps --all --quiet \
+        --filter "label=com.docker.compose.project=$project" \
+        --filter "label=com.docker.compose.service=postgres" \
+        --filter "label=com.docker.compose.oneoff=False") || return 1
+    if [ -n "$id" ]; then
+        # shellcheck disable=SC2086 # one container id per word
+        layout_limited 60 "inspecting postgres" docker inspect $id >"$work/layout-postgres.json" ||
+            return 1
+    fi
+    jq -r --slurpfile have "$work/layout-networks.json" --slurpfile postgres "$work/layout-postgres.json" '
+        ($have[0]) as $have | ($postgres[0]) as $postgres
+        | ($have | map({key: .Labels["com.docker.compose.network"], value: .}) | from_entries) as $by_key
+        | ($have | map({key: .Name, value: .Labels["com.docker.compose.network"]}) | from_entries) as $key_of
+        | ((.networks // {}) | to_entries[] | select($by_key[.key] != null)
+            | .key as $k | ((.value.ipam.config // [])[0] // {}) as $w
+            | ($by_key[$k]) as $got | (($got.IPAM.Config // [])[0] // {}) as $g
+            | [ (if $w.subnet != null and $w.subnet != ($g.Subnet // "") then "subnet" else empty end),
+                (if $w.subnet != null and ($w.ip_range // "") != ($g.IPRange // "") then "ip_range" else empty end),
+                (if $w.gateway != null and $w.gateway != ($g.Gateway // "") then "gateway" else empty end),
+                (if (.value.internal // false) != ($got.Internal // false) then "internal" else empty end) ]
+            | select(length > 0) | "network \($k) differs from the rendered one (\(join(", ")))"),
+          (((.services.postgres.networks // {}) | keys | sort) as $wanted
+            | if ($postgres | length) > 1 then
+                "postgres has \($postgres | length) containers"
+              elif ($postgres | length) == 0 or ($postgres[0].State.Running | not) then
+                "postgres is not running"
+              else
+                (($postgres[0].NetworkSettings.Networks // {}) | keys | map($key_of[.] // .) | sort) as $on
+                | if $on != $wanted then
+                    "postgres is on \($on | join(" ")) but rendered on \($wanted | join(" "))"
+                  else empty end
+              end)
+    ' "$compose"
+}
+layout_full_stop() {
+    # The full stop for a database network change (operations
+    # specification, "Rollout" and "Rollback"). Compose can neither recreate
+    # a network a running container is on ("active endpoints") nor attach a
+    # stopped container to the recreated one, so every container of the
+    # project but caddy is removed (never a volume: every data path is a
+    # bind mount), and every network caddy is not on with them. postgres and
+    # valkey then start on the rendered networks, which must then match.
+    # caddy, only on ingress and proxy, keeps serving the maintenance page.
+    # A one-off container still running (a cron backup) is never killed
+    # mid-copy: the full stop refuses before stopping anything, and again
+    # before the networks go if one started meanwhile. Returns non-zero,
+    # having said why, on any failure; repeating it is safe (and the
+    # upgrade repeats it before its step 1 when postgres is not running).
+    local rows busy ids caddy caddy_networks net name changes
+    layout_containers() {
+        # The project's containers: id, state, service, one-off flag.
+        layout_limited 60 "listing the project's containers" docker ps --all \
+            --filter "label=com.docker.compose.project=$project" \
+            --format '{{.ID}} {{.State}} {{.Label "com.docker.compose.service"}} {{.Label "com.docker.compose.oneoff"}}'
+    }
+    layout_busy() {
+        # Refuse while a one-off is not finished (running, paused, restarting).
+        busy=$(awk '$4 == "True" && $2 != "exited" && $2 != "created" && $2 != "dead" { print $3 }' <<<"$1" |
+            sort -u | tr '\n' ' ')
+        [ -z "$busy" ] && return 0
+        echo "One-off containers of $project are still running (${busy% }); $2 Repeat once they finish." >&2
+        return 1
+    }
+    rows=$(layout_containers) || return 1
+    layout_busy "$rows" "nothing was stopped." || return 1
+    # Through Compose, for their own stop grace periods (PostgreSQL's
+    # shutdown checkpoint); the rest stopped already or stop in a minute.
+    layout_limited 600 "stopping postgres and valkey" "${dc[@]}" stop postgres valkey >/dev/null || return 1
+    ids=$(awk '$3 != "caddy" { print $1 }' <<<"$rows")
+    if [ -n "$ids" ]; then
+        # The online services stopped already (the upgrade's steps 1 and
+        # 2, pk-restore's step 1), so their own longer grace periods do
+        # not matter here; this stops only what is left.
+        # shellcheck disable=SC2086 # one container id per word
+        layout_limited 300 "stopping the other containers" docker stop --time 60 $ids >/dev/null || return 1
+        # shellcheck disable=SC2086
+        layout_limited 120 "removing the containers" docker rm $ids >/dev/null || return 1
+    fi
+    rows=$(layout_containers) || return 1
+    layout_busy "$rows" "postgres and valkey are stopped." || return 1
+    # caddy's own networks stay, read from caddy itself so a stopped caddy
+    # (pk-restore stops it) keeps them too; Compose recreates the others.
+    caddy_networks=" "
+    caddy=$(awk '$3 == "caddy" { print $1 }' <<<"$rows")
+    for caddy in $caddy; do
+        # shellcheck disable=SC2016 # a Go template, not a shell expansion
+        caddy_networks+=$(layout_limited 60 "inspecting caddy" docker inspect \
+            --format '{{range $name, $n := .NetworkSettings.Networks}}{{$name}} {{end}}' "$caddy") ||
+            return 1
+    done
+    ids=$(layout_limited 60 "listing the project's networks" docker network ls --quiet \
+        --filter "label=com.docker.compose.project=$project") || return 1
+    for net in $ids; do
+        name=$(layout_limited 60 "inspecting network $net" docker network inspect --format '{{.Name}}' "$net") ||
+            return 1
+        [[ $caddy_networks == *" $name "* ]] && continue
+        layout_limited 60 "removing network $name" docker network rm "$net" >/dev/null || return 1
+    done
+    layout_limited 600 "starting postgres and valkey" "${dc[@]}" up --detach --wait postgres valkey >/dev/null ||
+        return 1
+    changes=$(layout_changes) || return 1
+    if [ -n "$changes" ]; then
+        echo "After the full stop the database networks still differ from the rendered ones:" >&2
+        printf '%s\n' "$changes" | sed 's/^/    /' >&2
+        return 1
+    fi
+}
+# END database network layout (#2111).
 collect_static() {
     # The image's static files, collected into cache/static.next (this
     # command's own staging tree) and moved in at step 7.
@@ -881,7 +1033,7 @@ replacement_state() {
         return 0
     fi
     postgres_running ||
-        refuse "postgres is not running; start it with: docker compose ... up --detach --wait postgres valkey"
+        refuse "postgres is not running (also after a step 7 that stopped partway recreating it); start it with: docker compose ... up --detach --wait postgres valkey"
     marker=$(query "SELECT shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = current_database()") ||
         refuse "cannot read the database's provisioning marker"
     if [ "$from" -eq 5 ] && [ -z "$marker" ]; then
@@ -941,7 +1093,7 @@ else
     web_yaml=$services/web.yaml
     read_paths
     postgres_running ||
-        refuse "postgres is not running; start it with: docker compose ... up --detach --wait postgres valkey"
+        refuse "postgres is not running (also after a step 7 that stopped partway recreating it); start it with: docker compose ... up --detach --wait postgres valkey"
     marker=$(query "SELECT shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = current_database()")
     [ "$marker" = "parishkit-stewardship:$uuid" ] ||
         refuse "the database is not deployment $uuid's (its provisioning marker differs)"
@@ -1292,6 +1444,24 @@ if [ "$drill" -eq 1 ]; then
 elif [ "$local_mode" -eq 0 ]; then
     limited "$LIMIT_PULL" "docker compose pull" "${dc[@]}" pull --quiet
 fi
+# PostgreSQL's connection sources (#2111): when the retargeted file's
+# database networks differ from what Docker runs (postgres and valkey
+# started from a set rendered before the source rules, or a restore with
+# an image from before them), they are recreated on the rendered networks
+# before any one-off needs them (operations specification, "Rollout").
+changes=$(layout_changes) || refuse "cannot compare the database networks with what Docker runs"
+if [ -n "$changes" ]; then
+    echo "    the database networks change; recreating postgres and valkey on the rendered ones:"
+    printf '%s\n' "$changes" | sed 's/^/      /'
+    layout_full_stop || refuse "recreating postgres and valkey on the rendered networks failed"
+elif jq -e '.services.postgres.command // [] | any(startswith("hba_file="))' "$compose" >/dev/null; then
+    # The networks match, so postgres keeps running, but retarget-image may
+    # have rewritten its source rules: PostgreSQL reads them only at start
+    # or on a reload, so reload them (the source check after step 8 shows
+    # which rules are in force).
+    query "SELECT pg_reload_conf()" >/dev/null || refuse "cannot reload PostgreSQL's source rules"
+    echo "    reloaded PostgreSQL's source rules"
+fi
 move_aside "$static_dir"
 mv "$static_dir.next" "$static_dir"
 if has_command revoke-automation-sessions; then
@@ -1366,6 +1536,27 @@ for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
     [ "$attempt" -eq 12 ] || sleep 5
 done
 [ "$healthy" -eq 1 ] || refuse "web did not turn healthy; see docker compose ... logs web"
+if has_command database-sources; then
+    # The source check (operations specification, "Source check"), from the
+    # two services a restore starts: web and the admin-recovery one-off. It
+    # uses no password. A difference names the login and the source; web
+    # stays up, but the review must wait for a fix.
+    step "8. Checking the database sources from web and admin-recovery"
+    sources_ok=1
+    limited "$LIMIT_QUERY" "the source check from web" "${dc[@]}" exec -T web \
+        timeout "$LIMIT_QUERY" pk-stewardship database-sources --config "$services/web.yaml" </dev/null ||
+        sources_ok=0
+    oneoff "the source check from admin-recovery" admin-recovery database-sources \
+        --config "$services/admin-recovery.yaml" || sources_ok=0
+    if [ "$sources_ok" -eq 0 ]; then
+        phase=sources  # finish adds no resume hint
+        [ "$drill" -eq 0 ] ||
+            refuse "the database sources differ from the rendered rules (above); the drill's web is removed: record the difference"
+        refuse "the database sources differ from the rendered rules (above); web is up, but do not release the Restore review until a release fixes them"
+    fi
+else
+    echo "    $image has no database source check"
+fi
 if [ "$drill" -eq 1 ]; then
     # Nothing but the three may exist on a drill host.
     created=$(limited "$LIMIT_QUERY" "listing the project's containers" docker ps --all \
