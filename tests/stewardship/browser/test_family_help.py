@@ -60,7 +60,7 @@ def test_review_submit_sits_in_the_sticky_bar(page, component_origin):
     """The Review page's Submit button is in the same sticky bar."""
     page.set_viewport_size({"width": 390, "height": 640})
     begin(page, component_origin, paged_form(), None)
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("0")
     review(page)
     bar = page.locator(".family-nav")
     expect(bar.get_by_role("button", name="Back to edit")).to_be_visible()

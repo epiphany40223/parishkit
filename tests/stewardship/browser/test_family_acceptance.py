@@ -54,7 +54,7 @@ def test_review_edit_controls_preserve_answers_and_focus_sections(
 
     begin(page, component_origin, financial_form(census=True, ministry=True), submit)
     show(page, page.get_by_label("First name (required)")).fill("Review edit")
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("52")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("52")
     show(page, page.get_by_label("Pledge frequency")).select_option("weekly")
     show(page, page.locator(f"#financial-option-{CHECK}")).check()
     show(page, page.get_by_label("Additional information (optional)")).fill(
@@ -72,7 +72,7 @@ def test_review_edit_controls_preserve_answers_and_focus_sections(
         page.keyboard.press("Enter")
         expect(page.locator("#" + target)).to_be_focused()
         expect(page.get_by_label("First name (required)")).to_have_value("Review edit")
-        expect(page.get_by_label("Annual pledge (USD)")).to_have_value("52")
+        expect(page.get_by_label("Annual pledge in dollars")).to_have_value("52")
         expect(page.get_by_label("Additional information (optional)")).to_have_value(
             "Private review note"
         )
@@ -223,7 +223,7 @@ def test_large_household_and_on_demand_ministry_list(page, component_origin):
         ),
     ).check()
     assert page.locator('[id*="-join-"]').count() == 1
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("0")
     started = monotonic()
     review(page)
     expect(

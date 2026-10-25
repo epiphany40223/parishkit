@@ -156,15 +156,15 @@ def test_cannot_give_hides_pledge_fields_and_restores_them(
     submissions, errors = [], []
     page.on("pageerror", lambda error: errors.append(str(error)))
     begin(page, component_origin, financial_form(), recorder(submissions))
-    pledge = show(page, page.get_by_label("Annual pledge (USD)"))
+    pledge = show(page, page.get_by_label("Annual pledge in dollars"))
     pledge.fill("120")
     page.get_by_label(GIVE).check()
-    expect(page.get_by_label("Annual pledge (USD)")).to_be_hidden()
+    expect(page.get_by_label("Annual pledge in dollars")).to_be_hidden()
     expect(page.get_by_label("Pledge frequency (required)")).to_be_hidden()
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
     page.get_by_label(GIVE).uncheck()
-    expect(page.get_by_label("Annual pledge (USD)")).to_have_value("120")
+    expect(page.get_by_label("Annual pledge in dollars")).to_have_value("120")
     page.get_by_label(GIVE).check()
     assert not errors, errors
     review(page)
@@ -239,13 +239,13 @@ def test_refresh_keeps_a_hidden_pledge_for_unchecking(page, component_origin):
     """A pledge hidden by "cannot contribute" comes back after a refresh."""
     form, submissions = financial_form(), []
     begin(page, component_origin, form, refreshing(submissions, deepcopy(form)))
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("120")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("120")
     page.get_by_label(GIVE).check()
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(show(page, page.get_by_label(GIVE))).to_be_checked()
     page.get_by_label(GIVE).uncheck()
-    expect(page.get_by_label("Annual pledge (USD)")).to_have_value("120")
+    expect(page.get_by_label("Annual pledge in dollars")).to_have_value("120")
 
 
 def test_loaded_limitation_unchecks_and_checks_again(page, component_origin):
@@ -324,7 +324,7 @@ def test_a_pledge_conflict_hidden_by_cannot_give_does_not_block_review(
     page.get_by_role("button", name="Submit to Sample Parish").click()
     # The refreshed form keeps this tab's "cannot contribute".
     expect(show(page, page.get_by_label(GIVE))).to_be_checked()
-    expect(page.get_by_label("Annual pledge (USD)")).to_be_hidden()
+    expect(page.get_by_label("Annual pledge in dollars")).to_be_hidden()
     assert review(page)
     expect(page.locator("[data-nav-error]")).to_be_hidden()
     page.get_by_role("button", name="Submit to Sample Parish").click()
@@ -401,10 +401,10 @@ def test_a_hidden_zero_pledge_frequency_conflict_does_not_block_review(
     fresh["financial"]["answers"]["frequency"] = "monthly"
     submissions = []
     begin(page, component_origin, form, refreshing(submissions, fresh))
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("0")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("0")
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
-    expect(show(page, page.get_by_label("Annual pledge (USD)"))).to_have_value("0")
+    expect(show(page, page.get_by_label("Annual pledge in dollars"))).to_have_value("0")
     expect(page.get_by_label("Pledge frequency (required)")).to_be_hidden()
     assert review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
@@ -432,13 +432,13 @@ def test_unchecking_cannot_give_after_a_refresh_never_restores_a_stale_pledge(
     submissions = []
     begin(page, component_origin, form, refreshing(submissions, fresh))
     if edited:
-        show(page, page.get_by_label("Annual pledge (USD)")).fill("20.00")
+        show(page, page.get_by_label("Annual pledge in dollars")).fill("20.00")
     show(page, page.get_by_label(GIVE)).check()
     review(page)
     page.get_by_role("button", name="Submit to Sample Parish").click()
     expect(show(page, page.get_by_label(GIVE))).to_be_checked()
     page.get_by_label(GIVE).uncheck()
-    pledge = page.get_by_label("Annual pledge (USD)")
+    pledge = page.get_by_label("Annual pledge in dollars")
     if edited:
         choice = page.get_by_role("radio", name="Use my edit", exact=False)
         expect(choice).to_be_visible()
@@ -520,7 +520,7 @@ def test_two_refreshes_never_send_a_hidden_stale_pledge(
         form,
         refreshing_twice(submissions, fresh, deepcopy(fresh)),
     )
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("20.00")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("20.00")
     if hidden_first:
         page.get_by_label(GIVE).check()
     submit_again(page)
@@ -533,7 +533,7 @@ def test_two_refreshes_never_send_a_hidden_stale_pledge(
     expect(show(page, page.get_by_label(GIVE))).to_be_checked()
     page.get_by_label(GIVE).uncheck()
     choose_my_edit(page)
-    expect(page.get_by_label("Annual pledge (USD)")).to_have_value("20.00")
+    expect(page.get_by_label("Annual pledge in dollars")).to_have_value("20.00")
     assert finish(page, submissions)["annual_pledge"] == "20.00"
 
 
@@ -550,7 +550,7 @@ def test_cannot_give_set_on_another_device_asks_before_dropping_a_pledge(
     }
     submissions = []
     begin(page, component_origin, form, refreshing(submissions, fresh))
-    show(page, page.get_by_label("Annual pledge (USD)")).fill("20.00")
+    show(page, page.get_by_label("Annual pledge in dollars")).fill("20.00")
     submit_again(page)
     expect(show(page, page.get_by_label(GIVE))).to_be_checked()
     # Review stops on the choice instead of silently dropping 20.
@@ -559,7 +559,7 @@ def test_cannot_give_set_on_another_device_asks_before_dropping_a_pledge(
     # The choice rebuilds the page, so click rather than wait on its state.
     show(page, page.get_by_label("Use my edit: my pledge")).click()
     expect(page.get_by_label(GIVE)).not_to_be_checked()
-    expect(page.get_by_label("Annual pledge (USD)")).to_have_value("20.00")
+    expect(page.get_by_label("Annual pledge in dollars")).to_have_value("20.00")
     financial = finish(page, submissions)
     assert financial["annual_pledge"] == "20.00" and not financial["cannot_give"]
 
@@ -584,7 +584,7 @@ def test_a_zero_pledge_from_another_device_asks_before_dropping_a_frequency(
     assert page.get_by_role("button", name="Submit to Sample Parish").count() == 0
     # Keep this tab's pledge, then its frequency.
     choose_my_edit(page)
-    expect(page.get_by_label("Annual pledge (USD)")).to_have_value("12.00")
+    expect(page.get_by_label("Annual pledge in dollars")).to_have_value("12.00")
     choose_my_edit(page)
     # The way to give was not this tab's edit, so it follows the record
     # (none); a positive pledge needs one again.

@@ -362,7 +362,7 @@ def tab_act(page, walk, action, index):
         expect(page.get_by_label(GIVE)).to_be_checked(checked=not checked)
         walk.decide("cannot", not checked)
         return
-    pledge = page.get_by_label("Annual pledge (USD)")
+    pledge = page.get_by_label("Annual pledge in dollars")
     if action in ("pledge", "zero"):
         if not usable(pledge):
             return
@@ -488,7 +488,7 @@ def resolve(page, walk):
         walk.fill(UNOFFERED, False)
         remove.click()
         return True
-    pledge = page.get_by_label("Annual pledge (USD)")
+    pledge = page.get_by_label("Annual pledge in dollars")
     if usable(pledge) and not pledge.input_value():
         walk.fill("pledge", "45.00")
         pledge.fill("45.00")

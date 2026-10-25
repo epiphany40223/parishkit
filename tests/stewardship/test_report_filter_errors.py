@@ -140,7 +140,8 @@ def test_financial_messages_are_the_page_hints_and_fields_exist():
     assert set(FIELD_IDS) == set(FIELD_MESSAGES) == set(FIELD_LINES)
     for field, element in FIELD_IDS.items():
         cell = re.search(
-            rf'<div(?: data-missing-hint="[^"]*")?><label for="{element}">.*?</div>',
+            r'<div(?: class="money-input")?(?: data-missing-hint="[^"]*")?>'
+            rf'<label for="{element}">.*?</div>',
             TEMPLATE,
         ).group(0)
         tag = re.search(rf'<input id="{element}" [^>]*>', cell).group(0)

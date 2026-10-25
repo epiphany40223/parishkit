@@ -256,7 +256,7 @@ def test_edit_saves_the_reviewers_pledge(page, component_origin):
     editor = page.locator("#pledges-edit-dialog-00000000-0000-0000-0000-000000000003")
     has_text(editor.locator("h2"), "Edit Family 03")
     has_text(editor.locator("[data-confirm-body]"), BODY)
-    amount = editor.get_by_label("Annual pledge, in dollars")
+    amount = editor.get_by_label("Annual pledge in dollars")
     frequency = editor.get_by_label("Frequency")
     assert amount.input_value() == "1200.00"
     assert frequency.input_value() == "weekly"

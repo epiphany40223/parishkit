@@ -181,7 +181,7 @@ def test_an_edited_pledge_is_shown_and_sent_back(page, component_origin):
     submissions, errors = [], []
     page.on("pageerror", lambda error: errors.append(str(error)))
     begin(page, component_origin, form, capture(submissions))
-    amount = show(page, page.get_by_label("Annual pledge (USD)"))
+    amount = show(page, page.get_by_label("Annual pledge in dollars"))
     assert amount.input_value().replace(",", "") == "1300.00"
     expect(page.get_by_label("Pledge frequency")).to_have_value("quarterly")
     expect(page.locator(f"#financial-option-{CHECK}")).to_be_checked()
