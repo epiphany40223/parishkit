@@ -19,7 +19,7 @@ MONEY_FORMAT = '"$"#,##0.00'
 EXCEL_DIGITS = 15
 # Internal references no download carries in any format (#966): row
 # versions, reference UUIDs and generations mean nothing to a reader, and
-# troubleshooting uses the page's Technical details and the audit log. The
+# troubleshooting uses the audit log and pk-admin. The
 # export guard test checks every export's columns and report information
 # against this list; System logs is the recorded exception.
 INTERNAL_FIELDS = frozenset(

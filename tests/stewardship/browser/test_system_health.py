@@ -409,7 +409,7 @@ def test_a_click_anywhere_on_a_tile_toggles_it(page, component_origin):
 def test_controls_and_text_selection_inside_a_tile_do_not_toggle_it(
     page, component_origin
 ):
-    """A link or a summary in an open band does its own job, and
+    """A link in an open band does its own job, and
     a double click or a drag that selects text, or the click that clears
     that selection, leaves the tile open."""
     page.set_viewport_size({"width": 1440, "height": 900})
@@ -422,9 +422,6 @@ def test_controls_and_text_selection_inside_a_tile_do_not_toggle_it(
     link = band.get_by_role("link", name="System logs")
     link.evaluate("(a) => a.addEventListener('click', (e) => e.preventDefault())")
     link.click()
-    technical = band.locator("details.technical-details")
-    technical.locator("summary").click()
-    expect(technical).to_have_attribute("open", "")
     page.wait_for_timeout(PAST_SECOND_CLICK_MS)
     expect(band).to_be_visible()
     # A double click selects a word (the paragraph is wider than its text,
@@ -2157,10 +2154,8 @@ def test_the_page_load_and_services_tiles_in_each_state(
         visible(
             version.get_by_text("The database matches the version that is running.")
         )
-    # Technical details stay closed, and the logs links end the band.
-    expect(version.locator("details.technical-details")).not_to_have_attribute(
-        "open", ""
-    )
+    # No Technical details (#2199): the logs links end the band.
+    expect(version.locator("details")).to_have_count(0)
     expect(version.get_by_role("link").last).to_have_text("Background work")
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     assert _axe(page, axe_source) == []

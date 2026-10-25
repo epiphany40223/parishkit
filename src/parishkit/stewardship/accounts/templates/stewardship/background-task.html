@@ -6,7 +6,7 @@
 {% if is_refresh %}{% aboutpage "refresh-task" %}<p>{% translate "Every refresh places every ParishSoft record into a complete new copy, so the progress counts records checked, not records changed. Unchanged records are reused, not stored again. When the refresh finishes, this page also says how many records changed." %}</p>
 <p>{% translate "Refreshing changes nothing in ParishSoft and sends no mail." %}</p>{% endaboutpage %}{% endif %}
 <p>{{ task.name }}{% if refresh_label %}: <strong>{{ refresh_label }}</strong>{% endif %}</p>
-{# live-status-v1.js updates the status by itself while the task runs and, when it ends, re-reads the status, Retry panels, history and latest retry quietly in place (#869); the technical details follow every poll (#2019); the page has no Refresh link (#1586). #}
+{# live-status-v1.js updates the status by itself while the task runs and, when it ends, re-reads the status, Retry panels, history and latest retry quietly in place (#869); the page has no Refresh link (#1586). #}
 {# A refresh's status region is not aria-live (#1579): this announcer, outside the in-place region so a re-read never replaces it, reads out its state sentence when it changes. #}<p class="visually-hidden" role="status" data-live-announcer="task"></p>
 <div id="task-status" data-in-place-region>{% include 'stewardship/background-task-status.html' %}</div>
 {% comment %}Retry panels appear once a task has failed; as an in-place region the
@@ -41,16 +41,6 @@
 <tbody>{% for event in history.rows %}<tr><td class="numeric">{{ event.version|number }}</td><td class="nowrap"><time datetime="{{ event.at }}" data-local-instant data-compact>{{ event.at }}</time></td><td>{% include "stewardship/task-action.html" with action=event.action %}</td><td>{% include "stewardship/task-state.html" with state=event.state %}</td><td>{{ event.phase_text }}{% if event.progress.total %} — {{ event.progress.display|out_of }}{% endif %}</td></tr>{% empty %}<tr><td colspan="5">{% translate "No history on this page. Use the page controls to see other pages of history." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=history label=history_label %}</div>{% endif %}
 <div id="task-latest" data-in-place-region>{% if work.latest_run_id and work.latest_run_id != task.id %}<p><a href="{% url 'admin:background_task_page' work.latest_run_id %}">{% translate "View the latest retry" %}</a></p>{% endif %}</div>
-{# Technical details sit outside the status region, so a poll never closes them. The values that change while the task runs are a mirror target of the region (background-task-technical-details.html), so an open disclosure stays open and current (#2019); the ones that never change for a task stay as drawn. The two lists share one grid (.technical-details-lists), so they line up as one. #}
-<details class="technical-details"><summary>{% translate "Technical details" %}</summary>
-<div class="technical-details-lists"><dl><dt>{% translate "Task ID" %}</dt><dd>{{ task.id }}</dd>
-{% if correlation_id %}<dt>{% translate "Correlation" %}</dt><dd>{{ correlation_id }}</dd>{% endif %}
-<dt>{% translate "Task type" %}</dt><dd><code>{{ task.type }}</code></dd>
-<dt>{% translate "Initiator ID" %}</dt><dd>{{ task.initiator_id|default:_("System") }}</dd>
-<dt>{% translate "Created" %}</dt><dd><time datetime="{{ task.created_at }}" data-local-instant>{{ task.created_at }}</time></dd></dl>
-<dl id="task-details" data-live-mirror-target="task-details">{% include 'stewardship/background-task-technical-details.html' %}</dl></div>
-<p>{% translate "The heartbeat is the last time the worker checked in; the lease is how long it may keep the task before recovery takes over." %}</p>
-</details>
 <p><a href="{% url 'admin:background' %}">{% translate "All background work" %}</a></p>
 <p class="help">{% translate "The status updates by itself while the task runs. Watching it does not extend your sign-in." %}</p>
 {% endblock %}

@@ -43,10 +43,10 @@ pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
 
-# Download, its reserved "until" line and the Technical details below the panel.
+# Download, its reserved "until" line and the retry line below the panel.
 DOWNLOAD = "form[data-download-until] button, [data-download-ended-gated]"
 LINE = "[data-download-window]"
-BELOW = "details.technical-details > summary"
+BELOW = 'main p:has-text("A retry uses exactly the same data")'
 # How long before the window's end a test checks that nothing has changed
 # yet: far longer than the real time its steps take while the fake clock
 # runs, so how fast the machine is does not matter.
@@ -59,7 +59,7 @@ def ms(delta):
 
 
 def places(page):
-    """Where Download, the "until" line and Technical details are drawn."""
+    """Where Download, the "until" line and the retry line are drawn."""
     return [place(page, selector) for selector in (DOWNLOAD, LINE, BELOW)]
 
 

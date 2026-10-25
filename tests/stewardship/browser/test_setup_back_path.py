@@ -124,7 +124,8 @@ def test_an_open_progress_page_shows_a_discarded_load_in_place(page, component_o
     visible(continuing)
     review = page.locator(REVIEW)
     assert review.get_attribute("href")
-    summary = page.locator("details", has_text="Technical details").locator("summary")
+    # A control outside every in-place region: the About panel's own.
+    summary = page.locator("details.about-page > summary")
     summary.focus()
     above = place(page, "h1")
     # A first load's pageshow is not a return to the page: nothing is read.

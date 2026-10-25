@@ -43,7 +43,7 @@ from parishkit.stewardship.web.tables import (
     window_table,
 )
 
-from .models import TASK_STATES, TaskRun
+from .models import TASK_STATES
 from .ownership import database_now
 from .queue_wait import explain
 from .task_reads import EVENT_SORTING, TASK_SORTING
@@ -233,8 +233,8 @@ def task_detail(request, task_id):
     return _read(request, task_id)
 
 
-# Plain-language names for every task type; the stable internal name stays
-# under Technical details. A type missing here still shows its internal name.
+# Plain-language names for every task type; the stable internal name is in
+# the logs and pk-admin. A type missing here still shows its internal name.
 TASK_NAMES = {
     "setup_source_load": _("Initial ParishSoft data load"),
     "setup_source_cleanup": _("Initial setup cleanup"),
@@ -476,13 +476,6 @@ def task_page(request, task_id):
             else None,
             "digest_retry_route": "admin:retry_report_email",
             "history": history,
-            # System logs' rows no longer show identifiers (#1065); the
-            # task's own page does, including the correlation its log
-            # entries share, for filtering by hand. Page only: the JSON and
-            # command line task documents are unchanged.
-            "correlation_id": TaskRun.objects.filter(pk=task["id"])
-            .values_list("correlation_id", flat=True)
-            .first(),
         },
     )
     return _finish_html(request, result, response, task_id)

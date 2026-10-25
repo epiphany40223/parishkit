@@ -20,7 +20,7 @@ pytestmark = pytest.mark.parametrize(
 )
 
 # Automation access shows its ended table only when asked; Past campaigns'
-# DONE state has a removed import, whose Removed cell holds a time too.
+# imported years each hold an Imported time.
 PAGES = (SIGNED_IN, ACCESS + "?ended=yes", PAST_CAMPAIGNS, BACKGROUND)
 
 
@@ -33,8 +33,8 @@ def test_each_time_cell_is_one_line_and_the_page_never_scrolls_sideways(
 
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + path)
-    # Open any closed disclosure (Past campaigns' Technical details table),
-    # so every time is laid out and has client rects to count.
+    # Open any closed disclosure, so every time is laid out and has client
+    # rects to count.
     page.locator("main details").evaluate_all(
         "boxes => boxes.forEach(b => { b.open = true; })"
     )

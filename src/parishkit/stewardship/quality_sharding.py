@@ -57,7 +57,6 @@ BROWSER_ENGINE_SECONDS = {
 BROWSER_FILE_EXTRA_SECONDS = {
     "test_system_health.py": 530,
     "test_campaign_stepper.py": 111,
-    "test_technical_details_live.py": 87,
     "test_about_page.py": 74,
     "test_export_in_place.py": 69,
     "test_family_pledge_walks.py": 49,

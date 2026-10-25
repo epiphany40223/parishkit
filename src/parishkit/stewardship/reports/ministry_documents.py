@@ -29,8 +29,8 @@ def new_member_labels(items):
     """The Member DUID label of each Member added on the form, by proposed id.
 
     A Member added on the form has no DUID yet; the page says "New Member"
-    and keeps its proposed id in Technical details, which a file leaves out
-    (#966). Two New Members with the same name would then give identical
+    and, like a file, never shows its proposed id (#966, #2199). Two New
+    Members with the same name would then give identical
     rows, so those get "New Member 1", "New Member 2", ... in form order:
     proposed id order, the order the Family form lists them once saved and
     the order their requests are recorded in. A New Member's rows (for

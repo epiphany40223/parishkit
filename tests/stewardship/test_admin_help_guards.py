@@ -3,9 +3,9 @@
 The Admin portal spec's Page help section asks that longer explanation sit in
 an "About this page" panel or a click-to-open field tip, that a page's
 introduction (the text between its heading and its data) be help hidden in
-that closed panel rather than paragraphs above the data, and that internal
-identifiers and bookkeeping fields sit in a closed "Technical details"
-disclosure. These tests read the Admin templates as text, so they need no
+that closed panel rather than paragraphs above the data, and that no Admin
+page shows internal identifiers and bookkeeping fields or a "Technical
+details" pane (#2199). These tests read the Admin templates as text, so they need no
 database: they check each translatable message against where it is placed.
 
 Both checks are deliberately simple text scans rather than a template render,
@@ -14,7 +14,6 @@ reaches. Their allowlists name the known, reviewed exceptions; a new entry
 should be rare and explained.
 """
 
-import functools
 import re
 from pathlib import Path
 
@@ -42,15 +41,9 @@ ADMIN_TEMPLATES = sorted(
 
 COMMENT = re.compile(r"{% comment %}.*?{% endcomment %}", re.S)
 ABOUT = re.compile(r"{% aboutpage .*?{% endaboutpage %}", re.S)
-# Any disclosure (About panel markup, Technical details, export panels and
-# similar) is one deliberate click away, so its text is not "always visible".
+# Any disclosure (About panel markup, export panels and similar) is one
+# deliberate click away, so its text is not "always visible".
 DETAILS = re.compile(r"<details\b.*?</details>", re.S)
-# Any <details> whose class list includes technical-details, whatever other
-# attributes or classes it gains later.
-TECHNICAL = re.compile(
-    r'<details\b[^>]*\bclass="[^"]*\btechnical-details\b[^"]*"[^>]*>.*?</details>',
-    re.S,
-)
 PARAGRAPH = re.compile(r"<p\b[^>]*>(.*?)</p>", re.S)
 MESSAGE = re.compile(
     r'{% (?:translate|trans) "((?:[^"\\]|\\.)*)"'
@@ -109,8 +102,9 @@ INTRO_ALLOWED = {
     "availability.html": 21,
 }
 
-# Labels for internal identifiers and worker bookkeeping. They may appear
-# only inside a Technical details disclosure.
+# Labels for internal identifiers and worker bookkeeping. No Admin page shows
+# them (UX conventions, "No Technical details panes", #2199): the logs and
+# pk-admin do.
 INTERNAL_TERMS = (
     "heartbeat",
     "lease expires",
@@ -127,11 +121,21 @@ INTERNAL_TERMS = (
     "request id",
     "refusal id",
     "correlation",
+    "configuration digest",
+    "configuration identity",
+    "checksum",
+    "sha-256",
+    "delivery id",
+    "test reference",
 )
-# Reviewed exceptions: filter fields an Admin types an identifier into. Each
-# is (template, term).
+# Reviewed exceptions: filter fields an Admin types an identifier into, and
+# prose that names a kept record without showing it. Each is (template, term).
 INTERNAL_ALLOWED = {
     ("logs.html", "correlation"),
+    # Sent mail's recipient filter accepts a delivery ID typed by hand.
+    ("deliveries.html", "delivery id"),
+    # Remove's dialog says the import's record (with its checksum) is kept.
+    ("past-campaigns.html", "checksum"),
 }
 
 
@@ -315,84 +319,49 @@ def test_intro_allowances_are_still_needed(name):
     assert found == allowed, f"{name}: update or remove its INTRO_ALLOWED entry"
 
 
-# {% include %} of another template in this directory, by its file name.
-INCLUDE = re.compile(r"""{% include ["']stewardship/([^"']+)["']""")
-# A live-status mirror source: an inert <template> that live-status-v1.js
-# copies into the element whose data-live-mirror-target has the same name.
-# It is never shown where it sits; its copy is shown where the target is.
-MIRROR = re.compile(
-    r'<template\b[^>]*\bdata-live-mirror="([^"]+)"[^>]*>.*?</template>', re.S
-)
-MIRROR_TARGET = re.compile(r'\bdata-live-mirror-target="([^"]+)"')
+@pytest.mark.parametrize("name", ADMIN_TEMPLATES)
+def test_no_admin_template_has_a_technical_details_pane(name):
+    """No Admin page draws a Technical details pane (#2199).
 
-
-@functools.cache
-def technical_scan(root):
-    """Every template's source, and what of it shows outside Technical details.
-
-    Returns two dicts by file name: the comment-free source, and that source
-    with its Technical details disclosures removed, along with each mirror
-    source (MIRROR) whose every target, in any template, sits inside a
-    Technical details disclosure, since its copy is only ever shown there. A
-    target whose name is built from a value (``{{ ... }}``) outside a
-    disclosure is taken to match any mirror name its fixed text allows.
-    Cached by template directory, so a test can point it elsewhere.
+    The whole source is read, template comments included, so a pane cannot
+    come back under a comment's cover, and both the words and the class the
+    panes used count.
     """
-    sources = {
-        path.name: COMMENT.sub("", path.read_text()) for path in root.glob("*.html")
-    }
-    outside = {name: TECHNICAL.sub("", source) for name, source in sources.items()}
-    shown_targets = [
-        re.compile(".+".join(map(re.escape, VALUE.split(target))))
-        for source in outside.values()
-        for target in MIRROR_TARGET.findall(source)
+    source = (TEMPLATES / name).read_text()
+    assert not re.search(r"technical[ -]details", source, re.I), (
+        f"{name}: Admin pages have no Technical details pane (UX conventions, "
+        '"No Technical details panes"); keep a fact a reader needs as a plain '
+        "line, and leave internal references to the logs and pk-admin"
+    )
+
+
+def test_the_admin_scripts_and_styles_draw_no_technical_details():
+    """Neither the Admin scripts nor the styles keep a pane's code (#2199)."""
+    static = TEMPLATES.parents[1] / "static/stewardship"
+    files = sorted([*static.glob("*.js"), *static.glob("*.css")])
+    assert files
+    found = [
+        path.name
+        for path in files
+        if re.search(r"technical[ -]details", path.read_text(), re.I)
     ]
-    hidden = {
-        target
-        for source in sources.values()
-        for target in MIRROR_TARGET.findall(source)
-        if not any(pattern.fullmatch(target) for pattern in shown_targets)
-    }
-    shown = {
-        name: MIRROR.sub(lambda m: "" if m[1] in hidden else m[0], source)
-        for name, source in outside.items()
-    }
-    return sources, shown
-
-
-def outside_technical_details(name):
-    """The part of a template that can show outside Technical details.
-
-    A template that other templates include, and that every including
-    template includes only inside a Technical details disclosure (or inside
-    a mirror source copied only into one), shows nothing outside it: a
-    fragment of a disclosure's rows (#2016) is checked where it is used.
-    One include anywhere else makes its whole source count as shown. Only
-    direct includes are followed, so a fragment of a fragment counts as
-    shown; split it differently or extend the scan if that is ever needed.
-    """
-    sources, shown = technical_scan(TEMPLATES)
-    included = any(name in INCLUDE.findall(source) for source in sources.values())
-    if included and not any(name in INCLUDE.findall(s) for s in shown.values()):
-        return ""
-    return shown[name]
+    assert not found, f"Technical details code is left in {found}"
 
 
 @pytest.mark.parametrize("name", ADMIN_TEMPLATES)
-def test_internal_field_names_are_under_technical_details(name):
-    """Internal identifier and worker fields are hidden until asked for."""
-    outside = outside_technical_details(name)
+def test_internal_field_names_are_not_shown(name):
+    """Internal identifier and worker fields are not on any Admin page."""
     found = sorted(
         {
             term
-            for message in messages(outside)
+            for message in messages(read(name))
             for term in INTERNAL_TERMS
             if term in message.lower() and (name, term) not in INTERNAL_ALLOWED
         }
     )
     assert not found, (
-        f"{name}: {', '.join(found)} shown outside a Technical details "
-        'disclosure (<details class="technical-details">)'
+        f"{name}: {', '.join(found)} shown on an Admin page; leave internal "
+        "references to the logs and pk-admin"
     )
 
 
@@ -401,8 +370,7 @@ def test_internal_field_names_are_under_technical_details(name):
 )
 def test_internal_term_exceptions_are_still_needed(name, term):
     """A stale exception is removed rather than left to hide a new use."""
-    outside = outside_technical_details(name)
-    assert any(term in message.lower() for message in messages(outside)), (
+    assert any(term in message.lower() for message in messages(read(name))), (
         f"{name}: remove ({name!r}, {term!r}) from INTERNAL_ALLOWED"
     )
 
@@ -414,11 +382,7 @@ def test_the_guards_catch_what_they_describe():
     assert max(len(m.split()) for m in messages(wall)) > LONG_PARAGRAPH_WORDS
     assert not PARAGRAPH.findall(DETAILS.sub("", ABOUT.sub("", about)))
     internal = '<dt>{% translate "Lease expires" %}</dt>'
-    hidden = '<details class="technical-details">' + internal + "</details>"
     assert "lease expires" in messages(internal)[0].lower()
-    assert not messages(TECHNICAL.sub("", hidden))
-    tagged = '<details data-x class="compact technical-details">' + internal
-    assert not messages(TECHNICAL.sub("", tagged + "</details>"))
 
 
 def test_the_intro_guard_catches_what_it_describes(tmp_path, monkeypatch):
@@ -484,44 +448,22 @@ def test_the_intro_guard_counts_each_kind_alone(tmp_path, monkeypatch):
     assert visible_intro_words("kinds.html") == 5
 
 
-def test_the_technical_guard_follows_includes(tmp_path, monkeypatch):
-    """A fragment used only inside Technical details passes; one other use fails.
-
-    The fragment is used as production-progress.html uses its rows: inside
-    the disclosure, and in a mirror source whose target is that disclosure.
-    """
-    row = '<dt>{% translate "Worker task state" %}</dt>'
-    include = '{% include "stewardship/rows.html" %}'
-    hidden = (
-        '<details class="technical-details"><dl data-live-mirror-target="m">'
-        + include
-        + "</dl></details>"
-    )
-    mirror = '<template data-live-mirror="m">' + include + "</template>"
-    cases = {
-        "inside": {"page.html": hidden + mirror},
-        "also-outside": {"page.html": hidden + mirror, "other.html": include},
-        "mirror-shown": {
-            "page.html": hidden + mirror,
-            "other.html": '<dl data-live-mirror-target="{{ x }}"></dl>',
-        },
-        "not-included": {},
+def test_the_pane_guard_catches_what_it_describes(tmp_path, monkeypatch):
+    """The pane guard flags the words or the class, even in a comment."""
+    pages = {
+        "words.html": '<details><summary>{% translate "Technical details" %}'
+        "</summary></details>",
+        "class.html": '<details class="compact technical-details"></details>',
+        "comment.html": "{% comment %}Technical details live here.{% endcomment %}",
+        "fine.html": '<details class="inline-help"><summary>Help</summary></details>',
     }
-    found = {}
-    for case, pages in cases.items():
-        root = tmp_path / case
-        root.mkdir()
-        (root / "rows.html").write_text(row)
-        for page, source in pages.items():
-            (root / page).write_text(source)
-        monkeypatch.setitem(globals(), "TEMPLATES", root)
-        found[case] = bool(messages(outside_technical_details("rows.html")))
-    assert found == {
-        "inside": False,
-        "also-outside": True,
-        "mirror-shown": True,
-        "not-included": True,
-    }
+    for page, source in pages.items():
+        (tmp_path / page).write_text(source)
+    monkeypatch.setitem(globals(), "TEMPLATES", tmp_path)
+    for page in ("words.html", "class.html", "comment.html"):
+        with pytest.raises(AssertionError):
+            test_no_admin_template_has_a_technical_details_pane(page)
+    test_no_admin_template_has_a_technical_details_pane("fine.html")
 
 
 # One help line under each Admin field (#2130; UX conventions, "Page
@@ -547,7 +489,6 @@ HELP_LINE_ALLOWED = {
     ("admin-banners.html", "Acknowledging hides the problems"),
     ("integration-settings.html", "Test access is not"),
     ("integrations.html", "A new key is"),
-    ("logs.html", "Usually easier: select an"),
     ("ministry-packet.html", "Ministry leaders receive the"),
     ("production-progress.html", "Items processed counts work"),
     ("refresh-schedule-preview.html", "Times skipped around Family"),

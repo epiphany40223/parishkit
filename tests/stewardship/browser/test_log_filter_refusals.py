@@ -20,9 +20,7 @@ ORDER = "Enter a whole Through date, no earlier than From, or clear it."
 NONE = "Tick at least one kind of entry to show."
 # Nothing ticked under an audit-only Activity: Audit record's own hint.
 AUDIT_ONLY = "This activity is made of audit records only; tick Audit record."
-IDENTIFIER = (
-    "Paste a whole identifier from the Technical details of an entry, or clear it."
-)
+IDENTIFIER = "Paste a whole identifier from a download of these entries, or clear it."
 BOXES = ("debug", "info", "warning", "error", "critical", "audit")
 # Apply's top in page coordinates.
 APPLY_BOX = (

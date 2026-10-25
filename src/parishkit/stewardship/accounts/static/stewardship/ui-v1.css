@@ -1616,19 +1616,8 @@ details.log-more-filters > .filter-bar { margin-top: .5rem; }
 .log-link-campaign { grid-column: 4; }
 .log-link-task { grid-column: 5; }
 .data-table .log-link-slots .icon-button { width: 2.25rem; margin: 0; }
-details.technical-details { margin: .35rem 0 0; padding: 0; border: 0; background: none; font-size: .875rem; }
-details.technical-details[open] { padding-bottom: 0; }
-details.technical-details dd { overflow-wrap: anywhere; }
-/* The Background task page's Technical details are two lists: the values
-   that never change for a task, then the ones its poll replaces (#2019).
-   They read as one: no space between them, and at two-column widths they
-   share one grid (subgrid), so labels and values line up across both. */
-.technical-details-lists { margin-block: 0 1rem; }
-.technical-details-lists > dl { margin: 0; }
-@media (min-width: 40rem) {
-  .technical-details-lists { display: grid; grid-template-columns: minmax(6rem, max-content) minmax(0, 1fr); gap: .5rem 1.5rem; }
-  .technical-details-lists > dl { grid-column: 1 / -1; grid-template-columns: subgrid; }
-}
+details.inline-help { margin: .35rem 0 0; padding: 0; border: 0; background: none; font-size: .875rem; }
+details.inline-help[open] { padding-bottom: 0; }
 
 [hidden] { display: none !important; }
 .content-editor { min-height: 12rem; overflow-wrap: anywhere; }
@@ -1964,7 +1953,7 @@ th:not([aria-sort]) .sort-indicator { opacity: .45; }
    screen (about 768px tall) with help collapsed. Scoped to Admin pages, so
    the Family portal keeps its roomier, phone-first spacing. :where() keeps
    these rules at element-level specificity, so they tighten only the shared
-   defaults and every more specific rule above (technical details, data
+   defaults and every more specific rule above (inline help, data
    tables, filter bars, .flow panels) still wins. */
 :where(.admin-body) main { padding-top: 1rem; }
 :where(.admin-body) main nav.breadcrumbs { margin-bottom: .5rem; }

@@ -31,7 +31,7 @@
   <tbody>
   {% for task in table.rows %}<tr>
     <th scope="row"><a href="{% url 'admin:background_task_page' task.id %}">{{ task.name }}</a>{% if task.refresh_label %} ({{ task.refresh_label }}){% endif %}{% if task.type == 'setup_source_load' %}<br><a href="{% url 'admin:setup_source_progress' task.id %}">{% translate "Open the setup load progress page" %}</a>{% endif %}</th>
-    <td>{% include "stewardship/task-state.html" with state=task.state %}{% if task.name != task.type %}<details class="technical-details" id="task-type-{{ task.id }}" data-keep-open><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Task type" %}</dt><dd><code>{{ task.type }}</code></dd></dl></details>{% endif %}</td>
+    <td>{% include "stewardship/task-state.html" with state=task.state %}</td>
     <td>{{ task.phase_text }}</td>
     <td>{% if task.progress.total %}{{ task.progress.display|out_of }}<br><progress value="{{ task.progress.current }}" max="{{ task.progress.total }}" aria-label="{% translate 'Task progress' %}"></progress>{% else %}{% translate "Waiting for progress details." %}{% endif %}</td>
     <td class="nowrap">{% if task.heartbeat_at %}<time datetime="{{ task.heartbeat_at }}" data-local-instant data-compact>{{ task.heartbeat_at }}</time>{% else %}—{% endif %}</td>
@@ -42,6 +42,6 @@
 </div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
-{# The page updates itself (#1586): every 30 seconds ui-v1.js re-reads the address shown (so its filters, sort, size and page) quietly in place through this hidden link, which names the table's region, and refreshes the table and counts; an opened Technical details stays open (data-keep-open). The page has no Refresh link. #}
+{# The page updates itself (#1586): every 30 seconds ui-v1.js re-reads the address shown (so its filters, sort, size and page) quietly in place through this hidden link, which names the table's region, and refreshes the table and counts. The page has no Refresh link. #}
 <a hidden data-in-place data-in-place-quiet data-reread-every="30000" href="{% url 'admin:background' %}#{{ table.anchor }}">{% translate "Check for updates" %}</a>
 {% endblock %}

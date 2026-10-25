@@ -184,14 +184,6 @@ def _row(archive, emails):
     }
 
 
-def _tombstone(archive, emails):
-    """One import in Technical details: its file, checksum and state."""
-    return {
-        "archive": archive,
-        "removed_by": emails.get(archive.removed_by_id, ""),
-    }
-
-
 def note_rows(archive):
     """The Review card's notes in full: (label, text, flagged) triples.
 
@@ -302,11 +294,10 @@ def _render(request, actor, selected, *, status=200, file_error=""):
     drawn on the file field with the page's error summary, so the review
     dialog marks the field and stays shut.
     """
-    rows = imports.archives()
-    active = [row for row in rows if row.state == "active"]
-    emails = _emails(
-        [row.imported_by_id for row in rows] + [row.removed_by_id for row in rows]
-    )
+    # Removed imports are not listed on the page (#2199): pk-admin history
+    # list prints every import with its file and checksum.
+    active = [row for row in imports.archives() if row.state == "active"]
+    emails = _emails([row.imported_by_id for row in active])
     table = whole_table(
         [_row(archive, emails) for archive in active],
         sorting=SORTING,
@@ -317,7 +308,6 @@ def _render(request, actor, selected, *, status=200, file_error=""):
         "stewardship/past-campaigns.html",
         {
             "table": table,
-            "tombstones": [_tombstone(archive, emails) for archive in rows],
             "refresh_url": _page_url(selected),
             "year_problem": _year_problem(),
             "max_bytes": MAX_ARCHIVE_BYTES,

@@ -299,8 +299,7 @@ def summary(actor, configuration, now, *, home=False):
             from parishkit.stewardship.jobs.views import TASK_NAMES
 
             result["recent_failures"] = [
-                # The plain task name leads; the internal type stays for
-                # display under Technical details.
+                # The plain task name; the internal type stays in the logs.
                 {**task, "name": TASK_NAMES.get(task["task_type"], task["task_type"])}
                 for task in failed.order_by("-updated_at", "-id").values(
                     "id", "task_type", "updated_at"

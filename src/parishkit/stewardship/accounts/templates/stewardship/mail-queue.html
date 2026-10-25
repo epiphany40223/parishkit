@@ -30,7 +30,4 @@
 <p class="visually-hidden" role="status" data-live-announcer="mail-queue"></p>
 {# live-status-v1.js updates this region by itself; the page has no Refresh link (#1586). #}
 <div id="mail-queue" data-in-place-region>{% include 'stewardship/mail-queue-status.html' %}</div>
-{# Technical details sit outside the region, so a poll never closes them; their list is its mirror target (mail-queue-technical-details.html), so an open disclosure stays open and current (#2016). #}
-{% if send %}<details class="technical-details"><summary>{% translate "Technical details" %}</summary>
-<dl data-live-mirror-target="mail-queue-details">{% include 'stewardship/mail-queue-technical-details.html' %}</dl></details>{% endif %}
 {% endblock %}

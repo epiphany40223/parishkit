@@ -165,8 +165,9 @@ def test_review_apply_replace_and_remove_in_the_page(auth_service, google):
         after = text(browser.get(PAGE))
     assert not CampaignArchive.objects.filter(state="active").exists()
     assert "No past campaigns are imported yet" in after
-    # Technical details list every import with its checksum, tombstones too.
-    assert active.checksum in after and "Removed or replaced" in after
+    # The page lists no checksums or removed imports (#2199); pk-admin
+    # history list does.
+    assert active.checksum not in after and "Removed or replaced" not in after
     kinds = list(
         AuditEvent.objects.filter(event_type__startswith="campaign_archive_")
         .order_by("created_at")

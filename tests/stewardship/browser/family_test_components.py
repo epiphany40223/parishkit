@@ -35,10 +35,6 @@ DENIED = reverse("admin:campaign_mail_families", args=[UUID(int=706)])
 # themselves (#1586); a route answers its reads with PENDING_SETTLED.
 PENDING = reverse("admin:campaign_mail_families", args=[UUID(int=707)])
 PENDING_SETTLED = "/family-test-settled"
-# PENDING once a newer Family test has taken the newest test's place (same
-# Family list length and times, a new reference and DUID), still pending, so
-# a test sees an open Technical details take the new reference (#1586).
-PENDING_NEWER = "/family-test-newer"
 # Routed answers to CHECK, fetched by GET from these addresses.
 REVIEW = "/family-test-review"
 REFUSED = "/family-test-refused"
@@ -108,8 +104,6 @@ def _page(context, admin, address, **values):
         }
         for index in range(1, 25)
     ]
-    if values.pop("newer", False):
-        items[0] = items[0] | {"id": UUID(int=7000), "duid": 2000}
     return family_tests_page(
         context,
         admin,
@@ -163,7 +157,6 @@ def components(context, admin):
         DENIED: _review(context, admin, DENIED),
         PENDING: _page(context, admin, PENDING, refresh=True),
         PENDING_SETTLED: _page(context, admin, PENDING),
-        PENDING_NEWER: _page(context, admin, PENDING, refresh=True, newer=True),
     }
     return {path: ("text/html", body) for path, body in pages.items()}
 

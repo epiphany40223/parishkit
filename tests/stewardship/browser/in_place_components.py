@@ -38,10 +38,6 @@ PRESENCE = reverse("admin:presence")
 # Families than the page first showed.
 BACKGROUND_LATER = "/in-place-background-later"
 PRESENCE_LATER = "/in-place-presence-later"
-# Background work showing every task (two rows, each with its own Technical
-# details), and the routed answer to its re-read with one more running.
-BACKGROUND_ALL = f"{BACKGROUND}?state=all"
-BACKGROUND_ALL_LATER = "/in-place-background-all-later"
 # A Rows per page choice of 25, and the routed answer to its re-read.
 BACKGROUND_25_LATER = "/in-place-background-25-later"
 FORM = "/in-place-form"
@@ -265,14 +261,6 @@ def components(context, admin):
         # The table's Next leads to page 2.
         f"{BACKGROUND}?{first.next_query}": html(
             "stewardship/background.html", second_context
-        ),
-        BACKGROUND_ALL: html(
-            "stewardship/background.html",
-            background_page(1, 1, tasks=2, state="all")[1],
-        ),
-        BACKGROUND_ALL_LATER: html(
-            "stewardship/background.html",
-            background_page(1, 2, tasks=2, state="all")[1],
         ),
         f"{BACKGROUND}?{size_query(first, 25)}": html(
             "stewardship/background.html", background_page(1, 1, size=25)[1]

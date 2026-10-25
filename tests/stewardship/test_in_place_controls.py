@@ -53,7 +53,7 @@ def test_background_updates_itself_in_place():
     """Background work has no Refresh link (#1586): a hidden periodic
     re-read link names the table region as its fragment (ui-v1.js re-reads
     the address shown, so the filter, sort, size and page are kept), the
-    work counts follow it, and an opened Technical details stays open."""
+    work counts follow it, and a row has no Technical details (#2199)."""
     task = {
         "id": str(UUID(int=1)),
         "type": "source_refresh",
@@ -90,10 +90,7 @@ def test_background_updates_itself_in_place():
         'href="/admin/system/background/#table">'
     )
     assert '<p id="background-counts" data-table-sync>' in page
-    assert (
-        f'<details class="technical-details" id="task-type-{task["id"]}" '
-        "data-keep-open>"
-    ) in page
+    assert "<details" not in page.split("<tbody>", 1)[1]
 
 
 def test_presence_updates_itself_in_place():
@@ -577,9 +574,7 @@ def test_remaining_live_status_pages_update_themselves():
 def test_task_page_regions_survive_its_quiet_refresh():
     """The task page has no Refresh task link (#1586); when its task ends it
     re-reads its own address quietly (#869). The latest retry is a region.
-    The technical details' changing values are a mirror target inside the
-    disclosure, which every poll of the status region follows (#2019), so
-    neither the polls nor that refresh ever close it."""
+    The page has no Technical details (#2199)."""
     events = [
         {
             "version": 1,
@@ -616,59 +611,7 @@ def test_task_page_regions_survive_its_quiet_refresh():
     )
     assert "Refresh task" not in page and 'id="task-refresh"' not in page
     assert '<div id="task-latest" data-in-place-region>' in page
-    details = page.split('<details class="technical-details">', 1)[1]
-    details = details.split("</details>", 1)[0]
-    assert details.count('data-live-mirror-target="task-details"') == 1
-    assert "as of when" not in details and "reload" not in details
-
-
-def test_task_status_carries_its_page_technical_details():
-    """The task status region carries a lasting copy of the task page's
-    changing Technical details (#2019), the same rows the page draws in the
-    disclosure, so a poll that brings a new heartbeat updates an open
-    disclosure without redrawing the region. A page that names its own
-    region (Refresh from ParishSoft, Update ParishSoft) has no such
-    disclosure and gets no copy."""
-    task = {
-        "id": UUID(int=5),
-        "type": "source_refresh",
-        "state": "running",
-        "active": True,
-        "attempt": 2,
-        "retry_sequence": 1,
-        "created_at": NOW.isoformat(),
-        "updated_at": NOW.isoformat(),
-        "heartbeat_at": NOW.isoformat(),
-        "lease_expires_at": NOW.isoformat(),
-        "progress": {"phase": "fetching", "current": 0, "total": 0},
-    }
-    values = {"task": task, "work": {"events": []}}
-    status = render_to_string("stewardship/background-task-status.html", values)
-    copy = re.search(
-        r'<template data-live-mirror="task-details" data-live-mirror-lasting>'
-        r"(.*?)</template>",
-        status,
-        re.S,
-    )
-    assert copy is not None
-    for label in ("State", "Phase", "Last heartbeat", "Lease expires"):
-        assert f"<dt>{label}</dt>" in copy[1]
-    assert "<code>fetching</code>" in copy[1]
-    page = render_to_string(
-        "stewardship/background-task.html", values | {"history": None}
-    )
-    target = re.search(
-        r'<dl id="task-details" data-live-mirror-target="task-details">(.*?)</dl>',
-        page,
-        re.S,
-    )
-    assert target is not None and target[1] == copy[1]
-    # The values that never change for a task stay outside the copy.
-    assert "Task ID" not in copy[1] and "Task ID" in page
-    named = render_to_string(
-        "stewardship/background-task-status.html", values | {"region_id": "r"}
-    )
-    assert "data-live-mirror" not in named
+    assert "<details" not in page and "data-live-mirror" not in page
 
 
 def test_change_status_never_follows_back_to_a_settings_page():

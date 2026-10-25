@@ -38,12 +38,6 @@ data-refresh-url (this page's address, with its sort).
 {% translate "Remove {name}?" as title_one %}{% translate "Remove {count} years?" as title_many %}{% translate "The year's figures and kept Family rows are deleted, and Campaign comparison stops showing the year. A record of the import (its year, file checksum, counts, and who removed it and when) is kept." as body %}{% translate "This cannot be undone, but the year's file can be imported again later." as caution %}{% translate "Remove" as accept %}
 {% include "stewardship/components/confirm-dialog.html" with dialog_id="past-campaign-remove" form_id="past-campaign-actions" fallback="past-campaigns-caption" title_one=title_one title_many=title_many body=body caution=caution accept=accept done_one=_("Removed {name}.") done_many=_("Removed {count} years.") %}
 {% else %}<p id="past-campaigns-caption" tabindex="-1">{% translate "No past campaigns are imported yet. Add a year's archive file below." %}</p>{% endif %}
-{% if tombstones %}<details class="technical-details"><summary>{% translate "Technical details" %}</summary>
-<div class="table-scroll" tabindex="0" role="region" aria-labelledby="past-campaign-files-caption">
-<table class="data-table whole-words"><caption id="past-campaign-files-caption">{% translate "Every import, with its file and SHA-256 checksum" %}</caption>
-<thead><tr><th scope="col">{% translate "Year" %}</th><th scope="col">{% translate "State" %}</th><th scope="col">{% translate "File" %}</th><th scope="col">{% translate "SHA-256" %}</th><th scope="col">{% translate "Removed" %}</th></tr></thead>
-<tbody>{% for row in tombstones %}<tr><th scope="row">{{ row.archive.campaign_year }}</th><td>{% if row.archive.state == "active" %}{% translate "Imported" %}{% else %}{% translate "Removed or replaced" %}{% endif %}</td><td>{{ row.archive.file_name|default:"—" }}</td><td><code>{{ row.archive.checksum }}</code></td><td>{% if row.archive.removed_at %}<time class="nowrap" datetime="{{ row.archive.removed_at|instant }}" data-local-instant data-compact>{{ row.archive.removed_at|instant }}</time>{% if row.removed_by %} {% blocktranslate with who=row.removed_by %}by {{ who }}{% endblocktranslate %}{% endif %}{% else %}—{% endif %}</td></tr>{% endfor %}</tbody>
-</table></div></details>{% endif %}
 </div>
 {% comment %}
 This campaign's archive (#1018 part (a)): Download campaign archive posts its

@@ -46,17 +46,13 @@
   participation exports return with the filters the export used (#1345).
 {% endcomment %}{% if report_url != admin_chrome.back.url %}<p><a href="{{ report_url }}">{% blocktranslate %}Return to {{ report_name }}{% endblocktranslate %}</a></p>{% endif %}
 <div id="export-lock" data-in-place-region>{% if not mutable %}<p class="notice" id="export-locked">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so new exports, cancelling and retrying are unavailable until it finishes or is cancelled; going live can take days. Files that are ready can still be downloaded." %}</p>{% endif %}</div>
-<details class="technical-details"><summary>{% translate "Technical details" %}</summary>
 <dl><dt>{% translate "Format" %}</dt><dd>{{ job.format|upper }}</dd>
-<dt>{% translate "Requested by (user reference)" %}</dt><dd>{{ job.requester_id }}</dd>
 {% if job.report == 'additional_information' %}
 <dt>{% translate "Matching items" %}</dt><dd>{{ job.information_snapshot.row_count|number }}</dd>
 <dt>{% translate "Workflow history" %}</dt><dd>{% if job.parameters.history %}{% translate "Included" %}{% else %}{% translate "Not included" %}{% endif %}</dd>
-<dt>{% translate "ParishSoft data load" %}</dt><dd>{{ job.information_source_generation|number }}</dd>
 <dt>{% translate "Captured at" %}</dt><dd><time datetime="{{ job.information_snapshot.created_at|date:'c' }}" data-local-instant>{{ job.information_snapshot.created_at|date:'c' }}</time></dd>
 {% elif job.financial_snapshot_id %}
 <dt>{% translate "Matching Families" %}</dt><dd>{{ job.financial_snapshot.row_count|number }}</dd>
-<dt>{% translate "ParishSoft data load" %}</dt><dd>{{ job.financial_source_generation|number }}</dd>
 <dt>{% translate "Captured at" %}</dt><dd><time datetime="{{ job.financial_snapshot.created_at|date:'c' }}" data-local-instant>{{ job.financial_snapshot.created_at|date:'c' }}</time></dd>
 {% elif job.family_test_names_snapshot_id %}
 <dt>{% translate "Families" %}</dt><dd>{{ job.family_test_names_snapshot.row_count|number }}</dd>
@@ -67,7 +63,6 @@
 <dt>{% translate "Captured at" %}</dt><dd><time datetime="{{ job.comparison_snapshot.created_at|date:'c' }}" data-local-instant>{{ job.comparison_snapshot.created_at|date:'c' }}</time></dd>
 {% elif job.ministry_snapshot_id %}
 <dt>{% translate "Matching results" %}</dt><dd>{{ job.ministry_snapshot.row_count|number }}</dd>
-<dt>{% translate "ParishSoft data load" %}</dt><dd>{{ job.ministry_source_generation|number }}</dd>
 <dt>{% translate "Captured at" %}</dt><dd><time datetime="{{ job.ministry_snapshot.created_at|date:'c' }}" data-local-instant>{{ job.ministry_snapshot.created_at|date:'c' }}</time></dd>
 {% elif job.timeline_snapshot_id %}
 <dt>{% translate "Timeline lines" %}</dt><dd>{{ job.timeline_snapshot.row_count|number }}</dd>
@@ -75,15 +70,11 @@
 <dt>{% translate "Captured at" %}</dt><dd><time datetime="{{ job.timeline_snapshot.created_at|date:'c' }}" data-local-instant>{{ job.timeline_snapshot.created_at|date:'c' }}</time></dd>
 {% elif job.directory_snapshot_id %}
 <dt>{% translate "Matching Families" %}</dt><dd>{{ job.directory_snapshot.row_count|number }}</dd>
-<dt>{% translate "ParishSoft data load" %}</dt><dd>{{ job.directory_source_generation|number }}</dd>
 <dt>{% translate "Captured at" %}</dt><dd><time datetime="{{ job.directory_snapshot.created_at|date:'c' }}" data-local-instant>{{ job.directory_snapshot.created_at|date:'c' }}</time></dd>
 {% else %}
 <dt>{% translate "Population" %}</dt><dd>{% if job.parameters.population_scope == 'historical' %}{% translate "Historical as of day" %}{% else %}{% translate "Current population" %}{% endif %}</dd>
-<dt>{% translate "ParishSoft data load" %}</dt><dd>{{ job.fact_set.source_generation|number }}</dd>
-<dt>{% translate "Responses included up to number" %}</dt><dd>{{ job.fact_set.submission_watermark|number }}</dd>
 {% endif %}
 <dt>{% translate "Requested at" %}</dt><dd><time datetime="{{ job.created_at|date:'c' }}" data-local-instant>{{ job.created_at|date:'c' }}</time></dd>
 <dt>{% translate "Export timezone" %}</dt><dd>{{ job.browser_timezone }}</dd></dl>
 <p>{% translate "A retry uses exactly the same data and request time as the original. Refreshing this page does not extend your sign-in." %}</p>
-</details>
 {% endblock %}

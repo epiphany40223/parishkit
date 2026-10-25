@@ -68,8 +68,8 @@ def observation(**values):
 
 @pytest.mark.parametrize("width", [320, 1280])
 def test_load_parish_data_moves_on_in_place(page, component_origin, axe_source, width):
-    """The load's phases, collections and counts move on without a reload; an
-    open Technical details stays open; completion shows Continue and stops."""
+    """The load's phases, collections and counts move on without a reload;
+    focus outside the region stays put; completion shows Continue and stops."""
     from playwright.sync_api import expect
 
     from .test_components import axe_violations
@@ -109,9 +109,8 @@ def test_load_parish_data_moves_on_in_place(page, component_origin, axe_source, 
     page.evaluate(MARK)
     assert "downloading" in page.locator("[data-progress-summary]").inner_text()
     expect(page.locator("[data-progress-elapsed]")).to_contain_text("minute ago")
-    details = page.locator("details", has_text="Technical details")
-    summary = details.locator("summary")
-    summary.click()
+    # A control outside the region (the About panel's) keeps focus.
+    summary = page.locator("details.about-page > summary")
     summary.focus()
     above = place(page, "h1")
     assert axe_violations(page, axe_source) == []
@@ -119,9 +118,6 @@ def test_load_parish_data_moves_on_in_place(page, component_origin, axe_source, 
     has_text(page.locator("[data-task-counts]"), "1,234 of 5,000 (25%)")
     visible(page.locator("[data-load-records]"))
     assert "In progress" in page.locator('[data-load-phase="staging"]').inner_text()
-    # The disclosure stayed open and shows the new phase; focus stayed on it.
-    assert details.evaluate("node => node.open")
-    has_text(details.locator("[data-task-phase]"), "staging")
     focused(summary)
     assert page.evaluate(MARKED) == "kept"
     assert same_place(place(page, "h1"), above)
@@ -180,10 +176,10 @@ def test_load_continue_waits_in_the_bottom_action_row(
     assert "once the parish data is loaded" in reason.inner_text()
     visible(reason)
     back = row.locator("a.setup-back")
-    # The row is the page's last content, below Technical details.
-    details = page.locator("details", has_text="Technical details")
-    assert place(page, "#setup-load-actions")[1] > place(page, "details")[1]
-    assert details.count() == 1
+    # The row is the page's last content, below the Last checked line.
+    checked = place(page, "[data-progress-checked]")[1]
+    assert place(page, "#setup-load-actions")[1] > checked
+    assert page.get_by_text("Technical details").count() == 0
     slot = place(page, "#setup-load-continue-reason")
     started = waiting.bounding_box()
     assert axe_violations(page, axe_source) == []
@@ -263,8 +259,8 @@ def test_finishing_setup_moves_on_in_place(page, component_origin, axe_source, w
     )
     page.goto(component_origin + "/setup-installation")
     page.evaluate(MARK)
-    details = page.locator("details", has_text="Technical details")
-    summary = details.locator("summary")
+    # A control outside the region (the About panel's) keeps focus.
+    summary = page.locator("details.about-page > summary")
     summary.focus()
     above = place(page, "h1")
     page.clock.fast_forward(2000)

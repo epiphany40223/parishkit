@@ -143,7 +143,6 @@ def test_export_status_updates_itself_and_downloads_once(page, component_origin)
     )
     page.goto(component_origin + "/report-export-pending")
     visible(page.get_by_text("Preparing your file"))
-    assert not page.get_by_text("Requested by (user reference)").is_visible()
     page.locator("[data-export-state=ready]").wait_for()
     page.wait_for_timeout(500)
     assert downloads == ["POST"]

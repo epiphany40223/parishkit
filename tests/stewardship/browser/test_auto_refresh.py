@@ -15,8 +15,6 @@ from .conftest import NOW
 from .in_place_components import (
     BACKGROUND,
     BACKGROUND_25_LATER,
-    BACKGROUND_ALL,
-    BACKGROUND_ALL_LATER,
     BACKGROUND_LATER,
     FORM,
     PRESENCE,
@@ -136,23 +134,6 @@ def test_focus_on_the_bottom_next_stays_there(page, component_origin):
 # Which of the table's Next links has focus (0 the top one), or -1.
 FOCUSED_NEXT = """() => [...document.querySelectorAll('#table [data-table-next]')]
     .indexOf(document.activeElement)"""
-
-
-def test_focus_on_a_rows_technical_details_stays_on_that_row(page, component_origin):
-    """Every row has its own Technical details summary with the same text:
-    focus on the second row's stays on that row's fresh summary."""
-    opened(page, component_origin, BACKGROUND_ALL)
-    reads = answer_reads(page, component_origin, BACKGROUND_ALL, BACKGROUND_ALL_LATER)
-    details = page.locator("#table details.technical-details")
-    assert details.count() == 2
-    second = details.nth(1).get_attribute("id")
-    details.nth(1).locator("summary").focus()
-    page.clock.fast_forward(TICK)
-    has_text(page.locator("#background-counts"), counts(2))
-    eventually(page, IDLE)
-    assert page.evaluate("document.activeElement.tagName") == "SUMMARY"
-    assert page.evaluate("document.activeElement.closest('details').id") == second
-    assert len(reads) == 1
 
 
 def test_rereads_wait_while_the_reader_is_mid_edit(page, component_origin):

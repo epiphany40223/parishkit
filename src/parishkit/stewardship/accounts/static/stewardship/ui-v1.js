@@ -1894,9 +1894,8 @@
   // the region it is in: its id, else its nearest ancestor with an id (the
   // region itself at most) and its position among that ancestor's elements
   // of the same tag, link target and text. The position matters because a
-  // paged table draws its navigator twice (two Next links alike) and every
-  // row has its own Technical details summary: the first match would move
-  // focus to another copy (#1586 review). Null when focus is not in an
+  // paged table draws its navigator twice (two Next links alike): the
+  // first match would move focus to another copy (#1586 review). Null when focus is not in an
   // in-place region.
   const heldFocus = () => {
     const node = document.activeElement;

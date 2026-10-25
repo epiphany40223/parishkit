@@ -194,7 +194,6 @@ def test_email_page_names_the_email_and_reads_in_the_requested_order(
         "What did you find?",
         "Family: Castellanos",
         "Attempt history",
-        "Technical details",
         "Latest background task",
         "Admin evidence and decisions",
     ]

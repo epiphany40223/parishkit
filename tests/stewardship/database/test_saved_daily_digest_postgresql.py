@@ -264,7 +264,8 @@ def test_the_retained_comparison_section_is_shown_as_saved(
             _, page = read(browser, path)
         page = page.decode()
         assert "data-digest-comparison" in page
-        assert "a" * 64 in page and "b" * 64 in page
+        # The files' checksums are not shown (#2199).
+        assert "a" * 64 not in page and "b" * 64 not in page
         for tile in SECTION["tiles"]:
             for line in tile["lines"]:
                 # Each saved line is drawn word for word, escaped and with

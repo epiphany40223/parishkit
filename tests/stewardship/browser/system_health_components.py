@@ -48,9 +48,6 @@ STATUS = "/system-health/status"
 # A healthy page whose polls bring the same state again.
 STEADY = "/system-health-steady"
 STEADY_STATUS = "/system-health-steady/status"
-# STEADY's status once the system is in Testing: the Version and services
-# tile's Technical details show the new mode (#2016).
-STEADY_TESTING = "/system-health-steady/status-testing"
 # Take a backup now (ADM-13 PR 3b): the page, and the answers its preview and
 # confirmation POSTs get (the browser test routes the POSTs to them). The
 # page is served at its real address, where the review dialog posts.
@@ -735,13 +732,6 @@ def components(context, admin):
         STEADY_STATUS: (
             "text/html",
             render_to_string("stewardship/system-health-status.html", values(False)),
-        ),
-        STEADY_TESTING: (
-            "text/html",
-            render_to_string(
-                "stewardship/system-health-status.html",
-                values(False, mode="testing"),
-            ),
         ),
         DATED: (
             "text/html",
