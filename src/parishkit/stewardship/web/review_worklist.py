@@ -907,6 +907,15 @@ class Worklist:
     # #2131): a stream whose table fits its box only by wrapping its text
     # columns keeps the four 44px decision toggles from taking that room.
     paired_actions: bool = False
+    # Where the table's review region sends its live read (#2174,
+    # ``review_live``) when that is not ``action`` itself: Ministry requests
+    # adds its remembered view's token, so a redrawn row's links keep it.
+    live_address: str = ""
+    # A review region's check (#2174, ``review_live.narrow``) sets whether
+    # the page's table draws the selection column, so a changed row keeps
+    # its table's cells even when the reader may no longer decide in bulk
+    # (a held campaign); None is the table's own choice (``selectable``).
+    select_column: bool | None = None
 
     max_bulk = MAX_BULK
 
@@ -977,12 +986,21 @@ class Worklist:
     @property
     def selectable(self):
         """Whether the page draws the selection column and bulk bar."""
+        if self.select_column is not None:
+            return self.select_column
         return bool(self.bulk) and not self.bulk_too_many
 
     @property
     def shown_columns(self):
         """The identity columns drawn as columns of their own (not dated)."""
         return tuple(column for column in self.columns if not column.dated)
+
+    @property
+    def live_columns(self):
+        """The optional columns this table draws, as its review region sends
+        them with each read (``review_live.COLUMNS``, #2174)."""
+        shown = (("now", self.shows_now), ("select", self.selectable))
+        return "-".join(name for name, on in shown if on)
 
     @property
     def span(self):

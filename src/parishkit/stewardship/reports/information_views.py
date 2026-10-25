@@ -46,6 +46,7 @@ from parishkit.stewardship.responses.information import (
     latest_revision,
 )
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web import review_live
 from parishkit.stewardship.web.contracts import (
     ErrorCode,
     FieldError,
@@ -61,6 +62,7 @@ from parishkit.stewardship.web.part_status import (
 from parishkit.stewardship.web.refusals import with_status_code
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.review_worklist import (
+    EVERY_STAGE,
     REBOUND,
     RETIRED_DATES,
     drop_retired_dates,
@@ -109,8 +111,12 @@ CONTACTS = Part(
 
 def _principal(request, store, *, read_only=False):
     """Every list, request page and decision reloads the current Staff capability."""
+    # A review region's check (#2174) never extends the sign-in.
     principal = authenticated_admin(
-        request, store=store, activity=not read_only, read_only=read_only
+        request,
+        store=store,
+        activity=not read_only and not review_live.checking(request),
+        read_only=read_only,
     )
     return require(principal, Capability.ADDITIONAL_FOLLOWUP)
 
@@ -214,12 +220,16 @@ def decision_label(revision):
     )
 
 
-def _list_context(campaign_id, query, paging, principal):
-    """The worklist page's context: the placed requests, one page of them."""
+def _list_context(campaign_id, query, paging, principal, live=None):
+    """The worklist page's context: the placed requests, one page of them.
+
+    With ``live`` (a review region's check, #2174) the rows are the drawn
+    requests that changed, History included, and ``live_count`` their count.
+    """
     action = reverse("admin:information_queue")
-    metadata, rows, counts = requests(campaign_id, query)
+    metadata, rows, counts = requests(campaign_id, query, history=live is not None)
     table = paginate(
-        rows,
+        review_live.pick(rows, live),
         paging,
         carry=list(page_fields(query.form_values()).items()),
         sorting=SORTING,
@@ -229,7 +239,11 @@ def _list_context(campaign_id, query, paging, principal):
     link_families(campaign_id, table.rows)
     mutable = _mutable(campaign_id)
     worklist, table = worklist_page(counts, query, table, action, mutable=mutable)
+    count = None
+    if live is not None:
+        worklist, table, count = review_live.narrow(worklist, table, live)
     return {
+        "live_count": count,
         "metadata": metadata,
         "worklist": worklist,
         "table": table,
@@ -315,9 +329,19 @@ def _respond(request, campaign_id, *, item_id=None):
         # admission has no activity-only form, so the read-only check is
         # how it leaves the sign-in alone (Users uses ``passive``).
         automatic = item_id is not None and passive_read(request)
+        # A review region's check of the list (#2174) carries its drawn
+        # items alone, never extends the sign-in, and is audited only when
+        # it brings changed requests in.
+        live = review_live.drawn(request) if item_id is None else None
+        automatic = automatic or live is not None
         principal = _principal(request, service.store, read_only=automatic)
         notice, history_page, history_only, decision = None, 1, False, None
-        if item_id is None:
+        if live is not None:
+            if not review_live.alone(request):
+                raise ValueError("A live read carries nothing else.")
+            paging = dict(review_live.EVERY_ROW)
+            query = WorklistQuery(stage=EVERY_STAGE)
+        elif item_id is None:
             # A link may carry a Stage alone, a My review work card's
             # ``?stage=`` (#1818); WorklistQuery.parse checks its value.
             # Search and table choices stay private POST state. The retired
@@ -355,15 +379,22 @@ def _respond(request, campaign_id, *, item_id=None):
                 and "page" in values
                 and request.headers.get("X-Requested-With") == "fetch"
             )
-        _audit(principal, campaign_id, Outcome.STARTED, automatic=automatic)
-        finalized = False
+        if live is None:
+            _audit(principal, campaign_id, Outcome.STARTED, automatic=automatic)
+        finalized, changed = False, 0
 
         def finish(completed):
-            """Read-only guards close before writing permanent access evidence."""
+            """Read-only guards close before writing permanent access evidence.
+
+            A review region's check records only its completion, and only
+            when it brought changed requests in (or failed).
+            """
             nonlocal finalized
             if finalized:
                 return
             finalized = True
+            if live is not None and completed and not changed:
+                return
             try:
                 _audit(
                     principal,
@@ -383,13 +414,18 @@ def _respond(request, campaign_id, *, item_id=None):
 
         def content():
             """All lazy SQL and rendering stay within the response-owned barrier."""
+            nonlocal changed
             context = (
-                _list_context(campaign_id, query, paging, principal)
+                _list_context(campaign_id, query, paging, principal, live)
                 if item_id is None
                 else _item_context(
                     campaign_id, item_id, history_page, principal, history_only
                 )
             )
+            if live is not None:
+                changed = context["live_count"]
+                if not changed:
+                    return iter((b"",))
             context |= {"campaign_id": campaign_id, "notice": notice}
             if item_id is None:
                 # The export form's own key, so a repeated submit is a replay.

@@ -25,7 +25,7 @@ from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.accounts.sessions import authenticated_admin
+from parishkit.stewardship.accounts.sessions import authenticated_admin, automatic_read
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
@@ -37,6 +37,7 @@ from parishkit.stewardship.time_entry import (
     is_blank,
     parse_time,
 )
+from parishkit.stewardship.web import review_live
 from parishkit.stewardship.web.contracts import (
     ErrorCode,
     FieldError,
@@ -109,6 +110,7 @@ from .ministry_followup import (
     valid_ministry,
 )
 from .ministry_worklist import (
+    EVERY,
     WorklistQuery,
     for_reader,
     read_rows,
@@ -155,8 +157,14 @@ def _recalled(request, campaign_id, token):
 
 def _principal(request, store, *, read_only=False):
     """Every queue, request and mutation reloads the current follow-up scope."""
+    # A review region's check (#2174) never extends the sign-in.
     principal = authenticated_admin(
-        request, store=store, activity=not read_only, read_only=read_only
+        request,
+        store=store,
+        activity=not read_only
+        and not automatic_read(request)
+        and not review_live.checking(request),
+        read_only=read_only,
     )
     if not can_follow_up(principal):
         raise unscoped(principal, "Ministry follow-up is unavailable.")
@@ -208,13 +216,20 @@ def _error(campaign_id, *, request_id=None, status=400, link=False):
     return with_status_code(response, *(["bad_link"] if link else []))
 
 
-def _audit(principal, campaign_id, outcome, ministry=None):
+def _audit(principal, campaign_id, outcome, ministry=None, *, automatic=False):
     """Retain parish-owned access evidence, not private search or displayed values.
 
     A request page names its Ministry (``ministry``): the page shows that
     Member's contact details, so its view is audited with Ministry scope, as
-    the retired Members joining and leaving lists were (#1157).
+    the retired Members joining and leaving lists were (#1157). ``automatic``
+    marks a review region's check that brought changed rows in (#2174), as a
+    report's automatic view is marked (#1620).
     """
+    context = {"outcome": outcome}
+    if ministry is not None:
+        context["ministry_duid"] = ministry
+    if automatic:
+        context["automatic"] = True
     # An audit append takes no row locks, so it need not join the
     # writers' work order; waiting there stalled report pages behind
     # every source promotion and installer.
@@ -229,8 +244,7 @@ def _audit(principal, campaign_id, outcome, ministry=None):
             subject_id=campaign_id,
             parish_id=system.active_configuration.parish.pk,
             campaign_id=campaign_id,
-            context={"outcome": outcome}
-            | ({} if ministry is None else {"ministry_duid": ministry}),
+            context=context,
         )
 
 
@@ -435,6 +449,9 @@ def _page_response(
     try:
         service = runtime()
         principal = _principal(request, service.store)
+        # A review region's check of the worklist (#2174): its drawn items,
+        # with the page's remembered view's token for the rows' links.
+        live = review_live.drawn(request) if request_id is None else None
         if request_id is None:
             if campaign_id is None:
                 # No current campaign: the "no campaign" page, as Ministry
@@ -446,7 +463,30 @@ def _page_response(
                 )
                 response["Cache-Control"] = "no-store"
                 return response
-            if packet is not None:
+            if live is not None:
+                allowed = {review_live.LIVE, review_live.COLUMNS, "queue"}
+                if not set(request.GET) <= allowed:
+                    raise ValueError("A live read carries nothing else.")
+                # The remembered view's filters and Members choice (the
+                # rows its page drew, and decorated against), at every
+                # stage, unpaged, in the reader's scope; kept to the drawn
+                # rows below. Never remembered again.
+                live_token = queue_token(request.GET.get("queue", ""))
+                if (
+                    live_token
+                    and recall_queue(request, QUEUE, campaign_id, live_token) is None
+                ):
+                    live_token = ""
+                query = for_reader(
+                    replace(
+                        _recalled(request, campaign_id, live_token),
+                        stage=EVERY,
+                        page=1,
+                        size=str(review_live.MAX_LIVE),
+                    ),
+                    principal,
+                )
+            elif packet is not None:
                 # The packet's POST body is not a worklist view: the default.
                 query = WorklistQuery()
             elif request.GET and set(request.GET) == {"queue"}:
@@ -458,9 +498,12 @@ def _page_response(
             else:
                 query = _queue_query(request, principal, parameters)
             history_page = 1
-            # Remembered before the response streams: the session is saved
-            # once the view returns.
-            token = remember_queue(request, QUEUE, campaign_id, query.view_values())
+            if live is not None:
+                token = live_token
+            else:
+                # Remembered before the response streams: the session is
+                # saved once the view returns.
+                token = remember_queue(request, QUEUE, campaign_id, query.view_values())
             queue_view, history_only = query, False
         else:
             values = filters(request.GET, allowed={"page", "queue"})
@@ -488,14 +531,17 @@ def _page_response(
         # queue page: read here, before the guarded read-only response,
         # because its definer records its own audit event. A refused read
         # is a refused page (PermissionError, below).
+        # A check (#2174) draws no By Ministry Leaders and records only its
+        # completion, and only when it brought changed rows in.
         coverage = (
             read_coverage(request.session.session_key)
-            if request_id is None and reads_every_ministry(principal)
+            if request_id is None and reads_every_ministry(principal) and live is None
             else None
         )
-        _audit(principal, campaign_id, Outcome.STARTED)
+        if live is None:
+            _audit(principal, campaign_id, Outcome.STARTED)
         # The request's Ministry, once read, for the completion event.
-        finalized, shown_ministry = False, None
+        finalized, shown_ministry, changed = False, None, 0
 
         def finish(completed):
             """Read-only guards close before writing permanent access evidence."""
@@ -503,12 +549,15 @@ def _page_response(
             if finalized:
                 return
             finalized = True
+            if live is not None and completed and not changed:
+                return
             try:
                 _audit(
                     principal,
                     campaign_id,
                     Outcome.SUCCEEDED if completed else Outcome.FAILED,
                     shown_ministry,
+                    automatic=live is not None,
                 )
             except (DatabaseError, StorageInvariantError) as error:
                 emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
@@ -531,21 +580,34 @@ def _page_response(
             return True
 
         def queue_content():
-            """The worklist page, its By Ministry counts and its packet."""
+            """The worklist page, its By Ministry counts and its packet.
+
+            A review region's check (#2174) keeps only the drawn requests
+            that changed, and answers nothing when none did.
+            """
+            nonlocal changed
             mutable = mutable_now()
             # The worklist reads an empty campaign as empty for Staff and
             # Administrators; its By Ministry read cross-checks that (#1133).
             result = read_rows(campaign_id, query, principal, empty=True)
+            listed = worklist_context(
+                campaign_id,
+                query,
+                principal,
+                result,
+                token=token,
+                mutable=mutable,
+                action=reverse("admin:ministry_report"),
+                live=live,
+            )
+            if live is not None:
+                listed["worklist"], listed["table"], changed = review_live.narrow(
+                    listed["worklist"], listed["table"], live
+                )
+                if not changed:
+                    return iter((b"",))
             context = dict(
-                worklist_context(
-                    campaign_id,
-                    query,
-                    principal,
-                    result,
-                    token=token,
-                    mutable=mutable,
-                    action=reverse("admin:ministry_report"),
-                ),
+                listed,
                 **_overview(campaign_id, principal, coverage),
                 campaign_id=campaign_id,
                 mutable=mutable,

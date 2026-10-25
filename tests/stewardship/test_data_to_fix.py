@@ -108,7 +108,8 @@ def test_a_section_shows_exactly_when_its_page_admits(role, monkeypatch):
             module, "authenticated_admin", lambda *args, **kwargs: principal
         )
         try:
-            admission(object(), None)
+            # A plain page load: no automatic re-read (#2174).
+            admission(SimpleNamespace(method="GET", headers={}), None)
             admitted = True
         except PermissionError:
             admitted = False

@@ -2110,6 +2110,10 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
    the same border, background and ink as a stage chip in that look; its
    icon and word carry the state, not the colour. */
 .stage-chip:is(.status-error, .status-warning), .status-badge.status-warning { border-color: var(--status-line); background: var(--status-bg); color: var(--status-ink); }
+/* A review region's item someone else changed (#2174) says so beside its
+   stage, in the accent ink so it reads as news, not as a stage of its own;
+   it is drawn hidden with every item and shown only on a redrawn one. */
+.live-changed { color: var(--accent-strong); font-size: .8125rem; font-weight: 600; white-space: nowrap; }
 /* A worklist's filters are always open (no Filters disclosure), on one
    compact row that wraps only when the window is too narrow for it
    (#1653), so a laptop window (1366 px, Admin menu beside) holds a

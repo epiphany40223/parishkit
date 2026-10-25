@@ -47,7 +47,7 @@
     {% if not dashboard.campaign %}<dl class="home-facts">{% include "stewardship/home-data-age.html" %}</dl>
     {% if dashboard.can_refresh %}<p><a href="{% url 'admin:source_refresh' %}">{% translate "Refresh now" %}</a></p>{% endif %}{% endif %}
   </section>
-  {# Review work (#1690; review pipeline spec, "Role views"): the panels Staff and Ministry leaders land on instead of Home, with Ready to update. #}{% if dashboard.review %}{% load review_work %}{% review_panels dashboard.review as review_panels %}{% if review_panels %}<section class="panel" aria-labelledby="review-work-heading" data-review-work>
+  {# Review work (#1690; review pipeline spec, "Role views"): the panels Staff and Ministry leaders land on instead of Home, with Ready to update. #}{% if dashboard.review %}{% load review_work %}{% review_panels dashboard.review as review_panels %}{% if review_panels %}<section class="panel" aria-labelledby="review-work-heading" data-review-work data-live-items="{% url 'admin:index' %}">
     <h2 id="review-work-heading">{% translate "Review work" %}</h2>
     {% include "stewardship/review-work-panels.html" with panels=review_panels nested=True %}
   </section>{% endif %}{% endif %}

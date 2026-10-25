@@ -226,13 +226,15 @@ def _latest(ids):
     }
 
 
-def requests(campaign_id, query):
+def requests(campaign_id, query, *, history=False):
     """Every request the filters match, each with its placement, and the counts.
 
     Returns ``(metadata, rows, counts)``: the selection's metadata (the
     ParishSoft data the names come from), the rows at the chosen Stage, and
     each stage's count (History's too) over every request the search and
-    dates match, for the Stage filter's choices.
+    dates match, for the Stage filter's choices. ``history`` keeps History's
+    rows under Every stage too: a review region's check (#2174) finds a
+    drawn request whatever stage it has moved to.
     """
     result = information_page(campaign_id, query.information, whole=True)
     rows = result["rows"]
@@ -255,7 +257,7 @@ def requests(campaign_id, query):
         stage = row["placement"].stage.value
         counts[stage] = counts.get(stage, 0) + 1
         if query.stage == stage or (
-            query.stage == EVERY_STAGE and stage != Stage.HISTORY.value
+            query.stage == EVERY_STAGE and (history or stage != Stage.HISTORY.value)
         ):
             shown.append(row)
     return result["metadata"], shown, counts

@@ -14,12 +14,18 @@ from parishkit.stewardship.accounts import admin_navigation, google_account_help
 from parishkit.stewardship.campaigns import single_campaign
 from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
 from parishkit.stewardship.source.source_status import source_status_label
-from parishkit.stewardship.web import dates, presentation, stat_tiles
+from parishkit.stewardship.web import dates, presentation, review_live, stat_tiles
 from parishkit.stewardship.web.buttons import portal_classes
 from parishkit.stewardship.web.exports import DEFAULT_EXPORT_FORMAT
 from parishkit.stewardship.web.review_worklist import clamp_name
 
 register = template.Library()
+# A review region's item key, token and seen token (#2174,
+# web/review_live.py): the values the server compares a region's read
+# with, and (seen) what ui-v1.js compares to tag a redrawn item.
+register.filter("live_key", review_live.item_key)
+register.filter("live_token", review_live.item_token)
+register.filter("live_seen", review_live.seen_token)
 for name in (
     "number",
     "duid",

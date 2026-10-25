@@ -4066,6 +4066,278 @@
   });
   scheduleReread();
 
+  // Review regions (#2174; UX conventions, "Pages that update themselves",
+  // items others change; review pipeline spec, "Concurrency", live while
+  // open): a review worklist's table, a Family hub tab's rows and the Review
+  // work cards, each marked [data-live-items="<its page's address>"]. Every
+  // item in one carries data-live-item (a short key of its id) and
+  // data-live-token (a digest of what it shows; web/review_live.py). About
+  // every minute (data-live-every, at least REREAD_MIN_MS), and at once when
+  // the tab is shown again or the window regains focus, the region sends its
+  // pairs in one passive GET of that address (live=key.token,...); the
+  // answer holds only the items whose token changed, or nothing. Each changed
+  // item is redrawn where it is, and its own parts (a row's Edit and Entered
+  // by hand forms, [data-live-part="<key>"]) with it; a part's form keeps the
+  // view the page shows, the hidden fields of the region's data-live-view
+  // form. A redrawn item shows its hidden "Changed by someone else" tag
+  // ([data-live-tag]) only when what it shows changed (its data-live-seen,
+  // or its token where it draws none): a row whose offered actions alone
+  // changed (the campaign was held) is redrawn untagged. A worklist's read
+  // also sends its table's columns (live_columns: data-live-columns), so a
+  // redrawn row has the cells its table has. A row whose answer still has
+  // other cells (a Family hub tab whose Reviewer's value column came or
+  // went) redraws the whole region instead, but only from an answer that is
+  // the whole region ([data-live-whole]: a hub tab's own page). A worklist's
+  // answer holds only its changed rows, so it never replaces its table
+  // (which would drop the other rows, their sort and the pager): the row
+  // keeps its cells, shows its tag if what it shows changed, and takes its
+  // new token, so it waits for the reader's next redraw. An item's further
+  // rows (a hub pledge's) are parts of it. Nothing else changes: no row
+  // moves, appears or goes, and nothing is announced. A region waits while
+  // the reader is busy (readerBusy), while
+  // focus is in it or while the pointer is over it, and tries again at the
+  // next tick, LIVE_TICK_MS later. A hidden region (an unchosen tab) is not
+  // read. One read is in flight at a time, page-wide. Failures and refusals
+  // are said in a periodic re-read's words, on a line of the region's own
+  // (liveProblem); a failed read is
+  // tried again at the region's pace, and a read that has not answered in
+  // LIVE_TIMEOUT_MS is a failure, so one hung read never stops the others.
+  // A region of more than LIVE_BATCH items sends LIVE_BATCH per read, in
+  // turn, keeping the request line short (each pair is 18 characters once
+  // its comma is encoded, so 300 come to about 5.4k of the web server's
+  // 8190). On a touch screen :hover can stay on the region after a tap until
+  // the reader taps elsewhere; it only delays a check.
+  const LIVE_PACE_MS = 60000;
+  const LIVE_TICK_MS = REREAD_MIN_MS;
+  const LIVE_BATCH = 300;
+  const LIVE_TIMEOUT_MS = 30000;
+  const LIVE_ITEM = "[data-live-item][data-live-token]";
+  // Each region's state, by element: when it was last read, whether it is
+  // due at once, its failures in a row, whether a refusal stopped it, and
+  // where its next batch starts. A region an in-place answer redrew is a new
+  // element, freshly drawn, so it starts over.
+  const liveStates = new WeakMap();
+  let liveInFlight = false;
+  let liveTimer = 0;
+  const liveState = (region) => {
+    let state = liveStates.get(region);
+    if (!state) {
+      state = {last: Date.now(), due: false, failures: 0, stopped: false, offset: 0};
+      liveStates.set(region, state);
+    }
+    return state;
+  };
+  const liveHeld = (region) => readerBusy() || region.contains(document.activeElement)
+    || region.matches(":hover");
+  const liveShown = (region) => !region.closest("[hidden]") && region.getClientRects().length > 0;
+  const liveKey = (key) => `[data-live-item="${CSS.escape(key)}"]`;
+  const keepView = (form, view) => {
+    // Give a redrawn part's form the view the page shows: the answer drew it
+    // for the live read's own view, so its hidden fields are replaced by
+    // those of the region's view form (the decision dialog's, which every
+    // in-place answer keeps current), its CSRF token aside.
+    const fields = (node) => [...node.querySelectorAll(":scope > input[type=hidden]")]
+      .filter((input) => input.name !== "csrfmiddlewaretoken");
+    fields(form).forEach((input) => input.remove());
+    form.append(...fields(view).map((input) => input.cloneNode()));
+  };
+  const redrawParts = (region, fresh, key) => {
+    // Swap an item's own parts for the answer's: by id, adding a part the
+    // item now offers at the region's end (a closed dialog's form takes no
+    // room) and removing one it no longer offers.
+    const selector = `[data-live-part="${CSS.escape(key)}"]`;
+    const old = [...region.querySelectorAll(selector)];
+    const copies = [...fresh.querySelectorAll(selector)];
+    const view = document.getElementById(region.dataset.liveView || "");
+    copies.forEach((copy) => {
+      if (copy instanceof HTMLFormElement && view instanceof HTMLFormElement) keepView(copy, view);
+      const twin = old.find((node) => node.id && node.id === copy.id);
+      const part = document.adoptNode(copy);
+      if (twin) twin.replaceWith(part);
+      else region.append(part);
+      enhanceSwapped(part);
+    });
+    old.filter((node) => !copies.some((copy) => copy.id === node.id)).forEach((node) => node.remove());
+  };
+  const showTags = (node) => node.querySelectorAll("[data-live-tag]").forEach((tag) => {
+    tag.hidden = false;
+  });
+  // What an item shows the reader: its data-live-seen, or its whole token
+  // where it draws none (a Review work card shows all it is).
+  const liveSeen = (node) => node.dataset.liveSeen ?? node.dataset.liveToken;
+  const cellCount = (node) => (node instanceof HTMLTableRowElement ? node.cells.length : -1);
+  const redrawRegion = (region, whole, seen) => {
+    // The whole region from the answer (a hub tab's own page): the changed
+    // items whose shown values changed (``seen``) tagged, its open
+    // disclosures kept open, by their place. A tag already shown stays.
+    const tagged = [...region.querySelectorAll(LIVE_ITEM)]
+      .filter((node) => node.querySelector("[data-live-tag]:not([hidden])"))
+      .map((node) => node.dataset.liveItem);
+    [...seen, ...tagged].forEach((key) => {
+      const copy = whole.querySelector(liveKey(key));
+      if (copy) showTags(copy);
+    });
+    const open = [...region.querySelectorAll("details")].map((node) => node.open);
+    whole.querySelectorAll("details").forEach((node, index) => {
+      if (open[index]) node.open = true;
+    });
+    const redrawn = document.adoptNode(whole);
+    region.replaceWith(redrawn);
+    enhanceSwapped(redrawn);
+  };
+  const applyLive = (region, sent, text) => {
+    // Redraw each sent item whose answer differs, unless it was redrawn
+    // since it was sent (the reader's own answer is newer than this one).
+    if (!text.trim()) return;
+    const fresh = new DOMParser().parseFromString(text, "text/html");
+    const changed = [...sent].filter(([key, token]) => {
+      const item = region.querySelector(liveKey(key));
+      const copy = fresh.querySelector(liveKey(key));
+      return item && copy && item.dataset.liveToken === token && copy.dataset.liveToken !== token;
+    }).map(([key]) => key);
+    const seen = changed.filter((key) => liveSeen(region.querySelector(liveKey(key)))
+      !== liveSeen(fresh.querySelector(liveKey(key))));
+    const misfit = changed.some((key) => cellCount(region.querySelector(liveKey(key)))
+      !== cellCount(fresh.querySelector(liveKey(key))));
+    // Only an answer that is the whole region may replace it: a worklist's
+    // holds only its changed rows (review_live.narrow).
+    const whole = misfit && region.id ? fresh.getElementById(region.id) : null;
+    if (whole && whole.matches("[data-live-items][data-live-whole]")) {
+      redrawRegion(region, whole, seen);
+      return;
+    }
+    changed.forEach((key) => {
+      const item = region.querySelector(liveKey(key));
+      const copy = fresh.querySelector(liveKey(key));
+      if (cellCount(item) !== cellCount(copy)) {
+        item.dataset.liveToken = copy.dataset.liveToken;
+        if (seen.includes(key)) showTags(item);
+        return;
+      }
+      // A tag already shown stays: an untagged redraw never takes it away.
+      if (seen.includes(key) || item.querySelector("[data-live-tag]:not([hidden])")) showTags(copy);
+      const redrawn = document.adoptNode(copy);
+      item.replaceWith(redrawn);
+      redrawParts(region, fresh, key);
+      enhanceSwapped(redrawn);
+    });
+    // A redrawn row's box may now be offered or not: the selection bar
+    // counts the table's boxes again.
+    selectionUpdates.forEach(({scope, update}) => {
+      if (scope.isConnected && region.contains(scope)) update();
+    });
+  };
+  const liveProblem = (region, text) => {
+    // Say ``text`` on the region's own line after it, or hide that line: a
+    // line of its own, so a periodic re-read's beside it is never touched.
+    let line = region.parentElement?.querySelector(":scope > [data-live-problem]") || null;
+    if (!line && !text) return;
+    if (!line) {
+      line = document.createElement("p");
+      line.className = "notice";
+      line.setAttribute("role", "status");
+      line.setAttribute("data-live-problem", "");
+      region.after(line);
+    }
+    line.textContent = text;
+    line.hidden = !text;
+  };
+  const liveFailed = (region, state) => {
+    state.failures += 1;
+    if (state.failures >= REREAD_FAILURES) liveProblem(region, UPDATES_RETRYING);
+  };
+  const readLive = async (region, state) => {
+    // Send this region's items (or its next batch) and redraw what changed.
+    state.last = Date.now();
+    state.due = false;
+    const items = [...region.querySelectorAll(LIVE_ITEM)];
+    if (!items.length) return;
+    state.offset %= items.length;
+    const batch = items.slice(state.offset, state.offset + LIVE_BATCH);
+    state.offset += batch.length;
+    const sent = new Map(batch.map((item) => [item.dataset.liveItem, item.dataset.liveToken]));
+    const url = new URL(region.dataset.liveItems, document.baseURI);
+    url.hash = "";
+    url.searchParams.set("live", [...sent].map(([key, token]) => `${key}.${token}`).join(","));
+    if (region.dataset.liveColumns !== undefined) {
+      url.searchParams.set("live_columns", region.dataset.liveColumns);
+    }
+    liveInFlight = true;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), LIVE_TIMEOUT_MS);
+    let response, text;
+    try {
+      response = await fetch(url, {credentials: "same-origin", cache: "no-store",
+        signal: controller.signal, headers: {...PASSIVE_READ, "X-Requested-With": "fetch"}});
+      text = await response.text();
+    } catch (error) {
+      liveFailed(region, state);
+      return;
+    } finally {
+      window.clearTimeout(timer);
+      liveInFlight = false;
+    }
+    // A refusal (the sign-in ended, access was removed, or an answer from
+    // another page, such as the sign-in page) stops this region's checks.
+    const elsewhere = response.redirected && new URL(response.url).pathname !== url.pathname;
+    if (elsewhere || [400, 401, 403, 404, 410].includes(response.status)) {
+      state.stopped = true;
+      liveProblem(region, UPDATES_REFUSED);
+      return;
+    }
+    if (!response.ok) {
+      liveFailed(region, state);
+      return;
+    }
+    state.failures = 0;
+    liveProblem(region, "");
+    // The reader may have started something while the read was out: the
+    // answer waits for the next check rather than land under them.
+    if (!region.isConnected) return;
+    if (liveHeld(region)) {
+      state.due = true;
+      return;
+    }
+    applyLive(region, sent, text);
+  };
+  const liveTick = () => {
+    // Read the first region that is due and free, then look again a tick
+    // later. A region held by the reader stays due, so it is read as soon
+    // as they are done.
+    window.clearTimeout(liveTimer);
+    if (document.visibilityState === "visible" && !liveInFlight) {
+      const now = Date.now();
+      for (const region of document.querySelectorAll("[data-live-items]")) {
+        const state = liveState(region);
+        const pace = Math.max(Number(region.dataset.liveEvery) || LIVE_PACE_MS, REREAD_MIN_MS);
+        const waited = now - state.last;
+        if (state.stopped || !liveShown(region) || waited < (state.due ? REREAD_MIN_MS : pace)) continue;
+        if (liveHeld(region)) {
+          state.due = true;
+          continue;
+        }
+        readLive(region, state);
+        break;
+      }
+    }
+    liveTimer = window.setTimeout(liveTick, LIVE_TICK_MS);
+  };
+  const liveCatchUp = () => {
+    // Shown again, focused or restored: every region is due at once.
+    document.querySelectorAll("[data-live-items]").forEach((region) => {
+      liveState(region).due = true;
+    });
+    liveTick();
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") liveCatchUp();
+  });
+  window.addEventListener("focus", liveCatchUp);
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) liveCatchUp();
+  });
+  liveTick();
+
   // A control's value for the rules below (data-show-when and
   // data-required-when). A checkbox counts as its value only while it is
   // ticked and is empty otherwise, as a submission would send it:
