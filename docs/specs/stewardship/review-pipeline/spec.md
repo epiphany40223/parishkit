@@ -1993,17 +1993,18 @@ a Confirmed or Conflict the reader was not shown.
 
 ## Review wizard
 
-Status: **approved; slice 1 built**
+Status: **approved; slices 1 and 2 built**
 ([#2123](https://github.com/epiphany40223/parishkit/issues/2123)); the
 flow, behaviour and shared-code requirement below, and the page scope,
 waiting set, start page, Limitations pages, navigation rows, keyboard,
 menu and dashboard entries, are the Administrator's decisions of
 2026-10-24, and the spec was approved on 2026-10-24 with three changes:
 Finish opens My review work, runs have no time limit, and a reader may
-have several runs (one per tab). Its first slice is built: the run
+have several runs (one per tab). Its first two slices are built: the run
 storage, the start page, the page frame with its navigation, the menu
 entry and the dashboard card (#2123, slice 1 of the
-[delivery plan](#wizard-delivery-plan)); the sections come next.
+[delivery plan](#wizard-delivery-plan)), then the shared section
+component and the Family pages (slice 2); the Member pages come next.
 
 The review wizard is a third view of the same review data, beside each
 stream's [review worklist](#review-worklist) (bulk decisions over a table)
@@ -2079,7 +2080,7 @@ stream one at a time exactly when its Review work page is in their menu:
   page, which is that Family's Pledges page (the Pledges section, which
   lists the answer as the Pledges table does); a Limitations run's Family
   page also re-checks the Pledges access (`FINANCIAL_DETAIL`), and a
-  reader without it gets Member pages only. **Cannot attend Mass or
+  reader without it never sees the financial answer there. **Cannot attend Mass or
   prayer services** is a Family answer too (the Limitations table's
   Families table), so it is on the Family page as well, for every reader
   of Limitations (#2123 slice 1; it has no Member to go to). Every other
@@ -2216,11 +2217,18 @@ Each page has, top to bottom:
   Staff and Administrators "Open this Family's Timeline".
 - **The navigation row, second copy**, at the bottom.
 
-A page whose subject has nothing left in the stream (the Family withdrew
-every change, a Member left the Family, a Family left the campaign) says so
-in the section's own empty words, such as "No changes: every answered field
-matched ParishSoft.", or "This Member is no longer listed for this
-stream.", and keeps Previous and Next.
+A page whose subject has nothing left in the stream for this reader (the
+Family withdrew every change, a Member left the Family, a Family left the
+campaign, or the reader lost access to the subject's items, such as a
+Ministry leader who no longer leads the request's Ministry) names nothing:
+its heading reads "No longer listed", the line under it and the Timeline
+link are left out, and the section says "This Family is no longer listed
+for this stream." or "This Member is no longer listed for this stream.".
+It keeps Previous and Next. The stored ids are never shown, so a run
+started earlier never shows a name the reader may no longer see (#2123
+slice 2). A run started at the Stage History reaches such pages too, since
+the section, as the hub's tab, shows every stage but History (open point
+for the Administrator, #2123).
 
 ### Wizard navigation
 
@@ -2432,30 +2440,49 @@ tab, the panel templates carry the tab's heading, its link sentence and
 `hub_tab_url`, and `hub-census-panel.html` also draws the Member's
 Ministry part. The split:
 
-- A new `reports/review_sections.py` with `read_section(stream, campaign,
-  family, subject, principal, *, refresh_url, prefix)`, the code now in
-  `hub_reads` plus `hub_actions.census_tab`, `ministry_tab`,
-  `financial_tab` and `other_tab`, keyed by a stream and a subject instead
-  of a tab key. `hub_reads` becomes a call per chosen tab; the wizard
-  calls it once per page.
-- `census_tab` takes the subject (`HubCensus.subject`) rather than the tab
-  key; `ministry_tab` gains `scoped=True` for the wizard, keeping only the
-  rows its leader-scoped worklist lists (the hub's Staff and Administrator
-  readers see the same rows either way); `other_tab` gains `keep`, the item
-  ids the page shows, so the wizard draws one Member's (or the Family's)
-  cannot answers for Limitations, or the current item for Additional
-  information.
+- As built (#2123 slice 2), the hub's per-stream reads and row actions
+  stay where they are, in `hub_census`, `hub_streams` and `hub_actions`
+  (`census_worklist` with `census_subject`, `financial_tab`, `other_tab`,
+  `ministry_worklist`, `limitations_worklist`), and are the one
+  implementation. A new `reports/review_sections.py`,
+  `read_section(stream, campaign, family, subject, principal, *,
+  parish_name)`, composes those same functions for one wizard page and
+  then narrows their result to the run's matched items. `hub_reads` and
+  the hub's tab functions are unchanged. This replaces the planned
+  `census_tab(subject)`, `other_tab(keep=…)` and `ministry_tab(scoped=True)`
+  parameters, which the narrowing makes unnecessary. A Ministry
+  requests page reads through `hub_actions.ministry_worklist`, whose
+  `read_rows` is the leader-scoped read.
+- **Live replacements.** The stored item ids are first followed to their
+  live replacements: a census change or Ministry request through
+  `superseded_by`, an Additional information item through `replacement`.
+  A pledge is the Family's current one. Limitations answer ids do not
+  change. The section then keeps the replacements the stream's scoped read
+  still lists for the reader, and counts the subject's other listed items
+  for the filtered-out line.
+- **Scoped, on every page.** Each page, Member pages included, reads its
+  subject through the stream's own worklist read under the reader's
+  principal. For a Ministry leader that read is `ministry_worklist.read_rows`,
+  limited to their Ministries. The subject is named only while one of its
+  items is listed ([wizard pages](#wizard-pages)).
 - Templates under `components/`: `review-census-section.html` (the
-  addition line, the Changed table, Show unchanged and the dialogs, from
-  `hub-census-panel.html`), `review-ministry-section.html` (from
-  `hub-ministry.html`), `review-pledge-section.html` (from
-  `hub-financial-panel.html`, the contributions line included) and
+  addition line, the Changed table and Show unchanged, from
+  `hub-census-panel.html`; takes `subject`), `review-ministry-section.html`
+  (from `hub-ministry.html`; takes `rows` and `w`),
+  `review-pledge-section.html` (from `hub-financial-panel.html`, the
+  contributions line included; takes `financial` and `pledge`) and
   `review-answers-section.html` (the Answers to handle table, from
-  `hub-other-panel.html`, taking its rows). Each takes the section, its
-  `prefix` and `refresh_url`, and keeps `hub-changed-table.html`,
-  `hub-stage.html` and `hub-dialogs.html` as they are. The hub panels keep
-  their headings and link sentences and include the sections, so the hub
-  draws exactly what it draws today.
+  `hub-other-panel.html`; takes `rows` and `actions_column`). Each also
+  takes a `prefix`, which its ids carry. None of them draws the dialogs.
+  They keep
+  `hub-changed-table.html`, `hub-stage.html` and `hub-dialogs.html` as they
+  are. The hub panels keep their regions, headings, link sentences and
+  dialogs (`hub-dialogs.html`) and include the sections, so the hub draws
+  exactly what it drew before (every hub render the hub unit tests make is
+  identical apart from the random request keys). The wizard page draws
+  its parts through `components/review-wizard-section.html`, which
+  includes the same section components, the filtered-out line and the
+  stream's dialogs.
 - The region each section sits in (`data-in-place-region`,
   `data-refresh-url`) redraws from the hub tab's address on the hub and
   from the wizard page's address in the wizard, so an action redraws in
@@ -2502,22 +2529,25 @@ in slices 2 and 3:
    shown; the start refusals; a leader offered only Ministry requests
    with the choice skipped; the run guard); the menu inventory; browser
    tests of the start page, the rows and the card.
-2. **Shared section component and Family pages**:
-   `review_sections.read_section`, the `census_tab`, `ministry_tab` and
-   `other_tab` parameters, the four `components/review-*-section.html`
-   templates and the hub panels including them (the hub draws exactly
-   what it draws today: render comparisons of each hub tab before and
+2. **Shared section component and Family pages** (built):
+   `review_sections.read_section` over the hub's own functions, the four
+   `components/review-*-section.html` templates and the hub panels
+   including them (the hub draws exactly what it drew: a render
+   comparison of every hub render the hub unit tests make, before and
    after); then the Family pages of Pledges, Additional information,
    Census changes and Limitations, each with only the matched items, the
    filtered-out line, and actions posting to the stream pages and
-   redrawing in place from the wizard page's address. Tests: the hub's
-   tab, row-action and query-count tests unchanged; `other_tab(keep=…)`;
-   only matched items shown with the filtered-out line; the Limitations
-   Family page only with a Family answer; a page drawn after another
-   reviewer's decision shows the live stage and a stale action gets the
-   stream's refusal; query-count tests per page.
-3. **Member pages**: Ministry requests (`ministry_tab(scoped=True)`, a
-   leader never gets a row for a Ministry they do not lead), Census
+   redrawing in place from the wizard page's address; and every page,
+   Member pages included, naming its subject only while it is listed.
+   Tests: the hub's tab, row-action and query-count tests unchanged; the
+   narrowing to matched items with the filtered-out line; the Limitations
+   Family page's answers and pledge parts; a replaced item shown by its
+   replacement; a page drawn after a decision shows the live stage and a
+   stale action gets the stream's refusal; a leader who lost the Ministry
+   sees no name; query-count tests per page.
+3. **Member pages**: Ministry requests (through
+   `hub_actions.ministry_worklist`, so a leader never gets a row for a
+   Ministry they do not lead), Census
    Member and New Member pages and Limitations Member pages; browser
    tests (Chromium and WebKit locally, all three in CI) that Previous and
    Next, in both rows, keep their screen position across pages of
