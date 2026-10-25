@@ -615,6 +615,27 @@ def test_upgrade_check_proves_migration_and_grants_are_no_ops(
             "GRANT CREATE ON SCHEMA public TO pk_stewardship_backup_worker",
             "REVOKE CREATE ON SCHEMA public FROM pk_stewardship_backup_worker",
         ),
+        # A look-alike operator, which an unqualified operator in a definer
+        # function could resolve to, and the CREATE that would let a runtime
+        # login add one (#2166).
+        (
+            "CREATE FUNCTION public.upgrade_check_has(jsonb, varchar) "
+            "RETURNS boolean LANGUAGE sql AS 'SELECT true'; "
+            "CREATE OPERATOR public.? (LEFTARG=jsonb, RIGHTARG=varchar, "
+            "FUNCTION=public.upgrade_check_has)",
+            "DROP OPERATOR public.?(jsonb, varchar); "
+            "DROP FUNCTION public.upgrade_check_has(jsonb, varchar)",
+        ),
+        (
+            "GRANT CREATE ON SCHEMA public TO pk_stewardship_web",
+            "REVOKE CREATE ON SCHEMA public FROM pk_stewardship_web",
+        ),
+        (
+            "GRANT CREATE ON DATABASE stewardship_provision_tests "
+            "TO pk_stewardship_worker",
+            "REVOKE CREATE ON DATABASE stewardship_provision_tests "
+            "FROM pk_stewardship_worker",
+        ),
         (
             "CREATE SEQUENCE public.upgrade_check_sequence; "
             "GRANT USAGE ON SEQUENCE public.upgrade_check_sequence "

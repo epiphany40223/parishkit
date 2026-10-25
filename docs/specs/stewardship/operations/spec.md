@@ -804,6 +804,26 @@ must end in the same catalog. The rules:
   `test_schema_migration_files.py` enforces this for `SECURITY DEFINER`.
   The upgrade-parity test cannot catch the omission, because a fresh install
   runs the same migration.
+- **New SQL names `pg_catalog`'s jsonb and containment operators.** An
+  unqualified operator is resolved through `search_path`, and PostgreSQL
+  chooses the closest argument-type match among every schema on the path, so
+  `pg_catalog` first in a function's fixed path does not by itself keep a
+  look-alike in `public` from winning. Every frozen file after 0178 therefore
+  writes `?`, `?|`, `?&`, `@>` and `<@` as `OPERATOR(pg_catalog.?)` and so on
+  (a replaced baseline function's copy equals its latest frozen copy, so the
+  baseline follows), for example
+  `settings OPERATOR(pg_catalog.?) 'organization_id'`;
+  `test_schema_migration_files.py` refuses a bare one in those frozen files
+  (comments and string literals aside), and the files up to 0178 keep theirs,
+  since applied files are never edited. The control that matters is that no
+  runtime login can create an operator at all (the upgrade check below);
+  qualifying is defense in depth. The rule names these five, the subject of
+  #2166; every other unqualified operator (`=`, `||`, `->` and so on) and
+  unqualified function name has the same exposure, and so do the invoker
+  functions that keep their bare operators until a migration replaces them
+  for another reason, which run with the owner's rights when a definer
+  function calls them or a definer's write fires them. All of these rest on
+  the no-`CREATE` control alone.
 - **Upgrade parity is tested.** `tests/stewardship/database/test_upgrade_parity_postgresql.py`
   installs the previous release tag's tree (the latest annotated `v*` tag
   reachable from HEAD) in a second database, migrates it with the current
@@ -864,7 +884,12 @@ that every runtime login's admission refuses (see **Grant admission**
 above), and the backup login's definer, sequence and `CREATE` authority
 that its backup admission refuses, so an upgrade onto a drifted catalog
 stops before its services would all refuse to start or its next backup
-would fail. The migration login has no runtime admission, so the
+would fail. It also answers false on `CREATE` on an application schema or
+the database for any runtime login, and on any operator outside `pg_catalog`
+other than the `pg_trgm` extension's own (#2166), so a release with no
+schema change stops on either; a schema-change upgrade runs the commands
+anyway, and then only each runtime login's admission (which refuses
+`CREATE`, not operators) stands guard. The migration login has no runtime admission, so the
 `database-roles` and `database-grants` commands' role check and the
 migration profile's own identity check refuse the same drift for it (#389).
 In those checks and in the upgrade check, the migration login owns the
