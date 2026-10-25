@@ -1589,6 +1589,12 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
 .status-working .level-icon, .status-warning .level-icon, .status-error .level-icon, .status-unknown .level-icon { color: var(--status-line); }
 .status-error .status-word { font-weight: 700; }
 .log-table th, .log-table td { vertical-align: top; }
+/* The Level cell's visually-hidden name is absolutely positioned. Nothing
+   positioned lies between it and the page, so the .table-scroll box would not
+   clip it, and once the Time cell stopped wrapping (#2179) its place lay past
+   the viewport at 320 px and widened the page. A positioned cell is its
+   containing block, so the box clips it. */
+.log-table .log-level-cell { position: relative; }
 .log-filters { margin-block: 1rem; }
 .log-level-choices { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; margin: 0; padding: 0; border: 0; }
 .log-level-choices legend { float: left; margin: 0 .5rem 0 0; padding: 0; font-size: .925rem; font-weight: 600; }
