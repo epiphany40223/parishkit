@@ -222,6 +222,8 @@ def test_delete_selected_names_the_count(page, component_origin):
     has_count(rows(page), 1)
     assert slugs(page) == ["{{ file.ministry-guide }}"]
     visible(page.locator("main > [role=status]", has_text="Deleted 2 files."))
+    # The ticks were sent and their rows deleted: no "not kept" line (#2123).
+    assert page.locator("[data-edits-lost]").count() == 0
     assert page.evaluate("window.notReloaded === true")
     assert not failures
 

@@ -15,6 +15,9 @@ address, which the section redraws from). ``FOCUS_PATH`` is the Member
 page opened by the bottom row's Next, ``BACK_PATH`` by the top row's
 Previous. ``GREYED_CARD_PATH`` is My review work while the menu greys
 the wizard out, and ``NO_CARD_PATH`` while it has no wizard entry.
+``PLEDGE_PATH`` is a Pledges page, its pledge To review with the Family
+hub's Pledges row actions, and ``PLEDGE_EDITED_PATH`` the same page once
+the pledge is edited (#2123).
 """
 
 from types import SimpleNamespace
@@ -43,7 +46,7 @@ from parishkit.stewardship.reports.review_sections import Part, Section
 from parishkit.stewardship.reports.review_streams import EVERY, STREAMS
 from parishkit.stewardship.reports.review_wizard import SORTS, WAITING
 
-from ..test_hub_actions import census_worklist, hub_rows
+from ..test_hub_actions import census_worklist, hub_rows, pledge_tab
 from ..test_hub_census import ANSWERS, NAMES
 from .review_work_components import CAMPAIGN, COUNTS, chrome
 from .timeline_components import HOME_CHANGE
@@ -58,6 +61,8 @@ ACCEPTED_PATH = "/review-wizard-1-accepted"
 MEMBER_ACCEPTED_PATH = "/review-wizard-2-accepted"
 FOCUS_PATH = "/review-wizard-2-from-next"
 BACK_PATH = "/review-wizard-2-from-previous"
+PLEDGE_PATH = "/review-wizard-pledge"
+PLEDGE_EDITED_PATH = "/review-wizard-pledge-edited"
 # The hub unit tests' deceased Member 5, its two changes, and the Member the
 # Family added, with the ids their census worklist items carry.
 DECEASED = "11111111-0000-4000-8000-000000000005"
@@ -208,6 +213,28 @@ def new_member_section():
     )
 
 
+def pledge_context(fresh):
+    """A Pledges page of a one-page run: the pledge To review (``fresh``)
+    or edited, drawn as review_sections draws it, with the Financial tab's
+    Pledges row actions (its pledge editor's frequencies too)."""
+    from parishkit.stewardship.reports.financial import FREQUENCY_LABELS
+    from parishkit.stewardship.responses.financial import FREQUENCIES
+
+    financial = pledge_tab(fresh=fresh)
+    return page_context(1) | {
+        "stream": next(stream for stream in STREAMS if stream.key == "pledges"),
+        "previous_url": None,
+        "next_url": None,
+        "size": 1,
+        "section": Section(
+            listed=True,
+            parts=(Part("pledge", "review-pledge", financial=financial),),
+            dialogs=(financial.pledge.actions,),
+        ),
+        "frequencies": [(key, FREQUENCY_LABELS[key]) for key in FREQUENCIES],
+    }
+
+
 def page_context(position, focus=None, **values):
     """One of the run's three pages: a Family page, a Member page, the last.
 
@@ -303,6 +330,13 @@ def components(context, admin):
             render_to_string(
                 "stewardship/review-wizard-page.html",
                 base | page_context(2, focus=focus),
+            ),
+        )
+    for path, fresh in ((PLEDGE_PATH, True), (PLEDGE_EDITED_PATH, False)):
+        pages[path] = (
+            "text/html",
+            render_to_string(
+                "stewardship/review-wizard-page.html", base | pledge_context(fresh)
             ),
         )
     review = {"campaign": CAMPAIGN, "counts": COUNTS}

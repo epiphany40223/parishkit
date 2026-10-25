@@ -228,3 +228,47 @@ def test_accept_on_the_pledge_returns_focus_to_its_icon(page, component_origin):
     assert "decide=accept" in sent[-1]
     assert page.evaluate(MARKED) == "kept"
     assert_clean(page, errors)
+
+
+@pytest.mark.parametrize("redrawn", [HUB_PLEDGE, HUB_PLEDGE_FRESH])
+def test_a_saved_pledge_edit_shows_no_not_kept_line(page, component_origin, redrawn):
+    """Edit's Save posts what was typed, and the tab redraws itself from its
+    address: the pledge edited (no Edit form any more: regression cover), or
+    still To review, its row's Edit form then drawn anew (the case the line
+    was wrongly shown for). Either way no "Changes you typed ... were not
+    kept" line, since what was typed was saved (#2123)."""
+    errors = watch(page)
+    page.goto(component_origin + HUB_PLEDGE_FRESH)
+    page.evaluate(MARK)
+    sent = []
+
+    def pledges(route):
+        """Keep the decision's body; answer as the page does, with a notice."""
+        sent.append(route.request.post_data)
+        route.fulfill(
+            content_type="text/html",
+            body="<!doctype html><p data-confirm-announce>Pledge edited.</p>",
+        )
+
+    page.route("**" + PLEDGES, pledges)
+    page.route(
+        lambda url: url.endswith("?tab=financial"),
+        lambda route: route.fulfill(
+            response=route.fetch(url=component_origin + redrawn, method="GET")
+        ),
+    )
+    table = page.locator("#family-tabs-panel-financial").get_by_role(
+        "table", name="The Family's pledge"
+    )
+    table.locator("[data-row-action='edit']").click()
+    editor = page.locator("dialog[open]")
+    visible(editor)
+    editor.get_by_label("Annual pledge, in dollars").fill("1,300")
+    editor.get_by_label("Frequency").select_option("monthly")
+    editor.get_by_role("button", name="Save").click()
+    hidden(editor)
+    has_text(page.locator("main > div[role=status].visually-hidden"), "Pledge edited.")
+    assert "decide=edit" in sent[-1] and "value_amount=1%2C300" in sent[-1]
+    assert page.evaluate(MARKED) == "kept"
+    assert page.locator("[data-edits-lost]").count() == 0
+    assert_clean(page, errors)

@@ -14,6 +14,8 @@ from .review_wizard_components import (
     MEMBER_ACCEPTED_PATH,
     NO_CARD_PATH,
     PAGE_PATHS,
+    PLEDGE_EDITED_PATH,
+    PLEDGE_PATH,
     RUN,
     START_PATH,
 )
@@ -507,3 +509,86 @@ def test_phone_rows_never_overlap_with_larger_text(page, component_origin):
         ]
         for left, right in zip(boxes, boxes[1:], strict=False):
             assert left["x"] + left["width"] <= right["x"], (row, boxes)
+
+
+PLEDGES = "**/admin/reports/financial/pledges/"
+
+
+def pledge_answers(page, origin, redrawn):
+    """Answer a POST to Pledges as its page does (a notice), and the page's
+    own address, which the section redraws from, with ``redrawn``. Returns
+    the POST bodies sent."""
+    sent = []
+
+    def pledges(route):
+        """Keep the decision's body; answer as Pledges does, with a notice."""
+        sent.append(route.request.post_data)
+        route.fulfill(
+            content_type="text/html",
+            body="<!doctype html><p data-confirm-announce>Pledge recorded.</p>",
+        )
+
+    page.route(PLEDGES, pledges)
+    page.route(
+        "**" + page_url(RUN, 1),
+        lambda route: route.fulfill(response=route.fetch(url=origin + redrawn)),
+    )
+    return sent
+
+
+def pledge_editor(page):
+    """Open the pledge's Edit and return its dialog."""
+    section = page.locator("#review-section")
+    section.get_by_role("table", name="The Family's pledge").locator(
+        "[data-row-action='edit']"
+    ).click()
+    editor = page.locator("dialog[open]")
+    visible(editor)
+    return editor
+
+
+@pytest.mark.parametrize("redrawn", [PLEDGE_EDITED_PATH, PLEDGE_PATH])
+def test_a_saved_pledge_edit_says_nothing_was_lost(page, component_origin, redrawn):
+    """A Pledges page's Edit: Save posts what was typed and the section
+    redraws in place: no "Changes you typed ... were not kept" line, since
+    what was typed was saved (#2123, R52 Part W). Redrawn edited, the pledge
+    has no Edit form any more (regression cover); redrawn still To review
+    (a read that does not show the edit yet), its Edit form is drawn anew,
+    the case the line was wrongly shown for."""
+    errors = watch(page)
+    page.goto(component_origin + PLEDGE_PATH)
+    page.evaluate(MARK)
+    sent = pledge_answers(page, component_origin, redrawn)
+    editor = pledge_editor(page)
+    editor.get_by_label("Annual pledge, in dollars").fill("1,300")
+    editor.get_by_label("Frequency").select_option("monthly")
+    editor.get_by_role("button", name="Save").click()
+    hidden(editor)
+    has_text(
+        page.locator("main > div[role=status].visually-hidden"), "Pledge recorded."
+    )
+    assert "decide=edit" in sent[-1] and "value_amount=1%2C300" in sent[-1]
+    assert page.evaluate(MARKED) == "kept"
+    assert page.locator("[data-edits-lost]").count() == 0
+    assert_clean(page, errors)
+
+
+def test_unsaved_edit_typing_is_still_noted_when_redrawn(page, component_origin):
+    """What was typed into Edit and not saved is still noted as lost when
+    another decision redraws the section and draws the editor anew: only
+    the applied dialog's own form forgets its typing."""
+    page.goto(component_origin + PLEDGE_PATH)
+    sent = pledge_answers(page, component_origin, PLEDGE_PATH)
+    editor = pledge_editor(page)
+    editor.get_by_label("Annual pledge, in dollars").fill("1,300")
+    editor.get_by_role("button", name="Cancel").click()
+    hidden(editor)
+    page.locator("#review-section").get_by_role(
+        "table", name="The Family's pledge"
+    ).locator("[data-row-action='accept']").click()
+    dialog = page.locator("dialog[open]")
+    visible(dialog)
+    dialog.get_by_role("button", name="Record").click()
+    hidden(dialog)
+    assert "decide=accept" in sent[-1]
+    visible(page.locator("[data-edits-lost]"))
