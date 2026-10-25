@@ -31,7 +31,7 @@ from .review_worklist_components import (
 )
 from .test_bulk_bar import assert_accessible
 from .test_table_sorting import MARK, MARKED, fulfil_post_with
-from .waits import available, has_text, hidden, visible
+from .waits import available, closes, focused, has_text, hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "webkit"], indirect=True
@@ -367,19 +367,22 @@ def test_a_decision_keeps_every_button_in_place(page, component_origin):
 def test_space_and_enter_press_and_unpress(page, component_origin, key):
     """From the keyboard, Space and Enter choose a decision and choose a
     pressed one again, each opening its own dialog; an unavailable button
-    opens nothing."""
+    opens nothing.
+
+    Each Escape waits for the dialog's close event, where the page returns
+    focus to the opener, before the test moves focus on (#2160)."""
     page.goto(component_origin + PATH)
     dialog = page.locator("#worklist-decide-dialog")
     icon(page, 0, "Accept").focus()
     page.keyboard.press(key)
     has_text(dialog.locator("h2"), f"Accept {name(0)}?")
-    page.keyboard.press("Escape")
-    hidden(dialog)
+    closes(dialog, lambda: page.keyboard.press("Escape"))
+    focused(icon(page, 0, "Accept"))
     icon(page, 2, "Accept").focus()
     page.keyboard.press(key)
     has_text(dialog.locator("h2"), f"Send {name(2)} back to review?")
-    page.keyboard.press("Escape")
-    hidden(dialog)
+    closes(dialog, lambda: page.keyboard.press("Escape"))
+    focused(icon(page, 2, "Accept"))
     icon(page, 2, "Ignore").focus()
     page.keyboard.press(key)
     assert page.locator("dialog[open]").count() == 0
