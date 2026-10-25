@@ -557,6 +557,15 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # place with their latest bodies, operators qualified, which the reruns and
 # restores above bring back older; ``CLOSURE_REPLACED_ONLY`` puts each 0179
 # body back last (with its SECURITY DEFINER alter), 0177's among them.
+# 0181 (#2177) adds the reviewer's share methods to 0127's pledge reviews
+# and replaces 0158's pledge review guard and 0155's pledge item selection
+# in place; the swap drops the table (runtime_grants.CLOSURE_TABLES), and
+# 0127's reinstall makes it again without the column and with older bodies.
+# Its file must run whole again only after 0149's rerun (which also widens
+# 0127's state check) and 0158's, both triggered by the guard's phrases,
+# which 0181's body holds too: so ``CLOSURE_REPLACED_LAST`` runs it, keyed
+# by the item selection (0127's reinstall puts back a body without its
+# rule), after 0158's entry.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -1352,6 +1361,11 @@ CLOSURE_REPLACED_LAST = {
             "public.stewardship_limitation_review_guard_v1()",
         ),
         (("stewardship_responses", "0028_ignored_note_optional"), "(#1889)"),
+    ),
+    # 0181 (#2177), after 0158's reruns: see the note above CLOSURE_CREATED.
+    "public.stewardship_pledge_review_states_v1(uuid,uuid)": (
+        ("stewardship_reports", "0049_pledge_share_methods"),
+        "coalesce(v.reviewed_shares,b.answer->'shares')",
     ),
 }
 

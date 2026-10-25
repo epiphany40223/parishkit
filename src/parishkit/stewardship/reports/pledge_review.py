@@ -14,8 +14,9 @@ refresh Confirmed it or found a Conflict.
   ``placement`` maps an item onto the pipeline (``financial_placement``),
   with its latest refresh check (``pledge_refresh``, #1704, #1747), which
   may make it Confirmed, a Conflict or Entered incorrectly.
-- ``edited_value`` checks an Edit's annual pledge and frequency as the
-  Family form checks them.
+- ``edited_value`` checks an Edit's annual pledge and frequency, and
+  ``edited_shares`` its share methods (#2177), as the Family form checks
+  them.
 - ``PledgeDecisions`` is the stream's ``DecisionService``: Accept, Edit,
   Ignore, Back to review and Entered by hand, one item or in bulk (all or
   none), in the writers' order, each with its audit event.
@@ -50,8 +51,14 @@ from parishkit.stewardship.pipeline import (
 )
 from parishkit.stewardship.responses.financial import (
     FREQUENCIES,
+    InvalidFinancialAnswers,
     pledge_amount,
     pledge_error,
+    validate_financial_answers,
+)
+from parishkit.stewardship.responses.financial_inputs import (
+    InvalidFinancialSource,
+    financial_definition,
 )
 from parishkit.stewardship.responses.models import Submission
 from parishkit.stewardship.web.review_worklist import WORDS, StaleDecision
@@ -208,6 +215,15 @@ class EditRefusal(ValueError):
 
 
 FREQUENCY_HINT = "Choose how often the Family gives: a pledge above zero needs one."
+# The editor's share-method fields (#2177): its marker that the share
+# methods are in the post (pk-admin and a page drawn before #2177 send
+# none, so their Edit leaves the share methods in force as they are,
+# ``PledgeDecisions._shares``), one checkbox per
+# method and a details box per method that takes text.
+SHARES_SENT = "value_shares"
+SHARE_FIELD = "value_share_"
+SHARE_TEXT_FIELD = "value_share_text_"
+VALUE_FIELDS = frozenset({"value_amount", "value_frequency"})
 
 
 def edited_value(fields):
@@ -219,8 +235,14 @@ def edited_value(fields):
     ``EditRefusal`` at its field; a missing or repeated field is a plain
     ValueError (a malformed form).
     """
-    if set(fields) != {"value_amount", "value_frequency"} or any(
-        len(values) != 1 for values in fields.values()
+    # Any other field must be one of the share methods' (``edited_shares``).
+    if (
+        not set(fields) >= VALUE_FIELDS
+        or any(len(values) != 1 for values in fields.values())
+        or any(
+            name not in VALUE_FIELDS and not name.startswith("value_share")
+            for name in fields
+        )
     ):
         raise ValueError("A pledge Edit needs its amount and frequency once.")
     try:
@@ -236,6 +258,129 @@ def edited_value(fields):
     if amount.cents > 0 and not frequency:
         raise EditRefusal(("value_frequency",), FREQUENCY_HINT)
     return amount.decimal, frequency or None
+
+
+def share_options(configuration, campaign_id):
+    """The share methods the campaign offers now (``ShareOption``s), or none.
+
+    The Family form's own definition of ``configuration`` (the campaign's
+    active values), so the editor offers and checks what the form does.
+    """
+    try:
+        return financial_definition(configuration, campaign_id=campaign_id).options
+    except InvalidFinancialSource:
+        return ()
+
+
+def family_shares(submission):
+    """The Family's own share methods on ``submission``, as SQL reads them.
+
+    ``stewardship_pledge_answer_v1``'s rule: the stored object, or none.
+    """
+    shares = (submission.answers.get("financial") or {}).get("shares")
+    return dict(shares) if isinstance(shares, dict) else {}
+
+
+def in_force_shares(item, family):
+    """The share methods carried forward: an Edit's in force, else ``family``.
+
+    An Edit's share methods count while it is in force, as its amount does
+    (``reviewed_parts``); a row without them carries the Family's own.
+    """
+    review = item.review
+    if (
+        item.in_force
+        and review
+        and review.decision == "accepted_edited"
+        and review.reviewed_shares is not None
+    ):
+        return dict(review.reviewed_shares)
+    return dict(family)
+
+
+# The Family form's share-method refusals (``validate_financial_answers``),
+# worded for Staff: the form says "you" to the Family.
+SHARES_HINT = "Choose at least one share method: a pledge above zero needs one."
+DETAILS_HINT = (
+    "Enter the details this share method asks for, in at most 2,000 characters."
+)
+
+
+def _share_refusal(error, options):
+    """The Family form's refusal of share methods, at the editor's field.
+
+    ``error`` is ``validate_financial_answers``'s: the group's error (none
+    ticked) marks the first method's checkbox, a method's error (its
+    details missing or too long) that method's details box.
+    """
+    if "financial.shares" in error.fields:
+        return EditRefusal((SHARE_FIELD + options[0].id,), SHARES_HINT)
+    key = min(error.fields).removeprefix("financial.shares.")
+    return EditRefusal((SHARE_TEXT_FIELD + key,), DETAILS_HINT)
+
+
+def edited_shares(fields, options, kept, amount, frequency):
+    """An Edit's share methods, checked as the Family form checks them (#2177).
+
+    ``fields`` are the editor's posted fields; without ``SHARES_SENT`` the
+    Edit names no share methods (None; the service keeps those in force).
+    ``options`` are the methods the campaign offers now and ``kept`` the
+    share methods in force: one of those the campaign no longer offers may
+    stay ticked, with its text (counting as the one chosen), but is never
+    added. A zero pledge has none (None, as the Family form
+    clears them). Otherwise the Family form's rules hold: offered methods
+    only, a details text where the method takes one, and at least one for
+    a pledge above zero when any is offered (``EditRefusal`` at its
+    field). A field naming no such method is a ValueError (a malformed
+    form).
+    """
+    if SHARES_SENT not in fields:
+        if set(fields) - VALUE_FIELDS:
+            raise ValueError("Pledge share methods without their marker.")
+        return None
+    if fields[SHARES_SENT] != ["1"]:
+        raise ValueError("Unknown pledge share methods marker.")
+    offered = {option.id: option for option in options}
+    chosen, retired = {}, {}
+    for name, values in fields.items():
+        if name in VALUE_FIELDS or name == SHARES_SENT:
+            continue
+        if name.startswith(SHARE_TEXT_FIELD):
+            # Read with its checkbox below; one for a method without
+            # details, or not offered, is forged.
+            option = offered.get(name.removeprefix(SHARE_TEXT_FIELD))
+            if option is None or not option.free_text:
+                raise ValueError("Unknown pledge share method details.")
+            continue
+        key = name.removeprefix(SHARE_FIELD)
+        if not name.startswith(SHARE_FIELD) or values != ["on"]:
+            raise ValueError("Unknown pledge share method field.")
+        if key in offered:
+            text = fields.get(SHARE_TEXT_FIELD + key, [""])[0]
+            chosen[key] = text if offered[key].free_text else ""
+        elif key in kept:
+            retired[key] = kept[key]
+        else:
+            raise ValueError("Unknown pledge share method.")
+    if amount == 0:
+        return None
+    try:
+        answer = validate_financial_answers(
+            {
+                "annual_pledge": f"{amount:.2f}",
+                "frequency": frequency or "",
+                "shares": chosen,
+                "cannot_give": False,
+            },
+            tuple(options),
+        )
+    except InvalidFinancialAnswers as error:
+        # A method in force the campaign no longer offers, kept ticked, is
+        # a share method chosen, as the dialog's check counts it.
+        if not (retired and set(error.fields) == {"financial.shares"} and not chosen):
+            raise _share_refusal(error, options) from None
+        return retired
+    return answer["shares"] | retired
 
 
 def family_value(submission):
@@ -341,11 +486,46 @@ class PledgeDecisions:
                 and not decision.note
             ):
                 raise NoteRequired(UNDO_NEEDS_NOTE)
-            action = decision.action
-            if action is Action.EDIT and value == family_value(responses[item_id]):
-                action, matched = Action.ACCEPT, True
-            self._record(actor, item, action, value, keys[item_id], decision.note)
+            action, edit = decision.action, None
+            if action is Action.EDIT:
+                edit = (*value, self._shares(decision, item, responses[item_id], value))
+                if edit == (*family_value(responses[item_id]), None):
+                    action, matched = Action.ACCEPT, True
+            self._record(actor, item, action, edit, keys[item_id], decision.note)
         return self._notice(decision, list(ids), matched=matched)
+
+    def _shares(self, decision, item, response, value):
+        """An Edit's share methods to store: None for the Family's own.
+
+        Checked against the campaign's current methods and the share
+        methods in force (``edited_shares``); the Family's own share
+        methods are recorded as none, so a row only ever holds a
+        reviewer's change (the guard refuses the Family's own). An Edit
+        with no share-method field at all (pk-admin, or a page drawn
+        before #2177) leaves them as they are: an Edit still in force (a
+        Conflict's) keeps its share methods for a pledge above zero.
+        """
+        if not set(decision.fields) - VALUE_FIELDS:
+            review = item.review
+            kept = (
+                review.reviewed_shares
+                if item.in_force and review and review.decision == "accepted_edited"
+                else None
+            )
+            return kept if value[0] > 0 else None
+        from parishkit.stewardship.campaigns.models import Campaign
+
+        campaign = Campaign.objects.select_related("active_configuration").get(
+            pk=self.campaign_id
+        )
+        family = family_shares(response)
+        shares = edited_shares(
+            decision.fields,
+            share_options(campaign.active_configuration.values, self.campaign_id),
+            in_force_shares(item, family),
+            *value,
+        )
+        return None if shares == family else shares
 
     @staticmethod
     def _replayed(actor, keys):
@@ -361,14 +541,16 @@ class PledgeDecisions:
     def _record(self, actor, item, action, value, key, note):
         """Insert one decision row and its audit event; the guard checks both.
 
+        ``value`` is an Edit's (amount, frequency, share methods or None).
         Entered by hand, and Back to review of a terminal step (#1840),
-        carry the decision in force forward with its values: the mark keeps
+        carry the decision in force forward with its values and share
+        methods (#2177): the mark keeps
         it, and the undo removes only the step after it, so the pledge goes
         back to To enter by hand (``pipeline.undo_stage``; a Confirmed
         pledge no decision was behind goes back to To review with none).
         """
         stored, decision = RECORDED[action]
-        reviewed = (None, None)
+        reviewed = (None, None, None)
         entered = False
         marked = None
         keeps = action is Action.ENTERED_BY_HAND or (
@@ -382,6 +564,7 @@ class PledgeDecisions:
             reviewed = (
                 item.review.reviewed_annual_pledge,
                 item.review.reviewed_frequency,
+                item.review.reviewed_shares,
             )
         if action is Action.ENTERED_BY_HAND:
             # The mark records ParishSoft's upcoming-year amount when the
@@ -399,6 +582,7 @@ class PledgeDecisions:
             decision=decision,
             reviewed_annual_pledge=reviewed[0],
             reviewed_frequency=reviewed[1],
+            reviewed_shares=reviewed[2],
             entered=entered,
             # The guard sets the answer from the response itself.
             answer={},

@@ -63,12 +63,22 @@ from parishkit.stewardship.pipeline import (
 from parishkit.stewardship.source.catalog_names import ministry_display_name
 
 from .census_changes import LABELS
-from .financial import FREQUENCY_LABELS
+from .financial import (
+    FREQUENCY_LABELS,
+    UNAVAILABLE_SHARE,
+    in_offered_order,
+    share_labels,
+)
 from .hub_census import member_label
 from .limitations import ANSWERS as LIMITATION_ANSWERS
 from .limitations import proposed_label
 from .ministries import outcome_label
 from .money import MoneyAmount
+
+# The key under which ``names`` carries the campaign's share-method labels
+# (option id to label) for a pledge Edit's share methods (#2177); Ministry
+# names are keyed by DUID, an int, so the two never meet.
+SHARE_LABELS = "share_labels"
 
 # One Family's decision history in one scope, oldest first: one row per
 # stored step, across every stream, each with the submission it belongs to
@@ -182,7 +192,7 @@ WITH subs AS (
     JOIN stewardship_information_revision v ON v.item_id=i.id
     UNION ALL
     SELECT 'pledge', g.family_id::text, g.sequence, g.created_at, g.actor_id,
-        g.submission_id, NULL, NULL, NULL, g.action, g.decision,
+        g.submission_id, NULL, NULL, g.reviewed_shares::text, g.action, g.decision,
         g.reviewed_annual_pledge::text, g.reviewed_frequency,
         NULL, NULL, NULL, g.note, NULL
     FROM subs JOIN stewardship_pledge_review g ON g.submission_id=subs.id
@@ -543,7 +553,9 @@ def _decoded(value):
 def item_words(row, names):
     """The item a row is about, for its Details: what and whom.
 
-    ``names`` maps a Ministry DUID to its display name. A census change
+    ``names`` maps a Ministry DUID to its display name, and ``SHARE_LABELS``
+    to the campaign's share-method labels when a pledge line needs them
+    (#2177). A census change
     names its field and Member (or the Family); a Ministry request its join
     or leave, Ministry and Member, plus a decided request's outcome; a
     pledge only itself, plus an Edit's Reviewer's value (``pledge_words``);
@@ -553,7 +565,7 @@ def item_words(row, names):
     if stream == "information":
         return str(_("Additional information"))
     if stream == "pledge":
-        return pledge_words(row)
+        return pledge_words(row, names.get(SHARE_LABELS))
     if stream == "limitation":
         # A proposed Member is named as the Limitations downloads name them.
         subject = (
@@ -591,7 +603,7 @@ def item_words(row, names):
     return f"{words}; {outcome}" if outcome else words
 
 
-def pledge_words(row):
+def pledge_words(row, labels=None):
     """A pledge line's item: "Pledge", and an Edit's Reviewer's value.
 
     The value reads as the Pledges page's Reviewer's value cell does
@@ -599,14 +611,51 @@ def pledge_words(row):
     frequency's word ("No frequency" for a zero pledge without one).
     It repeats ``reviewed_parts`` and ``frequency_label`` there rather than
     import a views module; keep the two in step. Only an Edit records an
-    Accepted (edited) decision (``pledge_review_action_state``).
+    Accepted (edited) decision (``pledge_review_action_state``). An Edit
+    that changed the Family's share methods (#2177; ``subject`` holds them
+    as stored) adds them, each by the label ``labels`` gives its option
+    (``share_labels_for``), with its Other text, in the configured order.
     """
     if row["a"] != "edit":
         return str(_("Pledge"))
     amount = MoneyAmount(int(Decimal(row["c"]) * 100)).display
     frequency = FREQUENCY_LABELS[row["d"] or "none"]
     words = _("Pledge; Reviewer's value: %(amount)s, %(frequency)s")
-    return str(words % {"amount": amount, "frequency": frequency})
+    words = str(words % {"amount": amount, "frequency": frequency})
+    if not row.get("subject"):
+        return words
+    labels = labels or {}
+    shares = ", ".join(
+        f"{labels.get(key, UNAVAILABLE_SHARE)}: {text}"
+        if text
+        else labels.get(key, UNAVAILABLE_SHARE)
+        for key, text in in_offered_order(json.loads(row["subject"]), labels)
+    )
+    return str(
+        _("%(words)s; share methods: %(shares)s") % {"words": words, "shares": shares}
+    )
+
+
+def share_labels_for(campaign_id):
+    """The campaign's share methods by option id, as Pledges words them (#2177).
+
+    Each by its current full label (``share_labels``), the Family form's
+    wording for a household with no listed Member, in configured order.
+    """
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+    from parishkit.stewardship.campaigns.models import Campaign
+
+    campaign = Campaign.objects.select_related("active_configuration").get(
+        pk=campaign_id
+    )
+    system = SystemConfiguration.objects.select_related(
+        "active_configuration__parish"
+    ).get()
+    return share_labels(
+        campaign.active_configuration.values,
+        campaign_id=campaign_id,
+        parish_name=system.active_configuration.parish.name,
+    )
 
 
 def first_state(row):
@@ -729,7 +778,8 @@ def read_reviews(values, reader=None):
     the lines are for, who sees the Back to review notes their roles allow
     (``note_visible``). One statement, plus the
     current catalog's Ministry names (``ministry_names``) only when a
-    Ministry line needs them. Runs inside the page's read guard.
+    Ministry line needs them, and the campaign's share-method labels only
+    when an Edit's share methods do. Runs inside the page's read guard.
     """
     with connection.cursor() as cursor:
         cursor.execute(_HISTORY, values)
@@ -738,4 +788,8 @@ def read_reviews(values, reader=None):
         int(row["subject"]) for row in rows if row["stream"].startswith("ministry")
     }
     names = ministry_names(duids) if duids else {}
+    if any(row["stream"] == "pledge" and row["subject"] for row in rows):
+        # An Edit's share methods (#2177) are worded from the campaign's
+        # configuration: two more statements, only when a line needs them.
+        names = {**names, SHARE_LABELS: share_labels_for(values["campaign"])}
     return steps(rows, names, reader), requests(rows, names)

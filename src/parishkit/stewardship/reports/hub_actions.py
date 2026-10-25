@@ -257,14 +257,20 @@ def reviewed_rows(rows, item):
     ``rows`` are ``hub_streams.financial_tab``'s, in its order (Annual
     pledge, Frequency, Share methods), and ``item`` the pledge's decorated
     Pledges row (None without one). An Edit replaces the amount and the
-    frequency only, so Share methods never has a Reviewer's value; without
-    an Edit in force the rows are as they were.
+    frequency, and Share methods has a Reviewer's value only when the Edit
+    changed them (#2177); without an Edit in force the rows are as they
+    were.
     """
     amount, frequency, installment = item["reviewer_parts"] if item else ("", "", "")
     if not amount:
         return rows
-    # The frequency is worded as the Family's answer beside it is.
-    values = (amount, frequency_words(frequency, installment), "")
+    # The frequency is worded as the Family's answer beside it is; the share
+    # methods as the Family's are, one after another.
+    shares = "; ".join(
+        f"{share['label']}: {share['text']}" if share["text"] else share["label"]
+        for share in item["reviewer_shares"]
+    )
+    values = (amount, frequency_words(frequency, installment), shares)
     return tuple(
         replace(row, reviewer=value) for row, value in zip(rows, values, strict=True)
     )

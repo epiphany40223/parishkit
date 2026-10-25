@@ -1,15 +1,32 @@
 {% load i18n %}{% comment %}
   A pledge's Edit on the review worklist (#1686), drawn per row: the annual
-  pledge and frequency to carry forward, which start as the value carried
-  forward (the reviewer's, else the Family's), named value_amount and
-  value_frequency (web/review_worklist.read_decision). The amount takes the
-  Family form's format; a pledge above zero needs a frequency, which the
-  server checks (reports/pledge_review.edited_value) and, when it refuses,
-  shows in the one reserved error line, marking the field (ui-v1.js
-  refuseAtFields). It ends with the worklist's note, as every editor does.
+  pledge, frequency and share methods to carry forward, which start as the
+  value carried forward (the reviewer's, else the Family's), named
+  value_amount, value_frequency and the share-method fields
+  (web/review_worklist.read_decision). The amount takes the Family form's
+  format; a pledge above zero needs a frequency, which the server checks
+  (reports/pledge_review.edited_value) and, when it refuses, shows in the one
+  reserved error line, marking the field (ui-v1.js refuseAtFields).
+
+  The share methods (#2177) are the campaign's current choices as the Family
+  form offers them (reports/pledge_review_views.edit_choices): a checkbox
+  value_share_<id> each, and for a method that takes details a box
+  value_share_text_<id> shown only while it is ticked; a method in force the
+  campaign no longer offers is listed ticked and can only be unticked. The
+  group is shown only while a frequency is chosen (a pledge above zero),
+  needing one ticked (data-require-one), as the Family form hides them for a
+  zero pledge; a hidden box is disabled and not sent. value_shares says the
+  share methods are in the post (reports/pledge_review.edited_shares), so a
+  zero pledge or an empty choice is still a choice. It ends with the
+  worklist's note, as every editor does.
 {% endcomment %}<div class="dialog-fields" data-missing-hint="{% translate 'Enter the annual pledge in dollars, like 1200 or 1200.50.' %}">
 <div><label for="{{ dialog_id }}-amount">{% translate "Annual pledge, in dollars" %}</label><input id="{{ dialog_id }}-amount" name="value_amount" inputmode="decimal" maxlength="16" pattern="(?:[0-9]{1,9}|[0-9]{1,3}(?:,[0-9]{3}){1,2})(?:\.[0-9]{1,2})?" value="{{ row.edit_amount }}" required data-confirm-reset></div>
 <div><label for="{{ dialog_id }}-frequency">{% translate "Frequency" %}</label><select id="{{ dialog_id }}-frequency" name="value_frequency" data-confirm-reset><option value=""{% if not row.edit_frequency %} selected{% endif %}>{% translate "No frequency (a zero pledge)" %}</option>{% for key, label in frequencies %}<option value="{{ key }}"{% if row.edit_frequency == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+<input type="hidden" name="value_shares" value="1">
+{% if row.edit_shares %}<fieldset class="choice-group" id="{{ dialog_id }}-shares" data-show-when="value_frequency!=" data-require-one data-missing-hint="{% translate 'Choose at least one share method: a pledge above zero needs one.' %}"><legend>{% translate "Share methods (choose at least one)" %}</legend>
+{% for share in row.edit_shares %}<div><label for="{{ dialog_id }}-share-{{ forloop.counter }}"><input type="checkbox" id="{{ dialog_id }}-share-{{ forloop.counter }}" name="value_share_{{ share.id }}" value="on"{% if share.checked %} checked{% endif %} data-confirm-reset> {{ share.label }}{% if share.retired %} {% translate "(no longer offered)" %}{% endif %}</label></div>
+{% if share.free_text %}<div data-show-when="value_share_{{ share.id }}=on"><label for="{{ dialog_id }}-share-{{ forloop.counter }}-text">{% blocktranslate with label=share.label %}Details for {{ label }}{% endblocktranslate %}</label><textarea id="{{ dialog_id }}-share-{{ forloop.counter }}-text" name="value_share_text_{{ share.id }}" maxlength="2000" rows="2" required data-missing-hint="{% translate 'Enter the details this share method asks for, in at most 2,000 characters.' %}" data-confirm-reset>{{ share.text }}</textarea></div>{% endif %}
+{% endfor %}</fieldset>{% endif %}
 <div class="field-error-line"><ul class="errorlist" id="{{ dialog_id }}-error" hidden><li></li></ul></div>
 </div>
 {% include "stewardship/components/review-worklist-note.html" with note_name="note" %}

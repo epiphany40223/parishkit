@@ -4,7 +4,8 @@ One row per Family's current pledge answer (the rows of Financial
 stewardship detail with no filter), drawn by the shared review worklist
 (``web/review_worklist``) with Stage first in its always-open filters (To
 review by default), then a Family search. Each row offers Accept, Edit (the
-annual pledge and frequency), Ignore, Back to review and Entered by hand as
+annual pledge, frequency and share methods, #2177), Ignore, Back to review
+and Entered by hand as
 its stage allows (``pipeline``'s role table), one row or in bulk, recorded
 by ``pledge_review.PledgeDecisions``. Stage To enter by hand is the
 "Pledges" list Staff type into ParishSoft from: the shared export
@@ -92,16 +93,26 @@ from parishkit.stewardship.web.tables import (
 
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
-from .financial import FREQUENCY_LABELS, FinancialQuery, name_families, shape_result
+from .financial import (
+    FREQUENCY_LABELS,
+    UNAVAILABLE_SHARE,
+    FinancialQuery,
+    in_offered_order,
+    name_families,
+    shape_result,
+    share_wording,
+)
 from .money import MoneyAmount
 from .pledge_refresh import display, pledge_check_states
 from .pledge_review import (
     WITHHELD,
     EditRefusal,
     PledgeDecisions,
+    in_force_shares,
     placement,
     read_items,
     reader_roles,
+    share_options,
     version_of,
 )
 from .read_admission import admit_report_read
@@ -152,8 +163,11 @@ HEADINGS = (
     "Share methods",
     "Reviewer's annual pledge",
     "Reviewer's frequency",
+    # Blank unless the Edit changed the Family's share methods (#2177).
+    "Reviewer's share methods",
     "Annual pledge to enter",
     "Frequency to enter",
+    "Share methods to enter",
     # ParishSoft's upcoming-year amount the latest refresh check found
     # (#1704); blank before any.
     "ParishSoft annual pledge",
@@ -177,8 +191,10 @@ PDF_WEIGHTS = {
     "Share methods": 7,
     "Reviewer's annual pledge": 6,
     "Reviewer's frequency": 5,
+    "Reviewer's share methods": 7,
     "Annual pledge to enter": 6,
     "Frequency to enter": 5,
+    "Share methods to enter": 7,
     "ParishSoft annual pledge": 6,
     "Stage": 5,
     "Decision": 5,
@@ -271,7 +287,11 @@ def pledge_rows(campaign_id, principal, search=""):
     decided pledges' check runs (Not seen, #1704). Returns the rows, each
     carrying ``item`` (with its latest counting check, #1747), ``check``
     (a decided pledge's check run, or None), ``placement`` and
-    ``not_seen``, and the selection's metadata.
+    ``not_seen``, and the selection's metadata. Each row also carries what
+    an Edit's share methods are worded and offered from (#2177): the
+    Family's own share methods as stored (``family_shares``), the
+    campaign's current wording (``wording``) and its offered methods
+    (``options``).
     """
     query = FinancialQuery(search=search)
     with connection.cursor() as cursor:
@@ -293,12 +313,20 @@ def pledge_rows(campaign_id, principal, search=""):
     system = SystemConfiguration.objects.select_related(
         "active_configuration__parish"
     ).get()
+    configuration = campaign.active_configuration.values
+    parish_name = system.active_configuration.parish.name
+    # The Family's share methods as stored, before shaping words them.
+    stored = {row["id"]: dict(row["shares"]) for row in result["rows"]}
     result = shape_result(
         result,
         campaign_id=campaign_id,
-        parish_name=system.active_configuration.parish.name,
-        configuration=campaign.active_configuration.values,
+        parish_name=parish_name,
+        configuration=configuration,
     )
+    wording = share_wording(
+        configuration, campaign_id=campaign_id, parish_name=parish_name
+    )
+    options = share_options(configuration, campaign_id)
     name_families(result)
     items = read_items(campaign_id)
     checks = pledge_check_states(items.values())
@@ -312,6 +340,9 @@ def pledge_rows(campaign_id, principal, search=""):
             continue
         review = item.review
         row["item"] = item
+        row["family_shares"] = stored[row["id"]]
+        row["wording"] = wording
+        row["options"] = options
         row["check"] = checks.get(item.submission_id)
         row["placement"] = placement(item)
         row["stage"] = row["placement"].stage.value
@@ -337,15 +368,53 @@ def frequency_label(frequency):
     return FREQUENCY_LABELS[frequency or "none"]
 
 
+def share_text(shares):
+    """Worded share methods as one line: each full label, with its Other text."""
+    return ", ".join(
+        f"{share['label']}: {share['text']}" if share["text"] else share["label"]
+        for share in shares
+    )
+
+
 def answer_parts(row):
     """The Family's answer as (annual pledge, frequency, share methods) text."""
     if row["cannot_give"]:
         return CANNOT_GIVE, "", ""
-    shares = ", ".join(
-        f"{share['label']}: {share['text']}" if share["text"] else share["label"]
-        for share in row["shares"]
-    )
+    shares = share_text(row["shares"])
     return row["annual"].display, frequency_label(row["frequency"]), shares
+
+
+def worded_shares(row, shares):
+    """``shares`` (option id to its text) worded as the Family's are (#2177).
+
+    In the campaign's configured order, each by its current wording; a
+    method the campaign no longer offers keeps the wording the Family's
+    own answer has for it, else reads as an unavailable method.
+    """
+    seen = {share["id"]: share for share in row["shares"]}
+    worded = []
+    for key, text in in_offered_order(shares, row["wording"]):
+        if key in row["wording"]:
+            label, short = row["wording"][key]
+        elif key in seen:
+            label, short = seen[key]["label"], seen[key]["short"]
+        else:
+            label = short = UNAVAILABLE_SHARE
+        worded.append({"id": key, "label": label, "short": short, "text": text})
+    return worded
+
+
+def reviewed_shares(row):
+    """An Edit's share methods in force, worded, or None without any (#2177).
+
+    None while no Edit is in force, and for an Edit that left the Family's
+    own share methods (no ``reviewed_shares``, which an edited zero pledge
+    never has).
+    """
+    review = row["item"].review
+    if not reviewed_parts(row)[0] or review.reviewed_shares is None:
+        return None
+    return worded_shares(row, review.reviewed_shares)
 
 
 def reviewed_parts(row):
@@ -378,14 +447,24 @@ def reviewed_installment(row):
 
 
 def to_enter(row):
-    """The pledge to type into ParishSoft: the reviewer's value, else the Family's."""
+    """The pledge to type into ParishSoft: the reviewer's value, else the Family's.
+
+    (annual pledge, frequency, share methods) text. The share methods are an
+    Edit's when it changed them, none for an edited zero pledge (the
+    Family form clears them), else the Family's own (#2177).
+    """
     reviewed = reviewed_parts(row)
+    amount, frequency, shares = answer_parts(row)
     if reviewed[0]:
-        return reviewed
-    amount, frequency, _shares = answer_parts(row)
+        edited = reviewed_shares(row)
+        if edited is not None:
+            shares = share_text(edited)
+        elif row["item"].review.reviewed_annual_pledge == 0:
+            shares = ""
+        return (*reviewed, shares)
     if row["cannot_give"]:
-        return MoneyAmount(0).display, NO_FREQUENCY
-    return amount, frequency
+        return MoneyAmount(0).display, NO_FREQUENCY, ""
+    return amount, frequency, shares
 
 
 def family_answer(row):
@@ -398,9 +477,57 @@ def family_answer(row):
 
 
 def reviewer_value(row):
-    """The Reviewer's value cell: an Edit's pledge and frequency, else blank."""
+    """The Reviewer's value cell: an Edit's pledge and frequency, else blank.
+
+    Under them, as the Family's answer cell has its own, the Edit's share
+    methods when it changed them (#2177).
+    """
     amount, frequency = reviewed_parts(row)
-    return f"{amount}, {frequency}" if amount else ""
+    if not amount:
+        return ""
+    edited = reviewed_shares(row)
+    if edited is None:
+        return f"{amount}, {frequency}"
+    return format_html(
+        '{}, {}<br><span class="help">{}</span>', amount, frequency, share_text(edited)
+    )
+
+
+def edit_choices(row):
+    """The editor's share-method checkboxes, ticked as the value in force (#2177).
+
+    Every method the campaign offers now, in its order, by its full label
+    with whether it takes details; then each method in force that it no
+    longer offers (``retired``), ticked, which may be unticked but never
+    chosen again. The value in force is an Edit's share methods, else the
+    Family's own (``in_force_shares``).
+    """
+    kept = in_force_shares(row["item"], row["family_shares"])
+    choices = [
+        {
+            "id": option.id,
+            "label": row["wording"].get(option.id, (option.label,))[0],
+            "free_text": option.free_text,
+            "checked": option.id in kept,
+            "text": kept.get(option.id, ""),
+            "retired": False,
+        }
+        for option in row["options"]
+    ]
+    offered = {option.id for option in row["options"]}
+    retired = {key: text for key, text in kept.items() if key not in offered}
+    choices.extend(
+        {
+            "id": share["id"],
+            "label": share["label"],
+            "free_text": False,
+            "checked": True,
+            "text": share["text"],
+            "retired": True,
+        }
+        for share in worded_shares(row, retired)
+    )
+    return choices
 
 
 def mark(row):
@@ -461,7 +588,8 @@ def export_rows(rows, zone, *, time_text=iso_time):
                 frequency,
                 shares,
                 *reviewed_parts(row),
-                *(to_enter(row) if row["stage"] in ENTERING else ("", "")),
+                share_text(reviewed_shares(row) or ()),
+                *(to_enter(row) if row["stage"] in ENTERING else ("", "", "")),
                 parishsoft_amount(row),
                 stage_text(row),
                 decision.label if decision else "",
@@ -810,6 +938,9 @@ def decorate(rows):
                     frequency,
                     reviewed_installment(row) if amount else "",
                 ),
+                # An Edit's share methods when it changed them, worded (none
+                # otherwise), for the Family hub's Share methods row (#2177).
+                "reviewer_shares": reviewed_shares(row) or (),
                 # Shown beside Entered incorrectly and Not seen in
                 # ParishSoft (the component's shows_now), #1704.
                 "parishsoft_now": parishsoft_amount(row),
@@ -832,6 +963,9 @@ def decorate(rows):
                     item.review.reviewed_frequency if amount else row["frequency"]
                 )
                 or "",
+                # The share methods it starts from: the Edit's in force,
+                # else the Family's (#2177).
+                "edit_shares": edit_choices(row),
                 "_source": row,
             }
         )

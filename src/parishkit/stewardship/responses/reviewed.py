@@ -684,7 +684,8 @@ def financial_entries(family, prior):
     Confirmed, so it always has an entry while the Family's latest live
     response answers the financial questions. Its stage is the pledge
     selection's (``reports.pledge_review``); an edited pledge shows the
-    reviewer's amount and frequency from the decision in force.
+    reviewer's amount, frequency and share methods (#2177) from the
+    decision in force.
     """
     if prior is None or prior.mode != "live" or "financial" not in prior.answers:
         return []
@@ -720,8 +721,9 @@ def pledge_shown(entry, answer, review):
 
     ``answer`` is the financial answer of the response the entry names (the
     Family's own) and ``review`` the decision row it names. An edited pledge
-    shows the reviewer's amount and frequency with the Family's own share
-    methods and Cannot contribute answer; an edited zero pledge hides and
+    shows the reviewer's amount and frequency, the reviewer's share methods
+    when the Edit changed them (#2177) else the Family's own, and the
+    Family's own Cannot contribute answer; an edited zero pledge hides and
     clears the frequency and share methods as the Family form does for a
     zero pledge, and an edited pledge above zero is not Cannot contribute.
     The pledge stage selection compares a later response with the same
@@ -733,10 +735,13 @@ def pledge_shown(entry, answer, review):
 
     amount = MoneyAmount(int(review.reviewed_annual_pledge * 100))
     positive = amount.cents > 0
+    shares = (
+        answer["shares"] if review.reviewed_shares is None else review.reviewed_shares
+    )
     return {
         "annual_pledge": amount.canonical,
         "frequency": (review.reviewed_frequency or "") if positive else "",
-        "shares": dict(answer["shares"]) if positive else {},
+        "shares": dict(shares) if positive else {},
         "cannot_give": False if positive else bool(answer.get("cannot_give")),
     }
 

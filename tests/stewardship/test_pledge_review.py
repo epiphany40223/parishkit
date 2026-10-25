@@ -25,24 +25,35 @@ from parishkit.stewardship.reports import pledge_review_views as views
 from parishkit.stewardship.reports.money import MoneyAmount
 from parishkit.stewardship.reports.pledge_models import PledgeReview
 from parishkit.stewardship.reports.pledge_review import (
+    DETAILS_HINT,
+    SHARES_HINT,
     EditRefusal,
     Item,
+    edited_shares,
     edited_value,
+    in_force_shares,
     placement,
 )
+from parishkit.stewardship.responses.financial import ShareOption
+from parishkit.stewardship.responses.reviewed import pledge_shown
 from parishkit.stewardship.web.review_worklist import build
 
 SUBMITTED = datetime(2054, 10, 6, 15, 30, tzinfo=UTC)
+ONLINE = "11111111-1111-4111-8111-111111111111"
+OTHER = "22222222-2222-4222-8222-222222222222"
 STAFF = frozenset({"staff"})
 
 
-def review(decision="accepted", *, entered=False, amount=None, frequency=None):
+def review(
+    decision="accepted", *, entered=False, amount=None, frequency=None, shares=None
+):
     """An unsaved latest decision row, as the selection would return it."""
     row = PledgeReview(
         actor_id=uuid4(),
         decision=decision,
         reviewed_annual_pledge=amount,
         reviewed_frequency=frequency,
+        reviewed_shares=shares,
         entered=entered,
         note="Checked with the Family",
     )
@@ -95,9 +106,16 @@ def pledge_row(found=None, **extra):
         "annual": MoneyAmount(120000),
         "frequency": "weekly",
         "shares": [
-            {"label": "Online giving", "text": ""},
-            {"label": "Other", "text": "Stock gift"},
+            {"id": ONLINE, "label": "Online giving", "short": "Online", "text": ""},
+            {"id": OTHER, "label": "Other", "short": "Other", "text": "Stock gift"},
         ],
+        # What an Edit's share methods are worded and offered from (#2177).
+        "family_shares": {ONLINE: "", OTHER: "Stock gift"},
+        "wording": {ONLINE: ("Online giving", "Online"), OTHER: ("Other", "Other")},
+        "options": (
+            ShareOption(ONLINE, "Online giving", False),
+            ShareOption(OTHER, "Other", True),
+        ),
         "submitted_at": SUBMITTED,
         "item": found,
         "placement": placement(found),
@@ -211,6 +229,163 @@ def test_a_malformed_edit_is_a_plain_value_error(posted):
     assert not isinstance(refused.value, EditRefusal)
 
 
+# --- Share methods on an Edit (#2177) --------------------------------------
+
+SHARE_OPTIONS = (
+    ShareOption(ONLINE, "Online giving", False),
+    ShareOption(OTHER, "Other", True),
+)
+RETIRED = "33333333-3333-4333-8333-333333333333"
+
+
+def shares_posted(**fields):
+    """The editor's posted share-method fields, each once, with the marker."""
+    return {"value_shares": ["1"]} | {
+        name.replace("ONLINE", ONLINE).replace("OTHER", OTHER): [value]
+        for name, value in fields.items()
+    }
+
+
+def test_an_edits_share_methods_are_read_as_the_family_form_stores_them():
+    """Ticked methods, with details for Other; a retired method in force may
+    stay ticked with its text; a zero pledge has none; no marker leaves the
+    share methods alone."""
+    posted = shares_posted(
+        value_share_ONLINE="on", value_share_OTHER="on", value_share_text_OTHER=" Gift "
+    )
+    kept = {RETIRED: "Old"}
+    assert edited_shares(posted, SHARE_OPTIONS, kept, Decimal("10"), "weekly") == {
+        ONLINE: "",
+        OTHER: "Gift",
+    }
+    posted = shares_posted(value_share_ONLINE="on") | {f"value_share_{RETIRED}": ["on"]}
+    assert edited_shares(posted, SHARE_OPTIONS, kept, Decimal("10"), "weekly") == {
+        ONLINE: "",
+        RETIRED: "Old",
+    }
+    # A kept retired method alone is the one chosen, as the dialog counts it.
+    posted = {"value_shares": ["1"], f"value_share_{RETIRED}": ["on"]}
+    assert edited_shares(posted, SHARE_OPTIONS, kept, Decimal("10"), "weekly") == {
+        RETIRED: "Old"
+    }
+    assert edited_shares(shares_posted(), SHARE_OPTIONS, {}, Decimal("0"), "") is None
+    assert edited_shares({}, SHARE_OPTIONS, {}, Decimal("10"), "weekly") is None
+
+
+@pytest.mark.parametrize(
+    ("posted", "field", "message"),
+    [
+        ({}, f"value_share_{ONLINE}", SHARES_HINT),
+        ({"value_share_OTHER": "on"}, f"value_share_text_{OTHER}", DETAILS_HINT),
+    ],
+)
+def test_share_methods_the_family_form_refuses_are_refused_at_their_field(
+    posted, field, message
+):
+    """None ticked above zero, or Other without details, at its field."""
+    with pytest.raises(EditRefusal) as refused:
+        edited_shares(
+            shares_posted(**posted), SHARE_OPTIONS, {}, Decimal("10"), "weekly"
+        )
+    assert (refused.value.fields, refused.value.message) == ((field,), message)
+
+
+@pytest.mark.parametrize(
+    "posted",
+    [
+        {f"value_share_{RETIRED}": ["on"]},
+        {f"value_share_{ONLINE}": ["1"]},
+        {f"value_share_text_{ONLINE}": ["x"]},
+        {"value_share": ["on"]},
+        {"value_shares": ["yes"]},
+        {"value_shares": None, f"value_share_{ONLINE}": ["on"]},
+    ],
+)
+def test_a_forged_share_method_field_is_a_plain_value_error(posted):
+    """A method neither offered nor in force, another checkbox value, details
+    for a method without them, or an unknown field: a malformed form."""
+    posted = {
+        name: value
+        for name, value in ({"value_shares": ["1"]} | posted).items()
+        if value is not None
+    }
+    with pytest.raises(ValueError) as refused:
+        edited_shares(
+            posted,
+            SHARE_OPTIONS,
+            {},
+            Decimal("10"),
+            "weekly",
+        )
+    assert not isinstance(refused.value, EditRefusal)
+
+
+def test_the_share_methods_in_force_are_an_edits_else_the_familys():
+    """An Edit's share methods count only while it is in force."""
+    family = {ONLINE: ""}
+    edited = review("accepted_edited", amount=Decimal("5"), frequency="weekly")
+    assert in_force_shares(item("to_enter_by_hand", edited), family) == family
+    edited.reviewed_shares = {OTHER: "Gift"}
+    assert in_force_shares(item("to_enter_by_hand", edited), family) == {OTHER: "Gift"}
+    changed = item("to_review", edited, in_force=False)
+    assert in_force_shares(changed, family) == family
+
+
+def edited_row(shares, amount="1300.00"):
+    """A row whose Edit in force has ``shares``."""
+    return pledge_row(
+        item(
+            "to_enter_by_hand",
+            review(
+                "accepted_edited",
+                amount=Decimal(amount),
+                frequency="monthly" if Decimal(amount) else None,
+                shares=shares,
+            ),
+        )
+    )
+
+
+def test_an_edits_share_methods_show_beside_the_familys_and_are_to_enter():
+    """The Reviewer's value has them under its amount, the files and the
+    editor carry them; a method neither offered nor in the Family's answer
+    reads as an unavailable one."""
+    row = edited_row({OTHER: "Bonds", RETIRED: ""})
+    assert str(views.reviewer_value(row)) == (
+        '$1,300.00, Monthly<br><span class="help">Other: Bonds, '
+        "Unavailable share method</span>"
+    )
+    assert views.to_enter(row)[2] == "Other: Bonds, Unavailable share method"
+    choices = views.edit_choices(row)
+    assert [(c["id"], c["checked"], c["text"], c["retired"]) for c in choices] == [
+        (ONLINE, False, "", False),
+        (OTHER, True, "Bonds", False),
+        (RETIRED, True, "", True),
+    ]
+    # An edited zero pledge has no share methods to enter.
+    zero = edited_row(None, amount="0.00")
+    assert views.to_enter(zero) == ("$0.00", "No frequency", "")
+    assert views.reviewed_shares(zero) is None
+
+
+def test_the_reviewed_form_draws_an_edits_share_methods():
+    """The reviewer's share methods when the Edit changed them, else the
+    Family's; an edited zero pledge none."""
+    entry = {"shown": "reviewer"}
+    answer = {
+        "annual_pledge": "1200.00",
+        "frequency": "weekly",
+        "shares": {ONLINE: ""},
+        "cannot_give": False,
+    }
+    edited = review("accepted_edited", amount=Decimal("1300.00"), frequency="monthly")
+    assert pledge_shown(entry, answer, edited)["shares"] == {ONLINE: ""}
+    edited.reviewed_shares = {OTHER: "Gift"}
+    assert pledge_shown(entry, answer, edited)["shares"] == {OTHER: "Gift"}
+    edited.reviewed_annual_pledge = Decimal("0.00")
+    assert pledge_shown(entry, answer, edited)["shares"] == {}
+
+
 def test_cells_show_the_familys_answer_and_the_reviewers_value():
     """Family's answer keeps the Family's pledge; the edit is beside it."""
     row = pledge_row()
@@ -219,14 +394,22 @@ def test_cells_show_the_familys_answer_and_the_reviewers_value():
         "</span>"
     )
     assert views.reviewer_value(row) == "$1,300.00, Monthly"
-    assert views.to_enter(row) == ("$1,300.00", "Monthly")
+    assert views.to_enter(row) == (
+        "$1,300.00",
+        "Monthly",
+        "Online giving, Other: Stock gift",
+    )
 
 
 def test_the_pledge_to_enter_is_the_familys_without_an_edit():
     """An accepted pledge carries the Family's answer forward."""
     row = pledge_row(item("to_enter_by_hand", review("accepted")))
     assert views.reviewer_value(row) == ""
-    assert views.to_enter(row) == ("$1,200.00", "Weekly")
+    assert views.to_enter(row) == (
+        "$1,200.00",
+        "Weekly",
+        "Online giving, Other: Stock gift",
+    )
 
 
 def test_a_family_that_cannot_contribute_enters_a_zero_pledge():
@@ -235,7 +418,7 @@ def test_a_family_that_cannot_contribute_enters_a_zero_pledge():
         item("to_review"), cannot_give=True, annual=MoneyAmount(0), frequency=None
     )
     assert views.family_answer(row) == "Cannot contribute"
-    assert views.to_enter(row) == ("$0.00", "No frequency")
+    assert views.to_enter(row) == ("$0.00", "No frequency", "")
 
 
 def test_a_changed_pledge_shows_no_edit_or_last_decision():
@@ -365,8 +548,11 @@ def test_the_files_name_every_column_once():
         "Share methods": "Online giving, Other: Stock gift",
         "Reviewer's annual pledge": "$1,300.00",
         "Reviewer's frequency": "Monthly",
+        # The Edit left the Family's share methods (#2177).
+        "Reviewer's share methods": "",
         "Annual pledge to enter": "$1,300.00",
         "Frequency to enter": "Monthly",
+        "Share methods to enter": "Online giving, Other: Stock gift",
         "ParishSoft annual pledge": "",
         "Stage": "To enter by hand",
         "Decision": "Accepted (edited)",

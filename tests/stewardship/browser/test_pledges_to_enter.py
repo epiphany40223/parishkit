@@ -389,3 +389,113 @@ def test_refresh_checks_show_on_the_worklist(page, component_origin, axe_source,
         "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
     )
     assert_accessible(page, axe_source)
+
+
+# --- Share methods on an Edit (#2177) --------------------------------------
+
+ONLINE = "11111111-1111-4111-8111-111111111111"
+OTHER = "22222222-2222-4222-8222-222222222222"
+
+
+def share_editor(page, index):
+    """Row ``index``'s pledge editor, opened, and its share-method group."""
+    icon(page, index, "Edit").click()
+    editor = page.locator(f"#pledges-edit-dialog-00000000-0000-0000-0000-{index:012x}")
+    visible(editor)
+    return editor, editor.locator("fieldset.choice-group")
+
+
+def test_edit_changes_the_share_methods_in_the_dialog(page, component_origin):
+    """The editor shows the Family form's share methods, ticked as the Family
+    answered, Other's details shown while it is ticked; unticking every one
+    of a pledge above zero holds Save; Save posts the ticked ones, and the
+    row shows the reviewer's share methods beside the Family's answer."""
+    from .pledges_components import SHARES, SHARES_EVERY
+
+    page.goto(component_origin + PATH)
+    page.evaluate(MARK)
+    sent = posts_to(page, component_origin, SHARES)
+    editor, group = share_editor(page, 3)
+    visible(group)
+    online = group.get_by_label("Online giving")
+    other = group.get_by_label("Other", exact=True)
+    details = group.get_by_label("Details for Other")
+    assert online.is_checked() and other.is_checked()
+    assert details.input_value() == "Stock gift"
+    save = editor.get_by_role("button", name="Save")
+    # Cancel and reopen: the boxes start again ticked as drawn.
+    other.uncheck()
+    hidden(details)
+    editor.get_by_role("button", name="Cancel").click()
+    editor, group = share_editor(page, 3)
+    online = group.get_by_label("Online giving")
+    other = group.get_by_label("Other", exact=True)
+    details = group.get_by_label("Details for Other")
+    assert online.is_checked() and other.is_checked()
+    visible(details)
+    save = editor.get_by_role("button", name="Save")
+    # Other ticked without details: Save waits, saying what the box needs.
+    details.fill("")
+    assert save.is_disabled()
+    has_text(
+        page.locator("#" + save.get_attribute("aria-describedby")),
+        "Enter the details this share method asks for, in at most 2,000 characters.",
+    )
+    details.fill("Stock gift")
+    other.uncheck()
+    hidden(details)
+    online.uncheck()
+    # None ticked for a pledge above zero: the Family form's rule.
+    assert save.is_disabled()
+    online.check()
+    available(save)
+    save.click()
+    has_text(page.locator("#pledges-notice"), EDITED_NOTICE)
+    body = sent[-1]
+    assert "value_shares=1" in body and f"value_share_{ONLINE}=on" in body
+    assert f"value_share_{OTHER}" not in body and "value_share_text_" not in body
+    assert "value_amount=1200.00" in body and "value_frequency=weekly" in body
+    assert page.evaluate(MARKED) == "kept"
+    # The value in force, with the Family's answer beside it (an editor
+    # drawn from it is database/test_pledge_share_methods_postgresql's).
+    from playwright.sync_api import expect
+
+    page.goto(component_origin + SHARES_EVERY)
+    cells = row(page, 3).locator("td")
+    expect(cells.filter(has_text="Stock gift")).to_have_text(
+        "$1,200.00, WeeklyOnline giving, Other: Stock gift"
+    )
+    expect(cells.filter(has_text="Weekly").last).to_have_text(
+        "$1,200.00, WeeklyOnline giving"
+    )
+
+
+def test_a_zero_pledge_hides_and_sends_no_share_methods(page, component_origin):
+    """No frequency (a zero pledge) hides the share methods, as the Family
+    form does; the post says none were sent for it."""
+    page.goto(component_origin + PATH)
+    sent = posts_to(page, component_origin, EDITED)
+    editor, group = share_editor(page, 3)
+    editor.get_by_label("Annual pledge, in dollars").fill("0")
+    editor.get_by_label("Frequency").select_option("")
+    hidden(group)
+    editor.get_by_role("button", name="Save").click()
+    has_text(page.locator("#pledges-notice"), EDITED_NOTICE)
+    body = sent[-1]
+    assert "value_shares=1" in body and "value_share_" not in body
+
+
+def test_a_stale_share_method_edit_is_refused_in_place(page, component_origin):
+    """An Edit someone else's change made stale is answered with the page as
+    it is, saying nothing was recorded; the row stays To review."""
+    from .pledges_components import STALE, STALE_NOTICE
+
+    page.goto(component_origin + PATH)
+    page.evaluate(MARK)
+    posts_to(page, component_origin, STALE)
+    editor, group = share_editor(page, 3)
+    group.get_by_label("Online giving").uncheck()
+    editor.get_by_role("button", name="Save").click()
+    has_text(page.locator("#pledges-notice"), STALE_NOTICE)
+    assert offered(row(page, 3)) == ["accept", "edit", "ignore"]
+    assert page.evaluate(MARKED) == "kept"

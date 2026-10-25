@@ -290,12 +290,14 @@ def test_rows_are_shaped_with_exact_installments_and_honest_absence(monkeypatch)
         # Worded as that Family saw it, before the year label was later edited.
         # Without a short label the page's cell shows the full label (#1569).
         {
+            "id": OTHER,
             "label": f"Another way in Jubilee, {PERIOD}",
             "short": f"Another way in Jubilee, {PERIOD}",
             "text": "Stock",
         },
         # An option absent from the configuration the Family saw is never guessed.
         {
+            "id": RETIRED,
             "label": "Unavailable share method",
             "short": "Unavailable share method",
             "text": "Old text",
@@ -497,9 +499,10 @@ def test_short_labels_name_methods_on_the_page_but_never_in_exports(monkeypatch)
     shaped = page(configuration=shortened)
     full = "This household will give online to Sample Parish"
     assert shaped["rows"][0]["shares"] == [
-        {"label": full, "short": "Online", "text": ""},
+        {"id": ONLINE, "label": full, "short": "Online", "text": ""},
         # No short label: the full label in both places.
         {
+            "id": OTHER,
             "label": f"Another way in 2055, {PERIOD}",
             "short": f"Another way in 2055, {PERIOD}",
             "text": "x",
@@ -528,6 +531,7 @@ def test_a_short_label_set_later_names_earlier_answers(monkeypatch):
     substitute(monkeypatch, (json.dumps(result()),))
     row = page(configuration=shortened)["rows"][0]
     assert row["shares"][0] == {
+        "id": OTHER,
         "label": f"Another way in Jubilee, {PERIOD}",
         "short": "Other",
         "text": "Stock",
@@ -549,4 +553,9 @@ def test_a_cleared_short_label_shows_the_full_label_for_earlier_answers(monkeypa
     )
     row = page(configuration=CONFIGURATION)["rows"][0]
     full = f"Another way in 2055, {PERIOD}"
-    assert row["shares"][0] == {"label": full, "short": full, "text": "Stock"}
+    assert row["shares"][0] == {
+        "id": OTHER,
+        "label": full,
+        "short": full,
+        "text": "Stock",
+    }
