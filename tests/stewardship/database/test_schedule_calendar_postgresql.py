@@ -15,6 +15,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from django.db import transaction
 
 from parishkit.stewardship.accounts import (
     campaign_wizard,
@@ -683,3 +684,60 @@ def test_a_move_to_a_time_already_past_is_refused_at_the_date(
         assert re.search(r'name="schedule-date"[^>]*aria-invalid="true"', page)
     assert ConfigurationChangeRequest.objects.count() == before
     assert review_text(post(browser, edit, move(store, date="2054-10-22")))
+
+
+def events_list(page):
+    """The page's hidden list of operational events (#1808)."""
+    return page.split("data-calendar-events>", 1)[1].split("</ul>", 1)[0]
+
+
+def test_the_calendar_reads_refreshes_backups_and_milestones_changing_nothing(
+    auth_service, google
+):
+    """Operational events (#1808): read, never stored, never in the table.
+
+    The reminder sends on October 25 at 9:00 AM in New York. A backup that
+    ran from 8:58 to 9:03 AM that day is listed with its start and end, the
+    reminder notes it was sent during it, and one long before the campaign
+    is not read. The saved refresh schedule's nightly time is listed on the
+    days around each send, as daily events; with no Production activation
+    there is no milestone.
+    """
+    from parishkit.stewardship.jobs.backup_models import BackupRun
+
+    from .test_backup_postgresql import FACTS
+
+    store = auth_service.store
+    draft_with_schedules(store)
+    due = definition("reminder").current_revision.due_at
+    with transaction.atomic():
+        BackupRun.objects.create(
+            started_at=due - timedelta(minutes=2),
+            completed_at=due + timedelta(minutes=3),
+            **FACTS,
+        )
+        BackupRun.objects.create(
+            started_at=due - timedelta(days=400),
+            completed_at=due - timedelta(days=400),
+            **FACTS,
+        )
+    browser, _ = signed_in()
+    before = ConfigurationChangeRequest.objects.count()
+    response = browser.get(CALENDAR)
+    assert response.status_code == 200
+    page = unescape(response.content.decode())
+    events = events_list(page)
+    started = (due - timedelta(minutes=2)).strftime("%Y-%m-%dT%H:%M")
+    assert events.count('data-kind="backup"') == 1
+    assert f'<time datetime="{started}' in events
+    assert events.count('data-kind="refresh" data-daily') >= 3
+    assert 'data-kind="milestone"' not in events
+    reminder_item = re.search(
+        r'<li data-calendar-send data-label="Reminder 1".*?</li>', page
+    )[0]
+    assert "<span data-calendar-note>Sent during a backup</span>" in reminder_item
+    # The table stays sends only, and the About text says where they come from.
+    table = page.split('id="calendar-sends-caption"', 1)[1]
+    assert "Backup" not in table and "ParishSoft refresh" not in table
+    assert "The backup schedule is set on the server" in page
+    assert ConfigurationChangeRequest.objects.count() == before
