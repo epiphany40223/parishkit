@@ -128,7 +128,7 @@ def test_every_login_has_exactly_its_own_service_source(profile, mode):
 
 @pytest.mark.parametrize("profile", PROFILES)
 def test_no_tcp_trust_and_the_socket_admits_only_the_operator_and_inspector(profile):
-    """The socket trusts the operator and the inspection login only; TCP never trusts or uses md5."""
+    """The socket trusts the operator and inspector only; TCP never trusts."""
     _, _, hba = rendering(profile)
     rules = [line for line in hba.splitlines() if line and not line.startswith("#")]
     assert rules[:3] == [
