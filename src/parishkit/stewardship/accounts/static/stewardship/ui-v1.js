@@ -6545,6 +6545,11 @@
       field.name = name;
       field.value = bundle;
       form.append(field);
+      // The chosen image goes with the save as this bundle, so the slot's
+      // form drawn anew by a redraw once it is applied says no "not kept"
+      // line (#2185); choosing another file drops the bundle (below) and
+      // marks the form again.
+      editedSince.delete(upload.id);
     }
     return true;
   };
@@ -6627,6 +6632,10 @@
     if (form.hasAttribute("data-direct-uploads") && !(await stageUploads(form, finish, hold))) return;
     // Read once any images are staged, so the save names them.
     const body = new URLSearchParams(new FormData(form, submitter || undefined));
+    // What was typed goes with this post, so a redraw once it is applied,
+    // drawing the form anew (no later step to open, below), says no "not
+    // kept" line (#2185); anything typed after it marks the form again.
+    editedSince.delete(form.id);
     let answer = null;
     try {
       answer = await readPage(formUrl(form), {method: "POST", body});
