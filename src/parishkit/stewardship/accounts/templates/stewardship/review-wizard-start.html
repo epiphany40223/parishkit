@@ -10,7 +10,9 @@
     stream's filters are drawn below the group and shown only while it is
     chosen (data-show-when, which also keeps the hidden ones from being
     sent): Basic is one name search, with the stream's help under it
-    (what its search matches; blank means every waiting item), Advanced
+    (what its search matches; blank means every waiting item) and, for
+    Pledges while Limitations is offered, a line saying where its
+    left-out Families are (Basic only, as asked in R52 Part W2), Advanced
     the stream's Stage (with
     Waiting, Basic's set, first) and its table's own filter template. Start
     starts a new run, replacing the reader's earlier open runs; it waits
@@ -32,7 +34,7 @@
 </fieldset>{% endif %}
 {% include "stewardship/components/choice-pair.html" with pair_id="review-mode" name="mode" legend=_("Filters") first_value="basic" first_label=_("Basic") second_value="advanced" second_label=_("Advanced") chosen=mode %}
 {% for item in streams %}{% if item.available %}<div class="filters" data-show-when="stream={{ item.stream.key }}" data-review-filters="{{ item.stream.key }}">
-<div data-show-when="mode=basic"><div><label for="{{ item.stream.key }}-basic-search">{% translate "Search name" %}</label><input id="{{ item.stream.key }}-basic-search" name="search" maxlength="200" value="{{ item.search }}" aria-describedby="{{ item.stream.key }}-basic-search-help"></div><p class="help" id="{{ item.stream.key }}-basic-search-help" data-review-search-help>{{ item.stream.search_help }}</p></div>
+<div data-show-when="mode=basic"><div><label for="{{ item.stream.key }}-basic-search">{% translate "Search name" %}</label><input id="{{ item.stream.key }}-basic-search" name="search" maxlength="200" value="{{ item.search }}" aria-describedby="{{ item.stream.key }}-basic-search-help{% if item.note %} {{ item.stream.key }}-basic-note{% endif %}"></div><p class="help" id="{{ item.stream.key }}-basic-search-help" data-review-search-help>{{ item.stream.search_help }}</p>{% if item.note %}<p class="help" id="{{ item.stream.key }}-basic-note" data-review-basic-note>{{ item.note }}</p>{% endif %}</div>
 <div data-show-when="mode=advanced"><div><label for="{{ item.stream.key }}-stage">{% translate "Stage" %}</label><select id="{{ item.stream.key }}-stage" name="stage">{% for value, label in item.stages %}<option value="{{ value }}"{% if item.stage == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
 {% with drawn=item.context %}{% include item.stream.filters_template with query=drawn.query search=drawn.search route_choices=drawn.route_choices kind_choices=drawn.kind_choices ministries=drawn.ministries members_choices=drawn.members_choices %}{% endwith %}</div>
 </div>{% endif %}{% endfor %}

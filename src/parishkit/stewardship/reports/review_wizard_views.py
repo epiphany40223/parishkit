@@ -209,6 +209,10 @@ def _start_context(principal, campaign_id, offered, *, chosen=None, mode="basic"
                 ],
                 "stage": mine.get("stage", WAITING),
                 "search": mine.get("search", ""),
+                # Where the deferred items are, while that stream is offered.
+                "note": stream.basic_note
+                if not stream.defers_to or stream.defers_to in linked
+                else "",
                 # The table's own filter template, with its own context.
                 "context": stream.context(principal, campaign_id, mine)
                 if item.url
@@ -287,8 +291,15 @@ def _start_run(request, campaign_id, store, offered):
     principal = stream.principal(request, store)
     admit_report_read(campaign_id)
     note, status, count = None, 200, 0
+    # A stream that defers items to another (Pledges' Cannot contribute
+    # Families, to Limitations) leaves them out only while that one is
+    # offered to this reader as a link.
+    options = {}
+    if stream.defers_to:
+        linked = {offer.key for offer, item in offered if item.url}
+        options["defer"] = stream.defers_to in linked
     with transaction.atomic():
-        items = stream.read(campaign_id, values, principal)
+        items = stream.read(campaign_id, values, principal, **options)
         count = len(items)
         try:
             subjects = sequence(items, grouped=stream.grouped, sort=sort)

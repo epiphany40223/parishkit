@@ -444,7 +444,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
 .review-work > .link-cards, .review-work-stream > .link-cards { flex: 1 1 32rem; grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); }
 .review-work-stream + .review-work-stream { margin-top: .75rem; }
 /* Review one at a time beside the tables (review-work-split.html, #2123, R52 Part W): the One
-   at a time pane, a vertical rule with "or", then the stream groups By table. The pane's text
+   at a time pane, a vertical rule with "or", then the In bulk stream groups. The pane's text
    sits at its top and its button is centred in the height left below it (margin-block: auto,
    with no justify-content, and no flex gap, which auto margins would leave out of the centring),
    so it reads as the panel's main action. The split is a container,

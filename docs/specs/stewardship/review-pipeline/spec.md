@@ -2025,8 +2025,10 @@ code the other two views already run
 ### Wizard flow
 
 1. **Choose the stream.** Census changes, Ministry requests, Pledges,
-   Additional information or Limitations, in the Review work menu's order,
-   offering only the streams the reader may open
+   Limitations or Additional information, in that order (the wizard's own,
+   `review_streams.STREAMS`; R52 Part W2 moved Additional information
+   last; the Review work menu and tables keep the menu's order), offering
+   only the streams the reader may open
    ([wizard streams and access](#wizard-streams-and-access)). With exactly
    one (a Ministry leader: Ministry requests) the choice is not shown.
 2. **Filter and sort.** Default: everything waiting, sorted by name
@@ -2065,8 +2067,8 @@ stream one at a time exactly when its Review work page is in their menu:
 | Census changes | `census_changes` (`VIEW_CENSUS`, census on) | Administrators, Staff | the Family, then each changed Member |
 | Ministry requests | `ministry_report` (`MINISTRY_REPORT`, scoped) | Administrators, Staff, Ministry leaders (their Ministries only) | one Member |
 | Pledges | `pledges_to_enter` (`FINANCIAL_DETAIL`) | Administrators, Staff | one Family |
-| Additional information | `information_queue` (`ADDITIONAL_FOLLOWUP`) | Administrators, Staff | one Family |
 | Limitations | `limitations_report` (`CAMPAIGN_REPORT`, Ministry stewardship on) | Administrators, Staff | the Family (only with a Family answer: the financial one, its Pledges page, or Cannot attend Mass), then each Member with a Limitations answer |
+| Additional information | `information_queue` (`ADDITIONAL_FOLLOWUP`) | Administrators, Staff | one Family |
 
 - A stream is offered while its menu entry is available
   (`admin_navigation`'s `Entry` for that page, campaign condition
@@ -2091,8 +2093,11 @@ stream one at a time exactly when its Review work page is in their menu:
   prayer services** is a Family answer too (the Limitations table's
   Families table), so it is on the Family page as well, for every reader
   of Limitations (#2123 slice 1; it has no Member to go to). Every other
-  Limitations answer is per Member and is on that Member's page. A
-  Pledges run's Family page shows the same financial answer.
+  Limitations answer is per Member and is on that Member's page. While
+  Limitations is offered, a Pledges run leaves a Cannot contribute
+  financially Family out
+  ([wizard filters and sort](#wizard-filters-and-sort)), so that answer
+  is reviewed in Limitations only.
 - While other campaign work holds the campaign, pages draw no action icons,
   with the stream pages' reason, as the hub does (`hub_actions.mutable`).
 
@@ -2118,18 +2123,22 @@ Advanced when it is drawn with an Advanced filter set):
   - Ministry requests: "Member's name or the Ministry. Leave blank for
     every waiting request."
   - Pledges: "Family name or the Family DUID. Leave blank for every
-    waiting pledge."
-  - Additional information: "Family name, the Family DUID, or words in
-    the information or notes. Leave blank for every waiting item."
+    waiting pledge." While Limitations is offered, a second line under
+    it says "Families who answered Cannot contribute are in
+    Limitations." (R52 Part W2; see Pledges below). Only Basic shows
+    that line, as the Administrator asked; Advanced leaves the same
+    Families out.
   - Limitations: "Family name, a Member's name, or the Family DUID. Leave
     blank for every waiting answer."
+  - Additional information: "Family name, the Family DUID, or words in
+    the information or notes. Leave blank for every waiting item."
 - **Advanced:** every filter the stream's Review work table has, drawn by
   that table's own filter template and parsed by its own query class: for
   Ministry requests the Stage, Search Member or Ministry name, Ministry,
   Request and Members (Staff); for Census changes the Stage, Search, How
   it reaches ParishSoft and Kind; for Pledges the Stage and Search; for
-  Additional information the Stage and Search; for Limitations the Stage,
-  Search and Show. The Stage filter adds one choice ahead of the table's,
+  Limitations the Stage, Search and Show; for Additional information the
+  Stage and Search. The Stage filter adds one choice ahead of the table's,
   **Waiting** (Basic's set), which is its default here, and leaves out the
   table's **History**: the wizard never offers History, its last choice
   reads **Every stage except History**, a start posted at History is
@@ -2152,6 +2161,20 @@ Advanced when it is drawn with an Advanced filter set):
   then the secondary name, then the DUID, then the subject's campaign
   record id. A subject's submitted time is the newest submitted time among
   its matched items; equal times fall back to Last name (A–Z).
+
+- **Pledges leave out Cannot contribute:** while the reader is offered
+  Limitations (it needs Ministry stewardship), in Basic and Advanced
+  alike, a Pledges run implicitly leaves out the pledge rows whose Family answered
+  **Cannot contribute financially** (the rows `pledge_rows` marks
+  `cannot_give`), with no filter to bring them back: that answer is
+  reviewed in the Limitations run, which keeps including it on the
+  Family's page ([wizard streams and access](#wizard-streams-and-access)).
+  Only the Pledges wizard sequence leaves them out; the Pledges table
+  keeps listing them, and its **Review these one at a time** button
+  starts a run without them (when it lists only those, the start page
+  says "Nothing matches these filters." and starts nothing). Without
+  Limitations nothing else offers those Families one at a time, so a
+  Pledges run keeps them (R52 Part W2; the Administrator, 2026-10-25).
 
 Nothing a reader types reaches an address: the search travels only in the
 POST that starts the run, as on the tables
@@ -2441,7 +2464,7 @@ earlier unfinished runs in the campaign, and finished ones stay:
   - In the middle, a thin vertical rule with a small muted "or" at its
     centre. It is decoration, hidden from screen readers, which read the
     pane and then the tables.
-  - On the right, a small uppercase **By table** label above the stream
+  - On the right, a small uppercase **In bulk** label above the stream
     groups, unchanged except that they fit the narrower column: narrower
     stream names and cards, so My review work still fits a laptop window
     under the [overview pages](../ui-conventions/spec.md#overview-pages)
@@ -2455,7 +2478,7 @@ earlier unfinished runs in the campaign, and finished ones stay:
   sideways scroll at 320px. The pane shows no count of its own: the
   waiting set differs per stream, so a total would add unlike things and
   repeat the stream cards' numbers. It is shown to readers for whom the
-  wizard is offered; without it, the pane, the rule and the By table
+  wizard is offered; without it, the pane, the rule and the In bulk
   label are left out and the stream groups take the full width. The
   layout is static: nothing moves on hover, focus or a click
   ([no layout shift](../ui-conventions/spec.md#no-layout-shift)), and its
@@ -2656,7 +2679,10 @@ in slices 2 and 3:
    Family-only progress words in the grouped streams, no footer links on
    the pages, the pane's shorter help line, and no unfinished
    runs anywhere (a start replaces them); tests of each, with the resume
-   tests removed.
+   tests removed. R52 Part W2's follow in it too: the pane's **In bulk**
+   label (was By table), the wizard's own stream order with Additional
+   information last, and Pledges runs without the Cannot contribute
+   Families; tests of each.
 
 ## Update phase
 

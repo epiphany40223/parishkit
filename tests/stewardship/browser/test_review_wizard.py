@@ -116,6 +116,14 @@ def test_start_page_choices_show_only_the_chosen_streams_filters(
     pledges = page.get_by_role("radio", name="Pledges")
     expect(pledges).to_be_disabled()
     expect(page.get_by_text("Pledges: This campaign does not include")).to_be_visible()
+    # The wizard's own stream order: Additional information last (R52 Part W2).
+    assert page.locator("#review-stream label").all_text_contents() == [
+        "Census changes",
+        "Ministry requests",
+        "Pledges",
+        "Limitations",
+        "Additional information",
+    ]
     # Census changes, Basic: one name search.
     expect(page.get_by_role("radio", name="Census changes")).to_be_checked()
     assert sorted(set(visible_names(page))) == [
@@ -267,7 +275,7 @@ def test_review_work_puts_one_at_a_time_beside_the_tables(
     page, component_origin, axe_source, path
 ):
     """At 1280px with the menu open (R52 Part W), Home's Review work panel and
-    My review work put the One at a time pane, then "or", then the By table
+    My review work put the One at a time pane, then "or", then the In bulk
     stream groups side by side, below the heading with a gap; the pane's
     button is the portal's primary button, centred below its text; the
     "or" is hidden from screen readers; the page passes axe."""
@@ -288,7 +296,7 @@ def test_review_work_puts_one_at_a_time_beside_the_tables(
     expect(link).to_have_class("button")
     expect(link).to_have_attribute("href", "/admin/reports/review/")
     expect(page.locator(".review-work-or")).to_have_attribute("aria-hidden", "true")
-    expect(page.locator("[data-review-work-tables]")).to_contain_text("By table")
+    expect(page.locator("[data-review-work-tables]")).to_contain_text("In bulk")
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
@@ -348,7 +356,7 @@ def test_without_the_wizard_the_tables_take_the_full_width(
     parts = page.evaluate(SPLIT)
     assert parts["pane"] is None and parts["or"] is None
     assert parts["tables"]["width"] == parts["split"]["width"]
-    expect(page.locator("[data-review-work-tables]")).not_to_contain_text("By table")
+    expect(page.locator("[data-review-work-tables]")).not_to_contain_text("In bulk")
     expect(page.locator("[data-review-stream]")).to_have_count(5)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
 

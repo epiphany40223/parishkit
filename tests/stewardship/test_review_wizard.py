@@ -239,3 +239,58 @@ def test_the_wizard_offers_no_history():
     kept = review_streams._keep(items, review_streams.EVERY)
     assert [item.stage for item in kept] == ["to_review", "confirmed"]
     assert [i.stage for i in review_streams._keep(items, "waiting")] == ["to_review"]
+
+
+def test_the_wizard_orders_its_streams_with_additional_information_last():
+    """The wizard's own order (R52 Part W2): Additional information last,
+    while the Review work menu keeps its own order."""
+    from parishkit.stewardship.accounts import review_work
+    from parishkit.stewardship.reports import review_streams
+
+    assert [stream.key for stream in review_streams.STREAMS] == [
+        "census",
+        "ministry",
+        "pledges",
+        "limitations",
+        "information",
+    ]
+    menu = [view.entry for view in review_work.STREAMS]
+    assert menu.index("information_queue") < menu.index("limitations_report")
+
+
+def test_a_pledges_run_leaves_out_cannot_contribute(monkeypatch):
+    """While Limitations is offered, a Pledges run skips the rows whose
+    Family answered Cannot contribute financially (reviewed there); the
+    others are kept (R52 Part W2)."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.reports import pledge_review_views, review_streams
+
+    def row(number, cannot_give):
+        """One ``pledge_rows`` row, To review."""
+        return {
+            "id": f"pledge-{number}",
+            "item": SimpleNamespace(family_id=f"f{number}"),
+            "family_name": f"Family {number}",
+            "family_duid": number,
+            "stage": "to_review",
+            "cannot_give": cannot_give,
+        }
+
+    rows = [row(1, False), row(2, True), row(3, False)]
+    monkeypatch.setattr(pledge_review_views, "pledge_rows", lambda *args: (rows, None))
+    for stage in ("waiting", "all"):
+        items = review_streams._pledges("c", {"stage": stage}, None)
+        assert [item.id for item in items] == ["pledge-1", "pledge-3"], stage
+    # Without Limitations (no Ministry stewardship) nothing else offers them.
+    kept = review_streams._pledges("c", {"stage": "waiting"}, None, defer=False)
+    assert [item.id for item in kept] == ["pledge-1", "pledge-2", "pledge-3"]
+    assert review_streams.BY_KEY["pledges"].defers_to == "limitations"
+    assert review_streams.BY_KEY["pledges"].basic_note == (
+        "Families who answered Cannot contribute are in Limitations."
+    )
+    assert not any(
+        stream.basic_note
+        for stream in review_streams.STREAMS
+        if stream.key != "pledges"
+    )

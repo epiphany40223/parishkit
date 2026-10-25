@@ -16,7 +16,8 @@ stream only through this module:
   matching item with its subject (``subject_of``);
 - its audit: the stream page's own view event, with the count read.
 
-The streams are in the Review work menu's order.
+The streams are in the wizard's own order (``STREAMS``), which is not the
+Review work menu's: Additional information comes last (R52 Part W2).
 """
 
 from dataclasses import dataclass
@@ -163,12 +164,23 @@ def _ministry(campaign_id, values, principal):
     return _keep(items, stage, leader=is_leader(principal))
 
 
-def _pledges(campaign_id, values, principal):
-    """Pledges' items: one Family each (``pledge_rows``, ``at_stage``)."""
+def _pledges(campaign_id, values, principal, *, defer=True):
+    """Pledges' items: one Family each (``pledge_rows``, ``at_stage``).
+
+    With ``defer`` (the wizard offers Limitations to this reader), the
+    Cannot contribute financially Families are left out; see below.
+    """
     from .pledge_review_views import PledgeQuery, at_stage, pledge_rows
 
     query = PledgeQuery.parse(_values(values | {"stage": _read_stage(values)}))
     rows, _metadata = pledge_rows(campaign_id, principal, query.search)
+    # A Family that answered Cannot contribute financially (``cannot_give``)
+    # is reviewed in the Limitations run instead, which lists that answer
+    # (``limitations.cannot_contribute``); the Pledges table keeps it (R52
+    # Part W2). Without Limitations (no Ministry stewardship) nothing else
+    # offers them one at a time, so they stay.
+    if defer:
+        rows = [row for row in rows if not row["cannot_give"]]
     items = [
         Item(
             id=str(row["id"]),
@@ -473,6 +485,11 @@ class ReviewStream:
     ``stages`` draw the Advanced filters. ``search_help`` is Basic's help
     under Search name: what the stream's search matches (its table's own
     search) and that a blank search means every waiting item.
+    ``defers_to`` names the stream that reviews the items this stream's
+    run leaves out while that stream is offered (Pledges: Limitations,
+    for the Cannot contribute Families); the read then takes ``defer``.
+    ``basic_note`` is an optional second help line under Basic's search,
+    drawn only while ``defers_to`` is offered: where those items are.
     """
 
     key: str
@@ -484,6 +501,8 @@ class ReviewStream:
     context: object
     stages: object
     search_help: str = ""
+    defers_to: str = ""
+    basic_note: str = ""
     grouped: bool = False
     member: bool = False
     closed: tuple = ()
@@ -496,6 +515,10 @@ class ReviewStream:
         return PAGES[self.entry].label
 
 
+# The wizard's streams in its start page's order (the Administrator, R52
+# Part W2): Census changes, Ministry requests, Pledges, Limitations, then
+# Additional information. The Review work menu and tables keep their own
+# order (``review_work.STREAMS``).
 STREAMS = (
     ReviewStream(
         "census",
@@ -539,21 +562,8 @@ STREAMS = (
         _pledges_stages,
         # The pledge rows' search (0175): Family name and DUID.
         _("Family name or the Family DUID. Leave blank for every waiting pledge."),
-    ),
-    ReviewStream(
-        "information",
-        "information_queue",
-        "stewardship/information-worklist-filters.html",
-        _information,
-        _information_principal,
-        _information_audit,
-        _information_context,
-        _information_stages,
-        # The information queue's search (0175): Family, DUID and the text.
-        _(
-            "Family name, the Family DUID, or words in the information or notes. "
-            "Leave blank for every waiting item."
-        ),
+        defers_to="limitations",
+        basic_note=_("Families who answered Cannot contribute are in Limitations."),
     ),
     ReviewStream(
         "limitations",
@@ -571,6 +581,21 @@ STREAMS = (
         ),
         grouped=True,
         closed=(("show", "any"),),
+    ),
+    ReviewStream(
+        "information",
+        "information_queue",
+        "stewardship/information-worklist-filters.html",
+        _information,
+        _information_principal,
+        _information_audit,
+        _information_context,
+        _information_stages,
+        # The information queue's search (0175): Family, DUID and the text.
+        _(
+            "Family name, the Family DUID, or words in the information or notes. "
+            "Leave blank for every waiting item."
+        ),
     ),
 )
 BY_KEY = {stream.key: stream for stream in STREAMS}

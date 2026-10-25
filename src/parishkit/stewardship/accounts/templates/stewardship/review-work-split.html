@@ -2,16 +2,16 @@
   The Review work panel's body on Admin Home and My review work (#2123,
   R52 Part W; review pipeline spec, "Wizard entry points"): side by side,
   the One at a time pane (review_work.wizard_cards' one card), a rule
-  with "or", then the By table stream groups (review-work-panels.html,
+  with "or", then the In bulk stream groups (review-work-panels.html,
   with ``panels`` and ``nested``). The pane's text sits at its top and its
   primary button is centred in the height left below it; while the menu
   greys the wizard out, its reason takes the button's place as muted
   text, never a link. The "or" is decoration (aria-hidden): a screen
   reader hears the pane, then the tables. Without the wizard the pane,
-  the rule and the By table label are left out and the stream groups take
+  the rule and the In bulk label are left out and the stream groups take
   the full width. In a narrow container the parts stack (ui-v1.css).
 {% endcomment %}<div class="review-work-split"><div class="review-work-split-row">{% with card=wizard_cards.0 %}{% if card %}<section class="review-work-wizard" aria-labelledby="review-wizard-cards-label" data-review-wizard-card>
     <div class="review-work-wizard-text"><span id="review-wizard-cards-label" class="review-work-kicker">{% translate "One at a time" %}</span><span class="review-work-wizard-help">{% translate "Every stream's waiting items, one Family or Member per page." %}</span></div>
     {% if card.url %}{% button href=card.url data-review-wizard-link %}{{ card.label }}{% endbutton %}{% else %}<p class="review-work-wizard-off" data-review-wizard-reason>{{ card.reason }}</p>{% endif %}
   </section><div class="review-work-or" aria-hidden="true">{% translate "or" %}</div>{% endif %}
-  <div class="review-work-tables" data-review-work-tables>{% if card %}<span class="review-work-kicker">{% translate "By table" %}</span>{% endif %}{% include "stewardship/review-work-panels.html" %}</div>{% endwith %}</div></div>
+  <div class="review-work-tables" data-review-work-tables>{% if card %}<span class="review-work-kicker">{% translate "In bulk" %}</span>{% endif %}{% include "stewardship/review-work-panels.html" %}</div>{% endwith %}</div></div>

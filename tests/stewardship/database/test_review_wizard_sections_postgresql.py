@@ -250,7 +250,8 @@ def test_a_leader_who_loses_the_ministry_sees_no_name(response_service, google):
 def test_a_limitations_family_page_draws_cannot_contribute(response_service, google):
     """A Family that cannot contribute financially: a Limitations run's
     Family page draws the answer by the pledge section, with Pledges' own
-    actions, for Staff, who may see pledges."""
+    actions, for Staff, who may see pledges. A Pledges run leaves that
+    Family out, while the Pledges table still lists it (R52 Part W2)."""
     from dataclasses import asdict
 
     from ..test_financial_answers import OPTIONS
@@ -292,3 +293,17 @@ def test_a_limitations_family_page_draws_cannot_contribute(response_service, goo
     assert "Cannot attend Mass" not in drawn and "filtered out" not in drawn
     action, _fields = dialog_fields(drawn, "hub-financial-pledges-decide")
     assert action == reverse("admin:pledges_to_enter")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        # The start page says where those Families are.
+        _response, body = read(browser, START)
+        assert b"Families who answered Cannot contribute are in Limitations." in body
+        # The Pledges run has nothing to show, at Waiting and at every stage.
+        for fields in ({}, {"mode": "advanced", "stage": "all"}):
+            response, body = start(browser, stream="pledges", **fields)
+            assert response.status_code == 200, fields
+            assert b"Nothing matches these filters." in body, fields
+        assert not ReviewRun.objects.filter(stream="pledges").exists()
+        # The Pledges table keeps listing the Family.
+        response, body = read(browser, reverse("admin:pledges_to_enter"))
+    assert response.status_code == 200
+    assert f'name="item" value="{submission.pk}:'.encode() in body
