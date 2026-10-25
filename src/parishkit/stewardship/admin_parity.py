@@ -154,6 +154,9 @@ LEDGER = {
         "a test of text typed on the page and not saved; test sample tests "
         "a saved email"
     ),
+    # The repeat rules' live date list (#2092) draws the dates the page's
+    # unsaved rule gives; ``schedule preview`` reviews a repeat's reminders.
+    "schedule_repeat_dates": command("schedule preview"),
     # The read-only calendar of every send (#469) draws the saved schedules
     # and campaign dates that ``schedule show`` lists.
     "schedule_calendar": command("schedule show"),

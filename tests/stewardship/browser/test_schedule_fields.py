@@ -7,8 +7,18 @@ from urllib.parse import parse_qs
 
 import pytest
 
+from .repeat_dates_components import assert_span_row
 from .test_components import axe_violations
-from .waits import available, has_attribute, has_text, hidden, reads, visible
+from .waits import (
+    available,
+    has_attribute,
+    has_text,
+    hidden,
+    reads,
+    repeat_line,
+    repeat_lines,
+    visible,
+)
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -256,6 +266,18 @@ def choose_repeating(page):
 
 
 @pytest.mark.parametrize("width", [320, 1280])
+def test_repeating_puts_from_until_and_send_time_on_one_row(
+    page, component_origin, width
+):
+    """The pane's Repeating draws From, Until and Send time side by side on
+    desktop and stacked on a phone, without sideways scroll (pk-local R48)."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + "/schedule-editor-mail")
+    choose_repeating(page)
+    assert_span_row(page, width, f"{PANE} [data-repeat-panel]", f'[name="{NEW}time"]')
+
+
+@pytest.mark.parametrize("width", [320, 1280])
 def test_repeating_posts_one_reminder_row_per_date(
     page, component_origin, axe_source, width
 ):
@@ -307,13 +329,19 @@ def test_repeating_posts_one_reminder_row_per_date(
     reading = page.locator(f"#id_{NEW}time_reading")
     assert repeat(page, "time").get_attribute("data-time-entry") == "time"
     reading_height = reading.bounding_box()["height"]
-    gap = page_top(repeat(page, "email")) - page_top(reading)
+    email_top = page_top(repeat(page, "email"))
+    control_height = repeat(page, "time").bounding_box()["height"]
     repeat(page, "time").fill("9xx")
     has_text(reading, "“9xx” isn't a time. Try 2:00 PM, 2pm, 14:00 or 1400.")
     has_attribute(repeat(page, "time"), "aria-invalid", "true")
-    # Its two lines are reserved: the refusal moves nothing below it.
+    # Its lines are reserved: the refusal moves nothing below it. An invalid
+    # control's own border may draw it a little taller (2px in Chromium and
+    # WebKit), which moves Email to send by that much at most: not at all on
+    # desktop when the taller From and Until set the row's height, as on
+    # Linux Chromium (train t106).
     assert reading.bounding_box()["height"] == pytest.approx(reading_height, abs=1)
-    assert abs(page_top(repeat(page, "email")) - page_top(reading) - gap) < 1
+    grown = repeat(page, "time").bounding_box()["height"] - control_height
+    assert -1 < page_top(repeat(page, "email")) - email_top < grown + 1
     repeat(page, "time").fill("6am")
     has_text(reading, reads("Reads as 6:00 AM"))
     repeat(page, "time").blur()
@@ -338,10 +366,14 @@ def test_repeating_posts_one_reminder_row_per_date(
     panel.locator('[data-repeat="weekday"][value="3"]').check()
     counted(pane, 8)
     assert abs(page_top(wait) - top) < 1
-    assert (
-        "Thursday, October 1, 2054: not added, not after the initial invitation"
-        in dates.inner_text()
+    # The lines are the shared schedule preview (#2092): a date not added is
+    # struck, with its reason.
+    line = repeat_line(
+        dates,
+        "Thursday, October 1, 2054",
+        "not added: not after the initial invitation",
     )
+    assert dates.locator("li s").filter(has_text="not after").count() == 1, line
     assert "8 reminders to add:" in dates.inner_text()
     # A whole schedule: Review covers it.
     available(review)
@@ -430,14 +462,12 @@ def test_repeating_judges_each_date_in_the_campaigns_zone(
     repeat(page, "time").blur()
     repeat(page, "email").select_option(index=1)
     dates = pane.locator("[data-repeat-dates]")
+    counted(pane, len(kept))
     if left_out:
-        counted(pane, len(kept))
-        assert (
-            f"{left_out}: not added, outside the campaign dates" in dates.inner_text()
-        )
+        repeat_line(dates, left_out, "not added: outside the campaign dates")
     else:
-        counted(pane, len(kept))
-        assert "not added" not in dates.inner_text()
+        lines = repeat_lines(dates, len(kept))
+        assert not [line for line in lines if "not added" in line]
     first = int(page.locator('[name="schedules-TOTAL_FORMS"]').input_value()) - 1
     fields = posted(page, component_origin, path)
     assert [
@@ -464,17 +494,20 @@ def test_repeat_monthly_names_skipped_months_and_refusals(page, component_origin
     pane = page.locator(PANE)
     dates = pane.locator("[data-repeat-dates]")
     counted(pane, 1)
-    text = dates.inner_text()
-    assert "Saturday, October 31, 2054" in text
-    assert "November 2054: not added, skipped: it has no day 31" in text
+    from playwright.sync_api import expect
+
+    repeat_line(dates, "Saturday, October 31, 2054", "Reminder")
+    # A skipped month is no send: a line after the shared preview's.
+    expect(dates.locator("[data-repeat-preview] > p.help")).to_have_text(
+        "November 2054 is skipped: it has no day 31."
+    )
     # The nth-weekday form replaces the day of the month.
     repeat(page, "by").select_option("weekday")
     hidden(panel.locator('[data-repeat-by="day"]'))
     repeat(page, "ordinal").select_option("-1")
     repeat(page, "month-weekday").select_option("4")
-    assert (
-        "Friday, November 27, 2054: not added, outside the campaign dates"
-        in dates.inner_text()
+    repeat_line(
+        dates, "Friday, November 27, 2054", "not added: outside the campaign dates"
     )
     # A rule error is said at its fields (#1915), not in the summary.
     repeat(page, "until").fill("2054-09-01")
@@ -608,7 +641,8 @@ def test_repeat_limit_leaves_out_saved_rows_marked_delete(page, component_origin
     repeat(page, "time").fill("9:00")
     repeat(page, "email").select_option(index=1)
     counted(pane, 3)
-    assert f"over the limit of {total + 2} schedules" in pane.inner_text()
+    over = f"not added: over the limit of {total + 2} schedules"
+    repeat_line(pane.locator("[data-repeat-dates]"), over, over)
     open_saved(page)
     page.locator('[name="schedules-0-DELETE"]').check()
     counted(pane, 4)
@@ -635,8 +669,45 @@ def test_repeat_leaves_out_dates_whose_time_has_passed(page, component_origin):
     repeat(page, "time").blur()
     repeat(page, "email").select_option(index=1)
     counted(pane, 4)
-    text = pane.locator("[data-repeat-dates]").inner_text()
+    lines = repeat_lines(pane.locator("[data-repeat-dates]"), 9)
     for passed in ("Thursday, October 1", "Monday, October 5", "Thursday, October 15"):
-        assert f"{passed}, 2054: not added, its time has passed" in text
-    assert "Monday, October 19, 2054" in text
-    assert "Monday, October 19, 2054: not added" not in text
+        (line,) = [line for line in lines if line.startswith(f"{passed}, 2054,")]
+        assert "not added: its time has passed" in line
+    (line,) = [line for line in lines if line.startswith("Monday, October 19, 2054,")]
+    assert "not added" not in line
+
+
+def test_a_failed_date_list_read_says_so_in_place(page, component_origin):
+    """#2092: while a newer list is awaited the lines are marked busy, and a
+    refused read replaces them with the list's failure sentence, under the
+    heading, rather than leave the lines of another rule."""
+    from playwright.sync_api import expect
+
+    page.goto(component_origin + "/schedule-editor-mail")
+    choose_repeating(page)
+    pane = page.locator(PANE)
+    panel = pane.locator("[data-repeat-panel]")
+    panel.locator('[data-repeat="weekday"][value="0"]').check()
+    repeat(page, "time").fill("9:00")
+    repeat(page, "email").select_option(index=1)
+    dates = pane.locator("[data-repeat-dates]")
+    repeat_line(dates, "Monday, October 19, 2054", "Reminder")
+    held = []
+    page.route("**/repeat-dates/", lambda route: held.append(route))
+    panel.locator('[data-repeat="weekday"][value="3"]').check()
+    preview = dates.locator("[data-repeat-preview]")
+    has_attribute(preview, "aria-busy", "true")
+    # The earlier lines stay in place while the answer is awaited.
+    assert dates.locator("li").count() > 0
+    # The held read arrives a moment after the change; refuse it.
+    for _ in range(100):
+        if held:
+            break
+        page.wait_for_timeout(50)
+    held[0].fulfill(status=500, body="")
+    expect(preview).to_have_text(
+        "These dates couldn't be listed right now. Review changes still checks "
+        "every date."
+    )
+    expect(preview).not_to_have_attribute("aria-busy", "true")
+    assert dates.locator("[data-repeat-heading]").inner_text().endswith("to add:")

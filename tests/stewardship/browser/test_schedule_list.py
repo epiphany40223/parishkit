@@ -19,6 +19,7 @@ from urllib.parse import parse_qs
 
 import pytest
 
+from .repeat_dates_components import assert_span_row
 from .schedule_list_components import (
     APPLY,
     APPLY_PASSED,
@@ -62,6 +63,7 @@ from .waits import (
     has_attribute,
     has_text,
     hidden,
+    repeat_line,
     same_place,
     visible,
 )
@@ -441,10 +443,10 @@ def test_new_repeating_reminder_lists_and_posts_the_dates_that_fit(
         "document.querySelector('[data-repeat-summary]').textContent"
         " === '3 reminders to add, 1 not added.'",
     )
-    dates = page.locator("[data-repeat-dates]")
-    assert (
-        "Tuesday, October 20, 2054: not added, another email is already "
-        "scheduled then" in dates.inner_text()
+    repeat_line(
+        page.locator("[data-repeat-dates]"),
+        "Tuesday, October 20, 2054",
+        "not added: another email is already scheduled then",
     )
     with page.expect_request(lambda request: request.method == "POST") as sent:
         page.get_by_role("button", name=ADD).click()
@@ -475,6 +477,20 @@ def start_repeat(page, origin, path=NEW):
     page.get_by_label("Tuesday").check()
     page.locator('[name="schedule-time"]').fill("06:00")
     choose(page, "template_version", email_for(page, "reminder"))
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_repeating_puts_from_until_and_send_time_on_one_row(
+    page, component_origin, width
+):
+    """Sends Repeating draws From, Until and Send time side by side on
+    desktop and stacked on a phone, without sideways scroll (pk-local R48)."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + NEW)
+    choose(page, "kind", "reminder")
+    page.get_by_role("radio", name="Repeating").check()
+    visible(page.locator("#repeat-until"))
+    assert_span_row(page, width, "[data-repeat-rule]", '[name="schedule-time"]')
 
 
 def reason(button):
@@ -880,9 +896,10 @@ def test_a_repeat_compares_moments_in_a_zone_a_day_ahead(
             "document.querySelector('[data-repeat-summary]').textContent"
             " === '3 reminders to add, 1 not added.'",
         )
-        assert (
-            "Wednesday, October 21, 2054: not added, another email is already "
-            "scheduled then" in page.locator("[data-repeat-dates]").inner_text()
+        repeat_line(
+            page.locator("[data-repeat-dates]"),
+            "Wednesday, October 21, 2054",
+            "not added: another email is already scheduled then",
         )
         with page.expect_request(lambda request: request.method == "POST") as sent:
             page.get_by_role("button", name=ADD).click()

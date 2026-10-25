@@ -29,14 +29,16 @@ as the fields' values, so the page's change gate (#750) counts them as part
 of the blank form, not as an edit.
 data-repeat-room says how many more schedules fit, of data-repeat-limit. The
 summary line and the date list are drawn by schedule-entry.html around Review
-changes. A rule error is shown at its fields (#1915), and while the rule gives
+changes; the list's dates are the shared schedule preview, which the page
+script asks the server for (data-repeat-dates-url, #2092), judged in the
+campaign's zone (data-repeat-zone). A rule error is shown at its fields (#1915), and while the rule gives
 no date to add the form's buttons wait (data-repeat-gated), named by that
 error's words or the summary's; a refused New draws the server's refusal at
 the same fields (RepeatRule.refuse_rule), and a refusal of the repeat as a
 whole (only reminders repeat, no date fits, a time passed) at Sends.
 A page drawn again for a Reminder draws Sends shown, and for Repeating the
 rule too, so nothing flashes before the page script runs.
-{% endcomment %}{% with reminder=entry.kind.value|stringformat:"s" sends=repeat.sends.value|default:"once" %}<div class="schedule-repeat-entry" data-repeat-panel data-repeat-entry data-repeat-start="{{ values.start_date }}" data-repeat-end="{{ values.end_date }}" data-repeat-window-start="{{ window_start }}" data-repeat-window-end="{{ window_end }}" data-repeat-mailings="{{ mailings_json }}" data-repeat-room="{{ room }}" data-repeat-limit="{{ limit }}"{% if reminder != "reminder" %} hidden{% endif %}>
+{% endcomment %}{% with reminder=entry.kind.value|stringformat:"s" sends=repeat.sends.value|default:"once" %}<div class="schedule-repeat-entry" data-repeat-panel data-repeat-entry data-repeat-start="{{ values.start_date }}" data-repeat-end="{{ values.end_date }}" data-repeat-zone="{{ values.timezone }}" data-repeat-window-start="{{ window_start }}" data-repeat-window-end="{{ window_end }}" data-repeat-mailings="{{ mailings_json }}" data-repeat-room="{{ room }}" data-repeat-limit="{{ limit }}"{% if reminder != "reminder" %} hidden{% endif %}>
 {% translate "For example every Monday until the campaign ends; each date is saved as its own reminder." as repeat_tip %}{% translate "Sends" as sends_legend %}{% translate "Once" as once_label %}{% translate "Repeating" as repeating_label %}{% include "stewardship/components/choice-pair.html" with pair_id="repeat-sends" name=repeat.sends.html_name legend=sends_legend first_value="once" first_label=once_label second_value="repeat" second_label=repeating_label chosen=sends help_id="repeat-help" help_tip=repeat_tip errors=repeat.sends.errors disabled=True %}
 <p class="help" id="repeat-help">{% translate "Once sends this reminder on one date; Repeating sends it on each date of a rule." %}</p>
 <div data-repeat-rule{% if reminder != "reminder" or sends != "repeat" %} hidden{% endif %}>
