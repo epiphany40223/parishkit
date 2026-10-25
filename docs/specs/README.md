@@ -18,6 +18,13 @@ one place and is linked rather than duplicated. Each specification file is named
   the general, portal-wide UX rules and take precedence over the other
   specs for them.
 
+- **[sync/spec.md](sync/spec.md)** — ParishKit Sync, the small web portal
+  that runs the periodic integrations (ParishSoft to Google Groups and
+  Constant Contact, ministry rosters, calendar reservation checks) as
+  modules and replaces the per-tool commands below as each module reaches
+  parity. Its subsystem specs cover the core app, credentials, jobs,
+  modules and configuration, providers, logging and deployment.
+
 The related ParishSoft API comparison lives one level up in the docs root:
 **[../parishsoft-api-analysis.md](../parishsoft-api-analysis.md)** (v1 vs. v2,
 which API ParishKit uses, the write-capability analysis, and the switch/hybrid

@@ -1727,6 +1727,12 @@ then, the separate Review and Change status pages); `data-review-of` in
 Edit pages follow it). **Exception.** A [wizard](#wizards) step that edits a
 draft nobody can see yet saves directly, with no Review step (wizard rule 5;
 built in the setup wizard, planned for the campaign wizard in #1404 PR 4).
+**Exception.** ParishKit Sync's module configuration saves directly when
+**Save** is pressed, with no Review step; its safety net is Preview (a dry
+run against the unsaved edits) and revision revert (see
+[Sync modules](../../sync/modules/spec.md#saving-preview-and-revisions);
+Administrator decision, 2026-10-25). Saves are still explicit, never
+autosaved, and each one is audited.
 
 A status that can no longer be read never looks as if it were still
 waiting. When the follow-up's status read is refused (the sign-in ended, or
