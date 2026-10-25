@@ -1245,6 +1245,17 @@ td > :last-child { margin-bottom: 0; }
 .bulk-bar [data-select-all-button] { min-width: calc(15ch + 2.5rem + 2 * var(--button-border-width)); }
 .bulk-hint { flex-basis: 100%; margin: 0; min-height: 1.6em; min-height: 1lh; }
 .bulk-hint[data-cleared] { visibility: hidden; }
+/* Review these one at a time (#2123): its form holds only hidden fields and
+   takes no place in the selection bar; its button names it (form=). The
+   reason of an unavailable one is a line of its own after every other
+   control and line of the bar (order), never on the buttons' line, so it
+   moves none of them. The runs it offers to continue are one line each,
+   Continue after the words. */
+.bulk-bar .wizard-entry { display: contents; }
+.wizard-entry-reason { flex-basis: 100%; order: 1; margin: 0; }
+.wizard-runs { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: .5rem; }
+.wizard-runs li { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; }
+.wizard-runs .button { margin: 0; }
 main nav.table-nav { justify-content: space-between; margin-block: .75rem; font-size: .925rem; }
 .table-nav .table-count { margin: 0; }
 main nav.table-nav form { gap: .5rem .75rem; }

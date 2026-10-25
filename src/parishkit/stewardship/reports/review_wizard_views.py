@@ -11,6 +11,10 @@ work and both for the current campaign:
   as the run's sequence of subjects, stored, and page 1 opens (303); or
   discards one of the reader's runs (``discard``) and answers with the
   start page again (303), which the confirmation dialog redraws in place.
+  A review table's Review these one at a time posts a start too, with the
+  table's view (``table``, ``review_wizard_tables``); while the reader has
+  unfinished runs and the post does not say ``new``, it first answers with
+  a page asking to continue one of them or start a new run.
 - ``reports/review/<position>/?run=<id>`` (``page``): one page of a run.
   A GET draws the subject's heading and the two navigation rows; a POST is
   Previous or Next (the address names the target position), which records
@@ -35,6 +39,7 @@ from uuid import UUID
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, IntegrityError, transaction
+from django.db.models import Subquery
 from django.db.models.functions import Now
 from django.http import HttpResponseRedirect
 from django.template.loader import render_to_string
@@ -70,6 +75,7 @@ from .review_wizard import FAMILY, SORTS, WAITING, TooManyPages, progress, seque
 
 START_TEMPLATE = "stewardship/review-wizard-start.html"
 PAGE_TEMPLATE = "stewardship/review-wizard-page.html"
+ASK_TEMPLATE = "stewardship/review-wizard-ask.html"
 # The refusals and notes the start page says in place of starting a run.
 NOTHING = "Nothing matches these filters."
 TOO_MANY = (
@@ -129,13 +135,45 @@ def page_url(run_id, position, came_from=None):
     return f"{url}&from={came_from}" if came_from else url
 
 
-def unfinished(principal, campaign_id):
-    """The reader's unfinished runs in this campaign, the latest used first."""
-    return list(
-        ReviewRun.objects.filter(
-            user_id=principal.identity, campaign_id=campaign_id, finished_at=None
-        ).order_by("-updated_at", "-created_at")
+def unfinished(principal, campaign_id, *, limit=None):
+    """The reader's unfinished runs in this campaign, the latest used first
+    (at most ``limit`` of them when given)."""
+    runs = ReviewRun.objects.filter(
+        user_id=principal.identity, campaign_id=campaign_id, finished_at=None
+    ).order_by("-updated_at", "-created_at")
+    return list(runs if limit is None else runs[:limit])
+
+
+def run_choice(run):
+    """One run as ``(words, url)``: "*stream*, *progress words*" and its
+    current page, as the card, the start page and the tables name it."""
+    stream = BY_KEY[run.stream]
+    words = progress(
+        run.subjects, run.position, grouped=stream.grouped, member_stream=stream.member
     )
+    return f"{stream.label}, {words}", page_url(run.pk, run.position)
+
+
+# How many unfinished runs a review table's question lists: the latest used.
+# Each run's sequence (up to 5,000 subjects) is read for its progress words,
+# and a table is drawn again after every decision, so the read is bounded;
+# the start page lists them all.
+LISTED_RUNS = 5
+
+
+def listed_runs(principal, campaign_id=None):
+    """The reader's latest unfinished runs as ``(words, url)``, and whether
+    there are more than ``LISTED_RUNS``.
+
+    In ``campaign_id``, else in the current campaign, which the review
+    tables show (read in the same statement, so a table pays one read).
+    """
+    if campaign_id is None:
+        campaign_id = Subquery(
+            SystemConfiguration.objects.values("current_campaign_id")[:1]
+        )
+    found = unfinished(principal, campaign_id, limit=LISTED_RUNS + 1)
+    return tuple(map(run_choice, found[:LISTED_RUNS])), len(found) > LISTED_RUNS
 
 
 def card_runs(principal, campaign_id):
@@ -154,17 +192,7 @@ def card_runs(principal, campaign_id):
     )
     if len(runs) != 1:
         return [None] * len(runs)
-    found = []
-    for run in ReviewRun.objects.filter(pk=runs[0]):
-        stream = BY_KEY[run.stream]
-        words = progress(
-            run.subjects,
-            run.position,
-            grouped=stream.grouped,
-            member_stream=stream.member,
-        )
-        found.append((f"{stream.label}, {words}", page_url(run.pk, run.position)))
-    return found
+    return [run_choice(run) for run in ReviewRun.objects.filter(pk=runs[0])]
 
 
 def filter_words(stream, filters_, principal):
@@ -194,14 +222,15 @@ def run_row(run, principal):
     words = progress(
         run.subjects, run.position, grouped=stream.grouped, member_stream=stream.member
     )
+    label, url = run_choice(run)
     return {
         "id": run.pk,
         "stream": stream.label,
         "filters": filter_words(stream, run.filters, principal),
         "progress": words,
         "updated_at": run.updated_at,
-        "url": page_url(run.pk, run.position),
-        "label": f"{stream.label}, {words}",
+        "url": url,
+        "label": label,
     }
 
 
@@ -216,11 +245,11 @@ def parse_start(parameters, offered):
     values = filters(
         parameters,
         allowed={"csrfmiddlewaretoken", "start", "stream", "mode", "sort", "stage"}
-        | {"search"}
+        | {"search", "table", "new"}
         | {name for stream in STREAMS for name, _default in stream.closed},
     )
-    values.pop("csrfmiddlewaretoken", None)
-    values.pop("start", None)
+    for name in ("csrfmiddlewaretoken", "start", "table", "new"):
+        values.pop(name, None)
     available = {stream.key: stream for stream, item in offered if item.url}
     stream = available.get(values.pop("stream", ""))
     mode = values.pop("mode", "basic")
@@ -392,6 +421,46 @@ def _start_run(request, campaign_id, store, offered):
     )
 
 
+def _ask(request, campaign_id, store, offered):
+    """A review table's start while the reader has unfinished runs: ask first.
+
+    The table's button asks in its own dialog when the reader had runs as
+    the table was drawn; this is the same question for a post that came
+    without the answer (``new``), so a run started in another tab since is
+    offered too. Returns None, to start the run, when there is none to ask
+    about. The post's fields, stream and access are checked as a start's
+    are (``parse_start``, the stream page's own check) before anything is
+    drawn; its filter values are checked by the stream's read when Start a
+    new run posts it again, with ``new``, as it came (escaped hidden fields,
+    its search only in the POST body). Cancel opens the table's plain
+    address: the table's view is not kept, since its search is POST-only.
+    """
+    stream = parse_start(request.POST, offered)[0]
+    principal = stream.principal(request, store)
+    found, more = listed_runs(principal, campaign_id)
+    if not found:
+        return None
+    posted = [
+        (name, value)
+        for name, value in request.POST.items()
+        if name not in {"csrfmiddlewaretoken", "new"}
+    ]
+    return _render(
+        request,
+        campaign_id,
+        lambda: stream.principal(request, store, read_only=True),
+        lambda: {
+            "runs": found,
+            "more": more,
+            "posted": posted,
+            "stream": stream,
+            "start_url": start_url(),
+            "table_url": reverse(f"admin:{stream.entry}"),
+        },
+        template=ASK_TEMPLATE,
+    )
+
+
 def _audit(stream, principal, campaign_id, count, stored, *, outcome=Outcome.SUCCEEDED):
     """Audit a read as the stream page's view; a failed audit is logged."""
     try:
@@ -439,6 +508,10 @@ def start(request, campaign_id):
         if request.method == "POST":
             if "discard" in request.POST:
                 return _discard(request, campaign_id, principal)
+            if "table" in request.POST and "new" not in request.POST:
+                asked = _ask(request, campaign_id, service.store, offered)
+                if asked is not None:
+                    return asked
             return _start_run(request, campaign_id, service.store, offered)
         if request.GET:
             raise ValueError("The start page takes no query.")

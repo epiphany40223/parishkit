@@ -177,6 +177,9 @@ from .report_emails_components import components as report_email_components
 from .response_dashboard_components import components as dashboard_components
 from .restore_review_components import components as restore_review_components
 from .review_wizard_components import components as review_wizard_components
+from .review_wizard_entry_components import (
+    components as review_wizard_entry_components,
+)
 from .review_work_components import components as review_work_components
 from .review_worklist_components import components as review_worklist_components
 from .schedule_list_components import POSTS as SCHEDULE_LIST_POSTS
@@ -2369,6 +2372,7 @@ def component_responses():
     responses.update(menu_components(context, admin))
     responses.update(review_work_components(context, admin))
     responses.update(review_wizard_components(context, admin))
+    responses.update(review_wizard_entry_components(context, admin))
     responses.update(home_steps_components(context, admin))
     responses.update(home_overview_components(context, admin))
     responses.update(automation_components(context, admin))

@@ -20,7 +20,9 @@
     #1950): it shows there while the filters are held and no notice has
     words; a notice always wins the line (Apply filters still names the
     hint in aria-describedby);
-  - the table region: the selection bar (the bulk buttons, which wait
+  - the table region: the selection bar (Review these one at a time,
+    which starts a review wizard run with this view, #2123,
+    components/review-wizard-entry.html; the bulk buttons, which wait
     until every ticked row offers their action, data-confirm-kind; Add, for
     readers allowed to add there), the table in the shared column order and
     each row's action icons, and each Edit's value editor;
@@ -48,7 +50,7 @@
 <div id="{{ table.anchor }}" class="worklist-table" data-table-region>
 {% include "stewardship/table-navigator.html" with table=table label=w.pages_label %}
 {% if w.selectable %}<div data-select-table data-missing-hint="{% blocktranslate with items=w.items %}Tick {{ items }} on this page to decide them together.{% endblocktranslate %}" data-kind-hint="{% blocktranslate with items=w.items %}Not every ticked row offers that action. Tick {{ items }} at the same stage, or use each row's own icons.{% endblocktranslate %}">{% endif %}
-{% if w.selectable or w.add %}<div class="bulk-bar">
+{% load review_work %}{% review_wizard_entry w table as wizard %}{% if w.selectable or w.add or wizard %}<div class="bulk-bar">{% if wizard %}{% include "stewardship/components/review-wizard-entry.html" with entry=wizard %}{% endif %}
 {% if w.add %}{% translate "Add" as add_label %}{% button type="button" variant="secondary" name="decide" value="add" data-confirm-open=w.add_dialog data-confirm-with=w.add_post data-title-one=add_label data-done-one="" %}{% translate "Add" %}{% endbutton %}
 {% endif %}{% if w.selectable %}{% for choice in w.bulk %}{% button type="button" variant="secondary" data-bulk-action data-confirm-open=w.bulk_dialog name="bulk" value=choice.value data-confirm-kind=choice.value data-confirm-choice=choice.choice data-confirm-body=choice.body data-confirm-warning=choice.warning data-title-one=choice.title_one data-title-many=choice.title_many data-done-one=choice.done_one data-done-many=choice.done_many %}{{ choice.label }}{% endbutton %}
 {% endfor %}{% include "stewardship/table-selection.html" %}{% endif %}

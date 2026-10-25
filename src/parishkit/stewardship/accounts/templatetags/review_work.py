@@ -24,3 +24,19 @@ def review_panels(context, review):
 def review_wizard_cards(context, review):
     """Return ``review_work.wizard_cards`` for this render and ``review`` (#2123)."""
     return review_work.wizard_cards(context.get("admin_chrome") or {}, review or {})
+
+
+@register.simple_tag(takes_context=True)
+def review_wizard_entry(context, worklist, table):
+    """Return the table's Review these one at a time button, or None (#2123).
+
+    ``review_wizard_tables.table_entry`` for the signed-in reader; a tag so
+    the shared table component draws it on every render of every review
+    table, in-place redraws included, with no page passing it along.
+    """
+    from parishkit.stewardship.reports.review_wizard_tables import table_entry
+
+    principal = getattr(getattr(context, "request", None), "principal", None)
+    if principal is None:
+        return None
+    return table_entry(principal, worklist, table)

@@ -6890,6 +6890,31 @@
         || node.getAttribute("aria-invalid") === "true")) clearFieldError(node);
     });
   };
+  // Review these one at a time (#2123): while the reader has unfinished
+  // runs, a review table's button asks first in its dialog
+  // (components/review-wizard-entry.html, data-wizard-ask): Continue opens
+  // a run, Start a new run submits the button's form with new=1, and
+  // Cancel or Escape closes it with focus back on the button. Without a
+  // dialog (no runs) the button submits its form as it is.
+  document.addEventListener("click", (event) => {
+    const button = event.target instanceof Element
+      ? event.target.closest("button[data-wizard-ask]") : null;
+    const dialog = button && document.getElementById(button.dataset.wizardAsk);
+    if (!(dialog instanceof HTMLDialogElement)) return;
+    event.preventDefault();
+    wireDialog(dialog);
+    if (!dialog.parishWizardAsk) {
+      dialog.parishWizardAsk = true;
+      // A redraw of the table replaces the button, so the one to return to
+      // is found by the dialog's id when the dialog closes.
+      dialog.addEventListener("close", () => {
+        document.querySelector(`button[data-wizard-ask="${dialog.id}"]`)?.focus();
+      });
+    }
+    dialog.showModal();
+    // The safe choice takes focus first.
+    dialog.querySelector("[data-confirm-cancel]")?.focus();
+  });
   // Ask before Advanced → Basic when Basic cannot show the configuration.
   const askNoBasic = (root) => {
     const toggle = modeToggle(root);
