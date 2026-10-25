@@ -26,17 +26,20 @@ TARGET_LABELS = {
     "slack": _("Install the Slack credential"),
 }
 
-# What each credential request state means to the Admin.
+# What each credential request state means to the Admin, in one short line,
+# so the box's reserved forms (#1903) stay small and the row is no taller
+# than it needs to be (#2145). While it waits for the server operator the
+# box's status already says so, and its only detail is the live count of
+# acknowledged services (setup-finishing-step.html); the operator's own
+# steps are in the runtime guide, not on the page.
 CREDENTIAL_TEXT = {
-    "missing": _("Waiting for the credential installer to start."),
-    "staged": _("Queued for installation."),
-    "testing": _("Checking the credential with the provider."),
-    "installing": _("Installing the credential on the server."),
-    "operator": _(
-        "Waiting for the server operator to acknowledge the new credentials. "
-        "This step is done on the server; see the deployment runbook."
-    ),
-    "acknowledged": _("Installed and acknowledged by the server."),
+    "missing": _("Waiting for the installer."),
+    "staged": _("Queued to install."),
+    "testing": _("Checking with the provider."),
+    "installing": _("Installing on the server."),
+    # Plain "", never _(""): gettext of an empty string is the catalog header.
+    "operator": "",
+    "acknowledged": _("Installed and acknowledged."),
 }
 
 # Why a credential was not installed (#456 L2), keyed by its final state, or
@@ -73,23 +76,25 @@ CHECKPOINT_FAILURES = {
 }
 
 # What the Start the load step, the configuration step and the final load
-# step say in each running state (#1916).
+# step say in each running state (#1916), each one short line (#2145). The
+# queued Start the load box keeps the shared sentence every queued job
+# says (``stages.QUEUED``, UX conventions "Stage boxes").
 START_TEXT = {
-    "waiting": _("Starts after the configuration is prepared."),
+    "waiting": _("Starts after the configuration."),
     "active": stages.QUEUED,
-    "done": _("The background service started the load."),
+    "done": _("The load started."),
 }
 CONFIGURATION_TEXT = {
-    "waiting": _("Starts after every credential is installed and acknowledged."),
-    "active": _("Preparing the new configuration."),
-    "done": _("The configuration is prepared."),
+    "waiting": _("Starts after the credentials are acknowledged."),
+    "active": _("Preparing the configuration."),
+    "done": _("Configuration prepared."),
 }
 SOURCE_TEXT = {
-    "waiting": _("Starts after the configuration is prepared."),
+    "waiting": _("Starts after the configuration."),
     # The final load is queued and no worker has taken it yet.
-    "queued": _("Starts once the background service picks up the job."),
-    "active": _("Loading the parish data again."),
-    "done": _("Parish data is loaded."),
+    "queued": _("Waiting to start."),
+    "active": _("Loading parish data."),
+    "done": _("Parish data loaded."),
 }
 # The final load's states in which it ended without loading anything.
 SOURCE_ENDED = frozenset({"failed", "cancelled", "abandoned"})

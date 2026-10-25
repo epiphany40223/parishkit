@@ -68,8 +68,8 @@ def test_just_confirmed_setup_is_working_and_waiting():
     "state,expected,text",
     [
         ("staged", "active", "Queued"),
-        ("testing", "active", "Checking the credential"),
-        ("installing", "active", "Installing the credential"),
+        ("testing", "active", "Checking with the provider"),
+        ("installing", "active", "Installing on the server"),
         ("expired", "failed", "not installed in time"),
         ("cancelled", "failed", "installation was cancelled"),
     ],
@@ -137,7 +137,9 @@ def test_awaiting_operator_acknowledgement_counts_services():
     rows = by_key(result)
     assert rows["parishsoft"]["state"] == "operator"
     assert rows["parishsoft"]["count"] == {"done": 1, "total": 2}
-    assert "deployment runbook" in str(rows["parishsoft"]["text"])
+    # Its status says it waits for the operator; its only detail is the
+    # count, and the operator's steps are in the runtime guide (#2145).
+    assert rows["parishsoft"]["text"] == ""
     assert rows["google_workspace"]["state"] == "done"
     assert rows["configuration"]["state"] == "waiting"
     assert result["overall"] == "operator"
@@ -304,21 +306,27 @@ def test_each_box_reserves_every_running_form():
     assert operator["count"] == {"done": 8, "total": 8}
     assert operator["status"] == "Waiting for the server operator"
     assert forms(rows["configuration"]) == {
-        ("waiting", "Starts after every credential is installed and acknowledged."),
-        ("active", "Preparing the new configuration."),
-        ("done", "The configuration is prepared."),
+        ("waiting", "Starts after the credentials are acknowledged."),
+        ("active", "Preparing the configuration."),
+        ("done", "Configuration prepared."),
     }
     # Start the load and the final load reserve the words that swap when a
     # worker picks the final load up (#1916), so no box resizes at that moment.
     assert forms(rows["start"]) == {
-        ("waiting", "Starts after the configuration is prepared."),
+        ("waiting", "Starts after the configuration."),
         ("active", str(stages.QUEUED)),
-        ("done", "The background service started the load."),
+        ("done", "The load started."),
     }
     assert forms(rows["source"]) >= {
-        ("waiting", "Starts after the configuration is prepared."),
-        ("waiting", "Starts once the background service picks up the job."),
+        ("waiting", "Starts after the configuration."),
+        ("waiting", "Waiting to start."),
     }
+    # Every running form but the shared queued sentence is one short line
+    # (#2145), so no box is reserved much taller than what it shows.
+    for row in rows.values():
+        for form in row["reserve"]:
+            if form["text"] != stages.QUEUED:
+                assert len(str(form["text"])) <= 50, form["text"]
     source = {form["state"]: form for form in rows["source"]["reserve"]}
     assert set(source) == {"waiting", "active", "done"}
     # The final load's counts are reserved before it starts; no task

@@ -273,7 +273,7 @@ def test_finishing_setup_moves_on_in_place(page, component_origin, axe_source, w
     # The box's shown words, not its invisible reserved forms (#1903).
     shown = step.locator(".stage-body:not(.reserve-ghost)")
     has_text(shown.locator(".stage-status"), "In progress")
-    visible(shown.get_by_text("Checking the credential with the provider."))
+    visible(shown.get_by_text("Checking with the provider."))
     assert "sign-in" not in page.locator("main").inner_text()
     focused(summary)
     assert page.evaluate(MARKED) == "kept"

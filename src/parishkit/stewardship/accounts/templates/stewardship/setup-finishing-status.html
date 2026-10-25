@@ -1,7 +1,10 @@
 {% load i18n stewardship %}{% comment %}
   Finishing setup's live status region (#1354): each step, the time since
-  confirmation, a failure's notice and the server operator's instructions,
-  or, once setup is complete, the result with Continue. The page and the
+  confirmation, a failure's notice and one line on what happens next, or,
+  once setup is complete, the result with Continue. The server operator's
+  own steps are in the runtime guide, not on this page (#2145). The line
+  shows in every running state, so it never comes or goes while setup
+  runs; a failure, which stops the updates, drops it. The page and the
   passive status fragment it polls (/admin/setup/finishing?format=status, which
   never renews idle time) both draw it, and live-status-v1.js swaps in the
   fresh region while setup is still finishing (data-live-pending), then
@@ -23,11 +26,8 @@
 <h2>{% translate "Progress" %}</h2>
 {% translate "Steps to finish setup" as steps_label %}{% include 'stewardship/components/stage-boxes.html' with stages=steps label=steps_label key_attribute="finishing-step" detail="stewardship/setup-finishing-step.html" %}
 <p data-finishing-elapsed>{% translate "You confirmed setup:" %} <time{% if overall != 'failed' %} data-live-since{% endif %} datetime="{{ confirmed_at|date:'c' }}">{{ confirmed_ago }}</time></p>
+{% if overall != 'failed' %}<p data-finishing-next>{% translate "Before setup can finish, the server operator restarts the services that use the new credentials; each credential's box counts the services that have acknowledged it. Then setup applies the configuration, loads the parish data again and finishes by itself. This page updates as it goes." %}</p>{% endif %}
 </section>
-{% if not prepared %}<section class="panel"><h2>{% translate "What the server operator does" %}</h2>
-<p>{% translate "Once the credential installers have staged their files, the deployment operator must recreate the actual worker and mail containers using the generated configured Compose topology (the Slack variant when enabled). Use the same Compose project as initial startup, not a second deployment." %}</p>
-<p>{% translate "Run the documented credential acknowledgement command inside each actual consumer after recreation. A one-off container does not acknowledge the real consumer. The installer retains rollback material until the final setup transaction succeeds." %}</p>
-<p>{% translate "Follow the “First database and application startup” section of the Stewardship runtime operator guide. The web application cannot recreate containers or access the Docker daemon." %}</p></section>
-{% endif %}{% endif %}
+{% endif %}
 <template data-live-mirror="setup-cancel">{% if overall != 'completed' %}{% include 'stewardship/setup-cancel-form.html' with mirrored=True %}{% endif %}</template>
 </div>

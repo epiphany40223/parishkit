@@ -53,7 +53,10 @@ def test_final_confirmation_freezes_once_then_shows_passive_original_progress(
         assert b"Finishing setup" in response.content
         assert b"Install the ParishSoft credential" in response.content
         assert b"Apply the configuration" in response.content
-        assert b"actual consumer" in response.content
+        # The operator's steps are in the runtime guide, not here (#2145):
+        # one line says what happens next.
+        assert b"actual consumer" not in response.content
+        assert b"data-finishing-next" in response.content
         assert b"installing credentials needs a" not in response.content
         assert response.context["attempt"].attempt_id == attempt.attempt_id
         assert response.context["overall"] == "working"
