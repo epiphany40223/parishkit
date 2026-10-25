@@ -49,9 +49,14 @@ def parish_added_form():
 
 
 def box(locator):
-    """A locator's page position and size, rounded, for a no-shift check."""
+    """A locator's page position and size, unrounded.
+
+    Not rounded: a no-shift check that subtracts two separately rounded
+    boxes can differ by 1 px when a fractional edge crosses a .5 boundary
+    (Firefox at 320 px), though nothing moved.
+    """
     found = locator.bounding_box()
-    return tuple(round(found[key]) for key in ("x", "y", "width", "height"))
+    return tuple(found[key] for key in ("x", "y", "width", "height"))
 
 
 @pytest.mark.parametrize("width", [320, 1280])
@@ -98,9 +103,10 @@ def test_a_parish_added_value_is_in_its_field_with_a_badge(
     before = offset()
     nickname.fill("Davey")
     expect(badge).to_have_text("Added by the parish")
-    assert offset() == before
+    # Under half a pixel is sub-pixel layout noise; a real shift is >= 1 px.
+    assert offset() == pytest.approx(before, abs=0.5)
     nickname.fill(ADDED_NICKNAME)
-    assert offset() == before
+    assert offset() == pytest.approx(before, abs=0.5)
     mailing = page.locator("#family-mailing_address-added")
     show(page, mailing)
     expect(mailing).to_have_text("Added by the parish")
