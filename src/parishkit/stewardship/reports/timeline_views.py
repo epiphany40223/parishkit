@@ -41,6 +41,8 @@ the user's Timeline (#1867, ``person_identity.family_user_rows``); the page
 never shows their Admin activity, which Staff could otherwise read.
 """
 
+import hashlib
+import json
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from urllib.parse import urlencode
@@ -230,6 +232,35 @@ def timeline_table(lines, query, values):
         carry=query.carry,
         sorting=TIMELINE_SORTING,
     )
+
+
+# The header a periodic re-read of the Timeline table sends with the digest
+# of the lines it drew (ui-v1.js SEEN_HEADER, #2197).
+SEEN_HEADER = "X-ParishKit-Seen"
+
+
+def lines_digest(table, *, mail_links=False, filtered_out=False):
+    """A short digest of what the Timeline table draws, or "" without one.
+
+    Its rows' times, words, details and Mail message links (in the order
+    shown), whether those links are drawn, and which empty-table sentence
+    shows: everything the table region draws that a newer read could
+    change. A periodic re-read sends the digest its table drew, and an
+    answer whose digest is the same is empty (#2197).
+    """
+    if table is None:
+        return ""
+    lines = [
+        [
+            event.at.isoformat(),
+            str(event.what),
+            str(event.detail),
+            str(event.message_id or ""),
+        ]
+        for event in table.rows
+    ]
+    shown = json.dumps([lines, bool(mail_links), bool(filtered_out)])
+    return hashlib.sha256(shown.encode()).hexdigest()[:32]
 
 
 @dataclass(frozen=True)
@@ -429,6 +460,8 @@ def page_context(campaign, family_id, identity, timeline, as_of, **options):
         options.get("sections", ()),
         census,
     )
+    filtered_out = table is not None and not table.rows and bool(timeline.events)
+    mail_links = full and options.get("mail_links", False)
     return {
         "campaign": campaign,
         "identity": identity,
@@ -465,7 +498,11 @@ def page_context(campaign, family_id, identity, timeline, as_of, **options):
         "query": query,
         "kinds": KINDS,
         # Every line was filtered out, rather than none recorded yet.
-        "filtered_out": table is not None and not table.rows and bool(timeline.events),
+        "filtered_out": filtered_out,
+        # What the table draws, for its periodic re-read (#2197).
+        "table_digest": lines_digest(
+            table, mail_links=mail_links, filtered_out=filtered_out
+        ),
         "as_of": as_of,
         "show_codes": options.get("show_codes", False),
         "open_form": available,
@@ -477,7 +514,7 @@ def page_context(campaign, family_id, identity, timeline, as_of, **options):
         "export": options.get("export") if full else None,
         # Email lines link their Mail message page only for roles that may
         # open it (Administrators); Staff see the lines unlinked (#1774).
-        "mail_links": full and options.get("mail_links", False),
+        "mail_links": mail_links,
         # People in this Family who are users (#1867), Administrators only.
         "family_users": options.get("family_users", ()),
         # The chosen tab's own address, which a row action's dialog redraws
@@ -511,7 +548,8 @@ def export_context(campaign_id, family_id):
 
 def _principal(request, store, *, read_only=False):
     """A current Admin or Staff user, reloaded from policy on every call."""
-    # A tab's review region check (#2174) never extends the sign-in.
+    # A tab's review region check (#2174) and the table's own periodic
+    # re-read (#2197) never extend the sign-in.
     principal = authenticated_admin(
         request,
         store=store,
@@ -543,8 +581,9 @@ def _audit(principal, campaign_id, family_id, outcome, *, automatic=False):
     in. No name, DUID, code, filter or shown value is copied. The
     Administrator confirmed recording the Family on 2026-10-05 (reports
     spec). An append takes no row locks, so it runs after the read guard
-    closes. ``automatic`` marks a tab's review region check that brought
-    changed rows in (#2174), as a report's automatic view is marked (#1620).
+    closes. ``automatic`` marks a tab's review region check (#2174) or the
+    table's own re-read (#2197) that brought changed rows in, as a report's
+    automatic view is marked (#1620).
     """
     context = {"outcome": outcome}
     if automatic:
@@ -623,7 +662,11 @@ def timeline(request, campaign_id, family_id):
         except ValueError:
             return private_response("Invalid report filters.\n", status=400)
         admit_report_read(campaign_id)
-        finalized, found, changed = False, False, 0
+        # The table's own periodic re-read (#2197) sends the digest of the
+        # lines it drew; only an automatic read may, so a page the reader
+        # opens is always drawn and audited.
+        seen = request.headers.get(SEEN_HEADER, "") if automatic_read(request) else ""
+        finalized, found, changed, unchanged = False, False, 0, False
 
         def finish(completed):
             """Audit completion once, after the read-only transaction closes.
@@ -637,8 +680,9 @@ def timeline(request, campaign_id, family_id):
             if finalized or not found:
                 return
             finalized = True
-            # A check that found nothing changed showed nothing (#2174).
-            if live is not None and completed and not changed:
+            # A check or re-read that found nothing changed showed nothing
+            # (#2174, #2197).
+            if completed and (unchanged or (live is not None and not changed)):
                 return
             try:
                 _audit(
@@ -646,7 +690,7 @@ def timeline(request, campaign_id, family_id):
                     campaign_id,
                     family_id,
                     Outcome.SUCCEEDED if completed else Outcome.FAILED,
-                    automatic=live is not None,
+                    automatic=live is not None or automatic_read(request),
                 )
             except (DatabaseError, StorageInvariantError) as error:
                 emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
@@ -665,8 +709,11 @@ def timeline(request, campaign_id, family_id):
 
             A tab's review region check answers the page only when one of
             its drawn items is drawn differently now, and nothing otherwise.
+            The table's periodic re-read whose lines are the same as those
+            it drew (``seen``) is answered empty, so nothing is swapped and
+            nothing is recorded.
             """
-            nonlocal found, changed
+            nonlocal found, changed, unchanged
             campaign = Campaign.objects.select_related("active_configuration").get(
                 pk=campaign_id
             )
@@ -760,6 +807,9 @@ def timeline(request, campaign_id, family_id):
                 edit_today=campaign_today(campaign).isoformat(),
                 **streams,
             )
+            if seen and seen == context["table_digest"]:
+                unchanged = True
+                return iter((b"",))
             page = render_to_string(
                 "stewardship/timeline.html", context, request=request
             )

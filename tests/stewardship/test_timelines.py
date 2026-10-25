@@ -8,6 +8,7 @@ against PostgreSQL in ``database/test_timelines_postgresql.py``.
 """
 
 import re
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import UUID, uuid4
@@ -24,6 +25,7 @@ from parishkit.stewardship.reports.timeline_views import (
     Identity,
     TimelineQuery,
     _full,
+    lines_digest,
     open_form,
     page_context,
     parse_query,
@@ -344,7 +346,7 @@ def test_administrator_page_shows_summary_and_timeline():
     ) in page
     # One shared table region: the filter bar and the When heading both
     # refresh it in place. No Production / Testing control is drawn.
-    assert '<div id="table" data-table-region>' in page
+    assert '<div id="table" data-table-region data-reread-seen="' in page
     assert "mode-testing" not in page and "Testing rehearsal</a>" not in page
     assert (
         '<form id="table-filters" data-table-sync method="get" '
@@ -903,3 +905,50 @@ def test_the_familys_users_link_their_timelines_when_given():
     for absent in (render(TIMELINE), render(Timeline(TIMELINE.summary), full=False)):
         assert "People in this Family who are users" not in absent
         assert "/admin/users/" not in absent.split("<main")[1]
+
+
+def test_the_table_updates_itself_with_a_digest_of_its_lines():
+    """The Timeline panel carries the table's quiet 60-second re-read
+    (#2197), held while the reader works in the panel, outside the table's
+    region; the region names a digest of the lines it draws, which changes
+    with any line, its words or its link, and with the empty sentence."""
+    page = render(TIMELINE)
+    reread = re.search(r"<a hidden [^>]*data-reread-every=[^>]*>", page).group(0)
+    assert 'data-reread-every="60000"' in reread
+    assert 'data-reread-hold="timeline-events"' in reread
+    assert f'href="{timeline_url(FAMILY)}#table"' in reread
+    assert '<section class="panel" id="timeline-events"' in page
+    region = page.split('<div id="table"')[1]
+    assert reread not in region
+    digest = re.search(r'data-reread-seen="([0-9a-f]{32})"', region).group(1)
+    table = page_context(
+        CAMPAIGN,
+        FAMILY,
+        IDENTITY,
+        TIMELINE,
+        START,
+        full=True,
+        mail_links=True,
+    )
+    assert table["table_digest"] == digest
+    rows = table["table"]
+    same = SimpleNamespace(rows=list(rows.rows))
+    assert lines_digest(same, mail_links=True) == digest
+    assert lines_digest(same, mail_links=False) != digest
+    assert lines_digest(SimpleNamespace(rows=same.rows[1:]), mail_links=True) != digest
+    worded = [replace(same.rows[0], detail="other"), *same.rows[1:]]
+    assert lines_digest(SimpleNamespace(rows=worded), mail_links=True) != digest
+    empty = SimpleNamespace(rows=[])
+    assert lines_digest(empty) != lines_digest(empty, filtered_out=True)
+    # Only the full view has the table, its re-read and its digest.
+    reduced = render(Timeline(TIMELINE.summary), full=False)
+    assert "data-reread-every" not in reduced and "data-reread-seen" not in reduced
+    assert lines_digest(None) == ""
+
+
+def test_what_happened_keeps_its_words_whole_on_both_timelines():
+    """The Family and user Timelines' tables are marked for the What
+    happened column's minimum width (#2197, ui-v1.css .timeline-table)."""
+    page = render(TIMELINE)
+    assert '<table class="data-table timeline-table">' in page
+    assert '<th scope="col" class="timeline-what">What happened</th>' in page

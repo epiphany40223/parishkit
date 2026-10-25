@@ -7,7 +7,7 @@
 </dl>
 </section>
 {% endwith %}
-{% if full %}<section class="panel" aria-labelledby="events-heading">
+{% if full %}<section class="panel" id="timeline-events" aria-labelledby="events-heading">
 <h2 id="events-heading">{% translate "Timeline" %}</h2>
 {# The filter bar (#1570): a GET form whose closed choices stay in the address, applied in place (ui-v1.js, form#table-filters[data-table-sync]); it carries the When sort as hidden fields, and the sort heading carries the filters back. The zone is the browser's, filled by ui-v1.js (#558), so From and Through are days in this computer's time zone, as on System logs; the gate's hint keeps its line (data-complete-hint="reserve"), so nothing moves. #}
 <form id="table-filters" data-table-sync method="get" action="{{ page_url }}#table" class="filter-bar timeline-filters" data-require-complete data-missing-hint="{% translate 'Correct the filters to apply them.' %}">
@@ -20,10 +20,11 @@
 {% translate "From and Through are days in this computer's time zone:" as zone_note %}{% include "stewardship/components/zone-note.html" with note_text=zone_note note_id="timeline-zone-help" %}
 <p class="help" data-complete-hint="reserve" hidden></p>
 </form>
-{# One shared table region (web/tables.py, #488/#519): the filter bar and the When heading (sort_heading) refresh it in place; each href ends in its id, the table's anchor "table". #}
-<div id="table" data-table-region>
-<div class="table-scroll" tabindex="0" role="region" aria-labelledby="events-caption"><table class="data-table"><caption id="events-caption">{% translate "Everything recorded for this Family" %}</caption>
-<thead><tr>{% translate "When" as heading %}{% sort_heading table "when" heading %}<th scope="col">{% translate "What happened" %}</th><th scope="col">{% translate "Details" %}</th></tr></thead><tbody>
+{# One shared table region (web/tables.py, #488/#519): the filter bar and the When heading (sort_heading) refresh it in place; each href ends in its id, the table's anchor "table". The table updates itself (#2197, ui-conventions "Pages that update themselves", lists that others add to): this hidden link re-reads it quietly every 60 s, waiting while focus or the pointer is in this panel (data-reread-hold), and the region's data-reread-seen (the drawn lines' digest) lets an unchanged answer be empty and unaudited. #}
+<a hidden data-in-place data-in-place-quiet data-reread-every="60000" data-reread-hold="timeline-events" href="{{ page_url }}#table">{% translate "Check for updates" %}</a>
+<div id="table" data-table-region data-reread-seen="{{ table_digest }}">
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="events-caption"><table class="data-table timeline-table"><caption id="events-caption">{% translate "Everything recorded for this Family" %}</caption>
+<thead><tr>{% translate "When" as heading %}{% sort_heading table "when" heading %}<th scope="col" class="timeline-what">{% translate "What happened" %}</th><th scope="col">{% translate "Details" %}</th></tr></thead><tbody>
 {% for event in table.rows %}<tr><td class="nowrap"><time datetime="{{ event.at|instant }}" data-local-instant data-compact>{{ event.at|instant }}</time></td><th scope="row">{% if event.message_id and mail_links %}<a href="{% url 'admin:delivery' event.message_id %}">{{ event.what }}</a>{% else %}{{ event.what }}{% endif %}</th><td>{{ event.detail }}</td></tr>
 {% empty %}<tr><td colspan="3">{% if filtered_out %}{% translate "No lines match these filters. Choose All in Kind and clear From and Through to see every line." %}{% else %}{% translate "Nothing recorded for this Family yet. Emails, sign-ins, submissions and review actions appear here as they happen." %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
 </div>
