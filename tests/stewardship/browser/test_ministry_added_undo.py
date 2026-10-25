@@ -28,12 +28,13 @@ REVIEWER_VALUE = "Join Another Ministry"
 
 
 def reviewer_cell(page):
-    """The added row's Reviewer's value cell, found by its column heading."""
-    headings = [
-        node.inner_text().strip() for node in page.locator("#table thead th").all()
-    ]
-    cells = worklist_row(page, ADDED_REQUEST).locator(":scope > th, :scope > td")
-    return cells.nth(headings.index("Reviewer's value"))
+    """The added row's Reviewer's value: the labelled line of its values cell
+    (review work tables, #2124), found by its label."""
+    line = worklist_row(page, ADDED_REQUEST).locator(
+        ".values-cell .stack-line",
+        has=page.locator(".value-label", has_text="Reviewer's value"),
+    )
+    return line.locator(".value-clamp")
 
 
 def decide(page, origin, label, answer, sent):
