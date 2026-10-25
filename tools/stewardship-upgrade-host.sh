@@ -553,7 +553,9 @@ hba_reload() {
     for attempt in $(seq 1 30); do
         answer=$(hba_answer "$hba_since")
         elapsed=$(( $(date -u +%s) - started ))
-        [ "$answer" = hba_reload_pending ] && [ "$attempt" -lt 30 ] && [ "$elapsed" -lt 30 ] || break
+        if [ "$answer" != hba_reload_pending ] || [ "$attempt" -ge 30 ] || [ "$elapsed" -ge 30 ]; then
+            break
+        fi
         sleep 1
     done
     case "$answer" in

@@ -1683,7 +1683,11 @@ def test_the_database_sources_are_checked_from_web_and_admin_recovery(host):
         f"database-sources --config {host['root']}/config/services/web.yaml"
     )
     # Without the command (a release before #2111) nothing is checked; the
-    # set is loaded already, so the repeat resumes at step 7.
+    # set is loaded already, so the repeat resumes at step 7. Step 7 moved
+    # the static tree aside under the run's per-second stamp; clear that so
+    # a repeat within the same second does not refuse to reuse the name.
+    for aside in (host["root"] / "cache").glob("static.pre-restore-*"):
+        shutil.rmtree(aside)
     result, calls = restore(host, "--from", "7")
     assert result.returncode == 0, output(result)
     assert not any("database-sources" in c for c in calls)
