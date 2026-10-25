@@ -787,3 +787,40 @@ def test_add_asks_for_the_member_ministry_and_request(page, component_origin):
     # Firefox fills them a moment later.
     expect(replaced).to_contain_text("Ignored <Member>")
     available(add)
+
+
+# The table's box and its first row's layout, and how many lines each
+# "Leave (cannot participate)" answer takes and whether its two-line clamp
+# cuts it short.
+LONG_NAMES_FIT = """() => {
+  const box = document.querySelector('.worklist-table .table-scroll');
+  const leaves = [...box.querySelectorAll('.value-clamp')]
+    .filter((value) => value.textContent.includes('cannot participate'))
+    .map((value) => {
+      const range = document.createRange();
+      range.selectNodeContents(value);
+      return {lines: new Set([...range.getClientRects()].map(
+                (rect) => Math.round(rect.top))).size,
+              cut: value.scrollHeight > value.clientHeight + 1};
+    });
+  return {scroll: box.scrollWidth, width: box.clientWidth, leaves,
+          display: getComputedStyle(box.querySelector('tbody tr')).display};
+}"""
+
+
+def test_long_names_fit_the_box_at_a_laptop_window(page, component_origin):
+    """With the long-names data (followup-page: long Member and Ministry
+    names, every stage) at a 1280 px window beside the Admin menu, the
+    table keeps its table layout and fits its box, so neither scrolls
+    sideways; each "Leave (cannot participate)" answer takes at most two
+    lines, none cut short. In Linux's DejaVu Sans it was 80-100 px wider
+    than its box (#2181)."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + "/followup-page")
+    page.evaluate("document.fonts.ready")
+    fit = page.evaluate(LONG_NAMES_FIT)
+    assert fit["display"] == "table-row", fit
+    assert fit["scroll"] <= fit["width"] + 1, fit
+    assert fit["leaves"], fit
+    assert all(leave["lines"] <= 2 and not leave["cut"] for leave in fit["leaves"]), fit
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")

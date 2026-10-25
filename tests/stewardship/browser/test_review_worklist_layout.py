@@ -33,7 +33,7 @@ CARDS_BELOW = 57 * 16
 MINIMUMS = {
     "tbody th[scope=row], tbody .name-cell": 7 * 16,
     "tbody .field-cell": 6 * 16,
-    "tbody .stage-cell": 6.5 * 16,
+    "tbody .stage-cell": 5.75 * 16,
 }
 FIT = """() => {
   const box = document.querySelector('.worklist-table .table-scroll');

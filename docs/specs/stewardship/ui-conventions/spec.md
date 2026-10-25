@@ -5389,8 +5389,10 @@ shared component:
   have a minimum width, and wrap only between words
   (`overflow-wrap: break-word`, which breaks a word only when it is wider
   than the whole cell); never `anywhere` or `break-all` there. Only free
-  text (a Family's answer, a note) wraps freely, still at word boundaries
-  first. Times never wrap. The Actions cell holds its icons two to a line,
+  text (a Family's answer, including a short answer with its marker such
+  as a Ministry request's "Leave (cannot participate)", and a note) wraps
+  freely, still at word boundaries first, so the answer takes two lines
+  rather than widening the table. Times never wrap. The Actions cell holds its icons two to a line,
   so it stays narrow. Every Family, Member and Ministry name wraps
   between words to at most two lines, then is clamped, whole in its tip,
   as the [cut-short values](#table-fit-and-row-height) guideline says; a

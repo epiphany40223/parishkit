@@ -2198,14 +2198,22 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .worklist-table .table-scroll { container: review-worklist / inline-size; }
 .review-table { width: 100%; }
 .review-table th, .review-table td { overflow-wrap: break-word; word-break: normal; }
-/* A little less side padding than other whole-word tables, so the widest
-   (Ministry requests) keeps its table at a 1280 px window with the Admin
-   menu open. */
-.data-table.review-table th, .data-table.review-table td { padding-inline: .5rem; }
+/* Less side padding than other whole-word tables, so the widest (Ministry
+   requests, with long names) keeps its table at a 1280 px window with the
+   Admin menu open, even in Linux's wider DejaVu Sans (#2181). */
+.data-table.review-table th, .data-table.review-table td { padding-inline: .375rem; }
 .review-table .name-cell, .review-table tbody th[scope=row] { min-width: 7rem; }
 .review-table .field-cell { min-width: 6rem; }
-.review-table .stage-cell { min-width: 6.5rem; }
-.review-table .values-cell { min-width: 8rem; max-width: 18rem; }
+/* A stage's longest word ("interested", in "Declined / no longer
+   interested") is about 75 px in DejaVu Sans, so 5.75rem keeps it whole.
+   A short answer with its marker, "Leave (cannot participate)", wraps
+   between words onto two lines (#2181); 8.5rem keeps "Leave (cannot"
+   (about 114 px in DejaVu Sans) on the first, so the value never needs a
+   third line, which its two-line clamp would hide. DejaVu Sans is the
+   widest of the fonts the tests use, so do not tighten these on a
+   narrower one. */
+.review-table .stage-cell { min-width: 5.75rem; }
+.review-table .values-cell { min-width: 8.5rem; max-width: 18rem; }
 .review-table .dates-cell { min-width: 9rem; }
 /* Names are cut short last (ui-conventions "Table fit and row height",
    cut-short values): a Family or Member name (name-clamp) and a Ministry
