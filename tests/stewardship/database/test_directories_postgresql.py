@@ -528,8 +528,15 @@ def test_staff_directories_survive_limiter_outage_but_not_revocation(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         # A Ministry leader gets no box, and the route refuses them (#561).
         assert b"data-find-family" not in read(browser, "/admin/")[1]
+        # Still signed in, they are told the role is the reason, never to
+        # sign in again: the shared role refusal, which the box shows (#2189).
         response, body = search(browser, find, {"search": "examp"})
-        assert response.status_code == 403 and body == b""
+        assert response.status_code == 403
+        answer = json.loads(body)
+        assert [error["code"] for error in answer["errors"]] == ["denied"]
+        assert answer["refusal"]["message"] == (
+            "This page is for Administrators and Staff. Your access doesn't include it."
+        )
         for route in routes:
             response, body = read(browser, route)
             assert response.status_code == 403 and harness.code.encode() not in body

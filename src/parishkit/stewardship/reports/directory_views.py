@@ -21,13 +21,14 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
+from parishkit.stewardship.accounts import role_refusal
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.cryptography import CryptographicError
 from parishkit.stewardship.accounts.family_authentication import (
     runtime as family_runtime,
 )
 from parishkit.stewardship.accounts.policy import Capability
-from parishkit.stewardship.accounts.role_refusal import require
+from parishkit.stewardship.accounts.role_refusal import RoleDenied, require
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
@@ -462,7 +463,11 @@ def find_family(request, campaign_id):
     rechecked inside the campaign read guard, as the directory does, and the
     search is audited as a directory view (search used, row counts; never
     the text). Refusals answer with an empty body and the status alone; the
-    script shows its own fixed text for them.
+    script shows its own fixed text for them. The one exception is a
+    current session whose role lacks the search (a Ministry leader, or a
+    role changed since the page was drawn): it gets the shared role
+    refusal's typed JSON, whose sentence and fix the script shows, so a
+    signed-in reader is never told to sign in again (#2189).
     """
     finish, handed_off = None, False
     try:
@@ -543,6 +548,8 @@ def find_family(request, campaign_id):
         )
         handed_off = response.status_code == 200 and response.streaming
         return response
+    except RoleDenied as error:
+        return role_refusal.response(error)
     except (PermissionError, ObjectDoesNotExist):
         return _bare(403)
     except (*SAFE_FAILURES, StorageInvariantError, CryptographicError, UnicodeError):
