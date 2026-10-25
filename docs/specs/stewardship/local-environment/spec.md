@@ -1468,9 +1468,17 @@ that no more than 90% of `E` respond.
   realistic amount range, Ministry interest, census edits (a changed email, or
   a proposed new adult household Member, who also joins the first offered
   Ministry when the campaign offers Ministries, so the Chairperson review has
-  new Members to review), a few email opt-outs, and occasional additional
-  information text. When the campaign collects census answers and the
-  timeline has enough submissions, each kind appears at least once.
+  new Members to review), a few email opt-outs, occasional additional
+  information text, and the Limitations answers: about 4% of submissions
+  cannot attend Mass, and, when the campaign offers Ministries, about 4% name
+  one adult who cannot serve (a Member with current Ministries when the
+  Family has one, otherwise its oldest Member when the form carries birth
+  dates, else its lowest DUID; that Member stops every
+  current Ministry and joins none, as the submit check requires), with
+  some Families giving both. The Limitations answers draw from their own
+  generator, so the other draws of a seed are unchanged. When the campaign
+  collects census answers and the timeline has enough submissions, each kind
+  appears at least once.
 - **Edge cases.** At least:
   - re-submissions (later versions) from 3% of submitting Families, with a
     minimum of one;
