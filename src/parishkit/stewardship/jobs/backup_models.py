@@ -55,6 +55,9 @@ FAILURE_KINDS = (
     "unexpected",
     "unanswered",
 )
+# An access check also records that the applied delegated mailbox user changed
+# after it was queued, so it was closed without contacting Drive (#269).
+PROBE_FAILURE_KINDS = (*FAILURE_KINDS, "settings_changed")
 # Drive folder IDs; the same pattern backup_drive.FOLDER_ID accepts.
 FOLDER_PATTERN = r"^[A-Za-z0-9_-]{10,200}$"
 
@@ -180,7 +183,7 @@ class BackupDriveProbe(models.Model):
             ),
             models.CheckConstraint(
                 condition=models.Q(failure_kind__isnull=True)
-                | models.Q(failure_kind__in=FAILURE_KINDS),
+                | models.Q(failure_kind__in=PROBE_FAILURE_KINDS),
                 name="backup_probe_failure_kind",
             ),
         ]

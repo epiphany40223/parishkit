@@ -2425,8 +2425,16 @@ the server still refuses it there. **Test access** queues a check that the Googl
 installer answers by writing and trashing one small file in the folder, as
 the applied delegated mailbox user only (the database refuses a check naming
 any other user, so the web process cannot make the installer impersonate
-someone else); the page follows the result with the passive live-status
-pattern and explains each failure in plain language. A pending check shows
+someone else). The installer compares the check with the applied delegated
+user again just before it runs it, through a definer that returns only the
+applied backup folder link and delegated user
+([#269](https://github.com/epiphany40223/parishkit/issues/269)): a check
+queued before an Administrator changed that user is not run and fails as
+"The delegated mailbox user changed after this check was requested, so the
+check was not run. Select Test access again to check as the current user."
+The tested folder is not compared, since Test access checks the entered
+folder before it is saved. The page follows the result with the passive
+live-status pattern and explains each failure in plain language. A pending check shows
 until it finishes; a finished result shows for up to ten minutes and
 disappears as soon as the tested folder is saved after it (other
 configuration changes don't hide it). The folder that was tested stays in the

@@ -5,6 +5,7 @@ import json
 import logging
 import re
 from datetime import timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -22,7 +23,7 @@ from parishkit.stewardship.accounts.backup_destination import (
 from parishkit.stewardship.accounts.configuration_installation import install_request
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.audit.models import OperationalLog
-from parishkit.stewardship.backup_drive import PROBE_WAIT
+from parishkit.stewardship.backup_drive import PROBE_WAIT, DriveFailure
 from parishkit.stewardship.backup_offsite import SEALED_FILES, copy_offsite
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import DeploymentProfile, ServiceRole
@@ -955,6 +956,191 @@ def test_a_check_queued_across_a_workspace_change_is_a_stale_page(workspace):
         with pytest.raises(StaleRecordError):
             request_probe(uuid4(), FOLDER, "old.mailbox@example.org")
         assert request_probe(uuid4(), FOLDER, "mail@example.org").state == "pending"
+
+
+@pytest.fixture
+def destination(monkeypatch, request):
+    """``workspace`` with the off-site backup folder applied as well."""
+    original = campaign_builders.configuration_document
+
+    def document():
+        value = original()
+        value["sections"]["integrations"].append(
+            {
+                "id": str(uuid4()),
+                "values": {
+                    "kind": "backup",
+                    "settings": {"target": LINK},
+                    "credential_fingerprint": None,
+                },
+            }
+        )
+        return value
+
+    monkeypatch.setattr(campaign_builders, "configuration_document", document)
+    return request.getfixturevalue("workspace")
+
+
+def read_destination():
+    """Call the backup destination definer as the current session; or its SQLSTATE."""
+    try:
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM stewardship_backup_destination_v1()")
+            return cursor.fetchone()
+    except DatabaseError as error:
+        return error.__cause__.sqlstate
+
+
+def test_only_the_workspace_installer_reads_the_backup_destination(destination):
+    """The definer answers the installer alone, with just the two settings (#269).
+
+    Every other runtime login lacks EXECUTE, and a login granted EXECUTE by
+    mistake is still refused by the definer's own caller check.
+    """
+    from parishkit.stewardship.runtime_grants import (
+        BACKUP_DESTINATION_FUNCTION,
+        runtime_functions,
+    )
+    from parishkit.stewardship.runtime_identities import database_identities
+
+    granted = {
+        sql_name
+        for _, sql_name, role, target in database_identities()
+        if role is not ServiceRole.MIGRATION
+        and BACKUP_DESTINATION_FUNCTION in runtime_functions(role, target=target)
+    }
+    assert granted == {"pk_stewardship_credential_google_workspace"}
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT has_function_privilege('public', "
+            "'public.stewardship_backup_destination_v1()', 'EXECUTE')"
+        )
+        assert cursor.fetchone() == (False,)
+    with target_login("google_workspace"):
+        assert read_destination() == (LINK, "mail@example.org")
+        assert backup_probes.applied_mailbox() == "mail@example.org"
+
+    def refused():
+        """This session's login holds no EXECUTE and is refused (42501)."""
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT has_function_privilege(session_user, "
+                "'public.stewardship_backup_destination_v1()', 'EXECUTE')"
+            )
+            assert cursor.fetchone() == (False,)
+        assert read_destination() == "42501"
+
+    for service in (ServiceRole.WEB, ServiceRole.WORKER, ServiceRole.BACKUP_WORKER):
+        with task_login(service, exact=True):
+            refused()
+    with target_login("parishsoft"):
+        refused()
+    stray = "test_destination_" + uuid4().hex
+    with connection.cursor() as cursor:
+        cursor.execute(f'CREATE ROLE "{stray}" LOGIN NOINHERIT')
+        cursor.execute(
+            "GRANT EXECUTE ON FUNCTION public.stewardship_backup_destination_v1() "
+            f'TO "{stray}"'
+        )
+        cursor.execute(f'SET SESSION AUTHORIZATION "{stray}"')
+    try:
+        assert read_destination() == "42501"
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("RESET SESSION AUTHORIZATION")
+            cursor.execute(f'DROP OWNED BY "{stray}"')
+            cursor.execute(f'DROP ROLE "{stray}"')
+
+
+def test_the_destination_is_empty_without_applied_settings():
+    """No applied Workspace or backup settings read as NULLs, not an error."""
+    with target_login("google_workspace"):
+        assert read_destination() == (None, None)
+        assert backup_probes.applied_mailbox() is None
+
+
+def queued_before_a_change(actor, subject):
+    """A pending check for ``subject``, as if queued before the user changed.
+
+    The insert guard admits only the applied user, so the row is written
+    with triggers off (the superuser's replica mode), which is the state a
+    check queued just before an Administrator changed the user is left in.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("SET session_replication_role = replica")
+        try:
+            row = BackupDriveProbe.objects.create(
+                requested_by_id=actor, folder_id=FOLDER, subject=subject
+            )
+        finally:
+            cursor.execute("SET session_replication_role = DEFAULT")
+    return row
+
+
+def test_a_check_queued_for_a_changed_user_closes_without_drive(workspace, monkeypatch):
+    """The installer never impersonates a user that is no longer applied (#269)."""
+    monkeypatch.setattr(
+        backup_probes, "DriveClient", lambda *a, **k: pytest.fail("contacted Drive")
+    )
+    monkeypatch.setattr(
+        key_files, "read_private", lambda path: pytest.fail("read the key")
+    )
+    actor = uuid4()
+    row = queued_before_a_change(actor, "old.mailbox@example.org")
+    with target_login("google_workspace"):
+        assert (
+            backup_probes.run_pending_probes(
+                "unused",
+                profile=DeploymentProfile.PRODUCTION,
+                session_factory=lambda value, subject: pytest.fail(subject),
+            )
+            == 1
+        )
+        assert not backup_probes.has_pending()
+    row.refresh_from_db()
+    assert (row.state, row.failure_kind) == ("failed", "settings_changed")
+    assert row.completed_at is not None
+    with transaction.atomic():
+        status = latest_probe(actor, database_now())
+    assert status.kind == "failed"
+    assert str(status.message) == DriveFailure("settings_changed").message
+
+
+RECHECK_SQL = (
+    Path(backup_probes.__file__).with_name("schema")
+    / "migrations"
+    / "0176_backup_probe_recheck.sql"
+).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "broken",
+    [
+        "GRANT EXECUTE ON FUNCTION public.stewardship_backup_destination_v1() "
+        "TO PUBLIC",
+        "ALTER FUNCTION public.stewardship_backup_destination_v1() SECURITY INVOKER",
+        "ALTER TABLE public.stewardship_backup_drive_probe "
+        "DROP CONSTRAINT backup_probe_failure_kind",
+        "DROP FUNCTION public.stewardship_backup_destination_v1()",
+        # The CHECK as it was before 0176, without settings_changed.
+        "ALTER TABLE public.stewardship_backup_drive_probe "
+        "DROP CONSTRAINT backup_probe_failure_kind; "
+        "ALTER TABLE public.stewardship_backup_drive_probe "
+        "ADD CONSTRAINT backup_probe_failure_kind CHECK "
+        "(failure_kind IS NULL OR failure_kind IN ('authorization', "
+        "'api_disabled', 'not_found', 'permission', 'not_folder', "
+        "'credential', 'verification', 'unavailable', 'unexpected', "
+        "'unanswered'))",
+    ],
+)
+def test_the_recheck_migration_refuses_a_partial_install(broken):
+    """0176's closing DO block raises unless the definer and CHECK are as declared."""
+    check = RECHECK_SQL[RECHECK_SQL.index("DO $check$") :]
+    with connection.cursor() as cursor:
+        cursor.execute(check)
+        with pytest.raises(DatabaseError, match="0176"), transaction.atomic():
+            cursor.execute(broken)
+            cursor.execute(check)
 
 
 def test_smoke_send_reads_the_deployment_tag(workspace, monkeypatch):

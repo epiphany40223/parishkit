@@ -141,6 +141,12 @@ class DriveFailure(Exception):
             "The check was not answered. The Google Workspace installer service "
             "may not be running; ask the server administrator."
         ),
+        # Test access only (#269): the check waited while the user changed.
+        "settings_changed": (
+            "The delegated mailbox user changed after this check was requested, "
+            "so the check was not run. Select Test access again to check as the "
+            "current user."
+        ),
     }
 
     def __init__(self, kind, *, retryable=None, budget_stop=False):

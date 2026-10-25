@@ -558,6 +558,9 @@ FROZEN = {
     "0175_campaign_families.sql": (
         "83f1a43c2b5b62760166ae940fbaf4cd2b0f3a3fbdb195e5d2537b8c9408cbe3"
     ),
+    "0176_backup_probe_recheck.sql": (
+        "7296bc4c8dd4990c3d8fe0ad7feebe32b74eec2b781a7d256ddc463d260b38cb"
+    ),
 }
 
 

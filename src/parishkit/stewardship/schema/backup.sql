@@ -68,7 +68,7 @@ CREATE TABLE "stewardship_backup_drive_probe" (
     CONSTRAINT "backup_probe_state" CHECK (((state)::text = ANY ((ARRAY['pending'::character varying, 'succeeded'::character varying, 'failed'::character varying])::text[]))),
     CONSTRAINT "backup_probe_folder" CHECK (((folder_id)::text ~ '^[A-Za-z0-9_-]{10,200}$'::text)),
     CONSTRAINT "backup_probe_shape" CHECK ((((completed_at IS NULL) AND (failure_kind IS NULL) AND ((state)::text = 'pending'::text)) OR ((completed_at IS NOT NULL) AND (failure_kind IS NULL) AND ((state)::text = 'succeeded'::text)) OR ((completed_at IS NOT NULL) AND (failure_kind IS NOT NULL) AND ((state)::text = 'failed'::text)))),
-    CONSTRAINT "backup_probe_failure_kind" CHECK (((failure_kind IS NULL) OR ((failure_kind)::text = ANY ((ARRAY['authorization'::character varying, 'api_disabled'::character varying, 'not_found'::character varying, 'permission'::character varying, 'not_folder'::character varying, 'credential'::character varying, 'verification'::character varying, 'unavailable'::character varying, 'unexpected'::character varying, 'unanswered'::character varying])::text[]))))
+    CONSTRAINT "backup_probe_failure_kind" CHECK (((failure_kind IS NULL) OR ((failure_kind)::text = ANY ((ARRAY['authorization'::character varying, 'api_disabled'::character varying, 'not_found'::character varying, 'permission'::character varying, 'not_folder'::character varying, 'credential'::character varying, 'verification'::character varying, 'unavailable'::character varying, 'unexpected'::character varying, 'unanswered'::character varying, 'settings_changed'::character varying])::text[]))))
 );
 CREATE INDEX "backup_probe_pending" ON "stewardship_backup_drive_probe" ("created_at") WHERE ((state)::text = 'pending'::text);
 

@@ -520,6 +520,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # It also replaces 0110's financial and 0094's and 0100's information
 # selections, which those files' reruns bring back older, so
 # ``CLOSURE_REPLACED_ONLY`` puts 0175's bodies back last.
+# 0176 (#269) creates one definer, granted to the Google Workspace installer
+# (runtime_grants.CLOSURE_FUNCTIONS), and drops and adds the access check's
+# failure kind CHECK again; its file installs whole again (the CHECK is
+# still there, so dropping and adding it again is harmless).
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -1022,6 +1026,11 @@ CLOSURE_CREATED = {
             "public.stewardship_setup_load_organization_v1()",
         ),
         ("stewardship_accounts", "0035_parishsoft_organization_choice"),
+    ),
+    # 0176 (#269): the Test access re-check's backup destination definer.
+    "public.stewardship_backup_destination_v1()": (
+        "stewardship_jobs",
+        "0038_probe_settings_changed",
     ),
 }
 
