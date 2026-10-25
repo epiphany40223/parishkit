@@ -59,6 +59,18 @@ def arrows_hidden(text):
     )
 
 
+@register.filter
+def share_name(share):
+    """A worded share method by its short label, the full one its tooltip.
+
+    ``reports.financial.share_name`` (#2198), imported here so template
+    loading never pulls the reports package in at startup.
+    """
+    from parishkit.stewardship.reports.financial import share_name as name
+
+    return name(share)
+
+
 @register.simple_tag
 def reminder_workgroup_name():
     """The displayed name of the campaign's reminder exclusion setting (#1061).

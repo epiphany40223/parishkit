@@ -104,6 +104,7 @@ from .financial import (
     in_offered_order,
     name_families,
     shape_result,
+    share_cell,
     share_text,
     share_wording,
 )
@@ -467,19 +468,25 @@ def to_enter(row):
 
 
 def family_answer(row):
-    """The Family's answer cell: its pledge and frequency, then its share methods."""
+    """The Family's answer cell: its pledge and frequency, then its share methods.
+
+    The share methods are named by their short labels (#2198); the files
+    word them in full (``answer_parts``).
+    """
     amount, frequency, shares = answer_parts(row)
     first = f"{amount}, {frequency}" if frequency else amount
     if not shares:
         return first
-    return format_html('{}<br><span class="help">{}</span>', first, shares)
+    return format_html(
+        '{}<br><span class="help">{}</span>', first, share_cell(row["shares"])
+    )
 
 
 def reviewer_value(row):
     """The Reviewer's value cell: an Edit's pledge and frequency, else blank.
 
     Under them, as the Family's answer cell has its own, the Edit's share
-    methods when it changed them (#2177).
+    methods when it changed them (#2177), by their short labels (#2198).
     """
     amount, frequency = reviewed_parts(row)
     if not amount:
@@ -488,7 +495,7 @@ def reviewer_value(row):
     if edited is None:
         return f"{amount}, {frequency}"
     return format_html(
-        '{}, {}<br><span class="help">{}</span>', amount, frequency, share_text(edited)
+        '{}, {}<br><span class="help">{}</span>', amount, frequency, share_cell(edited)
     )
 
 

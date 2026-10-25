@@ -173,6 +173,37 @@ def test_share_labels_use_the_neutral_household_wording():
     assert share_labels({}, campaign_id=CAMPAIGN, parish_name="Sample") == {}
 
 
+def test_a_table_cell_names_a_share_method_by_its_short_label():
+    """A cell shows the short label, the full label its tooltip and its
+    screen-reader text; a method without one shows its label alone; Other
+    text follows, everything escaped; files keep the full labels (#2198)."""
+    online = {"label": "Online <giving>", "short": "Online & co", "text": ""}
+    other = {"label": "Other", "short": "Other", "text": "<b>Bonds</b>"}
+    assert str(financial.share_name(online)) == (
+        '<span title="Online &lt;giving&gt;"><span aria-hidden="true">'
+        'Online &amp; co</span><span class="visually-hidden">Online &lt;giving&gt;'
+        "</span></span>"
+    )
+    assert str(financial.share_name(other)) == "Other"
+    assert str(financial.share_cell([other, other], "; ")) == (
+        "Other: &lt;b&gt;Bonds&lt;/b&gt;; Other: &lt;b&gt;Bonds&lt;/b&gt;"
+    )
+    assert financial.share_cell([]) == ""
+    assert financial.share_text([online, other]) == (
+        "Online <giving>, Other: <b>Bonds</b>"
+    )
+    # The template filter Financial stewardship's chips use is the same
+    # markup, escaped once.
+    from django.template import engines
+
+    drawn = (
+        engines["django"]
+        .from_string("{% load stewardship %}{{ share|share_name }}")
+        .render({"share": online})
+    )
+    assert drawn == str(financial.share_name(online))
+
+
 class Cursor:
     """Stand in for the one statement the read model issues."""
 

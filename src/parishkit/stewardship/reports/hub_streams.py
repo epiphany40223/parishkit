@@ -36,7 +36,13 @@ from parishkit.stewardship.source.source_status import (
     source_status_label,
 )
 
-from .financial import FinancialQuery, family_answers, giving_proof, shape_result
+from .financial import (
+    FinancialQuery,
+    family_answers,
+    giving_proof,
+    shape_result,
+    share_cell,
+)
 from .financial_documents import period_years
 from .hub_census import FieldRow, Subject
 from .ministries import outcome_label
@@ -251,10 +257,8 @@ def financial_tab(row, metadata):
         row["frequency_label"],
         row["installment"].display if row["installment"].available else "",
     )
-    shares = "; ".join(
-        f"{share['label']}: {share['text']}" if share["text"] else share["label"]
-        for share in row["shares"]
-    ) or str(_("None chosen"))
+    # Each method by its short label, the full one its tooltip (#2198).
+    shares = share_cell(row["shares"], "; ") or str(_("None chosen"))
     if years:
         pledge_label = _("Annual pledge (ParishSoft %(years)s)") % {"years": years}
     else:

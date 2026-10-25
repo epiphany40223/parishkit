@@ -313,3 +313,27 @@ def test_each_acting_tab_draws_the_dialogs_focus_fallback():
         f'<p id="{worklist.notice_id}" class="visually-hidden" tabindex="-1">' in page
     )
     assert worklist.notice_id == "hub-family-census-notice"
+
+
+def test_an_edits_share_methods_are_named_by_short_label():
+    """The Share methods row's Reviewer's value names each of an Edit's
+    methods as the Family's answer beside it does: by its short label, the
+    full one its tooltip (#2198)."""
+    from parishkit.stewardship.reports.hub_actions import reviewed_rows
+    from parishkit.stewardship.reports.hub_streams import financial_tab
+
+    from .test_hub_streams import METADATA, shaped_pledge
+
+    rows = financial_tab(shaped_pledge(), METADATA).pledge.rows
+    item = {
+        "reviewer_parts": ("$1,300.00", "Monthly", "$108.33"),
+        "reviewer_shares": [
+            {"id": "a", "label": "Online giving", "short": "Online", "text": ""},
+            {"id": "b", "label": "Other", "short": "Other", "text": "Bonds"},
+        ],
+    }
+    shares = reviewed_rows(rows, item)[2].reviewer
+    assert str(shares) == (
+        '<span title="Online giving"><span aria-hidden="true">Online</span>'
+        '<span class="visually-hidden">Online giving</span></span>; Other: Bonds'
+    )

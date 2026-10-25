@@ -462,12 +462,20 @@ def test_edit_changes_the_share_methods_in_the_dialog(page, component_origin):
 
     page.goto(component_origin + SHARES_EVERY)
     cells = row(page, 3).locator("td")
-    expect(cells.filter(has_text="Stock gift")).to_have_text(
-        "$1,200.00, WeeklyOnline giving, Other: Stock gift"
+    expect(cells.filter(has_text="Stock gift")).to_have_count(1)
+    # Each method by its short label; the full label is its tooltip and the
+    # visually hidden text a screen reader hears (#2198).
+    shown = (
+        "c => { const d = c.cloneNode(true);"
+        " d.querySelectorAll('.visually-hidden').forEach((e) => e.remove());"
+        " return d.textContent; }"
     )
-    expect(cells.filter(has_text="Weekly").last).to_have_text(
-        "$1,200.00, WeeklyOnline giving"
-    )
+    family = cells.filter(has_text="Stock gift")
+    assert family.evaluate(shown) == "$1,200.00, WeeklyOnline, Other: Stock gift"
+    assert family.locator("[title]").first.get_attribute("title") == "Online giving"
+    assert family.locator(".visually-hidden").first.text_content() == "Online giving"
+    reviewer = cells.filter(has_text="Weekly").last
+    assert reviewer.evaluate(shown) == "$1,200.00, WeeklyOnline"
 
 
 def test_a_zero_pledge_hides_and_sends_no_share_methods(page, component_origin):

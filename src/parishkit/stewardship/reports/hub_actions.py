@@ -22,6 +22,7 @@ from .census_change_views import SORTING
 from .census_changes import EVERY_STAGE, CensusQuery, census_changes
 from .census_worklist import worklist_page
 from .export_services import admit_campaign
+from .financial import share_cell
 from .hub_streams import frequency_words
 from .information_worklist import EVERY_STAGE as INFORMATION_EVERY
 from .information_worklist import SORTING as INFORMATION_SORTING
@@ -265,11 +266,8 @@ def reviewed_rows(rows, item):
     if not amount:
         return rows
     # The frequency is worded as the Family's answer beside it is; the share
-    # methods as the Family's are, one after another.
-    shares = "; ".join(
-        f"{share['label']}: {share['text']}" if share["text"] else share["label"]
-        for share in item["reviewer_shares"]
-    )
+    # methods as the Family's are, one after another, by short label (#2198).
+    shares = share_cell(item["reviewer_shares"], "; ")
     values = (amount, frequency_words(frequency, installment), shares)
     return tuple(
         replace(row, reviewer=value) for row, value in zip(rows, values, strict=True)

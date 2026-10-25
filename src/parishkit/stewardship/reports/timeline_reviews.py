@@ -67,7 +67,7 @@ from .financial import (
     FREQUENCY_LABELS,
     UNAVAILABLE_SHARE,
     in_offered_order,
-    share_labels,
+    share_wording,
 )
 from .hub_census import member_label
 from .limitations import ANSWERS as LIMITATION_ANSWERS
@@ -637,10 +637,13 @@ def pledge_words(row, labels=None):
 
 
 def share_labels_for(campaign_id):
-    """The campaign's share methods by option id, as Pledges words them (#2177).
+    """The campaign's share methods by option id, as Pledges names them (#2177).
 
-    Each by its current full label (``share_labels``), the Family form's
-    wording for a household with no listed Member, in configured order.
+    Each by its current short label, else its full label (``share_wording``:
+    the Family form's wording for a household with no listed Member), in
+    configured order. A Timeline line is one sentence the page, its PDF and
+    ``pk-admin`` share, so it names a method as a table cell does, without
+    the cell's tooltip (UX conventions, "Short labels in tables"; #2198).
     """
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
     from parishkit.stewardship.campaigns.models import Campaign
@@ -651,11 +654,12 @@ def share_labels_for(campaign_id):
     system = SystemConfiguration.objects.select_related(
         "active_configuration__parish"
     ).get()
-    return share_labels(
+    wording = share_wording(
         campaign.active_configuration.values,
         campaign_id=campaign_id,
         parish_name=system.active_configuration.parish.name,
     )
+    return {key: short for key, (_label, short) in wording.items()}
 
 
 def first_state(row):

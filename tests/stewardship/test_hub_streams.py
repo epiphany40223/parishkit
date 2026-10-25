@@ -119,8 +119,8 @@ def shaped_pledge(**values):
         "frequency_label": "Monthly",
         "cannot_give": False,
         "shares": [
-            {"label": "Online giving", "text": ""},
-            {"label": "Other", "text": "Stock gift"},
+            {"label": "Online giving", "short": "Online", "text": ""},
+            {"label": "Other", "short": "Other", "text": "Stock gift"},
         ],
         "source_pledge": MoneyAmount(100000),
         "source_contributions": MoneyAmount(90000),
@@ -145,7 +145,15 @@ def test_the_financial_tab_is_one_pledge_item():
     ] == [
         ("Annual pledge (ParishSoft 2026)", "$1,000.00", True, "$1,200.00"),
         ("Frequency", "", False, "Monthly ($100.00 each)"),
-        ("Share methods", "", False, "Online giving; Other: Stock gift"),
+        (
+            "Share methods",
+            "",
+            False,
+            # By short label, the full one its tooltip and spoken (#2198).
+            '<span title="Online giving"><span aria-hidden="true">Online</span>'
+            '<span class="visually-hidden">Online giving</span></span>; '
+            "Other: Stock gift",
+        ),
     ]
     assert tab.pledge.unchanged == () and tab.years == "2026"
     assert tab.contributions.display == "$900.00"

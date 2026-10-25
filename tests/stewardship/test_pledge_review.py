@@ -356,6 +356,12 @@ def test_an_edits_share_methods_show_beside_the_familys_and_are_to_enter():
         "Unavailable share method</span>"
     )
     assert views.to_enter(row)[2] == "Other: Bonds, Unavailable share method"
+    # A method with a short label is named by it in the cell (#2198), in
+    # full in the files and the editor's choices.
+    online = edited_row({ONLINE: ""})
+    assert 'aria-hidden="true">Online</span>' in str(views.reviewer_value(online))
+    assert views.to_enter(online)[2] == "Online giving"
+    assert views.edit_choices(online)[0]["label"] == "Online giving"
     choices = views.edit_choices(row)
     assert [(c["id"], c["checked"], c["text"], c["retired"]) for c in choices] == [
         (ONLINE, False, "", False),
@@ -387,11 +393,17 @@ def test_the_reviewed_form_draws_an_edits_share_methods():
 
 
 def test_cells_show_the_familys_answer_and_the_reviewers_value():
-    """Family's answer keeps the Family's pledge; the edit is beside it."""
+    """Family's answer keeps the Family's pledge; the edit is beside it.
+
+    The cell names each share method by its short label, the full label its
+    tooltip and what a screen reader hears (#2198); the files keep the full
+    labels (``to_enter``).
+    """
     row = pledge_row()
     assert str(views.family_answer(row)) == (
-        '$1,200.00, Weekly<br><span class="help">Online giving, Other: Stock gift'
-        "</span>"
+        '$1,200.00, Weekly<br><span class="help"><span title="Online giving">'
+        '<span aria-hidden="true">Online</span><span class="visually-hidden">'
+        "Online giving</span></span>, Other: Stock gift</span>"
     )
     assert views.reviewer_value(row) == "$1,300.00, Monthly"
     assert views.to_enter(row) == (
