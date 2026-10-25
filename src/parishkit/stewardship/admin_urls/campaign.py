@@ -31,6 +31,7 @@ from ..accounts import (
     go_live_prepare_views,
     go_live_views,
     reminder_workgroup_views,
+    repeat_dates_preview,
     schedule_calendar_views,
     schedule_email_test,
     schedule_entry_views,
@@ -156,6 +157,13 @@ patterns = [
         "campaign/schedules/suggestion/",
         schedule_entry_views.schedule_suggested,
         "schedule_suggested",
+    ),
+    # The repeat rules' live date list (#2092), a fragment the page script
+    # reads, POST only, also before the UUID address.
+    _page(
+        "campaign/schedules/repeat-dates/",
+        repeat_dates_preview.repeat_dates_preview,
+        "schedule_repeat_dates",
     ),
     # The read-only Campaign calendar (#469), also before the UUID address.
     _page(
