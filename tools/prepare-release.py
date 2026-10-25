@@ -312,7 +312,7 @@ def build_artifacts() -> None:
 def create_annotated_tag(plan: ReleasePlan, notes: str) -> None:
     """Create the annotated git release tag."""
     validate_tag_prerequisites(plan)
-    tag = f"v{plan.release_version}"
+    tag = release_tags.tag_for(plan.release_version)
     subprocess.run(
         ["git", "tag", "-a", tag, "-F", "-"],
         cwd=ROOT,
@@ -364,7 +364,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--tag",
         action="store_true",
-        help="create an annotated local vVERSION tag; does not push it",
+        help="create an annotated local stewardship-vVERSION tag; does not push it",
     )
     args = parser.parse_args(argv)
     if args.tag:

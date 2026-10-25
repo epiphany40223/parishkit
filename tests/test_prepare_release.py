@@ -388,7 +388,8 @@ def test_create_annotated_tag_uses_notes_file(monkeypatch, tmp_path):
     """Verify main(--tag) creates the annotated tag from the notes file.
 
     The full tagging path runs end to end against stubbed git, asserting the
-    tag is created with `git tag -a vX -F -` and the notes file piped as input.
+    tag is created with `git tag -a stewardship-vX -F -` and the notes file
+    piped as input.
 
     The setup stays local to this test so fixtures remain easy to understand
     and change.
@@ -429,7 +430,7 @@ def test_create_annotated_tag_uses_notes_file(monkeypatch, tmp_path):
 
     assert tag_calls == [
         (
-            ["git", "tag", "-a", "v1.3.0", "-F", "-"],
+            ["git", "tag", "-a", "stewardship-v1.3.0", "-F", "-"],
             {
                 "cwd": release.ROOT,
                 "check": True,

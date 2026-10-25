@@ -37,7 +37,8 @@ Collect, outside the runtime root and outside the repository:
 - The **image digest** of the release to install, copied from the GitHub
   Release's notes as the complete
   `ghcr.io/<owner>/<repository>/stewardship@sha256:<64 hex>` reference. The
-  release workflow writes that line when the human pushes a `vX.Y.Z` tag; a
+  release workflow writes that line when the human pushes a
+  `stewardship-vX.Y.Z` tag (`vX.Y.Z` up to 1.23.0); a
   tag such as `:1.2.3` is never deployed, only the digest. The host pulls it
   without a registry credential, so the package must be public, a one-time
   step after the first release (see the
@@ -461,7 +462,8 @@ sequence with the commands that exist.
    to the time `web` is down:
    - Verify its build provenance, unless `release.sh` printed this digest
      (it has already verified it):
-     `gh attestation verify oci://NEW_DIGEST --repo OWNER/REPOSITORY --signer-workflow OWNER/REPOSITORY/.github/workflows/release.yml --source-ref refs/tags/vX.Y.Z --deny-self-hosted-runners`,
+     `gh attestation verify oci://NEW_DIGEST --repo OWNER/REPOSITORY --signer-workflow OWNER/REPOSITORY/.github/workflows/release.yml --source-ref refs/tags/stewardship-vX.Y.Z --deny-self-hosted-runners`
+     (`refs/tags/vX.Y.Z` for a release up to 1.23.0),
      from any machine with `gh` signed in. Stop if it fails: the image was
      not built by this repository's release workflow for that tag. The
      [release image guide](stewardship-release-image.md#the-pushed-digest-is-smoke-tested-and-attested)
