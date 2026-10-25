@@ -2265,7 +2265,9 @@ def provisioned_logins(monkeypatch):
     monkeypatch.setattr(
         provisioning, "_connection", lambda *a: nullcontext(connection.connection)
     )
-    configuration = SimpleNamespace(postgres=SimpleNamespace(password_file=None))
+    configuration = SimpleNamespace(
+        postgres=SimpleNamespace(password_file=None, name="stewardship_tests")
+    )
 
     def grants():
         """Run database-grants as the operator; its result."""
