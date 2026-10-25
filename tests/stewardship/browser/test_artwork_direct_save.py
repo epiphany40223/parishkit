@@ -147,6 +147,48 @@ def test_save_and_continue_stages_each_image_then_saves(page, component_origin):
     assert failures == []
 
 
+def test_a_save_redrawn_in_place_says_no_image_was_lost(page, component_origin):
+    """A save redrawn in place draws the slots anew with no "not kept" line.
+
+    When the page read again once the save is applied names no later step
+    (the wizard ended meanwhile), the page is redrawn in place, drawing the
+    slot's form again. The chosen image went with the save, so nothing says
+    it was lost (#2185).
+    """
+    from playwright.sync_api import expect
+
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    loads = []
+
+    def no_next(route):
+        """Load the step first; every later load names no next step."""
+        loads.append(route.request.url)
+        if len(loads) == 1:
+            route.continue_()
+            return
+        fetched = route.fetch()
+        body = re.sub(r' data-next-url="[^"]*"', "", fetched.text())
+        route.fulfill(response=fetched, body=body)
+
+    page.route(component_origin + STEP, no_next)
+    page.goto(component_origin + STEP)
+    form = page.locator("#artwork-upload-banner")
+    form.evaluate("(form) => { form.dataset.drawn = 'first'; }")
+    _, save, _ = primary(page)
+    slot(page, BANNER).get_by_label("Image").set_input_files(png())
+    save.click()
+    # The slot's form drawn anew carries no mark of the first drawing.
+    expect(form).not_to_have_attribute("data-drawn", "first")
+    expect(form).to_be_attached()
+    # The "not kept" line would be added in a microtask after the swap.
+    page.evaluate("() => new Promise((done) => setTimeout(done, 50))")
+    assert page.locator("[data-edits-lost]").count() == 0
+    assert page.url == component_origin + STEP
+    assert len(loads) == 2
+    assert failures == []
+
+
 def test_a_refused_image_is_said_in_its_slot_and_saves_nothing(page, component_origin):
     """A refused image is marked at its field and said in its slot's line.
 

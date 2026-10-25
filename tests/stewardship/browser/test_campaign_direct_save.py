@@ -309,6 +309,51 @@ def test_campaign_settings_saves_directly_and_says_what_was_removed(
     assert failures == []
 
 
+def test_a_save_redrawn_in_place_says_nothing_was_lost(page, component_origin):
+    """A save redrawn in place draws the form anew with no "not kept" line.
+
+    When the page read again once the save is applied names no later step
+    (the wizard ended meanwhile), the page is redrawn in place, drawing the
+    form again. What was typed went with the save, so nothing says it was
+    lost (#2185).
+    """
+    from playwright.sync_api import expect
+
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    loads = []
+
+    def no_next(route):
+        """Load the page first; every later load names no next step."""
+        if route.request.method == "POST":
+            route.continue_()
+            return
+        loads.append(route.request.url)
+        if len(loads) == 1:
+            route.continue_()
+            return
+        fetched = route.fetch()
+        body = re.sub(r' data-next-url="[^"]*"', "", fetched.text())
+        route.fulfill(response=fetched, body=body)
+
+    page.route(lambda url: url.split("#")[0] == component_origin + DIRECT, no_next)
+    page.goto(component_origin + DIRECT)
+    form = page.locator("#settings-form")
+    form.evaluate("(form) => { form.dataset.drawn = 'first'; }")
+    _, save, _ = primary(page)
+    page.locator("#id_options-0-label").fill("Renamed option")
+    save.click()
+    # The form drawn anew carries no mark of the first drawing.
+    expect(form).not_to_have_attribute("data-drawn", "first")
+    expect(form).to_be_attached()
+    # The "not kept" line would be added in a microtask after the swap.
+    page.evaluate("() => new Promise((done) => setTimeout(done, 50))")
+    assert page.locator("[data-edits-lost]").count() == 0
+    assert page.url == component_origin + DIRECT
+    assert len(loads) == 2
+    assert failures == []
+
+
 def test_a_value_refused_at_its_field_is_marked_there(page, component_origin):
     """A direct save refused for a value marks the field and the summary.
 
