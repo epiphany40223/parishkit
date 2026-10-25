@@ -1181,6 +1181,12 @@ td > :last-child { margin-bottom: 0; }
 .calendar-month ul { list-style: none; margin: 0; padding: 0; }
 .calendar-month li { margin-block: .15rem; }
 .calendar-month li.schedule-past { color: var(--muted); }
+/* Operational events (#1808): muted, unlinked lines after a day's sends,
+   with a rule between so they never read as sends; a send's notes about
+   them sit under its link, muted, in the link's own box. */
+.calendar-month ul.calendar-events { margin-block-start: .25rem; padding-block-start: .15rem; border-block-start: 1px dashed var(--border); color: var(--muted); font-size: .8125rem; }
+.calendar-send-body { min-width: 0; }
+.calendar-note { display: block; color: var(--muted); font-size: .8125rem; }
 /* A movable send's Move… (#1521): an icon button after its link, at least
    24px square (WCAG 2.2 SC 2.5.8), drawn on every movable send from the
    start so nothing moves. While a send is dragged it is faded and the day

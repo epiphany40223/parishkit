@@ -32,6 +32,7 @@ from .schedule_list_components import (
     ADD_ON,
     APPLY,
     CALENDAR,
+    CALENDAR_EVENTS,
     CALENDAR_OCTOBER,
     DATE_REFUSAL,
     EDIT_SERIES,
@@ -1260,3 +1261,78 @@ def test_a_day_another_family_email_holds_takes_no_drag_or_move(page, component_
         assert not submit.is_disabled()
         assert refusal.inner_text() == ""
         assert not failures
+
+
+def events_in(day_cell):
+    """A day's operational event lines (#1808), as shown."""
+    return day_cell.locator("ul.calendar-events li").all_inner_texts()
+
+
+def week_cell(page, label):
+    """The week shown's cell whose day reads ``label`` ("30", "Oct 1")."""
+    cells = page.locator("table.calendar-week td:has(.calendar-day)")
+    return cells.nth(cells.locator(".calendar-day").all_inner_texts().index(label))
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_operational_events_are_muted_lines_after_a_days_sends(
+    page, component_origin, axe_source, width
+):
+    """Refreshes, a backup and go-live milestones in both views (#1808).
+
+    At Los Angeles times: on October 1 the invitation (6:00 AM, sent while
+    the backup ran) is followed by the day's refreshes in one line and the
+    backup; September 29 and 30 hold no send, so only their milestones
+    show, not their refreshes. Reminder 1 notes the 5:00 AM refresh in its
+    preparation window. Nothing is linked and the table stays sends only.
+    """
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + CALENDAR_EVENTS)
+    failures = watch(page)
+    opening = cell(page, 1)
+    assert events_in(opening) == [
+        "ParishSoft refresh 5:00 AM, 11:00 PM",
+        "Backup 5:58 AM–6:03 AM",
+        "Backup 3:00 PM",
+    ]
+    assert opening.locator(".calendar-events :is(a, button)").count() == 0
+    invitation = opening.locator("li.schedule-past").first
+    assert invitation.locator(".calendar-note").inner_text() == "Sent during a backup"
+    # The events come after the day's sends, muted.
+    sends_box = opening.locator("ul:not(.calendar-events)").bounding_box()
+    events_box = opening.locator("ul.calendar-events").bounding_box()
+    assert events_box["y"] >= sends_box["y"] + sends_box["height"]
+    color = "node => getComputedStyle(node).color"
+    assert opening.locator("ul.calendar-events").evaluate(color) == invitation.evaluate(
+        color
+    )
+    reminder = cell(page, 10).locator("li.calendar-movable")
+    note = reminder.locator(".calendar-note")
+    assert note.inner_text() == "A ParishSoft refresh falls in the 2 hours before it"
+    # Move… stays beside the link, which the note sits under.
+    link = reminder.get_by_role("link", name="6:00 AM Reminder 1")
+    move = reminder.get_by_role("button", name="Move Reminder 1…")
+    top = link.bounding_box()["y"]
+    assert abs(move.bounding_box()["y"] - top) <= 8
+    assert note.bounding_box()["y"] >= top + link.bounding_box()["height"] - 1
+    # A report email's send, or a past one, has no refresh note.
+    assert cell(page, 6).locator(".calendar-note").count() == 0
+    table = page.locator("table.calendar-sends")
+    assert "ParishSoft" not in table.inner_text() and "Backup" not in table.inner_text()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
+    # The week view draws the same: the days before the campaign hold only
+    # their milestones, which always show.
+    view_segment(page, "Week").click()
+    assert week_shown(page) == "Week of September 27, 2054"
+    assert events_in(week_cell(page, "29")) == ["Go-live started 8:00 AM"]
+    assert events_in(week_cell(page, "30")) == ["Production activated 12:40 PM"]
+    assert events_in(week_cell(page, "Oct 1")) == [
+        "ParishSoft refresh 5:00 AM, 11:00 PM",
+        "Backup 5:58 AM–6:03 AM",
+        "Backup 3:00 PM",
+    ]
+    assert events_in(week_cell(page, "2"))[0].startswith("ParishSoft refresh")
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
+    assert not failures
