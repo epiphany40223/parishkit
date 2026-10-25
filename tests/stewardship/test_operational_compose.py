@@ -72,6 +72,7 @@ def seed_runtime(root, *, production=False, provider_mode="configured"):
         *configuration.paths.values.values(),
         layout.deployment_directory,
         layout.service_directory,
+        layout.hba_directory,
         layout.database_password("operator").parent,
         *(layout.database_password(name).parent for name, *_ in database_identities()),
         configuration.valkey.password_file.parent,

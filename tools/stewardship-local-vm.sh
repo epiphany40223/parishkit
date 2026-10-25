@@ -1259,10 +1259,18 @@ web_oneoff_command() {
     # the clock directory also mounted writable at $clock_control. `docker
     # compose run web` cannot do this: web holds a fixed address on the proxy
     # network, which a second container could not share. A command array, not
-    # a function, so `timed` can run it under its limit.
-    local web_image file mode line
+    # a function, so `timed` can run it under its limit. It takes the seeder's
+    # own fixed backend address (`--ip`), the one PostgreSQL's source rules
+    # allow for web's logins besides web itself; a dynamic address is in the
+    # range no rule allows. Seed steps hold the seed lock and run one at a
+    # time, so the one address is never needed twice.
+    local web_image file mode line seeder_ip
     local -a options=()
     web_image=$(jq -r '.services.web.image' "$services/compose.json")
+    seeder_ip=$(jq -er '."x-local-seeder".ipv4_address' "$services/compose.json") || {
+        echo "compose.json names no seeder address; retarget the deployment first." >&2
+        return 1
+    }
     # Web's own environment, mounts and tmpfs exactly as rendered; Compose
     # variable references (${NAME:-default}) are resolved from this shell as
     # Compose would resolve them from the operator's.
@@ -1288,6 +1296,7 @@ web_oneoff_command() {
     fi
     oneoff=(docker run --rm --init --user 10001:10001 --read-only --cap-drop ALL
         --security-opt no-new-privileges:true --network "${project}_backend"
+        --ip "$seeder_ip"
         --mount "type=bind,source=$clock_dir,target=$clock_control"
         "${options[@]}" "$web_image")
 }
@@ -1321,7 +1330,7 @@ seed_step() {
     step "Seeder step $name ($service)"
     started=$(date -u +%s)
     if [ "$service" = web ]; then
-        web_oneoff_command
+        web_oneoff_command || exit 1
         seed_result=$(timed "$limit" "the seeder step $name" \
             "${oneoff[@]}" local-seed --step "$name" --config "$services/$config" \
             --clock-dir "$clock_control" "${arguments[@]}" "$@" | tail -1)

@@ -328,8 +328,9 @@ source address is the identity, and the renderer makes it fixed:
   allowed source. The implementation verifies the gateway placement and
   the `ip_range` allocation on the Docker Engine version Production runs.
   The subnets are /28 slices, in a fixed order, of one new `runtime_network`
-  block (`offline`, default `172.29.242.0/24`, private and disjoint from
-  `backend` and `proxy` like them). None of these profiles uses Valkey or
+  block (`offline`, default `172.29.242.0/24`, a /24 or /25 so it holds
+  every profile's slice, private and disjoint from `backend` and `proxy`
+  like them). None of these profiles uses Valkey or
   another backend service; the backup worker keeps
   `application-egress`. A side effect is that the backup worker, which
   reads the Valkey ACL, can no longer reach Valkey.
@@ -502,8 +503,9 @@ that network unchanged. If that proof fails, the implementation drops the
 `ip_range` and lists dynamic `backend` containers under
 [what source rules cannot stop](#what-source-rules-cannot-stop) instead.
 Nothing in the database changed, so no restore is ever needed. The new
-`runtime_network.offline` field is written to the provisioning record only
-when the deployment YAML sets it, so the previous release's
+`runtime_network.offline` field is written to the provisioning record (and
+to the service documents) only when the deployment YAML sets it to a block
+other than the default, so the previous release's
 `retarget-image` accepts the record; the implementation proves this with
 the previous release's image before the release ships.
 

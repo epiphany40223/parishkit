@@ -1944,6 +1944,10 @@ def test_spike_refuses_without_postgres_or_the_certificate(tmp_path):
 # ---------------------------------------------------------------------------
 # Finishing setup (runbook first installation, step 5; #1355).
 
+# The LOCAL seeder's fixed backend address, which the rendered compose.json
+# carries for the one-off web container's `--ip` (#2111).
+SEEDER_ADDRESS = {"x-local-seeder": {"ipv4_address": "172.29.240.30"}}
+
 
 def frozen_wizard(root, etc, snapshots):
     """An installed fake-clock root whose wizard froze its attempt.
@@ -1959,7 +1963,9 @@ def frozen_wizard(root, etc, snapshots):
         "tmpfs": ["/tmp"],
     }
     services = root / "config" / "services"
-    (services / "compose.json").write_text(json.dumps({"services": {"web": web}}))
+    (services / "compose.json").write_text(
+        json.dumps({"services": {"web": web}} | SEEDER_ADDRESS)
+    )
     (services / "compose.faketime.json").write_text(
         json.dumps({"services": {"web": {**web, "volumes": []}}})
     )
@@ -2080,6 +2086,7 @@ def snapshot_of(
                     }
                 }
             }
+            | SEEDER_ADDRESS
         )
     )
     (dir / "taken").write_text(f"2026-10-0{day}T00:00:00Z\n")
@@ -2111,6 +2118,7 @@ def running(root, etc, snapshots):
                     }
                 }
             }
+            | SEEDER_ADDRESS
         )
     )
     (services / "worker.yaml").write_text(
@@ -2825,6 +2833,28 @@ def fake_parishsoft_root(root, etc, snapshots):
     )
 
 
+def test_a_seeder_step_refuses_a_rendering_without_the_seeder_address(tmp_path):
+    """No `docker run` on a dynamic backend address, which no source rule allows."""
+
+    def prepare(root, etc, snapshots):
+        fake_parishsoft_root(root, etc, snapshots)
+        compose = root / "config" / "services" / "compose.json"
+        compose.write_text(
+            json.dumps({"services": json.loads(compose.read_text())["services"]})
+        )
+
+    calls, output, _ = run_vm(
+        tmp_path,
+        "fake-parishsoft",
+        "refresh",
+        status=1,
+        prepare=prepare,
+        env={"FAKE_COMPLETED": "t"},
+    )
+    assert "names no seeder address" in output
+    assert not any("local-seed --step refresh " in call for call in calls)
+
+
 def test_a_fake_parishsoft_edit_rewrites_the_file_and_recreates_only_the_fake(
     tmp_path,
 ):
@@ -2898,6 +2928,8 @@ def test_fake_parishsoft_refresh_runs_the_seeder_refresh_step_under_web(tmp_path
     )
     step = calls[first(calls, "local-seed --step refresh ")]
     assert "--network parishkit-local_backend" in step
+    # Its own fixed address, the one the LOCAL source rules allow (#2111).
+    assert "--ip 172.29.240.30 " in step
     assert "--admin-email a@example.test" in step
     assert "Full ParishSoft refresh finished" in output
     # Refused before setup is complete.
