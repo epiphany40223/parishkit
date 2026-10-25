@@ -38,6 +38,14 @@ FAMILY_PAGES = {
 ADMIN_TEMPLATES = sorted(
     path.name for path in TEMPLATES.glob("*.html") if path.name not in FAMILY_PAGES
 )
+# The pane and internal-term guards also read the nested templates
+# (components/, widgets/), where a removed pane once lived; the other guards
+# are written for whole pages. Family pages are skipped as above.
+ALL_ADMIN_TEMPLATES = sorted(
+    str(path.relative_to(TEMPLATES))
+    for path in TEMPLATES.rglob("*.html")
+    if path.name not in FAMILY_PAGES
+)
 
 COMMENT = re.compile(r"{% comment %}.*?{% endcomment %}", re.S)
 ABOUT = re.compile(r"{% aboutpage .*?{% endaboutpage %}", re.S)
@@ -319,7 +327,7 @@ def test_intro_allowances_are_still_needed(name):
     assert found == allowed, f"{name}: update or remove its INTRO_ALLOWED entry"
 
 
-@pytest.mark.parametrize("name", ADMIN_TEMPLATES)
+@pytest.mark.parametrize("name", ALL_ADMIN_TEMPLATES)
 def test_no_admin_template_has_a_technical_details_pane(name):
     """No Admin page draws a Technical details pane (#2199).
 
@@ -348,10 +356,9 @@ def test_the_admin_scripts_and_styles_draw_no_technical_details():
     assert not found, f"Technical details code is left in {found}"
 
 
-@pytest.mark.parametrize("name", ADMIN_TEMPLATES)
-def test_internal_field_names_are_not_shown(name):
-    """Internal identifier and worker fields are not on any Admin page."""
-    found = sorted(
+def internal_terms_shown(name):
+    """The internal terms ``name`` shows that are not reviewed exceptions."""
+    return sorted(
         {
             term
             for message in messages(read(name))
@@ -359,6 +366,12 @@ def test_internal_field_names_are_not_shown(name):
             if term in message.lower() and (name, term) not in INTERNAL_ALLOWED
         }
     )
+
+
+@pytest.mark.parametrize("name", ALL_ADMIN_TEMPLATES)
+def test_internal_field_names_are_not_shown(name):
+    """Internal identifier and worker fields are not on any Admin page."""
+    found = internal_terms_shown(name)
     assert not found, (
         f"{name}: {', '.join(found)} shown on an Admin page; leave internal "
         "references to the logs and pk-admin"
@@ -383,6 +396,16 @@ def test_the_guards_catch_what_they_describe():
     assert not PARAGRAPH.findall(DETAILS.sub("", ABOUT.sub("", about)))
     internal = '<dt>{% translate "Lease expires" %}</dt>'
     assert "lease expires" in messages(internal)[0].lower()
+
+
+def test_the_internal_term_guard_flags_a_bad_template(tmp_path, monkeypatch):
+    """A template showing an internal label fails the guard; a plain one passes."""
+    (tmp_path / "bad.html").write_text('<dt>{% translate "Lease expires" %}</dt>')
+    (tmp_path / "fine.html").write_text('<dt>{% translate "Started" %}</dt>')
+    monkeypatch.setitem(globals(), "TEMPLATES", tmp_path)
+    with pytest.raises(AssertionError):
+        test_internal_field_names_are_not_shown("bad.html")
+    test_internal_field_names_are_not_shown("fine.html")
 
 
 def test_the_intro_guard_catches_what_it_describes(tmp_path, monkeypatch):

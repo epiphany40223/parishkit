@@ -54,7 +54,6 @@ def setup_preview(request):
                 "readiness": readiness,
                 "tests_accepted": all(item["accepted"] for item in readiness),
                 "parish": parish,
-                "candidate_digest": preview.compiled.candidate.digest,
                 "document": json.dumps(document, ensure_ascii=False, indent=2),
                 "testing_recipient": preview.draft.sections["testing"][
                     "testing_recipient"

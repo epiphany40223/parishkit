@@ -5,7 +5,7 @@ The commands are the Past campaigns page's actions (campaign-history spec,
 (slice 4) and the command line cannot drift:
 
 - ``history list`` (any session) reads the imported years and their
-  tombstones: the page's columns, checksums, versions and states. It records
+  tombstones: their columns, checksums, versions and states. It records
   nothing, as the page's GET records nothing.
 - ``history preview -`` (full scope) reads one workbook's bytes from
   standard input, checks it in the isolated helper and stores it as a

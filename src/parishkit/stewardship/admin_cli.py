@@ -2132,7 +2132,7 @@ def files_rename(args, preamble, runtime, context):
 
 
 def history_list(args, preamble, runtime, context):
-    """The Past campaigns page's imported years and tombstones (#1018)."""
+    """The imported years and their tombstones (#1018)."""
     from .admin_history import list_archives
 
     return list_archives(context["caller"], runtime)

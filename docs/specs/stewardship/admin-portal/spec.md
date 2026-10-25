@@ -6501,7 +6501,8 @@ was created), which the page does not offer as headings.
 a phone, without sideways scrolling) holds:
 
 - **Recipient**: a name, a Family DUID (with or without its thousands
-  commas), an email address, or a delivery ID. A DUID lists that Family's
+  commas), an email address, or a delivery ID (the last part of an email
+  page's web address). A DUID lists that Family's
   emails; an address lists every email whose intended recipients include
   it, in either case, across kinds (a Family member who is also an
   Administrator sees both their Family's emails and their reports); a

@@ -250,7 +250,7 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
             )
             assert response.status_code == 200
             assert b"Financial stewardship export" in body
-            assert row not in body
+            assert b"Matching Families" in body and row not in body
         with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
             assert execute_hint(
                 request.task_id,

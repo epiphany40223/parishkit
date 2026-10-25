@@ -65,7 +65,6 @@ def setup_confirmation(request):
             | {
                 "form": form,
                 "readiness_problem": problem,
-                "candidate_digest": preview.compiled.candidate.digest,
             },
             status=400 if request.method == "POST" else 200,
         )
