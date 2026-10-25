@@ -125,7 +125,9 @@ def denial(*, status=403, retry=None, admin=True, sign_in=False, account=None):
     Any other refusal keeps the generic "Access unavailable" text for a
     reader without a current session; a browser's page load by a signed-in
     reader is drawn by the browser-error middleware without the sign-in
-    wording instead (``web.error_pages.GENERIC_DENIAL``, #2165).
+    wording instead, and a signed-in reader's script gets the typed
+    ``denied`` JSON with that wording (``web.error_pages.GENERIC_DENIAL``,
+    #2165, #2172).
 
     Every report view sends a ``PermissionError`` here, including the
     ``UserFacingGone`` refusal of a campaign that is not the current one

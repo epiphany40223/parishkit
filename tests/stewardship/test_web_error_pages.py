@@ -18,6 +18,8 @@ from parishkit.stewardship.web.contracts import (
 from parishkit.stewardship.web.error_pages import BrowserErrorMiddleware, page_request
 
 PAGE = {"HTTP_ACCEPT": "text/html,*/*;q=0.8", "HTTP_SEC_FETCH_MODE": "navigate"}
+# What ui-v1.js's in-place regions send.
+SCRIPT = {"HTTP_ACCEPT": "application/json", "HTTP_X_REQUESTED_WITH": "fetch"}
 
 
 def through(request, response):
@@ -635,7 +637,7 @@ def test_a_signed_in_denial_offers_home_and_no_sign_in(method, recheck):
     )
 
 
-def test_a_signed_in_refusal_keeps_its_own_sentence_without_sign_in():
+def test_a_signed_in_refusal_keeps_its_own_sentence_without_sign_in(recheck):
     """A reviewed sentence (#939) still shows, with no Sign in again (#2165)."""
     from parishkit.stewardship.accounts.role_refusal import response
     from parishkit.stewardship.web.refusals import UserFacingDenied
@@ -679,14 +681,11 @@ def _assert_sign_in_denial(response):
     assert "Accept" in response["Vary"]
 
 
-def test_a_report_denial_keeps_sign_in_for_signed_out_readers_and_scripts(recheck):
-    """Without an admitted session, or for a script, the response is unchanged."""
-    script = {"HTTP_ACCEPT": "application/json", "HTTP_SEC_FETCH_MODE": "cors"}
-    for request in (
-        RequestFactory().get("/admin/reports/directory", **PAGE),
-        _admitted(RequestFactory().get("/admin/reports/directory", **script)),
-    ):
-        _assert_sign_in_denial(through(request, _report_denial()))
+@pytest.mark.parametrize("headers", [PAGE, SCRIPT], ids=["page", "script"])
+def test_a_report_denial_keeps_sign_in_for_signed_out_readers(recheck, headers):
+    """Without an admitted session the response is unchanged, with no query."""
+    request = RequestFactory().get("/admin/reports/directory", **headers)
+    _assert_sign_in_denial(through(request, _report_denial()))
     assert recheck.calls == []
 
 
@@ -709,7 +708,9 @@ def test_a_session_ended_after_admission_keeps_the_sign_in_page(recheck, answer)
     admitted = request.principal
     _assert_sign_in_denial(through(request, _report_denial()))
     assert recheck.calls == [("store", True)]
-    assert request.principal is admitted
+    # Nothing later in the request draws from the old roles (#2172).
+    assert admitted is not None
+    assert not hasattr(request, "principal")
 
 
 def _other_denials():
@@ -741,3 +742,156 @@ def test_only_the_generic_admin_denial_is_redrawn(recheck, kind):
     assert "Your access doesn&#x27;t include" not in drawn.content.decode()
     assert drawn.content.decode() == body
     assert recheck.calls == []
+
+
+# The signed-in wording a script or in-place region receives (#2172).
+SIGNED_IN_REFUSAL = {
+    "message": "Your access doesn't include this page.",
+    "fix": (
+        "Choose a page from the menu, or ask a parish administrator if you "
+        "need this one."
+    ),
+    "link": None,
+}
+
+
+def _ended_answers():
+    """What a fresh read-only check answers for a session no longer live."""
+    from uuid import uuid4
+
+    from parishkit.stewardship.accounts.policy import Principal
+
+    return {
+        "ended": None,
+        "refused": PermissionError("refused"),
+        "outage": DatabaseError("outage"),
+        "no_role": Principal(identity=uuid4(), roles=frozenset()),
+    }
+
+
+ENDED = ["ended", "refused", "outage", "no_role"]
+
+
+def test_a_signed_in_scripts_denial_carries_the_signed_in_wording(recheck):
+    """An in-place region's plain denied JSON says what the page says."""
+    request = _admitted(RequestFactory().post("/admin/users", **SCRIPT))
+    plain = error_response(PermissionError("private"))
+    plain.set_cookie("probe", "kept")
+    response = through(request, plain)
+    data = json.loads(response.content)
+    assert response.status_code == 403
+    assert response["Content-Type"] == "application/json"
+    assert response.cookies["probe"].value == "kept"
+    assert data["errors"] == [
+        {
+            "code": "denied",
+            "field_id": None,
+            "message": "Your access doesn't include this page.",
+        }
+    ]
+    assert data["refusal"] == SIGNED_IN_REFUSAL
+    assert "Sign in" not in response.content.decode()
+    assert recheck.calls == [("store", True)]
+    assert request.principal is recheck.result
+
+
+def test_a_signed_in_scripts_own_refusal_keeps_its_sentence(recheck):
+    """A reviewed refusal keeps its own sentence; only the closed text changes."""
+    request = _admitted(RequestFactory().get("/admin/system/logs", **SCRIPT))
+    data = json.loads(through(request, _role_refusal()).content)
+    assert data["refusal"]["message"] == (
+        "This page is for Administrators. Your access doesn't include it."
+    )
+    assert data["errors"][0]["message"] == "Your access doesn't include this page."
+
+
+def _assert_sign_in_json(response):
+    """The closed denied JSON as it was: sign-in text and no added refusal."""
+    data = json.loads(response.content)
+    assert response.status_code == 403
+    assert data["errors"][0]["message"] == "Access is unavailable. Sign in again."
+    assert "refusal" not in data
+
+
+def test_a_script_refused_before_admission_keeps_the_sign_in_wording(recheck):
+    """No admitted session: the JSON is unchanged, with no session query."""
+    request = RequestFactory().post("/admin/users", **SCRIPT)
+    _assert_sign_in_json(through(request, error_response(PermissionError("x"))))
+    assert recheck.calls == []
+
+
+def test_a_scripts_signed_out_refusal_is_unchanged(recheck):
+    """An ended-session refusal keeps its own sign-in refusal (#2058)."""
+    from parishkit.stewardship.accounts.role_refusal import signed_out_response
+
+    request = _admitted(RequestFactory().post("/admin/users", **SCRIPT))
+    data = json.loads(through(request, signed_out_response()).content)
+    assert data["refusal"]["link"] == {"url": "/admin/login", "label": "Sign in"}
+    assert data["errors"][0]["message"] == "Access is unavailable. Sign in again."
+    assert recheck.calls == []
+
+
+@pytest.mark.parametrize("answer", ENDED)
+def test_a_script_whose_session_ended_keeps_the_sign_in_wording(recheck, answer):
+    """The view admitted a session that a later recheck refused (#2172)."""
+    recheck.result = _ended_answers()[answer]
+    request = _admitted(RequestFactory().post("/admin/users", **SCRIPT))
+    _assert_sign_in_json(through(request, error_response(PermissionError("x"))))
+    assert recheck.calls == [("store", True)]
+    assert not hasattr(request, "principal")
+
+
+def test_a_signed_in_scripts_report_denial_becomes_the_typed_json(recheck):
+    """``denial()``'s sign-in page reaches an in-place region as typed JSON.
+
+    The region would otherwise show that page whole, with its sign-in text.
+    """
+    request = _admitted(RequestFactory().post("/admin/reports/directory", **SCRIPT))
+    response = through(request, _report_denial())
+    data = json.loads(response.content)
+    assert response.status_code == 403
+    assert data["errors"][0]["code"] == "denied"
+    assert data["refusal"] == SIGNED_IN_REFUSAL
+    assert "Accept" in response["Vary"]
+    assert recheck.calls == [("store", True)]
+
+
+@pytest.mark.parametrize("answer", ENDED)
+def test_a_scripts_report_denial_keeps_its_page_once_the_session_ended(recheck, answer):
+    """A session no longer live keeps ``denial()``'s sign-in page (#2172)."""
+    recheck.result = _ended_answers()[answer]
+    request = _admitted(RequestFactory().post("/admin/reports/directory", **SCRIPT))
+    _assert_sign_in_denial(through(request, _report_denial()))
+    assert not hasattr(request, "principal")
+
+
+def test_a_typed_denial_page_is_drawn_from_the_fresh_principal(recheck):
+    """A view's own typed denial checks the session again before the menu."""
+    request = _admitted(RequestFactory().get("/admin/users", **PAGE))
+    _assert_signed_in_denial(through(request, error_response(PermissionError("x"))))
+    assert recheck.calls == [("store", True)]
+    assert request.principal is recheck.result
+
+
+@pytest.mark.parametrize("answer", ENDED)
+def test_a_typed_denial_page_whose_session_ended_keeps_sign_in(recheck, answer):
+    """A session revoked mid-request sees the sign-in wording and no old menu.
+
+    The view admitted a principal, then a later recheck refused the session
+    and the view answered its own typed ``denied`` error. The fresh check
+    refuses too, so the page says to sign in again and the admitted
+    principal, whose roles would draw the menu, is dropped (#2172).
+    """
+    recheck.result = _ended_answers()[answer]
+    request = _admitted(RequestFactory().get("/admin/users", **PAGE))
+    # The admitted session too, which the chrome would draw from.
+    request.portal_session = object()
+    response = through(request, error_response(PermissionError("x")))
+    body = response.content.decode()
+    assert response.status_code == 403
+    assert "Your session may have ended" in body
+    assert '<p><a href="/admin/login">Sign in again</a></p>' in body
+    assert "Your access doesn&#x27;t include" not in body
+    assert recheck.calls == [("store", True)]
+    assert not hasattr(request, "principal")
+    assert not hasattr(request, "portal_session")

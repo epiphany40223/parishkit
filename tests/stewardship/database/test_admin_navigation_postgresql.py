@@ -1,5 +1,6 @@
 """Capability-filtered Admin navigation, operational banners and passive work views."""
 
+import json
 import re
 from uuid import uuid4
 
@@ -349,6 +350,53 @@ def test_a_dashboard_page_load_revoked_after_render_keeps_sign_in(
     check (here, a recheck refused for another reason) gets the signed-in
     refusal, with its menu (#2165).
     """
+    body = _refused_dashboard(
+        monkeypatch, revoke, {"Accept": "text/html", "Sec-Fetch-Mode": "navigate"}
+    ).content.decode()
+    menu = 'href="/admin/system/background/"'
+    if revoke:
+        assert "Sign-in is unavailable. Please try again." in body
+        assert 'href="/admin/login">Try signing in again</a>' in body
+        assert "Your access doesn&#x27;t include" not in body
+        assert menu not in body
+    else:
+        assert "Your access doesn&#x27;t include this page." in body
+        assert "Sign-in is unavailable" not in body
+        assert menu in body
+
+
+@pytest.mark.parametrize("revoke", [False, True])
+def test_an_in_place_read_refused_after_render_says_why(
+    auth_service, google, monkeypatch, revoke
+):
+    """The in-place answer to the same refusal follows the same split (#2172).
+
+    A live session gets the typed ``denied`` JSON with the signed-in
+    wording, which the region shows beside its control; a session revoked
+    in between keeps ``denial()``'s sign-in page.
+    """
+    response = _refused_dashboard(
+        monkeypatch,
+        revoke,
+        {"Accept": "application/json", "X-Requested-With": "fetch"},
+    )
+    body = response.content.decode()
+    if revoke:
+        assert "Sign-in is unavailable. Please try again." in body
+        assert "Your access doesn" not in body
+    else:
+        data = json.loads(body)
+        assert data["errors"][0]["code"] == "denied"
+        assert data["refusal"]["message"] == "Your access doesn't include this page."
+        assert "Sign in" not in body
+
+
+def _refused_dashboard(monkeypatch, revoke, headers):
+    """Admin home's answer when its post-render recheck refuses the session.
+
+    With ``revoke`` the user is disabled first, so the middleware's fresh
+    read-only check refuses it too; otherwise only home's recheck refuses.
+    """
     from parishkit.stewardship.accounts import authentication
 
     browser, _ = signed_in()
@@ -364,22 +412,10 @@ def test_a_dashboard_page_load_revoked_after_render_keeps_sign_in(
         return None
 
     monkeypatch.setattr(authentication, "authenticated_admin", recheck)
-    response = browser.get(
-        "/admin/", headers={"Accept": "text/html", "Sec-Fetch-Mode": "navigate"}
-    )
-    body = response.content.decode()
+    response = browser.get("/admin/", headers=headers)
     assert response.status_code == 403
     assert AuditEvent.objects.filter(event_type="dashboard_viewed").count() == 0
-    menu = 'href="/admin/system/background/"'
-    if revoke:
-        assert "Sign-in is unavailable. Please try again." in body
-        assert 'href="/admin/login">Try signing in again</a>' in body
-        assert "Your access doesn&#x27;t include" not in body
-        assert menu not in body
-    else:
-        assert "Your access doesn&#x27;t include this page." in body
-        assert "Sign-in is unavailable" not in body
-        assert menu in body
+    return response
 
 
 def test_restricted_web_role_can_read_dashboard_and_status_pages(auth_service, google):

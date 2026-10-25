@@ -9,6 +9,7 @@ server-owned text is shown: never exception strings or submitted values.
 """
 
 import contextlib
+import json
 from urllib.parse import urlencode, urlsplit
 
 from django.conf import settings
@@ -84,13 +85,16 @@ _GUIDANCE = {
 # The generic denial a signed-in Admin sees instead (#2165): the sign-in
 # wording above fits only a reader without a current session, and signing in
 # again cannot help someone already signed in. The fix is the role
-# refusal's (accounts.role_refusal.role_denied_for, #1924).
-_SIGNED_IN_DENIED = (
+# refusal's (accounts.role_refusal.role_denied_for, #1924). Scripts get it as
+# their JSON refusal too (#2172), which an in-place region shows beside its
+# control; no link, as the page already has the menu.
+_SIGNED_IN = Refusal(
     _("Your access doesn't include this page."),
-    _(
+    fix=_(
         "Choose a page from the menu, or ask a parish administrator if you "
         "need this one."
     ),
+    sign_in=False,
 )
 _NOT_FOUND = (
     _("Page unavailable"),
@@ -261,10 +265,38 @@ def _signed_in(request):
 
     ``AdminCaller.admitted`` marks the request with its principal; a request
     refused before that (no session, an ended one, a CSRF failure) has none.
-    Nothing clears it when a later recheck refuses the session, so a redraw
-    of ``denial()``'s page also rechecks (``_signed_in_denial``).
+    Nothing clears it when a later recheck refuses the session, so callers
+    use ``_live_principal``, which also rechecks.
     """
     return is_admin(request) and getattr(request, "principal", None) is not None
+
+
+def _live_principal(request):
+    """The admitted Admin session's current principal, by a fresh check, or None.
+
+    The principal the view admitted is no proof the session is still live:
+    a later recheck in the same request (Admin home's, a report's
+    authorize, a service's) may have refused it as revoked, disabled or
+    changed in role. So a denial is drawn as signed in only when a fresh
+    read-only check (``_read_only_admission``) still admits the session
+    with a role; the request then carries that check's principal, so the
+    chrome shows the current roles (#2165, #2172).
+
+    A request refused before admission costs no query. When the check
+    refuses, the admitted principal and session are dropped from the
+    request, as ``admin_context.greyed_page`` does for a page hidden by
+    role, so the chrome (``admin_context.portal_chrome``) draws nothing from the old
+    roles.
+    """
+    if not _signed_in(request):
+        return None
+    principal = _read_only_admission(request)
+    if principal is None or not principal.roles:
+        for name in ("principal", "portal_session"):
+            request.__dict__.pop(name, None)
+        return None
+    request.principal = principal
+    return principal
 
 
 def _is_local():
@@ -273,8 +305,12 @@ def _is_local():
     return value is not None and DeploymentProfile(value) is DeploymentProfile.LOCAL
 
 
-def error_page(request, response):
-    """Render a typed error response's closed messages as an HTML page."""
+def error_page(request, response, *, live=None):
+    """Render a typed error response's closed messages as an HTML page.
+
+    ``live`` says whether the caller's ``_live_principal`` check already
+    found the session live, so it is not checked twice; None checks here.
+    """
     setattr(request, ERROR_PAGE_ATTRIBUTE, True)
     errors = response.stewardship_errors
     admin = is_admin(request)
@@ -288,11 +324,16 @@ def error_page(request, response):
     # explanation, fix and link (see web.refusals); still never raw text.
     refusal = getattr(response, "stewardship_refusal", None)
     signed_out = admin and refusal is not None and refusal.signed_out
-    # A signed-in reader is never told to sign in again (#2165).
-    signed_in = code == ErrorCode.DENIED and not signed_out and _signed_in(request)
+    # A signed-in reader is never told to sign in again (#2165). The check
+    # runs even for a signed-out refusal, so that a principal admitted
+    # earlier but no longer live leaves no menu behind (#2172).
+    if live is None:
+        live = code == ErrorCode.DENIED and _live_principal(request) is not None
+    signed_in = live and not signed_out
     messages = list(dict.fromkeys(str(MESSAGES[e.code]) for e in errors))
     if signed_in:
-        messages, guidance = [str(_SIGNED_IN_DENIED[0])], _SIGNED_IN_DENIED[1]
+        messages = [str(_SIGNED_IN.message)]
+        guidance = _SIGNED_IN.fix
     if refusal is not None:
         messages = [str(refusal.message)]
         # The page answering a form's POST shows the full-page fix: Reload
@@ -438,7 +479,7 @@ class BrowserErrorMiddleware:
             return response
         patch_vary_headers(response, NEGOTIATION_HEADERS)
         if not page_request(request):
-            return response
+            return _signed_in_script_denial(request, response)
         response.close()
         if _ended_session_load(request, response):
             return sign_in_redirect(request, response)
@@ -452,30 +493,67 @@ class BrowserErrorMiddleware:
         text, which suits only a reader without a current session. It has
         no request, so it marks the response (``GENERIC_DENIAL``) and this
         draws a browser's page load for a signed-in reader as the typed
-        ``denied`` page instead, with the menu and no Sign in link (#2165).
-        Scripts, signed-out readers and a session that ended after its
-        admission keep the original response.
+        ``denied`` page instead, with the menu and no Sign in link (#2165),
+        and a signed-in reader's script as the typed ``denied`` JSON with
+        the signed-in wording (#2172). Signed-out readers and a session that
+        ended after its admission keep the original response.
         """
         if not getattr(response, GENERIC_DENIAL, False):
             return None
         # Its page and script answers now differ by these headers.
         patch_vary_headers(response, NEGOTIATION_HEADERS)
-        if not (page_request(request) and _signed_in(request)):
+        # Only a session that passes a fresh read-only check gets the
+        # signed-in answer, drawn from its current principal; any other
+        # keeps the sign-in page (#2165).
+        if _live_principal(request) is None:
             return None
-        # The principal the view admitted is no proof the session is still
-        # live: a later recheck (Admin home's, a report's authorize) may have
-        # refused it as revoked, disabled or changed in role, and the chrome
-        # would then show that session's old menu and counts. Only a
-        # session that passes a fresh read-only check gets the signed-in
-        # page, drawn from its current principal; any other keeps the
-        # sign-in page (#2165).
-        principal = _read_only_admission(request)
-        if principal is None or not principal.roles:
-            return None
-        request.principal = principal
         response.close()
         typed = validation_response(
             [FieldError(ErrorCode.DENIED)], status=response.status_code
         )
         typed.cookies = response.cookies
-        return error_page(request, typed)
+        if not page_request(request):
+            # An in-place region would show denial()'s page whole, with its
+            # sign-in text; the typed JSON is shown as a line beside the
+            # control instead (#2172).
+            patch_vary_headers(typed, NEGOTIATION_HEADERS)
+            return _signed_in_json(typed)
+        return error_page(request, typed, live=True)
+
+
+def _signed_in_script_denial(request, response):
+    """Give a signed-in reader's ``denied`` JSON the signed-in wording (#2172).
+
+    Scripts and in-place regions read the JSON's ``refusal`` (ui-v1.js's
+    in-place refusal line) and closed messages, whose ``denied`` text says to
+    sign in again. A refusal of a session that a fresh read-only check still
+    admits (``_live_principal``) says instead what the page says. Any other
+    response, including a refusal that says the session ended and any
+    request refused before admission, is returned unchanged.
+    """
+    refusal = response.stewardship_refusal
+    if (
+        response.stewardship_errors[0].code != ErrorCode.DENIED
+        or (refusal is not None and refusal.signed_out)
+        or _live_principal(request) is None
+    ):
+        return response
+    return _signed_in_json(response)
+
+
+def _signed_in_json(response):
+    """Rewrite a typed ``denied`` JSON response in place for a signed-in reader.
+
+    Each ``denied`` error's closed message becomes the signed-in sentence,
+    and a response with no reviewed refusal of its own gains the signed-in
+    refusal; one with its own sentence keeps it. Status, headers, cookies
+    and the typed markers the refusal log already read stay as they are.
+    """
+    body = json.loads(response.content)
+    for item in body["errors"]:
+        if item["code"] == ErrorCode.DENIED:
+            item["message"] = str(_SIGNED_IN.message)
+    if body.get("refusal") is None:
+        body["refusal"] = _SIGNED_IN.as_dict()
+    response.content = json.dumps(body)
+    return response

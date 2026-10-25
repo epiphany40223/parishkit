@@ -17,6 +17,8 @@ import pytest
 from .backup_test_components import (
     BAD_FOLDER,
     BAD_LINK,
+    DENIED_SIGNED_IN,
+    DENIED_SIGNED_OUT,
     PAGE,
     REFUSED,
     REFUSED_LINKED,
@@ -126,6 +128,41 @@ def test_a_refusal_s_link_is_shown_with_it(page, component_origin):
     link = note.get_by_role("link", name="Google Workspace mail")
     workspace = "/admin/system/integrations/google_workspace/"
     expect(link).to_have_attribute("href", workspace)
+    assert page.evaluate(MARKED) == "kept"
+
+
+@pytest.mark.parametrize(
+    "address,text",
+    [
+        (
+            DENIED_SIGNED_IN,
+            "Your access doesn't include this page. Choose a page from the menu, "
+            "or ask a parish administrator if you need this one.",
+        ),
+        (
+            DENIED_SIGNED_OUT,
+            "This was not done: you are not allowed to do this now, or your "
+            "sign-in has ended. Reload the page.",
+        ),
+    ],
+    ids=["signed_in", "signed_out"],
+)
+def test_a_denied_test_access_says_why_in_place(page, component_origin, address, text):
+    """A ``denied`` refusal's line fits the reader (#2172).
+
+    A session still live is told its access doesn't include this, never to
+    sign in again; a request refused before admission keeps the line that
+    says the sign-in may have ended. The page is not reloaded either way.
+    """
+    from playwright.sync_api import expect  # imported late: collection needs no browser
+
+    open_marked(page, component_origin, address)
+    page.get_by_role("button", name=NAME, exact=True).click()
+    note = page.locator("[data-in-place-refusal]")
+    expect(note).to_have_text(text)
+    expect(note).to_have_attribute("role", "alert")
+    assert note.get_by_role("link").count() == 0
+    assert page.url == component_origin + address
     assert page.evaluate(MARKED) == "kept"
 
 
