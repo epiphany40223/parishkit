@@ -4,6 +4,8 @@ import json
 import subprocess
 import time
 
+from parishkit.stewardship.runtime_network import OFFLINE_PROFILES
+
 
 def inspect_service(file, project, service, run):
     """Inspect only the exact container resolved by this UUID Compose project."""
@@ -137,24 +139,31 @@ def check_ingress(file, project, configuration, run):
     for service, port in (("postgres", "5432"), ("valkey", "6379")):
         target = inspect_service(file, project, service, run)
         addresses = target["NetworkSettings"]["Networks"]
-        assert len(addresses) == 1
-        address = next(iter(addresses.values()))["IPAddress"]
-        denied = run(
-            file,
-            project,
-            "exec",
-            "-T",
-            "caddy",
-            "nc",
-            "-z",
-            "-w",
-            "1",
-            address,
-            port,
-            check=False,
+        # PostgreSQL is also on each one-shot profile's own network (#2111);
+        # Caddy reaches none of its addresses.
+        expected = {"backend"} | (
+            {f"offline-{name}" for name in OFFLINE_PROFILES}
+            if service == "postgres"
+            else set()
         )
-        assert denied.returncode != 0
-        assert denied.returncode != 127
+        assert {name.removeprefix(project + "_") for name in addresses} == expected
+        for network in addresses.values():
+            denied = run(
+                file,
+                project,
+                "exec",
+                "-T",
+                "caddy",
+                "nc",
+                "-z",
+                "-w",
+                "1",
+                network["IPAddress"],
+                port,
+                check=False,
+            )
+            assert denied.returncode != 0
+            assert denied.returncode != 127
     run(file, project, "stop", "--timeout", "10", "web")
     # With web down, Caddy answers with its own maintenance page (#162).
     down = json.loads(request_from_caddy_host(file, project, configuration, run).stdout)

@@ -69,24 +69,28 @@ GOLDEN_ROOT = Path("/opt/parishkit")
 # the Compose digests were regenerated once when application mounts gained a
 # fixed order (#480; infrastructure volume lists unchanged).
 # Intentional Production change since: #392 L3 adds oom_score_adj to every
-# application-image service (the Compose digests and fixture only).
+# application-image service (the Compose digests and fixture only), and
+# #2111 adds the database connection sources: fixed backend addresses, the
+# one-shot offline networks and PostgreSQL's hba_file (the Compose digests
+# and fixture only; the service documents are unchanged, and pg_hba.conf is
+# pinned in full by its own fixture).
 # The "configured" Compose document and the Caddyfile are also committed in
 # full under fixtures/ so a difference can be read, not just detected.
 GOLDEN_DIGESTS = {
     ("initial", "compose"): (
-        "5b8fd171cc1b5cdc1d5bfe9cd3a1a30c95aa48652f5ed532e581cc43322f7d6f"
+        "404cce1dbc7ad30c79b0d6ffd1e41471a780c666064aa50fd438f1bc3e3f046d"
     ),
     ("initial", "documents"): (
         "7e34be432d98fe26781a67030ffb76d1f0ed85f850bb072bad74b4a8c9dfdeba"
     ),
     ("configured", "compose"): (
-        "d8da9f4b57f95ee91775502e393b2f285fac7aa843ba67bffe965440be92f7e3"
+        "765d13ff897b360c6ccfdce0339dab021e4c414fde37062edcf03a6a518a36dc"
     ),
     ("configured", "documents"): (
         "9d65bab1d7b28eebd476ee671871d675f86ff81cff6259cd82ded7b936a1d360"
     ),
     ("configured-slack", "compose"): (
-        "4ba584cfbbdedc6ebc71b644f855d4579ae1e707e798880d1b70f0c75dca46aa"
+        "b22bf08772d88d584e22f21a27c8eea0daf4f0dacf7ecd282781715abc30b49d"
     ),
     ("configured-slack", "documents"): (
         "81fa8932b36a6d3a9e41c0301d63dc9ab30501f950cf815bf3e8b2caf2dc8b6c"
@@ -376,16 +380,20 @@ def test_direct_profiles_still_render_a_published_web_port_and_no_caddy(
 def test_production_rendering_matches_the_golden_files():
     """Canonical-JSON identical to main before LOCAL, in every provider mode.
 
-    Regenerate the two fixture files only for an intentional Production change,
+    Regenerate the three fixture files only for an intentional Production change,
     from a rendering at GOLDEN_ROOT with ``canonical``, and update the digests.
     """
     configuration = configuration_for(DeploymentProfile.PRODUCTION, GOLDEN_ROOT)
     caddy_path = RuntimeLayout(configuration).service_directory / "Caddyfile"
+    hba_path = RuntimeLayout(configuration).hba_directory / "pg_hba.conf"
+    hba = (FIXTURES / "production-pg_hba.golden").read_text()
     for mode in ("initial", "configured", "configured-slack"):
         compose, documents = render_runtime(
             configuration, image=PRODUCTION_IMAGE, provider_mode=mode
         )
         assert documents.pop(caddy_path) == render_caddy(configuration)
+        # The same source rules in every provider mode, with no LOCAL seeder.
+        assert documents.pop(hba_path) == hba
         documents = {str(path): document for path, document in documents.items()}
         for name, value in (("compose", compose), ("documents", documents)):
             digest = hashlib.sha256(canonical(value).encode()).hexdigest()

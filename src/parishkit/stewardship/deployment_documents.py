@@ -4,6 +4,7 @@ from dataclasses import asdict, fields
 from pathlib import Path
 
 from .reports.export_window import DEFAULT_MINUTES
+from .runtime_network import network_document
 
 
 def deployment_document(configuration, *, switches=True):
@@ -52,7 +53,7 @@ def deployment_document(configuration, *, switches=True):
         "secrets": {name: str(path) for name, path in configuration.secrets.items()},
         "authentication_limits": asdict(configuration.authentication_limits),
         "runtime_budget": asdict(configuration.runtime_budget),
-        "runtime_network": asdict(configuration.runtime_network),
+        "runtime_network": network_document(configuration.runtime_network),
         # Every service loads its rendered document, not the operator's YAML,
         # so an omitted section silently reverts to its defaults there.
         "operational_alerts": asdict(configuration.operational_alerts),

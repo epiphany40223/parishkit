@@ -27,6 +27,8 @@ from .deployment import (
 from .deployment_documents import deployment_document, service_configuration_file
 from .observability import DEBUG_LOGGING_VARIABLE
 from .offline_boundaries import offline_targets
+from .runtime_hba import HBA_FILE, HBA_MOUNT, LOCAL_SEEDER, held_logins, render_hba
+from .runtime_network import OFFLINE_PROFILES
 from .runtime_paths import APPLICATION_GID, APPLICATION_UID, RuntimeLayout
 from .service_boundaries import ALLOWED_SECRETS, rotating_directories
 from .source.loading import DROP_OVERRIDE_VARIABLE
@@ -285,7 +287,14 @@ def _online_mounts(configuration):
 
 
 def render_runtime(configuration, *, image, checkout=None, provider_mode="configured"):
-    """Build one complete foundation topology, with independent offline profiles."""
+    """Build one complete foundation topology, with independent offline profiles.
+
+    Besides the Compose document and the per-service documents, it renders
+    PostgreSQL's source rules (``runtime_hba``) from the same services: every
+    ``backend`` member gets a fixed address, each one-shot profile its own
+    offline network, and each login is accepted only from where its service
+    runs (operations spec, "Database connection sources").
+    """
     if type(provider_mode) is not str or provider_mode not in {
         "initial",
         "configured",
@@ -328,7 +337,7 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
         or not Path(checkout).is_absolute()
     ):
         raise ConfigError("Source mounts require an explicit development checkout.")
-    services, documents = {}, {}
+    services, documents, logins = {}, {}, {}
     roles = [
         (ServiceRole.WEB, None),
         (ServiceRole.CONFIG_INSTALLER, None),
@@ -357,6 +366,9 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
             "credential-installer-" + target.replace("_", "-") if target else role.value
         )
         documents[selected.configuration_file] = deployment_document(selected)
+        # The SQL logins this service's own rendered configuration names: the
+        # source rules are derived from these, never from a separate list.
+        logins[name] = held_logins(selected)
         service = _application(image, budget)
         if role is ServiceRole.MAIL_DISPATCH:
             # Empty unless the operator's shell exports it when running
@@ -406,6 +418,7 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
                 bind(path, read_only=ro)
                 for path, ro in offline_targets(selected).items()
             ]
+            service["networks"] = {_offline_network(name): {}}
         elif role is ServiceRole.BACKUP_WORKER:
             from .backup_boundaries import backup_targets
 
@@ -421,6 +434,7 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
                 bind(path, read_only=ro)
                 for path, ro in backup_targets(selected).items()
             ]
+            service["networks"] = {_offline_network(name): {}}
             # The off-site copy uploads the sealed set to Google Drive.
             _join_egress(service)
         else:
@@ -471,10 +485,21 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
             host = "[::1]" if origin.hostname == "::1" else "127.0.0.1"
             selected["ports"] = [f"{host}:{origin.port or 80}:8000"]
         services["web" if replica == 0 else f"web-{replica}"] = selected
+        logins["web" if replica == 0 else f"web-{replica}"] = logins["web"]
     services.update(_infrastructure(configuration))
     if configuration.profile is DeploymentProfile.LOCAL:
         services["mailpit"] = _mailpit(configuration)
         services["fake-parishsoft"] = _fake_parishsoft(configuration, image)
+    addresses = _backend_addresses(configuration, targets)
+    for name, service in services.items():
+        if "backend" in service["networks"]:
+            if name not in addresses:
+                raise ConfigError("Every backend service needs a fixed address.")
+            service["networks"]["backend"] = {"ipv4_address": addresses[name]}
+    seeder = addresses.get(LOCAL_SEEDER)
+    documents[RuntimeLayout(configuration).hba_directory / "pg_hba.conf"] = render_hba(
+        configuration, services, logins, seeder=seeder
+    )
     if configuration.profile.behind_proxy:
         from .runtime_ingress import render_ingress
 
@@ -491,11 +516,53 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
         # share _application's hardening but keep the default OOM score.
         if service["image"] == image:
             service["oom_score_adj"] = APPLICATION_OOM_SCORE_ADJ
-    return {
+    result = {
         "name": _project_name(configuration),
         "services": services,
         "networks": _networks(configuration),
-    }, documents
+    }
+    if seeder is not None:
+        # Compose ignores x- keys; the operator script reads the seeder's
+        # fixed address here and passes it to `docker run --ip`.
+        result["x-" + LOCAL_SEEDER] = {"ipv4_address": seeder}
+    return result, documents
+
+
+def _offline_network(profile):
+    """The Compose name of a one-shot profile's own internal network."""
+    return "offline-" + profile
+
+
+def _backend_addresses(configuration, targets):
+    """Every ``backend`` member's fixed address, by service name.
+
+    Offsets from 2 in a fixed order: PostgreSQL, Valkey, eight web replica
+    slots, the configuration installer, worker, mail-dispatch, scheduler,
+    the credential installers in sorted target order, then LOCAL's mailpit,
+    fake ParishSoft and seeder. LOCAL's members come last, so Production's
+    addresses never depend on them; ``backend_address`` refuses an offset
+    outside the lower half. On the smallest allowed backend (/26) that half
+    ends at offset 31: Production uses 2 to 27 and LOCAL 2 to 30, so a new
+    member past that needs a wider minimum subnet. A new credential target
+    shifts every later address, which the full-stop rollout absorbs.
+    """
+    names = [
+        "postgres",
+        "valkey",
+        "web",
+        *(f"web-{replica}" for replica in range(1, 8)),
+        "config-installer",
+        "worker",
+        "mail-dispatch",
+        "scheduler",
+        *("credential-installer-" + target.replace("_", "-") for target in targets),
+    ]
+    if configuration.profile is DeploymentProfile.LOCAL:
+        names += ["mailpit", "fake-parishsoft", LOCAL_SEEDER]
+    network = configuration.runtime_network
+    return {
+        name: network.backend_address(2 + offset) for offset, name in enumerate(names)
+    }
 
 
 def _join_egress(service):
@@ -582,13 +649,30 @@ def _networks(configuration):
     result = {
         "backend": {
             "internal": True,
-            "ipam": {"config": [{"subnet": network.backend}]},
+            "ipam": {
+                "config": [
+                    {
+                        "subnet": network.backend,
+                        # Pinned so the explicit range cannot move it.
+                        "gateway": network.backend_gateway,
+                        # Dynamic addresses only from the upper half, which no
+                        # source rule allows; every fixed one is below it.
+                        "ip_range": network.backend_dynamic_range,
+                    }
+                ]
+            },
         },
         "proxy": {
             "internal": True,
             "ipam": {"config": [{"subnet": network.proxy}]},
         },
     }
+    for profile in OFFLINE_PROFILES:
+        # Joined only by the profile and PostgreSQL; nothing routes out.
+        result[_offline_network(profile)] = {
+            "internal": True,
+            "ipam": {"config": [network.offline_ipam(profile)]},
+        }
     # Insertion order is the rendered order; Production's is unchanged.
     result["application-egress"] = {}
     if configuration.profile is DeploymentProfile.LOCAL:
@@ -646,6 +730,7 @@ def resolve_valkey_files(configuration):
 def _infrastructure(configuration):
     """Stock images run without root/capabilities and retain only their own state."""
     layout = RuntimeLayout(configuration)
+    network = configuration.runtime_network
     shared = _application(POSTGRES_IMAGE, configuration.runtime_budget)
     shared.pop("environment")
     postgres = shared | {
@@ -665,7 +750,21 @@ def _infrastructure(configuration):
                 layout.database_password("operator"),
                 target="/run/secrets/postgres-password",
             ),
+            # The directory, not the file, so a renamed-in replacement is seen
+            # on reload without recreating PostgreSQL.
+            bind(layout.hba_directory, target=HBA_MOUNT),
         ],
+        # Its own fixed address on every one-shot network (backend's is set
+        # with the other backend members' in render_runtime).
+        "networks": {
+            "backend": {},
+            **{
+                _offline_network(profile): {
+                    "ipv4_address": network.offline_postgres(profile)
+                }
+                for profile in OFFLINE_PROFILES
+            },
+        },
         "tmpfs": [
             *shared["tmpfs"],
             "/var/run/postgresql:rw,nosuid,nodev,noexec,uid=10001,gid=10001,mode=0700",
@@ -680,6 +779,10 @@ def _infrastructure(configuration):
             "log_min_error_statement=panic",
             "-c",
             "log_parameter_max_length_on_error=0",
+            # The rendered source rules; the data directory's stock file is
+            # never read or edited.
+            "-c",
+            f"hba_file={HBA_FILE}",
         ],
         "healthcheck": {
             "test": [

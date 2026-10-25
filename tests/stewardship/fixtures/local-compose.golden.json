@@ -7,6 +7,8 @@
    "ipam": {
     "config": [
      {
+      "gateway": "172.29.240.1",
+      "ip_range": "172.29.240.128/25",
       "subnet": "172.29.240.0/24"
      }
     ]
@@ -15,6 +17,66 @@
   "ingress": {
    "driver_opts": {
     "com.docker.network.bridge.enable_ip_masquerade": "false"
+   }
+  },
+  "offline-admin-recovery": {
+   "internal": true,
+   "ipam": {
+    "config": [
+     {
+      "gateway": "172.29.242.33",
+      "ip_range": "172.29.242.40/29",
+      "subnet": "172.29.242.32/28"
+     }
+    ]
+   }
+  },
+  "offline-backup-worker": {
+   "internal": true,
+   "ipam": {
+    "config": [
+     {
+      "gateway": "172.29.242.65",
+      "ip_range": "172.29.242.72/29",
+      "subnet": "172.29.242.64/28"
+     }
+    ]
+   }
+  },
+  "offline-bootstrap": {
+   "internal": true,
+   "ipam": {
+    "config": [
+     {
+      "gateway": "172.29.242.1",
+      "ip_range": "172.29.242.8/29",
+      "subnet": "172.29.242.0/28"
+     }
+    ]
+   }
+  },
+  "offline-database-provision": {
+   "internal": true,
+   "ipam": {
+    "config": [
+     {
+      "gateway": "172.29.242.49",
+      "ip_range": "172.29.242.56/29",
+      "subnet": "172.29.242.48/28"
+     }
+    ]
+   }
+  },
+  "offline-migration": {
+   "internal": true,
+   "ipam": {
+    "config": [
+     {
+      "gateway": "172.29.242.17",
+      "ip_range": "172.29.242.24/29",
+      "subnet": "172.29.242.16/28"
+     }
+    ]
    }
   },
   "proxy": {
@@ -54,7 +116,7 @@
     }
    },
    "networks": {
-    "backend": {}
+    "offline-admin-recovery": {}
    },
    "oom_score_adj": 500,
    "profiles": [
@@ -135,7 +197,7 @@
    },
    "networks": {
     "application-egress": {},
-    "backend": {}
+    "offline-backup-worker": {}
    },
    "oom_score_adj": 500,
    "profiles": [
@@ -233,7 +295,7 @@
     }
    },
    "networks": {
-    "backend": {}
+    "offline-bootstrap": {}
    },
    "oom_score_adj": 500,
    "profiles": [
@@ -603,7 +665,9 @@
     }
    },
    "networks": {
-    "backend": {}
+    "backend": {
+     "ipv4_address": "172.29.240.12"
+    }
    },
    "oom_score_adj": 500,
    "read_only": true,
@@ -694,7 +758,9 @@
     }
    },
    "networks": {
-    "backend": {}
+    "backend": {
+     "ipv4_address": "172.29.240.16"
+    }
    },
    "oom_score_adj": 500,
    "read_only": true,
@@ -803,7 +869,9 @@
     }
    },
    "networks": {
-    "backend": {}
+    "backend": {
+     "ipv4_address": "172.29.240.17"
+    }
    },
    "oom_score_adj": 500,
    "read_only": true,
@@ -912,7 +980,9 @@
     }
    },
    "networks": {
-    "backend": {}
+    "backend": {
+     "ipv4_address": "172.29.240.18"
+    }
    },
    "oom_score_adj": 500,
    "read_only": true,
@@ -1021,7 +1091,9 @@
     }
    },
    "networks": {
-    "backend": {}
+    "backend": {
+     "ipv4_address": "172.29.240.19"
+    }
    },
    "oom_score_adj": 500,
    "read_only": true,
@@ -1130,7 +1202,9 @@
     }
    },
    "networks": {
-    "backend": {}
+    "backend": {
+     "ipv4_address": "172.29.240.20"
+    }
    },
    "oom_score_adj": 500,
    "read_only": true,
@@ -1239,7 +1313,9 @@
     }
    },
    "networks": {
-    "backend": {}
+    "backend": {
+     "ipv4_address": "172.29.240.21"
+    }
    },
    "oom_score_adj": 500,
    "read_only": true,
@@ -1349,7 +1425,9 @@
    },
    "networks": {
     "application-egress": {},
-    "backend": {}
+    "backend": {
+     "ipv4_address": "172.29.240.22"
+    }
    },
    "oom_score_adj": 500,
    "read_only": true,
@@ -1458,7 +1536,9 @@
     }
    },
    "networks": {
-    "backend": {}
+    "backend": {
+     "ipv4_address": "172.29.240.23"
+    }
    },
    "oom_score_adj": 500,
    "read_only": true,
@@ -1568,7 +1648,9 @@
    },
    "networks": {
     "application-egress": {},
-    "backend": {}
+    "backend": {
+     "ipv4_address": "172.29.240.24"
+    }
    },
    "oom_score_adj": 500,
    "read_only": true,
@@ -1678,7 +1760,9 @@
    },
    "networks": {
     "application-egress": {},
-    "backend": {}
+    "backend": {
+     "ipv4_address": "172.29.240.25"
+    }
    },
    "oom_score_adj": 500,
    "read_only": true,
@@ -1787,7 +1871,9 @@
     }
    },
    "networks": {
-    "backend": {}
+    "backend": {
+     "ipv4_address": "172.29.240.26"
+    }
    },
    "oom_score_adj": 500,
    "read_only": true,
@@ -1896,7 +1982,9 @@
     }
    },
    "networks": {
-    "backend": {}
+    "backend": {
+     "ipv4_address": "172.29.240.27"
+    }
    },
    "oom_score_adj": 500,
    "read_only": true,
@@ -1991,7 +2079,7 @@
     }
    },
    "networks": {
-    "backend": {}
+    "offline-database-provision": {}
    },
    "oom_score_adj": 500,
    "profiles": [
@@ -2275,7 +2363,9 @@
     }
    },
    "networks": {
-    "backend": {}
+    "backend": {
+     "ipv4_address": "172.29.240.29"
+    }
    },
    "oom_score_adj": 500,
    "read_only": true,
@@ -2342,7 +2432,9 @@
    },
    "networks": {
     "application-egress": {},
-    "backend": {}
+    "backend": {
+     "ipv4_address": "172.29.240.14"
+    }
    },
    "oom_score_adj": 500,
    "read_only": true,
@@ -2463,7 +2555,9 @@
     }
    },
    "networks": {
-    "backend": {},
+    "backend": {
+     "ipv4_address": "172.29.240.28"
+    },
     "ingress": {}
    },
    "ports": [
@@ -2516,7 +2610,7 @@
     }
    },
    "networks": {
-    "backend": {}
+    "offline-migration": {}
    },
    "oom_score_adj": 500,
    "profiles": [
@@ -2575,7 +2669,9 @@
     "-c",
     "log_min_error_statement=panic",
     "-c",
-    "log_parameter_max_length_on_error=0"
+    "log_parameter_max_length_on_error=0",
+    "-c",
+    "hba_file=/etc/postgresql/hba/pg_hba.conf"
    ],
    "environment": {
     "POSTGRES_DB": "stewardship",
@@ -2605,7 +2701,24 @@
     }
    },
    "networks": {
-    "backend": {}
+    "backend": {
+     "ipv4_address": "172.29.240.2"
+    },
+    "offline-admin-recovery": {
+     "ipv4_address": "172.29.242.34"
+    },
+    "offline-backup-worker": {
+     "ipv4_address": "172.29.242.66"
+    },
+    "offline-bootstrap": {
+     "ipv4_address": "172.29.242.2"
+    },
+    "offline-database-provision": {
+     "ipv4_address": "172.29.242.50"
+    },
+    "offline-migration": {
+     "ipv4_address": "172.29.242.18"
+    }
    },
    "read_only": true,
    "restart": "unless-stopped",
@@ -2635,6 +2748,15 @@
      "read_only": true,
      "source": "/opt/parishkit/credentials/database/operator",
      "target": "/run/secrets/postgres-password",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/pg-hba",
+     "target": "/etc/postgresql/hba",
      "type": "bind"
     }
    ]
@@ -2678,7 +2800,9 @@
     }
    },
    "networks": {
-    "backend": {}
+    "backend": {
+     "ipv4_address": "172.29.240.15"
+    }
    },
    "oom_score_adj": 500,
    "read_only": true,
@@ -2780,7 +2904,9 @@
     }
    },
    "networks": {
-    "backend": {}
+    "backend": {
+     "ipv4_address": "172.29.240.3"
+    }
    },
    "read_only": true,
    "restart": "unless-stopped",
@@ -2853,7 +2979,9 @@
    },
    "networks": {
     "application-egress": {},
-    "backend": {},
+    "backend": {
+     "ipv4_address": "172.29.240.4"
+    },
     "proxy": {
      "ipv4_address": "172.29.241.10"
     }
@@ -3038,7 +3166,9 @@
    },
    "networks": {
     "application-egress": {},
-    "backend": {}
+    "backend": {
+     "ipv4_address": "172.29.240.13"
+    }
    },
    "oom_score_adj": 500,
    "read_only": true,
@@ -3162,5 +3292,8 @@
     }
    ]
   }
+ },
+ "x-local-seeder": {
+  "ipv4_address": "172.29.240.30"
  }
 }

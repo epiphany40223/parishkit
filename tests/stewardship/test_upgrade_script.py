@@ -284,7 +284,44 @@ json() {
     [ -z "$FAKE_BACKUP_UNRECORDED" ] || recorded=false
     echo '{"backup_recorded": '"$recorded"', "offsite": {"state": "'"$1"'"}}'
 }
+# The database network layout (#2111), when FAKE_LAYOUT_RUNNING names the
+# layout Docker runs (old or new): FAKE_NETWORKS_<layout> is what `network
+# inspect` answers and FAKE_POSTGRES_<layout> the networks postgres is on.
+# The retarget renders FAKE_COMPOSE_<FAKE_RENDER_LAYOUT>; starting postgres
+# and valkey moves Docker to the rendered layout (unless FAKE_LAYOUT_STUCK).
+# FAKE_ONEOFF adds a running one-off backup-worker container.
+layout=$(cat "$FAKE_STATE/layout" 2>/dev/null || echo "${FAKE_LAYOUT_RUNNING-}")
+# run_host upper-cases the FAKE_* names it is given.
+upper=$(tr '[:lower:]' '[:upper:]' <<<"$layout")
+networks_var=FAKE_NETWORKS_$upper
+postgres_var=FAKE_POSTGRES_$upper
 case "$*" in
+    "network ls --quiet --filter "*)
+        [ -z "$layout" ] || jq -r '.[].Id' <<<"${!networks_var}" ;;
+    "network inspect --format "*)
+        jq -r --arg id "$last" '.[] | select(.Id == $id) | .Name' \
+            <<<"${!networks_var}" ;;
+    "inspect --format "*"NetworkSettings.Networks"*" id-caddy")
+        echo "stewardship_proxy " ;;
+    "network inspect "*) echo "${!networks_var}" ;;
+    "network rm "*) echo "$last" >>"$FAKE_STATE/networks_removed" ;;
+    "ps --all --quiet --filter "*"service=postgres"*)
+        [ -e "$FAKE_STATE/postgres_removed" ] || echo id-postgres ;;
+    "inspect id-postgres")
+        # Without a layout, postgres runs on the networks the file renders.
+        on=${!postgres_var:-$(jq -c '.services.postgres.networks // {}
+            | with_entries(.key |= "stewardship_" + .)' "$FAKE_COMPOSE")}
+        echo '[{"State": {"Running": true},' \
+            '"NetworkSettings": {"Networks": '"$on"'}}]' ;;
+    "ps --all --filter "*" --format "*)
+        printf '%s\n' "id-postgres running postgres False" \
+            "id-valkey running valkey False" "id-caddy running caddy False" \
+            "id-web exited web False"
+        [ -z "$FAKE_ONEOFF" ] || echo "id-backup running backup-worker True" ;;
+    "rm id-"*) touch "$FAKE_STATE/postgres_removed" ;;
+    *" up --detach --wait postgres valkey")
+        rm -f "$FAKE_STATE/postgres_removed"
+        [ -n "$FAKE_LAYOUT_STUCK" ] || cp "$FAKE_STATE/rendered" "$FAKE_STATE/layout" ;;
     *" --entrypoint test "*0171_retire_digests.sql) exit "${FAKE_RETIREMENT:-0}" ;;
     *"0041_report_conversion"*) echo "${FAKE_CONVERTED:-t}" ;;
     "image inspect "*faketime-stewardship*) exit 1 ;;
@@ -329,6 +366,36 @@ case "$*" in
     *" upgrade-check "*)
         [ -z "$FAKE_RENDER_FAIL" ] || exit 2
         echo "SELECT true;" ;;
+    *" hba-check --config "*)
+        [ -z "$FAKE_HBA_RENDER_FAIL" ] || exit 2
+        echo "SELECT 'hba_reload_pending';" ;;
+    *"SELECT pg_reload_conf()"*) printf '%s\n' "2026-10-25 04:00:00.000001+00" t ;;
+    *" -v since=infinity"*)
+        # The check before the reload, of the file alone: FAKE_HBA_FILE, or
+        # the pending answer every good file gives against infinity.
+        cat >/dev/null
+        echo "${FAKE_HBA_FILE:-hba_reload_pending}" ;;
+    *" -v since="*)
+        # FAKE_HBA: the hba check's answers after the reload, one per call,
+        # the last repeated. The query arrives on stdin, as psql reads it.
+        cat >/dev/null
+        read -r -a answers <<<"${FAKE_HBA:-t}"
+        echo x >>"$FAKE_STATE/hba"
+        n=$(wc -l <"$FAKE_STATE/hba")
+        [ "$n" -le "${#answers[@]}" ] || n=${#answers[@]}
+        echo "${answers[$((n - 1))]}" ;;
+    *" database-sources --config "*)
+        # Read stdin as a real `compose exec` does, so a caller that forgets
+        # </dev/null inside a read loop loses the rest of its list.
+        cat >/dev/null
+        # FAKE_SOURCES_FAIL: the one service whose check finds a difference.
+        if [ -n "$FAKE_SOURCES_FAIL" ] && [[ " $* " == *" $FAKE_SOURCES_FAIL "* ]]; then
+            echo "MISMATCH: pk_stewardship_operator is allowed from" \
+                "172.29.240.13 ($FAKE_SOURCES_FAIL): the rendered rules refuse" \
+                "it (security failure)" >&2
+            exit 1
+        fi
+        echo "database sources match the rendered rules" ;;
     *"PGOPTIONS"*)
         cat >/dev/null
         echo x >>"$FAKE_STATE/checks"
@@ -376,7 +443,20 @@ case "$*" in
                         latency="$latency"', "mail_redirect": "'"${arg#*=}"'"' ;;
             esac
         done
-        echo '{"services": {"web": {"image": "'"$last"'"}}}' >"$FAKE_COMPOSE"
+        if [ -n "$FAKE_HBA_RULES" ]; then
+            # The source rules (#2111): PostgreSQL's command names the
+            # mounted file, and the application services name their documents.
+            jq -n --arg i "$last" --arg c "$(dirname "$FAKE_COMPOSE")" '{services: {
+                web: {image: $i, command: ["runtime", "--config", "\($c)/web.yaml"]},
+                worker: {command: ["runtime", "--config", "\($c)/worker.yaml"]},
+                migration: {profiles: ["migration"],
+                    command: ["migrate", "--config", "\($c)/migration.yaml"]},
+                caddy: {command: ["exec caddy run"]},
+                postgres: {command: ["postgres", "-c",
+                    "hba_file=/etc/postgresql/hba/pg_hba.conf"]}}}' >"$FAKE_COMPOSE"
+        else
+            echo '{"services": {"web": {"image": "'"$last"'"}}}' >"$FAKE_COMPOSE"
+        fi
         if [ -n "$FAKE_OVERRIDE" ]; then
             derived="parishkit-stewardship-local-faketime-stewardship:${last##*:}"
             echo '{"services": {"web": {"image": "'"$derived"'"},' \
@@ -404,6 +484,13 @@ case "$*" in
             jq "del($key)" "$web.new" >"$web"
         fi
         rm -f "$web.new"
+        if [ -n "$FAKE_RENDER_LAYOUT" ]; then
+            upper=$(tr '[:lower:]' '[:upper:]' <<<"$FAKE_RENDER_LAYOUT")
+            rendered_var=FAKE_COMPOSE_$upper
+            jq --arg image "$last" '.services.web.image = $image' \
+                <<<"${!rendered_var}" >"$FAKE_COMPOSE"
+            echo "$FAKE_RENDER_LAYOUT" >"$FAKE_STATE/rendered"
+        fi
         touch "$FAKE_STATE/retargeted" ;;
     *" --rm -T migration migrate --config "*" --users-upgrade-base")
         if [ -n "$FAKE_BASE_FAIL" ]; then
@@ -2192,3 +2279,454 @@ def test_a_first_run_never_asks_the_backup_to_resume(tmp_path):
     calls, _, _ = run_host(tmp_path, "upgrade", noop="f", schema_change="1", env=USERS)
     assert any(call.endswith(" run --rm -T backup-worker") for call in calls)
     assert not any("--users-upgrade-resume" in call for call in calls)
+
+
+# The database network layout (#2111): the release that adds PostgreSQL's
+# source rules renders fixed backend addresses, a dynamic ip_range and a
+# one-shot network per profile; the release before it renders none of them.
+def _network(key, subnet, gateway, ip_range=None):
+    """One network as `docker network inspect` reports it (Compose's labels)."""
+    config = {"Subnet": subnet, "Gateway": gateway}
+    if ip_range:
+        config["IPRange"] = ip_range
+    return {
+        "Id": f"net-{key}",
+        "Name": f"stewardship_{key}",
+        "Internal": True,
+        "Labels": {"com.docker.compose.network": key},
+        "IPAM": {"Config": [config]},
+    }
+
+
+def _rendered(new):
+    """The Compose file's database networks, as either release renders them."""
+    backend = {"subnet": "172.29.240.0/24"}
+    networks = {
+        "backend": {"internal": True, "ipam": {"config": [backend]}},
+        "proxy": {
+            "internal": True,
+            "ipam": {"config": [{"subnet": "172.29.241.0/24"}]},
+        },
+    }
+    postgres = {"backend": {}}
+    if new:
+        backend.update(gateway="172.29.240.1", ip_range="172.29.240.128/25")
+        networks["offline-migration"] = {
+            "internal": True,
+            "ipam": {
+                "config": [
+                    {
+                        "subnet": "172.29.242.16/28",
+                        "gateway": "172.29.242.17",
+                        "ip_range": "172.29.242.24/29",
+                    }
+                ]
+            },
+        }
+        postgres = {
+            "backend": {"ipv4_address": "172.29.240.2"},
+            "offline-migration": {"ipv4_address": "172.29.242.18"},
+        }
+    return {
+        "services": {"web": {}, "postgres": {"networks": postgres}},
+        "networks": networks,
+    }
+
+
+LAYOUT = {
+    "networks_old": json.dumps(
+        [
+            _network("backend", "172.29.240.0/24", "172.29.240.1"),
+            _network("proxy", "172.29.241.0/24", "172.29.241.1"),
+        ]
+    ),
+    "networks_new": json.dumps(
+        [
+            _network("backend", "172.29.240.0/24", "172.29.240.1", "172.29.240.128/25"),
+            _network(
+                "offline-migration",
+                "172.29.242.16/28",
+                "172.29.242.17",
+                "172.29.242.24/29",
+            ),
+            _network("proxy", "172.29.241.0/24", "172.29.241.1"),
+        ]
+    ),
+    "postgres_old": json.dumps({"stewardship_backend": {}}),
+    "postgres_new": json.dumps(
+        {"stewardship_backend": {}, "stewardship_offline-migration": {}}
+    ),
+    "compose_old": json.dumps(_rendered(False)),
+    "compose_new": json.dumps(_rendered(True)),
+}
+
+
+@pytest.mark.parametrize(
+    ("mode", "running", "rendered"),
+    [("upgrade", "old", "new"), ("rollback", "new", "old")],
+    ids=["rollout", "rollback to a release before the rules"],
+)
+def test_a_database_network_change_fully_stops_after_the_retarget(
+    tmp_path, mode, running, rendered
+):
+    """Both directions remove everything but caddy and restart the stores first.
+
+    After the retarget (and before step 4 needs PostgreSQL), postgres and
+    valkey stop through Compose, every container but caddy is removed, every
+    network caddy is not on is removed, and postgres and valkey start again
+    on the rendered networks, which then match. caddy is never stopped.
+    """
+    calls, output, _ = run_host(
+        tmp_path,
+        mode,
+        layout_running=running,
+        render_layout=rendered,
+        **LAYOUT,
+    )
+    retarget = first(calls, " retarget-image ")
+    stop = first(calls, " stop postgres valkey")
+    remove = first(calls, "rm id-")
+    start = first(calls, " up --detach --wait postgres valkey")
+    assert retarget < stop < remove < start < first(calls, " up --detach --wait web")
+    assert calls[remove] == "rm id-postgres id-valkey id-web"
+    removed = [c for c in calls if c.startswith("network rm ")]
+    assert "network rm net-proxy" not in removed and "network rm net-backend" in removed
+    assert not any(" stop " in c and "caddy" in c for c in calls)
+    if mode == "upgrade":
+        # Step 4's decisive check runs on the recreated PostgreSQL.
+        checks = [
+            i for i, c in enumerate(calls) if "PGOPTIONS" in c and "0041" not in c
+        ]
+        assert start < checks[1]
+    assert "3. Full stop: the database networks change" in output
+    assert "network backend differs from the rendered one (ip_range)" in output
+    assert "postgres and valkey run on the rendered networks" in output
+    done = "Upgraded" if mode == "upgrade" else "Rolled back"
+    assert f"{done} to {TARGET} in" in output
+
+
+def test_an_unchanged_database_layout_needs_no_full_stop(tmp_path):
+    """A later upgrade finds the rendered networks running and stops nothing more."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", layout_running="new", render_layout="new", **LAYOUT
+    )
+    assert not any(" stop postgres valkey" in c for c in calls)
+    assert not any(c.startswith(("rm ", "network rm ")) for c in calls)
+    assert "Full stop" not in output
+    assert f"Upgraded to {TARGET} in" in output
+
+
+def test_a_running_one_off_refuses_the_full_stop(tmp_path):
+    """A cron backup is never killed mid-copy: nothing stops, the page stays up."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        status=1,
+        layout_running="old",
+        render_layout="new",
+        oneoff="1",
+        **LAYOUT,
+    )
+    assert (
+        "One-off containers of stewardship are still running (backup-worker)" in output
+    )
+    assert "The full stop did not finish; caddy serves the maintenance page" in output
+    assert "Failed with web stopped: caddy serves the maintenance page." in output
+    assert not any(" stop postgres valkey" in c or c.startswith("rm ") for c in calls)
+    assert not any(" up --detach " in c for c in calls)
+    # Repeated once the backup finished, the full stop runs.
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        again=True,
+        layout_running="old",
+        render_layout="new",
+        **LAYOUT,
+    )
+    assert any(" up --detach --wait postgres valkey" in c for c in calls)
+    assert f"Upgraded to {TARGET} in" in output
+
+
+def test_networks_that_still_differ_after_the_full_stop_stop_the_run(tmp_path):
+    """The comparison after the restart must find nothing; else step 4 never runs."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        status=1,
+        layout_running="old",
+        render_layout="new",
+        layout_stuck="1",
+        **LAYOUT,
+    )
+    assert "After the full stop the database networks still differ" in output
+    assert "caddy serves the maintenance page" in output
+    assert not any(" up --detach --wait web" in c for c in calls)
+
+
+def test_an_expired_restart_of_the_stores_is_logged(tmp_path):
+    """A hung `up postgres valkey` is killed, logged with its limit; the run stops."""
+    _, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        status=1,
+        layout_running="old",
+        render_layout="new",
+        timeout="up --detach --wait postgres valkey",
+        **LAYOUT,
+    )
+    assert re.search(
+        r"TIMEOUT: starting postgres and valkey killed after \d+s \(limit 600s\)",
+        output,
+    )
+    kept = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    assert "TIMEOUT: starting postgres and valkey" in kept
+
+
+@pytest.mark.parametrize(
+    ("mode", "running", "rendered"),
+    [("upgrade", "old", "new"), ("rollback", "new", "old")],
+    ids=["rollout", "rollback"],
+)
+def test_a_repeat_finishes_a_failed_full_stop_before_step_one(
+    tmp_path, mode, running, rendered
+):
+    """A full stop that failed after postgres stopped is finished first.
+
+    Step 1's check and backup need PostgreSQL. The repeat finds web down
+    and postgres gone, finishes the full stop under the file the earlier
+    run retargeted, and only then checks: a rollback is never sent to a
+    database restore it does not need.
+    """
+    common = dict(layout_running=running, render_layout=rendered, **LAYOUT)
+    _, output, _ = run_host(
+        tmp_path,
+        mode,
+        status=1,
+        timeout="up --detach --wait postgres valkey",
+        **common,
+    )
+    assert "The full stop did not finish" in output
+    calls, output, _ = run_host(tmp_path, mode, again=True, **common)
+    finish = first(calls, " up --detach --wait postgres valkey")
+    assert finish < first(calls, "PGOPTIONS") < first(calls, " retarget-image ")
+    assert "Finishing the full stop an earlier run began" in output
+    assert "postgres is not running" in output
+    assert "database-restore" not in output
+    done = "Upgraded" if mode == "upgrade" else "Rolled back"
+    assert f"{done} to {TARGET} in" in output
+
+
+def test_caddy_keeps_its_networks_in_the_full_stop(tmp_path):
+    """Only the networks caddy is not on are removed; caddy itself stays."""
+    calls, _, _ = run_host(
+        tmp_path, "upgrade", layout_running="old", render_layout="new", **LAYOUT
+    )
+    assert "inspect --format" in next(c for c in calls if c.endswith(" id-caddy"))
+    removed = [c for c in calls if c.startswith("network rm ")]
+    assert removed == ["network rm net-backend"]
+
+
+def test_the_source_rules_are_reloaded_and_checked_before_step_4(tmp_path):
+    """After the retarget: render, reload, wait for the load, then migrate (#2111)."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        hba_rules=1,
+        hba="hba_reload_pending hba_reload_pending t",
+    )
+    retarget = first(calls, " retarget-image ")
+    render = first(calls, " hba-check --config /run/operator.yaml")
+    reload = first(calls, "SELECT pg_reload_conf()")
+    polls = [i for i, call in enumerate(calls) if " -v since=" in call]
+    decisive = [
+        i
+        for i, call in enumerate(calls)
+        if "PGOPTIONS" in call and "0041" not in call and "since=" not in call
+    ][1]
+    # One check before the reload (the file must already parse), then polls.
+    assert retarget < render < polls[0] < reload < polls[1] < decisive
+    assert len(polls) == 4
+    # The file alone first; then the load must follow PostgreSQL's own
+    # clock_timestamp() from just before the signal.
+    assert "-v since=infinity" in calls[polls[0]]
+    assert "SELECT clock_timestamp()" in calls[reload]
+    for poll in polls[1:]:
+        assert "-v since=2026-10-25 04:00:00.000001+00" in calls[poll]
+    # The reload is sent as the operator over the socket; the check read-only.
+    assert "exec -T postgres psql -U pk_stewardship_operator" in calls[reload]
+    assert "default_transaction_read_only=on" in calls[polls[0]]
+    assert "--network none" in calls[render]
+    assert "the rendered source rules are in force (the reload took " in output
+    # Step 6: every running application service by exec, each one-shot by
+    # run, after the services start; caddy and PostgreSQL never.
+    start_rest = first(calls, "up --detach --wait worker scheduler mail-dispatch")
+    web = first(calls, "exec -T web pk-stewardship database-sources --config ")
+    worker = first(calls, "exec -T worker pk-stewardship database-sources --config ")
+    migration = first(calls, "-T migration database-sources --config ")
+    assert start_rest < min(web, worker, migration)
+    assert " run --name " in calls[migration]
+    sources = [call for call in calls if "database-sources" in call]
+    assert len(sources) == 3
+    assert output.count("database sources match the rendered rules") == 3
+    assert f"Upgraded to {TARGET} in" in output
+
+
+def test_no_rendered_rules_means_nothing_to_reload_or_probe(tmp_path):
+    """A release before #2111 (a rollback to it, say) renders no hba_file."""
+    calls, output, _ = run_host(tmp_path, "upgrade")
+    assert "PostgreSQL source rules: none rendered for" in output
+    for fragment in ("hba-check", "pg_reload_conf", "database-sources"):
+        assert not any(fragment in call for call in calls), fragment
+
+
+def test_a_reload_that_never_takes_effect_stops_before_step_4(tmp_path):
+    """The bounded wait logs what timed out, its limit and the time waited."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", status=1, hba_rules=1, hba="hba_reload_pending"
+    )
+    assert "TIMEOUT: the wait for the hba reload stopped after " in output
+    assert "(limit 30s)" in output
+    log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    assert "TIMEOUT: the wait for the hba reload stopped after " in log
+    assert len([call for call in calls if " -v since=" in call]) == 1 + 30
+    assert "caddy serves the maintenance page" in output
+    assert not any(" up --detach --wait web" in call for call in calls)
+    assert not any("Report email conversion" in line for line in output.splitlines())
+
+
+@pytest.mark.parametrize(
+    ("answer", "why"),
+    [
+        ("hba_file_not_mounted", "PostgreSQL does not use the mounted rules"),
+        ("hba_file_differs", "the mounted pg_hba.conf differs from the rendered one"),
+        ("hba_file_invalid", "pg_hba.conf has errors"),
+        ("ERROR:", "the hba check did not answer: ERROR:"),
+    ],
+)
+def test_a_failed_hba_condition_stops_with_the_page_up(tmp_path, answer, why):
+    """Each condition is named; the maintenance page stays up; step 4 never runs.
+
+    Found before the reload, nothing is reloaded; found after it (the
+    pending answer first), the run stops all the same.
+    """
+    for reloaded in (False, True):
+        answers = {"hba": answer} if reloaded else {"hba_file": answer}
+        calls, output, _ = run_host(
+            tmp_path / str(reloaded), "upgrade", status=1, hba_rules=1, **answers
+        )
+        assert f"The hba check failed: {why}" in output
+        assert "caddy serves the maintenance page" in output
+        assert any("pg_reload_conf" in call for call in calls) is reloaded
+        assert not any(" up --detach --wait web" in call for call in calls)
+
+
+def test_an_unrenderable_hba_check_stops_before_reloading(tmp_path):
+    """The target image must render the check; nothing is reloaded without it."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", status=1, hba_rules=1, hba_render_fail=1
+    )
+    assert "Could not render the hba check in" in output
+    assert not any("pg_reload_conf" in call for call in calls)
+
+
+def test_a_source_difference_fails_the_run_with_the_site_up(tmp_path):
+    """The login, source and service are named; web keeps serving (decision 7)."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", status=1, hba_rules=1, sources_fail="worker"
+    )
+    assert (
+        "MISMATCH: pk_stewardship_operator is allowed from 172.29.240.13 (worker)"
+    ) in output
+    assert "worker: database sources differ from the rendered rules" in output
+    assert f"Upgraded to {TARGET}, but NOT healthy:" in output
+    assert f"Failed after web started healthy: {TARGET} is serving" in output
+    assert "caddy serves the maintenance page" not in output
+    # The other services were still checked, and web was started.
+    assert any("exec -T web pk-stewardship database-sources" in c for c in calls)
+    assert any("-T migration database-sources" in c for c in calls)
+    assert "web was down for" in output
+
+
+def test_a_rendering_that_hangs_is_logged_and_stops_before_reloading(tmp_path):
+    """Rendering the hba check runs under a time limit; its kill is logged."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", status=1, hba_rules=1, timeout="hba-check"
+    )
+    log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    assert "TIMEOUT: rendering the hba check killed after " in log
+    assert "(limit 300s)" in log
+    assert "Could not render the hba check in" in output
+    assert not any("pg_reload_conf" in call for call in calls)
+
+
+def test_a_reload_that_hangs_is_logged_and_stops_before_step_4(tmp_path):
+    """The reload runs under a time limit like every other step."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", status=1, hba_rules=1, timeout="pg_reload_conf"
+    )
+    log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    assert "TIMEOUT: the PostgreSQL configuration reload killed after " in log
+    assert "(limit 30s)" in log
+    assert "Could not reload PostgreSQL's configuration" in output
+    assert "caddy serves the maintenance page" in output
+    assert not any(" up --detach --wait web" in call for call in calls)
+
+
+@pytest.mark.parametrize(
+    ("fragment", "service", "limit"),
+    [
+        ("exec -T worker pk-stewardship database-sources", "worker", 60),
+        ("-T migration database-sources", "migration", 120),
+    ],
+)
+def test_a_source_check_that_hangs_is_logged_and_named(
+    tmp_path, fragment, service, limit
+):
+    """A killed check is logged and named as unfinished, never as a difference."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", status=1, hba_rules=1, timeout=fragment
+    )
+    log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    assert f"TIMEOUT: the source check from {service} killed after " in log
+    assert f"(limit {limit}s). Web keeps serving." in log
+    assert f"{service}: the source check did not finish within {limit}s" in output
+    assert f"{service}: database sources differ" not in output
+    assert "Failed after web started healthy" in output
+    # The rest of the list was still checked.
+    assert len([call for call in calls if "database-sources --config" in call]) == 3
+
+
+def test_a_rollback_to_a_release_with_rules_reloads_and_checks_them(tmp_path):
+    """A rollback whose target renders hba_file goes through the same checks."""
+    calls, output, _ = run_host(tmp_path, "rollback", hba_rules=1)
+    retarget = first(calls, " retarget-image ")
+    assert retarget < first(calls, "SELECT pg_reload_conf()")
+    assert "the rendered source rules are in force" in output
+    assert len([call for call in calls if "database-sources --config" in call]) == 3
+    assert f"Rolled back to {TARGET} in" in output
+
+
+def test_fake_clock_local_mode_checks_the_rules_under_both_compose_files(tmp_path):
+    """The reload, the check and every probe run under the faketime override."""
+    calls, output, root = run_host(
+        tmp_path, "upgrade", profile="local", clock="fake", hba_rules=1
+    )
+    override = str(root / "config" / "services" / "compose.faketime.json")
+    for fragment in ("SELECT pg_reload_conf()", " -v since=", "database-sources"):
+        matched = [call for call in calls if fragment in call]
+        assert matched and all(override in call for call in matched), fragment
+    assert "the rendered source rules are in force" in output
+
+
+def test_a_service_that_is_not_running_is_not_probed(tmp_path):
+    """Only running online services are probed by exec; one-shots always run."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        hba_rules=1,
+        services_after="postgres valkey web scheduler mail-dispatch caddy",
+    )
+    assert not any("exec -T worker pk-stewardship database-sources" in c for c in calls)
+    assert any("exec -T web pk-stewardship database-sources" in c for c in calls)
+    assert any("-T migration database-sources" in c for c in calls)
+    assert f"Upgraded to {TARGET} in" in output

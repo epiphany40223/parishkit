@@ -193,7 +193,7 @@ The profile, which Production can never hold, stays the switch.
 | `stewardship/deployment.py`: `PROXIED_PROFILES`, `_origin`, `load_deployment` | One proxy hop; exactly the [localhost origin](#origin-proxy-and-image), and it is the default | Laptop topology: the browser reaches Caddy on `localhost` |
 | `stewardship/web/security.py`: `browser_settings` | The invalid-origin message names the proxy, not Production | Laptop topology: wording only |
 | `stewardship/origin_check.py`: `check_public_origin`; `stewardship/origin_check_worker.py`: `resolve` | Accepts exactly the localhost origin without a DNS lookup | Laptop topology: `localhost` has no public name to resolve |
-| `stewardship/runtime_topology.py`: `_image`, `render_runtime`, `render_faketime_override`, `_project_name`, `_networks`, `_mailpit`, `_fake_parishsoft`, `_caddy` | The local image tags, the `mailpit` and `fake-parishsoft` services, the fake-clock override, the `parishkit-local` project, the no-masquerade `ingress` network, loopback-only Caddy | Laptop topology ([topology](#topology-and-web-differences)); Mailpit and the fake refuse any other profile |
+| `stewardship/runtime_topology.py`: `_image`, `render_runtime`, `render_faketime_override`, `_project_name`, `_networks`, `_backend_addresses`, `_mailpit`, `_fake_parishsoft`, `_caddy`; `stewardship/runtime_hba.py`: `source_rules` | The local image tags, the `mailpit` and `fake-parishsoft` services, the fake-clock override, the `parishkit-local` project, the no-masquerade `ingress` network, loopback-only Caddy; the fixed `backend` addresses of `mailpit`, `fake-parishsoft` and the seeder, after all of Production's, and the seeder's [source rule](../operations/spec.md#database-connection-sources) for web's logins, refused in any other profile | Laptop topology ([topology](#topology-and-web-differences)); Mailpit and the fake refuse any other profile |
 | `stewardship/runtime_ingress.py`: `render_local_caddy`, `render_ingress` | The local Caddyfile with `tls internal` on `localhost` | Laptop topology: no public name, so no ACME |
 | `stewardship/runtime_provisioning.py`: `provisioning_plan` | The fake-clock override document and the Mailpit store directory | Laptop topology |
 | `stewardship/service_boundaries.py`: `_check_extra`; `stewardship/backup_boundaries.py`: `validate_backup_mounts`; `stewardship/offline_boundaries.py`: `validate_offline_mounts` | Admit the read-only [fake-clock](#fake-clock) mount | Laptop topology: the fake clock exists only here |
@@ -1844,9 +1844,14 @@ fake service, no such file and no marker, so none of this can reach it.
 **Snapshots and fast reset.** Snapshots are uncompressed copies of the runtime
 root inside the VM, under `/opt/parishkit-snapshots/<name>` together with the
 deployment YAML and record, so a restore is self-contained. `reset --seeded`
-stops the services, restores the seeded
+stops the services and removes their containers and networks (never a
+volume; a snapshot from before #2111 renders other database networks,
+which Compose cannot attach existing containers to, as the operations
+specification's
+[Rollout](../operations/spec.md#checks-rollout-and-rollback) explains),
+restores the seeded
 snapshot with `rsync --delete` preserving numeric ownership, modes and hard
-links, and restarts them; it SHOULD take seconds plus service start-up. Because
+links, and starts them again; it SHOULD take seconds plus service start-up. Because
 the seed is anchored to the time it was generated, a restored seeded snapshot
 keeps its original dates and grows older each day. Re-seed (`reseed`, then
 `snapshot --seeded`) only when fresh dates are needed; otherwise reset to the
@@ -1915,7 +1920,8 @@ Otherwise:
 - When it was taken on another image, matching migrations are not enough
   (grants, logins and credential files change without a migration), and the
   running image's required backup would refuse an older schema's pending
-  migrations. So the switch restores the snapshot whole except Caddy's data,
+  migrations. So the switch removes the containers and networks as `reset`
+  does, restores the snapshot whole except Caddy's data,
   starts it on its own image (refusing beforehand if that image is gone from
   the VM), and runs the scripted upgrade's host half in local mode to the
   running image with `--schema-change`, as `deploy` does. That upgrade's

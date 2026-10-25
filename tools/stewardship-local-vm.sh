@@ -357,6 +357,16 @@ stop_services() {
     [ -z "$killed" ] || echo "    killed after the 90s stop timeout (exit 137): $(tr '\n' ' ' <<<"$killed")"
 }
 
+remove_containers() {
+    # After stop_services, before a snapshot's root (and so its Compose
+    # file) is put back: remove the project's containers and networks, never
+    # a volume (the rendered topology has none; the data lives under the
+    # root). A snapshot rendered before #2111 has other database networks,
+    # and Compose can attach neither a running nor a stopped container to a
+    # recreated network (operations specification, "Rollout").
+    timed 300 "removing the containers" docker compose -f "$services/compose.json" -p "$project" down --remove-orphans 2>&1 | quiet
+}
+
 image_constant() {
     # image_constant MODULE NAME [FALLBACK]: a Python constant from the
     # application image, so the script never copies a value that lives in
@@ -1065,6 +1075,7 @@ switch_to() {
         step "Switching to the $name snapshot (taken on $snap_image): restoring it whole, then upgrading it to $run_image"
         phase=stopped
         stop_services
+        remove_containers
         phase=restoring
         rsync -aHAX --checksum --inplace --delete --numeric-ids --exclude=/run/persistent/caddy/ "$dir/root/" "$root/"
         # The running record (debug setting and all), naming the snapshot's
@@ -1102,6 +1113,7 @@ cmd_reset() {
     load_env
     step "Stopping the services to restore the $name snapshot"
     stop_services
+    remove_containers
     step "Restoring $snapshots/$name over $root"
     # --checksum: a file the services rewrote with the same size and time
     # as the snapshot's copy is still put back. --inplace keeps the inode
@@ -1259,10 +1271,21 @@ web_oneoff_command() {
     # the clock directory also mounted writable at $clock_control. `docker
     # compose run web` cannot do this: web holds a fixed address on the proxy
     # network, which a second container could not share. A command array, not
-    # a function, so `timed` can run it under its limit.
-    local web_image file mode line
+    # a function, so `timed` can run it under its limit. It takes the seeder's
+    # own fixed backend address (`--ip`), the one PostgreSQL's source rules
+    # allow for web's logins besides web itself; a dynamic address is in the
+    # range no rule allows. Seed steps hold the seed lock and run one at a
+    # time, so the one address is never needed twice.
+    local web_image file mode line seeder_ip
     local -a options=()
-    web_image=$(jq -r '.services.web.image' "$services/compose.json")
+    # Explicit returns: callers run this as `web_oneoff_command || exit 1`,
+    # where bash ignores errexit inside the function.
+    oneoff=()
+    web_image=$(jq -er '.services.web.image' "$services/compose.json") || return 1
+    seeder_ip=$(jq -er '."x-local-seeder".ipv4_address' "$services/compose.json") || {
+        echo "compose.json names no seeder address; retarget the deployment first." >&2
+        return 1
+    }
     # Web's own environment, mounts and tmpfs exactly as rendered; Compose
     # variable references (${NAME:-default}) are resolved from this shell as
     # Compose would resolve them from the operator's.
@@ -1279,7 +1302,7 @@ web_oneoff_command() {
     if [ "$mode" = fake ]; then
         refuse_real_oauth_client
         file="$services/compose.faketime.json"
-        web_image=$(jq -r '.services.web.image' "$file")
+        web_image=$(jq -er '.services.web.image' "$file") || return 1
         while IFS= read -r line; do options+=("$line"); done < <(
             jq -r '.services.web.environment | to_entries[] | "--env", "\(.key)=\(.value)"' "$file")
         while IFS= read -r line; do options+=("$line"); done < <(
@@ -1288,6 +1311,7 @@ web_oneoff_command() {
     fi
     oneoff=(docker run --rm --init --user 10001:10001 --read-only --cap-drop ALL
         --security-opt no-new-privileges:true --network "${project}_backend"
+        --ip "$seeder_ip"
         --mount "type=bind,source=$clock_dir,target=$clock_control"
         "${options[@]}" "$web_image")
 }
@@ -1321,7 +1345,7 @@ seed_step() {
     step "Seeder step $name ($service)"
     started=$(date -u +%s)
     if [ "$service" = web ]; then
-        web_oneoff_command
+        web_oneoff_command || exit 1
         seed_result=$(timed "$limit" "the seeder step $name" \
             "${oneoff[@]}" local-seed --step "$name" --config "$services/$config" \
             --clock-dir "$clock_control" "${arguments[@]}" "$@" | tail -1)
