@@ -84,9 +84,10 @@
 
   const targets = () => Array.from(results.querySelectorAll("[data-find-family-result]"));
 
-  // Fixed text for a refused or failed search; the server never words it.
-  // A redirect (to the sign-in page) or a 403 means the session ended or
-  // access was removed: the wording matches the other live Admin regions.
+  // Fixed text for a refused or failed search whose answer carries no
+  // reviewed refusal (refused, below). A redirect (to the sign-in page) or
+  // a 403 without one means the session ended or access was removed: the
+  // wording matches the other live Admin regions.
   const failure = (statusCode) => {
     if (statusCode === 400) {
       return "That search could not be used. Try a shorter one.";
@@ -95,6 +96,26 @@
       return "Couldn't search. Refresh the page or sign in again.";
     }
     return "Find a Family is unavailable right now. Try again in a moment.";
+  };
+
+  // The server's own words for a refused (403) search: a typed denial's JSON
+  // refusal (message and fix), or null for any other answer. A signed-in
+  // reader whose role lacks the search gets the shared role refusal, and
+  // a generic denial of a session still live gets the signed-in one
+  // (#2172), so that reader is never told to sign in again (#2189). A bare
+  // 403 (no current session) or a denial without a refusal keeps the fixed
+  // sign-in wording. A refusal's link is not shown: its fix already points
+  // to the header's menu or to signing in.
+  const refused = (text) => {
+    try {
+      const refusal = JSON.parse(text)?.refusal;
+      if (refusal?.message) {
+        return [refusal.message, refusal.fix].filter(Boolean).join(" ");
+      }
+    } catch {
+      // Not JSON: the fixed text instead.
+    }
+    return null;
   };
 
   const showMessage = (text) => {
@@ -165,7 +186,8 @@
       return;
     }
     if (!response.ok) {
-      showMessage(failure(response.status));
+      const own = response.status === 403 ? refused(answer) : null;
+      showMessage(own || failure(response.status));
       return;
     }
     const parsed = new DOMParser().parseFromString(answer, "text/html");

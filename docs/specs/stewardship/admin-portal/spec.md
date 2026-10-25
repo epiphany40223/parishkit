@@ -1246,7 +1246,14 @@ from the box to the results, Up and Down move between them, and Escape closes
 them and returns to the box. Because it is the directory's search, it also
 finds a Family by any active Member's name and by its envelope number
 ([#664](https://github.com/epiphany40223/parishkit/issues/664)). Its route
-(`find_family`) is a non-page action.
+(`find_family`) is a non-page action. A current session whose role lacks
+the search is answered with the shared
+[role refusal](../ui-conventions/spec.md#pages-the-role-may-not-open), and
+the box shows a refusal's own sentence and fix whenever a refused search's
+answer carries one (not its link), so a signed-in reader is never told to
+sign in again. Any other refused (403) search, such as one with no current session,
+says "Couldn't search. Refresh the page or sign in again."
+([#2189](https://github.com/epiphany40223/parishkit/issues/2189)).
 
 Entries use the same capability checks as the pages they open, and a group
 with no entry for the viewer's role is omitted; the menu is not the security

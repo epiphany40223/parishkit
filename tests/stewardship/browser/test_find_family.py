@@ -7,11 +7,19 @@ body, never a URL) and the keyboard path through the results are checked on
 Chromium and WebKit.
 """
 
+import json
 import re
 from contextlib import suppress
 from urllib.parse import parse_qs
 
 import pytest
+
+from parishkit.stewardship.accounts import role_refusal
+from parishkit.stewardship.web.contracts import (
+    ErrorCode,
+    FieldError,
+    validation_response,
+)
 
 from .find_family_components import ANSWERS, DIRECTORY, FIND, LONG, NONE, PATH
 from .waits import has_text, hidden, recorded, visible
@@ -33,13 +41,15 @@ class _Seen(list):
         self.held = []
 
 
-def _answer(page, *, status=200, hold=(), statuses=None):
+def _answer(page, *, status=200, hold=(), statuses=None, refusal=None):
     """Answer the search route; return the list of requests it saw.
 
     Each entry is ``(method, url, fields)``. A search whose text is in
     ``hold`` is not answered: its route is kept in ``seen.held`` so the
     test can answer it late with ``_late``. ``statuses`` lists the status
-    of each answer in turn (then 200); ``status`` answers every one.
+    of each answer in turn (then 200); ``status`` answers every one. A
+    ``refusal`` (a typed error's JSON) is the body of every answer that is
+    not a 200; otherwise such an answer has no body.
     """
     seen = _Seen()
     queue = list(statuses or ())
@@ -54,6 +64,11 @@ def _answer(page, *, status=200, hold=(), statuses=None):
             seen.held.append((route, text))
             return
         code = queue.pop(0) if queue else status
+        if code != 200 and refusal is not None:
+            route.fulfill(
+                status=code, content_type="application/json", body=json.dumps(refusal)
+            )
+            return
         route.fulfill(
             status=code,
             content_type="text/html; charset=utf-8",
@@ -157,14 +172,72 @@ def test_enter_searches_at_once_and_says_when_nothing_matches(page, component_or
     hidden(results)
 
 
-def test_a_refused_search_says_so_in_fixed_words(page, component_origin):
-    """A refusal answers with no body; the box words it itself."""
-    _answer(page, status=403)
+# The typed ``denied`` JSON a refused search can be answered with. The
+# shared role refusal is ``find_family``'s answer to a current session whose
+# role lacks the search; the signed-out refusal and the closed denial (no
+# refusal) are other shared answers, built here by the same code.
+ROLE_DENIAL = json.loads(
+    role_refusal.response(role_refusal.role_denied_for("staff")).content
+)
+SIGNED_OUT_DENIAL = json.loads(role_refusal.signed_out_response().content)
+CLOSED_DENIAL = json.loads(
+    validation_response([FieldError(ErrorCode.DENIED)], status=403).content
+)
+# The browser-error middleware's answer to a generic denial of a session a
+# fresh check still admits (#2172, web/error_pages.py).
+SIGNED_IN_DENIAL = {
+    "errors": [
+        {
+            "code": "denied",
+            "field_id": None,
+            "message": "Your access doesn't include this page.",
+        }
+    ],
+    "refusal": {
+        "message": "Your access doesn't include this page.",
+        "fix": "Choose a page from the menu, or ask a parish administrator if "
+        "you need this one.",
+        "link": None,
+    },
+}
+FIXED = "Couldn't search. Refresh the page or sign in again."
+FIX = "Choose a page from the menu, or ask a parish administrator if you need this one."
+
+
+@pytest.mark.parametrize(
+    "refusal,text",
+    [
+        (None, FIXED),
+        (CLOSED_DENIAL, FIXED),
+        (
+            SIGNED_OUT_DENIAL,
+            "Your sign-in has ended, for example after an hour without activity "
+            "or after signing out in another tab. Sign in again to continue.",
+        ),
+        (
+            ROLE_DENIAL,
+            "This page is for Administrators and Staff. Your access doesn't "
+            f"include it. {FIX}",
+        ),
+        (SIGNED_IN_DENIAL, f"Your access doesn't include this page. {FIX}"),
+    ],
+    ids=["no_body", "closed", "signed_out", "role", "signed_in"],
+)
+def test_a_refused_search_says_why(page, component_origin, refusal, text):
+    """A refused search says what fits the reader (#2189).
+
+    A refusal with the server's own words shows them: a signed-in reader
+    whose access does not include the search is never told to sign in
+    again. A denial without them, or no body (no current session), keeps
+    the box's fixed words.
+    """
+    _answer(page, status=403, refusal=refusal)
     page.goto(component_origin + PATH)
     field, results, status = _box(page)
     field.fill("examp")
     field.press("Enter")
-    has_text(status, "Couldn't search. Refresh the page or sign in again.")
+    has_text(status, text)
+    has_text(results, text)
     visible(results)
 
 
