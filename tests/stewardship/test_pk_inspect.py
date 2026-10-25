@@ -42,6 +42,16 @@ def host(tmp_path):
         path = bin_dir / name
         path.write_text(body)
         path.chmod(0o755)
+    # The Compose test container mounts /tmp noexec, so a stand-in executable
+    # there cannot run; the real wrapper still runs against a real PostgreSQL
+    # in the Docker provisioning test.
+    probe = tmp_path / "probe"
+    probe.write_text("#!/bin/sh\n")
+    probe.chmod(0o755)
+    try:
+        subprocess.run([str(probe)], check=False)
+    except PermissionError:
+        pytest.skip("stand-in executables cannot run from a noexec temp directory")
     return tmp_path
 
 
