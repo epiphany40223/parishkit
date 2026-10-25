@@ -377,7 +377,7 @@ def test_administrator_page_shows_summary_and_timeline():
     assert f'<a href="/admin/mail/sent/{INVITATION.id}/">Invitation</a>' in page
     assert page.count("<tbody>") == 1 and page.count("<tr>") == 1 + len(TIMELINE.events)
     # Newest first: the receipt (the latest event) leads, the invitation ends.
-    rows = re.findall(r'<tr><td><time datetime="([^"]+)"', page)
+    rows = re.findall(r'<tr><td(?: class="nowrap")?><time datetime="([^"]+)"', page)
     assert rows == sorted(rows, reverse=True) and len(rows) == len(TIMELINE.events)
     assert page.index("Submission receipt</a>") < page.index(">Invitation</a>")
     # Every time is a browser-local instant, never labelled UTC.
@@ -391,7 +391,7 @@ def test_administrator_page_shows_summary_and_timeline():
 def test_the_when_heading_reverses_the_order():
     """sort=when shows the oldest first, and the heading offers newest first."""
     page = render(TIMELINE, values={"sort": "when", "size": "all"})
-    rows = re.findall(r'<tr><td><time datetime="([^"]+)"', page)
+    rows = re.findall(r'<tr><td(?: class="nowrap")?><time datetime="([^"]+)"', page)
     assert rows == sorted(rows)
     assert 'aria-sort="ascending" data-sort-column="when"' in page
     assert 'href="?size=all&amp;sort=-when#table"' in page
