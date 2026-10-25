@@ -36,7 +36,7 @@ category, never a reason within it. The kinds and their callers:
 | `no_access` | You signed in with Google as the verified address, but that address doesn't have access to the Administration portal. | Admin sign-in refused by policy after Google verified the address, 403 |
 | `unfinished` | Signing in with Google didn't complete. | Other Admin sign-in refusals (cancelled, provider error, used or expired state, local test link), 403 |
 | `rate_limited` | Too many sign-in attempts. Try again later. | Every Admin 429 |
-| default | Sign-in is unavailable. Please try again. | Admin refusals such as report views for a reader without a current session (a signed-in reader's page load gets the [signed-in refusal page](../specs/stewardship/ui-conventions/spec.md#pages-the-role-may-not-open), #2165); Family fetch 400/403 |
+| default | Sign-in is unavailable. Please try again. | Admin refusals such as report views for a reader without a current session (a signed-in reader's page load gets the [signed-in refusal page](../specs/stewardship/ui-conventions/spec.md#pages-the-role-may-not-open), #2165, and a signed-in reader's script its typed `denied` JSON, #2172); Family fetch 400/403 |
 
 - Family `denied()` maps any 429 or 503 to `unavailable`. That covers the
   manual entry limiter checks, including the failure that crosses the limit,

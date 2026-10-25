@@ -2737,14 +2737,38 @@ does a session that ends after its admission, when a later recheck in the
 same request refuses it as revoked, disabled or changed in role: the
 signed-in page is drawn only after a fresh read-only session check passes,
 with the menu of that check's current roles, never the ones first admitted.
-Status codes, the `denied` code, refusal-log reasons and what scripts
-receive are unchanged. **Why.** The sign-in hint fits only a signed-out
-reader; a signed-in one cannot fix the refusal by signing in, and the old
-text read like an outage. **Shared code.** `web/error_pages.py`
+Status codes, the `denied` code and refusal-log reasons are unchanged;
+what scripts receive follows the next paragraph. **Why.** The sign-in hint
+fits only a signed-out reader; a signed-in one cannot fix the refusal by
+signing in, and the old text read like an outage. **Shared code.** `web/error_pages.py`
 (`error_page`, and `BrowserErrorMiddleware`, which redraws
 `accounts.authentication.denial()`'s generic page for a signed-in reader's
 page load). **Precedent.**
 [#2165](https://github.com/epiphany40223/parishkit/issues/2165).
+
+**In-place and script refusals of a signed-in person.** The JSON that a
+script or an in-place region receives follows the same split and the same
+fresh check, and so does a page that answers with its own typed `denied`
+error rather than the generic denial. When the check returns a live
+principal with roles, a `denied` answer carries the signed-in wording: its
+closed `denied` message reads "Your access doesn't include this page.", and
+one with no reviewed refusal of its own gains that sentence and fix as its
+refusal, with no link, so the in-place line beside the control says the
+same as the page. A refusal that has its own sentence keeps it.
+`accounts.authentication.denial()`'s generic page, which an in-place
+region could only show whole, with its sign-in text, answers such a script
+as that typed JSON instead. A request refused before any session is
+admitted, or whose session the check finds ended, keeps the sign-in
+wording: the closed "Access is unavailable. Sign in again." message with no
+added refusal, `denial()`'s page as it is, and a typed-denial page with no
+left menu. During a restore review the check does not run (as for the
+not-found page's chrome), so every such denial keeps the sign-in wording
+and no menu. **Why.** An in-place line that tells a signed-in
+person to sign in again repeats the confusion of the page (#2165), and a
+session revoked partway through a request must not see the menu of its old
+roles. **Shared code.** `web/error_pages.py` (`_live_principal`, used by
+`error_page` and `BrowserErrorMiddleware`). **Precedent.**
+[#2172](https://github.com/epiphany40223/parishkit/issues/2172).
 
 ### Navigation rules
 

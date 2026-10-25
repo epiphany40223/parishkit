@@ -7,18 +7,25 @@ view does: a Post/Redirect/Get redirect back to the page, here with a query
 with the settled check, whose quiet follow-up re-reads ``SETTLED``, the page
 showing that result. Pages at two other queries (``REFUSED``,
 ``REFUSED_LINKED``) have their Test access refused as the view refuses a
-script's fetch: a typed error's JSON (400), never a page (#519).
+script's fetch: a typed error's JSON (400), never a page (#519). Two more
+(``DENIED_SIGNED_IN``, ``DENIED_SIGNED_OUT``) have it refused with the typed
+``denied`` 403, as the browser-error middleware answers a script for a
+session that is still live and for one refused before admission (#2172).
 """
 
 from types import SimpleNamespace
 from unittest import mock
+from uuid import uuid4
 
 from django.template.loader import render_to_string
+from django.test import RequestFactory
 from django.urls import reverse
 
 from parishkit.stewardship.accounts import integration_views
 from parishkit.stewardship.accounts.admin_editing import error_response
 from parishkit.stewardship.accounts.integration_forms import IntegrationForm
+from parishkit.stewardship.accounts.policy import Principal
+from parishkit.stewardship.web import error_pages
 from parishkit.stewardship.web.refusals import UserFacingError
 
 PAGE = reverse("admin:integration_settings", args=["backup"])
@@ -27,6 +34,8 @@ TESTED = f"{PAGE}?tested=1"
 SETTLED = f"{PAGE}?settled=1"
 REFUSED = f"{PAGE}?refused=1"
 REFUSED_LINKED = f"{PAGE}?refused=linked"
+DENIED_SIGNED_IN = f"{PAGE}?refused=signed-in"
+DENIED_SIGNED_OUT = f"{PAGE}?refused=signed-out"
 # Test access refused at the folder link field: the view draws the page
 # again with the field's error (400, #1330).
 BAD_LINK = f"{PAGE}?bad=link"
@@ -81,6 +90,8 @@ def components(context, admin):
         SETTLED: settings(passed),
         REFUSED: settings(url=REFUSED),
         REFUSED_LINKED: settings(url=REFUSED_LINKED),
+        DENIED_SIGNED_IN: settings(url=DENIED_SIGNED_IN),
+        DENIED_SIGNED_OUT: settings(url=DENIED_SIGNED_OUT),
         BAD_LINK: settings(url=BAD_LINK),
         STATUS: status,
     }
@@ -113,8 +124,31 @@ def posts(context, admin):
         PAGE: (303, TESTED, ""),
         REFUSED: refused(local),
         REFUSED_LINKED: refused(linked),
+        DENIED_SIGNED_IN: denied(DENIED_SIGNED_IN, live=True),
+        DENIED_SIGNED_OUT: denied(DENIED_SIGNED_OUT, live=False),
         BAD_LINK: (400, None, bad_link(context, admin), "text/html"),
     }
+
+
+def denied(path, *, live):
+    """The middleware's answer to a fetch the view refused as ``denied``.
+
+    The view's plain ``PermissionError`` passes through the real
+    browser-error middleware. With ``live`` the request was admitted and the
+    middleware's fresh read-only session check (stubbed here, as it needs
+    the database) still admits it; otherwise the request was refused before
+    any admission and no check runs (#2172).
+    """
+    request = RequestFactory().post(path, HTTP_X_REQUESTED_WITH="fetch")
+    principal = Principal(identity=uuid4(), roles=frozenset({"administrator"}))
+    if live:
+        request.principal = principal
+        request.session = SimpleNamespace(session_key="key")
+    with mock.patch.object(error_pages, "_read_only_admission", lambda _: principal):
+        response = error_pages.BrowserErrorMiddleware(
+            lambda _: error_response(PermissionError("refused"))
+        )(request)
+    return (403, None, response.content.decode(), "application/json")
 
 
 def bad_link(context, admin):

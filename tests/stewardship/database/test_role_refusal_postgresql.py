@@ -4,7 +4,9 @@ import json
 from urllib.parse import urlencode
 from uuid import uuid4
 
+import psycopg
 import pytest
+from django.db import connection
 from django.db.models import F
 from django.urls import reverse
 from django.utils import timezone
@@ -167,3 +169,82 @@ def test_background_task_reads_refuse_staff_by_role(auth_service, google):
     assert ended.status_code == 403
     assert "This page is for" not in ended.content.decode()
     assert json.loads(ended.content)["refusal"]["link"]["url"] == "/admin/login"
+
+
+# What ui-v1.js's in-place regions send.
+IN_PLACE = {"HTTP_ACCEPT": "application/json", "HTTP_X_REQUESTED_WITH": "fetch"}
+# A left-menu link only an admitted Administrator's chrome draws.
+MENU = 'href="/admin/system/background/"'
+
+
+@pytest.mark.parametrize("revoke", [False, True], ids=["live", "revoked"])
+@pytest.mark.parametrize("in_place", [False, True], ids=["navigate", "in_place"])
+def test_a_typed_denial_after_admission_rechecks_the_session(
+    auth_service, google, monkeypatch, revoke, in_place
+):
+    """A view's own typed denial is drawn signed in only for a live session.
+
+    Users admits the session, then its read refuses with a plain
+    ``PermissionError`` (as a service's recheck does for a role changed
+    during the request), which the view answers as its typed ``denied``
+    error. A session still live gets the signed-in wording, on the page with
+    its menu and in the in-place JSON. One revoked mid-request keeps the
+    sign-in wording, and its page draws no menu from the roles it was first
+    admitted with (#2172).
+    """
+    from parishkit.stewardship.accounts import user_views
+
+    browser, _ = signed_in()
+
+    def refused(*args, **kwargs):
+        """Refuse the read, revoking the session first if asked.
+
+        The read runs in a read-only transaction, so the revocation commits
+        from another connection, as a sign-out in another tab would.
+        """
+        if revoke:
+            settings = connection.settings_dict
+            with psycopg.connect(
+                host=settings["HOST"],
+                port=settings["PORT"],
+                user=settings["USER"],
+                password=settings["PASSWORD"],
+                dbname=settings["NAME"],
+            ) as other:
+                other.execute(
+                    "UPDATE stewardship_portal_session SET revoked_at=now(), "
+                    "version=version+1 WHERE revoked_at IS NULL"
+                )
+        raise PermissionError("Users reader changed.")
+
+    monkeypatch.setattr(user_views, "_users", refused)
+    response = browser.get(reverse("admin:users"), **(IN_PLACE if in_place else PAGE))
+    assert response.status_code == 403
+    if in_place:
+        data = json.loads(response.content)
+        assert data["errors"][0]["code"] == "denied"
+        if revoke:
+            assert data["errors"][0]["message"] == (
+                "Access is unavailable. Sign in again."
+            )
+            assert "refusal" not in data
+        else:
+            assert data["errors"][0]["message"] == (
+                "Your access doesn't include this page."
+            )
+            assert (
+                data["refusal"]["message"] == "Your access doesn't include this page."
+            )
+            assert data["refusal"]["link"] is None
+        return
+    body = response.content.decode()
+    if revoke:
+        assert "Your session may have ended" in body
+        assert SIGN_IN in body
+        assert "Your access doesn&#x27;t include" not in body
+        assert MENU not in body
+    else:
+        assert "Your access doesn&#x27;t include this page." in body
+        assert "Your session may have ended" not in body
+        assert SIGN_IN not in body
+        assert MENU in body
