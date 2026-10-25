@@ -3344,7 +3344,7 @@ key derived from it) for the page's `pledge_review.PledgeDecisions`, so every
 rule is the page's, in Python and in the SQL guard of the
 [financial stream](../review-pipeline/spec.md): the role, the item's version,
 the actions its stage offers, a note to undo a terminal stage (reopening
-an ignored pledge takes an optional one, #1889), and an Edit's amount and frequency checked as the Family form checks them. All or
+an ignored pledge takes an optional one, #1889), and an Edit's amount and frequency checked as the Family form checks them. The command takes no share methods: its Edit keeps the share methods in force (an earlier Edit's still in force for a pledge above zero, else the Family's own; [#2177](https://github.com/epiphany40223/parishkit/issues/2177)). All or
 none: an item someone decided first, or that the Family answered again since,
 is `stale_version`; anything else refused is `invalid`, an Edit value at its
 option (`amount`, `frequency`) with the service's static reason, never the

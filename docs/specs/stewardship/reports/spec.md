@@ -1235,7 +1235,10 @@ none, even with the same answer as the change it replaced (#2028). **Details** n
 - Additional information: "Additional information";
 - a pledge: "Pledge", and on an **Accepted (edited)** line the Reviewer's
   value as [Pledges](#pledges) shows it ("Pledge; Reviewer's value:
-  $1,300.00, Quarterly");
+  $1,300.00, Quarterly"), with the reviewer's share methods when the Edit
+  changed them, each by its full label with any Other text ("Pledge;
+  Reviewer's value: $1,300.00, Quarterly; share methods: Online giving",
+  [#2177](https://github.com/epiphany40223/parishkit/issues/2177));
 - a Limitations answer: the answer in [Limitations](#limitations)' words
   and whom it is about ("Cannot participate in any ministries for Smith,
   Anne", "Cannot attend Mass or prayer services for the Family");
@@ -3610,7 +3613,10 @@ section is the page.
 - **Columns**, in the shared order: Family (the Family-name link), Family DUID,
   Family's answer (the annual pledge, then its frequency, or "Cannot
   contribute", then the share methods chosen), Reviewer's value (an Edit's
-  annual pledge and frequency), Stage, Submitted (the Family's latest
+  annual pledge and frequency, then, under them as the Family's answer has
+  them, its share methods when the Edit changed them,
+  [#2177](https://github.com/epiphany40223/parishkit/issues/2177)), Stage,
+  Submitted (the Family's latest
   response), Last decision and Actions. There is no Baseline column: A is
   ParishSoft's amount when the Family answered, $0.00 when unrecorded
   (#1704, #1753). **ParishSoft now**, after
@@ -3657,25 +3663,40 @@ section is the page.
   Edits, then select all and Accept, then Stage To enter by hand, export, type
   the pledges into ParishSoft, select all and Entered by hand.
 - **Edit** opens the row's own dialog with the annual pledge (the Family form's
-  format and limit: dollars and cents, under $1,000,000,000) and the frequency
+  format and limit: dollars and cents, under $1,000,000,000), the frequency
   (Weekly, Monthly, Quarterly, Annual, or No frequency for a zero pledge; a
-  pledge above zero needs one), filled from the value carried forward, and the
-  optional note. Save records Accepted (edited), the Family's answer stays
-  beside it, and the pledge to enter is the reviewer's value. A value the
-  server refuses is shown at its field
+  pledge above zero needs one) and the share methods, filled from the value
+  carried forward (the reviewer's, else the Family's), and the optional note.
+  The share methods are the campaign's current choices as the Family form
+  offers them, each a checkbox by its full label, with a details box for a
+  method that takes text, shown while it is ticked; they are shown only
+  while a frequency is chosen (a pledge above zero has one; for a zero pledge
+  choose No frequency, and any share methods are dropped), and a pledge
+  above zero needs at least one when any is offered, as on the Family form
+  ([conditional fields](../ui-conventions/spec.md#conditional-fields)). A
+  method in force that the campaign no longer offers is listed ticked, with
+  "(no longer offered)", and can be unticked but not chosen again; kept
+  ticked, it counts as the one share method chosen. Save
+  records Accepted (edited), the Family's answer stays beside it, and the
+  pledge to enter is the reviewer's value
+  ([share methods on an Edit](../review-pipeline/spec.md#financial-stream),
+  [#2177](https://github.com/epiphany40223/parishkit/issues/2177)). A value
+  the server refuses is shown at its field
   ([field errors](../ui-conventions/spec.md#field-errors-and-live-checks)).
-  Share methods and Cannot contribute are not edited here: Staff change those
-  through [Open form](#open-form), as before.
+  Cannot contribute is not edited here: Staff change it through
+  [Open form](#open-form), as before.
 - **Download.** The shared export buttons below the table download the applied
   Stage and search as CSV, XLSX or PDF in the browser's time zone, rendered on
   request as Roster changes to enter's are, with the page's columns and its
   combined cells split
   ([downloaded files](../ui-conventions/spec.md#downloaded-files)): Family,
   ParishSoft status, Family DUID, Annual pledge, Frequency, Share methods,
-  Reviewer's annual pledge, Reviewer's frequency, Annual pledge to enter,
-  Frequency to enter, ParishSoft annual pledge, Stage, Decision, Entered by,
-  Entered at, Submitted, Last decision, Last decision at and Note. Money keeps
-  its cents. The two "to enter" columns are filled only for To enter by hand,
+  Reviewer's annual pledge, Reviewer's frequency, Reviewer's share methods
+  (blank unless the Edit changed them), Annual pledge to enter, Frequency to
+  enter, Share methods to enter, ParishSoft annual pledge, Stage, Decision,
+  Entered by, Entered at, Submitted, Last decision, Last decision at and
+  Note (#2177 added the two share-method columns). Money keeps
+  its cents. The three "to enter" columns are filled only for To enter by hand,
   Entered by hand, Entered incorrectly and Confirmed rows; at the other stages
   nothing is to be entered. ParishSoft annual pledge is the latest refresh
   check's amount, or for a pledge Confirmed at the Family's submit the
