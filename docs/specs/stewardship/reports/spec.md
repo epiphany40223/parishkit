@@ -3611,6 +3611,11 @@ section is the page.
   Reviewer's value, is ParishSoft's upcoming-year amount the latest refresh
   found, shown on a Conflict, Entered incorrectly or Not seen in ParishSoft
   row, as on every worklist; a page with no such row has no such column.
+  The Actions cell holds its four
+  [decision toggles](../ui-conventions/spec.md#decision-toggles) two to a
+  line: on one line they took the room the Family's answer needs, which
+  then wrapped onto one more line and pushed the first row below a laptop's
+  first screen (#2131).
 - **Row and bulk actions** are the role table's for the stream: a To review or
   Conflict row offers Accept, Edit and Ignore (a Conflict's earlier decision
   reads "Earlier: Accepted, not in force." under its stage, and the decision

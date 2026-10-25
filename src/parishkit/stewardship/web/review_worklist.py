@@ -872,6 +872,10 @@ class Worklist:
     # (#2064) posts a row's decision to the stream's page and then redraws
     # its own tab from the tab's address, so its dialogs set it false.
     answer_page: bool = True
+    # Whether the Actions cell holds its icons two to a line (Pledges,
+    # #2131): a stream whose table fits its box only by wrapping its text
+    # columns keeps the four 44px decision toggles from taking that room.
+    paired_actions: bool = False
 
     max_bulk = MAX_BULK
 
@@ -970,6 +974,7 @@ def build(
     address="",
     silent=frozenset(),
     add_body=ADD_BODY,
+    paired_actions=False,
     **templates,
 ):
     """The ``worklist`` for one reader of one page of ``stream``'s rows.
@@ -989,7 +994,8 @@ def build(
     dialog), ``withheld`` (actions this item cannot take) and
     ``shown_baseline`` (a Family that signs in again sees ParishSoft's value
     for it once it is Ignored, #1705, which its Ignore dialog says). ``roles``
-    is the reader's role set. ``add_body`` is what Add's dialog says.
+    is the reader's role set. ``add_body`` is what Add's dialog says;
+    ``paired_actions`` draws the Actions cell's icons two to a line.
     ``stage`` is the Stage filter's value and ``fields`` the stream's other
     filters, posted by every form; ``baseline`` and ``reviewer`` say whether
     the stream has those columns. ``address`` is the view's own address
@@ -1023,6 +1029,7 @@ def build(
         bulk_too_many=len(decorated) > MAX_BULK,
         address=address,
         add_body=add_body,
+        paired_actions=paired_actions,
         **templates,
     )
 

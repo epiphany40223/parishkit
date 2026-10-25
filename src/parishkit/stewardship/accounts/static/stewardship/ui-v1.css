@@ -2027,6 +2027,17 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 /* A row action that posts in place (a worklist's Entered by hand) sits in
    its own form, inline, so it lines up as a lone button does. */
 .table-actions form { display: inline; margin: 0; }
+/* A worklist whose table fits its box only by wrapping its text columns
+   (Pledges, #2131) holds its Actions cell's icons two to a line: four
+   44px decision toggles on one line took the room its Family's answer
+   needed, wrapping it onto one more line, so the first row ended below a
+   laptop's window. Its rows are already several lines tall, so two lines
+   of icons fit them. The width is two icons and their two .5rem end
+   margins (the second's is dropped, but the line still fits it), so the
+   pairs never re-break; the row gap matches the icons' gap. */
+.table-actions.paired-actions { white-space: normal; width: calc(2 * var(--button-min-height) + 1rem); min-width: calc(2 * var(--button-min-height) + 1rem); box-sizing: content-box; }
+.table-actions.paired-actions .icon-button:nth-child(even) { margin-inline-end: 0; }
+.table-actions.paired-actions .icon-button:nth-child(n+3) { margin-block-start: .5rem; }
 /* A fixed square, not a minimum: a link (Edit) and a <button> (Delete) must
    draw the same size, and the `.data-table button` rule's smaller padding and
    min-height would otherwise shrink only the button. The doubled-up selector
