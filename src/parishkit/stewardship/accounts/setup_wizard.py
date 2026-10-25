@@ -44,10 +44,10 @@ class Page:
 # each other (#1353): the load can take a few minutes, so everything else is
 # done before the wait, and a load that fails on a wrong key or organization
 # is one step after the page that fixes it. No data-entry page needs the
-# loaded data. Review comes last, so it is the last step before Finish setup
-# and shows the tests' results (#1476). Setup collects nothing about a
-# campaign (#142): an Administrator creates it afterwards from Home, with
-# Create the campaign.
+# loaded data. Finish setup comes last; it checks the tests' results itself
+# (#1476), and no separate Review page comes before it (#2145). Setup
+# collects nothing about a campaign (#142): an Administrator creates it
+# afterwards from Home, with Create the campaign.
 PAGES = (
     Page("parish", _("Parish profile"), "admin:setup_step", ("parish",)),
     Page("mail", _("Outgoing email settings"), "admin:setup_step", ("mail",)),
@@ -70,12 +70,11 @@ PAGES = (
         ("parishsoft",),
     ),
     Page("source", _("Load parish data"), "admin:setup_source"),
-    Page("preview", _("Review"), "admin:setup_preview"),
     Page("finish", _("Finish setup"), "admin:setup_confirmation"),
 )
 BY_KEY = {page.key: page for page in PAGES}
-# Review and Finish setup need every required page first, the tests included.
-FINAL = frozenset({"preview", "finish"})
+# Finish setup needs every required page first, the tests included.
+FINAL = frozenset({"finish"})
 # The staged credential each test step proves.
 TESTS = {"mail_test": "google_workspace", "slack_test": "slack"}
 # Only an editable (or loading) attempt shows the stepper; frozen and ended
@@ -136,11 +135,11 @@ class Wizard:
 
     @property
     def resume(self):
-        """The first open page still needing work, else the review page."""
+        """The first open page still needing work, else Finish setup."""
         for step in self.steps:
             if step.state == "todo" and BY_KEY[step.key].required:
                 return step
-        return self.step("preview")
+        return self.step("finish")
 
 
 def applicable(key, sections):
@@ -169,25 +168,13 @@ def _done(key, draft, credentials, tests):
             not sections[key]["enabled"] or credentials.get("slack") is True
         )
     if key == "source":
-        # Bound to a load whose staged data is still valid, by review's own
+        # Bound to a load whose staged data is still valid, by Finish setup's own
         # predicate (#1353): a failed load returns setup to collecting too,
         # and a successful one goes stale when its credential changes; both
         # show as not done, with Load again.
         return draft.source_loaded
     if key in {"mail_test", "slack_test"}:
         return key in tests
-    if key == "preview":
-        # Review is done once the admin has opened it for the current draft
-        # version with every earlier required page complete, the tests
-        # included (#1476), not merely when it could be opened; any later edit
-        # bumps the version and asks for it again.
-        return getattr(draft, "reviewed", {}).get(
-            "preview"
-        ) == draft.status.version and all(
-            _done(page.key, draft, credentials, tests)
-            for page in PAGES[: PAGES.index(BY_KEY["preview"])]
-            if page.required and applicable(page.key, sections)
-        )
     if key == "finish":
         return False
     return key in sections
@@ -419,7 +406,7 @@ def accepted_tests(draft, bindings=None):
 def observed(draft):
     """Read staged-credential freshness and accepted tests for the stepper.
 
-    Only non-secret receipt columns are read, exactly those the preview and
+    Only non-secret receipt columns are read, exactly those Finish setup and the
     test status pages already read for the same admitted original attempt.
     """
     credentials, bindings = _receipts(draft)

@@ -22,7 +22,7 @@ class SetupConfirmationForm(AdminForm):
     preview_token = forms.CharField(max_length=4096, widget=forms.HiddenInput)
     confirmed = forms.BooleanField(
         widget=ACKNOWLEDGMENT,
-        label=_("I reviewed these settings and want to finish setup."),
+        label=_("I checked the settings in each step and want to finish setup."),
     )
 
 

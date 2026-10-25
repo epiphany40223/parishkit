@@ -90,7 +90,6 @@ CONVERTED_PAGES = {
     "/delivery-refusal": "Clearing removes only this refusal",
     "/setup-parish": "Do not enter API tokens",
     "/setup-confirmation": "only this sign-in can continue or cancel setup",
-    "/setup-preview": "This is a read-only preview",
     "/setup-mail-test": "The test goes only to the designated Testing recipient",
     "/setup-branding": "This logo is private",
     "/setup-source": "Starting the load fixes the parish time zone",

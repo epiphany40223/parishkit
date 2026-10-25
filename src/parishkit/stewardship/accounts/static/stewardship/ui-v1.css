@@ -1298,8 +1298,19 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
    state; the mark (a bullet, the working spinner, a check, a cross or a
    pause) and the colour only reinforce it. Loading parish data and
    Finishing setup (setup wizard), Load ParishSoft data (Campaign setup)
-   and a ParishSoft refresh's Background task status (#1579) draw it. */
+   and a ParishSoft refresh's Background task status (#1579) draw it.
+   Rows are natural height: a box is as tall as its content (and its
+   reserve, below) needs. */
 .stage-boxes { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); }
+/* Finishing setup's list alone gives every row its tallest row's height
+   (1fr rows, #2145), so a wrapped second row is never shorter than the
+   first. Only while it runs: a failed setup's region (no in-place retry;
+   a failure stops the updates) keeps natural rows, so the failure's long,
+   unreserved explanation makes only its own row taller. The rule is not
+   on every list: some (Load ParishSoft data) clear a failed box in place
+   with Try again, and switching from natural to equal rows then would
+   move the action row below (#736). */
+.setup-finishing-region:not([data-finishing-state="failed"]) .stage-boxes { grid-auto-rows: 1fr; }
 /* The status sits on its own line under the stage's name, so a box keeps
    its height when its status word changes (Not started, then Done). The
    box is one grid cell: its shown words (.stage-body) share it with

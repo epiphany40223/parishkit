@@ -23,7 +23,6 @@ from django.utils import timezone
 from parishkit.stewardship.accounts.setup_credentials import stage_credential
 from parishkit.stewardship.accounts.setup_drafts import save_section, view_draft
 from parishkit.stewardship.accounts.setup_notification_models import SetupSlackDelivery
-from parishkit.stewardship.accounts.setup_preview_views import _readiness
 from parishkit.stewardship.accounts.setup_secret_models import SetupSealedCredential
 from parishkit.stewardship.accounts.setup_wizard import observed, wizard_for
 from parishkit.stewardship.audit.models import AuditEvent
@@ -89,8 +88,6 @@ def test_turning_slack_off_discards_the_token_and_the_queued_test(
         credentials, tests = observed(draft)
     assert "slack" not in credentials and "slack_test" not in tests
     assert not SLACK_STEPS & keys(request, setup_service)
-    # Review lists no Slack test, so Finish setup waits for none.
-    assert [item["label"] for item in _readiness(draft, tests)] == ["Test email"]
 
 
 def test_turning_slack_on_again_needs_a_new_token_and_test(

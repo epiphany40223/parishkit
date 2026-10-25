@@ -1035,7 +1035,7 @@ def preview_token(request, service):
 
 def wizard_confirm(request, service, attempt_id, *, wait):
     """Send the sample mail, wait for the catcher to take it, then confirm the
-    current preview (the wizard's Test email, Review and Finish setup, #1476)."""
+    current preview (the wizard's Test email and Finish setup, #1476)."""
     from django.core import signing
 
     from parishkit.stewardship.accounts.setup_confirmation import freeze_setup

@@ -240,7 +240,7 @@ def _without_domains(values):
 
     Domains no longer grant sign-in, so a saved domain is refused rather than
     silently dropped: the Admin saves the step again and lists addresses. The
-    refusal reaches Review and Finish as a user-facing message that names the
+    refusal reaches Finish setup as a user-facing message that names the
     access step and links to it (the step's own form no longer has a domain
     field to mark, and the step reads its saved addresses back unchanged).
     """

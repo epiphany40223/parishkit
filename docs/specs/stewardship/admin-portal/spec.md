@@ -212,14 +212,19 @@ configured ([#142](https://github.com/epiphany40223/parishkit/issues/142)):
 6. ParishSoft API key, the
    [organization choice](#parishsoft-organization-choice) from the
    organizations that key reaches, and a complete staged source load.
-7. Exact preview/readiness summary and final confirmation.
+7. Final confirmation, which checks readiness (the accepted tests) itself.
 
 The campaign is created afterwards, from Home, by
 [Create the campaign](#create-the-campaign). The wizard has no campaign
 pages: the First campaign, Share options, Pages and emails and Dates and
 mail schedules pages it had before #142 are gone, and their old addresses
 are not kept (no redirects). Finishing setup creates no campaign, Families
-or Family codes.
+or Family codes. The wizard has no Review page either: Finish setup follows
+Load parish data directly, and the old `/admin/setup/preview` address is not
+kept (no redirect;
+[#2145](https://github.com/epiphany40223/parishkit/issues/2145)). Review only
+repeated what the steps show and the exact public configuration, and Finish
+setup already checks the tests and takes the explicit confirmation.
 
 The [parish date format](../ui-conventions/spec.md#date-format) is not a wizard
 step: setup starts with the default US long style, and an Admin changes it
@@ -237,7 +242,7 @@ staged with the outgoing mail and Testing settings as its public scope), then
 Test email; then the one Slack notifications (optional) step, which takes the
 channel and the Slack bot token together, then Test Slack while Slack is on;
 then Parish logos and Administrative access. ParishSoft connection and Load
-parish data come last before Review, next to each other
+parish data come last before Finish setup, next to each other
 ([#1353](https://github.com/epiphany40223/parishkit/issues/1353)): the load
 can take a few minutes, so the rest of setup is done before the wait, and a
 load that fails on a wrong key is one step after the page that fixes it. No data-entry page needs the loaded data, and neither test needs the logos,
@@ -249,10 +254,10 @@ setup credentials admits a credential only for the setup attempt's original
 owner and live, active session while the attempt is collecting, in Testing
 mode with no campaign. Each staged credential's audit entry records how old
 the session's sign-in was, in seconds, when it was sealed. The idle and
-absolute session limits and the two-hour load watchdog still apply. Review and the final
-confirmation follow the load, so Review is the last step before Finish setup
-and shows the tests' results
-([#1476](https://github.com/epiphany40223/parishkit/issues/1476)). Every page shows a
+absolute session limits and the two-hour load watchdog still apply. The final
+confirmation follows the load and checks the tests' results itself
+([#1476](https://github.com/epiphany40223/parishkit/issues/1476),
+[#2145](https://github.com/epiphany40223/parishkit/issues/2145)). Every page shows a
 compact progress stepper: the current step by number and name, the count of
 completed steps and a slim [step bar](../ui-conventions/spec.md#step-bars)
 whose segments are links to the steps that can open, named by step and
@@ -265,9 +270,7 @@ available with the reason), open on a wide screen and a collapsed disclosure on 
 conventional: completed steps and the first unfinished required step are
 links; later unfinished steps wait for every earlier required step, and
 optional steps never hold later ones back. A step counts as completed only
-after its own explicit save, credential, load, accepted test or, for the
-review page, an explicit review for the current data with every earlier
-step, the tests included, done; defaults seeded by
+after its own explicit save, credential, load or accepted test; defaults seeded by
 another page never complete a step. While the source load runs, completed
 steps keep their status but are not links. The stepper is presentation only;
 each page still enforces its own prerequisites. Each page has one identical
@@ -317,13 +320,13 @@ setup test", and a short plain-text and HTML body that names the parish and
 says its outgoing email settings work. It carries no Family data, link, code
 or campaign content, and nothing in it depends on a campaign.
 
-Test email, Test Slack (only when Slack is on), Review and Finish setup are
+Test email, Test Slack (only when Slack is on) and Finish setup are
 ordinary steps with the same action row, not a hub. Each test needs only its
 own inputs ([#1578](https://github.com/epiphany40223/parishkit/issues/1578)):
 Test email opens once Outgoing email settings, Testing recipient and Google
 Workspace connection are done, and Test Slack once the Slack notifications
 step is saved on with a current Slack bot token; neither waits for Parish
-logos, Administrative access, ParishSoft connection, the load or Review. A
+logos, Administrative access, ParishSoft connection or the load. A
 test is bound to the staged credential it used (the same credential, at the
 same version and key fingerprint) and to the settings sealed with that
 credential: the outgoing email settings and Testing recipient for the email
@@ -331,7 +334,7 @@ test, the channel for the Slack test. An accepted test stays accepted while
 that binding is current, whatever else is saved; it is needed again only
 when its own inputs change. The parish name and the From name in the test
 email are display text, not delivery routing, so changing them later does
-not ask for a new test (Review shows them). On each test page the primary
+not ask for a new test. On each test page the primary
 action sends the test until a test of the current settings is accepted; then
 it is Continue to the next step, with sending another test kept as a
 secondary button. When the newest test of the current settings was not sent,
@@ -344,21 +347,15 @@ Slack test, which also offers
 [turning Slack off](#turning-slack-off-during-setup). Saving a fix opens the
 next step not done yet (Google Workspace connection when its key must be
 entered again, otherwise Test email; Test Slack after the Slack step), never
-Review first; when that step's prerequisites are missing, the save opens the
-step that needs work instead. Review's Readiness section says, for each
-required test, whether a test of these exact settings was accepted, and
-links the test step only for a test that was not; its body links no other
-step. Review counts as done only when it is shown with every earlier step,
-the tests included, done, and its primary action is Continue to Finish
-setup. Any later save bumps the draft version, so Review is required again;
-a changed mail or Testing setting also makes the staged Google Workspace key
-stale, and with it the email test. Back from Test email goes to Google
-Workspace connection, from Test Slack to Slack notifications, from Parish
-logos to the test before it, from Review to Load parish data, and from
-Finish setup to Review. Finish setup's primary action is "Check readiness
-and finish setup", which still requires accepted tests of the current
+Finish setup first; when that step's prerequisites are missing, the save opens the
+step that needs work instead. A changed mail or Testing setting makes the
+staged Google Workspace key stale, and with it the email test. Back from
+Test email goes to Google Workspace connection, from Test Slack to Slack
+notifications, from Parish logos to the test before it, and from Finish
+setup to Load parish data. Finish setup's primary action is "Check readiness
+and finish setup", which requires accepted tests of the current
 settings, and the SQL readiness guard admits the same binding and no other;
-its links to the tests stay for a test that went stale after Review. A setup
+when a test is missing or went stale, the page says so and links the tests. A setup
 attempt still collecting when this order is installed keeps its saved steps,
 staged credentials and accepted tests: the stepper opens the first step that
 needs work in the new order, and a test accepted earlier counts while its
@@ -613,10 +610,19 @@ frozen attempt's owner opens the setup overview, the Admin sees a "Finishing
 setup" page on the original login's cancellation route. It lists each step in
 plain language (each credential's installation, the server operator's
 acknowledgement with a count of acknowledged services, applying the
-configuration, the final parish data load, and completion) with the time since
-confirmation. Each step changes in place while setup finishes. Once setup
-completes, the page shows a Continue link to the Admin home and drops Cancel
-setup. A failed step stops the updates. A failed step explains what to do: a credential the provider
+configuration, the final parish data load, and completion). A step that is
+working shows the portal's shared
+[working spinner](../ui-conventions/spec.md#working-spinner) in its box;
+the page shows no time since confirmation and no line under the boxes.
+Each step's words are one short line, and while a credential waits for the
+server operator its box says so in its status and shows only the live
+count. The operator's own steps are in the
+[runtime guide](../../../guides/stewardship-runtime.md#first-database-and-application-startup),
+not on the page
+([#2145](https://github.com/epiphany40223/parishkit/issues/2145)). Each
+step changes in place while setup finishes. Once setup completes, the page
+says the system is configured, shows a Continue link to the Admin home and
+drops Cancel setup; the notice gives no backup advice. A failed step stops the updates. A failed step explains what to do: a credential the provider
 rejected repeats the integration page's per-provider advice on what to check,
 one that did not finish in time asks the operator to check the credential
 installers, and each says to cancel and start a new setup (#456). No step
@@ -895,8 +901,8 @@ transaction it discards this setup's staged Slack bot token (its ciphertext
 and channel are scrubbed; the audit records `setup_credential_scrubbed` for
 the Administrator) and cancels a Slack test still waiting for the Slack
 installer, so nothing is posted to Slack afterwards; a test already handed to
-Slack keeps its recorded result. Test Slack leaves the step bar, Review and
-Finish setup no longer need a Slack test, and turning Slack on again asks for
+Slack keeps its recorded result. Test Slack leaves the step bar, Finish
+setup no longer needs a Slack test, and turning Slack on again asks for
 a new token and a new test. While Slack is
 off, opening the Test Slack page anyway (the browser's Back button, an old
 tab or a bookmark) shows no error: it opens the next step that needs work,
@@ -1660,7 +1666,6 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `setup_credential_parishsoft` | ParishSoft connection | Setup stepper | Administrator | Setup credential: ParishSoft (stepper: ParishSoft connection) | `/admin/setup/credentials/parishsoft` | (same) |  |
 | `setup_source` | Load parish data | Setup stepper | Administrator | (same) | `/admin/setup/source` | (same) |  |
 | `setup_source_progress` | Loading parish data | Setup stepper | Administrator | (same) | `/admin/setup/source/<task>` | (same) |  |
-| `setup_preview` | Review | Setup stepper | Administrator | Setup preview (stepper: Review) | `/admin/setup/preview` | (same) |  |
 | `setup_confirmation` | Finish setup | Setup stepper | Administrator | Finish initial setup (stepper: Finish setup) | `/admin/setup/confirm` | (same) |  |
 | `setup_finishing` | Finishing setup | Setup stepper | Administrator | (same) | `/admin/setup/finishing` | (same) |  |
 | `setup_unavailable` | Setup step not available | Setup stepper | Administrator | (same) | (any setup step whose prerequisites are missing) | (same) |  |
@@ -2452,8 +2457,8 @@ without pasting the link again. The Integrations list always links to this
 page: "Set up off-site backups" before it is configured, and "Change" after.
 The page and the administration home show
 the last successful off-host copy; until the integration is added, the home
-page invites the Administrator to set it up, and the setup wizard's
-completion panel points to it. The copies themselves, their retention and
+page invites the Administrator to set it up. The setup wizard's completion
+notice does not mention it. The copies themselves, their retention and
 their alert are defined by the
 [backup runbook](../../../guides/stewardship-backup-runbook.md#off-site-copies-to-google-drive).
 
@@ -2569,9 +2574,9 @@ credential file, and only the one-shot `backup-worker` profile reads it
 
 The setup wizard does not gain a step: the first key is installed with the
 deployment, before the wizard runs, and adding a step would reopen the
-frozen setup-draft guards and finalization patch. Instead the wizard's
-completion panel points to this page, as it does for off-site backups. A
-browser-side key-pair generator is not offered.
+frozen setup-draft guards and finalization patch. The wizard's completion
+notice does not point to this page either; the Integrations list links to
+it. A browser-side key-pair generator is not offered.
 
 ### ParishSoft refresh schedule settings
 

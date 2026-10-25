@@ -1,7 +1,7 @@
 """Original-login public draft ownership, distinct from active YAML and secrets."""
 
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
@@ -39,36 +39,6 @@ class DraftView:
     # that succeeded can go stale when its credential changes, and then
     # needs loading again (#1353).
     source_loaded: bool = False
-    # Wizard pages the admin has explicitly reviewed (see mark_reviewed).
-    reviewed: dict = field(default_factory=dict)
-
-
-# Pages that save nothing of their own record an explicit review here. It is
-# wizard progress in the attempt's own login session (which the admin-portal
-# spec allows), not staged configuration: the setup draft's steps and keys are
-# fixed by SQL, and an attempt never outlives the session it is bound to.
-REVIEWED = "setup_reviewed"
-
-
-def mark_reviewed(request, attempt_id, page, value):
-    """Remember that this attempt's ``page`` was reviewed as ``value``.
-
-    ``value`` names what was reviewed (the draft version shown on the review
-    page), so a later change to that data makes the page count as not done
-    again.
-    """
-    reviewed = request.session.get(REVIEWED, {})
-    if reviewed.get("attempt") != str(attempt_id):
-        reviewed = {"attempt": str(attempt_id)}
-    request.session[REVIEWED] = reviewed | {page: value}
-
-
-def _reviewed(request, attempt_id):
-    """This attempt's review marks from the session; another attempt's are ignored."""
-    reviewed = request.session.get(REVIEWED, {})
-    if reviewed.get("attempt") != str(attempt_id):
-        return {}
-    return {key: value for key, value in reviewed.items() if key != "attempt"}
 
 
 def staged_load(attempt):
@@ -77,7 +47,7 @@ def staged_load(attempt):
     Valid means: the bound load succeeded, its exchange is unscrubbed and
     on the Task's fence, the staged ParishSoft credential still has the
     version and fingerprint the load read, and its snapshot is ready on the
-    same fences. Review, campaign staging and the wizard's Load parish data
+    same fences. Finish setup, campaign staging and the wizard's Load parish data
     step all use this one predicate (#1353), and the attempt's audit trigger
     repeats it in SQL to refuse a Load again of a still-valid load.
     """
@@ -153,7 +123,6 @@ def view_draft(request, service, attempt_id=None):
             row.source_task_id,
             row.source_task.state if row.source_task_id else None,
             row.state == SetupState.COLLECTING and staged_load(row) is not None,
-            _reviewed(request, row.pk),
         )
 
 

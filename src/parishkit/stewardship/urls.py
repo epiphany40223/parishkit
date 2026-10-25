@@ -22,7 +22,6 @@ from .accounts import (
     setup_credential_views,
     setup_mail_views,
     setup_notification_views,
-    setup_preview_views,
     setup_progress_views,
     setup_views,
     signed_in_views,
@@ -168,7 +167,6 @@ admin_patterns = [
         setup_branding_views.setup_branding_asset,
         name="setup_branding_asset",
     ),
-    path("setup/preview", setup_preview_views.setup_preview, name="setup_preview"),
     path(
         "setup/confirm",
         setup_confirmation_views.setup_confirmation,

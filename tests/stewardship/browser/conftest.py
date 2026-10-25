@@ -298,7 +298,6 @@ SETUP_LOAD_STATUS = "/admin/setup/source/progress-status?format=status"
 def finishing_context(**status):
     """The "Finishing setup" page context, built by the real step mapping."""
     from parishkit.stewardship.accounts.setup_finishing import finishing
-    from parishkit.stewardship.jobs.queue_wait import waited_words
 
     now = datetime.now(UTC)
     status = {
@@ -310,16 +309,7 @@ def finishing_context(**status):
         "targets": ["parishsoft", "google_workspace"],
         "source": None,
     } | status
-    return (
-        status
-        | finishing(status)
-        | {
-            "status_url": SETUP_FINISHING_STATUS,
-            "confirmed_ago": waited_words(
-                status["server_now"] - status["confirmed_at"]
-            ),
-        }
-    )
+    return status | finishing(status) | {"status_url": SETUP_FINISHING_STATUS}
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -1346,40 +1336,6 @@ def component_responses():
                     }
                 ],
             ),
-        ),
-        (
-            "/setup-preview",
-            "setup-preview",
-            {
-                "draft": setup_draft,
-                "parish": {
-                    "name": "Sample Parish",
-                    "website": "https://example.invalid/",
-                    "phone": "+12025550123",
-                },
-                "campaign": mail_campaign["values"],
-                "testing_recipient": "testing@example.org",
-                "candidate_digest": "a" * 64,
-                "document": '{"sections": {"campaigns": []}}',
-                # The tests come before Review (#1476), which shows them.
-                "readiness": [
-                    {
-                        "label": "Test email",
-                        "accepted": True,
-                        "url": "/admin/setup/mail-test",
-                    }
-                ],
-                "tests_accepted": True,
-                "samples": [
-                    {
-                        "label": "Family welcome",
-                        "sample": {
-                            "html": "<p>Hello Sample Family</p>",
-                            "text": "Hello Sample Family",
-                        },
-                    }
-                ],
-            },
         ),
         # The schedule editor (Dates and mail schedules), as its view draws
         # it: the saved schedules' table, their editors and a blank row.

@@ -586,7 +586,6 @@ LEDGER = {
             "setup_branding",
             "setup_branding_asset",
             "setup_credential",
-            "setup_preview",
             "setup_confirmation",
             "setup_mail",
             "setup_mail_status",

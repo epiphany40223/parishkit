@@ -273,7 +273,7 @@ def test_finishing_setup_moves_on_in_place(page, component_origin, axe_source, w
     # The box's shown words, not its invisible reserved forms (#1903).
     shown = step.locator(".stage-body:not(.reserve-ghost)")
     has_text(shown.locator(".stage-status"), "In progress")
-    visible(shown.get_by_text("Checking the credential with the provider."))
+    visible(shown.get_by_text("Checking with the provider."))
     assert "sign-in" not in page.locator("main").inner_text()
     focused(summary)
     assert page.evaluate(MARKED) == "kept"
@@ -283,6 +283,11 @@ def test_finishing_setup_moves_on_in_place(page, component_origin, axe_source, w
     recorded(page, polls, 2)
     visible(page.get_by_role("heading", name="Setup is complete"))
     visible(page.locator(".setup-actions").get_by_role("link", name="Continue"))
+    # The notice carries no backup advice (#2152): just the result.
+    done = page.locator("[data-finishing-done]")
+    assert done.locator("p").all_inner_texts() == [
+        "The system is configured. Continue to the administration home."
+    ]
     assert page.get_by_role("button", name="Cancel initial setup").count() == 0
     has_text(page.locator("[data-live-announcer]"), "Setup is complete.")
     focused(summary)

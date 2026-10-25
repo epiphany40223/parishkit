@@ -35,11 +35,7 @@ from .test_setup_campaign_postgresql import completed
 from .test_setup_credentials_postgresql import publish
 from .test_setup_preparation_postgresql import with_schedules
 from .test_setup_staging_postgresql import login, setup_service  # noqa: F401
-from .test_setup_views_postgresql import (
-    admin_session,
-    reviewed,
-    setup_http,  # noqa: F401
-)
+from .test_setup_views_postgresql import setup_http  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -267,76 +263,25 @@ def test_retired_step_left_in_a_draft_blocks_neither_saving_nor_finishing(
     assert SetupDraftSection.objects.filter(step=step).exists()
 
 
-def test_preview_http_is_private_inert_and_shows_the_system_settings(
+def test_review_page_is_gone_and_finish_follows_the_load(
     setup_http, monkeypatch, tmp_path, settings
 ):
-    """Actual restricted web responses disclose public intent, never private bytes."""
+    """Setup has no Review page (#2145): its old address is not kept (no
+    redirect), and Finish setup's Back is Load parish data. Finish setup
+    still compiles the exact preview and shows no private bytes."""
     request, _, media = complete_draft(setup_http, monkeypatch, tmp_path)
     settings.STEWARDSHIP_MEDIA_ROOT = media
     browser = Client(enforce_csrf_checks=True)
     browser.cookies["pk_admin"] = request.session.session_key
     with web_login():
-        response = browser.get("/admin/setup/preview")
+        assert browser.get("/admin/setup/preview").status_code == 404
+        response = browser.get("/admin/setup/confirm")
         assert response.status_code == 200, response.content
-        assert response["Cache-Control"] == "no-store"
-        for expected in (
-            b"<h1>Review</h1>",
-            b"Sample Parish",
-            b"keys themselves are never displayed",
-        ):
-            assert expected in response.content
-        # Review follows the tests (#1476). Opened by its address before the
-        # email test was accepted, its Readiness names the test with a link
-        # to it, it offers no Continue (Finish setup waits), and it records
-        # no review, so it is asked for again once the test is accepted.
-        content = response.content.decode().split("<h1>", 1)[1]
-        assert "Check readiness and finish setup" not in content
-        assert 'href="/admin/setup/slack-test"' not in content
-        assert 'href="/admin/setup/confirm"' not in content
-        assert "Test email: not accepted for these settings yet." in content
-        assert '<a href="/admin/setup/mail-test">Go to “Test email”</a>' in content
-        assert "setup-continue" not in content
-        assert b"synthetic-private" not in response.content
-        assert "setup_reviewed" not in admin_session(browser)
-        # Setup collects no campaign (#142): no page or email samples.
-        assert b"Named pages and email samples" not in response.content
-        assert browser.post("/admin/setup/preview", {}).status_code in {403, 405}
-        assert browser.get("/admin/setup/preview?mode=production").status_code == 400
-    assert not setup_http.configured()
-
-
-def test_review_after_an_accepted_test_shows_it_and_continues_to_finish(
-    setup_http, monkeypatch, tmp_path, settings
-):
-    """With the email test of this draft version accepted, Review says so,
-    links no step from its body, continues to Finish setup and records the
-    review for this exact draft version only (#1476)."""
-    from .test_setup_confirmation_postgresql import prepared
-
-    request, _, _ = prepared(setup_http, monkeypatch, tmp_path)
-    settings.STEWARDSHIP_MEDIA_ROOT = tmp_path / "media"
-    browser = Client(enforce_csrf_checks=True)
-    browser.cookies["pk_admin"] = request.session.session_key
-    with web_login():
-        response = browser.get("/admin/setup/preview")
-        assert response.status_code == 200, response.content
-        content = response.content.decode().split("<h1>", 1)[1]
-        assert "Test email: accepted for these settings." in content
-        assert "Test Slack" not in content  # Slack is off
-        body = content.split('<div class="setup-actions">', 1)[0]
-        for path in ("/admin/setup/mail-test", "/admin/setup/confirm"):
-            assert f'href="{path}"' not in body, path
-        assert (
-            '<a class="setup-continue" data-nav-slot="next" '
-            'href="/admin/setup/confirm">' in content
-        )
-        # Back from Review is Load parish data (#1578).
+        content = response.content.decode()
         assert (
             '<a class="setup-back" data-nav-slot="back" href="/admin/setup/source">'
             in content
         )
-        attempt = SetupAttempt.objects.get()
-        assert reviewed(browser) == {
-            "attempt": str(attempt.pk),
-            "preview": attempt.version,
-        }
+        assert "/admin/setup/preview" not in content
+        assert "synthetic-private" not in content
+    assert not setup_http.configured()

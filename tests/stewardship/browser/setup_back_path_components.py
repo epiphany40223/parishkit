@@ -25,7 +25,7 @@ from ..test_setup_wizard import draft
 PROGRESS_DONE = "/setup-source-progress-done"
 PROGRESS_FAILED = "/setup-source-progress-failed"
 # The progress page as a re-read finds it once its load was discarded: its
-# step bar shows Load parish data not done and Review unavailable.
+# step bar shows Load parish data not done and Finish setup unavailable.
 PROGRESS_VOIDED = "/setup-source-progress-voided"
 SOURCE_LOADED = "/setup-source-loaded"
 SOURCE_RELOAD = "/setup-source-reload"
@@ -76,7 +76,7 @@ def wizard(task_state, current="source"):
     """The stepper on ``current`` after a load that ended in ``task_state``.
 
     The email test, which comes before the load (#1578), was accepted, so
-    Review follows a load that is still valid.
+    Finish setup follows a load that is still valid.
     """
     sections = VALUES | {
         "branding": {"bundle_id": str(uuid4())},

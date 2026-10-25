@@ -58,11 +58,6 @@ def admin_session(browser):
     return SessionStore(session_key=browser.cookies["pk_admin"].value)
 
 
-def reviewed(browser):
-    """The setup review marks recorded in this browser's admin session."""
-    return admin_session(browser)["setup_reviewed"]
-
-
 def started():
     """Only an explicit POST starts temporary work; callback and GET do not."""
     browser, response = signed_in()
