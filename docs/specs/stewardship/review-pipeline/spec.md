@@ -1993,18 +1993,19 @@ a Confirmed or Conflict the reader was not shown.
 
 ## Review wizard
 
-Status: **approved; slices 1 and 2 built**
+Status: **approved; slices 1 to 3 built**
 ([#2123](https://github.com/epiphany40223/parishkit/issues/2123)); the
 flow, behaviour and shared-code requirement below, and the page scope,
 waiting set, start page, Limitations pages, navigation rows, keyboard,
 menu and dashboard entries, are the Administrator's decisions of
 2026-10-24, and the spec was approved on 2026-10-24 with three changes:
 Finish opens My review work, runs have no time limit, and a reader may
-have several runs (one per tab). Its first two slices are built: the run
-storage, the start page, the page frame with its navigation, the menu
+have several runs (one per tab). Its first three slices are built: the
+run storage, the start page, the page frame with its navigation, the menu
 entry and the dashboard card (#2123, slice 1 of the
-[delivery plan](#wizard-delivery-plan)), then the shared section
-component and the Family pages (slice 2); the Member pages come next.
+[delivery plan](#wizard-delivery-plan)), the shared section component and
+the Family pages (slice 2), then the Member pages (slice 3); the tables'
+entry buttons come next.
 
 The review wizard is a third view of the same review data, beside each
 stream's [review worklist](#review-worklist) (bulk decisions over a table)
@@ -2261,8 +2262,9 @@ for the Administrator, #2123).
   `reports/review/<position>/?run=<run id>`, so the browser's Back and a
   reload show a page, the position survives a sign-out, and a GET never
   writes. A page reached by Previous or Next puts focus on the control that
-  was used (in the top row or the bottom row), so pressing Enter again
-  moves on.
+  was used (in the top row or the bottom row), without scrolling the
+  page, so pressing Enter again moves on and both rows stay at their
+  screen spots.
 - **Finish** marks the run finished and opens **My review work**, whose
   counts reflect what was done in the run. Leaving by the menu or a link
   keeps the run where it was.
@@ -2452,7 +2454,23 @@ Ministry part. The split:
   `census_tab(subject)`, `other_tab(keep=…)` and `ministry_tab(scoped=True)`
   parameters, which the narrowing makes unnecessary. A Ministry
   requests page reads through `hub_actions.ministry_worklist`, whose
-  `read_rows` is the leader-scoped read.
+  `read_rows` is the leader-scoped read; it takes the run's Members
+  choice (`members`, the table's default on the hub and always for a
+  Ministry leader), so a run started at Members no longer in ParishSoft
+  reads the list it was started from.
+- **Member pages** (#2123 slice 3) draw the hub Member tab's parts for
+  the run's stream, matching the Member on its entity, never the hub's
+  tab key. Census changes' Member and New Member pages draw the Member's
+  census subject (`census_subject`); a New Member's page shows its
+  "Adding this Member" line and the Family's answers for the Member.
+  Ministry requests' page draws the Member's requests
+  (`hub_streams.read_member_ministry`) decorated by `ministry_worklist`.
+  Limitations' Member page draws the Member's Cannot participate in
+  ministries answer from the hub's Additional answers, named as the hub's
+  tab names the Member. A request
+  or answer the stream's scoped read does not list for the reader is
+  neither drawn nor counted in the filtered-out line, so a Ministry
+  leader never learns of another Ministry's request for the same Member.
 - **Live replacements.** The stored item ids are first followed to their
   live replacements: a census change or Ministry request through
   `superseded_by`, an Additional information item through `replacement`.
@@ -2472,7 +2490,10 @@ Ministry part. The split:
   `review-pledge-section.html` (from `hub-financial-panel.html`, the
   contributions line included; takes `financial` and `pledge`) and
   `review-answers-section.html` (the Answers to handle table, from
-  `hub-other-panel.html`; takes `rows` and `actions_column`). Each also
+  `hub-other-panel.html`; takes `rows` and `actions_column`). The
+  wizard's Ministry requests pages pass `review-ministry-section.html`
+  Ministry requests' worklist of the drawn rows as `w`, as the hub's
+  Member tab does. Each also
   takes a `prefix`, which its ids carry. None of them draws the dialogs.
   They keep
   `hub-changed-table.html`, `hub-stage.html` and `hub-dialogs.html` as they
@@ -2545,7 +2566,7 @@ in slices 2 and 3:
    replacement; a page drawn after a decision shows the live stage and a
    stale action gets the stream's refusal; a leader who lost the Ministry
    sees no name; query-count tests per page.
-3. **Member pages**: Ministry requests (through
+3. **Member pages** (built): Ministry requests (through
    `hub_actions.ministry_worklist`, so a leader never gets a row for a
    Ministry they do not lead), Census
    Member and New Member pages and Limitations Member pages; browser
