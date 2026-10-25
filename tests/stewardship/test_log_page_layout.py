@@ -124,7 +124,8 @@ def _level_cells(html):
     The row header (Time) comes first, so this also proves the column order.
     """
     return re.findall(
-        r'<tr[^>]*>\s*<th scope="row">.*?</th>\s*<td class="log-level-cell">(.*?)</td>',
+        r'<tr[^>]*>\s*<th scope="row"(?: class="nowrap")?>.*?</th>'
+        r'\s*<td class="log-level-cell">(.*?)</td>',
         html,
         re.S,
     )

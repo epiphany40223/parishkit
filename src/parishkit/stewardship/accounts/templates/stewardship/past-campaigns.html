@@ -29,7 +29,7 @@ data-refresh-url (this page's address, with its sort).
 <td class="numeric nowrap">{{ row.pledged }}</td>
 <td class="numeric nowrap">{{ row.active }} {% blocktranslate asvar tip with source=row.provenance %}Counted from: {{ source }}{% endblocktranslate %}{% include "stewardship/components/toggletip.html" with tip_id="provenance-"|add:row.label tip_text=tip %}</td>
 <td>{% if row.archive.family_rows_kept %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}</td>
-<td><time datetime="{{ row.archive.imported_at|instant }}" data-local-instant data-compact>{{ row.archive.imported_at|instant }}</time>{% if row.imported_by %}<span class="cell-detail">{% translate "by" %} {{ row.imported_by.0 }}<wbr>{{ row.imported_by.1 }}</span>{% endif %}</td>
+<td><time class="nowrap" datetime="{{ row.archive.imported_at|instant }}" data-local-instant data-compact>{{ row.archive.imported_at|instant }}</time>{% if row.imported_by %}<span class="cell-detail">{% translate "by" %} {{ row.imported_by.0 }}<wbr>{{ row.imported_by.1 }}</span>{% endif %}</td>
 {% table_actions name=row.label delete=row.remove_value confirm="past-campaign-remove" field="archive" verb="remove" %}
 </tr>{% endfor %}</tbody>
 </table>
@@ -42,7 +42,7 @@ data-refresh-url (this page's address, with its sort).
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="past-campaign-files-caption">
 <table class="data-table whole-words"><caption id="past-campaign-files-caption">{% translate "Every import, with its file and SHA-256 checksum" %}</caption>
 <thead><tr><th scope="col">{% translate "Year" %}</th><th scope="col">{% translate "State" %}</th><th scope="col">{% translate "File" %}</th><th scope="col">{% translate "SHA-256" %}</th><th scope="col">{% translate "Removed" %}</th></tr></thead>
-<tbody>{% for row in tombstones %}<tr><th scope="row">{{ row.archive.campaign_year }}</th><td>{% if row.archive.state == "active" %}{% translate "Imported" %}{% else %}{% translate "Removed or replaced" %}{% endif %}</td><td>{{ row.archive.file_name|default:"—" }}</td><td><code>{{ row.archive.checksum }}</code></td><td>{% if row.archive.removed_at %}<time datetime="{{ row.archive.removed_at|instant }}" data-local-instant data-compact>{{ row.archive.removed_at|instant }}</time>{% if row.removed_by %} {% blocktranslate with who=row.removed_by %}by {{ who }}{% endblocktranslate %}{% endif %}{% else %}—{% endif %}</td></tr>{% endfor %}</tbody>
+<tbody>{% for row in tombstones %}<tr><th scope="row">{{ row.archive.campaign_year }}</th><td>{% if row.archive.state == "active" %}{% translate "Imported" %}{% else %}{% translate "Removed or replaced" %}{% endif %}</td><td>{{ row.archive.file_name|default:"—" }}</td><td><code>{{ row.archive.checksum }}</code></td><td>{% if row.archive.removed_at %}<time class="nowrap" datetime="{{ row.archive.removed_at|instant }}" data-local-instant data-compact>{{ row.archive.removed_at|instant }}</time>{% if row.removed_by %} {% blocktranslate with who=row.removed_by %}by {{ who }}{% endblocktranslate %}{% endif %}{% else %}—{% endif %}</td></tr>{% endfor %}</tbody>
 </table></div></details>{% endif %}
 </div>
 {% comment %}

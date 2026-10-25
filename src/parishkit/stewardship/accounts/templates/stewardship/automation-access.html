@@ -44,9 +44,9 @@
     <th scope="row">{{ row.principal_email|default:_("unknown") }}{% if row.own %} ({% translate "you" %}){% endif %}</th>
     <td>{{ row.label }}</td>
     <td>{{ row.scope_label }}</td>
-    <td><time datetime="{{ row.created_at|instant }}" data-local-instant data-compact>{{ row.created_at|instant }}</time></td>
-    <td><time datetime="{{ row.expires_at|instant }}" data-local-instant data-compact>{{ row.expires_at|instant }}</time></td>
-    <td>{% if row.last_used_at %}<time datetime="{{ row.last_used_at|instant }}" data-local-instant data-compact>{{ row.last_used_at|instant }}</time>{% else %}{% translate "Never" %}{% endif %}</td>
+    <td class="nowrap"><time datetime="{{ row.created_at|instant }}" data-local-instant data-compact>{{ row.created_at|instant }}</time></td>
+    <td class="nowrap"><time datetime="{{ row.expires_at|instant }}" data-local-instant data-compact>{{ row.expires_at|instant }}</time></td>
+    <td class="nowrap">{% if row.last_used_at %}<time datetime="{{ row.last_used_at|instant }}" data-local-instant data-compact>{{ row.last_used_at|instant }}</time>{% else %}{% translate "Never" %}{% endif %}</td>
     <td><code>{{ row.host }}</code></td>
     {% table_actions name=row.label delete=row.id confirm="session-revoke" field="session_id" verb="revoke" %}
   </tr>{% endfor %}</tbody>
@@ -69,10 +69,10 @@
   <tbody>{% for row in ended_table.rows %}<tr>
     <th scope="row">{{ row.label }}</th>
     <td>{{ row.scope_label }}</td>
-    <td><time datetime="{{ row.created_at|instant }}" data-local-instant data-compact>{{ row.created_at|instant }}</time></td>
-    <td><time datetime="{{ row.expires_at|instant }}" data-local-instant data-compact>{{ row.expires_at|instant }}</time></td>
-    <td>{% if row.last_used_at %}<time datetime="{{ row.last_used_at|instant }}" data-local-instant data-compact>{{ row.last_used_at|instant }}</time>{% else %}{% translate "Never" %}{% endif %}</td>
-    <td>{% if row.ended_at %}<time datetime="{{ row.ended_at|instant }}" data-local-instant data-compact>{{ row.ended_at|instant }}</time>{% else %}{% translate "Not yet recorded" %}{% endif %}</td>
+    <td class="nowrap"><time datetime="{{ row.created_at|instant }}" data-local-instant data-compact>{{ row.created_at|instant }}</time></td>
+    <td class="nowrap"><time datetime="{{ row.expires_at|instant }}" data-local-instant data-compact>{{ row.expires_at|instant }}</time></td>
+    <td class="nowrap">{% if row.last_used_at %}<time datetime="{{ row.last_used_at|instant }}" data-local-instant data-compact>{{ row.last_used_at|instant }}</time>{% else %}{% translate "Never" %}{% endif %}</td>
+    <td class="nowrap">{% if row.ended_at %}<time datetime="{{ row.ended_at|instant }}" data-local-instant data-compact>{{ row.ended_at|instant }}</time>{% else %}{% translate "Not yet recorded" %}{% endif %}</td>
     <td><code>{{ row.host }}</code></td>
     <td>{% if row.reason_label %}{{ row.reason_label }}{% elif row.revoked_at %}{% translate "Ended" %}{% else %}{% translate "Expired or no longer valid" %}{% endif %}</td>
   </tr>{% endfor %}</tbody>
