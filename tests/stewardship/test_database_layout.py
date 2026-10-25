@@ -21,6 +21,7 @@ import ipaddress
 import json
 import os
 import random
+import re
 import shutil
 import subprocess
 from dataclasses import replace
@@ -337,7 +338,10 @@ def test_a_rollout_then_a_rollback_keeps_the_data(tmp_path):
 
         # The rollout: the new rendering differs, the full stop moves to it.
         changes = run_layout("new", "changes")
-        assert "network backend differs from the rendered one (ip_range)" in changes
+        # Docker on Linux also reports the gateway the old network was given.
+        assert re.search(
+            r"network backend differs from the rendered one \(ip_range[,)]", changes
+        )
         assert "postgres is on backend but rendered on backend offline-" in changes
         run_layout("new", "full-stop")
         files["current"] = files["new"]
