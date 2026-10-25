@@ -4,8 +4,10 @@
   reports/review_sections.py. Each part is drawn by the shared section
   component the Family hub's panel includes for the same stream, so the
   wizard and the hub draw one markup: census (review-census-section.html),
-  pledge (review-pledge-section.html) or answers
-  (review-answers-section.html). Only the run's matched items are drawn;
+  pledge (review-pledge-section.html), answers
+  (review-answers-section.html) or ministry (review-ministry-section.html,
+  with Ministry requests' worklist of its rows as the hub's Member tab
+  passes it). Only the run's matched items are drawn;
   one quiet line, plain text with no control, then names how many of the
   subject's other items in the stream the run's filters leave out. The
   stream's row dialogs follow (hub-dialogs.html, posting to the stream's
@@ -15,5 +17,6 @@
 {% else %}{% for part in section.parts %}{% if part.kind == "census" %}{% include "stewardship/components/review-census-section.html" with subject=part.subject prefix=part.prefix %}
 {% elif part.kind == "pledge" %}{% include "stewardship/components/review-pledge-section.html" with financial=part.financial pledge=part.financial.pledge prefix=part.prefix %}
 {% elif part.kind == "answers" %}{% include "stewardship/components/review-answers-section.html" with rows=part.rows actions_column=part.actions_column prefix=part.prefix %}
+{% elif part.kind == "ministry" %}{% include "stewardship/components/review-ministry-section.html" with rows=part.rows w=part.worklist prefix=part.prefix %}
 {% endif %}{% endfor %}{% if section.filtered_out %}<p class="help" data-review-filtered-out>{% if member_page %}{% blocktranslate count number=section.filtered_out trimmed %}{{ number }} more in this stream for this Member is filtered out.{% plural %}{{ number }} more in this stream for this Member are filtered out.{% endblocktranslate %}{% else %}{% blocktranslate count number=section.filtered_out trimmed %}{{ number }} more in this stream for this Family is filtered out.{% plural %}{{ number }} more in this stream for this Family are filtered out.{% endblocktranslate %}{% endif %}</p>
 {% endif %}{% for w in section.dialogs %}{% include "stewardship/hub-dialogs.html" %}{% endfor %}{% endif %}

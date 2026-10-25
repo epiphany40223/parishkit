@@ -163,7 +163,9 @@ def census_tab(campaign_id, family_id, census, chosen, principal):
     )
 
 
-def ministry_worklist(campaign_id, principal, ids, *, prefix, writable):
+def ministry_worklist(
+    campaign_id, principal, ids, *, prefix, writable, members="current"
+):
     """The Ministry stream's worklist of the requests ``ids``, for a Member tab.
 
     Read and decorated exactly as Ministry requests reads and decorates its
@@ -171,9 +173,11 @@ def ministry_worklist(campaign_id, principal, ids, *, prefix, writable):
     stage, then narrowed to the Member's requests the tab shows (``ids``).
     A request Ministry requests does not list for this reader (one whose
     Member ParishSoft no longer lists, which offers nothing) has no row, so
-    the hub draws no icon for it either.
+    the hub draws no icon for it either. ``members`` is Ministry requests'
+    Members choice: the hub's is the table's default; a review wizard run
+    reads with the choice it was started with (#2123).
     """
-    query = WorklistQuery(stage=EVERY, size=str(max(PAGE_SIZES)))
+    query = WorklistQuery(stage=EVERY, size=str(max(PAGE_SIZES)), members=members)
     result = read_rows(campaign_id, query, principal)
     result = dict(result, rows=[row for row in result["rows"] if str(row["id"]) in ids])
     worklist = worklist_context(

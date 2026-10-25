@@ -28,8 +28,7 @@ through the stream's own scoped read (``review_sections``): only the run's
 matched items the read still lists for this reader are shown, and the
 subject is named only while one is, so a reader who lost access to a
 subject's items mid-run (a Ministry leader no longer leading a Ministry)
-never sees a name stored with the run. Family pages draw their section in
-this slice; Member pages' sections come with the next (#2123).
+never sees a name stored with the run (#2123).
 """
 
 from uuid import UUID
@@ -558,6 +557,7 @@ def _page_context(request, run, position, came_from, principal, campaign_id):
             subject,
             principal,
             parish_name=configuration.active_configuration.parish.name,
+            filters=run.filters,
         )
     listed = bool(section and section.listed)
     timeline = None

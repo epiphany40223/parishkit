@@ -22,10 +22,10 @@ panels include. Only two things are the wizard's own:
   Member stored in a run started earlier; nor does anyone see the name of
   a subject whose items all left the stream.
 
-This slice draws the Family pages' sections (Pledges, Additional
-information, the Census changes Family page and the Limitations Family
-page); a Member page's section comes with the next slice, but whether its
-subject is listed is read here already, for its heading.
+The Family pages (Pledges, Additional information, the Census changes
+and Limitations Family pages) came with the wizard's second slice, the
+Member pages (Census changes' Member and New Member pages, Ministry
+requests and Limitations' Member pages) with its third.
 """
 
 from dataclasses import dataclass, replace
@@ -35,17 +35,18 @@ from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.responses.limitation_review import answer_id
 
 from .hub_actions import (
+    attach,
     census_subject,
     census_worklist,
     financial_tab,
-    limitations_worklist,
+    items_of,
     ministry_worklist,
     mutable,
     other_tab,
     shown,
 )
-from .hub_census import read_hub_census
-from .hub_streams import read_hub_financial, read_hub_other
+from .hub_census import Subject, read_hub_census
+from .hub_streams import read_hub_financial, read_hub_other, read_member_ministry
 from .review_wizard import FAMILY
 
 # How many replacements a stored id is followed through: each resubmission
@@ -62,9 +63,11 @@ class Part:
 
     ``kind`` names the template: "census" (``review-census-section.html``,
     ``subject`` a ``hub_census.Subject``), "pledge"
-    (``review-pledge-section.html``, ``financial`` a ``HubFinancial``) or
+    (``review-pledge-section.html``, ``financial`` a ``HubFinancial``),
     "answers" (``review-answers-section.html``, ``rows`` and
-    ``actions_column``). ``prefix`` is what every id it draws carries.
+    ``actions_column``) or "ministry" (``review-ministry-section.html``,
+    ``rows`` and ``worklist``, Ministry requests' worklist of them).
+    ``prefix`` is what every id it draws carries.
     """
 
     kind: str
@@ -73,6 +76,7 @@ class Part:
     financial: object = None
     rows: tuple = ()
     actions_column: bool = False
+    worklist: object = None
 
 
 @dataclass(frozen=True)
@@ -99,8 +103,9 @@ class Section:
         found = 0
         for part in self.parts:
             if part.kind == "census":
-                found += len(part.subject.changed)
-            elif part.kind == "answers":
+                # A New Member's page shows its addition, not changed fields.
+                found += len(part.subject.changed) + bool(part.subject.addition)
+            elif part.kind in ("answers", "ministry"):
                 found += len(part.rows)
             else:
                 found += 1
@@ -141,18 +146,22 @@ def follow(model, link, ids):
     return current
 
 
-def read_section(stream, campaign, family, subject, principal, *, parish_name):
+def read_section(
+    stream, campaign, family, subject, principal, *, parish_name, filters=None
+):
     """The section of one wizard page: its stream's items for its subject.
 
     ``stream`` is the run's ``ReviewStream`` key, ``family`` the
-    ``FamilyCampaign`` and ``subject`` the run's stored subject (its
-    ``family``, ``kind``, ``key`` and ``items``). The stream page's own
-    access was checked by the caller; each read here is the stream's own,
-    under ``principal``.
+    ``FamilyCampaign``, ``subject`` the run's stored subject (its
+    ``family``, ``kind``, ``key`` and ``items``) and ``filters`` the run's
+    stored filters. The stream page's own access was checked by the
+    caller; each read here is the stream's own, under ``principal``.
     """
     stored = {str(item) for item in subject.get("items", ())}
     if subject["kind"] != FAMILY:
-        return _member(stream, campaign, family, subject, stored, principal)
+        return _member(
+            stream, campaign, family, subject, stored, principal, filters=filters or {}
+        )
     reads = {
         "census": _census_family,
         "pledges": _pledges,
@@ -240,20 +249,23 @@ def _pledges(campaign, family, stored, principal, *, parish_name):
     return Section(listed=True, parts=(part,), dialogs=dialogs)
 
 
-def _answers(campaign, family, principal, *, information, wanted):
+def _answers(campaign, family, principal, *, information, wanted, members=None):
     """The hub's Additional answers ``wanted`` keeps, with their actions.
 
     ``wanted(row, other)`` picks the rows of the page's stream from the
     ``HubOther`` read (before the row actions are read, so the other
-    stream is not read for nothing). Returns the ``HubOther`` with its row
-    actions (``hub_actions.other_tab``) and the rows its streams' scoped
-    reads list for this reader.
+    stream is not read for nothing). ``members``, the hub's Member
+    subjects, asks for the Members' Cannot participate answers too, named
+    as the hub's tab names them; without it only the Family's own answers
+    (and its Additional information item) are read.
+    Returns the ``HubOther`` with its row actions (``hub_actions.other_tab``)
+    and the rows its streams' scoped reads list for this reader.
     """
     other = read_hub_other(
         campaign.pk,
         family.pk,
-        (),
-        ministry=False,
+        members or (),
+        ministry=members is not None,
         information=information,
         family_duid=family.family_duid,
     )
@@ -349,34 +361,152 @@ def _limitations_family(campaign, family, stored, principal, *, parish_name):
     )
 
 
-def _member(stream, campaign, family, subject, stored, principal):
-    """A Member page: whether its Member is still listed for this reader.
+def _modules(campaign):
+    """The campaign's active modules."""
+    return set((campaign.active_configuration.values or {}).get("modules", ()))
 
-    The section itself comes with the wizard's next slice; the heading needs
-    to know now whether any of the Member's stored items is still in the
-    stream's scoped read (for a Ministry leader, only their Ministries').
+
+def _member_of(census, subject):
+    """The hub's Member subject the run's subject names.
+
+    Matched on the Member's entity as its change rows and requests name it
+    (``("member", DUID)`` or ``("proposed_member", local id)``), never on
+    the hub's tab key, which a later response can renumber. A Member the
+    hub's census read gives no tab (a Family whose only response predates
+    census) is an unnamed subject with that entity and no fields, so its
+    requests and answers are still read by the entity they carry.
+    """
+    entity = (subject["kind"], str(subject["key"]))
+    found = next((m for m in census.members if tuple(m.entity) == entity), None)
+    return found or Subject("", "", entity=entity)
+
+
+def _member(stream, campaign, family, subject, stored, principal, *, filters):
+    """A Member page's section: the Member's matched items of the stream.
+
+    Census changes and Limitations have Member pages after their Family
+    page; Ministry requests is one Member per page. The hub's census read
+    is made once and kept for the heading's Member name.
+    """
+    census = read_hub_census(
+        campaign.pk, family.pk, census="census" in _modules(campaign)
+    )
+    member = _member_of(census, subject)
+    reads = {
+        "census": _census_member,
+        "ministry": _ministry_member,
+        "limitations": _limitations_member,
+    }
+    if stream not in reads:
+        return Section(census=census)
+    found = reads[stream](
+        campaign, family, member, census, stored, principal, filters=filters
+    )
+    return replace(found, census=census)
+
+
+def _census_member(campaign, family, member, census, stored, principal, *, filters):
+    """A Census changes Member page: the Member's changes that matched.
+
+    For a New Member the matched item is the addition itself: the page then
+    shows its "Adding this Member" line with its stage and actions, and the
+    Family's answers for the Member, as the hub's New Member tab does.
     """
     from parishkit.stewardship.responses.models import ProposedChange
+
+    if member.awaiting:
+        return Section()
+    worklist = census_worklist(
+        campaign.pk,
+        family.pk,
+        principal,
+        prefix="review-member-census",
+        writable=mutable(campaign.pk),
+    )
+    if worklist is None:
+        return Section()
+    acted = census_subject(member, worklist)
+    keep = follow(ProposedChange, "superseded_by", stored)
+    listed = [row for row in (*acted.changed, acted.addition) if row and row.item]
+    matched = {row.item_id for row in listed if row.item_id in keep}
+    if not matched:
+        return Section()
+    # A New Member's rows are the Family's answers, not changes: all stay.
+    rows = tuple(row for row in acted.rows if not row.changed or row.item_id in matched)
+    narrowed = replace(
+        acted, rows=rows, actions=shown(worklist, (*rows, acted.addition))
+    )
+    return Section(
+        listed=True,
+        parts=(Part("census", "review-member", subject=narrowed),),
+        dialogs=(narrowed.actions,) if narrowed.acting else (),
+        filtered_out=len(listed) - len(matched),
+    )
+
+
+def _ministry_member(campaign, family, member, census, stored, principal, *, filters):
+    """A Ministry requests page: the Member's requests that matched, scoped.
+
+    The rows are the hub Member tab's (``read_member_ministry``: every
+    request in force for the Member), decorated by Ministry requests' own
+    leader-scoped read (``hub_actions.ministry_worklist``). Only the rows
+    that read lists for this reader can be drawn or counted, so a Ministry
+    leader never sees, nor has counted, a request for a Ministry they do not
+    lead. The run's Members choice is read as it was started (a leader's is
+    always the default, as the table's).
+    """
     from parishkit.stewardship.workflows.models import MinistryRequest
 
-    census = None
-    visible = set()
-    if stream == "census":
-        census = read_hub_census(campaign.pk, family.pk, census=True)
-        stored = follow(ProposedChange, "superseded_by", stored)
-        worklist = census_worklist(
-            campaign.pk, family.pk, principal, prefix="review-member", writable=False
-        )
-        visible = {str(row["id"]) for row in worklist.rows} if worklist else set()
-    elif stream == "ministry":
-        stored = follow(MinistryRequest, "superseded_by", stored)
-        worklist = ministry_worklist(
-            campaign.pk, principal, stored, prefix="review-member", writable=False
-        )
-        visible = {str(row["id"]) for row in worklist.rows}
-    elif stream == "limitations":
-        worklist = limitations_worklist(
-            campaign.pk, family.family_duid, principal, writable=False
-        )
-        visible = {str(row["id"]) for row in worklist.rows}
-    return Section(listed=bool(stored & visible), census=census)
+    from .ministry_worklist import is_leader
+
+    rows = read_member_ministry(campaign.pk, family.pk, member.entity)
+    ids = {row.item_id for row in rows if row.item_id}
+    if not ids:
+        return Section()
+    members = "current" if is_leader(principal) else filters.get("members", "current")
+    worklist = ministry_worklist(
+        campaign.pk,
+        principal,
+        ids,
+        prefix="review-ministry",
+        writable=mutable(campaign.pk),
+        members=members,
+    )
+    items = items_of(worklist)
+    listed = [attach(row, items) for row in rows if row.item_id in items]
+    keep = follow(MinistryRequest, "superseded_by", stored)
+    matched = tuple(row for row in listed if row.item_id in keep)
+    if not matched:
+        return Section()
+    worklist = shown(worklist, matched)
+    return Section(
+        listed=True,
+        parts=(Part("ministry", "review-ministry", rows=matched, worklist=worklist),),
+        dialogs=(worklist,) if worklist.acting else (),
+        filtered_out=len(listed) - len(matched),
+    )
+
+
+def _limitations_member(
+    campaign, family, member, census, stored, principal, *, filters
+):
+    """A Limitations Member page: the Member's Cannot participate answer.
+
+    Drawn from the hub's Additional answers, labelled with the hub's Member
+    names, with Limitations' own row actions. A Member has one Limitations
+    answer, so this page never has a filtered-out line.
+    """
+    own = answer_id(family.family_duid, *member.entity)
+    other, listed = _answers(
+        campaign,
+        family,
+        principal,
+        information=False,
+        wanted=lambda row, other: row.item_id == own,
+        members=census.members,
+    )
+    matched = [row for row in listed if row.item_id in stored]
+    if not matched:
+        return Section()
+    part, dialogs = _answers_part(other, matched)
+    return Section(listed=True, parts=(part,), dialogs=dialogs)

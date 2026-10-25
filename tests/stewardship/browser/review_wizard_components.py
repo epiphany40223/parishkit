@@ -2,14 +2,19 @@
 
 ``START_PATH`` is a Staff member's start page with two unfinished runs,
 every stream offered and Pledges greyed out with the menu's reason.
-``PAGE_PATHS`` are one run's three pages: a Family page first, a Member
-page and the last page, so the navigation rows can be compared across
-pages. The Family page draws its census section through the shared
-component, its home address change To review with Census changes' row
-actions and one change filtered out; ``ACCEPTED_PATH`` is that page once the
-change is accepted (a test serves it at the page's address, which the
-section redraws from). ``CARD_PATH`` is My review work with one unfinished
-run, whose card continues it.
+``PAGE_PATHS`` are one run's three pages, each of a different height, so
+the navigation rows can be compared across pages: a Family page first, a
+Member page and the last page, a New Member's. Each draws its census
+section through the shared component with Census changes' row actions:
+the Family page its home address change To review with one change
+filtered out, the Member page a deceased Member's two changes, the New
+Member page its addition and the Family's answers for the Member.
+``ACCEPTED_PATH`` and ``MEMBER_ACCEPTED_PATH`` are the Family and Member
+pages once a change is accepted (a test serves each at its page's
+address, which the section redraws from). ``FOCUS_PATH`` is the Member
+page opened by the bottom row's Next, ``BACK_PATH`` by the top row's
+Previous. ``CARD_PATH`` is My review work with one unfinished run, whose
+card continues it.
 """
 
 from datetime import UTC, datetime
@@ -48,6 +53,36 @@ START_PATH = "/review-wizard"
 PAGE_PATHS = ("/review-wizard-1", "/review-wizard-2", "/review-wizard-3")
 CARD_PATH = "/review-wizard-card"
 ACCEPTED_PATH = "/review-wizard-1-accepted"
+MEMBER_ACCEPTED_PATH = "/review-wizard-2-accepted"
+FOCUS_PATH = "/review-wizard-2-from-next"
+BACK_PATH = "/review-wizard-2-from-previous"
+# The hub unit tests' deceased Member 5, its two changes, and the Member the
+# Family added, with the ids their census worklist items carry.
+DECEASED = "11111111-0000-4000-8000-000000000005"
+DEATH_DATE = "11111111-0000-4000-8000-000000000006"
+ADDED = "6f1c1b6e-0000-4000-8000-000000000001"
+ADDITION = "11111111-0000-4000-8000-000000000008"
+MEMBER_CHANGES = {
+    DECEASED: {
+        "entity_key": "5",
+        "field": "deceased_status",
+        "handling": "manual",
+        "baseline_value": False,
+        "current_value": False,
+        "submitted_value": True,
+        "member_name": "Adams, Eve",
+    },
+    DEATH_DATE: {
+        "entity_key": "5",
+        "field": "death_date",
+        "handling": "manual",
+        "baseline_available": False,
+        "baseline_value": None,
+        "current_value": None,
+        "submitted_value": "2026-09-01",
+        "member_name": "Adams, Eve",
+    },
+}
 RUN = UUID(int=2123)
 STAFF = Principal(UUID(int=2123), frozenset({"staff"}))
 CONTEXTS = {
@@ -145,10 +180,59 @@ def family_section(**values):
     )
 
 
-def page_context(position, **values):
+def member_section(**values):
+    """The Member page's census section: Member 5's two changes, acting.
+
+    ``values`` decorate the first change (its decision, say).
+    """
+    census = hub_shape(ANSWERS, NAMES, hub_rows())
+    member = next(m for m in census.members if m.entity == ("member", "5"))
+    items = [
+        {"id": item} | change | (values if item == DECEASED else {})
+        for item, change in MEMBER_CHANGES.items()
+    ]
+    acted = census_subject(
+        member, census_worklist(*items, prefix="review-member-census")
+    )
+    return Section(
+        listed=True,
+        parts=(Part("census", "review-member", subject=acted),),
+        dialogs=(acted.actions,),
+    )
+
+
+def new_member_section():
+    """The New Member page's section: the addition To review and the
+    Family's answers for the Member."""
+    census = hub_shape(ANSWERS, NAMES, hub_rows())
+    member = next(m for m in census.members if m.entity == ("proposed_member", ADDED))
+    addition = {
+        "id": ADDITION,
+        "entity_kind": "proposed_member",
+        "entity_key": ADDED,
+        "field": "new_member",
+        "handling": "manual",
+        "baseline_available": False,
+        "baseline_value": None,
+        "current_value": None,
+        "submitted_value": ANSWERS["proposed_members"][ADDED],
+        "member_name": "Adams, Zed",
+    }
+    acted = census_subject(
+        member, census_worklist(addition, prefix="review-member-census")
+    )
+    return Section(
+        listed=True,
+        parts=(Part("census", "review-member", subject=acted),),
+        dialogs=(acted.actions,),
+    )
+
+
+def page_context(position, focus=None, **values):
     """One of the run's three pages: a Family page, a Member page, the last.
 
-    ``values`` decorate the Family page's change (its decision, say).
+    ``values`` decorate the page's first change (its decision, say), and
+    ``focus`` names the navigation control the page was opened by.
     """
     census = STREAMS[0]
     family = {
@@ -179,14 +263,15 @@ def page_context(position, **values):
         "previous_url": views.page_url(RUN, position - 1) if position > 1 else None,
         "next_url": views.page_url(RUN, position + 1) if position < 3 else None,
         "here_url": views.page_url(RUN, position),
-        "focus": {key.replace("-", "_"): False for key in views.FROM},
+        "focus": {key.replace("-", "_"): key == focus for key in views.FROM},
         "stream_url": "/admin/reports/census/",
         "timeline_url": "/admin/reports/families/" + str(UUID(int=7)) + "/",
         "start_url": "/admin/reports/review/",
         "listed": True,
         "member_page": position > 1,
-        # Member pages draw no section in this slice (#2123 slice 3).
-        "section": family_section(**values) if position == 1 else Section(listed=True),
+        "section": (family_section, member_section, new_member_section)[position - 1](
+            **values
+        ),
         "edit_today": "2026-10-24",
         "frequencies": [],
     }
@@ -222,6 +307,21 @@ def components(context, admin):
             base | page_context(1, decision="approved"),
         ),
     )
+    pages[MEMBER_ACCEPTED_PATH] = (
+        "text/html",
+        render_to_string(
+            "stewardship/review-wizard-page.html",
+            base | page_context(2, decision="approved"),
+        ),
+    )
+    for path, focus in ((FOCUS_PATH, "next-bottom"), (BACK_PATH, "previous-top")):
+        pages[path] = (
+            "text/html",
+            render_to_string(
+                "stewardship/review-wizard-page.html",
+                base | page_context(2, focus=focus),
+            ),
+        )
     runs = [("Census changes, Family 12 of 87", views.page_url(RUN, 12))]
     pages[CARD_PATH] = (
         "text/html",

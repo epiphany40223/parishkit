@@ -6,7 +6,11 @@ from parishkit.stewardship.reports.review_wizard_views import page_url
 
 from .review_wizard_components import (
     ACCEPTED_PATH,
+    BACK_PATH,
     CARD_PATH,
+    DECEASED,
+    FOCUS_PATH,
+    MEMBER_ACCEPTED_PATH,
     PAGE_PATHS,
     RUN,
     START_PATH,
@@ -100,16 +104,27 @@ def test_start_page_choices_show_only_the_chosen_streams_filters(
     expect(page.get_by_role("button", name="Start")).to_be_enabled()
 
 
-def test_the_navigation_rows_keep_their_place_on_every_page(page, component_origin):
+@pytest.mark.parametrize("width", [320, 1366])
+def test_the_navigation_rows_keep_their_place_on_every_page(
+    page, component_origin, axe_source, width
+):
     """Previous, Finish and Next sit in the same spots on a Family page, a
-    Member page and the last page, in both rows; page 1 keeps Previous's
-    slot empty and the last page's Next slot is Finish; the bottom row is
-    at the bottom of the screen."""
-    page.set_viewport_size({"width": 1024, "height": 700})
-    found = []
+    Member page and the last page (a New Member's), whose sections differ in
+    height, in both rows, on a phone and a desktop; page 1 keeps Previous's
+    slot empty and the last page's Next slot is Finish; the bottom row is at
+    the bottom of the screen; every page passes axe and scrolls no wider
+    than the screen."""
+    page.set_viewport_size({"width": width, "height": 700})
+    found, heights = [], set()
     for path in PAGE_PATHS:
         page.goto(component_origin + path)
         found.append(page.evaluate(SLOTS))
+        heights.add(page.locator("#review-section").bounding_box()["height"])
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        page.evaluate(axe_source)
+        assert page.evaluate(AXE) == [], path
+    # The pages' sections differ in height, so equal spots mean something.
+    assert len(heights) == len(PAGE_PATHS), heights
 
     # Every control's spot, wherever its slot shows one: Finish and Next on
     # the first two pages, Previous on the last two, the Next slot on all.
@@ -141,6 +156,7 @@ def test_the_navigation_rows_keep_their_place_on_every_page(page, component_orig
     expect(top.get_by_role("button", name="Next")).to_have_count(0)
     expect(top.get_by_role("button", name="Finish")).to_have_count(1)
     expect(page.locator("[data-review-heading]")).to_contain_text("New Member")
+    expect(page.locator("#review-section")).to_contain_text("Adding this Member:")
     page.goto(middle)
     expect(page.locator("[data-review-family]")).to_contain_text(
         "Member of Squyres, Jeff and Tracy"
@@ -232,3 +248,68 @@ def test_accept_on_a_family_page_redraws_its_section_in_place(page, component_or
     assert page.url.endswith(PAGE_PATHS[0])
     assert page.evaluate(SLOTS) == before
     assert_clean(page, errors)
+
+
+def test_accept_on_a_member_page_keeps_both_rows_in_place(page, component_origin):
+    """A Member page's section is the hub Member tab's: Accept opens Census
+    changes' own dialog and posts there, the section is redrawn in place
+    from the page's own address with Accept pressed and focused, and
+    neither navigation row moves, on a page taller than the screen."""
+    errors = watch(page)
+    page.set_viewport_size({"width": 1366, "height": 600})
+    page.goto(component_origin + PAGE_PATHS[1])
+    page.evaluate(MARK)
+    sent = []
+
+    def census(route):
+        """Keep the decision's body; answer as Census changes does."""
+        if route.request.method != "POST":
+            route.continue_()
+            return
+        sent.append(route.request.post_data)
+        route.fulfill(
+            content_type="text/html",
+            body="<!doctype html><p data-confirm-announce>Accepted.</p>",
+        )
+
+    def here(route):
+        """The page's own address after the decision: the accepted page."""
+        route.fulfill(response=route.fetch(url=component_origin + MEMBER_ACCEPTED_PATH))
+
+    page.route("**/admin/reports/census/", census)
+    page.route("**" + page_url(RUN, 2), here)
+    section = page.locator("#review-section")
+    before = page.evaluate(SLOTS)
+    row = section.locator(f"#review-member-census-row-{DECEASED}")
+    accept = row.locator("[data-row-action='accept']")
+    has_attribute(accept, "aria-pressed", "false")
+    accept.click()
+    dialog = page.locator("#review-member-census-decide-dialog")
+    visible(dialog)
+    dialog.get_by_role("button", name="Record").click()
+    hidden(dialog)
+    accept = section.locator(
+        f"#review-member-census-row-{DECEASED} [data-row-action='accept']"
+    )
+    has_attribute(accept, "aria-pressed", "true")
+    focused(accept)
+    assert "decide=accept" in sent[-1]
+    assert page.evaluate(MARKED) == "kept"
+    assert page.url.endswith(PAGE_PATHS[1])
+    assert page.evaluate(SLOTS) == before
+    assert_clean(page, errors)
+
+
+@pytest.mark.parametrize(
+    ("path", "row", "name"),
+    [(FOCUS_PATH, "bottom", "Next"), (BACK_PATH, "top", "Previous")],
+)
+def test_a_move_puts_focus_on_the_control_used(page, component_origin, path, row, name):
+    """The page Next or Previous opens puts focus on that control, in the
+    row it was used in, so Enter moves on again."""
+    page.set_viewport_size({"width": 1366, "height": 700})
+    page.goto(component_origin + path)
+    control = page.locator(f'[data-review-nav="{row}"]').get_by_role(
+        "button", name=name
+    )
+    focused(control)
