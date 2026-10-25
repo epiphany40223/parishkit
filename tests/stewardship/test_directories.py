@@ -345,7 +345,10 @@ def test_open_form_follows_the_mode_and_keeps_the_code_out_of_urls(testing):
     ) in html
     assert '<th scope="row">Codeless</th>' in html
     assert html.count("Example, Anna and John") == (2 if testing else 3)
-    assert ("data-open-form-notice" in html) is not testing
+    # The Open form explanation is in the About panel, not a banner above the
+    # table (#2143).
+    assert "data-open-form-notice" not in html
+    assert "signs this browser in as that Family" in html
     assert ("appear next to the codes once the campaign is live" in html) is testing
 
 

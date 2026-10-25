@@ -49,9 +49,10 @@ def test_outgoing_mail_marks_emails_with_refused_addresses(page, component_origi
 def test_link_line_stays_on_screen_with_the_about_panel_open(page, component_origin):
     """An Administrator who keeps Sent mail's About panel open still sees
     the link line on a laptop screen (#938): the panel's long help opens
-    below the heading, and the links sit above it, so the help cannot push
-    them below the fold. Visible is not enough; the link must be inside the
-    window without scrolling."""
+    below the heading, and the link sits above it, so the help cannot push
+    it below the fold. Visible is not enough; the link must be inside the
+    window without scrolling. The line no longer repeats the menu's Mail
+    queue and Family email history (navigation rule 11, #2143)."""
     from playwright.sync_api import expect
 
     viewport = {"width": 1280, "height": 720}
@@ -66,21 +67,13 @@ def test_link_line_stays_on_screen_with_the_about_panel_open(page, component_ori
     help_box = panel.locator(".about-page-body").bounding_box()
     assert help_box["y"] + help_box["height"] > viewport["height"]
     assert page.evaluate("scrollY") == 0
-    for name in (
-        "Review refused addresses (3 unresolved)",
-        "See the mail queue",
-        "See Family email history",
-    ):
-        box = page.get_by_role("link", name=name).bounding_box()
-        assert box is not None, name
-        assert box["y"] >= 0 and box["y"] + box["height"] <= viewport["height"], (
-            name,
-            box,
-        )
-        assert box["x"] >= 0 and box["x"] + box["width"] <= viewport["width"], (
-            name,
-            box,
-        )
+    link = page.get_by_role("link", name="Review refused addresses (3 unresolved)")
+    box = link.bounding_box()
+    assert box is not None
+    assert box["y"] >= 0 and box["y"] + box["height"] <= viewport["height"], box
+    assert box["x"] >= 0 and box["x"] + box["width"] <= viewport["width"], box
+    for name in ("See the mail queue", "See Family email history"):
+        expect(page.get_by_role("link", name=name)).to_have_count(0)
 
 
 def test_without_refusals_the_link_line_is_unchanged(page, component_origin):
@@ -127,8 +120,9 @@ def test_refused_addresses_name_the_family_and_link_the_email(page, component_or
     assert email.get_attribute("href").startswith("/admin/mail/sent/")
     # Browser-local time: noon UTC in the fixture browser's Los Angeles.
     expect(row.locator("time").first).to_contain_text("5:00 AM")
-    back = page.get_by_role("link", name="See all sent mail")
-    assert back.get_attribute("href") == "/admin/mail/sent/"
+    # The breadcrumb and the menu lead back to Sent mail; the page repeats
+    # neither with a link of its own (navigation rule 11, #2143).
+    expect(page.get_by_role("link", name="See all sent mail")).to_have_count(0)
 
 
 def test_a_refused_address_names_its_family_and_links_the_email(page, component_origin):

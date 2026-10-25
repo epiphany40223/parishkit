@@ -47,7 +47,10 @@ def test_progress_pages_are_accessible_at_phone_and_desktop_widths(
             assert "emails finished" in name
         # Counts change on every poll, so the region itself never speaks.
         assert page.locator(REGION).get_attribute("aria-live") is None
-        assert page.get_by_role("link", name="Sent mail").count() >= 1
+        # The link line above the heading keeps only the section the menu
+        # does not reach (navigation rule 11, #2143).
+        why = page.get_by_role("link", name="Why sends are waiting (System health)")
+        assert why.count() == 1
         # Four headline tiles and one row per kind Sent mail lists.
         tiles = page.get_by_role("list", name="Emails waiting to go out")
         assert tiles.get_by_role("listitem").count() == 4

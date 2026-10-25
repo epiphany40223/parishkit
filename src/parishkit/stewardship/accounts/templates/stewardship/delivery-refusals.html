@@ -6,7 +6,6 @@
 <p>{% translate "Each row shows when the address was refused, the Family's name from the latest ParishSoft data (as in the Active parishioner family directory) and, in its own column, the Family DUID. Select the address to check it and clear the refusal. In the Email column, Open email shows the email whose delivery recorded the refusal; that email may still show Delivered, because another address of the Family accepted it." %}</p>
 <p>{% translate "An address marked Bounce reported was not refused by the mail service: an Administrator reported, on the email's page, that the email bounced there. It is set aside and cleared the same way." %}</p>
 <p>{% translate "On Sent mail, each email with a refused address that is still being skipped is marked, and the mark leads here, showing only that Family's refused addresses. The Family and Family DUID columns both sort, and either keeps each Family's addresses together; Families the latest ParishSoft data no longer has sort last." %}</p>{% endaboutpage %}
-<p><a href="{% url 'admin:deliveries' %}">{% translate "See all sent mail" %}</a></p>
 <form id="table-filters" data-table-sync method="get" class="filter-bar">
   <div class="short"><label for="family-duid">{% translate "Exact Family DUID" %}</label>
   <input id="family-duid" name="duid" value="{{ query }}" inputmode="numeric" maxlength="25"></div>

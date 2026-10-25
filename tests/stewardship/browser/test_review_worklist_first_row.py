@@ -95,28 +95,6 @@ def test_the_first_row_ends_inside_a_laptop_window(page, component_origin):
         assert no_sideways_scroll(page), path
 
 
-@pytest.mark.parametrize("width", [1366, 320])
-def test_the_pledges_link_sits_on_the_heading_row(page, component_origin, width):
-    """Pledges' Financial stewardship link shares the heading's row with
-    About this page (on a phone, About's line), and opening About shows its
-    help below that row without moving the link."""
-    page.set_viewport_size({"width": width, "height": 768})
-    page.goto(component_origin + PLEDGES)
-    link = page.get_by_role("link", name="Financial stewardship", exact=True)
-    about = page.locator("details.about-page > summary")
-    closed = link.bounding_box()
-    toggle = about.bounding_box()
-    # Beside About, on its line.
-    assert closed["x"] >= toggle["x"] + toggle["width"]
-    assert closed["y"] < toggle["y"] + toggle["height"]
-    assert closed["y"] + closed["height"] > toggle["y"]
-    about.click()
-    help_box = page.locator(".about-page-body").bounding_box()
-    assert link.bounding_box() == closed
-    assert help_box["y"] >= toggle["y"] + toggle["height"] - 1
-    assert no_sideways_scroll(page)
-
-
 def test_narrow_windows_never_scroll_sideways(page, component_origin):
     """At 320 px every worklist page fits the window's width."""
     page.set_viewport_size({"width": 320, "height": 768})

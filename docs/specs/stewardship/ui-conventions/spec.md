@@ -2724,8 +2724,9 @@ started. **Why.** One registry and one set of rules keep the menu, the
 trails and the page names from drifting. **Shared code.** The registry in
 `accounts/admin_navigation.py`; `test_admin_navigation.py`,
 `test_admin_page_names.py`, `test_admin_ways_back.py`,
+`test_admin_top_links.py`,
 `test_admin_message_links.py` and `test_admin_reachability_postgresql.py`.
-**Precedent.** #520, #521, #522. Where each page sits (its menu group,
+**Precedent.** #520, #521, #522, #2143. Where each page sits (its menu group,
 parent, name and URL) is feature placement and stays in the Admin portal's
 [Admin navigation](../admin-portal/spec.md#admin-navigation).
 
@@ -2810,6 +2811,20 @@ registry and the rendered pages.
     chooser addresses are gone (404, #864). New campaign is removed outright ([decision
     11](../admin-portal/spec.md#navigation-decisions)), not greyed, and so are the "Choose a retained
     campaign" links once greyed on Participation and Ministry requests (#1125).
+11. **No top links that repeat the menu.** The menu is the way between
+    pages, so no Admin page has, above its heading or between its heading
+    and its main content (its first section, form, table or panel), a bare
+    link or line of links to a menu entry, nor a banner that only points
+    elsewhere ([#2143](https://github.com/epiphany40223/parishkit/issues/2143),
+    Administrator, 2026-10-24). A top link stays only when it leads
+    somewhere the menu does not: a page outside the menu (Sent mail's
+    Review refused addresses), a section of a page (the Mail queue's Why
+    sends are waiting) or the specific record or view the page came from;
+    its spec says why. What a removed banner explained moves to the page's
+    About panel when it is still true and useful. Error pages are outside
+    this rule (rule 3 has them offer a way out). `test_admin_top_links.py`
+    checks every Admin template, with an allow-list that names each
+    exception's reason.
 
 ### Wizards
 
@@ -2996,8 +3011,9 @@ click away, without removing any of it. A page leads with its heading, its own
 data line (such as counts or the ParishSoft data date), safety notices (such as
 Testing mode) and then its data or form; at most a one-line hint that prevents
 a likely mistake stays visible above the data. A line of cross-links to
-related pages may sit above the heading instead, when an About panel left
-open would otherwise push it out of view (#938). An ordinary
+related pages the menu does not offer (navigation rule 11) may sit above
+the heading instead, when an About panel left open would otherwise push it
+out of view (#938). An ordinary
 settings or editor page's body does not repeat a menu entry as a plain
 navigation link: the menu is how an Admin moves between pages, so such a body
 links only pages the menu does not offer (such as a child page whose
