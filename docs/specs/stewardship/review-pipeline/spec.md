@@ -2182,6 +2182,9 @@ Each page has, top to bottom:
   Member with the hub's New Member badge. The browser title is
   "Review one at a time: *stream*, *progress*", without the name, as the
   Timeline's title leaves it out.
+  The last breadcrumb says the same, "*stream*, *progress*", so the trail
+  does not repeat its parent crumb, Review one at a time; a run that is
+  no longer open reads "Closed review".
 - **The navigation row, first copy**, with the progress line
   ([wizard navigation](#wizard-navigation)), under the heading and above
   the section. The progress is one line in the
@@ -2276,6 +2279,15 @@ after a confirmation
 and redraws the list in place). The panel is absent when there are none.
 **Start** on the choices below always creates a new run, leaving the
 others as they are.
+
+When no stream is offered to the reader, the start page answers 403. A
+Ministry leader who leads no Ministry gets the plain sentence the
+Ministry pages give them ([Ministry leaders from
+ParishSoft](../admin-portal/spec.md#ministry-leaders-from-parishsoft),
+`reports.ministries.unscoped`, #2165), not the generic sign-in denial;
+the page reuses that code, so the wording stays in one place. Any other
+reader keeps the generic denial, and a signed-out reader goes to
+sign-in.
 
 A page address carries its run's id. A run that was discarded (in this
 or another tab) or finished says "This review is no longer open." with a

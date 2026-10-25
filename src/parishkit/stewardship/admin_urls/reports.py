@@ -40,6 +40,7 @@ from ..reports import (
     ministry_followup_exports,
     ministry_followup_views,
     pledge_review_views,
+    review_wizard_views,
     timeline_views,
     weekly_views,
     workspace_views,
@@ -90,6 +91,15 @@ patterns = [
         "reports/financial/pledges/exports/",
         pledge_review_views.export,
         "pledges_to_enter_export",
+    ),
+    # Review one at a time (#2123): the start page, which also starts and
+    # discards runs, and a run's pages, whose Previous, Next and Finish post
+    # to the page they open. The run travels as ?run=<id>.
+    _page("reports/review/", review_wizard_views.start, "review_wizard"),
+    _page(
+        "reports/review/<int:position>/",
+        review_wizard_views.page,
+        "review_wizard_page",
     ),
     _page("reports/limitations/", limitation_views.report, "limitations_report"),
     _page(

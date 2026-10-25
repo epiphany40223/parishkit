@@ -104,24 +104,24 @@
    continue) is longer than the Family form's Next, and a wrapped primary
    reads worse than a middle set a little off center on the one step whose
    labels need it. */
-.setup-actions, .campaign-step-actions {
+.setup-actions, .campaign-step-actions, .review-wizard-actions {
   display: grid; grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
   grid-template-areas: "back action next"; align-items: start; column-gap: .75rem; row-gap: 0;
 }
 .campaign-step-actions { margin-block: 1.5rem .25rem; }
-.setup-actions > *, .campaign-step-actions > * { margin: 0; }
-:is(.setup-actions, .campaign-step-actions) > [data-nav-slot="back"] { grid-area: back; justify-self: start; }
-:is(.setup-actions, .campaign-step-actions) > [data-nav-slot="action"] { grid-area: action; justify-self: center; }
-:is(.setup-actions, .campaign-step-actions) > [data-nav-slot="next"] { grid-area: next; justify-self: end; }
+.setup-actions > *, .campaign-step-actions > *, .review-wizard-actions > * { margin: 0; }
+:is(.setup-actions, .campaign-step-actions, .review-wizard-actions) > [data-nav-slot="back"] { grid-area: back; justify-self: start; }
+:is(.setup-actions, .campaign-step-actions, .review-wizard-actions) > [data-nav-slot="action"] { grid-area: action; justify-self: center; }
+:is(.setup-actions, .campaign-step-actions, .review-wizard-actions) > [data-nav-slot="next"] { grid-area: next; justify-self: end; }
 /* A label wraps only between words. main's overflow-wrap: anywhere would
    let a narrow phone (or a wider font) squeeze Back to "Ba" / "ck" beside a
    long primary; with normal wrapping each word's width is its column's
    minimum, so Back keeps one line and the primary wraps between words. */
-:is(.setup-actions, .campaign-step-actions) > [data-nav-slot] { overflow-wrap: normal; }
+:is(.setup-actions, .campaign-step-actions, .review-wizard-actions) > [data-nav-slot] { overflow-wrap: normal; }
 /* A form in a slot (Continue, Stop go-live, a go-live primary) drops the
    global button margin, as the primary's own button does, so the slots'
    buttons are equally tall and line up. */
-:is(.setup-actions, .campaign-step-actions) > form button { margin: 0; }
+:is(.setup-actions, .campaign-step-actions, .review-wizard-actions) > form button { margin: 0; }
 /* Narrower, three long labels no longer fit one line, and the labels differ
    from step to step, so the row does not shorten them (as the Family bar
    does on a phone): Back and the primary share the first line, each column
@@ -132,11 +132,38 @@
    own margin spaces it), so the steps without a middle action keep one
    line. */
 @media (max-width: 48rem) {
-  .setup-actions, .campaign-step-actions {
+  .setup-actions, .campaign-step-actions, .review-wizard-actions {
     grid-template-columns: auto auto; grid-template-areas: "back next" "action action";
   }
   :is(.setup-actions, .campaign-step-actions) > [data-nav-slot="action"] { margin-block-start: .75rem; }
 }
+/* The review wizard's two navigation rows (#2123; review pipeline spec,
+   "Wizard navigation"): Previous, Finish and Next in the stepper's three
+   fixed slots, with the run's progress line and a slim bar above them.
+   Their labels are short, so the row stays one line at every width (the
+   rule above would move Finish to a line of its own on a phone, and the
+   last page, whose Finish is in Next's slot, would then be a line shorter:
+   the section under the top row would move). The progress line has a fixed
+   height, so a longer progress ("Family 12 of 87, Member 2 of 3") never
+   moves the buttons. The bottom row is pinned to the bottom of the screen
+   (sticky, over a page at least a screen tall), as the Family form's bar
+   is (#2063), so Previous and Next sit at the same screen spots on every
+   page whatever the section's height. */
+.review-wizard-actions { grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr); grid-template-areas: "back action next"; }
+/* The heading and the line under it (the Member's Family, empty on a Family
+   page) are one line each, so the top row never moves: a long name is cut
+   with an ellipsis, and its whole text stays the heading's. */
+.review-wizard-heading, .review-wizard-of { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.review-wizard-heading { height: 1.3em; line-height: 1.3em; }
+.review-wizard-heading .status-badge { line-height: 1.2; vertical-align: .15em; }
+.review-wizard-of { height: 1.5em; line-height: 1.5em; margin-block: 0; }
+.review-wizard-nav { margin-block: .5rem 1rem; }
+.review-wizard-progress { margin: 0; height: 1.5em; line-height: 1.5em; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.review-wizard-bar { display: block; width: 100%; height: .4rem; margin: .25rem 0 .75rem; }
+.review-wizard-page { min-height: 100dvh; display: flex; flex-direction: column; }
+.review-wizard-page > .review-wizard-body { flex: 1 0 auto; }
+.review-wizard-nav-bottom { position: sticky; bottom: 0; z-index: 3; margin-block-end: 0; padding-block: .5rem; background: var(--page); border-top: 1px solid var(--border); }
+@media print { .review-wizard-nav { display: none; } }
 /* A direct-save step's primary (#1404 PR 4): Continue and Save and continue
    share one grid cell, so the cell is as wide as the longer label and the
    switch between them moves nothing; the one not offered keeps its space

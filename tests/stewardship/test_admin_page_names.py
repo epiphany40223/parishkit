@@ -90,6 +90,7 @@ TEMPLATES = {
     "campaign_comparison": "campaign-comparison.html",
     "financial_report": "financial-report.html",
     "pledges_to_enter": "pledges-to-enter.html",
+    "review_wizard": "review-wizard-start.html",
     "limitations_report": "limitations-report.html",
     "census_changes": "census-changes.html",
     "update_parishsoft": "update-parishsoft.html",
@@ -113,6 +114,8 @@ TEMPLATES = {
 # after its report.
 OBJECT_NAMED = {
     "content_edit",
+    # One review wizard page is named after its Family or Member (#2123).
+    "review_wizard_page",
     # One email is named after its type and Family (#1015).
     "delivery",
     "content_revision",

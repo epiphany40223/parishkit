@@ -4,7 +4,8 @@
   {% comment %}My review work (#1690; review pipeline spec, "Role views", decision 8): what a Staff member or Ministry leader signs in to instead of Home, with nothing above it.{% endcomment %}
   <h1>{% translate "My review work" %}</h1>
   {% aboutpage "my-review-work" %}<p>{% translate "What Families sent that is waiting for you, by kind. Each card counts the items at one step of the work; select it to open the list." %}</p><p>{% translate "Each count is the number its list shows at that step, so a card with a count of 0 opens an empty list. The menu shows one number per list: what is waiting To review (for Census changes, To review and Conflict together). Not seen in ParishSoft appears only while something marked Entered by hand still does not show in ParishSoft after several refreshes." %}</p>{% endaboutpage %}
-  {% review_panels review as panels %}
+  {% review_panels review as panels %}{% review_wizard_cards review as wizard_cards %}
+  {# Review one at a time (#2123): its card first, ahead of the stream panels, as its menu entry is first. #}{% if wizard_cards %}<div class="review-work-wizard" data-review-wizard-card><span id="review-wizard-cards-label" class="visually-hidden">{% translate "Review one at a time" %}</span>{% include "stewardship/components/link-cards.html" with cards=wizard_cards cards_labelledby="review-wizard-cards-label" %}</div>{% endif %}
   {% if not review.campaign %}<p>{% translate "There is no current campaign, so there is nothing to review." %}</p>
   {% elif panels %}{% include "stewardship/review-work-panels.html" %}
   {% else %}<p>{% translate "Nothing from Families is waiting for you to review." %}</p>{% endif %}

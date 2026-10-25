@@ -1,0 +1,66 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% comment %}
+  Review one at a time, the review wizard's start page (#2123; review
+  pipeline spec, "Wizard flow" and "Wizard resume"), from
+  review_wizard_views.start.
+
+  - The reader's unfinished runs, when there are any: one row each (the
+    stream, its filters in words, its progress, when it was last used, in
+    the browser's time), with Continue (its current page) and Discard,
+    which asks first in the shared confirmation dialog, posts the run with
+    the table's form and redraws the list in place (data-row-actions).
+  - The choices, one form: the stream (a radio group of the streams the
+    reader's menu offers, a greyed one disabled with the menu's reason; not
+    shown when there is one), Basic or Advanced filters and the sort. Each
+    stream's filters are drawn below the group and shown only while it is
+    chosen (data-show-when, which also keeps the hidden ones from being
+    sent): Basic is one name search, Advanced the stream's Stage (with
+    Waiting, Basic's set, first) and its table's own filter template. Start
+    always starts a new run, leaving the others as they are; it waits
+    until a stream is chosen (the complete gate, data-require-complete).
+  - A refused start (nothing matches, or more than 5,000 pages) is drawn
+    again as posted, with its words in the reserved line above Start.
+{% endcomment %}
+{% block title %}{% translate "Review one at a time" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Review one at a time" %}</h1>
+{% aboutpage "review-wizard" %}<p>{% translate "Review one Family or Member at a time, with Previous and Next. Each page shows what that Family or Member sent for the stream you choose, with the same actions as the Family's Timeline; acting is optional, and you can finish at any time. The Review work tables remain for deciding many items at once." %}</p>{% endaboutpage %}
+{# The runs' region is always drawn, so Discarding the last run redraws it in place (empty) rather than reloading the page. #}<div id="review-runs" data-table-region data-refresh-url="{{ start_url }}" tabindex="-1">{% if runs %}<section class="panel" aria-labelledby="review-runs-heading">
+  <h2 id="review-runs-heading" tabindex="-1">{% translate "Unfinished reviews" %}</h2>
+  {# The table's form holds only the CSRF token: each Discard names it (form=), so the rows' Continue links stay outside any form's group of buttons. #}<form method="post" action="{{ start_url }}" id="review-run-actions" data-row-actions>{% csrf_token %}</form>
+  <div class="table-scroll" tabindex="0" role="region" aria-labelledby="review-runs-caption">
+  <table data-review-runs><caption id="review-runs-caption">{% translate "Your unfinished reviews" %}</caption>
+  <thead><tr><th scope="col">{% translate "Stream" %}</th><th scope="col">{% translate "Filters" %}</th><th scope="col">{% translate "Progress" %}</th><th scope="col">{% translate "Last used" %}</th><th scope="col">{% translate "Actions" %}</th></tr></thead>
+  <tbody>{% for run in runs %}<tr data-review-run="{{ run.id }}">
+    <th scope="row">{{ run.stream }}</th>
+    <td>{{ run.filters }}</td>
+    <td>{{ run.progress }}</td>
+    <td><time datetime="{{ run.updated_at|instant }}" data-local-instant data-compact>{{ run.updated_at|instant }}</time></td>
+    <td class="table-actions">{% blocktranslate asvar continue_label with name=run.label %}Continue {{ name }}{% endblocktranslate %}{% button href=run.url aria-label=continue_label %}{% translate "Continue" %}{% endbutton %} {% blocktranslate asvar discard_label with name=run.label %}Discard {{ name }}{% endblocktranslate %}{% button type="button" variant="secondary" form="review-run-actions" name="discard" value=run.id aria-label=discard_label data-confirm-open="review-run-discard" data-confirm-name=run.label %}{% translate "Discard" %}{% endbutton %}</td>
+  </tr>{% endfor %}</tbody>
+  </table>
+  </div>
+  {% translate "Discard {name}?" as title_one %}{% translate "Discard {count} reviews?" as title_many %}{% translate "The review's place and its list of Families or Members are removed. Nothing you decided in it is undone." as body %}{% translate "Discard" as accept %}
+  {% include "stewardship/components/confirm-dialog.html" with dialog_id="review-run-discard" form_id="review-run-actions" fallback="review-runs" title_one=title_one title_many=title_many body=body caution="" accept=accept done_one=_("Discarded {name}.") done_many=_("Discarded {count} reviews.") %}
+</section>{% endif %}</div>
+<section class="panel" aria-labelledby="review-start-heading">
+<h2 id="review-start-heading">{% translate "Start a review" %}</h2>
+<form method="post" action="{{ start_url }}" id="review-wizard-start" class="flow" data-review-start data-require-complete data-missing-hint="{% translate 'Choose a stream to start.' %}">{% csrf_token %}
+{% if single %}{% with only=streams.0 %}<input type="hidden" name="stream" value="{{ only.stream.key }}"><p>{% blocktranslate with stream=only.label %}Stream: {{ stream }}{% endblocktranslate %}</p>{% endwith %}
+{% else %}<fieldset class="choice-pair" id="review-stream" aria-labelledby="review-stream-legend"><legend id="review-stream-legend">{% translate "Stream" %}</legend>
+<span class="choice-pair-options">{% for item in streams %}<label for="review-stream-{{ item.stream.key }}"><input type="radio" id="review-stream-{{ item.stream.key }}" name="stream" value="{{ item.stream.key }}"{% if item.stream.key == chosen %} checked{% endif %} required{% if not item.available %} disabled aria-describedby="review-stream-{{ item.stream.key }}-reason"{% endif %}>{{ item.label }}</label>{% endfor %}</span>
+{% for item in streams %}{% if not item.available %}<p class="help" id="review-stream-{{ item.stream.key }}-reason">{{ item.label }}: {{ item.reason }}</p>{% endif %}{% endfor %}
+</fieldset>{% endif %}
+{% include "stewardship/components/choice-pair.html" with pair_id="review-mode" name="mode" legend=_("Filters") first_value="basic" first_label=_("Basic") second_value="advanced" second_label=_("Advanced") chosen=mode %}
+{% for item in streams %}{% if item.available %}<div class="filters" data-show-when="stream={{ item.stream.key }}" data-review-filters="{{ item.stream.key }}">
+<div data-show-when="mode=basic"><div><label for="{{ item.stream.key }}-basic-search">{% translate "Search name" %}</label><input id="{{ item.stream.key }}-basic-search" name="search" maxlength="200" value="{{ item.search }}"></div><p class="help">{% translate "Only what is still waiting for someone to act on it." %}</p></div>
+<div data-show-when="mode=advanced"><div><label for="{{ item.stream.key }}-stage">{% translate "Stage" %}</label><select id="{{ item.stream.key }}-stage" name="stage">{% for value, label in item.stages %}<option value="{{ value }}"{% if item.stage == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+{% with drawn=item.context %}{% include item.stream.filters_template with query=drawn.query search=drawn.search route_choices=drawn.route_choices kind_choices=drawn.kind_choices ministries=drawn.ministries members_choices=drawn.members_choices %}{% endwith %}</div>
+</div>{% endif %}{% endfor %}
+<div><label for="review-sort">{% translate "Sort" %}</label><select id="review-sort" name="sort">{% for value, label in sorts %}<option value="{{ value }}"{% if sort == value %} selected{% endif %}>{% translate label %}</option>{% endfor %}</select></div>
+<p class="action-status" id="review-start-notice" data-review-notice{% if refused %} role="alert"{% endif %}>{{ notice|default:"" }}</p>
+{% button type="submit" name="start" value="1" aria-describedby="review-start-hint" %}{% translate "Start" %}{% endbutton %}
+<p class="help" id="review-start-hint" data-complete-hint="reserve"></p>
+</form>
+</section>
+{% endblock %}

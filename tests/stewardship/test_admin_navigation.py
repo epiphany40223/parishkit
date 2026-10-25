@@ -581,6 +581,7 @@ ROLES = ("administrator", "staff", "ministry_leader")
 # Which entries each role sees, whatever the mode or campaign state: Review
 # work, then Reports and queries (R39 findings 1 and 4).
 REPORTS = [
+    "review_wizard",
     "census_changes",
     "ministry_report",
     "pledges_to_enter",
@@ -613,6 +614,7 @@ SPEC_ORDER = [
     "family_portal",
     "presence",
     # Review work
+    "review_wizard",
     "census_changes",
     "ministry_report",
     "pledges_to_enter",
@@ -646,7 +648,7 @@ SHAPES = {
     # Staff see Parish data with its one entry for them (#1011).
     # and Mail with Report emails alone, read-only (#1786).
     "staff": ["report_emails", *REPORTS, "parishsoft_fixes"],
-    "ministry_leader": ["ministry_report"],
+    "ministry_leader": ["review_wizard", "ministry_report"],
 }
 
 
@@ -707,6 +709,7 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
         "information_queue",
         "ministry_report",
         "family_directory",
+        "review_wizard",
     }
     for item in items:
         if item.name in needs:

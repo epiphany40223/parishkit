@@ -1,0 +1,28 @@
+{% extends 'stewardship/admin-base.html' %}{% load static i18n stewardship %}
+{% comment %}
+  One page of a review wizard run (#2123; review pipeline spec, "Wizard
+  pages"), from review_wizard_views.page: the subject's heading (a Family
+  as "Name (DUID n)", a Member with the Family under it, a New Member with
+  the hub's badge), the navigation row with the progress, the section
+  region, one link sentence and the navigation row again at the bottom of
+  the screen. The browser title names the stream and the progress, never
+  the subject. The section region is empty in this slice: the subject's
+  changed values and their actions come with the wizard's next slices.
+  A run that is finished or discarded (``closed``) says so, with a link to
+  the start page.
+{% endcomment %}
+{% block title %}{% if closed %}{% translate "Review one at a time" %}{% else %}{% blocktranslate trimmed with stream=stream.label progress=progress %}Review one at a time: {{ stream }}, {{ progress }}{% endblocktranslate %}{% endif %}{% endblock %}
+{% block head %}<link rel="stylesheet" href="{% static 'stewardship/stepper-v1.css' %}">{% endblock %}
+{% block content %}{% if closed %}
+<h1>{% translate "Review one at a time" %}</h1>
+<p data-review-closed>{% translate "This review is no longer open." %} <a href="{{ start_url }}">{% translate "Start or continue a review" %}</a></p>
+{% else %}<div class="review-wizard-page" data-review-page data-review-stream="{{ stream.key }}">
+<div class="review-wizard-body">
+{% with h=heading %}<h1 class="review-wizard-heading" data-review-heading>{% if h.member %}{{ h.member.name }}{% if h.member.duid %} ({% blocktranslate with member_duid=h.member.duid %}DUID {{ member_duid }}{% endblocktranslate %}){% endif %}{% if h.member.new %} <span class="status-badge">{% translate "New Member" %}</span>{% endif %}{% else %}{% family_link h.family_id h.family_name %} ({% blocktranslate with family_duid=h.family_duid %}DUID {{ family_duid }}{% endblocktranslate %}){% endif %}</h1>
+{# The line under the heading is always drawn (empty on a Family page), so the top row sits at the same spot on every page. #}<p class="help review-wizard-of" data-review-family>{% if h.member %}{% family_link h.family_id h.family_name as family %}{% blocktranslate %}Member of {{ family }}{% endblocktranslate %}{% endif %}</p>{% endwith %}
+{% include "stewardship/components/review-wizard-nav.html" with where="top" focus_previous=focus.previous_top focus_next=focus.next_top %}
+<div id="review-section" class="review-wizard-section" data-in-place-region data-refresh-url="{{ here_url }}" data-review-section></div>
+<p data-review-links><a href="{{ stream_url }}">{% blocktranslate with stream=stream.label %}Open {{ stream }}{% endblocktranslate %}</a>{% if timeline_url %} · <a href="{{ timeline_url }}">{% translate "Open this Family's Timeline" %}</a>{% endif %}</p>
+</div>
+{% include "stewardship/components/review-wizard-nav.html" with where="bottom" focus_previous=focus.previous_bottom focus_next=focus.next_bottom %}
+</div>{% endif %}{% endblock %}

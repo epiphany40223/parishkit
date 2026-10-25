@@ -396,7 +396,44 @@ def observe(principal, store):
             # The chrome reads the current campaign too; give it this row.
             config.current_campaign = campaign
         counts = read_counts(principal, campaign.pk) if campaign else {}
-        return config, {"campaign": campaign, "counts": counts}, database_now()
+        review = {
+            "campaign": campaign,
+            "counts": counts,
+            "runs": runs(principal, campaign),
+        }
+        return config, review, database_now()
+
+
+def runs(principal, campaign):
+    """The reader's unfinished review wizard runs, for the wizard's card (#2123).
+
+    ``review_wizard_views.card_runs``' rows, or none without a campaign.
+    """
+    if campaign is None:
+        return []
+    from parishkit.stewardship.reports.review_wizard_views import card_runs
+
+    return card_runs(principal, campaign.pk)
+
+
+def wizard_cards(chrome, review):
+    """The Review one at a time card, first on My review work and Home (#2123).
+
+    Shown while the viewer's menu has the wizard's entry (some stream is
+    offered), greyed with the menu's reason while it is. It opens the start
+    page; with exactly one unfinished run it reads "Continue: *stream*,
+    *progress*" and opens that run's current page. It has no count: the
+    waiting set differs per stream, so a total would add unlike things.
+    """
+    item = (chrome.get("entries") or {}).get("review_wizard")
+    if item is None or not (review or {}).get("campaign"):
+        return []
+    found = (review or {}).get("runs") or []
+    if item.url and len(found) == 1 and found[0]:
+        words, url = found[0]
+        label = _("Continue: %(run)s") % {"run": words}
+        return [Card(label, url)]
+    return [Card(item.label, item.url, item.reason)]
 
 
 @dataclass(frozen=True, slots=True)

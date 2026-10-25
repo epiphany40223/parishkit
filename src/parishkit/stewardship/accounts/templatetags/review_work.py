@@ -18,3 +18,9 @@ def review_panels(context, review):
     """
     review = review_work.with_counts(getattr(context, "request", None), review or {})
     return review_work.panels(context.get("admin_chrome") or {}, review)
+
+
+@register.simple_tag(takes_context=True)
+def review_wizard_cards(context, review):
+    """Return ``review_work.wizard_cards`` for this render and ``review`` (#2123)."""
+    return review_work.wizard_cards(context.get("admin_chrome") or {}, review or {})
