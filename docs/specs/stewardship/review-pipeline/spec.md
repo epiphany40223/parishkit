@@ -1993,14 +1993,17 @@ a Confirmed or Conflict the reader was not shown.
 
 ## Review wizard
 
-Status: **proposed, for the Administrator's review**
+Status: **approved; slice 1 built**
 ([#2123](https://github.com/epiphany40223/parishkit/issues/2123)); the
 flow, behaviour and shared-code requirement below, and the page scope,
 waiting set, start page, Limitations pages, navigation rows, keyboard,
 menu and dashboard entries, are the Administrator's decisions of
 2026-10-24, and the spec was approved on 2026-10-24 with three changes:
 Finish opens My review work, runs have no time limit, and a reader may
-have several runs (one per tab). Nothing of it is built yet.
+have several runs (one per tab). Its first slice is built: the run
+storage, the start page, the page frame with its navigation, the menu
+entry and the dashboard card (#2123, slice 1 of the
+[delivery plan](#wizard-delivery-plan)); the sections come next.
 
 The review wizard is a third view of the same review data, beside each
 stream's [review worklist](#review-worklist) (bulk decisions over a table)
@@ -2055,7 +2058,7 @@ stream one at a time exactly when its Review work page is in their menu:
 | Ministry requests | `ministry_report` (`MINISTRY_REPORT`, scoped) | Administrators, Staff, Ministry leaders (their Ministries only) | one Member |
 | Pledges | `pledges_to_enter` (`FINANCIAL_DETAIL`) | Administrators, Staff | one Family |
 | Additional information | `information_queue` (`ADDITIONAL_FOLLOWUP`) | Administrators, Staff | one Family |
-| Limitations | `limitations_report` (`CAMPAIGN_REPORT`, Ministry stewardship on) | Administrators, Staff | the Family (only with the financial answer; its Pledges page), then each Member with a Limitations answer |
+| Limitations | `limitations_report` (`CAMPAIGN_REPORT`, Ministry stewardship on) | Administrators, Staff | the Family (only with a Family answer: the financial one, its Pledges page, or Cannot attend Mass), then each Member with a Limitations answer |
 
 - A stream is offered while its menu entry is available
   (`admin_navigation`'s `Entry` for that page, campaign condition
@@ -2076,9 +2079,12 @@ stream one at a time exactly when its Review work page is in their menu:
   page, which is that Family's Pledges page (the Pledges section, which
   lists the answer as the Pledges table does); a Limitations run's Family
   page also re-checks the Pledges access (`FINANCIAL_DETAIL`), and a
-  reader without it gets Member pages only. Every other Limitations
-  answer is per Member and is on that Member's page. A Pledges run's
-  Family page shows the same financial answer.
+  reader without it gets Member pages only. **Cannot attend Mass or
+  prayer services** is a Family answer too (the Limitations table's
+  Families table), so it is on the Family page as well, for every reader
+  of Limitations (#2123 slice 1; it has no Member to go to). Every other
+  Limitations answer is per Member and is on that Member's page. A
+  Pledges run's Family page shows the same financial answer.
 - While other campaign work holds the campaign, pages draw no action icons,
   with the stream pages' reason, as the hub does (`hub_actions.mutable`).
 
@@ -2103,8 +2109,11 @@ Advanced when it is drawn with an Advanced filter set):
   it reaches ParishSoft and Kind; for Pledges the Stage and Search; for
   Additional information the Stage and Search; for Limitations the Stage,
   Search and Show. The Stage filter adds one choice ahead of the table's,
-  **Waiting** (Basic's set), which is its default here; the template
-  takes it as a parameter, so the tables do not offer it. Waiting is
+  **Waiting** (Basic's set), which is its default here. On the tables the
+  Stage is drawn by the shared worklist, not by the filter template, so
+  the start page draws its own Stage select from the same stage lists the
+  tables use (`review_streams`), and the tables do not offer Waiting.
+  Waiting is
   applied after the table's own read, which is run at Every stage, by the
   same placements the Stage filter uses.
 - **Sort:** **Name A–Z** (the default), **Oldest submitted first**,
@@ -2139,9 +2148,12 @@ subjects:
    changes, Limitations) the sort orders Families, and each Family's pages
    are adjacent: its Family page first, when the Family itself has a
    matching item (a household field in Census changes; in Limitations,
-   the Cannot contribute financially answer), then a page for each Member
-   with a matching item, in the Family hub's Member tab order
-   (`hub_census.shape`'s order). A Family with only Member items has no
+   the Cannot contribute financially or Cannot attend Mass answer), then
+   a page for each Member with a matching item: ParishSoft Members by
+   DUID, then the New Members the Family added, by name, as the Family
+   hub's Member tabs list them (`hub_census.shape`; a Member the hub
+   lists after the others because only earlier requests keep them sorts
+   here by DUID with the rest). A Family with only Member items has no
    Family page. A New Member the Family added is a Member page in that
    order. In Limitations the Family's financial answer is read from the
    Pledges stream's read with the run's Stage and Search, and every other
@@ -2274,24 +2286,29 @@ link to the start page; it is never an error page.
 One row per run, `stewardship_review_run`; a reader and campaign may
 have many:
 
-- `id` (uuid), `user_id` (the portal user, on delete cascade),
-  `campaign_id` (on delete cascade), `stream`, `filters` (jsonb: the
+- `id` (uuid), `user_id` (the portal user, deleted with it),
+  `campaign_id` (deleted with it), `stream`, `filters` (jsonb: the
   stream's closed filter values and the Basic or Advanced mode; the
   search text is never stored, only whether one was used, so the run's
   row can say "with a name search"), `sort`, `subjects` (jsonb array of
   subject keys, each with the ids of its matched items, at most 5,000
   subjects), `position`, `finished_at`, `created_at`,
   `updated_at`; indexed on `(user_id, campaign_id)`, not unique.
-- The keys and item ids are record ids and DUIDs only, never names or values, so the
-  row holds nothing the stream tables do not already hold.
+- The keys and item ids are record ids and DUIDs only, never names or
+  values, so the row holds nothing the stream tables do not already hold.
 - **Retention:** an unfinished run stays until finished or discarded, with
   no time limit; Discard deletes its row. A finished run keeps its row
   (it is not offered again) until the user or campaign is removed, which
-  deletes it by cascade. The rows are bounded by the runs readers start,
-  each at most 5,000 subjects of ids.
-- **Migration: yes**, number **0178** (assigned centrally; not yet
-  written). Resume must outlive the sign-in, so the Django
-  session (`report_paging.remember_queue`'s store) cannot hold it. The
+  deletes it by the model's cascade (`on_delete`; the foreign keys are
+  Django's own, which the model contract compares with the installed
+  schema, so the database itself does not cascade, and nothing deletes a
+  portal user or campaign row in SQL). The rows are bounded by the runs
+  readers start, each at most 5,000 subjects of ids.
+- **Migration: yes**, frozen file **0177** (`0177_review_run.sql`,
+  assigned centrally; renumbered from 0178), whose guard keeps a started
+  run's user, campaign, stream, filters, sort and sequence fixed, its
+  position inside the sequence, and a finished run unchanged. Resume
+  must outlive the sign-in, so the Django session (`report_paging.remember_queue`'s store) cannot hold it. The
   table is one new forward migration with its frozen SQL file under the
   [post-launch schema policy](../operations/spec.md#post-launch-schema-policy),
   with the web role's grants, the schema inventory and baseline entries,
@@ -2448,37 +2465,52 @@ rows, progress words, sort mapping, run limits),
 
 ### Wizard delivery plan
 
-Four pull requests, after this spec's review:
+Four pull requests, after this spec's review (the slices of #2123; the
+start page and the dashboard card come first, the hub's section split
+with the first slice that draws a section). Slices 1 to 3 board one
+train together, after the Administrator's pk-local check of the whole
+flow, since the menu entry and the card open pages whose sections arrive
+in slices 2 and 3:
 
-1. **Shared section component**, no visible change:
+1. **Run storage, start page, page frame, menu entry and card**:
+   `ReviewRun` and frozen file 0177, its grants, schema inventory and
+   users-swap entries; `review_streams.py` (each stream's label, access,
+   query class, filter template, read and audit) and
+   `pledge_review_views.PledgeQuery`; `review_wizard.py` (the sequence,
+   the sorts, the progress words, the 5,000-page refusal); the views,
+   templates and URLs of the start page and the run pages with their two
+   navigation rows, Previous, Next and Finish, the resume list with
+   Continue and Discard, the menu entry and the Review one at a time
+   card. The run pages' section region is empty. Tests: unit tests of the
+   sequence (Name A–Z ties broken deterministically, grouped Family then
+   Member order, a Family with Member items only, the 5,000-page refusal)
+   and the progress words; view tests under the web login (exact
+   statuses: a run started, moved, finished and no longer open; several
+   runs listed, continued and discarded; another reader's run never
+   shown; the start refusals; a leader offered only Ministry requests
+   with the choice skipped; the run guard); the menu inventory; browser
+   tests of the start page, the rows and the card.
+2. **Shared section component and Family pages**:
    `review_sections.read_section`, the `census_tab`, `ministry_tab` and
    `other_tab` parameters, the four `components/review-*-section.html`
-   templates and the hub panels including them, and `PledgeQuery`. Tests:
-   the hub's existing tab, row-action and query-count tests unchanged and
-   passing; render comparisons of each hub tab before and after; unit
-   tests of `other_tab(keep=…)` and `ministry_tab(scoped=True)` (a leader
-   never gets a row for a Ministry they do not lead); `PledgeQuery` parse
-   tests matching today's 400s.
-2. **Run storage**: the `ReviewRun` model and its migration (number from
-   the coordinator, frozen SQL), grants and schema inventory. Tests: model
-   constraints (one row per user and campaign, cascades), the schema audit
-   and migration tests.
-3. **Wizard pages and resume**: `review_streams.py`, `review_wizard.py`,
-   the views, templates, URLs and menu entry. Tests: unit tests of the
-   sequence (Name A–Z ties broken deterministically, grouped Family then
-   Member order, a Family with Member items only, the 5,000-page refusal,
-   the sort mapping); view tests per stream and role (exact 200, 303, 400
-   and 403 statuses; a leader offered only Ministry requests with the
-   choice skipped; a stream the reader may not open refused); resume
-   (several runs per reader, Continue, Discard, a discarded run's page); concurrency (a page drawn after
-   another reviewer's decision shows the live stage; a stale action gets
-   the stream's refusal); only matched items shown with the filtered-out
-   line; Limitations Family page only with the financial answer; the
-   dashboard card's two wordings; query-count tests per page; the navigation
-   inventory tests; browser tests (Chromium and WebKit locally, all three
-   in CI) that Previous and Next, in both rows, keep their screen position across pages
-   of different heights and after an in-place action, and that focus
-   returns to the control used. A pk-local check by the Administrator.
+   templates and the hub panels including them (the hub draws exactly
+   what it draws today: render comparisons of each hub tab before and
+   after); then the Family pages of Pledges, Additional information,
+   Census changes and Limitations, each with only the matched items, the
+   filtered-out line, and actions posting to the stream pages and
+   redrawing in place from the wizard page's address. Tests: the hub's
+   tab, row-action and query-count tests unchanged; `other_tab(keep=…)`;
+   only matched items shown with the filtered-out line; the Limitations
+   Family page only with a Family answer; a page drawn after another
+   reviewer's decision shows the live stage and a stale action gets the
+   stream's refusal; query-count tests per page.
+3. **Member pages**: Ministry requests (`ministry_tab(scoped=True)`, a
+   leader never gets a row for a Ministry they do not lead), Census
+   Member and New Member pages and Limitations Member pages; browser
+   tests (Chromium and WebKit locally, all three in CI) that Previous and
+   Next, in both rows, keep their screen position across pages of
+   different heights and after an in-place action, and that focus
+   returns to the control used.
 4. **Table entry buttons**: Review these one at a time on the five
    tables. Tests: each table's button posts its view and opens page 1
    with that view's sequence; the sort mapping; the existing-runs dialog (Continue per run, Start a new run, Cancel; finished runs not listed); the unavailable state on
