@@ -145,6 +145,9 @@ services:
         source: ../../tools/prepare-release.py
         target: /app/tools/prepare-release.py
       - <<: *test-bind
+        source: ../../tools/release_tags.py
+        target: /app/tools/release_tags.py
+      - <<: *test-bind
         source: ../../tools/stewardship-preflight.py
         target: /app/tools/stewardship-preflight.py
       - <<: *test-bind

@@ -3,8 +3,9 @@
 Production runs the previous release and reaches each new release through
 forward migrations, while CI, the local environment and a restore-drill host
 install the current tree from scratch. The two paths must agree. This test
-builds a database with the previous release's tree (the latest annotated
-``v*`` tag reachable from HEAD, exported with ``git archive`` and migrated in
+builds a database with the previous release's tree (the nearest annotated
+release tag reachable from HEAD, ``stewardship-v*`` or the older ``v*``
+(#2203), exported with ``git archive`` and migrated in
 a subprocess so none of the current tree is imported), migrates it with the
 current tree, and compares every catalog object the schema inventory
 fingerprints, the applied-migration list and the seed rows with a fresh
@@ -30,6 +31,7 @@ What this does not catch:
   back to the previous annotated tag and compares a real upgrade.
 """
 
+import importlib.util
 import io
 import json
 import os
@@ -47,6 +49,12 @@ from django.db import connection
 from parishkit.stewardship.schema_inventory import QUERIES, inventory
 
 ROOT = Path(__file__).resolve().parents[3]
+# The release tag naming rule, shared with the release tools (#2203).
+_TAGS_SPEC = importlib.util.spec_from_file_location(
+    "release_tags", ROOT / "tools" / "release_tags.py"
+)
+release_tags = importlib.util.module_from_spec(_TAGS_SPEC)
+_TAGS_SPEC.loader.exec_module(release_tags)
 SEED = ROOT / "src/parishkit/stewardship/schema/seed.sql"
 MIGRATE_TIMEOUT = 300
 # Seed values generated at insert time differ between any two databases.
@@ -72,14 +80,21 @@ DATABASES["default"]["NAME"] = os.environ["UPGRADE_PARITY_DATABASE"]
 
 
 def previous_release():
-    """Name the latest annotated ``v*`` tag reachable from HEAD, or fail clearly.
+    """Name the nearest annotated release tag reachable from HEAD, or fail clearly.
 
     ``git describe`` without ``--tags`` considers annotated tags only, which is
-    how releases are tagged. A shallow checkout cannot walk back to the tag,
-    so CI's database shards check out the full history.
+    how releases are tagged; it matches both release tag prefixes, so the
+    older ``v*`` tags still count after the switch to ``stewardship-v*``. A
+    shallow checkout cannot walk back to the tag, so CI's database shards
+    check out the full history.
     """
     result = subprocess.run(
-        ["git", "describe", "--abbrev=0", "--match", "v*"],
+        [
+            "git",
+            "describe",
+            "--abbrev=0",
+            *(f"--match={glob}" for glob in release_tags.GLOBS),
+        ],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -88,8 +103,9 @@ def previous_release():
     if result.returncode or not result.stdout.strip():
         pytest.fail(
             "No previous release tag is reachable from HEAD; the upgrade-parity "
-            "test needs an annotated v* tag in the checkout's history (a shallow "
-            "clone must fetch tags and enough depth to reach one): "
+            "test needs an annotated stewardship-v* or v* tag in the checkout's "
+            "history (a shallow clone must fetch tags and enough depth to reach "
+            "one): "
             f"{result.stderr.strip()}"
         )
     return result.stdout.strip()

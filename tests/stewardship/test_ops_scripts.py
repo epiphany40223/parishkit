@@ -423,6 +423,8 @@ def release_repo(tmp_path, version="1.2.3"):
     ops.mkdir(parents=True)
     for name in ("release.sh", "ci-watch.sh", "lib.sh", "release_evidence.py"):
         shutil.copy(OPS / name, ops / name)
+    # release_evidence.py loads the shared release tag rule from tools/.
+    shutil.copy(OPS.parent / "release_tags.py", ops.parent / "release_tags.py")
     (work / "pyproject.toml").write_text(f'[project]\nversion = "{version}"\n')
     git("add", "-A", cwd=work)
     git("commit", "-q", "-m", "release", cwd=work)
@@ -1583,6 +1585,8 @@ def train_repo(tmp_path, extra=False):
     ops.mkdir(parents=True)
     for name in ("merge-train.sh", "lib.sh", "release_evidence.py"):
         shutil.copy(OPS / name, ops / name)
+    # release_evidence.py loads the shared release tag rule from tools/.
+    shutil.copy(OPS.parent / "release_tags.py", ops.parent / "release_tags.py")
     git("add", "-A", cwd=work)
     git("commit", "-q", "-m", "base", cwd=work)
     git("remote", "add", "origin", GITHUB_URL, cwd=work)
