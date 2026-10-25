@@ -566,6 +566,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # which 0181's body holds too: so ``CLOSURE_REPLACED_LAST`` runs it, keyed
 # by the item selection (0127's reinstall puts back a body without its
 # rule), after 0158's entry.
+# 0182 (#2196) creates nothing: it replaces 0175's financial selection in
+# place, which 0110's rerun and 0175's restore bring back older, so its
+# ``CLOSURE_REPLACED_ONLY`` entry takes the place of 0175's and restores
+# 0182's body instead.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -1688,6 +1692,14 @@ CLOSURE_REPLACED_ONLY = {
             re.M,
         ),
         (("stewardship_accounts", "0037_definer_operators"), "OPERATOR(pg_catalog."),
+    ),
+    # 0182 (#2196) replaces the Financial selection on 0175's body: this
+    # key's value replaces the 0175 entry above (in that entry's place), so
+    # the restore installs 0182's body and the report reads the values in
+    # force.
+    "stewardship_financial_report_v1": (
+        ("stewardship_reports", "0050_financial_in_force"),
+        "CROSS JOIN LATERAL stewardship_pledge_review_states_v1(x.id,NULL) k",
     ),
 }
 

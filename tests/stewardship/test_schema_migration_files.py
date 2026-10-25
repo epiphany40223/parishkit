@@ -575,6 +575,9 @@ FROZEN = {
     "0181_pledge_share_methods.sql": (
         "3ef1fe7492c46c02669f643e695610da31936f89ce1fc4b287889c5f656a82ad"
     ),
+    "0182_financial_in_force.sql": (
+        "faed7b0410b65588c2bbc801fc697de4863cda6a172ca7fde461a66423ae09e3"
+    ),
 }
 
 

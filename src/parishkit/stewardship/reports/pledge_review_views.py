@@ -14,10 +14,12 @@ or PDF (review pipeline spec, "Manual handling reports").
 
 The pledges come from the Financial stewardship selection
 (``stewardship_financial_report_v1``, read whole, without the ParishSoft
-comparison money) and the stages from ``pledge_review.read_items``, in the
-same guarded read; filtering, sorting and paging happen in memory, as the
-other worklists' do. The view and each download are audited as a count
-only; a Ministry leader never reaches either (``Capability.FINANCIAL_DETAIL``).
+comparison money, with each Family's own answer put back in place of the
+values in force, ``financial.family_answers``) and the stages from
+``pledge_review.read_items``, in the same guarded read; filtering, sorting
+and paging happen in memory, as the other worklists' do. The view and each
+download are audited as a count only; a Ministry leader never reaches either
+(``Capability.FINANCIAL_DETAIL``).
 """
 
 import csv
@@ -94,12 +96,15 @@ from parishkit.stewardship.web.tables import (
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .financial import (
+    CANNOT_GIVE,
     FREQUENCY_LABELS,
     UNAVAILABLE_SHARE,
     FinancialQuery,
+    family_answers,
     in_offered_order,
     name_families,
     shape_result,
+    share_text,
     share_wording,
 )
 from .money import MoneyAmount
@@ -207,7 +212,6 @@ PDF_WEIGHTS = {
 }
 PRIVACY = "Sensitive parish report. Share only with authorized recipients."
 FORMER = "Former portal user"
-CANNOT_GIVE = "Cannot contribute"
 # The stages at which a file names the pledge to enter: accepted, and
 # not yet or already entered (or confirmed by a refresh, #1704). At the
 # others nothing is to be entered.
@@ -315,6 +319,9 @@ def pledge_rows(campaign_id, principal, search=""):
     ).get()
     configuration = campaign.active_configuration.values
     parish_name = system.active_configuration.parish.name
+    # The Family's own answer, where the selection has the values in force
+    # (#2196): this page shows it beside the Reviewer's value.
+    family_answers(result)
     # The Family's share methods as stored, before shaping words them.
     stored = {row["id"]: dict(row["shares"]) for row in result["rows"]}
     result = shape_result(
@@ -366,14 +373,6 @@ def pledge_rows(campaign_id, principal, search=""):
 def frequency_label(frequency):
     """A stored frequency's word ("" or None is No frequency)."""
     return FREQUENCY_LABELS[frequency or "none"]
-
-
-def share_text(shares):
-    """Worded share methods as one line: each full label, with its Other text."""
-    return ", ".join(
-        f"{share['label']}: {share['text']}" if share["text"] else share["label"]
-        for share in shares
-    )
 
 
 def answer_parts(row):

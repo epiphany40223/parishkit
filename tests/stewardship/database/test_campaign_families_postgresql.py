@@ -149,6 +149,10 @@ def test_migration_check_refuses_the_old_body_or_a_changed_function():
     capture = capture[: capture.index("CREATE OR REPLACE FUNCTION")]
     check = FROZEN[FROZEN.index("DO $check$") :]
     with transaction.atomic(), connection.cursor() as cursor:
+        # 0182 (#2196) has replaced the financial selection since: put
+        # 0175's own body back, rolled back with the rest, so the check
+        # sees what 0175 installed.
+        cursor.execute(statement(FROZEN, FINANCIAL))
         cursor.execute(capture)
         cursor.execute(check)
         for change_sql, message in (
