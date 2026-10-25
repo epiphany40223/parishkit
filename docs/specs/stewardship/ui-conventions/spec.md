@@ -964,8 +964,9 @@ tabs and the Review work counts
   of the page's own address when that view is itself passive (Background
   work, Families on the form now). A read never extends the sign-in and
   never records an audited view, except a report's re-read that brings
-  newer figures in, once per newer set of figures, and a page's re-read
-  that brings in a part it could not read (both below).
+  newer figures in, once per newer set of figures, a page's re-read
+  that brings in a part it could not read, and a list's re-read that
+  brings changed lines in (all below).
 - **Settled regions re-read passively.** When a status region settles and
   its hidden follow-up link (`a[data-live-follow][data-in-place]`) brings
   the rest of the page up to date in place (the step bar, the action row,
@@ -1018,6 +1019,27 @@ tabs and the Review work counts
   even after failed re-reads), so the page re-reads itself once another
   generation of figures is ready
   ([reports](../reports/spec.md#response-dashboard)).
+- **Lists that others add to.** A list on an audited page that grows
+  while it is open, without the reader acting, re-reads itself on the
+  periodic quiet re-read (`a[data-reread-every]`) every 60 seconds, the
+  pace of the review regions' checks
+  ([#2197](https://github.com/epiphany40223/parishkit/issues/2197)). The
+  read is the page's own address, so new lines join in the list's chosen
+  order, filters and sort, and lines may appear. So that they never jump
+  under the reader, the link names the part they work in
+  (`data-reread-hold`, the list and its filter bar): besides the waits
+  below, the read also waits while focus is in that part (a filter being
+  chosen) or the pointer is over it, and tries again 5 seconds later. The
+  list's region carries a digest of the lines it drew
+  (`data-reread-seen`), sent with the passive read: an answer whose lines
+  are the same is empty, changes nothing and records nothing, and one with
+  changed lines is swapped in and records the page's audited view marked
+  `automatic`. Like every automatic read it never extends the sign-in. A
+  list in a tab that is not shown is not read; choosing its tab again
+  catches it up at once, at the address that tab last showed, so its
+  filters and sort still name what it shows. A quiet re-read keeps where
+  the reader scrolled the list's box sideways. The Family hub's
+  [Timeline tab](../reports/spec.md#timeline) is the precedent.
 - **Parts a page could not read.** A page whose view is audited and
   that could not read one of its parts says so in place of that part, never
   asking for a reload, and brings the part in by itself
@@ -1120,7 +1142,10 @@ tabs and the Review work counts
   re-read waits for the next tick. A choice that was applied (Rows per
   page, which keeps focus on the fresh choice) or a link or button that
   merely has focus does not hold it, and neither does a control outside
-  the regions (a filter bar), which the re-read never replaces. Focus
+  the regions the re-read replaces (a filter bar, also one inside a tab
+  panel), which it never replaces, except while focus is in the part a
+  [list that others add to](#pages-that-update-themselves) names (above).
+  Focus
   returns to the same element in the fresh copy: by its id, or else by its
   nearest ancestor's id and its position among the elements alike there,
   so focus on the bottom navigator's Next or on one row's Technical

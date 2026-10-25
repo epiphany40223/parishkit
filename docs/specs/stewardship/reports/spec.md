@@ -1095,7 +1095,13 @@ heading, which reverses the order in place. Rows at the same instant are
 listed in the order the Family took them in, reversed with the rest newest
 first, so each line still reads as happening when it did in both
 directions. A Family has few lines, so the table
-shows them all, with no paging or row navigator. Its lines are:
+shows them all, with no paging or row navigator. What happened keeps a
+minimum width, so its heading and the words its lines start with
+(Submissions, Reminder, Invitation) never wrap mid-label at 1280 px; on a
+phone the table's own box scrolls sideways, as a focusable named region,
+and the page does not
+([#2197](https://github.com/epiphany40223/parishkit/issues/2197)). Its
+lines are:
 
 - each Family email with its outcome (including Not sent (cancelled)),
   linked to its Mail message page for Administrators (Staff cannot open
@@ -1166,6 +1172,13 @@ With every line filtered out, the table says so and names the way back
 (choose All and clear the days). Every time is shown in the browser's time
 zone.
 
+**The table updates itself.** The Timeline table is a
+[list that others add to](../ui-conventions/spec.md#pages-that-update-themselves)
+([#2197](https://github.com/epiphany40223/parishkit/issues/2197)): every 60
+seconds a decision on a pledge, an email sent or a sign-in joins it without
+a reload. The part it waits for is the Timeline panel (its filter bar and
+table). The summary above it is drawn when the page or tab is opened.
+
 **Audit and reads.** Each view admits the report read, reads the Family
 under the campaign read guard with the role recheck (a Family of another
 campaign is refused like a missing one), decrypts the code under the
@@ -1180,6 +1193,11 @@ is, so no row pairs a campaign with a Family that is not in it. Recording
 which Family was viewed lets a later review see who looked at whom, and a
 view left unrecorded could never be filled in; the Administrator confirmed
 it on 2026-10-05 ([#477](https://github.com/epiphany40223/parishkit/issues/477)).
+The table's own re-read (above) is automatic: it never extends the
+sign-in, and it sends a digest of the lines the table drew, so an answer
+with the same lines is empty and records nothing, while one with changed
+lines records the view with `automatic: true` in its context, as a
+report's automatic re-read does (#1620, #2197).
 The subject is a soft reference with no foreign key, so, like other report
 access audit, the event is outside the purge inventory (see
 [audit records](../data/spec.md#job-outbox-audit-and-purge-records)). The
