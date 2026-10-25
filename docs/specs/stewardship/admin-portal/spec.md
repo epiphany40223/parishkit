@@ -3984,7 +3984,8 @@ is used only with "This reminder only". Every reminder they change keeps its
 own date and takes the send time and Email to send chosen here (with "Edit
 this schedule's email", the one new email they then share). Reminders that
 sent or are being prepared don't change. Choosing a scope is not a change by
-itself, so Review changes stays unavailable until the time or email changes.
+itself, so Review changes stays unavailable until the time, email or repeat
+(below) changes.
 
 When the page is drawn, the server plans each series scope once with nothing
 changed. A scope it would refuse for a reason the page already knows is drawn
@@ -4026,7 +4027,67 @@ what happens to the series:
   (with its rule, now ending the day before) and that the changed ones become
   a new series (with its rule).
 
-Changing a series' rule stays on the command line for now (planned in [#1808](https://github.com/epiphany40223/parishkit/issues/1808)); deleting a series
+**Change the repeat** (from
+[#1808](https://github.com/epiphany40223/parishkit/issues/1808), slice 3;
+the defaults below stand until the Administrator changes them) changes a
+series' rule from Edit, as the command line's [series entry](../admin-automation/spec.md#schedules-and-configuration) with a `repeat`
+does. A **Change the repeat** checkbox follows the choice, available while
+"This and following" or "The whole series" is chosen and greyed in place
+while "This reminder only" is (a [conditional
+field](../ui-conventions/spec.md#conditional-fields) that keeps its place,
+so choosing a scope moves nothing: a reminder alone never changes a rule).
+Ticking it shows the shared repeat rule's controls
+([Schedules](../ui-conventions/spec.md#schedules), the ones New's Repeating
+shows) below it, filled in with the series' saved rule; ticking it is not a
+change by itself. While the box is greyed, a ticked box's rule stays where
+it is, greyed and not sent, and the line above the button says to choose
+"This and following" or "The whole series". From starts at the first date
+the chosen scope changes: this reminder's date for "This and following", or
+the first reminder that has not sent and is not being prepared for "The
+whole series"; never the rule's own first date, which may be long past (a
+date New's repeat left out). When no earlier reminder stays in the series,
+From may be moved earlier. Choosing the other scope moves From to that
+scope's date while From still holds the date filled in; a typed From is
+kept. The rule's dates are calendar days and the send time is typed in this
+computer's zone, each date converted on its own as a repeat's are; a time
+that would move one of them to another day in the campaign's zone is
+refused at the choice, as above.
+
+As the Administrator types, the list under the button shows every date the
+new rule gives through the shared [schedule
+preview](../ui-conventions/spec.md#schedule-previews), checked as New's
+repeat checks its dates, against the other saved mailings (the series' own
+unsent reminders aside, since the change replaces them). Unlike New's repeat,
+which leaves out a date that does not fit, a new rule must give only dates
+that can be used, as the command line's does: while a date it gives is
+outside the campaign, already past, at or before the Initial invitation, at
+the moment of another mailing or past the 30-date limit, while a month is
+skipped for want of its day, or while From is before the first date the
+scope changes and earlier reminders stay in the series, Review changes
+waits, with the reason in the repeat's summary line above it, as New's
+repeat does ([prerequisite
+gates](../ui-conventions/spec.md#prerequisite-gates)); a From that is too
+early is also said at From. While nothing but a From the scope moved has
+changed, it waits too, with "Change the time, email or repeat to review
+it."; on Edit of a series' reminder the unchanged hint after the button
+reads "Change the date, time, email or repeat to review it." The
+server checks the rule with the command line's own repeat check (1 to 30
+dates, no month skipped) and plans the change with the command line's
+series edit given the new rule (`series_edits.plan`), so the page and the
+command line cannot differ; a refusal (a rule the repeat's own check
+refuses, one that gives no date or more than 30, a skipped month, a From
+before the first reminder the scope changes, or Change the repeat with
+"This reminder only") is shown at its field, with its code.
+Reminders that sent or are being prepared never change. A reminder from the
+cut date on a date the new rule gives, with the same time and email, stays
+as it is; every other reminder from the cut date is removed and each other
+date the rule gives is added. The review lists every reminder removed and
+added, says how many stay as they are, and names the series' new rule in
+plain words (for a split, the earlier reminders' rule and the new series'
+rule, as above). Apply records it as every schedule review does; reminder
+planning and emailed Family codes and links are unaffected.
+
+Deleting a series
 is Edit's Delete ([Delete a scheduled email](#delete-a-scheduled-email)).
 Editing from the calendar is in
 [Editing from the calendar](#editing-from-the-calendar).
