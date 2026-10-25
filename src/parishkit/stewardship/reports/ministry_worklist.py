@@ -612,7 +612,7 @@ def _request_words(row):
         return "Join"
     if row.get("cannot_serve"):
         return format_html(
-            '<span class="nowrap">Leave <span title="{}">({})</span></span>',
+            'Leave <span title="{}">({})</span>',
             "Cannot participate in any ministries (physical limitations)",
             "cannot participate",
         )
