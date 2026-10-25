@@ -86,7 +86,7 @@ def test_a_census_family_page_shows_its_matched_changes(response_service, google
         markup = page(browser, run)
         drawn = section(markup)
         row_id = f"review-family-census-row-{opt_out.pk}"
-        assert f'<tr id="{row_id}">' in drawn
+        assert f'<tr id="{row_id}"' in drawn
         assert str(home.pk) not in drawn
         assert 'id="review-family-changed-caption"' in drawn
         # The unchanged fields stay behind Show unchanged, as on the hub.
@@ -174,14 +174,14 @@ def test_information_and_limitations_family_pages(response_service, google):
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         run = location(start(browser, stream="information")[0])[1]["run"]
         drawn = section(page(browser, run))
-        assert f'<tr id="hub-other-information-row-{item.pk}">' in drawn
+        assert f'<tr id="hub-other-information-row-{item.pk}"' in drawn
         assert "Please call about the parish picnic." in drawn
         assert "Cannot attend" not in drawn and "filtered out" not in drawn
         action, _fields = dialog_fields(drawn, "hub-other-information-decide")
         assert action == reverse("admin:information_queue")
         run = location(start(browser, stream="limitations")[0])[1]["run"]
         drawn = section(page(browser, run))
-        assert f'<tr id="hub-other-limitations-row-f{duid}">' in drawn
+        assert f'<tr id="hub-other-limitations-row-f{duid}"' in drawn
         assert "Cannot attend Mass or prayer services" in drawn
         assert "Cannot participate" not in drawn and "picnic" not in drawn
         action, _fields = dialog_fields(drawn, "hub-other-limitations-decide")
@@ -199,7 +199,7 @@ def test_a_pledges_page_shows_the_current_pledge(response_service, google):
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         run = location(start(browser, stream="pledges")[0])[1]["run"]
         drawn = section(page(browser, run))
-    assert f'<tr id="hub-financial-pledges-row-{submission.pk}">' in drawn
+    assert f'<tr id="hub-financial-pledges-row-{submission.pk}"' in drawn
     assert 'id="review-pledge-caption"' in drawn and "$1,234.50" in drawn
     # Pinned as on the census page: here Pledges' read and the hub's
     # Financial read.
@@ -211,7 +211,7 @@ def test_a_pledges_page_shows_the_current_pledge(response_service, google):
     replaced = again(harness, annual_pledge="2,000")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         drawn = section(page(browser, run))
-    assert f'<tr id="hub-financial-pledges-row-{replaced.pk}">' in drawn
+    assert f'<tr id="hub-financial-pledges-row-{replaced.pk}"' in drawn
     assert "$2,000.00" in drawn and str(submission.pk) not in drawn
 
 
@@ -287,7 +287,7 @@ def test_a_limitations_family_page_draws_cannot_contribute(response_service, goo
             f"pledge-{submission.pk}"
         ]
         drawn = section(page(browser, run))
-    assert f'<tr id="hub-financial-pledges-row-{submission.pk}">' in drawn
+    assert f'<tr id="hub-financial-pledges-row-{submission.pk}"' in drawn
     assert "Cannot contribute financially" in drawn
     assert 'id="review-pledge-caption"' in drawn
     assert "Cannot attend Mass" not in drawn and "filtered out" not in drawn

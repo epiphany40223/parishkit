@@ -73,7 +73,7 @@ def test_census_member_and_new_member_pages(response_service, google):
         at = position(run, "member", "3")
         markup = page(browser, run, at)
         drawn = section(markup)
-        assert f'<tr id="review-member-census-row-{prefix.pk}">' in drawn
+        assert f'<tr id="review-member-census-row-{prefix.pk}"' in drawn
         assert str(first.pk) not in drawn
         assert "1 more in this stream for this Member is filtered out." in drawn
         # The header: the Family's line, then the Member's, whose name opens
@@ -131,7 +131,7 @@ def test_a_ministry_page_for_staff_and_for_a_leader(response_service, google):
         )[1]["run"]
         markup = page(browser, run)
         drawn = section(markup)
-        assert f'<tr id="review-ministry-row-{join.pk}">' in drawn
+        assert f'<tr id="review-ministry-row-{join.pk}"' in drawn
         assert str(leave.pk) not in drawn
         assert "1 more in this stream for this Member is filtered out." in drawn
         assert "Food pantry" in drawn
@@ -149,7 +149,7 @@ def test_a_ministry_page_for_staff_and_for_a_leader(response_service, google):
         assert ReviewRun.objects.get(pk=run).size == 1
         markup = page(browser, run)
     drawn = section(markup)
-    assert f'<tr id="review-ministry-row-{join.pk}">' in drawn
+    assert f'<tr id="review-ministry-row-{join.pk}"' in drawn
     assert str(leave.pk) not in markup and "filtered out" not in drawn
     # A leader cannot open the Timeline: every name is plain text.
     assert "/admin/reports/families/" not in markup
@@ -181,7 +181,7 @@ def test_a_limitations_member_page(response_service, google):
         markup = page(browser, run, at)
     drawn = section(markup)
     own = answer_id(duid, "member", "3")
-    assert f'<tr id="hub-other-limitations-row-{own}">' in drawn
+    assert f'<tr id="hub-other-limitations-row-{own}"' in drawn
     assert "Cannot participate in ministries:" in drawn
     assert "Cannot attend Mass" not in drawn and "filtered out" not in drawn
     action, _fields = dialog_fields(drawn, "hub-other-limitations-decide")
