@@ -7,14 +7,17 @@ from parishkit.stewardship.reports.review_wizard_views import page_url
 from .review_wizard_components import (
     ACCEPTED_PATH,
     BACK_PATH,
-    CARD_PATH,
     DECEASED,
     FOCUS_PATH,
+    GREYED_CARD_PATH,
+    GREYED_REASON,
     MEMBER_ACCEPTED_PATH,
+    NO_CARD_PATH,
     PAGE_PATHS,
     RUN,
     START_PATH,
 )
+from .review_work_components import HOME_PATH, PATH
 from .test_charts import assert_clean, watch
 from .test_family_response import expect
 from .test_table_sorting import MARK, MARKED
@@ -34,6 +37,39 @@ SLOTS = """() => Object.fromEntries([...document.querySelectorAll(
     return [row + ':' + slot.dataset.navSlot,
       [Math.round(box.x), Math.round(box.y), Math.round(box.width)]];
   }))"""
+# The Review work split's parts, each its box as {x, y, width, height,
+# bottom, right}, or null when it is not drawn (review-work-split.html).
+SPLIT = """() => Object.fromEntries(Object.entries({
+  split: '.review-work-split', pane: '[data-review-wizard-card]',
+  text: '.review-work-wizard-text',
+  action: '[data-review-wizard-card] > .button, [data-review-wizard-reason]',
+  or: '.review-work-or', tables: '[data-review-work-tables]',
+  heading: '#review-work-heading',
+}).map(([name, selector]) => {
+  const el = document.querySelector(selector);
+  if (!el) return [name, null];
+  const {x, y, width, height, bottom, right} = el.getBoundingClientRect();
+  return [name, {x, y, width, height, bottom, right}];
+}))"""
+
+
+def assert_side_by_side(parts):
+    """The pane, the "or" rule and the tables sit in one row, top-aligned and
+    of one height; the pane is 13rem wide, its text at its top and its button
+    (or reason) centred in the height left below the text."""
+    pane, rule, tables, text, action = (
+        parts[name] for name in ("pane", "or", "tables", "text", "action")
+    )
+    assert pane["right"] < rule["x"] < rule["right"] < tables["x"]
+    assert pane["y"] == rule["y"] == tables["y"]
+    assert pane["height"] == rule["height"] == tables["height"]
+    assert round(pane["width"]) == 13 * 16
+    # 1px border and 1rem padding: the label and help sit at the top.
+    assert round(text["y"] - pane["y"]) == 17
+    above = action["y"] - text["bottom"]
+    below = pane["bottom"] - 17 - action["bottom"]
+    assert above > 100
+    assert abs(above - below) <= 1.5
 
 
 def visible_names(page):
@@ -180,18 +216,93 @@ def test_phone_rows_stay_one_line(page, component_origin, axe_source):
     assert page.evaluate(AXE) == []
 
 
-def test_my_review_work_card_comes_first_and_continues_a_run(page, component_origin):
-    """The Review one at a time card is the first card, ahead of the stream
-    panels; with one unfinished run it continues that run."""
-    page.goto(component_origin + CARD_PATH)
-    card = page.locator("[data-review-wizard-card]")
-    link = card.get_by_role("link")
-    expect(link).to_have_text("Continue: Census changes, Family 12 of 87")
-    expect(link).to_have_attribute(
-        "href", "/admin/reports/review/12/?run=00000000-0000-0000-0000-00000000084b"
+@pytest.mark.parametrize("path", [HOME_PATH, PATH])
+def test_review_work_puts_one_at_a_time_beside_the_tables(
+    page, component_origin, axe_source, path
+):
+    """At 1280px with the menu open (R52 Part W), Home's Review work panel and
+    My review work put the One at a time pane, then "or", then the By table
+    stream groups side by side, below the heading with a gap; the pane's
+    button is the portal's primary button, centred below its text; the
+    "or" is hidden from screen readers; the page passes axe."""
+    page.set_viewport_size({"width": 1280, "height": 768})
+    page.goto(component_origin + path)
+    page.evaluate("document.fonts.ready.then(() => true)")
+    parts = page.evaluate(SPLIT)
+    assert_side_by_side(parts)
+    if parts["heading"]:
+        # Home: the row starts below the Review work heading, with a gap.
+        assert parts["pane"]["y"] - parts["heading"]["bottom"] >= 8
+    pane = page.locator("[data-review-wizard-card]")
+    expect(pane).to_contain_text("One at a time")
+    expect(pane).to_contain_text("Every stream's waiting items")
+    link = pane.get_by_role("link", name="Review one at a time")
+    expect(link).to_have_class("button")
+    expect(link).to_have_attribute("href", "/admin/reports/review/")
+    expect(page.locator(".review-work-or")).to_have_attribute("aria-hidden", "true")
+    expect(page.locator("[data-review-work-tables]")).to_contain_text("By table")
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    page.evaluate(axe_source)
+    assert page.evaluate(AXE) == []
+
+
+@pytest.mark.parametrize("path", [HOME_PATH, PATH, GREYED_CARD_PATH])
+def test_review_work_stacks_one_at_a_time_on_a_phone(
+    page, component_origin, axe_source, path
+):
+    """At 320px the pane is on top at full width with its button (or reason)
+    after its text, then a horizontal "or" rule, then the tables; nothing
+    scrolls sideways."""
+    page.set_viewport_size({"width": 320, "height": 640})
+    page.goto(component_origin + path)
+    page.evaluate("document.fonts.ready.then(() => true)")
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    parts = page.evaluate(SPLIT)
+    pane, rule, tables = parts["pane"], parts["or"], parts["tables"]
+    assert pane["bottom"] < rule["y"] < rule["bottom"] < tables["y"]
+    assert pane["width"] == rule["width"] == tables["width"] == parts["split"]["width"]
+    assert rule["height"] < 30
+    assert parts["action"]["y"] >= parts["text"]["bottom"]
+    assert parts["action"]["right"] <= pane["right"]
+    page.evaluate(axe_source)
+    assert page.evaluate(AXE) == []
+
+
+def test_a_greyed_pane_shows_the_menus_reason_not_a_link(
+    page, component_origin, axe_source
+):
+    """While the menu greys the wizard out, the pane shows the menu's reason
+    as muted text where the button would be (centred the same way), never a
+    link."""
+    page.set_viewport_size({"width": 1280, "height": 768})
+    page.goto(component_origin + GREYED_CARD_PATH)
+    page.evaluate("document.fonts.ready.then(() => true)")
+    assert_side_by_side(page.evaluate(SPLIT))
+    pane = page.locator("[data-review-wizard-card]")
+    expect(pane.get_by_role("link")).to_have_count(0)
+    reason = pane.locator("[data-review-wizard-reason]")
+    expect(reason).to_have_text(GREYED_REASON)
+    assert reason.evaluate("el => getComputedStyle(el).color") == page.evaluate(
+        "getComputedStyle(document.querySelector('.review-work-wizard-help')).color"
     )
-    first = page.locator("[data-link-card]").first
-    expect(first).to_contain_text("Continue: Census changes")
+    page.evaluate(axe_source)
+    assert page.evaluate(AXE) == []
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_without_the_wizard_the_tables_take_the_full_width(
+    page, component_origin, width
+):
+    """Without the menu's wizard entry there is no pane, no "or" and no By
+    table label: the stream panels take the full width."""
+    page.set_viewport_size({"width": width, "height": 768})
+    page.goto(component_origin + NO_CARD_PATH)
+    parts = page.evaluate(SPLIT)
+    assert parts["pane"] is None and parts["or"] is None
+    assert parts["tables"]["width"] == parts["split"]["width"]
+    expect(page.locator("[data-review-work-tables]")).not_to_contain_text("By table")
+    expect(page.locator("[data-review-stream]")).to_have_count(5)
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
 
 
 def test_accept_on_a_family_page_redraws_its_section_in_place(page, component_origin):

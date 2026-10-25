@@ -14,7 +14,8 @@ pages once a change is accepted (a test serves each at its page's
 address, which the section redraws from). ``FOCUS_PATH`` is the Member
 page opened by the bottom row's Next, ``BACK_PATH`` by the top row's
 Previous. ``CARD_PATH`` is My review work with one unfinished run, whose
-card continues it.
+card continues it; ``GREYED_CARD_PATH`` is My review work while the menu
+greys the wizard out, and ``NO_CARD_PATH`` while it has no wizard entry.
 """
 
 from datetime import UTC, datetime
@@ -52,6 +53,10 @@ from .timeline_components import HOME_CHANGE
 START_PATH = "/review-wizard"
 PAGE_PATHS = ("/review-wizard-1", "/review-wizard-2", "/review-wizard-3")
 CARD_PATH = "/review-wizard-card"
+GREYED_CARD_PATH = "/review-wizard-card-greyed"
+NO_CARD_PATH = "/review-wizard-card-none"
+# The menu's reason while it greys Review one at a time out.
+GREYED_REASON = "No stream is offered to you in this campaign."
 ACCEPTED_PATH = "/review-wizard-1-accepted"
 MEMBER_ACCEPTED_PATH = "/review-wizard-2-accepted"
 FOCUS_PATH = "/review-wizard-2-from-next"
@@ -330,4 +335,28 @@ def components(context, admin):
             base | {"review": {"campaign": CAMPAIGN, "counts": COUNTS, "runs": runs}},
         ),
     )
+    review = {"campaign": CAMPAIGN, "counts": COUNTS, "runs": []}
+    greyed = SimpleNamespace(
+        label="Review one at a time", url=None, reason=GREYED_REASON
+    )
+    others = {
+        name: item
+        for name, item in page_chrome["entries"].items()
+        if name != "review_wizard"
+    }
+    for path, entries in (
+        (GREYED_CARD_PATH, others | {"review_wizard": greyed}),
+        (NO_CARD_PATH, others),
+    ):
+        pages[path] = (
+            "text/html",
+            render_to_string(
+                "stewardship/my-review-work.html",
+                base
+                | {
+                    "admin_chrome": page_chrome | {"entries": entries},
+                    "review": review,
+                },
+            ),
+        )
     return pages

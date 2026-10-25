@@ -257,21 +257,20 @@ def test_the_run_guard_keeps_the_sequence_fixed(response_service, google):
 
 
 def test_my_review_work_card_leads_to_the_wizard(response_service, google):
-    """The card opens the start page; with one unfinished run it continues it."""
+    """The pane's button opens the start page; with one unfinished run it
+    continues it."""
     prepared(response_service)
     browser = staff_browser(google)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response = browser.get("/admin/")
         page = response.content.decode()
-        card = page.split("data-review-wizard-card")[1].split("</ul>")[0]
-        assert (
-            f'<a href="{START}"><span class="link-card-label">Review one at a time'
-            in (card)
-        )
+        card = page.split("data-review-wizard-card")[1].split("</section>")[0]
+        assert f'<a class="button" href="{START}"' in card
+        assert ">Review one at a time</a>" in card
         assert page.index("data-review-wizard-card") < page.index("data-review-stream=")
         run = location(start(browser)[0])[1]["run"]
         page = browser.get("/admin/").content.decode()
-        card = page.split("data-review-wizard-card")[1].split("</ul>")[0]
+        card = page.split("data-review-wizard-card")[1].split("</section>")[0]
         assert f'href="{START}1/?run={run}"' in card
         assert "Continue: Census changes, Family 1 of 1" in card
         # The menu lists Review one at a time first in Review work.

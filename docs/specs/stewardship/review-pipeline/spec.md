@@ -2397,19 +2397,47 @@ have many:
   that page list the five runs used last (each run's sequence is read for
   its progress words, on every draw of the table), and say when the start
   page lists more.
-- **Dashboard card.** My review work (for Staff and Ministry leaders) and
-  Administrators' Home Review work panel each get a **Review one at a
-  time** link card, the **first** card, ahead of the stream panels (as the
-  menu entry is first), in the same
-  [overview card](../ui-conventions/spec.md#overview-pages) styling. It
-  opens the wizard's start page. When the reader has exactly one unfinished run it
-  reads "Continue: *stream*, *progress words*" (for example "Continue:
-  Ministry requests, 12 of 87") and opens that run's current page; with
-  several it keeps its plain label and opens the start page, which lists
-  them. The card shows no count
-  of its own: the waiting set differs per stream, so a total would add
-  unlike things and repeat the stream cards' numbers. It is shown to
-  readers for whom the wizard is offered.
+- **Dashboard pane.** My review work (for Staff and Ministry leaders) and
+  Administrators' Home Review work panel put the wizard **beside** the
+  stream groups, so the choice reads plainly: review everything one at a
+  time, or open any table to work in bulk (R52 Part W, option B; the
+  Administrator, 2026-10-25). Under the page's or panel's heading is one
+  row, drawn by `review-work-split.html` for both pages:
+  - On the left, a **One at a time** pane about 13rem wide, in the accent's
+    soft fill with its line colour as a 1px border. At its top, as normal
+    flow: the small uppercase label "One at a time" and the muted line
+    "Every stream's waiting items, one Family or Member per page, with
+    Previous and Next." (it names no position, which would be wrong once
+    the parts stack and means nothing to a screen reader). Below them, centred in the height left, the
+    portal's primary button **Review one at a time**, a link to the
+    wizard's start page. When the reader has exactly one unfinished run
+    it reads "Continue: *stream*, *progress words*" (for example
+    "Continue: Ministry requests, 12 of 87") and opens that run's current
+    page; with several it keeps its plain label and opens the start page,
+    which lists them. While the menu greys the wizard out, the pane shows
+    the menu's reason as muted text in the button's place, never a link.
+  - In the middle, a thin vertical rule with a small muted "or" at its
+    centre. It is decoration, hidden from screen readers, which read the
+    pane and then the tables.
+  - On the right, a small uppercase **By table** label above the stream
+    groups, unchanged except that they fit the narrower column: narrower
+    stream names and cards, so My review work still fits a laptop window
+    under the [overview pages](../ui-conventions/spec.md#overview-pages)
+    rule and its two-line exception.
+
+  The layout follows the room the panel has, not the window: from 48rem
+  (a 1280px laptop window with the menu open) the parts sit side by side;
+  in less (a phone or a narrow window) they stack, the pane at full width
+  with its button after its text (beside it while there is room), then a
+  horizontal rule with "or", then the tables at full width, with no
+  sideways scroll at 320px. The pane shows no count of its own: the
+  waiting set differs per stream, so a total would add unlike things and
+  repeat the stream cards' numbers. It is shown to readers for whom the
+  wizard is offered; without it, the pane, the rule and the By table
+  label are left out and the stream groups take the full width. The
+  layout is static: nothing moves on hover, focus or a click
+  ([no layout shift](../ui-conventions/spec.md#no-layout-shift)), and its
+  colours are theme tokens, so dark mode follows.
 - My review work's stream cards keep opening the tables.
 
 ### Wizard shared component
@@ -2593,6 +2621,12 @@ in slices 2 and 3:
    five tables. Tests: each table's button posts its view and opens page 1
    with that view's sequence; the sort mapping; the existing-runs dialog (Continue per run, Start a new run, Cancel; finished runs not listed); the unavailable state on
    an empty table (no label is renamed, so no table test needed a sweep).
+   With it, the dashboard card becomes the side-by-side
+   [dashboard pane](#wizard-entry-points) (R52 Part W): browser tests of
+   the side-by-side row at 1280px (the gap below Home's heading, the text
+   at the pane's top and its button centred below it, the greyed
+   state), the stacked parts with no sideways scroll at 320px,
+   and the full-width tables without the wizard.
 
 ## Update phase
 

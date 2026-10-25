@@ -417,10 +417,12 @@ def runs(principal, campaign):
 
 
 def wizard_cards(chrome, review):
-    """The Review one at a time card, first on My review work and Home (#2123).
+    """The Review one at a time entry on My review work and Home (#2123).
 
-    Shown while the viewer's menu has the wizard's entry (some stream is
-    offered), greyed with the menu's reason while it is. It opens the start
+    A one-card list, drawn as the One at a time pane's button beside the
+    stream groups (review-work-split.html, R52 Part W). Shown while the
+    viewer's menu has the wizard's entry (some stream is offered), with the
+    menu's reason instead while the menu greys it out. It opens the start
     page; with exactly one unfinished run it reads "Continue: *stream*,
     *progress*" and opens that run's current page. It has no count: the
     waiting set differs per stream, so a total would add unlike things.
