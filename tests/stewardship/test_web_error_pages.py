@@ -553,3 +553,191 @@ def test_a_denial_linking_home_still_offers_sign_in_unless_it_says_not():
     assert '<p><a href="/admin/login">Sign in again</a></p>' in body
     # The home link still shows once, in the actions row.
     assert body.count('href="/admin/">Administration home</a>') == 1
+
+
+def _principal():
+    """A current Administrator principal, as a view's admission finds one."""
+    from uuid import uuid4
+
+    from parishkit.stewardship.accounts.policy import Principal
+
+    return Principal(identity=uuid4(), roles=frozenset({"administrator"}))
+
+
+def _admitted(request):
+    """Mark ``request`` as the view's admission does (``AdminCaller.admitted``).
+
+    A real ``Principal`` with a session cookie, but no ``portal_session``, so
+    the Admin chrome stays empty and needs no database.
+    """
+    from types import SimpleNamespace
+
+    request.principal = _principal()
+    request.session = SimpleNamespace(session_key="key")
+    return request
+
+
+@pytest.fixture
+def recheck(monkeypatch):
+    """Stub the redraw's read-only session check; returns its call log.
+
+    Set ``recheck.result`` to what ``authenticated_admin`` answers: a current
+    principal (the default), None for a session that ended after its
+    admission, or an exception to raise.
+    """
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts import authentication, sessions
+
+    log = SimpleNamespace(calls=[], result=_principal())
+
+    def check(request, *, store, read_only=False):
+        """Record the call, then answer as ``log.result`` says."""
+        log.calls.append((store, read_only))
+        if isinstance(log.result, Exception):
+            raise log.result
+        return log.result
+
+    monkeypatch.setattr(error_pages, "_restore_review", lambda: False)
+    monkeypatch.setattr(sessions, "authenticated_admin", check)
+    monkeypatch.setattr(
+        authentication, "runtime", lambda: SimpleNamespace(store="store")
+    )
+    return log
+
+
+def _assert_signed_in_denial(response, message="Your access doesn&#x27;t include"):
+    """A 403 that says why, links home and never asks to sign in (#2165)."""
+    body = response.content.decode()
+    assert response.status_code == 403
+    assert "<h1>Access unavailable</h1>" in body
+    assert message in body
+    assert "Choose a page from the menu" in body
+    for text in (
+        "Your session may have ended",
+        "Access is unavailable. Sign in again.",
+        "Sign-in is unavailable",
+        "Try signing in again",
+        # The error page's own link; the Admin base's hidden dialog has one.
+        '<p><a href="/admin/login">Sign in again</a></p>',
+    ):
+        assert text not in body
+    assert body.count('href="/admin/">Administration home</a>') == 1
+    assert "Accept" in response["Vary"]
+
+
+@pytest.mark.parametrize("method", ["get", "post"])
+def test_a_signed_in_denial_offers_home_and_no_sign_in(method, recheck):
+    """A signed-in reader's generic denial drops the sign-in hint (#2165)."""
+    request = _admitted(getattr(RequestFactory(), method)("/admin/users", **PAGE))
+    _assert_signed_in_denial(
+        through(request, error_response(PermissionError("private")))
+    )
+
+
+def test_a_signed_in_refusal_keeps_its_own_sentence_without_sign_in():
+    """A reviewed sentence (#939) still shows, with no Sign in again (#2165)."""
+    from parishkit.stewardship.accounts.role_refusal import response
+    from parishkit.stewardship.web.refusals import UserFacingDenied
+
+    error = UserFacingDenied("You don't lead any Ministry.")
+    request = _admitted(RequestFactory().get("/admin/reports/ministries", **PAGE))
+    _assert_signed_in_denial(
+        through(request, response(error)), "You don&#x27;t lead any Ministry."
+    )
+
+
+def _report_denial():
+    """What a report view's plain ``PermissionError`` answers (``denial()``)."""
+    from parishkit.stewardship.accounts.authentication import denial
+
+    try:
+        raise PermissionError("private")
+    except PermissionError:
+        return denial()
+
+
+def test_a_signed_in_report_denial_is_drawn_without_sign_in(recheck):
+    """``denial()``'s sign-in text becomes the signed-in page (#2165).
+
+    The page is drawn from the fresh read-only check's principal, not the
+    one the view admitted earlier in the request.
+    """
+    request = _admitted(RequestFactory().get("/admin/reports/directory", **PAGE))
+    _assert_signed_in_denial(through(request, _report_denial()))
+    assert recheck.calls == [("store", True)]
+    assert request.principal is recheck.result
+
+
+def _assert_sign_in_denial(response):
+    """``denial()``'s original generic page, with its sign-in wording."""
+    body = response.content.decode()
+    assert response.status_code == 403
+    assert "Sign-in is unavailable. Please try again." in body
+    assert 'href="/admin/login">Try signing in again</a>' in body
+    assert "Your access doesn&#x27;t include" not in body
+    assert "Accept" in response["Vary"]
+
+
+def test_a_report_denial_keeps_sign_in_for_signed_out_readers_and_scripts(recheck):
+    """Without an admitted session, or for a script, the response is unchanged."""
+    script = {"HTTP_ACCEPT": "application/json", "HTTP_SEC_FETCH_MODE": "cors"}
+    for request in (
+        RequestFactory().get("/admin/reports/directory", **PAGE),
+        _admitted(RequestFactory().get("/admin/reports/directory", **script)),
+    ):
+        _assert_sign_in_denial(through(request, _report_denial()))
+    assert recheck.calls == []
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [None, PermissionError("refused"), DatabaseError("outage")],
+    ids=["ended", "refused", "outage"],
+)
+def test_a_session_ended_after_admission_keeps_the_sign_in_page(recheck, answer):
+    """A later recheck refused the admitted session: no signed-in redraw.
+
+    The view admitted a real principal, then (say) Admin home's or a
+    report's recheck found the session revoked, disabled or changed in role
+    and called ``denial()``. The admitted principal is still on the request,
+    but the fresh read-only check refuses it, so the page keeps its sign-in
+    wording and draws no chrome from the old roles (#2165).
+    """
+    recheck.result = answer
+    request = _admitted(RequestFactory().get("/admin/reports/directory", **PAGE))
+    admitted = request.principal
+    _assert_sign_in_denial(through(request, _report_denial()))
+    assert recheck.calls == [("store", True)]
+    assert request.principal is admitted
+
+
+def _other_denials():
+    """``denial()`` answers that carry their own wording, not the generic text."""
+    from parishkit.stewardship.accounts.authentication import denial
+
+    return {
+        "rate_limited": denial(status=429),
+        "outage": denial(status=503),
+        "sign_in": denial(sign_in=True),
+        "family": denial(admin=False),
+    }
+
+
+@pytest.mark.parametrize("kind", ["rate_limited", "outage", "sign_in", "family"])
+def test_only_the_generic_admin_denial_is_redrawn(recheck, kind):
+    """A 429, a 503, a sign-in refusal and a Family denial keep their page.
+
+    None is marked ``GENERIC_DENIAL``, so even a signed-in page load gets
+    the original response and no session recheck runs (#2165).
+    """
+    response = _other_denials()[kind]
+    body = response.content.decode()
+    assert not getattr(response, error_pages.GENERIC_DENIAL, False)
+    path = "/" if kind == "family" else "/admin/reports/directory"
+    request = _admitted(RequestFactory().get(path, **PAGE))
+    drawn = through(request, response)
+    assert drawn.status_code == response.status_code
+    assert "Your access doesn&#x27;t include" not in drawn.content.decode()
+    assert drawn.content.decode() == body
+    assert recheck.calls == []

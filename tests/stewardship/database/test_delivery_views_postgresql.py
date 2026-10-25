@@ -769,6 +769,41 @@ def test_authority_is_rechecked_after_render(family_mail, google, monkeypatch): 
     assert not AuditEvent.objects.filter(event_type="delivery_viewed").exists()
 
 
+def test_a_page_load_revoked_mid_request_keeps_the_sign_in_page(
+    family_mail,  # noqa: F811
+    google,
+    monkeypatch,
+):
+    """A browser's page load revoked after admission goes to sign-in.
+
+    The view admitted the session, so its principal is still on the request
+    when the post-render recheck refuses it. The page load is sent to the
+    sign-in page as an ended session, never drawn as a signed-in refusal
+    (#2165).
+    """
+    from parishkit.stewardship.jobs import delivery_views
+
+    message = uncertain(family_mail)
+    browser, _ = signed_in()
+    original = delivery_views.render
+
+    def revoked(*args, **kwargs):
+        """Complete rendering then revoke the actual current principal."""
+        result = original(*args, **kwargs)
+        PortalUser.objects.update(disabled=True, version=F("version") + 1)
+        return result
+
+    monkeypatch.setattr(delivery_views, "render", revoked)
+    response = browser.get(
+        f"/admin/mail/sent/{message.pk}/",
+        headers={"Accept": "text/html", "Sec-Fetch-Mode": "navigate"},
+    )
+    assert response.status_code == 302
+    assert response["Location"].startswith("/admin/login?ended=1&")
+    assert str(message.pk).encode() not in response.content
+    assert not AuditEvent.objects.filter(event_type="delivery_viewed").exists()
+
+
 def test_web_cannot_read_render_or_sealed_substitution(family_mail):  # noqa: F811
     """Metadata grants do not quietly become general outbox read authority.
 
