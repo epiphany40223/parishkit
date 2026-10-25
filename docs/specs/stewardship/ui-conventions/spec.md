@@ -3920,12 +3920,15 @@ show while it still updates itself; a failed step's explanation, which
 comes with a failure notice above the boxes and stops the updates, is not
 reserved, so a running box is not drawn tall enough for a long failure.
 Because every form is reserved, each one is a short line, so the box is
-not drawn much taller than what it shows. Every row of one list of boxes
-has the same height, the tallest row's, so a list that wraps onto a second
-row never shows a short row under a tall one. A list with a failed box
-drops the equal rows, so the failure's long explanation makes only its own
-row taller; updates have stopped by then, so nothing moves under the
-reader.
+not drawn much taller than what it shows. Every row of Finishing setup's
+list of boxes has the same height, the tallest row's, so a list that wraps
+onto a second row never shows a short row under a tall one. A failed
+Finishing setup drops the equal rows, so the failure's long explanation
+makes only its own row taller; updates have stopped by then and the failure
+is retried only by starting a new setup, so nothing moves under the reader.
+Other lists of boxes keep natural row heights: some (Load ParishSoft data)
+clear a failed box in place with Try again, and switching from natural to
+equal rows then would move the controls below.
 **Precedent.** The Administrator's pk-local check of R40a (2026-10-21,
 [#1903](https://github.com/epiphany40223/parishkit/issues/1903)): Load
 parish data's status sentence grew from one line to three and pushed the
