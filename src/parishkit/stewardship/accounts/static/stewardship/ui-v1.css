@@ -582,6 +582,14 @@ fieldset > legend { float: left; width: 100%; padding: 0; margin-bottom: .5rem; 
    first visible row flowing beside the float, so a checkbox label's text
    dropped below its absolutely positioned box. */
 fieldset > legend ~ * { clear: both; }
+/* A legend's "i" sits beside its words, as a label's does in its .label-row
+   (field-tip.html's fieldset, a hand-drawn tip after a legend; #2144): the
+   legend shrinks to its words, leaving the tip room on its first line even
+   when the words wrap (a phone), and the tip floats after it. A
+   legend must stay the fieldset's first child, so the tip cannot share a
+   row element with it. Flex fieldsets (.choice-pair) ignore the floats. */
+fieldset > legend:has(+ .toggletip) { width: auto; max-width: calc(100% - 2.15rem); margin-inline-end: .4rem; }
+fieldset > legend + .toggletip { float: left; clear: none; }
 fieldset.panel > legend { font-size: var(--heading-2); font-weight: var(--heading-weight); }
 input, textarea, select, button { font: inherit; max-width: 100%; }
 input:not([type=checkbox], [type=radio], [type=hidden]), textarea, select { display: block; width: 100%; min-height: 44px; padding: .65rem .85rem; border: 1px solid var(--control-border); border-radius: var(--radius-small); background: var(--paper); color: var(--ink); box-shadow: inset 0 1px 2px rgb(16 24 40 / 6%); transition: border-color .15s, box-shadow .15s; }
@@ -748,14 +756,18 @@ textarea { max-width: 56rem; }
    directly under the control, in the smaller muted help style. The help keeps
    its aria-describedby link, so the reading order for assistive technology is
    unchanged in meaning. */
-:is(form, fieldset) > div:has(> .helptext):not(:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden]))))) { display: flex; flex-direction: column; clear: both; }
-:is(form, fieldset) > div:has(> .helptext):not(:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden]))))) > .helptext { order: 1; margin: .35rem 0 0; }
+:is(form, fieldset, .field-pair) > div:has(> .helptext):not(:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden]))))) { display: flex; flex-direction: column; clear: both; }
+:is(form, fieldset, .field-pair) > div:has(> .helptext):not(:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden]))))) > .helptext { order: 1; margin: .35rem 0 0; }
 /* A single yes/no checkbox sits beside its label, with any help below the
-   label, instead of on a line of its own. */
-:is(form, fieldset) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: .65rem; align-items: center; margin-block: .85rem; clear: both; }
-:is(form, fieldset) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > input[type=checkbox] { grid-column: 1; grid-row: 1; }
-:is(form, fieldset) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > label { grid-column: 2; grid-row: 1; margin: 0; font-weight: 550; cursor: pointer; }
-:is(form, fieldset) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > :is(.helptext, .errorlist) { grid-column: 2; margin: .2rem 0 0; }
+   label, instead of on a line of its own; so does each box of a group that
+   needs one ticked (data-require-one, Campaign settings' modules, #2144), so
+   every box of the group lines up, first, in the same place, and so does
+   each box of campaign-fields.html where Copy campaign draws it in a
+   .campaign-fields panel rather than straight in its form. */
+:is(form, fieldset, [data-require-one], .campaign-fields) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: .65rem; align-items: center; margin-block: .85rem; clear: both; }
+:is(form, fieldset, [data-require-one], .campaign-fields) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > input[type=checkbox] { grid-column: 1; grid-row: 1; }
+:is(form, fieldset, [data-require-one], .campaign-fields) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > label { grid-column: 2; grid-row: 1; margin: 0; font-weight: 550; cursor: pointer; }
+:is(form, fieldset, [data-require-one], .campaign-fields) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > :is(.helptext, .errorlist) { grid-column: 2; margin: .2rem 0 0; }
 /* One radio of a group, drawn as a div holding the radio and its own label
    (Edit scheduled email's Apply this edit to and Delete, #1656): the circle
    beside its words, as a lone checkbox is above, with that choice's help or
@@ -774,26 +786,30 @@ textarea { max-width: 56rem; }
    an open one does, the row's "i" stays beside a long label (the label
    wraps, not the "i") and the row never gets the extra line a wrapped "i"
    would add. Opening the tip does not grow the row (its bubble floats). */
-:is(form, fieldset) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > .label-row { grid-column: 2; grid-row: 1; margin: 0; flex-wrap: nowrap; }
-:is(form, fieldset) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > .label-row > label { font-weight: 550; }
+:is(form, fieldset, [data-require-one], .campaign-fields) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > .label-row { grid-column: 2; grid-row: 1; margin: 0; flex-wrap: nowrap; }
+:is(form, fieldset, [data-require-one], .campaign-fields) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > .label-row > label { font-weight: 550; }
 /* On desktop, consecutive short fields (dates, times, numbers) share a row.
    (!important: it must win over the help-text column rule above, whose
    selector is necessarily more specific.) */
 @media (min-width: 48rem) {
-  :is(form, fieldset) > div:has(> input:is([type=date], [type=time], [type=datetime-local], [type=month], [type=number], [data-time-entry=time])):not(:has(> :is(select, textarea))):not([hidden]) { display: inline-flex !important; flex-direction: column; vertical-align: top; min-width: 12rem; margin-inline-end: 1.5rem; }
-  :is(form, fieldset) > div:has(> input:is([type=date], [type=time], [type=datetime-local], [type=month], [type=number], [data-time-entry=time])) > :is(input, .helptext, .time-reading) { max-width: 14rem; }
+  :is(form, fieldset, .field-pair) > div:has(> input:is([type=date], [type=time], [type=datetime-local], [type=month], [type=number], [data-time-entry=time])):not(:has(> :is(select, textarea))):not([hidden]) { display: inline-flex !important; flex-direction: column; vertical-align: top; min-width: 12rem; margin-inline-end: 1.5rem; }
+  :is(form, fieldset, .field-pair) > div:has(> input:is([type=date], [type=time], [type=datetime-local], [type=month], [type=number], [data-time-entry=time])) > :is(input, .helptext, .time-reading) { max-width: 14rem; }
   /* A short field's reserved answer line (.field-error-line, drawn before
      the control) sits under its control, not above it, so every short field
      in a row (a date beside a time, which keeps its reading line below) puts
      its box at the same height under its label (#1851). The help
      follows it, as it follows a time's reading. */
-  :is(form, fieldset) > div:has(> input:is([type=date], [type=time], [type=datetime-local], [type=month], [type=number], [data-time-entry=time])):not(:has(> :is(select, textarea))):not([hidden]) > .field-error-line { order: 1; }
-  :is(form, fieldset) > div:has(> input:is([type=date], [type=time], [type=datetime-local], [type=month], [type=number], [data-time-entry=time])):not(:has(> :is(select, textarea))):not([hidden]) > .helptext { order: 2; }
-  /* A date checked as it is typed whose answer line has no Review beside
-     it (a live campaign's end date on Campaign settings, #1119) takes the
-     form's whole width, so its reserved line holds the longest answer in
-     as few lines as it can; the line never grows past that room. */
-  :is(form, fieldset) > div.field-live:has(> input[type=date]):not([hidden]) { display: flex !important; }
+  :is(form, fieldset, .field-pair) > div:has(> input:is([type=date], [type=time], [type=datetime-local], [type=month], [type=number], [data-time-entry=time])):not(:has(> :is(select, textarea))):not([hidden]) > .field-error-line { order: 1; }
+  :is(form, fieldset, .field-pair) > div:has(> input:is([type=date], [type=time], [type=datetime-local], [type=month], [type=number], [data-time-entry=time])):not(:has(> :is(select, textarea))):not([hidden]) > .helptext { order: 2; }
+  /* Two short fields that belong together (Campaign settings' start and
+     end dates, #2144) always share one row on desktop. A date checked as it
+     is typed whose answer line has no Review beside it (a live campaign's
+     end date, .field-live, #1119) takes the rest of that row, so its
+     reserved line holds the longest answer in as few lines as it can; the
+     line never grows past that room. At phone width each takes its own
+     row, as every short field does. */
+  .field-pair { display: flex; align-items: start; }
+  .field-pair > div.field-live:has(> input[type=date]):not([hidden]) { display: flex !important; flex: 1 1 0; margin-inline-end: 0; }
 }
 /* Forms read best at a comfortable measure; forms holding a table keep the
    page width. */

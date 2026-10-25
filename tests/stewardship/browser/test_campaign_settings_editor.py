@@ -34,6 +34,7 @@ from .campaign_settings_components import (
     LIVE_REVIEW,
     LOCKED,
 )
+from .keyboard import tab_to_next
 from .review_helpers import RESTORE, answer_reviews, expect_review
 from .test_in_place import MARK, MARKED
 from .test_live_end_date import answer_checks, enabled
@@ -427,4 +428,89 @@ def test_a_setting_is_as_tall_locked_as_open(page, component_origin, width, name
         name,
         width,
         found,
+    )
+
+
+# Each module box's left edge and its label's, the start and end dates'
+# tops and lefts, the leader roles' legend and its "i", and whether the page
+# scrolls sideways (#2144).
+LAYOUT = """() => {
+    const box = (node) => node.getBoundingClientRect();
+    const modules = ['census', 'ministry', 'financial_enabled',
+                     'additional_information'].map((name) => {
+        const input = document.getElementById('id_' + name);
+        const label = document.querySelector(`label[for="id_${name}"]`);
+        return [box(input).left, box(input).right, box(label).left,
+                box(input).top - box(label).top];
+    });
+    const legend = document.getElementById('id_ministry_leader_roles_label');
+    const tip = legend.nextElementSibling.querySelector('button');
+    return {
+        modules,
+        start: [box(document.getElementById('id_start_date')).left,
+                box(document.getElementById('id_start_date')).top],
+        end: [box(document.getElementById('id_end_date')).left,
+              box(document.getElementById('id_end_date')).top],
+        legend: [box(legend).top, box(legend).bottom, box(legend).right],
+        tip: [box(tip).left, box(tip).top, box(tip).bottom],
+        sideways: document.documentElement.scrollWidth
+            > document.documentElement.clientWidth,
+    };
+}"""
+
+
+@pytest.mark.parametrize("width", [1366, 900, 320])
+@pytest.mark.parametrize("path", [DRAFT, LIVE, LOCKED])
+def test_settings_layout_is_tight_and_uniform(page, component_origin, width, path):
+    """Campaign settings' layout (#2144): the start and end dates share a
+    row on desktop and stack on a phone; every module box (Census, Ministry
+    stewardship, Financial stewardship, Collect additional information)
+    sits first, in the same place, beside its label's first line; the
+    Ministry leader roles' "i" sits beside its legend, not under it; and
+    nothing scrolls sideways, open, live or locked."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + path)
+    if path == DRAFT:
+        # The draft asks no Ministries yet; ticking it shows the roles.
+        page.locator("#id_ministry").check()
+    found = page.evaluate(LAYOUT)
+    assert not found["sideways"], found
+    lefts = {round(left, 1) for left, _, _, _ in found["modules"]}
+    assert len(lefts) == 1, found["modules"]
+    for _, right, label_left, offset in found["modules"]:
+        assert right < label_left, found["modules"]
+        # The box centres on the label's first line, never under the words.
+        assert -20 < offset < 20, found["modules"]
+    start, end = found["start"], found["end"]
+    if width >= 900:
+        assert same_place(end[1], start[1]) and end[0] > start[0], found
+    else:
+        assert same_place(end[0], start[0]) and end[1] > start[1], found
+    top, bottom, right = found["legend"]
+    tip_left, tip_top, tip_bottom = found["tip"]
+    assert tip_left >= right and tip_top < bottom and tip_bottom > top, found
+
+
+@pytest.mark.parametrize("width", [1366, 320])
+def test_copy_campaign_lines_up_every_module_box(page, component_origin, width):
+    """Copy campaign draws the same fields in a panel (#2144): every module
+    box, Collect additional information's too, sits first, in one place,
+    beside its label's first line."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + "/clone-settings")
+    found = page.evaluate(LAYOUT.split("const legend")[0] + "return modules; }")
+    assert len({round(left, 1) for left, _, _, _ in found}) == 1, found
+    for _, right, label_left, offset in found:
+        assert right < label_left and -20 < offset < 20, found
+
+
+def test_a_module_box_comes_before_its_tip_in_keyboard_order(page, component_origin):
+    """Tab meets a module box, then its "i", in the order they are drawn
+    (#2144), never the "i" before the box it sits beside."""
+    page.goto(component_origin + DRAFT)
+    page.locator("#id_census").focus()
+    tab_to_next(page)
+    assert (
+        page.evaluate("document.activeElement.getAttribute('aria-controls')")
+        == "id_census_tip"
     )

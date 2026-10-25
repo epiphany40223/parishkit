@@ -289,6 +289,17 @@ CREATION_TIMEZONE_HINT = _(
 )
 
 HINTS = {
+    # Campaign settings' module checkboxes (#2144): one line under each box's
+    # words; the rest of ADMIN_CAMPAIGN's help opens from its "i".
+    "census": _(
+        "Ask Families to review and correct their household and Member details."
+    ),
+    "financial_enabled": _(
+        "Ask Families for a pledge for the upcoming financial period."
+    ),
+    "additional_information": _(
+        "Add a final question where Families can write anything else."
+    ),
     "website": _("For example https://www.yourparish.org/"),
     "timezone": _("For example America/New_York."),
     "phone": _("Ten-digit US number, for example (212) 555-1234."),
