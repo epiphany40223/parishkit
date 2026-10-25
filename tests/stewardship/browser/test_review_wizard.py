@@ -2,8 +2,19 @@
 
 import pytest
 
-from .review_wizard_components import CARD_PATH, PAGE_PATHS, START_PATH
+from parishkit.stewardship.reports.review_wizard_views import page_url
+
+from .review_wizard_components import (
+    ACCEPTED_PATH,
+    CARD_PATH,
+    PAGE_PATHS,
+    RUN,
+    START_PATH,
+)
+from .test_charts import assert_clean, watch
 from .test_family_response import expect
+from .test_table_sorting import MARK, MARKED
+from .waits import focused, has_attribute, has_text, hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -165,3 +176,59 @@ def test_my_review_work_card_comes_first_and_continues_a_run(page, component_ori
     )
     first = page.locator("[data-link-card]").first
     expect(first).to_contain_text("Continue: Census changes")
+
+
+def test_accept_on_a_family_page_redraws_its_section_in_place(page, component_origin):
+    """The Family page's section is the hub's: Accept opens Census changes'
+    own dialog and posts there, the section is redrawn in place from the
+    page's own address with Accept pressed and focused, and neither
+    navigation row moves; nothing reloads."""
+    errors = watch(page)
+    page.set_viewport_size({"width": 1024, "height": 700})
+    page.goto(component_origin + PAGE_PATHS[0])
+    page.evaluate(MARK)
+    sent = []
+
+    def census(route):
+        """Keep the decision's body; answer as Census changes does."""
+        if route.request.method != "POST":
+            route.continue_()
+            return
+        sent.append(route.request.post_data)
+        route.fulfill(
+            content_type="text/html",
+            body="<!doctype html><p data-confirm-announce>Accepted.</p>",
+        )
+
+    def here(route):
+        """The page's own address after the decision: the accepted page."""
+        route.fulfill(response=route.fetch(url=component_origin + ACCEPTED_PATH))
+
+    page.route("**/admin/reports/census/", census)
+    page.route("**" + page_url(RUN, 1), here)
+    section = page.locator("#review-section")
+    expect(section.get_by_text("1 more in this stream for this Family")).to_be_visible()
+    before = page.evaluate(SLOTS)
+    row = section.get_by_role("table", name="Changed fields").get_by_role(
+        "row", name="Home address"
+    )
+    accept = row.get_by_role("button", name="Accept Home address for Family")
+    has_attribute(accept, "aria-pressed", "false")
+    accept.click()
+    dialog = page.locator("#review-family-census-decide-dialog")
+    visible(dialog)
+    has_text(dialog.locator("h2"), "Accept Home address for Family?")
+    dialog.get_by_role("button", name="Record").click()
+    hidden(dialog)
+    row = section.get_by_role("table", name="Changed fields").get_by_role(
+        "row", name="Home address"
+    )
+    has_text(row.locator(".stage-chip .status-word"), "To enter by hand")
+    accept = row.locator("[data-row-action='accept']")
+    has_attribute(accept, "aria-pressed", "true")
+    focused(accept)
+    assert "decide=accept" in sent[-1]
+    assert page.evaluate(MARKED) == "kept"
+    assert page.url.endswith(PAGE_PATHS[0])
+    assert page.evaluate(SLOTS) == before
+    assert_clean(page, errors)

@@ -4,8 +4,12 @@
 every stream offered and Pledges greyed out with the menu's reason.
 ``PAGE_PATHS`` are one run's three pages: a Family page first, a Member
 page and the last page, so the navigation rows can be compared across
-pages. ``CARD_PATH`` is My review work with one unfinished run, whose card
-continues it.
+pages. The Family page draws its census section through the shared
+component, its home address change To review with Census changes' row
+actions and one change filtered out; ``ACCEPTED_PATH`` is that page once the
+change is accepted (a test serves it at the page's address, which the
+section redraws from). ``CARD_PATH`` is My review work with one unfinished
+run, whose card continues it.
 """
 
 from datetime import UTC, datetime
@@ -18,6 +22,8 @@ from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.reports import review_wizard_views as views
 from parishkit.stewardship.reports.census_change_views import KIND_LABELS, ROUTE_LABELS
 from parishkit.stewardship.reports.census_changes import CensusQuery
+from parishkit.stewardship.reports.hub_actions import census_subject
+from parishkit.stewardship.reports.hub_census import shape as hub_shape
 from parishkit.stewardship.reports.information import InformationQuery
 from parishkit.stewardship.reports.information_worklist import (
     WorklistQuery as InformationWorklist,
@@ -29,14 +35,19 @@ from parishkit.stewardship.reports.ministry_worklist import MEMBERS
 from parishkit.stewardship.reports.ministry_worklist import (
     WorklistQuery as MinistryWorklist,
 )
+from parishkit.stewardship.reports.review_sections import Part, Section
 from parishkit.stewardship.reports.review_streams import EVERY, STREAMS
 from parishkit.stewardship.reports.review_wizard import SORTS, WAITING
 
+from ..test_hub_actions import census_worklist, hub_rows
+from ..test_hub_census import ANSWERS, NAMES
 from .review_work_components import CAMPAIGN, COUNTS, chrome
+from .timeline_components import HOME_CHANGE
 
 START_PATH = "/review-wizard"
 PAGE_PATHS = ("/review-wizard-1", "/review-wizard-2", "/review-wizard-3")
 CARD_PATH = "/review-wizard-card"
+ACCEPTED_PATH = "/review-wizard-1-accepted"
 RUN = UUID(int=2123)
 STAFF = Principal(UUID(int=2123), frozenset({"staff"}))
 CONTEXTS = {
@@ -117,8 +128,28 @@ def start_context():
     }
 
 
-def page_context(position):
-    """One of the run's three pages: a Family page, a Member page, the last."""
+def family_section(**values):
+    """The Family page's census section: the home address change, acting.
+
+    Shaped and decorated as ``review_sections`` does it, from the hub unit
+    tests' rows: the hub's Family subject given Census changes' row actions
+    under the wizard's prefix.
+    """
+    worklist = census_worklist(HOME_CHANGE | values, prefix="review-family-census")
+    acted = census_subject(hub_shape(ANSWERS, NAMES, hub_rows()).family, worklist)
+    return Section(
+        listed=True,
+        parts=(Part("census", "review-family", subject=acted),),
+        dialogs=(acted.actions,),
+        filtered_out=1,
+    )
+
+
+def page_context(position, **values):
+    """One of the run's three pages: a Family page, a Member page, the last.
+
+    ``values`` decorate the Family page's change (its decision, say).
+    """
     census = STREAMS[0]
     family = {
         "family_id": UUID(int=7),
@@ -152,6 +183,12 @@ def page_context(position):
         "stream_url": "/admin/reports/census/",
         "timeline_url": "/admin/reports/families/" + str(UUID(int=7)) + "/",
         "start_url": "/admin/reports/review/",
+        "listed": True,
+        "member_page": position > 1,
+        # Member pages draw no section in this slice (#2123 slice 3).
+        "section": family_section(**values) if position == 1 else Section(listed=True),
+        "edit_today": "2026-10-24",
+        "frequencies": [],
     }
 
 
@@ -178,6 +215,13 @@ def components(context, admin):
                 "stewardship/review-wizard-page.html", base | page_context(position)
             ),
         )
+    pages[ACCEPTED_PATH] = (
+        "text/html",
+        render_to_string(
+            "stewardship/review-wizard-page.html",
+            base | page_context(1, decision="approved"),
+        ),
+    )
     runs = [("Census changes, Family 12 of 87", views.page_url(RUN, 12))]
     pages[CARD_PATH] = (
         "text/html",

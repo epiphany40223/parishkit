@@ -21,9 +21,15 @@ work and both for the current campaign:
 
 Every request re-checks the stream page's own access (its ``_principal``),
 so a role change mid-run takes effect on the next page; a run's start and
-each page are audited as that stream page's view, with the count read. The
-pages draw no section yet: the subject's changed values and their actions
-come with the wizard's next slices (#2123).
+each page are audited as that stream page's view, with the count read.
+
+A page's section is the Family hub's section for its stream, read live
+through the stream's own scoped read (``review_sections``): only the run's
+matched items the read still lists for this reader are shown, and the
+subject is named only while one is, so a reader who lost access to a
+subject's items mid-run (a Ministry leader no longer leading a Ministry)
+never sees a name stored with the run. Family pages draw their section in
+this slice; Member pages' sections come with the next (#2123).
 """
 
 from uuid import UUID
@@ -475,20 +481,22 @@ def _run(request, principal, campaign_id):
     )
 
 
-def heading(campaign_id, subject, *, census):
+def heading(family, subject, census, *, census_on):
     """The page's heading: the Family's name and DUID, and a Member's.
 
-    A Member is named as the Family hub's tab names them
-    (``hub_census.read_hub_census``), a New Member with the hub's badge.
+    ``family`` is the subject's ``FamilyCampaign`` and ``census`` the hub's
+    census read (``hub_census.read_hub_census``) the section made, or None
+    (then it is read here, with census answers when ``census_on``).
+    A Member is named as the Family hub's tab names them, a New Member with
+    the hub's badge. Drawn only while the subject is listed for the reader
+    (``review_sections.Section.listed``).
     """
-    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
     from parishkit.stewardship.source.snapshot_models import SourceCurrent
     from parishkit.stewardship.source.snapshot_names import snapshot_family_facts
     from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 
     from .hub_census import read_hub_census
 
-    family = FamilyCampaign.objects.get(pk=subject["family"], campaign_id=campaign_id)
     snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
     facts = snapshot_family_facts(snapshot, [family.family_duid], NAME_NOT_RECORDED)
     found = facts.get(family.family_duid)
@@ -501,7 +509,7 @@ def heading(campaign_id, subject, *, census):
     if subject["kind"] == FAMILY:
         return words
     entity = (subject["kind"], str(subject["key"]))
-    hub = read_hub_census(campaign_id, family.pk, census=census)
+    hub = census or read_hub_census(family.campaign_id, family.pk, census=census_on)
     member = next((m for m in hub.members if tuple(m.entity) == entity), None)
     words["member"] = {
         "name": member.label if member else _("This Member"),
@@ -512,7 +520,19 @@ def heading(campaign_id, subject, *, census):
 
 
 def _page_context(request, run, position, came_from, principal, campaign_id):
-    """A run page's context: the heading, the progress and the two rows."""
+    """A run page's context: the heading, the progress, the rows and the section.
+
+    The section is read live through the stream's scoped read
+    (``review_sections.read_section``); the subject's name, DUID and
+    Timeline link are drawn only while it lists one of the subject's items.
+    """
+    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+    from parishkit.stewardship.responses.census_review import campaign_today
+    from parishkit.stewardship.responses.financial import FREQUENCIES
+
+    from .financial import FREQUENCY_LABELS
+    from .review_sections import read_section
+
     stream = BY_KEY[run.stream]
     campaign = Campaign.objects.select_related("active_configuration").get(
         pk=campaign_id
@@ -523,16 +543,41 @@ def _page_context(request, run, position, came_from, principal, campaign_id):
         run.subjects, position, grouped=stream.grouped, member_stream=stream.member
     )
     size = run.size
+    family = FamilyCampaign.objects.filter(
+        pk=subject["family"], campaign_id=campaign_id
+    ).first()
+    section = None
+    if family is not None:
+        configuration = SystemConfiguration.objects.select_related(
+            "active_configuration__parish"
+        ).get()
+        section = read_section(
+            stream.key,
+            campaign,
+            family,
+            subject,
+            principal,
+            parish_name=configuration.active_configuration.parish.name,
+        )
+    listed = bool(section and section.listed)
     timeline = None
-    if allows(principal, Capability.CAMPAIGN_REPORT):
+    if listed and allows(principal, Capability.CAMPAIGN_REPORT):
         from .timeline_views import timeline_url
 
         timeline = timeline_url(subject["family"])
+    here = page_url(run.pk, position)
     return {
         "run": run,
         "stream": stream,
         "subject": subject,
-        "heading": heading(campaign_id, subject, census="census" in modules),
+        "listed": listed,
+        "member_page": subject["kind"] != FAMILY,
+        "heading": (
+            heading(family, subject, section.census, census_on="census" in modules)
+            if listed
+            else None
+        ),
+        "section": section,
         "progress": words,
         # The last crumb names the stream and progress, as the browser title
         # does; its parent crumb already says Review one at a time.
@@ -541,12 +586,16 @@ def _page_context(request, run, position, came_from, principal, campaign_id):
         "size": size,
         "previous_url": page_url(run.pk, position - 1) if position > 1 else None,
         "next_url": page_url(run.pk, position + 1) if position < size else None,
-        "here_url": page_url(run.pk, position),
+        "here_url": here,
         # The control a move came from takes focus on the page it opened.
         "focus": {control.replace("-", "_"): control == came_from for control in FROM},
         "stream_url": reverse(f"admin:{stream.entry}"),
         "timeline_url": timeline,
         "start_url": start_url(),
+        # What the shared row dialogs' editors read, as on the hub: the
+        # latest date a census Edit may give, and a pledge Edit's choices.
+        "edit_today": campaign_today(campaign).isoformat(),
+        "frequencies": [(key, FREQUENCY_LABELS[key]) for key in FREQUENCIES],
     }
 
 
@@ -624,11 +673,22 @@ def page(request, campaign_id, position):
             )
         if not 1 <= position <= run.size:
             raise ValueError("No such page in this run.")
-        subject = run.subjects[position - 1]
         audited = False
+        # The items the page drew, set while it is drawn, for its audit.
+        drawn = {"count": 0}
+
+        def context():
+            """The page's context, noting how many items it shows."""
+            found = _page_context(
+                request, run, position, came_from, principal, campaign_id
+            )
+            section = found["section"]
+            drawn["count"] = section.count if found["listed"] else 0
+            return found
 
         def finish(completed):
-            """Audit the page once, as its stream page's view of its items."""
+            """Audit the page once, as its stream page's view of the items
+            it shows."""
             nonlocal audited
             if not audited:
                 audited = True
@@ -636,7 +696,7 @@ def page(request, campaign_id, position):
                     stream,
                     principal,
                     campaign_id,
-                    len(subject["items"]),
+                    drawn["count"],
                     run.filters,
                     outcome=Outcome.SUCCEEDED if completed else Outcome.FAILED,
                 )
@@ -645,9 +705,7 @@ def page(request, campaign_id, position):
             request,
             campaign_id,
             lambda: stream.principal(request, service.store, read_only=True),
-            lambda: _page_context(
-                request, run, position, came_from, principal, campaign_id
-            ),
+            context,
             template=PAGE_TEMPLATE,
             on_close=finish,
         )
