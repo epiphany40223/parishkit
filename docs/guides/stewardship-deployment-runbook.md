@@ -831,10 +831,17 @@ above.
 The release that adds PostgreSQL's per-login source rules (operations
 specification,
 [Database connection sources](../specs/stewardship/operations/spec.md#database-connection-sources))
-ships alone, with no migration and no grant change, in a normal nightly
-window. Run it with the [scripted upgrade](#scripted-upgrade) as usual. It
-is the one upgrade that stops everything but `caddy`: right after step 3
-the log shows
+ships alone, with no migration, in a normal nightly window. It also
+carries the [database inspection login](#database-inspection-login-2148)
+(#2148), which is a grant change, so run the
+[scripted upgrade](#scripted-upgrade) with `STEWARDSHIP_SCHEMA_CHANGE=1`
+(pk-local: `deploy --schema-change`). The upgrade check answers `f` (or
+fails with `role "pk_stewardship_inspect" does not exist`), and step 4
+runs the migration, which finds nothing to apply, and `database-grants`,
+which creates the login. Without the variable the script refuses in step 1
+with `The upgrade check expects migration or grants to change something.`
+before anything stops; repeat it with the variable. It is the one upgrade
+that stops everything but `caddy`: right after step 3 the log shows
 
 ```text
 ==> HH:MM:SS (+Ns) 3. Full stop: the database networks change
@@ -849,7 +856,20 @@ maintenance page the whole time; the full stop adds a minute or two (PostgreSQL'
 start). No volume is touched: every data path is a bind mount.
 
 **Success** is the usual last line, `Upgraded to IMAGE in Ns; all N online
-services healthy`, with exit status 0. To see the rules in force, ask
+services healthy`, with exit status 0, and then one backup run by hand.
+The upgrade's own step-1 backup ran before the full stop, on the old
+networks, so right after the rollout run `run --rm backup-worker` as the
+backup runbook's [nightly backup](stewardship-backup-runbook.md#the-nightly-backup)
+says. Its JSON line must show `"backup_recorded": true` and an `offsite`
+whose `state` is `uploaded`; keep its manifest digest off the host as
+usual. That proves the backup worker connects from its new network and
+that the off-site copy still leaves through `application-egress`, which
+the full stop recreated. A refusal (one generic line, exit `2`) means the
+next cron backup would fail too, and an `offsite` state of `failed` means
+the off-site copies would stop: find the cause before the window ends, or
+roll back.
+
+To see the rules in force, ask
 PostgreSQL which file it read:
 
 ```sh
@@ -860,6 +880,41 @@ docker compose -f COMPOSE -p stewardship exec -T postgres \
 It prints `/etc/postgresql/hba/pg_hba.conf` (the rendered rules); the
 stock file in the data directory means the rules are not in force. Every
 later upgrade finds the networks unchanged and prints no full stop.
+
+To run the upgrade's hba check by hand, render it in the running image as
+step 1 renders the upgrade check (same isolation, runtime root read-only):
+`pk-stewardship hba-check --config /run/operator.yaml`, saved as
+`hba-check.sql`. Feed it to psql on its input with the `since` variable,
+which the query needs (without it psql reports a syntax error):
+
+```sh
+docker compose -f COMPOSE -p stewardship exec -T \
+  -e PGOPTIONS='-c default_transaction_read_only=on' postgres \
+  psql -U pk_stewardship_operator -d DATABASE -At -v ON_ERROR_STOP=1 \
+  -v since=-infinity < hba-check.sql
+```
+
+`since=-infinity` checks the file alone: the mount, the digest and the
+parse, but not when PostgreSQL last loaded it. The answer is the first
+condition that fails, in this order:
+
+- `hba_file_not_mounted`: PostgreSQL's `hba_file` is not the mounted path
+  (it was not recreated with the new command).
+- `hba_file_differs`: the mounted file is not byte for byte the rendered
+  one.
+- `hba_file_invalid`: the file has errors (`pg_hba_file_rules` reports an
+  error row), so a reload keeps PostgreSQL's previous rules.
+- `hba_reload_pending`: PostgreSQL has not loaded its configuration since
+  `since`. It never comes from `since=-infinity`. With `since=infinity`,
+  the form the script runs before its reload, every state answers this
+  when the three conditions above hold, so there it is the expected
+  answer, not a failure. To check a reload by hand, read
+  `SELECT clock_timestamp()` just before `SELECT pg_reload_conf()` and pass
+  that time as `since`.
+- `t`: every condition holds.
+
+The check is indirect; the source check (`database-sources`, which the
+upgrade runs in step 6) is what proves which rules are in force.
 
 **Failure**, and what to do. Every case below leaves the maintenance page
 up unless it says otherwise, and the run is safe to repeat with the same

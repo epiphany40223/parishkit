@@ -360,6 +360,15 @@ For a pull request that changes `up` itself (provisioning, the wizard, the
 seeder), `reset --reinstall` and the seeding recipe remain the way to test
 it, since `deploy` never reinstalls.
 
+Once pk-local runs the PostgreSQL source rules (#2111), run every `deploy`,
+`deploy --rollback`, `reset` and `snapshot restore` from a checkout that
+has them, including the one that returns pk-local to a snapshot afterwards.
+A checkout without them, older `main` and other branches alike, fails partway
+and can leave web removed with the maintenance page up; run the same
+command again from a checkout with the change. The specification's
+[operator script](../specs/stewardship/local-environment/spec.md#operator-script)
+says why.
+
 ### Switching between Testing and Production data
 
 The seeded campaign is live (Production mode), so the Testing-only pages
