@@ -283,6 +283,36 @@ def test_edge_cases_early_responder_resubmissions_and_no_email_family(size):
         assert any(a["email_opt_out"] for a in answers)
 
 
+def test_limitations_answers_have_small_shares_and_some_families_give_both():
+    """Cannot attend and Cannot serve are each about 4%, sometimes together (#2178).
+
+    Answers are drawn per submission, so many timelines' submissions are
+    pooled to check the shares; every timeline holds at least one of each.
+    """
+    answers = []
+    for seed in range(20):
+        result = timeline.build(
+            seed, 1100, NOW, range(SIZES[1100]), timezone=ZONE, ministries=range(5)
+        )
+        drawn = [e.data["answers"] for e in result.events if e.kind == "submission"]
+        assert any(a["cannot_attend"] for a in drawn)
+        assert any(a["cannot_serve"] for a in drawn)
+        answers += drawn
+    attend = sum(a["cannot_attend"] for a in answers) / len(answers)
+    serve = sum(a["cannot_serve"] for a in answers) / len(answers)
+    both = sum(a["cannot_attend"] and a["cannot_serve"] for a in answers)
+    assert 0.03 <= attend <= 0.05 and 0.03 <= serve <= 0.05
+    assert both >= 0.01 * len(answers)
+    # A 100-Family parish still has one of each (the documented 20-Family run
+    # may have too few submissions for every kind), and with no Ministries
+    # offered no Member is ever unable to serve.
+    small = [e.data["answers"] for e in build(100).events if e.kind == "submission"]
+    assert any(a["cannot_attend"] for a in small)
+    assert any(a["cannot_serve"] for a in small)
+    plain = [e.data.get("answers") for e in build(100, ministries=()).events]
+    assert not any(a["cannot_serve"] for a in plain if a)
+
+
 def test_occurrence_instants_are_the_boundary_initial_reminders_and_midnights():
     result = build(100, now_at(10, time(12, 0)))
     cal = result.calendar

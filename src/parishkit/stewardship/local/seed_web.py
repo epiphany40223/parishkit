@@ -560,6 +560,27 @@ def proposed_member(inputs, members):
     return identity, answers
 
 
+def unable_member(memberships, members):
+    """The Member who answers Cannot serve, by its DUID key (or None).
+
+    The first Member with current Ministries (in the synthetic parish only
+    adults have any); in a Family with none, the oldest Member by birth
+    date (a head of household). Birth dates are known only when the form
+    carries census fields, and a Member without one sorts last, so with
+    census off, or on equal dates, the lowest DUID (numerically) wins. The
+    rule holds either way: such a Member has no Ministry to stop. A Family
+    with no Members at all has nobody to name, so the answer is dropped.
+    """
+    held = [str(member) for member, current in memberships if current]
+    if held:
+        return held[0]
+    dated = sorted(
+        (str(members.get(str(member), {}).get("birth_date") or "9999"), int(member))
+        for member, _current in memberships
+    )
+    return str(dated[0][1]) if dated else None
+
+
 def build_answers(form, answers):
     """The browser's complete answer payload for a form, from its projection.
 
@@ -568,8 +589,12 @@ def build_answers(form, answers):
     abstract answers map onto the modules the campaign enabled: a pledge onto
     the financial section, Ministry interest onto one adult's join choices, a
     census edit onto a changed email or a proposed new Member (who joins the
-    first offered Ministry), an opt-out onto the household flag and free text
-    onto additional information.
+    first offered Ministry), an opt-out onto the household flag, free text
+    onto additional information, and the Limitations answers (#2178) onto
+    the welcome page's Cannot attend choice and one Member's Cannot serve.
+    Cannot serve goes to one adult (``unable_member``), who then stops every
+    current Ministry and joins none, the rule the submit check enforces;
+    Ministry interest then goes to another Member.
     """
     from parishkit.stewardship.responses.member_census import (
         MEMBER_FIELDS,
@@ -617,6 +642,8 @@ def build_answers(form, answers):
         "proposed_members": proposed,
         "ministries": {},
         "additional_information": answers.get("information", "") or "",
+        "cannot_attend": bool(answers.get("cannot_attend")),
+        "service": {},
     }
     if inputs.ministries is not None:
         chosen = [int(value) for value in answers.get("ministry_interest", [])]
@@ -624,11 +651,17 @@ def build_answers(form, answers):
         joins = [duid for duid in offered if duid in chosen] or (
             offered[:1] if chosen else []
         )
-        entries = {}
-        for member, current in inputs.ministries.memberships:
-            join = (
-                [duid for duid in joins if duid not in current] if not entries else []
-            )
+        memberships = inputs.ministries.memberships
+        unable = (
+            unable_member(memberships, members) if answers.get("cannot_serve") else None
+        )
+        entries, interested = {}, False
+        for member, current in memberships:
+            if str(member) == unable:
+                entries[unable] = {"join": [], "leave": list(current)}
+                continue
+            join = [] if interested else [d for d in joins if d not in current]
+            interested = True
             entries[str(member)] = {"join": join, "leave": []}
         # A proposed Member may only join; every one needs an entry.
         payload["ministries"] = {
@@ -637,6 +670,11 @@ def build_answers(form, answers):
                 identity: {"join": offered[:1]} for identity in proposed
             },
         }
+        if unable is not None:
+            payload["service"] = {
+                "members": {unable: {"cannot_serve": True}},
+                "proposed_members": {},
+            }
     if "financial" in inputs.modules:
         pledge = answers.get("pledge")
         if pledge is None:

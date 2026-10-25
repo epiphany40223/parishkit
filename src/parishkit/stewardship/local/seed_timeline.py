@@ -74,13 +74,19 @@ _KIND_ORDER = {
 }
 # Answer content drawn for submissions: realistic pledge amounts (the
 # synthetic parish's range), Ministry interest, census edits, opt-outs and
-# free text.
+# free text, and the Limitations answers (#2178).
 PLEDGE_AMOUNTS = (250, 500, 600, 1000, 1200, 1500, 2400, 3000, 5000)
 NO_PLEDGE_SHARE = 0.3
 MINISTRY_INTEREST_SHARE = 0.4
 CENSUS_EDIT_SHARE = 0.2
 OPT_OUT_SHARE = 0.03
 INFORMATION_SHARE = 0.15
+# Cannot attend Mass (the welcome page) about 4% of submissions; Cannot serve
+# (one Member who cannot participate in Ministries) also about 4% overall,
+# but half of the Families who cannot attend also cannot serve, so some
+# Families give both answers: 0.04 * 0.5 + 0.96 * 0.0208 is about 0.04.
+CANNOT_ATTEND_SHARE = 0.04
+CANNOT_SERVE_GIVEN_ATTEND, CANNOT_SERVE_OTHERWISE = 0.5, 0.0208
 INFORMATION_TEXTS = (
     "We will be travelling for part of the campaign.",
     "Please update our mailing address; we moved last spring.",
@@ -297,10 +303,15 @@ class _Draw:
     """Deterministic draws for one timeline, seeded by every input."""
 
     def __init__(self, seed, families, response_scale, cal):
-        """One generator for the whole timeline; every input is in its seed."""
-        self.random = random.Random(
-            f"{seed}:{families}:{response_scale}:{cal.now.isoformat()}:{cal.timezone}"
-        )
+        """One generator for the whole timeline; every input is in its seed.
+
+        The Limitations answers (#2178) draw from a second generator with the
+        same inputs, so adding them left every earlier draw, and so every
+        existing seed's timeline, exactly as it was.
+        """
+        key = f"{seed}:{families}:{response_scale}:{cal.now.isoformat()}:{cal.timezone}"
+        self.random = random.Random(key)
+        self.limitations = random.Random(f"{key}:limitations")
         self.cal = cal
 
     def time_of_day(self, day, *, earliest=None):
@@ -339,7 +350,7 @@ class _Draw:
         census = None
         if self.random.random() < CENSUS_EDIT_SHARE:
             census = self.random.choice(("changed_email", "proposed_member"))
-        return {
+        result = {
             "pledge": pledge,
             "ministry_interest": interest,
             "census_edit": census,
@@ -348,6 +359,16 @@ class _Draw:
             if self.random.random() < INFORMATION_SHARE
             else "",
         }
+        # The Limitations answers (#2178): Cannot serve is likelier for a
+        # Family that cannot attend, so some Families give both, and is only
+        # drawn when the campaign offers Ministries.
+        attend = self.limitations.random() < CANNOT_ATTEND_SHARE
+        serve = self.limitations.random() < (
+            CANNOT_SERVE_GIVEN_ATTEND if attend else CANNOT_SERVE_OTHERWISE
+        )
+        result["cannot_attend"] = attend
+        result["cannot_serve"] = bool(ministries) and serve
+        return result
 
 
 @dataclass(frozen=True)
@@ -479,7 +500,9 @@ def _ensure_variety(events, draw, ministries):
     least one of each. Distinct early submissions are given the missing
     kinds, which changes no count and keeps the draw deterministic. A census
     edit is never given to a submission that already holds the other kind,
-    so supplying one cannot remove the other.
+    so supplying one cannot remove the other. The Limitations answers (Cannot
+    attend, and Cannot serve when the campaign offers Ministries, #2178) come
+    last, so a tiny parish keeps the earlier kinds first.
     """
     submissions = [index for index, e in enumerate(events) if e.kind == "submission"]
     wanted = (
@@ -489,10 +512,12 @@ def _ensure_variety(events, draw, ministries):
         # submissions for every kind keeps the original three kinds first.
         ("information", INFORMATION_TEXTS[0]),
         ("census_edit", "proposed_member"),
+        ("cannot_attend", True),
+        ("cannot_serve", True),
     )
     taken = set()
     for key, value in wanted:
-        if key == "ministry_interest" and not ministries:
+        if key in ("ministry_interest", "cannot_serve") and not ministries:
             continue
         held = [events[i].data["answers"][key] for i in submissions]
         if (value in held) if key == "census_edit" else any(held):

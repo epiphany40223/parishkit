@@ -7,7 +7,11 @@ with the timeline's abstract answers mapped onto the enabled modules.
 
 from types import SimpleNamespace
 
-from parishkit.stewardship.local.seed_web import SEEDER_ADDRESS, build_answers
+from parishkit.stewardship.local.seed_web import (
+    SEEDER_ADDRESS,
+    build_answers,
+    unable_member,
+)
 from parishkit.stewardship.responses.answers import validate_answers
 from parishkit.stewardship.responses.comparison import ValueKind
 from parishkit.stewardship.responses.financial import ShareOption
@@ -99,7 +103,10 @@ def test_answers_map_onto_every_enabled_module_and_validate():
         "ministries",
         "additional_information",
         "financial",
+        "cannot_attend",
+        "service",
     }
+    assert payload["cannot_attend"] is False and payload["service"] == {}
     assert payload["members"]["501"]["email"] == "family501@example.test"
     assert payload["members"]["502"]["email"] == "member502@example.test"
     assert payload["members"]["501"]["first_name"] == "First501"
@@ -193,6 +200,104 @@ def test_a_proposed_member_is_a_complete_new_household_member():
     )
     # Without the census module nobody can be proposed.
     assert build_answers(form(modules=()), answers)["proposed_members"] == {}
+
+
+def test_limitations_answers_map_onto_cannot_attend_and_one_member():
+    """Cannot attend sets the welcome choice; Cannot serve stops one Member (#2178).
+
+    The Member with current Ministries cannot serve: it stops every one of
+    them and joins none, so Ministry interest goes to the other Member, and
+    the real validator, which enforces that rule, admits the payload.
+    """
+    from datetime import date
+
+    answers = ANSWERS | {"cannot_attend": True, "cannot_serve": True}
+    payload = build_answers(form(), answers)
+    assert payload["cannot_attend"] is True
+    assert payload["service"] == {
+        "members": {"501": {"cannot_serve": True}},
+        "proposed_members": {},
+    }
+    assert payload["ministries"]["members"] == {
+        "501": {"join": [], "leave": [MINISTRIES[2]]},
+        "502": {"join": [9001, 9002], "leave": []},
+    }
+    normalized = validate_answers(
+        payload,
+        _census_inputs(form()),
+        additional_enabled=True,
+        today=date(2026, 10, 1),
+    )
+    assert normalized["cannot_attend"] is True
+    assert normalized["service"]["members"]["501"]["cannot_serve"] is True
+    assert normalized["service"]["members"]["502"]["cannot_serve"] is False
+    # Each answer alone.
+    for alone in ({"cannot_attend": True}, {"cannot_serve": True}):
+        validate_answers(
+            build_answers(form(), alone),
+            _census_inputs(form()),
+            additional_enabled=True,
+            today=date(2026, 10, 1),
+        )
+    # Without Ministries, Cannot serve has no Member to name.
+    census_only = build_answers(form(modules=("census",)), answers)
+    assert census_only["service"] == {} and census_only["cannot_attend"] is True
+    validate_answers(
+        census_only,
+        _census_inputs(form(modules=("census",))),
+        additional_enabled=True,
+        today=date(2026, 10, 1),
+    )
+
+
+def test_cannot_serve_falls_back_to_the_oldest_member_and_census_may_be_off():
+    """A Family with no current Ministries still stores its Cannot serve.
+
+    The answer goes to the oldest Member (a head of household), who has no
+    Ministry to stop; with census disabled the mapping still validates.
+    """
+    from datetime import date
+
+    projection = form()
+    held = projection.inputs.ministries
+    projection.inputs.ministries = MinistryInputs(
+        held.options, tuple((member, ()) for member, _ in held.memberships)
+    )
+    payload = build_answers(projection, {"cannot_serve": True})
+    # Both Members share a birth date; the lower DUID wins the tie.
+    assert payload["service"]["members"] == {"501": {"cannot_serve": True}}
+    assert payload["ministries"]["members"]["501"] == {"join": [], "leave": []}
+    normalized = validate_answers(
+        payload,
+        _census_inputs(projection),
+        additional_enabled=True,
+        today=date(2026, 10, 1),
+    )
+    assert normalized["service"]["members"]["501"]["cannot_serve"] is True
+    modules = ("ministry", "financial")
+    answers = ANSWERS | {"cannot_attend": True, "cannot_serve": True}
+    no_census = build_answers(form(modules=modules), answers)
+    assert no_census["members"] == {"501": {}, "502": {}}
+    assert no_census["service"]["members"] == {"501": {"cannot_serve": True}}
+    validate_answers(
+        no_census,
+        _census_inputs(form(modules=modules)),
+        additional_enabled=True,
+        today=date(2026, 10, 1),
+    )
+
+
+def test_unable_member_picks_oldest_then_lowest_numeric_duid():
+    """The fallback prefers age, sorts undated last and ties by number."""
+    none = (("1000", ()), ("501", ()), ("77", ()))
+    dates = {"1000": {"birth_date": "1950-01-01"}, "501": {}, "77": {}}
+    assert unable_member(none, dates) == "1000"
+    # Equal or missing dates: the numerically lowest DUID, not text order.
+    assert unable_member(none, {}) == "77"
+    # A Member with current Ministries always wins.
+    assert unable_member((("1000", ()), ("501", ("a",))), dates) == "501"
+    # Nobody to name: the answer is dropped.
+    assert unable_member((), {}) is None
 
 
 def test_seeder_address_is_loopback():
