@@ -284,7 +284,44 @@ json() {
     [ -z "$FAKE_BACKUP_UNRECORDED" ] || recorded=false
     echo '{"backup_recorded": '"$recorded"', "offsite": {"state": "'"$1"'"}}'
 }
+# The database network layout (#2111), when FAKE_LAYOUT_RUNNING names the
+# layout Docker runs (old or new): FAKE_NETWORKS_<layout> is what `network
+# inspect` answers and FAKE_POSTGRES_<layout> the networks postgres is on.
+# The retarget renders FAKE_COMPOSE_<FAKE_RENDER_LAYOUT>; starting postgres
+# and valkey moves Docker to the rendered layout (unless FAKE_LAYOUT_STUCK).
+# FAKE_ONEOFF adds a running one-off backup-worker container.
+layout=$(cat "$FAKE_STATE/layout" 2>/dev/null || echo "${FAKE_LAYOUT_RUNNING-}")
+# run_host upper-cases the FAKE_* names it is given.
+upper=$(tr '[:lower:]' '[:upper:]' <<<"$layout")
+networks_var=FAKE_NETWORKS_$upper
+postgres_var=FAKE_POSTGRES_$upper
 case "$*" in
+    "network ls --quiet --filter "*)
+        [ -z "$layout" ] || jq -r '.[].Id' <<<"${!networks_var}" ;;
+    "network inspect --format "*)
+        jq -r --arg id "$last" '.[] | select(.Id == $id) | .Name' \
+            <<<"${!networks_var}" ;;
+    "inspect --format "*"NetworkSettings.Networks"*" id-caddy")
+        echo "stewardship_proxy " ;;
+    "network inspect "*) echo "${!networks_var}" ;;
+    "network rm "*) echo "$last" >>"$FAKE_STATE/networks_removed" ;;
+    "ps --all --quiet --filter "*"service=postgres"*)
+        [ -e "$FAKE_STATE/postgres_removed" ] || echo id-postgres ;;
+    "inspect id-postgres")
+        # Without a layout, postgres runs on the networks the file renders.
+        on=${!postgres_var:-$(jq -c '.services.postgres.networks // {}
+            | with_entries(.key |= "stewardship_" + .)' "$FAKE_COMPOSE")}
+        echo '[{"State": {"Running": true},' \
+            '"NetworkSettings": {"Networks": '"$on"'}}]' ;;
+    "ps --all --filter "*" --format "*)
+        printf '%s\n' "id-postgres running postgres False" \
+            "id-valkey running valkey False" "id-caddy running caddy False" \
+            "id-web exited web False"
+        [ -z "$FAKE_ONEOFF" ] || echo "id-backup running backup-worker True" ;;
+    "rm id-"*) touch "$FAKE_STATE/postgres_removed" ;;
+    *" up --detach --wait postgres valkey")
+        rm -f "$FAKE_STATE/postgres_removed"
+        [ -n "$FAKE_LAYOUT_STUCK" ] || cp "$FAKE_STATE/rendered" "$FAKE_STATE/layout" ;;
     *" --entrypoint test "*0171_retire_digests.sql) exit "${FAKE_RETIREMENT:-0}" ;;
     *"0041_report_conversion"*) echo "${FAKE_CONVERTED:-t}" ;;
     "image inspect "*faketime-stewardship*) exit 1 ;;
@@ -447,6 +484,13 @@ case "$*" in
             jq "del($key)" "$web.new" >"$web"
         fi
         rm -f "$web.new"
+        if [ -n "$FAKE_RENDER_LAYOUT" ]; then
+            upper=$(tr '[:lower:]' '[:upper:]' <<<"$FAKE_RENDER_LAYOUT")
+            rendered_var=FAKE_COMPOSE_$upper
+            jq --arg image "$last" '.services.web.image = $image' \
+                <<<"${!rendered_var}" >"$FAKE_COMPOSE"
+            echo "$FAKE_RENDER_LAYOUT" >"$FAKE_STATE/rendered"
+        fi
         touch "$FAKE_STATE/retargeted" ;;
     *" --rm -T migration migrate --config "*" --users-upgrade-base")
         if [ -n "$FAKE_BASE_FAIL" ]; then
@@ -2235,6 +2279,251 @@ def test_a_first_run_never_asks_the_backup_to_resume(tmp_path):
     calls, _, _ = run_host(tmp_path, "upgrade", noop="f", schema_change="1", env=USERS)
     assert any(call.endswith(" run --rm -T backup-worker") for call in calls)
     assert not any("--users-upgrade-resume" in call for call in calls)
+
+
+# The database network layout (#2111): the release that adds PostgreSQL's
+# source rules renders fixed backend addresses, a dynamic ip_range and a
+# one-shot network per profile; the release before it renders none of them.
+def _network(key, subnet, gateway, ip_range=None):
+    """One network as `docker network inspect` reports it (Compose's labels)."""
+    config = {"Subnet": subnet, "Gateway": gateway}
+    if ip_range:
+        config["IPRange"] = ip_range
+    return {
+        "Id": f"net-{key}",
+        "Name": f"stewardship_{key}",
+        "Internal": True,
+        "Labels": {"com.docker.compose.network": key},
+        "IPAM": {"Config": [config]},
+    }
+
+
+def _rendered(new):
+    """The Compose file's database networks, as either release renders them."""
+    backend = {"subnet": "172.29.240.0/24"}
+    networks = {
+        "backend": {"internal": True, "ipam": {"config": [backend]}},
+        "proxy": {
+            "internal": True,
+            "ipam": {"config": [{"subnet": "172.29.241.0/24"}]},
+        },
+    }
+    postgres = {"backend": {}}
+    if new:
+        backend.update(gateway="172.29.240.1", ip_range="172.29.240.128/25")
+        networks["offline-migration"] = {
+            "internal": True,
+            "ipam": {
+                "config": [
+                    {
+                        "subnet": "172.29.242.16/28",
+                        "gateway": "172.29.242.17",
+                        "ip_range": "172.29.242.24/29",
+                    }
+                ]
+            },
+        }
+        postgres = {
+            "backend": {"ipv4_address": "172.29.240.2"},
+            "offline-migration": {"ipv4_address": "172.29.242.18"},
+        }
+    return {
+        "services": {"web": {}, "postgres": {"networks": postgres}},
+        "networks": networks,
+    }
+
+
+LAYOUT = {
+    "networks_old": json.dumps(
+        [
+            _network("backend", "172.29.240.0/24", "172.29.240.1"),
+            _network("proxy", "172.29.241.0/24", "172.29.241.1"),
+        ]
+    ),
+    "networks_new": json.dumps(
+        [
+            _network("backend", "172.29.240.0/24", "172.29.240.1", "172.29.240.128/25"),
+            _network(
+                "offline-migration",
+                "172.29.242.16/28",
+                "172.29.242.17",
+                "172.29.242.24/29",
+            ),
+            _network("proxy", "172.29.241.0/24", "172.29.241.1"),
+        ]
+    ),
+    "postgres_old": json.dumps({"stewardship_backend": {}}),
+    "postgres_new": json.dumps(
+        {"stewardship_backend": {}, "stewardship_offline-migration": {}}
+    ),
+    "compose_old": json.dumps(_rendered(False)),
+    "compose_new": json.dumps(_rendered(True)),
+}
+
+
+@pytest.mark.parametrize(
+    ("mode", "running", "rendered"),
+    [("upgrade", "old", "new"), ("rollback", "new", "old")],
+    ids=["rollout", "rollback to a release before the rules"],
+)
+def test_a_database_network_change_fully_stops_after_the_retarget(
+    tmp_path, mode, running, rendered
+):
+    """Both directions remove everything but caddy and restart the stores first.
+
+    After the retarget (and before step 4 needs PostgreSQL), postgres and
+    valkey stop through Compose, every container but caddy is removed, every
+    network caddy is not on is removed, and postgres and valkey start again
+    on the rendered networks, which then match. caddy is never stopped.
+    """
+    calls, output, _ = run_host(
+        tmp_path,
+        mode,
+        layout_running=running,
+        render_layout=rendered,
+        **LAYOUT,
+    )
+    retarget = first(calls, " retarget-image ")
+    stop = first(calls, " stop postgres valkey")
+    remove = first(calls, "rm id-")
+    start = first(calls, " up --detach --wait postgres valkey")
+    assert retarget < stop < remove < start < first(calls, " up --detach --wait web")
+    assert calls[remove] == "rm id-postgres id-valkey id-web"
+    removed = [c for c in calls if c.startswith("network rm ")]
+    assert "network rm net-proxy" not in removed and "network rm net-backend" in removed
+    assert not any(" stop " in c and "caddy" in c for c in calls)
+    if mode == "upgrade":
+        # Step 4's decisive check runs on the recreated PostgreSQL.
+        checks = [
+            i for i, c in enumerate(calls) if "PGOPTIONS" in c and "0041" not in c
+        ]
+        assert start < checks[1]
+    assert "3. Full stop: the database networks change" in output
+    assert "network backend differs from the rendered one (ip_range)" in output
+    assert "postgres and valkey run on the rendered networks" in output
+    done = "Upgraded" if mode == "upgrade" else "Rolled back"
+    assert f"{done} to {TARGET} in" in output
+
+
+def test_an_unchanged_database_layout_needs_no_full_stop(tmp_path):
+    """A later upgrade finds the rendered networks running and stops nothing more."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", layout_running="new", render_layout="new", **LAYOUT
+    )
+    assert not any(" stop postgres valkey" in c for c in calls)
+    assert not any(c.startswith(("rm ", "network rm ")) for c in calls)
+    assert "Full stop" not in output
+    assert f"Upgraded to {TARGET} in" in output
+
+
+def test_a_running_one_off_refuses_the_full_stop(tmp_path):
+    """A cron backup is never killed mid-copy: nothing stops, the page stays up."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        status=1,
+        layout_running="old",
+        render_layout="new",
+        oneoff="1",
+        **LAYOUT,
+    )
+    assert (
+        "One-off containers of stewardship are still running (backup-worker)" in output
+    )
+    assert "The full stop did not finish; caddy serves the maintenance page" in output
+    assert "Failed with web stopped: caddy serves the maintenance page." in output
+    assert not any(" stop postgres valkey" in c or c.startswith("rm ") for c in calls)
+    assert not any(" up --detach " in c for c in calls)
+    # Repeated once the backup finished, the full stop runs.
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        again=True,
+        layout_running="old",
+        render_layout="new",
+        **LAYOUT,
+    )
+    assert any(" up --detach --wait postgres valkey" in c for c in calls)
+    assert f"Upgraded to {TARGET} in" in output
+
+
+def test_networks_that_still_differ_after_the_full_stop_stop_the_run(tmp_path):
+    """The comparison after the restart must find nothing; else step 4 never runs."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        status=1,
+        layout_running="old",
+        render_layout="new",
+        layout_stuck="1",
+        **LAYOUT,
+    )
+    assert "After the full stop the database networks still differ" in output
+    assert "caddy serves the maintenance page" in output
+    assert not any(" up --detach --wait web" in c for c in calls)
+
+
+def test_an_expired_restart_of_the_stores_is_logged(tmp_path):
+    """A hung `up postgres valkey` is killed, logged with its limit; the run stops."""
+    _, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        status=1,
+        layout_running="old",
+        render_layout="new",
+        timeout="up --detach --wait postgres valkey",
+        **LAYOUT,
+    )
+    assert re.search(
+        r"TIMEOUT: starting postgres and valkey killed after \d+s \(limit 600s\)",
+        output,
+    )
+    kept = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    assert "TIMEOUT: starting postgres and valkey" in kept
+
+
+@pytest.mark.parametrize(
+    ("mode", "running", "rendered"),
+    [("upgrade", "old", "new"), ("rollback", "new", "old")],
+    ids=["rollout", "rollback"],
+)
+def test_a_repeat_finishes_a_failed_full_stop_before_step_one(
+    tmp_path, mode, running, rendered
+):
+    """A full stop that failed after postgres stopped is finished first.
+
+    Step 1's check and backup need PostgreSQL. The repeat finds web down
+    and postgres gone, finishes the full stop under the file the earlier
+    run retargeted, and only then checks: a rollback is never sent to a
+    database restore it does not need.
+    """
+    common = dict(layout_running=running, render_layout=rendered, **LAYOUT)
+    _, output, _ = run_host(
+        tmp_path,
+        mode,
+        status=1,
+        timeout="up --detach --wait postgres valkey",
+        **common,
+    )
+    assert "The full stop did not finish" in output
+    calls, output, _ = run_host(tmp_path, mode, again=True, **common)
+    finish = first(calls, " up --detach --wait postgres valkey")
+    assert finish < first(calls, "PGOPTIONS") < first(calls, " retarget-image ")
+    assert "Finishing the full stop an earlier run began" in output
+    assert "postgres is not running" in output
+    assert "database-restore" not in output
+    done = "Upgraded" if mode == "upgrade" else "Rolled back"
+    assert f"{done} to {TARGET} in" in output
+
+
+def test_caddy_keeps_its_networks_in_the_full_stop(tmp_path):
+    """Only the networks caddy is not on are removed; caddy itself stays."""
+    calls, _, _ = run_host(
+        tmp_path, "upgrade", layout_running="old", render_layout="new", **LAYOUT
+    )
+    assert "inspect --format" in next(c for c in calls if c.endswith(" id-caddy"))
+    removed = [c for c in calls if c.startswith("network rm ")]
+    assert removed == ["network rm net-backend"]
 
 
 def test_the_source_rules_are_reloaded_and_checked_before_step_4(tmp_path):
