@@ -205,6 +205,8 @@ def drive_probe(profile, monkeypatch, tmp_path):
         backup_probes, "transaction", SimpleNamespace(atomic=nullcontext)
     )
     monkeypatch.setattr(ownership, "database_now", lambda: now)
+    # The check's user is still the applied one, so the check runs (#269).
+    monkeypatch.setattr(backup_probes, "applied_mailbox", lambda: row.subject)
     monkeypatch.setattr(key_files, "read_private", lambda path: account())
     # Accept any key and answer the probe, so only the profile can refuse.
     monkeypatch.setattr(integration_candidates, "workspace_info", lambda value: {})

@@ -6,11 +6,13 @@ writes one small file to the requested folder as the delegated user and
 trashes it again, then records the outcome by fixed category. A check that
 waited longer than ``PROBE_WAIT`` is closed as unanswered without contacting
 Drive, matching what the page already shows, so the table keeps no stale work.
+A check whose delegated user is no longer the applied one is closed as
+``settings_changed``, also without contacting Drive (#269).
 """
 
 from functools import partial
 
-from django.db import transaction
+from django.db import connection, transaction
 
 from .backup_drive import (
     PROBE_WAIT,
@@ -65,6 +67,19 @@ def _check(credential_path, row, session_factory):
     return None
 
 
+def applied_mailbox():
+    """The applied delegated mailbox user, or None when none is applied.
+
+    The installer cannot read the applied settings; the definer
+    ``stewardship_backup_destination_v1()`` (migration 0176) answers it.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT delegated_email FROM stewardship_backup_destination_v1()"
+        )
+        return cursor.fetchone()[0]
+
+
 def has_pending():
     """Whether any access check is waiting: one cheap read for the idle loop (#639)."""
     from .jobs.backup_models import BackupDriveProbe
@@ -86,6 +101,18 @@ def run_pending_probes(
     database transaction or row lock open. ``check`` (the installer's lease
     check) runs before each one. This installer is the only process that
     completes checks, and the SQL guard lets a check complete only once.
+
+    The insert guard admits only the applied delegated mailbox user, but an
+    Administrator may change that user (for example away from a compromised
+    account) while a check waits. So each check is compared with the applied
+    user right before it runs, and one queued for another user is closed as
+    ``settings_changed`` without impersonating anyone (#269). The folder is
+    not compared: Test access checks the folder the Administrator entered,
+    usually before it is saved, and runs only as the applied user anyway.
+    The comparison is made just before impersonation, not under a lock held
+    through the Drive calls (which would hold a transaction open for up to a
+    minute), so a change committed in the milliseconds between the read and
+    the session being built still lets that one check run as the old user.
     """
     from .jobs.backup_models import BackupDriveProbe
     from .jobs.ownership import database_now
@@ -104,15 +131,18 @@ def run_pending_probes(
             if row is None:
                 return finished
             waited = database_now() - row.created_at
-        stale = waited > PROBE_WAIT
-        if stale:
+        if waited > PROBE_WAIT:
             # Closed unanswered at its limit: say what waited and for how long.
             log_timeout(
                 "drive_probe_wait",
                 limit_seconds=PROBE_WAIT.total_seconds(),
                 elapsed_seconds=waited.total_seconds(),
             )
-        kind = "unanswered" if stale else _check(credential_path, row, session_factory)
+            kind = "unanswered"
+        elif row.subject != applied_mailbox():
+            kind = "settings_changed"
+        else:
+            kind = _check(credential_path, row, session_factory)
         with transaction.atomic():
             BackupDriveProbe.objects.filter(pk=row.pk, state="pending").update(
                 state="failed" if kind else "succeeded", failure_kind=kind

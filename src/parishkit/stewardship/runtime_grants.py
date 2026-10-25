@@ -496,6 +496,10 @@ EXPORT_DISCARD_FUNCTION = "stewardship_export_discard_due_v1(integer)"
 # latest check: the source worker's one read of them, so it is granted no
 # response answers or decision rows.
 PLEDGE_REFRESH_ITEMS_FUNCTION = "stewardship_pledge_refresh_items_v2(uuid, uuid, uuid)"
+# The applied off-site backup folder link and delegated mailbox user (0176,
+# #269): the Google Workspace installer compares a queued "Test access"
+# check with them before it runs it, without reading the applied settings.
+BACKUP_DESTINATION_FUNCTION = "stewardship_backup_destination_v1()"
 # Publication plans and outcomes (#528, DAT-09.01, migration 0087): the
 # worker writes a preflight's plan and each write attempt's outcome; web
 # reads them all and writes only an Administrator's confirmation.
@@ -622,6 +626,8 @@ CLOSURE_FUNCTIONS = {
     ),
     # The Family campaign tables' statistics after a first load (0172, #1932).
     FAMILY_ANALYZE_FUNCTION: ("stewardship_campaigns", "0018_family_statistics"),
+    # The Test access re-check's backup destination read (0176, #269).
+    BACKUP_DESTINATION_FUNCTION: ("stewardship_jobs", "0038_probe_settings_changed"),
 }
 
 
@@ -897,7 +903,9 @@ def runtime_functions(role, *, target=None):
     first load, the Family campaign tables' statistics (#1932).
     Web and the parishsoft, google_workspace and slack credential installers
     check that the automation session a secret request names is live
-    (``stewardship_automation_request_live_v1``, #1763). Web,
+    (``stewardship_automation_request_live_v1``, #1763); the google_workspace
+    installer also reads the applied backup folder and delegated mailbox
+    user, to close a queued Test access check whose user changed (#269). Web,
     the general worker and the download login read a user's role-derived
     Ministry scope (#922); the general worker and the configuration
     installer record the Ministry leader pairs a promotion or an activation
@@ -941,6 +949,8 @@ def runtime_functions(role, *, target=None):
         functions = {DEBUG_OFF_FUNCTION}
         if target in AUTOMATION_SECRET_TARGETS:
             functions.add(AUTOMATION_REQUEST_FUNCTION)
+        if target == "google_workspace":
+            functions.add(BACKUP_DESTINATION_FUNCTION)
         return frozenset(functions)
     return frozenset(
         {

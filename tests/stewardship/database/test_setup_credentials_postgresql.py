@@ -67,6 +67,12 @@ def publish(target, *, material=b"s" * 32):
                 "stewardship_automation_request_live_v1(uuid, uuid, timestamptz), "
                 f'public.stewardship_debug_logging_off_v1() TO "{role}"'
             )
+            if target == "google_workspace":
+                # The Test access re-check's backup destination read (#269).
+                cursor.execute(
+                    "GRANT EXECUTE ON FUNCTION public."
+                    f'stewardship_backup_destination_v1() TO "{role}"'
+                )
             cursor.execute(f'SET SESSION AUTHORIZATION "{role}"')
         publish_handoff(private)
     finally:
