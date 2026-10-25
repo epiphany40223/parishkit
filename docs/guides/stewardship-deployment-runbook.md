@@ -826,6 +826,100 @@ release that announces a schema or grant change, run the script with
 `STEWARDSHIP_SCHEMA_CHANGE=1` and watch step 4, or take the manual steps
 above.
 
+### Database connection sources (#2111)
+
+The release that adds PostgreSQL's per-login source rules (operations
+specification,
+[Database connection sources](../specs/stewardship/operations/spec.md#database-connection-sources))
+ships alone, with no migration and no grant change, in a normal nightly
+window. Run it with the [scripted upgrade](#scripted-upgrade) as usual. It
+is the one upgrade that stops everything but `caddy`: right after step 3
+the log shows
+
+```text
+==> HH:MM:SS (+Ns) 3. Full stop: the database networks change
+    network backend differs from the rendered one (ip_range)
+    postgres is on backend but rendered on backend offline-admin-recovery ...
+    postgres and valkey run on the rendered networks
+```
+
+followed by the source rules' reload and check, steps 4 to 6, and the
+source check from every service. `caddy` keeps running and serves the
+maintenance page the whole time; the full stop adds a minute or two (PostgreSQL's shutdown and
+start). No volume is touched: every data path is a bind mount.
+
+**Success** is the usual last line, `Upgraded to IMAGE in Ns; all N online
+services healthy`, with exit status 0. To see the rules in force, ask
+PostgreSQL which file it read:
+
+```sh
+docker compose -f COMPOSE -p stewardship exec -T postgres \
+  psql -U pk_stewardship_operator -d DATABASE -Atc 'SHOW hba_file'
+```
+
+It prints `/etc/postgresql/hba/pg_hba.conf` (the rendered rules); the
+stock file in the data directory means the rules are not in force. Every
+later upgrade finds the networks unchanged and prints no full stop.
+
+**Failure**, and what to do. Every case below leaves the maintenance page
+up unless it says otherwise, and the run is safe to repeat with the same
+digest: a repeat finds the stopped or partly recreated project and, before
+anything else, prints `Finishing the full stop an earlier run began` and
+finishes it, so its checks and backup see a running database:
+
+- `One-off containers of stewardship are still running (backup-worker);
+  nothing was stopped.` A cron backup was running. Wait for it to finish
+  (`docker ps` no longer lists it), then repeat the run. The same line
+  ending `postgres and valkey are stopped.` means one started during the
+  full stop; wait for it the same way and repeat.
+- `FAILED: ...` or `TIMEOUT: ... killed after Ns (limit Ns)`, then `The
+  full stop did not finish`. The line names the step that failed
+  (stopping, removing, a network, starting `postgres` and `valkey`). Look
+  at `docker ps --all` and `docker compose ... logs postgres`, fix the
+  cause, and repeat the run.
+- `FAILED: starting postgres and valkey` with `Pool overlaps with other
+  one on this address space` (or similar) in the lines below it: another
+  network on the host overlaps a subnet the deployment YAML's
+  `runtime_network` names; `docker network ls` and `docker network
+  inspect` show which. Fix that, then repeat, or roll back (below).
+- `After the full stop the database networks still differ from the
+  rendered ones`: something recreated a network or PostgreSQL differently
+  from the file (the lines below it say what). Look at `docker network
+  inspect` and `docker inspect` for the named one, fix it, and repeat.
+- The hba check fails (`The hba check failed: ...`): fix forward with a
+  release that corrects the rules, or roll back.
+- The run ends with `Upgraded to IMAGE, but NOT healthy:` and a line
+  `SERVICE: database sources differ from the rendered rules`. The source
+  check's output above it names the login, the source address and the
+  service. The site stays up if web is healthy. A login `allowed` from a
+  source the rules do not list is a security failure: roll back now. A
+  login `refused` where it should be allowed stops that service; fix
+  forward or roll back.
+
+**Rollback** from this release goes back to a release without the source
+rules, and needs the same full stop in the other direction. Run the
+[scripted rollback](#scripted-rollback) from a checkout of **this** release
+(or a later one), never of the previous release: the host half is uploaded
+from the checkout you run it from, and only this release's has the full
+stop. The previous image's `retarget-image` renders the old networks, so
+the log again shows `3. Full stop: the database networks change`, now with
+`network backend differs from the rendered one (ip_range)` and `postgres is on backend
+offline-... but rendered on backend`; the source rules' step says none are
+rendered; and the run ends `Rolled back to IMAGE in Ns; all N online
+services healthy`. `SHOW hba_file` (above) then prints the data
+directory's own `pg_hba.conf`, the stock rules. The database is never
+touched, so no restore is needed. The `config/services/pg-hba` directory
+stays behind, unused; the next upgrade rewrites it.
+
+The previous release's own checkout cannot do this rollback: its step 6
+fails with `network ... has active endpoints` and leaves `web` removed with
+the maintenance page up. If that happened, run the rollback again from this
+release's checkout; it finishes the change.
+
+`pk-restore` does the same full stop in its step 7 when a set from before
+this release is restored with an image that has the rules (see the backup
+runbook's [Scripted same-host restore](stewardship-backup-runbook.md#scripted-same-host-restore)).
+
 ### Users upgrade (#952)
 
 The release that turns sign-in rules into users converts the configuration
@@ -1405,6 +1499,9 @@ The previous release's image is normally still on the host, since the
 [scripted upgrade](#scripted-upgrade)'s image pruning keeps the replaced
 release and the newest few others; if it was removed, the rollback's pull
 fetches it again.
+A rollback from the release that added PostgreSQL's source rules also
+stops everything but `caddy` once and must run from that release's
+checkout (see [Database connection sources](#database-connection-sources-2111)).
 The rollback has not yet been rehearsed on a host; that is tracked in
 issue #460 and belongs on the
 [local laptop environment](../specs/stewardship/local-environment/spec.md)

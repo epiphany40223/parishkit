@@ -485,49 +485,100 @@ the seeder passes that address with `--ip`.
 **Rollout.** The change ships alone, in a release with no migration and no
 grant change, so the application-only
 [rollback](../../../guides/stewardship-deployment-runbook.md#rollback) stays
-available. `retarget-image` renders the new topology; its PostgreSQL
-command changes, so the upgrade recreates PostgreSQL. Running containers
-still hold dynamic `backend` addresses that the fixed ones may collide
-with, and the `backend` network's IPAM gains its `ip_range`, so that one
-upgrade needs a full stop. `stewardship-upgrade-host.sh` owns it: it
-detects the case by comparing the retargeted `backend` IPAM with the
-running network's (`docker network inspect`), and right after step 3 (the
-retarget and any fake-clock image builds) and before step 4 it stops and
-removes every container of the project except Caddy, PostgreSQL and Valkey
-included (volumes untouched), removes the `backend` network so Compose
-recreates it, and starts PostgreSQL and Valkey on their fixed addresses.
-The hba check runs on it, then step 4 (the upgrade check, `pg_trgm`, and any migration and
-`database-grants`, none of which this release changes) then runs against
-the recreated PostgreSQL, and step 6 starts the other services and runs
-the source check. Caddy stays up throughout: it is only on `proxy`, which
-does not change, and it keeps serving the maintenance page. The stop adds a
-few minutes inside the maintenance window. Later upgrades find the IPAM
-unchanged and skip it. The off-site copy and
-cron backups need no change; a cron backup that starts during the stop
-fails as it would in any upgrade's offline phase.
+available. `retarget-image` renders the new topology: fixed `backend`
+addresses, the `backend` network's new `ip_range`, the one-shot networks
+and PostgreSQL's changed command. Compose cannot apply that to a running
+project: it can neither recreate a network that a running container is on
+(it fails with "active endpoints" and leaves the service it was starting
+removed) nor attach a stopped container to the recreated network, so the
+containers must be removed, not only stopped. That one upgrade therefore
+needs a full stop, and `stewardship-upgrade-host.sh` owns it, right after
+step 3 (the retarget and any fake-clock image builds) and before step 4.
+It compares the retargeted Compose file with what Docker runs: for every
+rendered network that already exists, its `internal` flag and, where the
+file renders its address block, its subnet, its `ip_range` and (when
+rendered) its gateway, since Docker reports the subnet and gateway it chose
+for a network that renders none; and the set of networks the running
+PostgreSQL container is on. Any difference, or a PostgreSQL that is not
+running, triggers the full stop. It refuses, stopping nothing and naming
+them, while a one-off container of the project is unfinished (running,
+paused or restarting: a cron backup), so a backup is never killed
+mid-copy, and checks again before it removes any network. Otherwise it stops PostgreSQL and
+Valkey through Compose (for their stop grace periods), stops and removes
+every other container of the project except Caddy, never removing a volume
+(every data path is a bind mount), removes every network of the project
+Caddy is not on (read from Caddy's own container, so a stopped Caddy keeps
+its networks too), starts PostgreSQL and Valkey on the rendered networks,
+and compares again, which must find no difference. The inspections it
+compares go to files, never to a command line. Any failure stops the run
+with the maintenance page up, and the run is safe to repeat: a repeat
+finds web down and, when PostgreSQL is stopped, removed or on other
+networks than the file the earlier run retargeted renders, finishes the
+full stop before its step 1 needs PostgreSQL, so step 1's check and backup
+(and a rollback's check, which would otherwise point at a database
+restore) see a running database. The hba check runs on the recreated PostgreSQL, then step 4 (the
+upgrade check, `pg_trgm`, and any migration and `database-grants`, none of
+which this release changes) runs against it, and step 6 starts the other
+services and runs the source check. Caddy stays up throughout: it is only
+on `ingress` and `proxy`, which do not change, and it keeps serving the
+maintenance page. The stop adds a minute or two inside the maintenance
+window (PostgreSQL's shutdown and start). Later upgrades find nothing to
+change and skip it. The off-site copy and cron backups need no change; a
+cron backup that starts during the stop fails as it would in any upgrade's
+offline phase. The runbook's
+[database connection sources](../../../guides/stewardship-deployment-runbook.md#database-connection-sources-2111)
+section says how to tell success from failure.
+
+`pk-restore` runs the same comparison and full stop (one block of shell
+shared with the upgrade, kept identical by a test) in its step 7, right
+after `retarget-image` and the pull and before `revoke-automation-sessions`
+and `restore-begin` need the `admin-recovery` network: a set rendered
+before this change (whose step 5 or running deployment started PostgreSQL
+on the old networks), or a restore with an image from before it, gets
+PostgreSQL and Valkey recreated on the rendered networks first. When the
+networks already match, PostgreSQL keeps running and `pk-restore` reloads
+its configuration (`pg_reload_conf()` over the socket), since
+`retarget-image` may have rewritten the rules. After web's
+health check it runs the source check from web and from `admin-recovery`
+when the image has the command (a drill starts nothing else); a difference
+fails the run with web still up, and the Restore review waits for a fix.
+The local laptop environment's `deploy` and `deploy --rollback` run the
+upgrade's host half, full stop included; its `reset` and
+`snapshot restore` remove the containers and networks (never a volume)
+before they put a snapshot's root back, since a snapshot taken before this
+change renders the old networks.
 
 **Rollback.** Under the
 fail-forward policy a wrong rule is
 fixed in a new release. A service whose own login is refused cannot start,
-so if the site is down the operator runs the scripted rollback: the
-previous image's `retarget-image` renders Compose without `hba_file`,
-PostgreSQL restarts on the untouched stock file in its data directory, and
-the services run on dynamic addresses again. The rollback needs no full
-stop and adds no step to the previous release's tooling: dynamic addresses
-are allocated only from the `ip_range` that no fixed address uses, so
-moving from fixed to dynamic cannot collide. The one difference the
-previous tooling meets is the `backend` network's added `ip_range`; the
-implementation proves, with the previous release's scripted rollback on
-the Docker Engine and Compose versions Production runs, that it starts on
-that network unchanged. If that proof fails, the implementation drops the
-`ip_range` and lists dynamic `backend` containers under
-[what source rules cannot stop](#what-source-rules-cannot-stop) instead.
-Nothing in the database changed, so no restore is ever needed. The new
-`runtime_network.offline` field is written to the provisioning record (and
-to the service documents) only when the deployment YAML sets it to a block
-other than the default, so the previous release's
-`retarget-image` accepts the record; the implementation proves this with
-the previous release's image before the release ships.
+so if the site is down the operator runs the scripted rollback, from a
+checkout of **this** release or later, never of the previous one: the
+upload of the host half comes from the invoking checkout, and only this
+release's host half has the full stop. The previous image's
+`retarget-image` renders Compose without `hba_file` and with the old
+networks, so the comparison above differs again (the `backend` network
+loses its `ip_range` and PostgreSQL its one-shot networks), and the same
+full stop removes the containers and the one-shot networks and starts
+PostgreSQL on the untouched stock file in its data directory, with the
+services on dynamic addresses again. The rollback therefore needs the same
+full stop, in the same place (after step 3). The previous release's own
+tooling cannot do it: its step 6 `up web` fails with "active endpoints"
+while PostgreSQL runs, leaving web removed and the maintenance page up, and
+a PostgreSQL left running would keep the new rules, which refuse the old
+release's services on their dynamic addresses. An operator who used it by
+mistake repeats the rollback from this release's checkout, which finds and
+finishes the partly changed project. Because the full stop recreates
+`backend` from the previous rendering, the previous release never runs on a
+network with the `ip_range`, so the `backend` network keeps its `ip_range`
+(decision 12's fallback is not needed). Nothing in the database changed, so
+no restore is ever needed; a test on real Docker renders the Production
+topology, runs the shared block for a rollout and then a rollback, and
+proves that the rows, Caddy's container and the stock rules come back
+unchanged. The new `runtime_network.offline` field is written to the
+provisioning record (and to the service documents) only when the
+deployment YAML sets it to a block other than the default, so the previous
+release's `retarget-image` accepts the record; the implementation proves
+this with the previous release's image before the release ships.
 
 ### What source rules cannot stop
 

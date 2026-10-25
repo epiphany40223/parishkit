@@ -939,6 +939,21 @@ no digest is checked, and a fake-clock deployment is refused. The script's
 header comment lists every option. When it finishes, continue with step 8's review and
 release, then steps 9 and 10.
 
+PostgreSQL's connection sources (#2111) add two things. In step 7, right
+after `retarget-image` and the pull, it compares the database networks the
+retargeted Compose file renders with what Docker runs; when they differ (a
+set rendered before the source rules, or a restore with an image from
+before them) it removes every container of the project but `caddy` and
+the networks `caddy` is not on, never a volume, and starts `postgres` and
+`valkey` on the rendered networks before any one-off runs, as the
+[deployment runbook](stewardship-deployment-runbook.md#database-connection-sources-2111)
+describes for the upgrade; the log says `the database networks change`.
+It refuses while a one-off container of the project still runs. After
+web's health check, an image with the `database-sources` command runs the
+source check from `web` and from `admin-recovery`; a difference (the
+output names the login, the source and the service) fails the run with
+`web` still up, and the Restore review waits for a fix.
+
 ### Scripted replacement and drill restore
 
 On a new host, `pk-restore --replacement` also runs steps 3 and 5. With
