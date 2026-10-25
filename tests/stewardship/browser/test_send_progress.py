@@ -146,12 +146,15 @@ def test_polls_every_five_seconds_and_announces_only_quarter_changes(
 # Counts each poll timer the page arms (its 5-second fixed pace, and the
 # 30-second pace past its limit), so a test can wait until the page has read
 # a poll's answer and scheduled the next one before it moves the clock again.
+# The shared live-region ticker (liveTick, ui-v1.js) also re-arms every 5
+# seconds on every page; it is not this page's poll, so it is not counted.
 COUNT_ARMED_POLLS = """() => {
     const setTimeout = window.setTimeout;
     window.armedPolls = 0;
     window.slowPolls = 0;
     window.setTimeout = function (callback, delay, ...rest) {
-        if (delay === 5000) window.armedPolls += 1;
+        const ticker = callback && callback.name === "liveTick";
+        if (delay === 5000 && !ticker) window.armedPolls += 1;
         if (delay === 30000) window.slowPolls += 1;
         return setTimeout.call(window, callback, delay, ...rest);
     };
