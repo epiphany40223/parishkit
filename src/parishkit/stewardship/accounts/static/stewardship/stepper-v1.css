@@ -155,12 +155,14 @@
    put Next past the screen's gutter, away from its spot on page 1 (#2123).
    A small inline padding and gap leave all three well inside the row from
    320 px up, so the side columns get equal shares and Finish stays at the
-   center whether Previous's slot is empty or not. The side columns still
+   center whether Previous's slot is empty or not. (With .5rem of each,
+   Linux fonts made Previous wider than its share at 320 px, which moved
+   Finish 7 px between page 1 and the others; train t127.) The side columns still
    never shrink below their labels: with a much larger text size the row
    may then sit a little off center, but its buttons never overlap. */
 @media (max-width: 30rem) {
-  .review-wizard-actions { column-gap: .5rem; }
-  .review-wizard-actions button { padding-inline: .5rem; }
+  .review-wizard-actions { column-gap: .25rem; }
+  .review-wizard-actions button { padding-inline: .375rem; }
 }
 /* The heading and the line under it (the Member's Family, empty on a Family
    page) are one line each, so the top row never moves: a long name is cut
