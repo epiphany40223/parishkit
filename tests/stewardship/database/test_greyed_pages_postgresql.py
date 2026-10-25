@@ -76,22 +76,9 @@ def _staff(store, google):
     google[0]["email"] = "staff@example.org"
 
 
-def _greyed_link(body, name, reason):
-    """``body`` shows page ``name``'s in-page link greyed out with ``reason``."""
-    control = name.replace("_", "-")
-    assert f'href="/admin/{_path(name)}"' not in body
-    assert (
-        f'aria-describedby="{control}-link-tip" data-menu-tip>' in body
-        and f'<span class="admin-tip" id="{control}-link-tip" role="tooltip">'
-        f"{reason}</span>"
-        in body
-    ), name
-
-
 def test_no_parishsoft_data_leads_to_the_refresh(auth_service, google):
     """Before the first ParishSoft download the pages that list its data say
-    so and lead to Refresh from ParishSoft, never "try again later" (503);
-    the pages that link them grey the links the way the menu does."""
+    so and lead to Refresh from ParishSoft, never "try again later" (503)."""
     store = auth_service.store
     add_draft(store, store.active(), uuid4())
     browser, _ = signed_in()
@@ -118,15 +105,11 @@ def test_no_parishsoft_data_leads_to_the_refresh(auth_service, google):
     assert "ParishSoft data has not been downloaded yet, so no Family" in shown
     assert f'href="/admin/{_path("source_form")}"' not in shown
     assert 'id="source-form-link-tip"' not in shown
-    # The Response dashboard greys the directory for the data, and
-    # Limitations because this draft has no Ministry stewardship.
-    # A streamed report: read through an abortable transport.
+    # The Response dashboard no longer carries in-page links to the menu's pages
+    # (#2143), so there is no greyed link to check there; it still opens.
     dashboard, body = read(browser, f"/admin/{_path('response_dashboard')}")
     assert dashboard.status_code == 200
     body = body.decode()
-    _greyed_link(body, "family_directory", reason)
-    _greyed_link(body, "limitations_report", navigation.MINISTRY_MISSING)
-    _greyed_link(body, "information_queue", reason)
     assert "<h1>Response dashboard</h1>" in body
 
 
