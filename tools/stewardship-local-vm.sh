@@ -357,6 +357,16 @@ stop_services() {
     [ -z "$killed" ] || echo "    killed after the 90s stop timeout (exit 137): $(tr '\n' ' ' <<<"$killed")"
 }
 
+remove_containers() {
+    # After stop_services, before a snapshot's root (and so its Compose
+    # file) is put back: remove the project's containers and networks, never
+    # a volume (the rendered topology has none; the data lives under the
+    # root). A snapshot rendered before #2111 has other database networks,
+    # and Compose can attach neither a running nor a stopped container to a
+    # recreated network (operations specification, "Rollout").
+    timed 300 "removing the containers" docker compose -f "$services/compose.json" -p "$project" down --remove-orphans 2>&1 | quiet
+}
+
 image_constant() {
     # image_constant MODULE NAME [FALLBACK]: a Python constant from the
     # application image, so the script never copies a value that lives in
@@ -1065,6 +1075,7 @@ switch_to() {
         step "Switching to the $name snapshot (taken on $snap_image): restoring it whole, then upgrading it to $run_image"
         phase=stopped
         stop_services
+        remove_containers
         phase=restoring
         rsync -aHAX --checksum --inplace --delete --numeric-ids --exclude=/run/persistent/caddy/ "$dir/root/" "$root/"
         # The running record (debug setting and all), naming the snapshot's
@@ -1102,6 +1113,7 @@ cmd_reset() {
     load_env
     step "Stopping the services to restore the $name snapshot"
     stop_services
+    remove_containers
     step "Restoring $snapshots/$name over $root"
     # --checksum: a file the services rewrote with the same size and time
     # as the snapshot's copy is still put back. --inplace keeps the inode
