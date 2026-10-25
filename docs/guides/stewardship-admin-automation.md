@@ -1123,8 +1123,8 @@ email the campaign does not hold is exit 1 (`not_available`), and a held
 campaign `stale_version`, as for `content list`.
 
 `content history` prints `campaign_id`, `state` (the campaign's),
-`configuration_id` (the retained configuration version the page names in
-its technical details) and `entries`, each retained page and email with
+`configuration_id` (the retained configuration version, which the page
+does not show) and `entries`, each retained page and email with
 its `id`, `kind` (`page` or `email`), `slot`, `name` and `subject`. With
 `--revision` and an entry's `id`, `revision` holds that entry's `id`,
 `kind`, `slot`, `name` and `sample`: the page's fictional sample, its

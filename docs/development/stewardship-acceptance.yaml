@@ -490,6 +490,7 @@ sections:
     "Wizards": [ADM-02, ADM-03]
     "Admin page layout and help": [ADM-03]
     "Page help": [ADM-03]
+    "No Technical details panes": [ADM-03]
     "Button labels": [ADM-03]
     "Button emphasis": [ADM-03]
     "Review pipeline terms": [ADM-03, DAT-06]

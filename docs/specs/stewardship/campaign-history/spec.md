@@ -1386,9 +1386,11 @@ linked to #1018 (slice 7 completed part (b)).
    Remove posts the confirmation dialog's
    `<year>:<version>` to `removal/`. For a file already imported Apply is
    unavailable, as decision 12 records. The table's Active Families
-   cell carries the count's provenance in a toggletip, and every import's
-   file name and SHA-256, tombstones included, are under Technical
-   details. Review is unavailable, with the reason and a link to Campaign
+   cell carries the count's provenance in a toggletip. The page lists no
+   file checksums or removed imports
+   ([no Technical details panes](../ui-conventions/spec.md#no-technical-details-panes));
+   `pk-admin history list` prints every import, removed ones included,
+   with its file name and SHA-256. Review is unavailable, with the reason and a link to Campaign
    settings, while the current campaign's year cannot be resolved.
 5. **Charts and day control.** The three day-by-day charts, the final-results
    bars, the pledge-distribution stacked bars and Compare on day.
@@ -1492,8 +1494,9 @@ linked to #1018 (slice 7 completed part (b)).
    participation chart, which the digest boundary admits only as
    compiled), the figures, and a link to the report on the same day
    (`?day=N`). The saved digest page draws the stored specifications with
-   the chart engine in the browser and lists the files compared under
-   Past campaigns compared; `pk-admin report-email copy` prints the
+   the chart engine in the browser, without the compared files' checksums
+   ([no Technical details panes](../ui-conventions/spec.md#no-technical-details-panes));
+   `pk-admin report-email copy` prints the
    section without the specifications (`digest daily` until #1786). The renderer's timeout name is
    `digest_chart` with the helper `chart_render_worker`. A comparison
    that disagrees with its facts fails that compile (it is retried like a
