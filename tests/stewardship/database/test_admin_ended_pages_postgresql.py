@@ -70,9 +70,11 @@ def _routes():
 
 
 def _url(name, converters):
-    """The route's address with plausible arguments."""
+    """The route's address with plausible arguments (an int is a page
+    position, as the review wizard's run pages take)."""
+    plausible = {"uuid": uuid4, "int": lambda: 1}
     arguments = {
-        parameter: uuid4() if converter == "uuid" else "parishsoft"
+        parameter: plausible.get(converter, lambda: "parishsoft")()
         for converter, parameter in converters
     }
     return reverse(f"admin:{name}", kwargs=arguments)
