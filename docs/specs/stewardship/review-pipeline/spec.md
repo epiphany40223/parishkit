@@ -2050,7 +2050,7 @@ work counts on Home and My review work ([role views](#role-views)).
   its changed rows, so it never replaces the table (that would drop the
   other rows, their sort and the pager): a misfit row keeps its cells, takes
   the new token and shows its tag, and is redrawn at the reader's own next
-  redraw. The row carries a short **Changed by someone else** tag beside its
+  redraw. The row carries a short **Changed by someone else** tag under its
   stage until the reader's own next action redraws the table, but only when
   what it shows changed (its identity, values, stage or last decision): a
   row whose offered actions alone changed, such as when the campaign was

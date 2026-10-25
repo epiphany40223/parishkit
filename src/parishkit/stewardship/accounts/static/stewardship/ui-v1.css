@@ -2111,9 +2111,20 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
    icon and word carry the state, not the colour. */
 .stage-chip:is(.status-error, .status-warning), .status-badge.status-warning { border-color: var(--status-line); background: var(--status-bg); color: var(--status-ink); }
 /* A review region's item someone else changed (#2174) says so beside its
-   stage, in the accent ink so it reads as news, not as a stage of its own;
-   it is drawn hidden with every item and shown only on a redrawn one. */
-.live-changed { color: var(--accent-strong); font-size: .8125rem; font-weight: 600; white-space: nowrap; }
+   stage in a small accent notice with the info icon: easy to spot, but in
+   the calm accent look, not a warning, so it reads as news, not as a stage
+   or a problem. It is drawn hidden with every item and shown only on a
+   redrawn one. */
+.live-changed { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .45rem; border: 1px solid var(--accent); border-radius: var(--radius-small); background: var(--accent-soft); color: var(--accent-strong); font-size: .8125rem; font-weight: 700; }
+/* In a table cell it goes under the stage as a block that fills the cell
+   and wraps its words, and contain: inline-size keeps its width out of the
+   table's column sizing: a tag that counted would widen the Stage column
+   of a table laid out without it, re-wrapping the headings and moving
+   every row (Firefox). The block ends its line itself, so the <br> before
+   a worklist row's decision label would leave a blank line. */
+td > .live-changed { display: flex; contain: inline-size; margin-block-start: .25rem; }
+td > .live-changed:not([hidden]) + br { display: none; }
+.live-changed .level-icon { color: var(--accent); }
 /* A worklist's filters are always open (no Filters disclosure), on one
    compact row that wraps only when the window is too narrow for it
    (#1653), so a laptop window (1366 px, Admin menu beside) holds a

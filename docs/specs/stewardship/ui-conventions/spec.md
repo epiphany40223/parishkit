@@ -1024,8 +1024,12 @@ tabs and the Review work counts
   drew, a key and a token of what each shows, in one passive read; the
   answer holds only the items whose token changed, and each is redrawn where
   it is, with a short **Changed by someone else** tag when what it shows
-  (not only what it offers) changed. An answer of only the changed items
-  never replaces the list. Rows never move,
+  (not only what it offers) changed. The tag is a small notice in the
+  accent look with the info icon beside the item's stage (under it in a
+  table): easy to spot but not a warning. In a table its words wrap within
+  the column rather than widen it, so showing it never widens a column or
+  re-wraps the headings; the redrawn row itself may grow. An answer of
+  only the changed items never replaces the list. Rows never move,
   re-sort, appear or disappear: an item that no longer matches the filters
   keeps its place with its new state until the reader's own next redraw.
   Besides the waits below, the region waits while focus is in it or the

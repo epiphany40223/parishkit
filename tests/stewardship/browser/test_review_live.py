@@ -77,10 +77,23 @@ def test_a_change_made_elsewhere_appears_in_place_with_its_tag(page, component_o
     checks = answer_checks(page, component_origin, PATH, ACCEPTED)
     order = page.evaluate(ORDER)
     top = row(page, 0).bounding_box()["y"]
+    head = page.locator("#table thead").bounding_box()["height"]
+    stage = row(page, 0).locator(".stage-cell").bounding_box()["width"]
     page.evaluate("document.querySelector('#worklist-row-3').dataset.kept = 'yes'")
     page.clock.fast_forward(TICK)
-    visible(row(page, 0).locator("[data-live-tag]"))
+    tag = row(page, 0).locator("[data-live-tag]")
+    visible(tag)
     has_text(row(page, 0).locator(".stage-chip .status-word").first, "Ready to update")
+    # The tag is a notice with its icon that wraps within the Stage column:
+    # the column and the headings keep their size (a one-line tag widened
+    # the column and re-wrapped the headings in Firefox).
+    assert tag.locator(".level-icon-info").count() == 1
+    assert abs(row(page, 0).locator(".stage-cell").bounding_box()["width"] - stage) < 1
+    assert abs(page.locator("#table thead").bounding_box()["height"] - head) < 1
+    # The tag ends its own line, so the <br> before the decision label is
+    # not drawn (it would leave a blank line).
+    after = "(t) => t.nextElementSibling && getComputedStyle(t.nextElementSibling)"
+    assert tag.evaluate(f"{after}.display") in (None, "none")
     assert len(checks) == 1
     pairs, header = checks[0]
     assert header == "passive" and len(pairs.replace("%2C", ",").split(",")) == 8

@@ -162,7 +162,7 @@ def render_worklist(shown=None, **options):
 
 def test_the_worklist_draws_its_region_items_tags_and_parts():
     """The table region names its address and view form; each row its key
-    and token, with its tag hidden beside the stage; each row form its part."""
+    and token, with its tag hidden under the stage; each row form its part."""
     worklist, html = render_worklist()
     assert (
         'data-table-region data-live-items="/review" data-live-view="census-decide"'
