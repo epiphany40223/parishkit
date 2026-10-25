@@ -747,7 +747,7 @@ stream, as the table above says. Notes on the table:
   same way and is not withdrawn by an untick either, and one Staff ignored
   is shown as the roster has it, so the Family choosing it again makes a
   new request of its own, To review, which the lists show in its place;
-  the Ignored one is not replaced and stays Ignored in its history
+  the Ignored one is not replaced and is listed under History
   ([#2173](https://github.com/epiphany40223/parishkit/issues/2173)).
 - **A moved, deceased or death-date request already entered** (Entered by
   hand or Updated in ParishSoft, not yet Confirmed) is presented in its
@@ -1108,8 +1108,11 @@ derivation), where the design leaves a choice:
   stage, To review included; the submission's completeness check admits an
   open request the parish added left in force. An Ignored request the
   parish added that the Family chooses again is not replaced: it stays
-  Ignored, and the Family's new request, the latest for that Member and
-  Ministry, is the one the lists show (frozen file 0180,
+  Ignored, listed under History, and the Family's new request, the latest
+  for that Member and Ministry, is the one the other stages show. On a form
+  drawn before the reviewed form, an added request back at To review that
+  the Family chooses is replaced by the Family's own request, as any open
+  request is, since the Family now asks for it itself (frozen file 0180,
   [#2173](https://github.com/epiphany40223/parishkit/issues/2173)). An
   Ignored New Member's Ministry requests are judged as before the reviewed
   form, since the New Member itself is not shown.
@@ -1590,7 +1593,12 @@ current (until [#1890](https://github.com/epiphany40223/parishkit/issues/1890)
 reconciliation also resolved an open request whose roster state was
 current; it no longer does, rule 1).
 The mapping onto stages is the
-[existing state to stage](#existing-state-to-stage) table. A decided request is
+[existing state to stage](#existing-state-to-stage) table; a superseded or
+cancelled request is History, which Ministry requests lists under its Stage
+filter like the other streams' tables
+([#2180](https://github.com/epiphany40223/parishkit/issues/2180),
+[Ministry requests](../admin-portal/spec.md#follow-up-workflows)). The review
+wizard does not offer History. A decided request is
 not offered again in today's form; a Family that ticks it again is handled
 by [rule 1](#resubmission-before-the-reviewed-form).
 

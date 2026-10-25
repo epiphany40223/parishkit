@@ -8428,8 +8428,16 @@ for a leader an accepted request is at the stage **Accepted** (or Accepted
 (edited), or Added by the parish) whether or not Staff have entered it, and
 the leader's Stage filter offers To review, Accepted, Ignored and Confirmed.
 Staff and Administrators get To review, To enter by hand, Entered by hand,
-Ignored and Confirmed. Each choice shows its count, and Every stage comes
-last; To review is the default. The counts are the reader's scope with the
+Ignored and Confirmed. Both then get **History**, as the other review
+tables do: the requests a later Family response replaced (superseded) or
+that were withdrawn (cancelled), and any other that a later request about
+the same Member and Ministry outranks and that is no roster work,
+read-only, with no icons; a leader's
+History holds only the Ministries that leader leads, the same scope as the
+other choices (Administrator decision, 2026-10-25,
+[#2180](https://github.com/epiphany40223/parishkit/issues/2180)). Each
+choice shows its count, and Every stage comes last; it counts and lists
+every stage but History. To review is the default. The counts are the reader's scope with the
 other filters applied, so they follow Apply and every decision in place.
 
 **Filters**, always open above the table: Stage, Search Member or Ministry
