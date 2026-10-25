@@ -376,9 +376,10 @@ def automatic_read(request):
     action, so a header on it is ignored and it renews the sign-in as usual.
     Passive changes nothing but that renewal (and, on an audited view, adds
     the ``automatic`` mark): the session, role and capability checks run as
-    for any other request.
+    for any other request. A command's ``AdminCaller`` has no method and is
+    never one.
     """
-    return request.method in {"GET", "HEAD"} and passive_read(request)
+    return getattr(request, "method", None) in {"GET", "HEAD"} and passive_read(request)
 
 
 def authenticated_admin(
