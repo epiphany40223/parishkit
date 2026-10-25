@@ -11,7 +11,6 @@ from django.shortcuts import render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
-from parishkit.stewardship.jobs.queue_wait import waited_words
 from parishkit.stewardship.storage import StaleRecordError
 
 from .admin_editing import error_response
@@ -60,15 +59,7 @@ def _progress(request, service, *, polled=None):
     try:
         progress = finalization_status(request, service)
         steps = finishing(progress)
-        context = (
-            progress
-            | steps
-            | {
-                "confirmed_ago": waited_words(
-                    progress["server_now"] - progress["confirmed_at"]
-                ),
-            }
-        )
+        context = progress | steps
         if polled == "json":
             response = JsonResponse(
                 {"overall": steps["overall"], "signature": steps["signature"]}

@@ -310,13 +310,9 @@ def finishing(status, *, completed=False):
         overall = "operator"
     else:
         overall = "working"
-    elapsed = max(
-        0, int((status["server_now"] - status["confirmed_at"]).total_seconds())
-    )
     return {
         "steps": rows,
         "overall": overall,
-        "elapsed": elapsed,
         "signature": signature(rows, overall),
     }
 

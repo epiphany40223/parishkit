@@ -298,7 +298,6 @@ SETUP_LOAD_STATUS = "/admin/setup/source/progress-status?format=status"
 def finishing_context(**status):
     """The "Finishing setup" page context, built by the real step mapping."""
     from parishkit.stewardship.accounts.setup_finishing import finishing
-    from parishkit.stewardship.jobs.queue_wait import waited_words
 
     now = datetime.now(UTC)
     status = {
@@ -310,16 +309,7 @@ def finishing_context(**status):
         "targets": ["parishsoft", "google_workspace"],
         "source": None,
     } | status
-    return (
-        status
-        | finishing(status)
-        | {
-            "status_url": SETUP_FINISHING_STATUS,
-            "confirmed_ago": waited_words(
-                status["server_now"] - status["confirmed_at"]
-            ),
-        }
-    )
+    return status | finishing(status) | {"status_url": SETUP_FINISHING_STATUS}
 
 
 @pytest.fixture(scope="session", autouse=True)

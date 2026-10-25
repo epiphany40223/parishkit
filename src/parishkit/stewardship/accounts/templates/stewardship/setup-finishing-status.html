@@ -1,11 +1,10 @@
 {% load i18n stewardship %}{% comment %}
-  Finishing setup's live status region (#1354): each step, the time since
-  confirmation, a failure's notice and one line on what happens next, or,
-  once setup is complete, the result with Continue. The server operator's
-  own steps are in the runtime guide, not on this page (#2145). The line
-  shows in every running state, so it never comes or goes while setup
-  runs; a failure, which stops the updates, drops it. The page and the
-  passive status fragment it polls (/admin/setup/finishing?format=status, which
+  Finishing setup's live status region (#1354): each step, and a failure's
+  notice, or, once setup is complete, the result with Continue. A step
+  that is working shows only the shared working spinner in its box; the
+  region draws no time since confirmation and no line under the boxes,
+  and the server operator's own steps are in the runtime guide, not on
+  this page (#2145). The page and the passive status fragment it polls (/admin/setup/finishing?format=status, which
   never renews idle time) both draw it, and live-status-v1.js swaps in the
   fresh region while setup is still finishing (data-live-pending), then
   stops at completion or failure. Only the page passes status_url. The
@@ -18,15 +17,11 @@
 {% if overall == 'completed' %}<div class="setup-load-result" data-finishing-done>
 <h2>{% translate "Setup is complete" %}</h2>
 <p>{% translate "The system is configured. Continue to the administration home." %}</p>
-<p>{% translate "Optional next step: keep encrypted copies of the nightly backups in a Google Drive folder. After you continue, open Integrations in the main menu and choose Off-site backups (Google Drive)." %}</p>
-<p>{% translate "Backups are encrypted with the public key installed with the deployment. To check its fingerprint, or to replace it later, open Integrations and choose Backup encryption key." %}</p>
 <div class="setup-actions"><a class="setup-continue" data-nav-slot="next" href="/admin/">{% translate "Continue" %}</a></div>
 </div>{% else %}{% if overall == 'failed' %}<p class="notice notice-error">{% translate "Setup could not finish. The failed step below explains what happened and what to do." %}</p>{% endif %}
 <section class="panel" data-finishing>
 <h2>{% translate "Progress" %}</h2>
 {% translate "Steps to finish setup" as steps_label %}{% include 'stewardship/components/stage-boxes.html' with stages=steps label=steps_label key_attribute="finishing-step" detail="stewardship/setup-finishing-step.html" %}
-<p data-finishing-elapsed>{% translate "You confirmed setup:" %} <time{% if overall != 'failed' %} data-live-since{% endif %} datetime="{{ confirmed_at|date:'c' }}">{{ confirmed_ago }}</time></p>
-{% if overall != 'failed' %}<p data-finishing-next>{% translate "Before setup can finish, the server operator restarts the services that use the new credentials; each credential's box counts the services that have acknowledged it. Then setup applies the configuration, loads the parish data again and finishes by itself. This page updates as it goes." %}</p>{% endif %}
 </section>
 {% endif %}
 <template data-live-mirror="setup-cancel">{% if overall != 'completed' %}{% include 'stewardship/setup-cancel-form.html' with mirrored=True %}{% endif %}</template>

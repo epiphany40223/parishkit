@@ -61,7 +61,6 @@ def test_just_confirmed_setup_is_working_and_waiting():
     assert {row["state"] for row in rows.values()} == {"waiting"}
     assert result["overall"] == "working"
     assert "reauthenticate" not in result
-    assert result["elapsed"] == 190
 
 
 @pytest.mark.parametrize(

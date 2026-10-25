@@ -610,20 +610,19 @@ frozen attempt's owner opens the setup overview, the Admin sees a "Finishing
 setup" page on the original login's cancellation route. It lists each step in
 plain language (each credential's installation, the server operator's
 acknowledgement with a count of acknowledged services, applying the
-configuration, the final parish data load, and completion) with the time since
-confirmation, and one line under them on what happens next: the server
-operator restarts the services that use the new credentials (each
-credential's box counts the services that acknowledged it), then setup
-applies the configuration, loads the parish data again and finishes by
-itself. Each step's words are one short line, and while a credential waits
-for the server
-operator its box says so in its status and shows only the live count. The
-operator's own steps are in the
+configuration, the final parish data load, and completion). A step that is
+working shows the portal's shared
+[working spinner](../ui-conventions/spec.md#working-spinner) in its box;
+the page shows no time since confirmation and no line under the boxes.
+Each step's words are one short line, and while a credential waits for the
+server operator its box says so in its status and shows only the live
+count. The operator's own steps are in the
 [runtime guide](../../../guides/stewardship-runtime.md#first-database-and-application-startup),
 not on the page
-([#2145](https://github.com/epiphany40223/parishkit/issues/2145)). Each step changes in place while setup finishes. Once setup
-completes, the page shows a Continue link to the Admin home and drops Cancel
-setup. A failed step stops the updates. A failed step explains what to do: a credential the provider
+([#2145](https://github.com/epiphany40223/parishkit/issues/2145)). Each
+step changes in place while setup finishes. Once setup completes, the page
+says the system is configured, shows a Continue link to the Admin home and
+drops Cancel setup; the notice gives no backup advice. A failed step stops the updates. A failed step explains what to do: a credential the provider
 rejected repeats the integration page's per-provider advice on what to check,
 one that did not finish in time asks the operator to check the credential
 installers, and each says to cancel and start a new setup (#456). No step
@@ -2458,8 +2457,8 @@ without pasting the link again. The Integrations list always links to this
 page: "Set up off-site backups" before it is configured, and "Change" after.
 The page and the administration home show
 the last successful off-host copy; until the integration is added, the home
-page invites the Administrator to set it up, and the setup wizard's
-completion panel points to it. The copies themselves, their retention and
+page invites the Administrator to set it up. The setup wizard's completion
+notice does not mention it. The copies themselves, their retention and
 their alert are defined by the
 [backup runbook](../../../guides/stewardship-backup-runbook.md#off-site-copies-to-google-drive).
 
@@ -2575,9 +2574,9 @@ credential file, and only the one-shot `backup-worker` profile reads it
 
 The setup wizard does not gain a step: the first key is installed with the
 deployment, before the wizard runs, and adding a step would reopen the
-frozen setup-draft guards and finalization patch. Instead the wizard's
-completion panel points to this page, as it does for off-site backups. A
-browser-side key-pair generator is not offered.
+frozen setup-draft guards and finalization patch. The wizard's completion
+notice does not point to this page either; the Integrations list links to
+it. A browser-side key-pair generator is not offered.
 
 ### ParishSoft refresh schedule settings
 

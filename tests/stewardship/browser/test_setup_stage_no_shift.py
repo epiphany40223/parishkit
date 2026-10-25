@@ -194,18 +194,18 @@ def test_finishing_setup_boxes_keep_their_place(page, component_origin, width):
     # Every row of the list has one height, so a wrapped second row is never
     # shorter than the first (#2145).
     assert len({round(height) for _x, _y, _w, height in boxes}) == 1, boxes
-    elapsed = places(page, "[data-finishing-elapsed]")
-    # The line on what happens next stays in every running state (#2145).
-    after = places(page, "[data-finishing-next]")
-    assert len(after) == 1
+    # No time since confirmation and no line under the boxes (#2152): a
+    # working step shows only the shared spinner in its box.
+    assert page.locator("[data-finishing] > p").count() == 0
+    assert "You confirmed setup" not in page.locator("[data-finishing]").inner_text()
     for count, (key, state, _credentials, _source) in enumerate(states, start=1):
         next_poll(page, polls, count)
         has_attribute(
             page.locator(f'[data-finishing-step="{key}"]'), "data-stage-state", state
         )
         assert same_place(places(page, steps), boxes), (key, state)
-        assert same_place(places(page, "[data-finishing-elapsed]"), elapsed)
-        assert same_place(places(page, "[data-finishing-next]"), after)
+        active = page.locator(f'[data-finishing-step="{key}"] > .spinner')
+        assert active.count() == (1 if state == "active" else 0), (key, state)
     # The running final load, its reserved forms included, names no task.
     final = page.locator('[data-finishing-step="source"]')
     assert "1,234" in final.inner_text()
