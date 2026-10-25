@@ -40,6 +40,13 @@ RESTORE = "window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: 
 NOTICE = "The proposed dates below have not been saved."
 
 
+def review_post(response):
+    """Whether a response answers the pane's Review post, not the repeat
+    date list's own preview post (#2092), which can land first."""
+    request = response.request
+    return request.method == "POST" and "/repeat-dates/" not in request.url
+
+
 def page_top(locator):
     """The element's top edge from the top of the page, whatever the scroll."""
     return locator.evaluate("node => node.getBoundingClientRect().top + window.scrollY")
@@ -158,7 +165,7 @@ def test_a_refused_review_keeps_the_pane_and_marks_its_field(
     fill_once(page, prefix, "2054-10-15")
     review = page.get_by_role("button", name="Review changes")
     available(review)
-    with page.expect_response(lambda r: r.request.method == "POST") as answer:
+    with page.expect_response(review_post) as answer:
         review.click()
     assert answer.value.status == 400
     visible(page.locator("[data-error-summary]"))
@@ -196,7 +203,7 @@ def test_a_refused_repeating_review_shows_at_until(
     page.locator(f'[name="{prefix}template_version"]').select_option(index=1)
     review = page.get_by_role("button", name="Review changes")
     available(review)
-    with page.expect_response(lambda r: r.request.method == "POST") as answer:
+    with page.expect_response(review_post) as answer:
         review.click()
     assert answer.value.status == 400
     summary = page.locator("[data-error-summary]")
@@ -260,7 +267,7 @@ def test_a_second_initial_invitation_waits_and_its_refusal_stays_put(
     ]
     assert axe_violations(page, axe_source) == []
     # The server's safeguard: the form is sent anyway, as Enter would once.
-    with page.expect_response(lambda r: r.request.method == "POST") as answer:
+    with page.expect_response(review_post) as answer:
         page.evaluate("document.getElementById('schedule-dates-form').requestSubmit()")
     assert answer.value.status == 400
     summary = page.locator("[data-error-summary]")
