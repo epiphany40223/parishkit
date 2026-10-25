@@ -544,7 +544,10 @@ def _backend_addresses(configuration, targets):
     the credential installers in sorted target order, then LOCAL's mailpit,
     fake ParishSoft and seeder. LOCAL's members come last, so Production's
     addresses never depend on them; ``backend_address`` refuses an offset
-    outside the lower half.
+    outside the lower half. On the smallest allowed backend (/26) that half
+    ends at offset 31: Production uses 2 to 27 and LOCAL 2 to 30, so a new
+    member past that needs a wider minimum subnet. A new credential target
+    shifts every later address, which the full-stop rollout absorbs.
     """
     names = [
         "postgres",

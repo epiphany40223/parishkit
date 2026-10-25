@@ -138,10 +138,12 @@ def retarget_image(configuration, *, image):
             "services_started": False,
         }
     with StartupLease(layout.interlock, offline=True):
-        if not layout.hba_directory.exists():
-            # A deployment provisioned before the source rules (#2111) lacks
-            # their directory; it is the one storage this command creates.
-            private_directory(layout.hba_directory, create=True)
+        # A deployment provisioned before the source rules (#2111) lacks
+        # their directory; it is the one storage this command creates. An
+        # existing one must be a real owner-only directory (lstat: no link).
+        created = not os.path.lexists(layout.hba_directory)
+        private_directory(layout.hba_directory, create=True)
+        if created:
             _sync_directory(layout.service_directory)
         for path in sorted(stale):
             write_private(path, documents[path], maximum=MAX_DOCUMENT)

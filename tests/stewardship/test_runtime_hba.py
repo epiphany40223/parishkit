@@ -277,7 +277,8 @@ def test_the_database_name_is_quoted_and_an_unsafe_one_is_refused():
         )
         rules = [line for line in hba.splitlines() if line.startswith("host ")]
         assert all(line.startswith(f'host "{name}" ') for line in rules[:-1])
-    for name in ('a"b', "a\nb", ""):
+    # A quoted leading "/" is still a regular expression: "/.*" matches all.
+    for name in ('a"b', "a\nb", "", "/.*", "/stewardship"):
         with pytest.raises(ConfigError, match="database name"):
             rendering(
                 DeploymentProfile.PRODUCTION,

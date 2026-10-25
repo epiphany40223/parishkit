@@ -1266,7 +1266,10 @@ web_oneoff_command() {
     # time, so the one address is never needed twice.
     local web_image file mode line seeder_ip
     local -a options=()
-    web_image=$(jq -r '.services.web.image' "$services/compose.json")
+    # Explicit returns: callers run this as `web_oneoff_command || exit 1`,
+    # where bash ignores errexit inside the function.
+    oneoff=()
+    web_image=$(jq -er '.services.web.image' "$services/compose.json") || return 1
     seeder_ip=$(jq -er '."x-local-seeder".ipv4_address' "$services/compose.json") || {
         echo "compose.json names no seeder address; retarget the deployment first." >&2
         return 1
@@ -1287,7 +1290,7 @@ web_oneoff_command() {
     if [ "$mode" = fake ]; then
         refuse_real_oauth_client
         file="$services/compose.faketime.json"
-        web_image=$(jq -r '.services.web.image' "$file")
+        web_image=$(jq -er '.services.web.image' "$file") || return 1
         while IFS= read -r line; do options+=("$line"); done < <(
             jq -r '.services.web.environment | to_entries[] | "--env", "\(.key)=\(.value)"' "$file")
         while IFS= read -r line; do options+=("$line"); done < <(

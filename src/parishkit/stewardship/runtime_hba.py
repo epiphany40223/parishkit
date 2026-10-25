@@ -10,8 +10,8 @@ cannot change in one and not the other.
 The file is a rendered document in its own owner-only directory beside the
 Compose documents; PostgreSQL mounts that directory read-only and starts with
 ``-c hba_file=``. The stock ``pg_hba.conf`` in the data directory is never
-edited, so rolling back to a release without this file needs nothing more
-than its own rendering.
+edited, so a release without this file uses the stock rules again once its
+rendering has recreated PostgreSQL.
 """
 
 import re
@@ -39,16 +39,19 @@ HEADER = (
 
 
 def _database(name):
-    """The deployment's database, always quoted so no keyword or regex applies.
+    """The deployment's database, always quoted so no keyword applies.
 
     A quoted name in ``pg_hba.conf`` is matched literally, so ``all``,
-    ``replication`` or a leading ``+``, ``@`` or ``/`` never gain their special
-    meanings. A double quote or a non-printable character has no safe form
-    and is refused.
+    ``replication`` or a leading ``+`` or ``@`` never gain their special
+    meanings. A leading ``/`` is still a regular expression when quoted
+    (PostgreSQL 16 and later), so ``"/.*"`` would match every database; it
+    is refused, as are a double quote and a non-printable character, which
+    have no safe form.
     """
     if (
         type(name) is not str
         or not name
+        or name.startswith("/")
         or '"' in name
         or any(not " " <= character <= "~" for character in name)
     ):
