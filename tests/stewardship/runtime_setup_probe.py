@@ -174,7 +174,8 @@ def main():
     assert not runtime().configured() and not SetupCompletion.objects.exists()
     # Setup collects no campaign (#142). The email test belongs right after
     # Google Workspace connection (#1578) but needs only those settings, so
-    # sending it after the load proves the same; Review follows (#1476).
+    # sending it after the load proves the same; Finish setup follows
+    # (#1476; no Review page, #2145).
     mail = get("/admin/setup/mail-test")
     post("/admin/setup/mail-test", fields(mail.context["form"]))
     deadline = time.monotonic() + 120
@@ -185,7 +186,6 @@ def main():
             break
         assert time.monotonic() < deadline, status
         time.sleep(0.5)
-    get("/admin/setup/preview")
     confirmation = get("/admin/setup/confirm")
     assert confirmation.context["readiness_problem"] is None
     post(

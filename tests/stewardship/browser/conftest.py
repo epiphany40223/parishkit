@@ -1347,40 +1347,6 @@ def component_responses():
                 ],
             ),
         ),
-        (
-            "/setup-preview",
-            "setup-preview",
-            {
-                "draft": setup_draft,
-                "parish": {
-                    "name": "Sample Parish",
-                    "website": "https://example.invalid/",
-                    "phone": "+12025550123",
-                },
-                "campaign": mail_campaign["values"],
-                "testing_recipient": "testing@example.org",
-                "candidate_digest": "a" * 64,
-                "document": '{"sections": {"campaigns": []}}',
-                # The tests come before Review (#1476), which shows them.
-                "readiness": [
-                    {
-                        "label": "Test email",
-                        "accepted": True,
-                        "url": "/admin/setup/mail-test",
-                    }
-                ],
-                "tests_accepted": True,
-                "samples": [
-                    {
-                        "label": "Family welcome",
-                        "sample": {
-                            "html": "<p>Hello Sample Family</p>",
-                            "text": "Hello Sample Family",
-                        },
-                    }
-                ],
-            },
-        ),
         # The schedule editor (Dates and mail schedules), as its view draws
         # it: the saved schedules' table, their editors and a blank row.
         (

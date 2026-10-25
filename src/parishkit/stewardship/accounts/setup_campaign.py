@@ -1,4 +1,4 @@
-"""The setup attempt's staged ParishSoft load, as the Review and confirmation need it.
+"""The setup attempt's staged ParishSoft load, as the confirmation needs it.
 
 Before #142 this module also offered the first campaign's Ministry and fund
 choices from the staged load; setup collects no campaign any more, so only

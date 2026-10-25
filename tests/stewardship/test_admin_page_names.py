@@ -151,7 +151,6 @@ PENDING = {}
 SETUP = {
     "branding": "setup-branding.html",
     "source": "setup-source.html",
-    "preview": "setup-preview.html",
     "mail_test": "setup-mail.html",
     "slack_test": "setup-notification.html",
     "finish": "setup-confirmation.html",

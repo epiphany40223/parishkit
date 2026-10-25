@@ -1,4 +1,4 @@
-"""Review, the tests and Finish are ordinary wizard steps, not a hub of links."""
+"""The tests and Finish are ordinary wizard steps, not a hub of links."""
 
 import re
 from datetime import UTC, datetime, timedelta
@@ -25,14 +25,14 @@ NOW = datetime(2026, 9, 27, 12, tzinfo=UTC)
 
 
 def wizard(current, *, slack=False, tests=frozenset()):
-    """The stepper of a reviewed, otherwise complete draft on ``current``."""
+    """The stepper of an otherwise complete draft on ``current``."""
     sections = VALUES | {
         "branding": {"bundle_id": str(uuid4())},
         "slack": {"enabled": slack, "channel_id": "C0123456789" if slack else ""},
     }
     credentials = {"parishsoft": True, "google_workspace": True, "slack": True}
     return build(
-        draft(sections, source=uuid4(), reviewed={"preview": 3}),
+        draft(sections, source=uuid4()),
         current,
         credentials=credentials,
         tests=tests,
@@ -64,80 +64,6 @@ def actions(html):
 def body(html):
     """The page below its heading, i.e. without the stepper's own step links."""
     return html.split("<h1>", 1)[1]
-
-
-def review(readiness, **context):
-    """Render Review with these test states (``setup_preview_views._readiness``)."""
-    return page(
-        "setup-preview.html",
-        "preview",
-        parish={"name": "Sample Parish", "website": "https://example.invalid/"},
-        readiness=readiness,
-        tests_accepted=all(item["accepted"] for item in readiness),
-        **context,
-    )
-
-
-def test_review_shows_the_tests_and_continues_to_finish_setup():
-    """Review is the last step before Finish setup (#1476): its Readiness
-    says each required test was accepted, its body links no step, and the
-    primary action is Continue to Finish setup."""
-    readiness = [
-        {"label": "Test email", "accepted": True, "url": reverse("admin:setup_mail")},
-        {
-            "label": "Test Slack",
-            "accepted": True,
-            "url": reverse("admin:setup_notification"),
-        },
-    ]
-    html = review(
-        readiness,
-        wizard=wizard(
-            "preview", slack=True, tests=frozenset({"mail_test", "slack_test"})
-        ),
-    )
-    content = body(html)
-    for route in ("setup_mail", "setup_notification", "setup_confirmation"):
-        assert f'href="{reverse(f"admin:{route}")}"' not in content.replace(
-            actions(html), ""
-        )
-    assert "Test email: accepted for these settings." in content
-    assert "Test Slack: accepted for these settings." in content
-    assert "the tests of these exact settings were accepted" in content
-    row = actions(html)
-    finish = reverse("admin:setup_confirmation")
-    assert f'class="setup-continue" data-nav-slot="next" href="{finish}"' in row
-    assert "Finish setup" in row and "Back" in row
-    # Back from Review is Load parish data (#1578).
-    source = reverse("admin:setup_source")
-    assert f'class="setup-back" data-nav-slot="back" href="{source}"' in row
-    # The row comes last, after the exact configuration.
-    assert content.rindex("setup-actions") > content.index("<details>")
-
-
-def test_review_links_only_a_test_that_was_not_accepted():
-    """A test not accepted for these settings is named, with a link to its
-    step; an accepted one has none."""
-    readiness = [
-        {"label": "Test email", "accepted": True, "url": reverse("admin:setup_mail")},
-        {
-            "label": "Test Slack",
-            "accepted": False,
-            "url": reverse("admin:setup_notification"),
-        },
-    ]
-    html = review(
-        readiness,
-        wizard=wizard("preview", slack=True, tests=frozenset({"mail_test"})),
-    )
-    content = body(html).replace(actions(html), "")
-    assert "Test Slack: not accepted for these settings yet." in content
-    slack = reverse("admin:setup_notification")
-    assert f'<a href="{slack}">Go to “Test Slack”</a>' in content
-    assert f'href="{reverse("admin:setup_mail")}"' not in content
-    assert "setup cannot finish until each test below is accepted" in content
-    # Finish setup waits for the Slack test, so the row offers no Continue.
-    assert "setup-continue" not in actions(html)
 
 
 @pytest.mark.parametrize("slack", [False, True])
@@ -252,6 +178,9 @@ def test_finish_checks_readiness_as_its_primary_action():
         "Check readiness and finish setup</button>" in row
     )
     assert "setup-continue" not in row
+    # No Review page comes before it (#2145): Back is Load parish data.
+    source = reverse("admin:setup_source")
+    assert f'class="setup-back" data-nav-slot="back" href="{source}"' in row
 
 
 def test_only_an_accepted_test_of_the_current_settings_counts():
@@ -468,8 +397,7 @@ def test_test_slack_while_slack_is_off_opens_the_next_step_needing_work(
         "branding": {"bundle_id": str(uuid4())},
         "slack": {"enabled": False, "channel_id": ""},
     }
-    reviewed = {"preview": 3} if tests else {}
-    setup_draft = draft(sections, source=uuid4(), reviewed=reviewed)
+    setup_draft = draft(sections, source=uuid4())
     credentials = {"parishsoft": True, "google_workspace": True}
     monkeypatch.setattr(views, "runtime", object)
     monkeypatch.setattr(views, "view_draft", lambda request, service: setup_draft)

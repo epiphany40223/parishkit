@@ -1,10 +1,10 @@
 """The setup wizard runs each test right after its own input step (#1578).
 
 Test email follows Google Workspace connection and Test Slack (when Slack
-is on) the one Slack notifications step; Review and Finish setup follow
-Load parish data, so Review is the last step before finishing and shows the
-tests' results (#1476). A test that was not sent links the steps that fix
-it, and saving a fix leads back to the test, never to Review first.
+is on) the one Slack notifications step; Finish setup follows Load parish
+data (no Review page, #2145) and checks the tests' results itself (#1476).
+A test that was not sent links the steps that fix it, and saving a fix
+leads back to the test, never to Finish setup first.
 """
 
 import pytest
@@ -13,10 +13,10 @@ from parishkit.stewardship.accounts.setup_wizard import BY_KEY
 
 from .setup_order_components import (
     FAILED,
+    FINISH_READY,
+    FINISH_UNREADY,
     FIX,
     RETEST,
-    REVIEW_ACCEPTED,
-    REVIEW_UNTESTED,
     SLACK_FAILED,
     SLACK_OFF,
     SLACK_STEP,
@@ -29,7 +29,7 @@ pytestmark = pytest.mark.parametrize(
 )
 
 NOTICE = "[data-setup-test-failed]"
-REVIEW = '.setup-track a[data-tip*="Review"]'
+FINISH = '.setup-track a[data-tip*="Finish setup"]'
 
 
 def track_labels(page):
@@ -45,7 +45,8 @@ def test_a_failed_test_links_its_fix_and_the_fix_leads_back_to_the_test(
 ):
     """The notice says the test was not sent and links the steps that fix
     it, after the action row; following a link and saving the fix lands on
-    Test email again, with the old failure gone, and Review still waits."""
+    Test email again, with the old failure gone, and Finish setup still
+    waits."""
     from .test_components import axe_violations
 
     page.set_viewport_size({"width": width, "height": 900})
@@ -71,48 +72,49 @@ def test_a_failed_test_links_its_fix_and_the_fix_leads_back_to_the_test(
     has_text(page.locator("h1"), "Test email")
     assert page.locator(NOTICE).count() == 0
     visible(page.get_by_role("button", name="Send test email"))
-    assert page.locator(REVIEW).get_attribute("aria-disabled") == "true"
+    assert page.locator(FINISH).get_attribute("aria-disabled") == "true"
 
 
-def test_review_is_last_and_shows_the_accepted_test(page, component_origin, axe_source):
+def test_finish_follows_the_load_and_checks_the_accepted_test(
+    page, component_origin, axe_source
+):
     """The step bar runs Google Workspace connection, Test email, and later
-    Load parish data, Review, Finish setup (#1578); Review says the test was
-    accepted and continues to Finish setup."""
+    Load parish data, then Finish setup (#1578; no Review page, #2145); with
+    the test accepted, Finish setup offers its own submit, Back to the load."""
     from .test_components import axe_violations
 
-    page.goto(component_origin + REVIEW_ACCEPTED)
+    page.goto(component_origin + FINISH_READY)
     labels = track_labels(page)
     assert labels[labels.index("Load parish data") :] == [
         "Load parish data",
-        "Review",
         "Finish setup",
     ]
+    assert "Review" not in labels
     workspace = labels.index("Google Workspace connection")
     assert labels[workspace + 1] == "Test email"
-    readiness = page.locator("[data-setup-readiness]")
-    has_text(
-        readiness.locator("[data-setup-readiness-test]"),
-        "Test email: accepted for these settings.",
-    )
-    assert readiness.get_by_role("link").count() == 0
-    finish = page.locator(".setup-actions .setup-continue")
-    assert finish.get_attribute("href") == "/admin/setup/confirm"
-    assert "Finish setup" in finish.inner_text()
+    assert page.locator("#setup-readiness").count() == 0
+    submit = page.locator(".setup-actions button[type=submit]")
+    has_text(submit, "Check readiness and finish setup")
+    # It waits for the explicit confirmation, the step's only commitment.
+    assert submit.is_disabled()
+    page.get_by_label("I checked the settings in each step").check()
+    assert submit.is_enabled()
     back = page.locator(".setup-actions a.setup-back")
     assert back.get_attribute("href") == "/admin/setup/source"
     assert axe_violations(page, axe_source) == []
 
 
-def test_review_before_its_test_links_the_test_and_waits(page, component_origin):
-    """Review opened before the email test was accepted names it with a link
-    to Test email and offers no Continue to Finish setup."""
-    page.goto(component_origin + REVIEW_UNTESTED)
-    readiness = page.locator("[data-setup-readiness]")
-    test = readiness.locator("[data-setup-readiness-test]")
-    assert "Test email: not accepted for these settings yet." in test.inner_text()
-    link = readiness.get_by_role("link", name="Go to “Test email”")
+def test_finish_before_its_test_links_the_test_and_waits(page, component_origin):
+    """Finish setup opened before the email test was accepted says so, links
+    Test email, and its submit is unavailable, naming that reason."""
+    page.goto(component_origin + FINISH_UNREADY)
+    problem = page.locator("#setup-readiness")
+    has_text(problem, "A successful test of the current settings is required.")
+    link = page.get_by_role("link", name="Send and check the required email test")
     assert link.get_attribute("href") == "/admin/setup/mail-test"
-    assert page.locator(".setup-actions .setup-continue").count() == 0
+    submit = page.locator(".setup-actions button[type=submit]")
+    assert submit.is_disabled()
+    assert submit.get_attribute("aria-describedby") == "setup-readiness"
 
 
 @pytest.mark.parametrize("width", [320, 1280])

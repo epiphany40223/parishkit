@@ -125,15 +125,19 @@ def test_stepper_marks_current_done_and_unavailable_steps(setup_http, google):
 def test_unavailable_wizard_pages_explain_the_missing_step_in_html(setup_http, google):
     """A browser GET explains the prerequisite; POSTs keep the closed JSON.
 
-    The first-campaign pages are gone (#142): their old addresses are no
-    setup step at all.
+    The first-campaign pages are gone (#142), and so is Review (#2145):
+    their old addresses are no setup step at all.
     """
     with web_login():
         browser = started()
-        preview = browser.get("/admin/setup/preview")
-        assert preview.status_code == 503
-        assert b"Complete the required steps first" in preview.content
-        for path in ("/admin/setup/campaign", "/admin/setup/schedules"):
+        finish = browser.get("/admin/setup/confirm")
+        assert finish.status_code == 503
+        assert b"Complete the required steps first" in finish.content
+        for path in (
+            "/admin/setup/campaign",
+            "/admin/setup/schedules",
+            "/admin/setup/preview",
+        ):
             assert browser.get(path).status_code == 404, path
         posted = post(browser, "/admin/setup/campaign", {"version": "1"})
         assert posted.status_code == 404
@@ -229,5 +233,5 @@ def test_stepper_links_completed_steps_and_the_next_one_only(setup_http, google)
     bind_load(SetupAttempt.objects.get().pk)
     with web_login():
         body = browser.get("/admin/setup/source").content
-        assert b"1 of 12 steps completed" in body
+        assert b"1 of 11 steps completed" in body
         assert b"Completed" in body and b'href="/admin/setup/mail"' not in body

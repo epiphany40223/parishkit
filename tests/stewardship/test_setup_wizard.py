@@ -16,7 +16,6 @@ def draft(
     *,
     state=SetupState.COLLECTING,
     source=None,
-    reviewed=None,
     task_state=None,
 ):
     """A detached stand-in carrying only what the stepper reads.
@@ -32,7 +31,6 @@ def draft(
         source_task_id=source,
         source_task_state=task_state,
         source_loaded=task_state == "succeeded",
-        reviewed=reviewed or {},
     )
 
 
@@ -48,15 +46,15 @@ def test_every_page_has_a_unique_key_and_resolvable_url():
     assert PAGES[0].url == "/admin/setup/parish"
 
 
-def test_each_test_follows_its_own_input_step_and_review_is_last():
+def test_each_test_follows_its_own_input_step_and_finish_is_last():
     """Test email follows Google Workspace connection and Test Slack the one
     Slack step (#1578); ParishSoft connection and Load parish data are the
-    last data-entry pages, then Review and Finish setup.
+    last data-entry pages, then Finish setup.
 
     Each test is one step after the page that fixes it. The load can take
     minutes, so every other data-entry page comes first, and a failed load is
-    one step after the page that fixes its key (#1353). Review is the last
-    step before finishing and shows the tests' results (#1476).
+    one step after the page that fixes its key (#1353). No Review page comes
+    before Finish setup (#2145), which checks the tests itself (#1476).
     """
     assert [page.key for page in PAGES] == [
         "parish",
@@ -70,7 +68,6 @@ def test_each_test_follows_its_own_input_step_and_review_is_last():
         "access",
         "parishsoft",
         "source",
-        "preview",
         "finish",
     ]
 
@@ -89,7 +86,7 @@ def test_prerequisites_block_later_pages_until_saved():
     assert "slack_test" not in shown
     # Setup collects no campaign (#142).
     assert not {"campaign", "content", "shares", "schedules"} & shown.keys()
-    for key in ("source", "google_workspace", "preview"):
+    for key in ("source", "google_workspace", "finish"):
         assert shown[key] == "blocked", key
         assert wizard.step(key).url is None
         assert wizard.step(key).fix_url.startswith("/admin/setup")
@@ -127,9 +124,9 @@ def test_done_state_next_and_previous_follow_saved_choices():
     assert shown["mail_test"] == "done"
     assert shown["source"] == "done" and shown["branding"] == "done"
     # The Slack step is the first unfinished one: completed steps after it
-    # stay open; Test Slack needs its token, Review waits.
+    # stay open; Test Slack needs its token, Finish setup waits.
     assert wizard.step("source").url is not None
-    assert shown["slack_test"] == "blocked" and shown["preview"] == "blocked"
+    assert shown["slack_test"] == "blocked" and shown["finish"] == "blocked"
     assert wizard.step("slack_test").fix_url == "/admin/setup/slack"
     assert wizard.previous.key == "mail_test"
     assert wizard.next.key == "slack_test"
@@ -137,7 +134,7 @@ def test_done_state_next_and_previous_follow_saved_choices():
     ordered = [step.key for step in wizard.steps]
     assert ordered.index("access") < ordered.index("parishsoft")
     assert ordered.index("parishsoft") + 1 == ordered.index("source")
-    assert ordered[ordered.index("source") :] == ["source", "preview", "finish"]
+    assert ordered[ordered.index("source") :] == ["source", "finish"]
     # With a current token the step is done and its save opens Test Slack.
     keyed = build(
         draft(sections, source=uuid4()),
@@ -152,11 +149,10 @@ def test_done_state_next_and_previous_follow_saved_choices():
     assert build(draft(sections), "branding").previous.key == "slack_test"
 
 
-def final(current, *, tests=frozenset(), reviewed=None, version=3):
+def final(current, *, tests=frozenset()):
     """The stepper of a draft whose data-entry steps and load are all done."""
     sections = VALUES | {"branding": {"bundle_id": str(uuid4())}}
-    completed = draft(sections, source=uuid4(), reviewed=reviewed)
-    completed.status.version = version
+    completed = draft(sections, source=uuid4())
     return build(
         completed,
         current,
@@ -168,8 +164,8 @@ def final(current, *, tests=frozenset(), reviewed=None, version=3):
 def test_the_email_test_opens_without_the_later_steps_or_the_load():
     """Test email needs only Outgoing email settings, Testing recipient and
     Google Workspace connection (#1578): it opens before Parish logos,
-    Administrative access, ParishSoft connection and the load; Review and
-    Finish setup wait for it."""
+    Administrative access, ParishSoft connection and the load; Finish setup
+    waits for it."""
     sections = {key: VALUES[key] for key in ("parish", "mail", "testing")}
     wizard = build(
         draft(sections), "google_workspace", credentials={"google_workspace": True}
@@ -177,7 +173,7 @@ def test_the_email_test_opens_without_the_later_steps_or_the_load():
     shown = states(wizard)
     assert shown["mail_test"] == "todo"
     assert wizard.step("mail_test").url == "/admin/setup/mail-test"
-    assert {shown["preview"], shown["finish"]} == {"blocked"}
+    assert shown["finish"] == "blocked"
     # Saving the key opens Test email; Back from it is the key step.
     assert wizard.next.key == "mail_test" and wizard.onward.key == "mail_test"
     assert wizard.resume.key == "mail_test"
@@ -195,80 +191,65 @@ def test_the_email_test_opens_without_the_later_steps_or_the_load():
     assert keyless.step("mail_test").fix_url == (
         "/admin/setup/credentials/google_workspace"
     )
-    # After the load, Review follows it: Back from Review is Load parish data.
-    assert final("preview", tests=frozenset({"mail_test"})).previous.key == "source"
+    # After the load, Finish setup follows it: its Back is Load parish data.
+    assert final("finish", tests=frozenset({"mail_test"})).previous.key == "source"
 
 
-def test_review_follows_the_load_and_counts_only_after_the_tests():
-    """Review opens once the tests are accepted and is done only when it was
-    shown for this draft version; Finish setup follows it."""
+def test_finish_follows_the_load_and_opens_only_after_the_tests():
+    """Finish setup opens once the tests are accepted, straight after the
+    load (no Review page, #2145), and is never done before setup finishes."""
     tests = frozenset({"mail_test"})
     wizard = final("source", tests=tests)
     shown = states(wizard)
     assert shown["mail_test"] == "done"
-    # Review is open but not completed until the admin has actually opened it.
-    assert shown["preview"] == "todo" and wizard.step("preview").url is not None
-    assert shown["finish"] == "locked"
-    assert wizard.resume.key == "preview"
-    assert wizard.next.key == "preview" and wizard.onward.key == "preview"
-    reviewed = final("preview", tests=tests, reviewed={"preview": 3})
-    assert states(reviewed)["preview"] == "done"
-    assert states(reviewed)["finish"] == "todo"
-    assert reviewed.resume.key == "finish"
-    # Back from Review is the load; Back from Finish setup is Review.
-    assert reviewed.previous.key == "source" and reviewed.next.key == "finish"
-    assert final("finish", tests=tests, reviewed={"preview": 3}).previous.key == (
-        "preview"
-    )
-    # A review of an older draft version does not count.
-    stale = final("preview", tests=tests, reviewed={"preview": 2})
-    assert states(stale)["preview"] == "todo"
-    # Nor does a review mark while a test is not accepted: Review counts only
-    # with every earlier step, the tests included, done.
-    untested = final("preview", reviewed={"preview": 3})
-    assert states(untested)["preview"] == "blocked"
+    assert shown["finish"] == "todo" and wizard.step("finish").url is not None
+    assert wizard.resume.key == "finish"
+    assert wizard.next.key == "finish" and wizard.onward.key == "finish"
+    on_finish = final("finish", tests=tests)
+    assert on_finish.previous.key == "source" and on_finish.next is None
+    # Without an accepted test, Finish setup is blocked and the test fixes it.
+    untested = final("finish")
     assert states(untested)["finish"] == "blocked"
-    assert untested.step("preview").fix_url == "/admin/setup/mail-test"
+    assert untested.step("finish").fix_url == "/admin/setup/mail-test"
 
 
 @pytest.mark.parametrize("slack", [False, True])
-def test_a_later_save_keeps_the_tests_and_needs_review_again(slack):
-    """A save after the tests and Review bumps the draft version: Review counts
-    only for the version it saw (#1476), but a test stays accepted while its
-    own inputs are current (#1578), so the save opens Review, never a test."""
+def test_a_later_save_keeps_the_tests_and_opens_finish(slack):
+    """A test stays accepted while its own inputs are current (#1578), so a
+    later save of another step opens Finish setup, never a test."""
     sections = VALUES | {
         "branding": {"bundle_id": str(uuid4())},
         "slack": {"enabled": slack, "channel_id": "C0123456789" if slack else ""},
     }
     credentials = {"parishsoft": True, "google_workspace": True, "slack": True}
     tests = frozenset({"mail_test", "slack_test"} if slack else {"mail_test"})
-    saved = draft(sections, source=uuid4(), reviewed={"preview": 3})
+    saved = draft(sections, source=uuid4())
     saved.status.version = 4
     wizard = build(saved, "access", credentials=credentials, tests=tests)
     shown = states(wizard)
     assert shown["mail_test"] == "done"
     if slack:
         assert shown["slack_test"] == "done"
-    assert shown["preview"] == "todo" and shown["finish"] == "locked"
-    # Rule 8: the save opens the next step not done yet, Review.
+    assert shown["finish"] == "todo"
+    # Rule 8: the save opens the next step not done yet, Finish setup.
     assert wizard.next.key == "parishsoft"
-    assert wizard.onward.key == "preview"
+    assert wizard.onward.key == "finish"
 
 
 def test_a_changed_mail_setting_opens_the_stale_key_then_the_email_test():
     """A changed mail setting makes the staged Google Workspace key stale, and
     with it the email test: saving it opens the key step, and saving that
-    opens Test email, never Review (#1476, #1578)."""
+    opens Test email, never Finish setup (#1476, #1578)."""
     sections = VALUES | {"branding": {"bundle_id": str(uuid4())}}
     stale = build(
-        draft(sections, source=uuid4(), reviewed={"preview": 2}),
+        draft(sections, source=uuid4()),
         "mail",
         credentials={"parishsoft": True, "google_workspace": False},
     )
     assert states(stale)["mail_test"] == "blocked"
     assert stale.next.key == "testing" and stale.onward.key == "google_workspace"
     keyed = build(
-        draft(sections, source=uuid4(), reviewed={"preview": 2}),
+        draft(sections, source=uuid4()),
         "google_workspace",
         credentials={"parishsoft": True, "google_workspace": True},
     )
@@ -282,7 +263,7 @@ def test_onward_opens_the_step_needing_work_when_the_next_one_is_blocked(current
     not open the blocked Test email: it opens the stale key step instead."""
     sections = VALUES | {"branding": {"bundle_id": str(uuid4())}}
     wizard = build(
-        draft(sections, source=uuid4(), reviewed={"preview": 2}),
+        draft(sections, source=uuid4()),
         current,
         credentials={"parishsoft": True, "google_workspace": False},
     )
@@ -295,7 +276,7 @@ def test_onward_opens_the_step_needing_work_when_the_next_one_is_blocked(current
 def test_onward_is_the_next_step_when_every_later_one_is_done():
     """Rule 8: with nothing later left to do, a save opens the next step."""
     tests = frozenset({"mail_test"})
-    wizard = final("source", tests=tests, reviewed={"preview": 3})
+    wizard = final("source", tests=tests)
     later = [step for step in wizard.steps if step.number > wizard.current.number]
     assert all(step.state == "done" for step in later[:-1])
     # Finish setup is never done, so it is the step a save there opens.
@@ -309,7 +290,7 @@ def test_loading_keeps_completed_steps_but_links_only_the_load():
 
     The load is the last data-entry step, so every earlier data-entry page
     is complete while it runs; the email test, not sent here, waits like the
-    rest, and Review and Finish setup are still to come.
+    rest, and Finish setup is still to come.
     """
     sections = {
         key: VALUES[key] for key in ("parish", "mail", "testing", "slack", "access")
@@ -328,9 +309,9 @@ def test_loading_keeps_completed_steps_but_links_only_the_load():
         assert shown[key] == "done", key
         assert wizard.step(key).status == "Completed"
     assert wizard.completed == 8
-    assert {shown[key] for key in ("preview", "mail_test", "finish")} == {"blocked"}
+    assert {shown[key] for key in ("mail_test", "finish")} == {"blocked"}
     assert all(step.url is None for step in wizard.steps if step.key != "source")
-    assert wizard.next.key == "preview" and wizard.next.url is None
+    assert wizard.next.key == "finish" and wizard.next.url is None
 
 
 def test_a_failed_load_leaves_the_load_to_do_and_every_page_open():
@@ -389,8 +370,8 @@ def test_stepper_marks_current_step_with_text_not_color_alone():
     assert "Not available yet" in html
     assert 'href="/admin/setup/source"' not in html  # blocked: shown as text
     # Compact summary: the current step by number and name, and the count.
-    assert "Step 3 of 12:" in html and "<strong>Testing recipient</strong>" in html
-    assert "1 of 12 steps completed" in html
+    assert "Step 3 of 11:" in html and "<strong>Testing recipient</strong>" in html
+    assert "1 of 11 steps completed" in html
     # On a narrow screen the full list is collapsed by default (and stays as
     # the reader left it across an in-place swap, #519); the step bar is a
     # list of links.
@@ -431,7 +412,7 @@ def test_step_bar_links_each_open_step_and_explains_the_others():
     wizard = build(draft({"mail": VALUES["mail"]}), "testing")
     html = render_to_string("stewardship/setup-wizard.html", {"wizard": wizard})
     segments = track_segments(html)
-    assert len(segments) == len(wizard.steps) == 12
+    assert len(segments) == len(wizard.steps) == 11
     for step, segment in zip(wizard.steps, segments, strict=True):
         if step.url:
             assert f'href="{step.url}"' in segment, step.key
@@ -448,12 +429,12 @@ def test_step_bar_links_each_open_step_and_explains_the_others():
     # The tooltip and the accessible name say the same; the current step
     # says so, and Back/Next are untouched (the bar saves nothing).
     current = segments[2]
-    assert 'data-tip="Step 3 of 12: Testing recipient — Current step — ' in current
+    assert 'data-tip="Step 3 of 11: Testing recipient — Current step — ' in current
     assert (
-        '<span class="setup-sr-only">Step 3 of 12: Testing recipient — Current step'
+        '<span class="setup-sr-only">Step 3 of 11: Testing recipient — Current step'
         in html
     )
-    assert 'data-tip="Step 2 of 12: Outgoing email settings — Completed"' in html
+    assert 'data-tip="Step 2 of 11: Outgoing email settings — Completed"' in html
     assert " title=" not in html.split('<ol class="setup-track"')[1].split("</ol>")[0]
 
 
@@ -551,24 +532,22 @@ def test_the_slack_step_is_linked_from_every_step_once_saved(
         assert step.url == "/admin/setup/slack", page.key
 
 
-def test_turning_slack_off_drops_its_test_and_review_needs_no_slack_test():
+def test_turning_slack_off_drops_its_test_and_finish_needs_no_slack_test():
     """With Slack off Test Slack is gone; the email test stays accepted, since
     turning Slack off changes none of its inputs (#1578), so the save opens
-    Review (then Finish setup), which needs no Slack test (#1499)."""
+    Finish setup, which needs no Slack test (#1499)."""
     sections = VALUES | {"branding": {"bundle_id": str(uuid4())}}
     credentials = {"parishsoft": True, "google_workspace": True}
-    off = draft(sections, source=uuid4(), reviewed={"preview": 3})
+    off = draft(sections, source=uuid4())
     off.status.version = 4
     wizard = build(off, "slack", credentials=credentials)
     assert "slack_test" not in states(wizard)
     assert states(wizard)["slack"] == "done"
-    # Without an accepted email test, Review is blocked: the save opens it.
+    # Without an accepted email test, Finish setup is blocked: the save
+    # opens the test.
     assert wizard.onward.key == "mail_test"
-    # Every other step done: the save opens Review, which counts once shown
-    # for this version without a Slack test.
+    # Every other step done: the save opens Finish setup, open without a
+    # Slack test.
     tested = build(off, "slack", credentials=credentials, tests={"mail_test"})
-    assert tested.onward.key == "preview"
-    off.reviewed = {"preview": 4}
-    reviewed = build(off, "preview", credentials=credentials, tests={"mail_test"})
-    assert states(reviewed)["preview"] == "done"
-    assert states(reviewed)["finish"] == "todo"
+    assert tested.onward.key == "finish"
+    assert states(tested)["finish"] == "todo"

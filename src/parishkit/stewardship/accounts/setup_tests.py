@@ -4,7 +4,7 @@ Test email and Test Slack each prove one staged credential with the public
 settings sealed with it, and nothing else (#1578): the email test the Google
 Workspace key with the outgoing mail and Testing settings, the Slack test
 the bot token with the channel. A test page signs that binding (never the
-whole Review preview, which needs the parish data load and every step), and
+whole Finish setup preview, which needs the parish data load and every step), and
 the send repeats it, so a test can be sent before the later steps exist and
 an accepted one stays accepted while its own inputs are unchanged. The SQL
 live checks and readiness guard enforce the same binding.

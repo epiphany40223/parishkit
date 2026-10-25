@@ -813,7 +813,6 @@ NON_PAGES = frozenset(
         "setup_mail_status",
         "setup_notification",
         "setup_notification_status",
-        "setup_preview",
         "setup_source",
         "setup_source_progress",
         "setup_step",

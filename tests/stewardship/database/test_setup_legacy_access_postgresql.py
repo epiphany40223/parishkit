@@ -75,14 +75,13 @@ def test_review_and_finish_name_the_access_step_saved_with_a_domain(
     browser = Client(enforce_csrf_checks=True)
     browser.cookies["pk_admin"] = request.session.session_key
     with web_login():
-        for path in ("/admin/setup/preview", "/admin/setup/confirm"):
-            response = browser.get(path)
-            assert response.status_code == 400, response.content
-            page = response.content.decode()
-            assert "Domains no longer grant access." in page
-            assert "save the step again" in page
-            assert '<a href="/admin/setup/access">' in page
-            assert "This page address is not valid" not in page
+        response = browser.get("/admin/setup/confirm")
+        assert response.status_code == 400, response.content
+        page = response.content.decode()
+        assert "Domains no longer grant access." in page
+        assert "save the step again" in page
+        assert '<a href="/admin/setup/access">' in page
+        assert "This page address is not valid" not in page
         # Saving the access step again, with addresses only, clears it.
         save_section(
             request,
@@ -93,5 +92,5 @@ def test_review_and_finish_name_the_access_step_saved_with_a_domain(
             # The direct row write above did not change the draft's version.
             expected_version=status.version,
         )
-        assert browser.get("/admin/setup/preview").status_code == 200
+        assert browser.get("/admin/setup/confirm").status_code == 200
     assert not setup_http.configured()

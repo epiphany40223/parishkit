@@ -1,9 +1,9 @@
 """The setup wizard's tests and final steps in their order (#1476, #1578).
 
 Test email follows Google Workspace connection and Test Slack the Slack
-notifications step; Review follows Load parish data, so it is the last step
-before Finish setup and shows the tests' results. These pages are drawn
-from the real templates and view helpers:
+notifications step; Finish setup follows Load parish data (no Review page,
+#2145) and checks the tests' results itself. These pages are drawn from
+the real templates and view helpers:
 
 - ``FAILED``: Test email whose newest test of this revision was not sent,
   with the notice linking the steps that fix it.
@@ -11,18 +11,20 @@ from the real templates and view helpers:
   real address. Its Save and continue answers (``POSTS``) as the real view
   does once the fix is saved with the staged key still current for it: a
   redirect to the next step not done yet, which is Test email (wizard rule
-  8), never Review.
+  8), never Finish setup.
 - ``RETEST``: Test email at its real address after the fix: the failed test
   is of earlier settings, so the notice is gone and Send test email is the
   primary action again.
-- ``REVIEW_ACCEPTED`` and ``REVIEW_UNTESTED``: Review with the email test
-  accepted (Continue to Finish setup), and opened before it was (a link to
-  Test email, no Continue).
+- ``FINISH_READY`` and ``FINISH_UNREADY``: Finish setup with the email test
+  accepted (its Check readiness and finish setup button), and opened before
+  it was (the readiness refusal, a link to Test email and the button
+  unavailable).
 - ``SLACK_FAILED``: Test Slack whose newest test was not sent, with Turn off
   Slack notifications above the test form and in the notice (#1499). Both
   post the Slack notifications step's form (``SLACK_OFF``), answered as the
   real view answers once Slack is saved off: a redirect to the next step not
-  done, here Test email (``RETEST``, drawn with Slack off), never Review.
+  done, here Test email (``RETEST``, drawn with Slack off), never Finish
+  setup.
 - ``REDIRECTS``: GET answers that are redirects. Test Slack's real address
   answers as the real view does while Slack is off: a redirect to the next
   step needing work, Test email (#1505).
@@ -30,16 +32,17 @@ from the real templates and view helpers:
   a token saved for its channel, offering the same button above its form.
 """
 
-from types import SimpleNamespace
 from uuid import UUID
 
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts import setup_mail_views as mail_views
 from parishkit.stewardship.accounts import setup_notification_views as slack_views
+from parishkit.stewardship.accounts.setup_confirmation_views import (
+    SetupConfirmationForm,
+)
 from parishkit.stewardship.accounts.setup_forms import FORMS, initial_values
 from parishkit.stewardship.accounts.setup_mail_views import SetupMailForm
-from parishkit.stewardship.accounts.setup_preview_views import _readiness
 from parishkit.stewardship.accounts.setup_slack_step import SetupSlackStepForm
 from parishkit.stewardship.accounts.setup_wizard import BY_KEY
 
@@ -50,8 +53,8 @@ from .setup_live_components import status_row
 FAILED = "/setup-mail-failed"
 FIX = BY_KEY["mail"].url
 RETEST = BY_KEY["mail_test"].url
-REVIEW_ACCEPTED = "/setup-review-accepted"
-REVIEW_UNTESTED = "/setup-review-untested"
+FINISH_READY = "/setup-finish-ready"
+FINISH_UNREADY = "/setup-finish-unready"
 SLACK_FAILED = "/setup-slack-failed"
 SLACK_STEP = "/setup-slack-step"
 SLACK_OFF = BY_KEY["slack"].url
@@ -62,7 +65,7 @@ SLACK = {"enabled": True, "channel_id": "CFIXTURE"}
 
 
 def components(context, admin, now, status_url, setup_draft):
-    """The failed test, its fix, the retest and both Reviews (module doc)."""
+    """The failed test, its fix, the retest and both Finish setups (module doc)."""
 
     def page(template, values):
         """One setup page with the shared Admin chrome and setup draft."""
@@ -89,25 +92,16 @@ def components(context, admin, now, status_url, setup_draft):
             },
         )
 
-    def review(tests):
-        """Review with these accepted tests, as the real view draws it."""
-        readiness = _readiness(
-            SimpleNamespace(sections={"slack": {"enabled": False}}), tests
-        )
+    def finish(tests, problem=None):
+        """Finish setup with these accepted tests, as the real view draws it:
+        ``problem`` is the readiness refusal ``ready_inputs`` gives."""
         return page(
-            "setup-preview",
+            "setup-confirmation",
             {
-                "wizard": final_wizard("preview", tests=tests),
-                "parish": {
-                    "name": "Sample Parish",
-                    "website": "https://parish.example.org/",
-                    "phone": "+12125551234",
-                },
-                "testing_recipient": "testing@example.org",
+                "wizard": final_wizard("finish", tests=tests),
+                "form": SetupConfirmationForm(initial={"preview_token": "synthetic"}),
+                "readiness_problem": problem,
                 "candidate_digest": "a" * 64,
-                "document": "{}",
-                "readiness": readiness,
-                "tests_accepted": all(item["accepted"] for item in readiness),
             },
         )
 
@@ -147,8 +141,10 @@ def components(context, admin, now, status_url, setup_draft):
             },
         ),
         RETEST: mail_test(not_sent | {"current": False}),
-        REVIEW_ACCEPTED: review(frozenset({"mail_test"})),
-        REVIEW_UNTESTED: review(frozenset()),
+        FINISH_READY: finish(frozenset({"mail_test"})),
+        FINISH_UNREADY: finish(
+            frozenset(), "A successful test of the current settings is required."
+        ),
         SLACK_FAILED: slack_test(not_sent),
         SLACK_STEP: page(
             "setup-step",
