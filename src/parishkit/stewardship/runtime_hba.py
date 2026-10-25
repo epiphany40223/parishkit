@@ -18,6 +18,7 @@ import re
 
 from parishkit.config import ConfigError
 
+from .inspect_login import INSPECT_LOGIN
 from .runtime_network import OFFLINE_PROFILES
 
 HBA_MOUNT = "/etc/postgresql/hba"
@@ -34,7 +35,8 @@ HEADER = (
     "# Rendered by ParishKit Stewardship from the runtime topology; never edit.\n"
     "# Each login is accepted only from its own service's address, only for\n"
     "# this deployment's database, and only with scram-sha-256. The socket is\n"
-    "# reachable only through docker exec, and only the operator may use it.\n"
+    "# reachable only through docker exec, and only the operator (any database)\n"
+    "# and the inspection login (this deployment's database) may use it.\n"
 )
 
 
@@ -136,6 +138,10 @@ def render_hba(configuration, services, logins, *, seeder=None):
     The socket keeps ``trust`` for the operator alone, for every database:
     the image's first-start initialization connects to ``postgres`` as the
     operator through it, and only ``docker exec`` (host root) reaches it.
+    The socket also trusts the password-less, SELECT-only inspection login
+    (``inspect_login.INSPECT_LOGIN``, #2148) for this deployment's database
+    alone. It is deliberately not in ``database_identities()``, so it has no
+    TCP rule and ``database-sources`` never tries it over TCP.
     Every TCP line names this deployment's database and ``scram-sha-256``;
     the final ``host all all all reject`` refuses everything else, so a
     refusal always matches a line.
@@ -143,6 +149,7 @@ def render_hba(configuration, services, logins, *, seeder=None):
     database = _database(configuration.postgres.name)
     lines = [
         f"local all {OPERATOR} trust",
+        f"local {database} {INSPECT_LOGIN} trust",
         "local all all reject",
         *(
             f"host {database} {login} {source} scram-sha-256"
