@@ -26,11 +26,12 @@ FROZEN_SQL = (
 
 class Migration(migrations.Migration):
     dependencies = [
-        # The accounts app's previous migration, which installs the previous
-        # frozen file on main (0177, the setup load definer, #2163), so the
-        # files apply in prefix order. The train that lands 0178 (the review
-        # run, #2154) adds its migration here too.
+        # The accounts app's previous migration (0177, the setup load
+        # definer, #2163), so the app keeps one leaf.
         ("stewardship_accounts", "0036_setup_load_definer"),
+        # The migration that installs the previous frozen file (0178, the
+        # review run, #2154), so the files apply in prefix order.
+        ("stewardship_reports", "0048_review_run"),
     ]
 
     operations = [migrations.RunSQL(FROZEN_SQL.read_text(encoding="utf-8"))]
