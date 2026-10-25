@@ -566,6 +566,9 @@ FROZEN = {
     "0177_setup_load_definer.sql": (
         "2b9a25ecf6a2cb80e7896c8cd7fea761c31b1ecb07d48be79323f9da1ab2705e"
     ),
+    "0179_definer_operators.sql": (
+        "74f99f0c68e45a78ac42f4ab536b0c4253d199c455dd3713a3c4b06febd9fa43"
+    ),
 }
 
 
@@ -699,11 +702,14 @@ def test_new_frozen_files_qualify_jsonb_and_containment_operators():
     argument-type match in public would win over pg_catalog's (#2166), so new
     SQL names pg_catalog's (operations spec, post-launch schema policy).
     """
+    checked = 0
     for path in sorted(MIGRATIONS.glob("*.sql")):
         if int(path.name[:4]) <= LAST_UNQUALIFIED_OPERATOR_FILE:
             continue
+        checked += 1
         found = bare_operators(path.read_text(encoding="utf-8"))
         assert not found, f"{path.name}: write {found} as OPERATOR(pg_catalog.x)"
+    assert checked, "no frozen file after the rule was scanned"
 
 
 @pytest.mark.parametrize(

@@ -815,7 +815,10 @@ must end in the same catalog. The rules:
   `settings OPERATOR(pg_catalog.?) 'organization_id'`;
   `test_schema_migration_files.py` refuses a bare one in those frozen files
   (comments and string literals aside), and the files up to 0178 keep theirs,
-  since applied files are never edited. The control that matters is that no
+  since applied files are never edited. Migration 0179
+  ([#2166](https://github.com/epiphany40223/parishkit/issues/2166)) did this
+  for every `SECURITY DEFINER` function, and a database test refuses a
+  definer function that uses one bare. The control that matters is that no
   runtime login can create an operator at all (the upgrade check below);
   qualifying is defense in depth. The rule names these five, the subject of
   #2166; every other unqualified operator (`=`, `||`, `->` and so on) and

@@ -76,6 +76,30 @@ def ministry_scope(portal):
     return scalar("SELECT stewardship_ministry_scope_v1(%s)", [portal.pk])
 
 
+LEADER_SCOPE = "public.stewardship_ministry_leader_scope_v1(uuid)"
+
+
+def as_swap_left_it(cursor):
+    """Put 0052's leader scope body back where 0179's stands (#2166).
+
+    0179 has since replaced the body with its ``?|`` written
+    ``OPERATOR(pg_catalog.?|)``, which 0052's check (matching 0052's text)
+    refuses. Only that body is swapped back, keeping the function's current
+    rights, so a test that made it SECURITY INVOKER or installed an older
+    body still sees what it set up. Callers roll the change back.
+    """
+    cursor.execute(
+        "SELECT prosecdef FROM pg_proc WHERE oid=to_regprocedure(%s) "
+        "AND strpos(prosrc, 'OPERATOR(pg_catalog.?|)')>0",
+        [LEADER_SCOPE],
+    )
+    row = cursor.fetchone()
+    if row is not None:
+        cursor.execute(_replaced(SWAP, "stewardship_ministry_leader_scope_v1"))
+        if not row[0]:
+            cursor.execute(f"ALTER FUNCTION {LEADER_SCOPE} SECURITY INVOKER")
+
+
 def check_refuses(message):
     """Run the DO block in a savepoint, expecting it to refuse with ``message``."""
     with (
@@ -83,6 +107,7 @@ def check_refuses(message):
         transaction.atomic(),
         connection.cursor() as cursor,
     ):
+        as_swap_left_it(cursor)
         cursor.execute(CHECK)
 
 
@@ -90,6 +115,7 @@ def check_passes():
     """Run the DO block in a savepoint that is always rolled back."""
     with transaction.atomic():
         with connection.cursor() as cursor:
+            as_swap_left_it(cursor)
             cursor.execute(CHECK)
         transaction.set_rollback(True)
 
@@ -527,6 +553,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0177 (#2163) creates nothing: it replaces 0174's setup load organization
 # check in place as SECURITY DEFINER, which 0174's whole rerun brings back
 # as its caller's, so ``CLOSURE_REPLACED_ONLY`` puts 0177's body back last.
+# 0179 (#2166) creates nothing: it replaces fourteen definer functions in
+# place with their latest bodies, operators qualified, which the reruns and
+# restores above bring back older; ``CLOSURE_REPLACED_ONLY`` puts each 0179
+# body back last (with its SECURITY DEFINER alter), 0177's among them.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -1626,6 +1656,20 @@ CLOSURE_REPLACED_ONLY = {
             "WHEN p.canonical::jsonb ? 'campaign_families'",
         ),
     ),
+    # 0179 (#2166) replaces fourteen definer functions last, each its latest
+    # body with the jsonb and containment operators qualified (so 0177's
+    # entry above is overridden by the setup load check's). Every 0179 body,
+    # and no earlier one, names pg_catalog's operators.
+    **dict.fromkeys(
+        re.findall(
+            r"^CREATE OR REPLACE FUNCTION public\.(\w+)\(",
+            (MIGRATIONS / "migrations/0179_definer_operators.sql").read_text(
+                encoding="utf-8"
+            ),
+            re.M,
+        ),
+        (("stewardship_accounts", "0037_definer_operators"), "OPERATOR(pg_catalog."),
+    ),
 }
 
 
@@ -2233,6 +2277,15 @@ def swap_pending():
                     module = sys.modules[loader.disk_migrations[key].__module__]
                     text = Path(module.FROZEN_SQL).read_text(encoding="utf-8")
                     cursor.execute(_replaced(text, function))
+                    # A header without SECURITY DEFINER (0179's baseline
+                    # guards) needs the file's alter again, as it ran it.
+                    for alter in re.findall(
+                        rf"^ALTER FUNCTION public\.{function}\([^)]*\) "
+                        "SECURITY DEFINER;$",
+                        text,
+                        re.M,
+                    ):
+                        cursor.execute(alter)
             restore_views(cursor, views_before, sources=schema_sources())
             for app, name, applied in removed:
                 # A test that ran the full migration recorded the row again.

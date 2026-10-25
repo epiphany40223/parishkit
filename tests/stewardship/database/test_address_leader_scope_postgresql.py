@@ -41,6 +41,14 @@ FROZEN = (
 ).read_text(encoding="utf-8")
 CHECK = FROZEN[FROZEN.index("DO $check$") :]
 FUNCTION = "public.stewardship_address_leader_scope_v1(text,uuid)"
+# 0167's own statement, as CREATE OR REPLACE: 0179 (#2166) has since replaced
+# the body with its operator qualified, so the check tests put this back
+# first, in transactions that roll back.
+_START = FROZEN.index("CREATE FUNCTION public.stewardship_address_leader_scope_v1(")
+OWN = (
+    "CREATE OR REPLACE"
+    + FROZEN[_START + len("CREATE") : FROZEN.index("$$;", _START) + len("$$;")]
+)
 ADMIN = "admin@example.org"
 
 
@@ -236,9 +244,12 @@ def test_the_timeline_shows_a_never_signed_in_leaders_ministries(deployment):
 
 
 def test_the_migration_check_accepts_the_catalog():
-    """The installed function is exactly the declared one."""
-    with connection.cursor() as cursor:
+    """0167's function, as 0167 installed it, is exactly the declared one."""
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(OWN)
         cursor.execute(CHECK)
+        # Keep 0179's body: roll the restore back.
+        transaction.set_rollback(True)
 
 
 @pytest.mark.parametrize(
@@ -265,6 +276,7 @@ def test_the_migration_check_refuses_a_changed_function(statement):
         transaction.atomic(),
         connection.cursor() as cursor,
     ):
+        cursor.execute(OWN)
         cursor.execute(statement)
         cursor.execute(CHECK)
 
@@ -292,6 +304,7 @@ def test_the_migration_check_refuses_a_dropped_leader_join_or_role_gate(old, new
         transaction.atomic(),
         connection.cursor() as cursor,
     ):
+        cursor.execute(OWN)
         cursor.execute(f"SELECT pg_get_functiondef('{FUNCTION}'::regprocedure)")
         definition = cursor.fetchone()[0]
         assert old in definition

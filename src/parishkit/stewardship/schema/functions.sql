@@ -3786,7 +3786,7 @@ BEGIN
            -- A report's skipped send (#1658) is never planned, by any writer.
            OR (d.kind='report' AND EXISTS (
                SELECT 1 FROM stewardship_schedule_revision skipping WHERE skipping.id=NEW.revision_id
-                   AND coalesce(skipping.values->'skip_dates' ? NEW.slot,false))) THEN
+                   AND coalesce(skipping.values->'skip_dates' OPERATOR(pg_catalog.?) NEW.slot,false))) THEN
             RAISE EXCEPTION 'Occurrence creation is not admitted' USING ERRCODE='23514'; END IF;
     ELSE
         IF session_user='pk_stewardship_scheduler' AND (
