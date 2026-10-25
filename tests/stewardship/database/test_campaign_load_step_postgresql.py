@@ -311,7 +311,7 @@ def test_only_refreshes_since_creation_and_families_count(auth_service, google):
     assert html.count('data-stage-state="done"') == 5
     assert f'href="{reverse("admin:background_task_page", args=[succeeded])}"' in html
     assert ">See the load<" in html and ">Refresh from ParishSoft<" in html
-    assert "Check that ParishSoft has Families that match" in summary(html)
+    assert "Check that ParishSoft has matching Families" in summary(html)
     # Every other step says the same instead of offering the load.
     content = page(browser, reverse("admin:content_catalog"))
     assert NO_FAMILIES in content and "data-campaign-load-start" not in content

@@ -3264,7 +3264,7 @@ entry). The table records what each string was.
 | None: every active Family can be reached by email or postal mail. | None: every campaign Family can be reached by email or postal mail. |
 | Not available: ParishSoft no longer lists this Family as active and registered, so it can't use the Family form. | Not available: in the latest ParishSoft data this Family is no longer in this campaign, so it can't use the Family form. |
 | Historical as of day counts … including Families that later became inactive. | … including Families that later left this campaign. |
-| Check that ParishSoft has active Parishioner Families, then load again. | Check that ParishSoft has Families that match this campaign's Families choice, then load again. |
+| Check that ParishSoft has active Parishioner Families, then load again. | Check that ParishSoft has matching Families, then load again. (kept short so the load summary's reserved height does not grow at 320 px) |
 | Every eligible Family that has not responded gets the Reminders (Reminder WorkGroup page and review) | Every campaign Family that has not responded gets the Reminders |
 | an imported year counts the active Families its archive file names | an imported year counts the campaign Families its archive file names |
 | Active Family heads and emails (directory detail) | Active heads and emails |

@@ -4656,8 +4656,8 @@ live.
   - *Loaded, no Families* (the newest full refresh succeeded, yet the
     campaign has no Families, because no ParishSoft Family matched its
     [Families rule](#families-in-this-campaign)): "The campaign's ParishSoft data loaded,
-    but no Families matched. Check that ParishSoft has Families that match
-    this campaign's Families choice, then load again.", with **See the load** (the run's
+    but no Families matched. Check that ParishSoft has matching Families,
+    then load again.", with **See the load** (the run's
     Background task) and **Refresh from ParishSoft** (which shows what
     the load found). Every stage is done, since the load ran and finished;
     the line after the boxes is empty; and there is no button at all, not
