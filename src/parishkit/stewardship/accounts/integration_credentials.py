@@ -34,7 +34,6 @@ from .integration_selection import (
     NOT_KEY_SCOPE,
     authentication_scope,
     integration_records,
-    loaded_organization,
 )
 from .metrics_credentials import credential_receipt
 from .policy import Capability, allows
@@ -63,11 +62,11 @@ STOPPED = {
 
 # Why a new key was refused by its provider. A ParishSoft key for another
 # organization is refused for good too (#1492), but the installer records
-# that cause (#1495) and the page says it instead (MISMATCHED).
+# that cause (#1495) and the page says it instead (MISMATCHED). The
+# organization is chosen once, in setup (#1554), so only the key is checked.
 FAILED = {
     "parishsoft": _(
-        "ParishSoft did not accept the new API key for this organization ID. "
-        "Check the key and the organization ID, then try again."
+        "ParishSoft did not accept the new API key. Check the key, then try again."
     ),
     "google_workspace": _(
         "Google did not accept the new service-account key for the delegated "
@@ -189,16 +188,12 @@ def switch_patch(row, records):
 
 # A ParishSoft key that authenticates but does not reach the configured
 # organization (#1495). It may reach others (#1554), so the line says what is
-# missing rather than "belongs to another organization". Once data is loaded
-# the organization is locked, so the key must change; before the first load
-# either the key or the organization ID may be wrong.
+# missing rather than "belongs to another organization", and names the
+# organization "Name (ID)". The organization is chosen once, in setup, whose
+# load is done before this page is reached, so the key must change.
 MISMATCHED = _(
-    "This key does not reach the ParishSoft organization whose data is "
-    "already loaded. Paste a key that reaches the loaded organization."
-)
-MISMATCHED_BEFORE_LOAD = _(
-    "This key does not reach the configured ParishSoft organization ID. Check "
-    "the key and the organization ID, then try again."
+    "This key does not reach %(organization)s, whose data is loaded. Paste a "
+    "key that reaches it."
 )
 
 
@@ -214,20 +209,19 @@ def _failed_message(target, row):
     """Name the one reason a failed key change was refused.
 
     Only a ParishSoft refusal can have the organization-mismatch cause, so
-    other targets (and every other page) add no query for it.
-
-    The before/after-load wording is chosen when the page renders, not when
-    the key was refused: the request records no organization state and the
-    schema is frozen. The one false case is narrow: the Administrator changes
-    the organization ID before the first load and pastes the key for the new
-    ID, the check (still seeing the old ID) refuses it, the old ID stays
-    configured, and a load then finishes within the hour the line stays
-    visible. The line then says "already loaded" for a key that was for
-    another organization than the one configured at the time.
+    other targets (and every other page) add no query for it. The
+    organization is the loaded data's, named when the page renders (#1554).
+    Setup's own load comes before this page, so nothing loaded is only a
+    stand-in's case (a test or a reset local environment), said generally.
     """
+    from parishkit.stewardship.source.organization_names import (
+        loaded_organization_label,
+    )
+
     if target != "parishsoft" or not _mismatched(row):
         return FAILED[target]
-    return MISMATCHED if loaded_organization() is not None else MISMATCHED_BEFORE_LOAD
+    label = loaded_organization_label() or _("the organization chosen in setup")
+    return MISMATCHED % {"organization": label}
 
 
 # How long a finished key change stays on its integration's settings page,

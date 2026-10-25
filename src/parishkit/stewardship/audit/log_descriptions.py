@@ -463,11 +463,11 @@ DESCRIPTIONS = {
     ),
     "admin_cmd_export_directory": _(
         "An automation session requested a Family-code directory export, as "
-        "the Active parishioner family directory's export form does."
+        "the Campaign Family directory's export form does."
     ),
     "admin_cmd_export_postal": _(
         "An automation session requested a postal mail-merge export, as the "
-        "Active parishioner family directory's export form does with "
+        "Campaign Family directory's export form does with "
         "mailing columns."
     ),
     "admin_cmd_export_archive": _(
@@ -572,11 +572,9 @@ DESCRIPTIONS = {
         "as not sent, several at a time on Sent mail. Each email also has "
         "its own entry."
     ),
-    "family_directory_viewed": _(
-        "Someone opened the active parishioner family directory."
-    ),
+    "family_directory_viewed": _("Someone opened the Campaign Family directory."),
     "postal_outreach_viewed": _(
-        "Someone opened the active parishioner family directory with mailing columns."
+        "Someone opened the Campaign Family directory with mailing columns."
     ),
     "ministry_report_viewed": _("Someone opened a Ministry report."),
     "participation_viewed": _(
@@ -906,6 +904,9 @@ DESCRIPTIONS = {
     "setup_source_completed": _("The first ParishSoft load during setup finished."),
     "setup_source_voided": _(
         "A finished ParishSoft load during setup was discarded, to load again."
+    ),
+    "setup_parishsoft_organization_chosen": _(
+        "The ParishSoft organization to load was chosen during setup."
     ),
     "setup_frozen": _("Initial setup was completed and locked."),
     # Reports and pages (audit).
@@ -1383,7 +1384,7 @@ FIELD_LABELS = {
     "snapshot_id": _("ParishSoft data read (its snapshot id)"),
     "search_used": _("Search box used"),
     "report_sort": _("Sorted by"),
-    # The active parishioner family directory's choices (#933).
+    # The Campaign Family directory's choices (#933).
     "directory_response": _("Response"),
     "directory_data_check": _("ParishSoft data to check"),
     "directory_response_columns": _("Response columns included"),

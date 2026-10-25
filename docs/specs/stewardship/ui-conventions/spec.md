@@ -2117,7 +2117,7 @@ Testing rehearsal.
 - **Where.** The Response dashboard's Responses shown (Production |
   Testing rehearsal) and Chart population (Historical as of day | Current
   population), the
-  [family directory](../reports/spec.md#active-parishioner-family-directory)'s Responses shown
+  [family directory](../reports/spec.md#campaign-family-directory)'s Responses shown
   (Production | Testing rehearsal), above its Filters panel, and the
   [Campaign calendar](../admin-portal/spec.md#campaign-calendar)'s
   Show (Upcoming emails | Include past emails), above Every email by date,
@@ -3245,17 +3245,16 @@ Families registered elsewhere, so "active parishioner" stopped being true
 (Administrator, 2026-10-24,
 [#1393](https://github.com/epiphany40223/parishkit/issues/1393); the
 Administrator approved these words, including the Family badge, the same
-day). Status:
-specified, not built; the implementing PR changes the strings, their tests
-and the specification text together, and renames the reports
-specification's "Active parishioner family directory" heading (with its
-links and traceability entry).
+day). Status: built (#1393): the strings, their tests and the
+specification text changed together, and the reports specification's
+heading is now "Campaign Family directory" (with its links and traceability
+entry). The table records what each string was.
 
 | Today | Becomes |
 | --- | --- |
 | Active parishioner family directory (menu, page title and heading, error page, Return link, table and navigator labels, links on Find a Family, Deliveries, Delivery refusals, Timeline, Choose Families to test and the Response dashboard, audit descriptions, CLI help) | Campaign Family directory |
 | Active Families (Home and Go live tiles, participation summary, Past campaigns column and review, confirmation progress) | Campaign Families |
-| Active Families with a response | Campaign Families with a response |
+| Active Families with a response | Campaign Families responded (shortened so the label stays on one line at the Home fold) |
 | Percent of active Families (comparison metric and chart) | Percent of campaign Families |
 | Active Families counted from | Campaign Families counted from |
 | Active parishioner Families, the percentage denominator (archive workbook) | Campaign Families, the percentage denominator |
@@ -3266,7 +3265,7 @@ links and traceability entry).
 | None: every active Family can be reached by email or postal mail. | None: every campaign Family can be reached by email or postal mail. |
 | Not available: ParishSoft no longer lists this Family as active and registered, so it can't use the Family form. | Not available: in the latest ParishSoft data this Family is no longer in this campaign, so it can't use the Family form. |
 | Historical as of day counts … including Families that later became inactive. | … including Families that later left this campaign. |
-| Check that ParishSoft has active Parishioner Families, then load again. | Check that ParishSoft has Families that match this campaign's Families choice, then load again. |
+| Check that ParishSoft has active Parishioner Families, then load again. | Check that ParishSoft has matching Families, then load again. (kept short so the load summary's reserved height does not grow at 320 px) |
 | Every eligible Family that has not responded gets the Reminders (Reminder WorkGroup page and review) | Every campaign Family that has not responded gets the Reminders |
 | an imported year counts the active Families its archive file names | an imported year counts the campaign Families its archive file names |
 | Active Family heads and emails (directory detail) | Active heads and emails |
@@ -5129,7 +5128,7 @@ Family, or marks one inactive or deceased:
 - **Not in ParishSoft**: the data has no such Member or Family (deleted or
   merged there), or the Member now belongs to another Family.
 - **Inactive in ParishSoft**: a Member present, but marked inactive. For a
-  Family the words are **No longer in this campaign**: present, but no longer matching the campaign's [Families rule](../data/spec.md#campaign-families) (until #1393 is built, "Inactive in ParishSoft": no longer active and registered).
+  Family the words are **No longer in this campaign**: present, but no longer matching the campaign's [Families rule](../data/spec.md#campaign-families) (its status key is `left`, #1393). Under the legacy rule (a campaign created before #1393) the test stays ParishSoft's active flag, exactly as before.
 - **Deceased in ParishSoft**: present, but marked deceased.
 - **Name not recorded in ParishSoft**: present, but with no usable name. This
   is a gap in the data, not a removal, so it is worded as the name and has

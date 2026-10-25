@@ -130,11 +130,30 @@ def main():
     for target in ("google_workspace", "parishsoft"):
         path = "/admin/setup/credentials/" + target
         data = {"version": version(path), "candidate": "synthetic-private-" + target}
-        if target == "parishsoft":
-            data["organization_id"] = "1"
-        else:
+        if target != "parishsoft":
             data["candidate"] = fixture["workspace"]
         post(path, data)
+        if target == "parishsoft":
+            # The key's organization is chosen from its own lookup (#1554):
+            # wait for the installer to answer it, then confirm the one
+            # organization it lists.
+            deadline = time.monotonic() + 120
+            while True:
+                lookup = get(path).context["lookup"]
+                if not lookup.pending:
+                    break
+                assert time.monotonic() < deadline, lookup.state
+                time.sleep(0.5)
+            assert lookup.state == "ready", (lookup.state, lookup.error_code)
+            post(
+                path,
+                {
+                    "action": "choose",
+                    "lookup": str(lookup.identifier),
+                    "organization": "1",
+                    "version": version(path),
+                },
+            )
     draft = get("/admin/setup").context["draft"]
     progress = post(
         "/admin/setup",

@@ -292,13 +292,12 @@ def page_preview(browser, store, target, values):
 def test_tokens_confirm_on_either_channel(mail):
     """Tokens are bound to the Administrator, not the channel."""
     browser, secret, _ = paired(mail.service)
-    code, document, _ = preview(mail, secret, "parishsoft", {"organization_id": 54321})
+    code, document, _ = preview(mail, secret, "email", {"sender": "first@example.org"})
     assert code == 0, document
-    assert document["result"]["changes"] == [
-        {"field": "organization_id", "before": "12345", "after": "54321"}
-    ]
+    [line] = document["result"]["changes"]
+    assert line["field"] == "sender" and line["after"] == "first@example.org"
     response = browser.post(
-        "/admin/system/integrations/parishsoft/",
+        "/admin/system/integrations/email/",
         {
             "action": "confirm",
             "preview": document["result"]["preview"]["token"],
@@ -347,29 +346,29 @@ def test_a_preview_that_went_out_of_date_is_stale(mail):
     assert trail() == (0, 0, 0, 0)
 
 
-def test_a_parishsoft_change_keeps_the_stored_schedule_exactly(admin):
-    """Saving the organization ID from the command line stores the refresh
-    schedule's keys byte for byte, as the page's save does (#632); the
-    prompt names only the organization ID."""
+def test_the_organization_is_read_only_from_the_command_line(admin):
+    """The organization is chosen once, in setup (#1554): ``integration
+    show``'s ID posted back as it is changes nothing, and another is
+    ``invalid`` at its field in the page's words, naming the organization;
+    the stored settings stay exactly."""
     apply_rules_schedule(admin.service.store)
     before = stored_schedule(admin.service.store)
+    requests = ConfigurationChangeRequest.objects.count()
     _, secret, _ = paired(admin.service)
     code, document, _ = preview(admin, secret, "parishsoft", {"organization_id": "777"})
-    assert code == 0, document
-    assert document["result"]["changes"] == [
-        {"field": "organization_id", "before": "12345", "after": "777"}
-    ]
-    code, confirmed, errors = confirm(
-        admin,
-        secret,
-        "parishsoft",
-        document["result"]["preview"]["token"],
-        answer=b"yes\n",
+    assert code == 1
+    assert refused(document, "invalid") == ["settings.organization_id"]
+    [problem] = document["error"]["fields"]
+    assert problem["message"] == (
+        "The ParishSoft organization is ParishSoft organization 12345 and "
+        "can't change after setup."
     )
-    assert code == 0, confirmed
-    assert "This changes the ParishSoft settings: organization_id." in errors
-    install(admin, confirmed)
-    assert records(admin)["parishsoft"]["settings"]["organization_id"] == "777"
+    code, document, _ = preview(
+        admin, secret, "parishsoft", {"organization_id": "12345"}
+    )
+    assert code == 1 and refused(document, "invalid") == ["settings"]
+    assert "No settings have changed." in json.dumps(document["error"])
+    assert ConfigurationChangeRequest.objects.count() == requests
     assert stored_schedule(admin.service.store) == before
 
 
@@ -583,22 +582,18 @@ def test_the_command_and_the_page_build_the_same_change(admin):
     """For an older schedule with no saved mode, the command's change equals
     the page's own post of the same rules (built from the page as drawn, not
     the command's rows): the same patch, mode included; the organization ID
-    goes with it."""
+    is kept, as neither can change it (#1554)."""
     replace_settings(admin.service.store, OLDER)
     browser, secret, _ = paired(admin.service)
     nightly = [{"kind": "full", "at": "02:00"}]
-    code, document, _ = schedule_preview(
-        admin, secret, {"rules": nightly}, changes={"organization_id": "777"}
-    )
+    code, document, _ = schedule_preview(admin, secret, {"rules": nightly})
     assert code == 0, document
-    assert document["result"]["changes"] == [
-        {"field": "organization_id", "before": "12345", "after": "777"}
-    ]
+    assert document["result"]["changes"] == []
     page = page_preview(
         browser,
         admin.service.store,
         "parishsoft",
-        {"organization_id": "777"} | page_rows(browser, nightly),
+        page_rows(browser, nightly),
     )
     salt = SALT + "parishsoft"
     command = signing.loads(document["result"]["preview"]["token"], salt=salt)
@@ -606,6 +601,7 @@ def test_the_command_and_the_page_build_the_same_change(admin):
     settings = command["patch"][0]["values"]["settings"]
     # The page opened in Advanced (Basic can't show the older schedule).
     assert settings["refresh_schedule_mode"] == "advanced"
+    assert settings["organization_id"] == "12345"
 
 
 def test_an_older_schedules_kept_times_stay_allowed(admin):
@@ -671,16 +667,6 @@ def test_an_unchanged_refresh_schedule_is_no_change(admin):
     code, document, _ = schedule_preview(admin, secret, shown)
     assert code == 1 and refused(document, "invalid") == ["settings"]
     assert "No settings have changed." in json.dumps(document["error"])
-    # With another change, the schedule is kept exactly as stored.
-    code, document, _ = schedule_preview(
-        admin, secret, shown, changes={"organization_id": "777"}
-    )
-    assert code == 0 and document["result"]["schedule"] is None, document
-    code, confirmed, _ = confirm(
-        admin, secret, "parishsoft", document["result"]["preview"]["token"]
-    )
-    assert code == 0, confirmed
-    install(admin, confirmed)
     assert stored_schedule(admin.service.store) == before
 
 

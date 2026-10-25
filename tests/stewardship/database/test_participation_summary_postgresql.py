@@ -71,7 +71,7 @@ def test_the_request_freezes_the_summary_and_the_file_reads_only_it(
         "Submitted",
     ]
     assert [row["label"] for row in document["population"]][:2] == [
-        "Active Families",
+        "Campaign Families",
         "Active Members",
     ]
     assert str(request.campaign_id) not in str(document)
@@ -158,7 +158,7 @@ def valid():
     return {
         "observed_at": "2054-10-02T12:00:00+00:00",
         "population": [
-            {"label": "Active Families", "value": 3, "note": ""},
+            {"label": "Campaign Families", "value": 3, "note": ""},
             {"label": "Active Members", "value": None, "note": "Unknown."},
         ],
         "stages": [{"label": "Invited", "count": 2, "note": ""}],

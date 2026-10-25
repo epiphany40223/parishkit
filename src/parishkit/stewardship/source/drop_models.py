@@ -122,8 +122,8 @@ class SourceDropExample(models.Model):
 
     Up to five per failing count that concerns Families, Members or contacts
     (``position`` 1 to 5): a Family the current promoted data counted but
-    the refused load no longer did. Only its DUID and its name as the active
-    parishioner family directory shows it are kept, so the Administrator can
+    the refused load no longer did. Only its DUID and its name as the
+    Campaign Family directory shows it are kept, so the Administrator can
     look it up in ParishSoft before accepting the change once. See
     ``drop_examples`` for how they are chosen, shown and deleted. The guard
     in ``schema/migrations/0085_drop_examples.sql`` admits a row only from

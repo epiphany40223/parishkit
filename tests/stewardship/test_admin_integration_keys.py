@@ -337,11 +337,29 @@ def test_every_key_form_problem_is_a_refusal_at_the_key():
     assert other["message"] == "The key could not be checked."
 
 
-def test_the_command_refuses_a_locked_organization_in_the_pages_words():
+def test_the_command_refuses_a_locked_organization_in_the_pages_words(monkeypatch):
     """``integration key finish-switching`` refuses a changed loaded
-    organization with the same words as the page's dialog (#1568)."""
+    organization with the same words as the page's dialog (#1568), which
+    name it "Name (ID)" (#1554)."""
     from parishkit.stewardship import admin_integration_keys
-    from parishkit.stewardship.accounts import integration_selection_views
+    from parishkit.stewardship.accounts import (
+        integration_selection,
+        integration_selection_views,
+    )
+    from parishkit.stewardship.source import organization_names
 
-    page = str(integration_selection_views.ORGANIZATION_LOCKED)
-    assert page == admin_integration_keys.ORGANIZATION_LOCKED
+    monkeypatch.setattr(integration_selection, "loaded_organization", lambda: 12)
+    monkeypatch.setattr(
+        organization_names, "loaded_organization_label", lambda: "St. Example (12)"
+    )
+    page = str(integration_selection_views._locked())
+    [problem] = admin_integration_keys._organization_locked().fields
+    assert (
+        page
+        == problem["message"]
+        == (
+            "The ParishSoft organization is St. Example (12) and can't change "
+            "after setup."
+        )
+    )
+    assert problem["field"] == "organization_id"

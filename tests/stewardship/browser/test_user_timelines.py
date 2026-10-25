@@ -137,7 +137,7 @@ def test_pages_viewed_lists_only_page_views_in_place(page, component_origin, wid
     errors = watch(page)
     page.set_viewport_size({"width": width, "height": 2400})
     page.goto(component_origin + PAGE)
-    opened = "Opened the active parishioner family directory."
+    opened = "Opened the Campaign Family directory."
     assert opened not in lines(page)
     page.evaluate(MARK)
     kind = page.locator("#timeline-kind")

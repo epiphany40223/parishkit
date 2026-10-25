@@ -48,8 +48,10 @@ PLACE = """id => {
 # of them the page has at least, so that losing tips cannot quietly shrink
 # what the test covers.
 CASES = {
-    # A setup form's field help (accounts/field_tips.py) in a .label-row.
-    "label-row": ("/setup-credential", ".label-row .toggletip-button", 2),
+    # A setup form's field help (accounts/field_tips.py) in a .label-row. The
+    # ParishSoft connection form has only the key's tip since the expected
+    # organization ID field was removed (#1554).
+    "label-row": ("/setup-credential", ".label-row .toggletip-button", 1),
     # A follow-up edit form's short fields share a .field-row (#1014):
     # Outcome and How.
     "field-row": ("/followup-item", ".field-row .label-row .toggletip-button", 2),

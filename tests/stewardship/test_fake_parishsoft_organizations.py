@@ -3,7 +3,9 @@
 The fixed key then also reaches two other organizations, and the searches and
 lists answer with some of their records. A full load must store exactly what
 it stores for a key that reaches only the synthetic organization, and record
-how many records it left out.
+how many records it left out. Each other organization also answers its own
+requests: the first as a small parish of its own, which a full load reads
+whole, the second with nothing at all.
 """
 
 import json
@@ -15,6 +17,8 @@ from uuid import uuid4
 import pytest
 import requests
 
+from parishkit.parishsoft import ParishSoftClient, ParishSoftConfig
+from parishkit.parishsoft_source import organization_name
 from parishkit.stewardship.local import LOCAL_ORGANIZATION_ID
 from parishkit.stewardship.local.fake_parishsoft import (
     FakeParishSoft,
@@ -22,9 +26,12 @@ from parishkit.stewardship.local.fake_parishsoft import (
     start_server,
 )
 from parishkit.stewardship.observability import SafeJsonFormatter
+from parishkit.stewardship.provider_check_worker import _holds_families
 from parishkit.stewardship.source.canonical import SourceReferenceSkew
 from parishkit.stewardship.source.loading import (
+    ORGANIZATION_KEY,
     ORGANIZATIONS_KEY,
+    DestructiveSourceChange,
     load_full_source,
     log_organizations,
     organization_evidence,
@@ -33,7 +40,11 @@ from parishkit.stewardship.source.loading import (
 from parishkit.stewardship.source.windows import GivingPeriod, RefreshWindow
 from parishkit.stewardship.source.workgroups import load_reminder_workgroup
 
-from .test_fake_parishsoft import ANCHOR, KEY, client, configuration
+from .test_fake_parishsoft import ANCHOR, KEY, client, configuration, get, post
+
+# The other organizations: the first holds Families, the second nothing.
+HOLDING = LOCAL_ORGANIZATION_ID + 1
+EMPTY = LOCAL_ORGANIZATION_ID + 2
 
 
 def serve(fake):
@@ -126,6 +137,48 @@ def test_a_full_load_stores_only_the_configured_organization(servers, tmp_path, 
     )
 
 
+def test_a_full_load_records_the_organizations_name(servers, tmp_path):
+    """The configured organization's cleaned name, whatever else it reaches."""
+    single, multi = servers
+    fake = multi.fake
+    name = organization_name(fake.parish.organization["organizationReportName"])
+    assert name
+    for server in (single, multi):
+        loaded = load_full_source(
+            client(server, tmp_path), window=window(fake), as_of=ANCHOR
+        )
+        assert loaded.evidence[ORGANIZATION_KEY] == {"name": name}
+
+
+def test_other_organizations_answer_the_lookups_family_search(servers, tmp_path):
+    """The first other organization holds Families, the second none."""
+    single, multi = servers
+    plain = ParishSoftClient(
+        ParishSoftConfig(
+            KEY["x-api-key"],
+            tmp_path,
+            cache_enabled=False,
+            api_base_url=base_url(multi),
+            timeout=5,
+        )
+    )
+    assert _holds_families(plain, LOCAL_ORGANIZATION_ID) is True
+    assert _holds_families(plain, LOCAL_ORGANIZATION_ID + 1) is True
+    assert _holds_families(plain, LOCAL_ORGANIZATION_ID + 2) is False
+    # A one-organization key still answers 404 for any other organization.
+    response = requests.post(
+        base_url(single) + "/families/search",
+        json={
+            "organizationIDs": [LOCAL_ORGANIZATION_ID + 1],
+            "pageSize": 1,
+            "pageNumber": 1,
+        },
+        headers=KEY,
+        timeout=5,
+    )
+    assert response.status_code == 404
+
+
 def test_the_reminder_workgroup_list_keeps_only_the_parishs(servers, tmp_path):
     """Another organization's WorkGroup is never found, the parish's still is."""
     _, multi = servers
@@ -138,8 +191,13 @@ def test_the_reminder_workgroup_list_keeps_only_the_parishs(servers, tmp_path):
     families = {str(row["familyDUID"]) for row in fake.parish.families}
     found = load_reminder_workgroup(coherent, ours["workgroupName"], families=families)
     assert found["found"] is True and found["family_duids"]
+    # Two reads of the list, each leaving out every other organization's
+    # WorkGroups: the leaked rows and the first other organization's own.
+    others = len(fake.others.family_workgroups) + len(
+        fake.others.tenants[HOLDING].family_workgroups
+    )
     assert organization_evidence(coherent)[ORGANIZATIONS_KEY]["skipped"] == {
-        "family_workgroups": 4
+        "family_workgroups": 2 * others
     }
     # A membership Family the full load does not hold fails the refresh.
     with pytest.raises(SourceReferenceSkew):
@@ -188,3 +246,125 @@ def test_the_organizations_command_sets_the_mode_and_nothing_else():
     for words in (["organizations"], ["organizations", "3"], ["organizations", "x"]):
         with pytest.raises(EditError):
             edit_document(words, document)
+
+
+def every_endpoint(server, organization):
+    """Each scoped collection the loads read for ``organization``, by name."""
+    scoped = {"organizationIDs": [organization]}
+    return {
+        "families": post(server, "families/search", scoped),
+        "members": post(server, "members/search", scoped),
+        "contacts": post(server, "members/contact/list", scoped),
+        "ministries": get(server, "ministry/type/list", organizationId=organization),
+        "member_workgroups": get(
+            server, "members/workgroup/lookup/list", organizationId=organization
+        ),
+        "funds": get(server, f"offering/{organization}/funds"),
+        "pledges": get(server, "offering/pledge/list", OrganizationID=organization),
+        "contributions": get(
+            server, "offering/contributiondetail/list", OrganizationId=organization
+        ),
+    }
+
+
+def rows(response):
+    """A 200 answer's rows, bare or in the published envelope."""
+    assert response.status_code == 200
+    body = response.json()
+    return body["data"] if isinstance(body, dict) else body
+
+
+def test_the_first_other_organization_answers_as_a_parish_of_its_own(servers):
+    """Every endpoint a load reads answers for it, consistently: its Members'
+    Families are its own, its rosters and by-ID reads resolve, every row
+    names it, and no identity is the synthetic parish's (pk-local R51)."""
+    _, multi = servers
+    fake = multi.fake
+    answers = {
+        name: rows(item) for name, item in every_endpoint(multi, HOLDING).items()
+    }
+    assert all(answers[name] for name in answers), answers
+    families = {row["familyDUID"] for row in answers["families"]}
+    assert families == {
+        row["familyDUID"] for row in fake.others.tenants[HOLDING].families
+    }
+    members = answers["members"]
+    assert {row["familyDUID"] for row in members} <= families
+    assert {row["organizationID"] for row in members} == {HOLDING}
+    assert {row["ownerOrganizationID"] for row in answers["contacts"]} == {HOLDING}
+    assert {row["memberDUID"] for row in answers["contacts"]} <= {
+        row["memberDUID"] for row in members
+    }
+    assert {row["organizationId"] for row in answers["ministries"]} == {HOLDING}
+    funds = {row["fundId"] for row in answers["funds"]}
+    assert {row["fundID"] for row in answers["pledges"]} <= funds
+    assert {row["familyID"] for row in answers["pledges"]} <= families
+    assert {row["organizationID"] for row in answers["pledges"]} == {HOLDING}
+    assert {row["organizationId"] for row in answers["contributions"]} == {HOLDING}
+    # Rosters and Members are read by identity, with no organization.
+    ministry = answers["ministries"][0]["id"]
+    roster = rows(get(multi, f"ministry/{ministry}/minister/list"))
+    assert {row["memberId"] for row in roster} <= {row["memberDUID"] for row in members}
+    workgroup = answers["member_workgroups"][0]["id"]
+    assert rows(get(multi, f"members/workgroup/{workgroup}/list")) is not None
+    # The Family WorkGroup list names no organization: it carries the
+    # organization's own WorkGroups, whose rosters hold its Families.
+    own = fake.others.tenants[HOLDING].family_workgroups[0]
+    listed = rows(get(multi, "families/workgroup/list"))
+    assert own["workgroupDUID"] in {row["workgroupDUID"] for row in listed}
+    roster = rows(get(multi, f"families/workgroup/{own['workgroupDUID']}/list"))
+    assert roster and {row["familyId"] for row in roster} <= families
+    member = get(multi, f"members/{members[0]['memberDUID']}")
+    assert member.status_code == 200 and member.json()["familyDUID"] in families
+    # No identity is shared with the synthetic parish.
+    parish = fake.parish
+    assert not families & {row["familyDUID"] for row in parish.families}
+    assert not {row["memberDUID"] for row in members} & {
+        row["memberDUID"] for row in parish.members
+    }
+    assert not funds & {row["fundId"] for row in parish.funds}
+    # The synthetic organization's own answers are as before.
+    assert rows(post(multi, "families/search", {"organizationIDs": [1001]})) == rows(
+        post(servers[0], "families/search", {"organizationIDs": [1001]})
+    )
+
+
+def test_the_second_other_organization_holds_nothing_anywhere(servers):
+    """Every scoped endpoint answers it with an empty collection, never a 404."""
+    _, multi = servers
+    for name, response in every_endpoint(multi, EMPTY).items():
+        assert rows(response) == [], name
+
+
+def test_a_full_load_of_the_first_other_organization_succeeds(servers, tmp_path):
+    """Chosen in setup, it loads whole, named, without the parish's records."""
+    _, multi = servers
+    tenant = multi.fake.others.tenants[HOLDING]
+    funds = tuple(sorted(f["fundId"] for f in tenant.funds if f["requiresPledges"]))
+    loaded = load_full_source(
+        client(multi, tmp_path, organization=HOLDING),
+        window=RefreshWindow(
+            uuid4(), (GivingPeriod(date(2026, 1, 1), date(2026, 12, 31), funds),)
+        ),
+        as_of=ANCHOR,
+    )
+    assert loaded.counts["family"] == len(tenant.families)
+    assert loaded.counts["member"] == len(tenant.members)
+    assert loaded.counts["ministry"] == len(tenant.ministries)
+    assert loaded.counts["fund"] == len(tenant.funds)
+    assert loaded.counts["pledge"] > 0 and loaded.counts["contribution"] > 0
+    assert loaded.evidence[ORGANIZATION_KEY] == {"name": "Neighboring Parish 1"}
+    assert {row["familyDUID"] for row in tenant.families} >= {
+        int(key) for key in loaded.corpus["family"]
+    }
+
+
+def test_a_full_load_of_the_empty_organization_is_refused(servers, tmp_path):
+    """An organization holding nothing fails the first load's empty check."""
+    _, multi = servers
+    with pytest.raises(DestructiveSourceChange):
+        load_full_source(
+            client(multi, tmp_path, organization=EMPTY),
+            window=RefreshWindow(None, ()),
+            as_of=ANCHOR,
+        )

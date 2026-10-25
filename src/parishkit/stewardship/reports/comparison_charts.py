@@ -163,8 +163,8 @@ MEASURES = (
     ),
     Measure(
         "percent",
-        "Percent of active Families by campaign day",
-        "Percent of active Families",
+        "Percent of campaign Families by campaign day",
+        "Percent of campaign Families",
         "percent",
     ),
     Measure(

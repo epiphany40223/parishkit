@@ -14,6 +14,7 @@ from parishkit.stewardship.source.models import SourceMutationLease
 
 from .sessions import authenticated_admin, database_now
 from .setup_drafts import _owned, staged_load
+from .setup_finishing import SOURCE_ENDED
 from .setup_models import SetupAttempt
 from .setup_policy import SetupState
 from .setup_staging import _expire, _expiry, _window
@@ -53,6 +54,33 @@ def _load_detail(task):
         "current": max(0, task.progress_current - base) if saving else 0,
         "total": max(0, task.progress_total - base) if saving else 0,
     }
+
+
+def _failed_organization(attempt):
+    """The organization a failed bound load was for, as the portal names it.
+
+    A bound load's organization is the attempt's live ParishSoft key's
+    chosen one, since choosing another discards the load (#1353, #1554);
+    its name is the one the lookup read, kept until a load records it. None
+    when no organization is chosen (a setup from before #1554). Two
+    queries, only once the load has failed.
+    """
+    from parishkit.stewardship.source.organization_names import organization_label
+
+    from .setup_lookups import chosen_name
+    from .setup_secret_models import SetupSealedCredential
+
+    settings = (
+        SetupSealedCredential.objects.filter(
+            attempt=attempt, target="parishsoft", scrubbed_at=None
+        )
+        .values_list("settings", flat=True)
+        .first()
+    )
+    organization = (settings or {}).get("organization_id")
+    if organization is None:
+        return None
+    return organization_label(organization, chosen_name(attempt.pk, organization))
 
 
 def _discarded(attempt, task_id, renew):
@@ -166,6 +194,13 @@ def source_progress(request, service, task_id, *, renew=False):
             # the loaded snapshot's counts, else None.
             "organizations": (
                 None if staged is None else snapshot_organizations(staged.snapshot_id)
+            ),
+            # Which organization a failed load could not load (#1554), so
+            # the page names it beside the way back to choose another.
+            "organization_label": (
+                _failed_organization(attempt)
+                if bound and task.state in SOURCE_ENDED
+                else None
             ),
             "phase": task.phase,
             **_load_detail(task),

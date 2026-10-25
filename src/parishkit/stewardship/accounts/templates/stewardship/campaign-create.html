@@ -1,6 +1,6 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
 {% block title %}{% translate "Create the campaign" %}{% endblock %}
-{% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
+{% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script><script src="{% static 'stewardship/campaign-families-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
 <h1>{% translate "Create the campaign" %}</h1>
 {% aboutpage "campaign-create" %}<p>{% translate "This creates the campaign as a draft in Testing mode. Families see nothing and no email is sent until you go live." %}</p>

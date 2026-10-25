@@ -609,7 +609,7 @@ body, never a URL/query string, and are omitted from application/proxy request
 logs. Code-bearing exports use the ordinary authenticated temporary-export
 controls
 and complete report/export audit defined by the
-[active parishioner family directory](../reports/spec.md#active-parishioner-family-directory). Codes remain absent
+[Campaign Family directory](../reports/spec.md#campaign-family-directory). Codes remain absent
 from application logs, operational notifications, and unprivileged reports.
 
 Failed Family-code attempts use Valkey sliding-window limits keyed by source IP

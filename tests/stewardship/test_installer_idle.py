@@ -11,6 +11,7 @@ from parishkit.stewardship import runtime_process
 from parishkit.stewardship.accounts import (
     credential_database,
     setup_credential_installation,
+    setup_lookups,
     setup_mail_exchange,
     setup_notifications,
 )
@@ -136,6 +137,23 @@ def test_idle_slack_installer_skips_recovery_and_claim_locks(monkeypatch):
     check.assert_called_once_with()
 
 
+def test_idle_lookup_installer_skips_its_claim_lock(monkeypatch):
+    """No queued or running organization lookup (#1554): no locked claim."""
+    admit = Mock()
+    monkeypatch.setattr(credential_database, "admit_installer_database", admit)
+    monkeypatch.setattr(setup_lookups, "has_pending", lambda: False)
+    monkeypatch.setattr(setup_lookups, "_claim", refuse)
+    check = Mock()
+    assert (
+        setup_lookups.run_pending(
+            private("parishsoft"), check=check, profile=object(), base_url=None
+        )
+        is False
+    )
+    check.assert_called_once_with()
+    admit.assert_called_once_with("parishsoft")
+
+
 def test_idle_initial_staging_skips_file_and_work_order_locks(monkeypatch, tmp_path):
     """No frozen setup: neither the target file lock nor the global lock."""
     files = CredentialFiles(tmp_path.resolve() / "credential", private("slack"))
@@ -168,7 +186,7 @@ def test_queue_hint_counts_an_interrupted_journal_without_a_query(
     [
         ("metrics", ["queue"]),
         ("google_oauth", ["queue"]),
-        ("parishsoft", ["queue", "source", "initial"]),
+        ("parishsoft", ["queue", "source", "lookup", "initial"]),
         ("google_workspace", ["queue", "mail", "probe", "initial"]),
         ("slack", ["queue", "slack", "initial"]),
     ],
@@ -185,6 +203,7 @@ def test_each_target_checks_exactly_its_own_work(monkeypatch, target, expected):
 
     installer = SimpleNamespace(pending=hint("queue"))
     monkeypatch.setattr(setup_exchange, "has_pending", hint("source"))
+    monkeypatch.setattr(setup_lookups, "has_pending", hint("lookup"))
     monkeypatch.setattr(setup_mail_exchange, "has_pending", hint("mail"))
     monkeypatch.setattr(backup_probes, "has_pending", hint("probe"))
     monkeypatch.setattr(setup_notifications, "has_pending", hint("slack"))
@@ -198,6 +217,7 @@ def test_each_target_checks_exactly_its_own_work(monkeypatch, target, expected):
 def test_cheap_check_stops_at_the_first_step_with_work(monkeypatch):
     """Work found by the queue check needs no further reads."""
     monkeypatch.setattr(setup_exchange, "has_pending", refuse)
+    monkeypatch.setattr(setup_lookups, "has_pending", refuse)
     monkeypatch.setattr(setup_credential_installation, "has_pending", refuse)
     installer = SimpleNamespace(pending=lambda: True)
     assert runtime_process.installer_pending(installer, "parishsoft")() is True

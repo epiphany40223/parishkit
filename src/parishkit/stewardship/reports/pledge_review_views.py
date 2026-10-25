@@ -142,7 +142,7 @@ COLUMNS = (
 # enter (the reviewer's value, else the Family's) spelled out.
 HEADINGS = (
     "Family",
-    # Blank while ParishSoft lists the Family as active; otherwise #1216's
+    # Blank while the Family is in the campaign; otherwise #1216's
     # phrase, the Family cell's badge, right after the name it describes
     # (UX conventions, "Members and Families no longer in ParishSoft").
     "ParishSoft status",

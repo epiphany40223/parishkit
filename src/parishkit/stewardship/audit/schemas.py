@@ -269,6 +269,10 @@ class Action(StrEnum):
     SETUP_EXPIRED = "setup_expired"
     SETUP_CREDENTIAL_STAGED = "setup_credential_staged"
     SETUP_CREDENTIAL_SCRUBBED = "setup_credential_scrubbed"
+    # The setup wizard's ParishSoft organization choice (#1554); its subject
+    # is the organization lookup, its context counts only. Written by the
+    # lookup's guard.
+    SETUP_PARISHSOFT_ORGANIZATION_CHOSEN = "setup_parishsoft_organization_chosen"
     # Admin automation sessions (ADM-11): approval, ending (the reason is on
     # the session row), refused use, and an Administrator acknowledging the
     # automation notices on their own dashboard.
@@ -639,6 +643,15 @@ FIELDS = {
         # in (#1620): always true when present; a reader's own view has no
         # such key. Mirrored in stewardship_safe_context_v1.
         "automatic",
+        # The setup wizard's ParishSoft organization choice (#1554): the
+        # chosen organization ID and how many organizations the key reached,
+        # held no Families or were unknown, integers as every unlisted key.
+        # Never another organization's ID or name. Mirrored in
+        # stewardship_safe_context_v1 (frozen migration 0174).
+        "organization",
+        "organizations_reached",
+        "organizations_without_families",
+        "organizations_unknown",
     },
 }
 
@@ -719,7 +732,7 @@ REPORT_SORT_COLUMNS = (
     # Entered by Staff (#529), admitted by migration 0065.
     "staff_entered",
 )
-# The active parishioner family directory's Response choices (#933), as
+# The Campaign Family directory's Response choices (#933), as
 # stewardship_safe_context_v1 admits them; "yes" and "no" are the older
 # Campaign response choices earlier entries recorded.
 DIRECTORY_RESPONSES = frozenset(

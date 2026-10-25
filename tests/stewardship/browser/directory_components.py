@@ -196,7 +196,7 @@ def components(context, admin):
         "mailable": False,
     }
     # A Family the data still has but marks inactive: its name and the
-    # shared Inactive in ParishSoft badge beside it (#1216).
+    # shared No longer in this campaign badge beside it (#1216, #1393).
     faded = gone | {
         "family_id": UUID(int=85),
         "family_name": "Faded",

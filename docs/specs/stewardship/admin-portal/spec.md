@@ -557,10 +557,19 @@ shows as loaded. Each discard is audited as
 staging is never used again: finalization and campaign staging bind only to
 the current load. It is disposed of with the attempt's other source staging
 when setup ends, and the time zone the load fixed can change again.
-The progress page of a load that failed for good names the most common cause
-(a wrong key) and links to ParishSoft connection and to
+The progress page of a load that failed for good names the organization it
+was for, as the [organization name rule](../ui-conventions/spec.md#parishsoft-organization-names)
+writes it: "The parish data of St. Example Parish (1234) could not be loaded
+from ParishSoft." (only "The load did not finish." when no organization is
+chosen). It names the most common causes (a wrong key, or an organization
+that is not the parish's) and offers the way back to choose another: a link
+**Choose another organization or enter a different key** to ParishSoft
+connection, where pasting the key again lists the organizations it reaches
+([organization choice](#parishsoft-organization-choice); the failed load is
+discarded when a different organization or key is chosen), and a link to
 Load parish data, whose Load again starts a new load; Back goes to ParishSoft
-connection. Only a load that ended with the setup attempt itself (expired)
+connection (pk-local finding of 2026-10-24,
+[#1554](https://github.com/epiphany40223/parishkit/issues/1554)). Only a load that ended with the setup attempt itself (expired)
 still says to cancel setup and start again. A discarded load's progress page
 stays readable, passively only (it is never renewed), and says the load is no
 longer used, with a link to Load parish data and no Continue; a bound load
@@ -744,7 +753,8 @@ the load, its checks and the
 [Integrations page](#parish-and-integration-configuration) read the same
 setting as today. The chosen organization's name is kept with the lookup
 for the wizard's own pages until the load records it in its snapshot
-([ParishSoft organization name](../data/spec.md#parishsoft-organization-name)).
+([ParishSoft organization name](../data/spec.md#parishsoft-organization-name));
+a later choice clears the name an earlier one kept.
 The other organizations' IDs and names are the one place the system ever
 shows another organization (Administrator decision of 2026-10-24): they
 are shown only on this page, to the setup attempt's own Administrator, and
@@ -757,7 +767,9 @@ of them hold no Families or are unknown, counts only, never the key.
 
 **Revisiting the step.** The saved-key notice names the choice: "A
 ParishSoft API key is saved for St. Example Parish (1234)." Leaving the key
-field empty keeps the key and the choice. Pasting a key starts a new lookup,
+field empty keeps the key and the choice, and discards any lookup still open
+for the saved key pasted again (one that failed, say), so it never holds
+Load parish data back. Pasting a key starts a new lookup,
 and the rules above for discarding a finished load apply (a different key,
 or the same key with a different organization chosen, discards it; the
 same key and organization keep it). The load's own organization check
@@ -785,7 +797,9 @@ with exactly an `organization_id` setting, so it must also admit a key
 staged with no organization while its lookup is pending; a new setup row
 holds the lookup (its state, its error code, the bounded list with each
 organization's Families result until it is scrubbed, and the chosen ID and
-name); and the setup load must refuse to
+name), which the web changes only for the attempt's Administrator while
+their setup sign-in is live, as the credential guard requires to stage a
+key; and the setup load must refuse to
 start for a key with no chosen organization. The organization name
 recorded by loads needs no schema change.
 
@@ -812,13 +826,14 @@ today, to change to the choice above or to the
 | ParishSoft connection saved notice (`setup-credential.html`) | "A ParishSoft API key is saved (organization 1234)." | "A ParishSoft API key is saved for Name (1234)." |
 | ParishSoft connection form (`setup_credential_views.py`) | "Expected ParishSoft organization ID" field, its whole-number error and "To change the organization ID, enter the ParishSoft API key again as well." | removed (the choice above) |
 | Field help (`setup_help.py`) | `organization_id` help and its "For example 1234." hint | removed; the key's help says the organization is chosen next |
-| Setup load failure (`setup-source-progress-status.html`, two places) | "A wrong ParishSoft API key or organization ID is the most common cause." | "A wrong ParishSoft API key is the most common cause." |
+| Setup load failure (`setup-source-progress-status.html`, two places) | "A wrong ParishSoft API key or organization ID is the most common cause." | "A wrong ParishSoft API key is the most common cause." where setup cannot resume; a failed load that returns to collecting names its organization and offers choosing another ([setup load](#bootstrap-and-first-admin-wizard)) |
 | ParishSoft settings form (`integration_forms.py`) | "Expected ParishSoft organization ID" field, locked, with "Locked: ParishSoft data for this organization is loaded." and its tip | the text line "ParishSoft organization: Name (1234)", with no field, lock or tip |
 | ParishSoft settings refusal (`integration_forms.py`) | "The organization ID can't change after ParishSoft data has been loaded … Keep 1234 here." | removed with the field; a posted organization is refused as unexpected input |
 | ParishSoft key help (`integration_forms.py`) | "It must be a key for the organization above; a key for another organization is refused." | "It must be a key that reaches Name (1234); any other key is refused." |
+| Key refused notice (`integration_credentials.py`) | "ParishSoft did not accept the new API key for this organization ID. Check the key and the organization ID, then try again." | "ParishSoft did not accept the new API key. Check the key, then try again." |
 | Key mismatch notice ([Parish and integration configuration](#parish-and-integration-configuration)) | "This key does not reach the ParishSoft organization whose data is already loaded. Paste a key that reaches the loaded organization." | "This key does not reach Name (1234), whose data is loaded. Paste a key that reaches it." (the before-the-first-load variant is removed: the organization now comes from the key's own list) |
 | Reachable-organizations line (`parishsoft-organizations.html`) | "Only the configured organization's data is loaded" | "Only the data of Name (1234) is loaded" (still counts only for the others) |
-| System health problem title (`system_health.py`) | "ParishSoft organization does not match" | "The ParishSoft key does not reach Name (1234)" |
+| System health problem title (`system_health.py`) | "ParishSoft organization does not match" | "The ParishSoft key does not reach Name (1234)"; the critical-problems banner keeps the old words, which name no organization (see [Banner events and problems](#system-health)) |
 | System health problem text (`system-health-problem.html`) | "The ParishSoft key reaches a different organization than before" | "The ParishSoft key no longer reaches Name (1234)" |
 | Admin automation (`admin_integration_keys.py`, `pk-admin integration`) | `ORGANIZATION_LOCKED`: "This key was saved with a different ParishSoft organization ID…" at `organization_id` | the settings it prints add `organization_name` beside `organization_id` (both read-only); a posted different `organization_id` is refused as "The ParishSoft organization is Name (1234) and can't change after setup." |
 | Page script (`ui-v1.js`) | the rule that requires the key again once the organization ID differs from the saved one | removed with the field |
@@ -1055,7 +1070,7 @@ these groups, each listing the entries the viewer's role may open:
 | Reports and queries | Response dashboard | `/admin/reports/responses/` | Administrator, Staff | No current campaign |
 | Reports and queries | Campaign comparison | `/admin/reports/comparison/` | Administrator, Staff | No current campaign |
 | Reports and queries | Financial stewardship | `/admin/reports/financial/` | Administrator, Staff | The campaign has no financial module |
-| Reports and queries | Active parishioner family directory | `/admin/reports/families/` | Administrator, Staff | No current campaign, or ParishSoft data has not been downloaded yet |
+| Reports and queries | Campaign Family directory | `/admin/reports/families/` | Administrator, Staff | No current campaign, or ParishSoft data has not been downloaded yet |
 | Parish data | Parish settings | `/admin/parish/settings/` | Administrator | Never |
 | Parish data | Parish logos | `/admin/parish/logos/` | Administrator | Never |
 | Parish data | Ministries | `/admin/parish/ministries/` | Administrator | ParishSoft data has not been downloaded yet |
@@ -1111,7 +1126,7 @@ Notes on the groups:
   with the Ministry [follow-up](#follow-up-workflows) queue since
   [#1133](https://github.com/epiphany40223/parishkit/issues/1133); the
   separate Ministry follow-up entry is gone), and the
-  [active parishioner family directory](../reports/spec.md#active-parishioner-family-directory) (with Family
+  [Campaign Family directory](../reports/spec.md#campaign-family-directory) (with Family
   campaign codes and its mailing columns). Reports always show the current
   campaign. Ministry leaders see only their own Ministries in the Ministry
   entry. Roster changes are entered from Ministry requests itself, at its
@@ -1200,7 +1215,7 @@ dark scheme for this browser
 
 The shared header holds a **Find a Family** search box (#561) for
 Administrators and Staff only; Ministry leaders get none, since they cannot
-open the [active parishioner family directory](../reports/spec.md#active-parishioner-family-directory). It uses the
+open the [Campaign Family directory](../reports/spec.md#campaign-family-directory). It uses the
 directory's search query (the Family name with its heads of household, DUID
 and address) and its permission checks, so results show only Families the role
 may already see, and a result opens that Family's
@@ -1557,7 +1572,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `response_dashboard` | Response dashboard | Menu: Response dashboard | Administrator, Staff | (same); Participation and campaign statistics | `/admin/reports/responses/` | (same) | Absorbed Participation ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)): `/admin/reports/participation/` and its `exact-exports/` form action are gone, with no redirect (#864); the export form posts to `responses/exports/`. |
 | `reports` | Response dashboard | Menu: Response dashboard | Administrator, Staff | (redirects) Participation and campaign statistics; 'Campaign reports' only when no campaign exists; Campaign reports | `/admin/reports/` | (same) | Not a group root: redirects to the Response dashboard, or to Ministry requests for a viewer who may not open it (a Ministry leader). |
 | `campaign_comparison` | Campaign comparison | Menu: Campaign comparison | Administrator, Staff | (new, [#1018](https://github.com/epiphany40223/parishkit/issues/1018)) | `/admin/reports/comparison/` | (same) | Compares the current campaign with imported past campaigns ([campaign history](../campaign-history/spec.md#comparison-report)). |
-| `report_export` | _report page name_ export | The report it came from | Administrator, Staff, Ministry leader | Ministry export / Additional-information export / Family-directory export / Family-directory mail-merge export; Report export (breadcrumb) | `/admin/reports/exports/<request>/` | (same) | Object-named (exception). Every export shares it: a latest-data export too (decision 8). A report's export is named after its report page, for example "Active parishioner family directory export" or "Ministry requests export" (#520), and its breadcrumb says the same name as its heading. Exports that are not one report's keep their own names (Campaign archive, Campaign comparison download, Family timeline export, Chosen-Family test names export). No Admin page opens it: every export button downloads in place and only reads this address passively for the export's state ([downloads happen in place](../ui-conventions/spec.md#downloads-happen-in-place)); it is still the page for the exports only the command line asks for (latest-data, chosen-Family test names) and for an address opened directly. The export error page reads nothing from the database, so it cannot name the export; its link back says "Return to the export status page", and its sentences say to try again, never to return to the status page. Its actions post to `cancellation/`, `retries/` and `download/`. It is a [point-in-time](../operations/spec.md#point-in-time-exports) preparing step, not a history entry: past the download window it answers the fixed "no longer available" page, and no page lists earlier exports. |
+| `report_export` | _report page name_ export | The report it came from | Administrator, Staff, Ministry leader | Ministry export / Additional-information export / Family-directory export / Family-directory mail-merge export; Report export (breadcrumb) | `/admin/reports/exports/<request>/` | (same) | Object-named (exception). Every export shares it: a latest-data export too (decision 8). A report's export is named after its report page, for example "Campaign Family directory export" or "Ministry requests export" (#520), and its breadcrumb says the same name as its heading. Exports that are not one report's keep their own names (Campaign archive, Campaign comparison download, Family timeline export, Chosen-Family test names export). No Admin page opens it: every export button downloads in place and only reads this address passively for the export's state ([downloads happen in place](../ui-conventions/spec.md#downloads-happen-in-place)); it is still the page for the exports only the command line asks for (latest-data, chosen-Family test names) and for an address opened directly. The export error page reads nothing from the database, so it cannot name the export; its link back says "Return to the export status page", and its sentences say to try again, never to return to the status page. Its actions post to `cancellation/`, `retries/` and `download/`. It is a [point-in-time](../operations/spec.md#point-in-time-exports) preparing step, not a history entry: past the download window it answers the fixed "no longer available" page, and no page lists earlier exports. |
 | `report_exact` | Latest-data export | Response dashboard | Administrator, Staff | Queued participation export; Exact export | `/admin/reports/exports/<request>/` (the shared export page) | (same) | Decision 8: folded into the shared export page; it keeps its own heading, and its trail names it. Its old addresses (`exact-exports/<request>/` and its actions) are gone (#864). Since #1537 it is requested only with `export exact create`: the Response dashboard offers the export of the chart shown. |
 | `financial_report` | Financial stewardship | Menu: Financial stewardship | Administrator, Staff | Financial stewardship detail; Financial report | `/admin/reports/financial/` | (same) |  |
 | `pledges_to_enter` | Pledges | Menu: Pledges | Administrator, Staff | (new, [#1686](https://github.com/epiphany40223/parishkit/issues/1686)) | (none) | `/admin/reports/financial/pledges/` | The financial stream's review worklist and manual report ([Pledges](../reports/spec.md#pledges)); its decisions post to the page itself, and its CSV/XLSX/PDF download (`pledges/exports/`) is a non-page action. |
@@ -1573,8 +1588,8 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `ministry_followup` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry follow-up; Follow-up | `/admin/reports/ministries/follow-up/` | (retired; 404) | Retired with no redirect ([#1133](https://github.com/epiphany40223/parishkit/issues/1133)): the queue is now Ministry requests, at `/admin/reports/ministries/`. |
 | `ministry_followup_item` | Follow-up request | Ministry requests | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/ministries/follow-up/<request>/` | (same) | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). Shows the Member's contact details (#1157). A resolved join or leave's Entered in ParishSoft tick posts to `follow-up/<request>/roster/` (#528). |
 | `ministry_roster` | (retired) | (retired) | Administrator, Staff | Roster changes to enter (#528, #1660) | `/admin/reports/ministries/follow-up/roster/` | (retired; 404) | Folded into Ministry requests with no redirect (R39 finding 2): its rows are Ministry requests' Stages To enter by hand and Entered by hand ([roster entry](#roster-entry-on-ministry-requests)). |
-| `family_directory` | Active parishioner family directory | Menu: Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same) |  |
-| `timeline` | Timeline | Active parishioner family directory | Administrator, Staff | (new, #477; renamed from Family timeline, #1570) | `/admin/reports/families/<family>/` | (same) | One Family's [Timeline](../reports/spec.md#timeline); opened from every Family name the shared `family_link` helper draws (directory rows, Find a Family, NAV-19, and every other Admin table that names a Family; see the [Timeline](../reports/spec.md#timeline) for the list); `<family>` is the opaque campaign record id. Staff see the full timeline too (#1774) and export it (#1799). It is the Family's [information hub](#family-information-hub): a header strip above tabs (`?tab=`), on this one address. |
+| `family_directory` | Campaign Family directory | Menu: Campaign Family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same) |  |
+| `timeline` | Timeline | Campaign Family directory | Administrator, Staff | (new, #477; renamed from Family timeline, #1570) | `/admin/reports/families/<family>/` | (same) | One Family's [Timeline](../reports/spec.md#timeline); opened from every Family name the shared `family_link` helper draws (directory rows, Find a Family, NAV-19, and every other Admin table that names a Family; see the [Timeline](../reports/spec.md#timeline) for the list); `<family>` is the opaque campaign record id. Staff see the full timeline too (#1774) and export it (#1799). It is the Family's [information hub](#family-information-hub): a header strip above tabs (`?tab=`), on this one address. |
 | `emailed_reports` | (retired) | (retired) | Administrator, Staff | Emailed reports | `/admin/reports/emailed/` | (retired; 404) | Was the list of daily and weekly reports (decision 7, ADM-12.17). Retired with no redirect by [Report emails](../report-emails/spec.md#delivery-plan) delivery PR 5 (#1786, #864): Report emails lists every report's past sends. |
 | `weekly_digest_manual` | (retired) | (retired) | Administrator | Send a weekly report now; Request a manual information report; Manual information report | `/admin/reports/emailed/weekly/new/` | (retired; 404) | Retired with no redirect by [Report emails](../report-emails/spec.md#delivery-plan) delivery PR 5 (#1786, #864): its successor is each report's [Send now](../report-emails/spec.md#send-now). |
 | `weekly_digest_snapshot` | Weekly report | Report emails | Administrator, Staff | Weekly information report; Weekly summary | `/admin/reports/emailed/weekly/<snapshot>/` | (same) | Its old address, which weekly report emails sent before NAV-12 link, is gone, with no redirect (#864). |
@@ -1945,7 +1960,7 @@ Administrators have two always-visible indicators:
   within the last 90 seconds, that is, Families with the form open in their
   browser; a Family that signed in but closed the form is not counted. Detail
   lists, in the [column order](#table-column-order) for Admin tables, the
-  Family name as on the active parishioner family directory (surname, then
+  Family name as on the Campaign Family directory (surname, then
   the active heads of household, e.g. "Squyres, Jeff and Tracy"), Family
   DUID, the sign-in time, last activity, when the form was last seen open and
   the form section; it never shows answers or credentials.
@@ -4655,8 +4670,8 @@ live.
   - *Loaded, no Families* (the newest full refresh succeeded, yet the
     campaign has no Families, because no ParishSoft Family matched its
     [Families rule](#families-in-this-campaign)): "The campaign's ParishSoft data loaded,
-    but no Families matched. Check that ParishSoft has Families that match
-    this campaign's Families choice, then load again.", with **See the load** (the run's
+    but no Families matched. Check that ParishSoft has matching Families,
+    then load again.", with **See the load** (the run's
     Background task) and **Refresh from ParishSoft** (which shows what
     the load found). Every stage is done, since the load ran and finished;
     the line after the boxes is empty; and there is no button at all, not
@@ -4908,19 +4923,20 @@ emailed links changes.
 
 #### Families in this campaign
 
-Status: specified, not built
-([#1393](https://github.com/epiphany40223/parishkit/issues/1393)). What the
-choice means, how it is stored and how refreshes apply it are in the data
+Status: built ([#1393](https://github.com/epiphany40223/parishkit/issues/1393);
+`accounts/families_choice.py`, `campaign-families-section.html`,
+`campaign-families-v1.js`). What the choice means, how it is stored and how refreshes apply it are in the data
 specification's [campaign Families](../data/spec.md#campaign-families); this
 section is the page.
 
 **Where.** Create the campaign's first page has a **Families in this
-campaign** section, after the modules and before the dates, because the
+campaign** section, after the modules (and the additional information box)
+and before the Ministry selections, because the
 choice has to be made before the campaign's first load creates its Families
 (above). It is part of the one Campaign settings form, so it is asked once.
-Its help says, in plain words: "Choose which ParishSoft Families this
-campaign is sent to. They get a Family code and link, the Family form and the
-campaign's emails. You can't change this after the campaign is created."
+Its help says, in plain words: "Choose which ParishSoft Families get this
+campaign's Family code, form and emails. You can't change this after the
+campaign is created."
 
 **Basic and Advanced.** The section follows [Basic and Advanced
 modes](../ui-conventions/spec.md#basic-and-advanced-modes), with its toggle at
@@ -4966,17 +4982,23 @@ returns the two numbers (no names, no Family data). It shows only those two
 counts (Administrator decision, 2026-10-24), not a comparison with another
 choice. The time is browser-local.
 While the choice is incomplete the line says what is missing ("Choose at
-least one Family group."). When no Family matches, the line says so and
-**Create the campaign and continue** is unavailable with the reason "No
-Families in the latest ParishSoft data match this choice."
-([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)). The
+least one Family group."). When no Family matches, the line says so ("No
+Families in the latest ParishSoft data match this choice."). In both cases
+**Create the campaign and continue** is unavailable, its reason the line's
+own words, so the gate never says no Family matches while the choice is
+only incomplete
+([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)). This
+hold is not an error in the Advanced fields: a complete choice that matches
+nothing but equals a preset still switches back to Basic without the "no
+basic equivalent" question. The
 "Create the campaign?" confirmation repeats the choice in words and the count,
 and says "This can't be changed after the campaign is created." The count is
 a preview: the first load after creation counts the Families again from the
 data it reads.
 
 **Locked after creation.** On Campaign settings the section stays in its
-place in every campaign state, disabled, with the reason in its tip: "Chosen
+place in every campaign state, drawn as the rule's words with no control to
+change, with the reason in its tip: "Chosen
 when the campaign was created; it can't be changed." It shows the rule in the
 words above (an Advanced rule lists its groups by name, and a group
 the latest data no longer has as "*name* (no longer in ParishSoft)"). The
@@ -5154,7 +5176,7 @@ Check step says so beside the check.
 For staff validation, a Testing-mode draft campaign also offers a link from the
 test send, **Send this email to chosen real Families (Testing recipient only)**,
 to the page **Send this email to chosen Families**: an Administrator enters up to ten Family IDs, reviews each Family's eligibility
-(each reviewed row names the Family as the active parishioner family directory does, the
+(each reviewed row names the Family as the Campaign Family directory does, the
 surname then the heads of household), and confirms that real Family data goes to the Testing recipient. Each eligible
 Family's real message for a template its invitation or reminder schedules use is
 prepared with that Family's own Testing credential (reusing the credential
@@ -6312,7 +6334,7 @@ line the first rows start on a laptop screen with the help closed
   token `changed`), newest first by default; the email's own page keeps its
   whole timeline.
 - **Recipient** names whom the email is for. A Family email names the
-  Family by the Active parishioner family directory's surname-and-heads name
+  Family by the Campaign Family directory's surname-and-heads name
   from the latest ParishSoft data, read for the shown page only, or a muted
   "Not in current ParishSoft data" when that data no longer has the Family.
   An email to a person, one email per address (an Administrator's report or
@@ -6369,7 +6391,7 @@ line the first rows start on a laptop screen with the help closed
   reads their Names.
   Recipient sorts on the server over the whole list (sort token `name`): by
   surname, then the whole shown name, then Family DUID for Families that show
-  the same name, as the Active parishioner family directory orders them, each
+  the same name, as the Campaign Family directory orders them, each
   email's name read inside the page's query from the same ParishSoft
   snapshot the shown names come from. That keeps each Family's emails
   together, newest change first (then newest email) in both directions;
@@ -8106,7 +8128,7 @@ role may not see left out:
 | --- | --- | --- | --- | --- | --- |
 | 1 | Families the form cannot open | Families that cannot open the Family form because a Member's ParishSoft data has a value the form cannot accept | [Families the form cannot open](#system-health-page) | Administrator | `reports.source_form.blocked_families`, the System health sentence's own read, with its per-campaign and per-snapshot cache |
 | 2 | Refused email addresses | Unresolved refused addresses, and how many Families they belong to | [Refused addresses](#refused-addresses) | Administrator | `jobs.delivery_reads.unresolved_refusals()`, the set behind Sent mail's link-line count, counted in one query |
-| 3 | Families no mail can reach | Active parishioner Families with no deliverable email and no usable mailing address | The [active parishioner family directory](../reports/spec.md#active-parishioner-family-directory) with its "Can't be reached by email or mail" preset | Administrator, Staff | `accounts.admin_dashboard.unreachable_families`, the count Home showed before #1673, which is the directory's own "neither" selection |
+| 3 | Families no mail can reach | Active parishioner Families with no deliverable email and no usable mailing address | The [Campaign Family directory](../reports/spec.md#campaign-family-directory) with its "Can't be reached by email or mail" preset | Administrator, Staff | `accounts.admin_dashboard.unreachable_families`, the count Home showed before #1673, which is the directory's own "neither" selection |
 | 4 | Census changes to enter | Census changes at the [Census changes](../reports/spec.md#pending-census-changes) To review and Conflict stages, the same for every role | Census changes | Administrator, Staff | `reports.census_changes.census_changes` at every stage, counting the To review and Conflict rows |
 | 5 | Roster changes to enter | Accepted Ministry requests at Ministry requests' To enter by hand Stage: not yet marked Entered by hand ([#528](https://github.com/epiphany40223/parishkit/issues/528)) | Ministry requests at `?stage=to_enter_by_hand` | Administrator, Staff (those who may enter roster changes, the rule for Ministry requests' To enter by hand card) | `accounts.admin_context.roster_entry_count`, the open-stage read Home's Next steps and [My review work](../review-pipeline/spec.md#role-views) show for that Stage |
 
@@ -8787,7 +8809,7 @@ or "Timeline" alone when the latest ParishSoft data no longer has the Family;
 the browser title stays "Timeline", so browser history never keeps the name.
 Below it, on one line: the Family DUID, the envelope number when ParishSoft
 has one and the **Last portal action** (below). The strip has no link to the
-Active parishioner family directory: the Admin menu already has it
+Campaign Family directory: the Admin menu already has it
 (Administrator, 2026-10-19). The campaign's name and Counted at follow on
 the next line, as on the Timeline today.
 
@@ -9894,7 +9916,7 @@ The same problem never appears twice in ways that disagree.
   | Banner event | Problem kind | Words |
   | --- | --- | --- |
   | `source_destructive_change` | `source_destructive_change` | shared: "ParishSoft refresh refused: too large a change" |
-  | `source_tenant_mismatch` | `source_tenant_mismatch` | shared: "ParishSoft organization does not match" |
+  | `source_tenant_mismatch` | `source_tenant_mismatch` | the banner keeps "ParishSoft organization does not match", which names no organization; the tile names it, "The ParishSoft key does not reach St. Example Parish (1234)" ([#1554](https://github.com/epiphany40223/parishkit/issues/1554)) |
   | `source_invalid` | `source_failed` | shared: "ParishSoft refresh failed" |
   | `source_provider_failed` | `source_failing` | shared: "ParishSoft could not be reached" |
   | `source_credential_failed` | `source_failing` | the banner keeps "ParishSoft API key was refused", which names the cause; the tile's sentence names it too when the connection record does |
@@ -10875,7 +10897,7 @@ requires today.
    but missing, or no longer counted, in the refused load (for a Member or
    contact count, the Family the lost record belonged to), lowest Family
    DUID first, each once per count. Each example holds only the
-   Family's DUID and its name as the active parishioner family directory
+   Family's DUID and its name as the Campaign Family directory
    shows it, taken from the current promoted data; never which Member or
    address was lost. Ministry, roster and fund counts have no examples, nor
    does a load with no Families or no Members (it can never be accepted),

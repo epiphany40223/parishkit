@@ -296,7 +296,7 @@ def test_key_change_banner_and_rejected_setup_credential_say_what_to_do(
     )
     page.goto(component_origin + "/setup-credential-rejected")
     step = page.locator('[data-finishing-step="parishsoft"]')
-    visible(step.get_by_text("Check the key and the organization ID"))
+    visible(step.get_by_text("Check the key, then try again"))
     visible(step.get_by_text("cancel this setup and start a new one"))
 
 

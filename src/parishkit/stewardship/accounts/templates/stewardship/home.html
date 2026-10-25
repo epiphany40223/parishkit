@@ -38,8 +38,8 @@
       {% include "stewardship/home-data-age.html" %}
     </dl>
     {% if dashboard.families %}<div class="home-participation" data-home-participation>
-    {# The campaign's response figures, inside the campaign panel so the overview fits a laptop window (#1673): one population, the active Families, as stat tiles (ui-conventions "Stat tiles", #1540) built by admin_dashboard.family_tiles. The Response dashboard, which breaks them down, is linked in the panel's heading row. #}{% translate "Family participation" as tiles_label %}{% include "stewardship/components/stat-tiles.html" with tiles=dashboard.family_tiles tiles_label=tiles_label %}
-    {% if configuration.mode == 'testing' %}<p class="home-participation-foot">{% translate "Active Families with a response leaves out responses made in Testing mode." %}</p>{% endif %}
+    {# The campaign's response figures, inside the campaign panel so the overview fits a laptop window (#1673): one population, the campaign Families, as stat tiles (ui-conventions "Stat tiles", #1540) built by admin_dashboard.family_tiles. The Response dashboard, which breaks them down, is linked in the panel's heading row. #}{% translate "Family participation" as tiles_label %}{% include "stewardship/components/stat-tiles.html" with tiles=dashboard.family_tiles tiles_label=tiles_label %}
+    {% if configuration.mode == 'testing' %}<p class="home-participation-foot">{% translate "Campaign Families responded does not count responses made in Testing mode." %}</p>{% endif %}
     </div>{% endif %}
     {% endwith %}
     {% elif dashboard.first_campaign %}{% include 'stewardship/home-first-campaign.html' with first_campaign=dashboard.first_campaign %}{% if dashboard.first_campaign == 'held' %}<p class="visually-hidden" role="status" data-live-announcer="first-campaign"></p>{% endif %}

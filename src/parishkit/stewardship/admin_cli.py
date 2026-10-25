@@ -2590,7 +2590,7 @@ def export_directory(args, preamble, runtime, context):
     confirm(
         context,
         (
-            "Create an Active parishioner family directory export: a file of "
+            "Create an Campaign Family directory export: a file of "
             "every matching Family's code for the current campaign.",
         ),
     )
@@ -2633,7 +2633,7 @@ def export_postal(args, preamble, runtime, context):
     confirm(
         context,
         (
-            "Create a mail-merge export of the active Families that get "
+            "Create a mail-merge export of the campaign Families that get "
             "their invitation by postal mail (no deliverable head email, "
             "a usable mailing address) and match the filters: each one's "
             "code and mailing address for the current campaign.",
@@ -5145,7 +5145,7 @@ def _workgroup_preview_options(parser):
     choice.add_argument(
         "--clear",
         action="store_true",
-        help="name no WorkGroup: every eligible Family gets the Reminders",
+        help="name no WorkGroup: every campaign Family gets the Reminders",
     )
     parser.add_argument(
         "--expected-version",

@@ -413,8 +413,9 @@ its scheduled full and fifteen-minute cadence and resolves the incident by itsel
 after a successful refresh of the current scope, as the
 [source health guide](stewardship-source-health.md) explains. Two other source
 incidents are refusals, not outages: `source_tenant_mismatch` (the key no
-longer reaches the configured organization; a key that also reaches other
-organizations is fine, and only the configured one's data is loaded) and
+longer reaches the organization chosen in setup, which System health names
+"Name (ID)"; a key that also reaches other organizations is fine, and only
+the chosen one's data is loaded) and
 `source_destructive_change` (a load lost an
 unexpected share of records or of eligible Families). The application holds
 those refreshes and does not overwrite the snapshot; stop and investigate
@@ -446,9 +447,11 @@ and the stall's conditions no longer hold.
    read-only smoke check inside `worker`
    (`smoke --target parishsoft --organization-id …`).
 2. If the key is invalid, do not replace it blindly: confirm with the parish
-   that the key belongs to the configured organization, then replace it as
+   that the key reaches the organization the ParishSoft settings page names
+   ("ParishSoft organization: Name (ID)"), then replace it as
    [Replacing a provider credential](#replacing-a-provider-credential) below
-   describes. The organization ID itself cannot change after the first load.
+   describes. The organization itself is chosen once, in setup, and cannot
+   change.
 3. When the provider is back, use **Refresh now** on the home page
    (`/admin/parish/parishsoft-refresh/`) rather than waiting for the next scheduled run.
 
@@ -622,8 +625,8 @@ describes the design.
 4. Re-run the smoke check to confirm.
 
 Avoid replacing the Google Workspace or ParishSoft key while campaign mail is
-sending. The ParishSoft organization ID cannot change after the first
-ParishSoft data load.
+sending. The ParishSoft organization is chosen once, in setup, and cannot
+change; a new ParishSoft key must reach it.
 
 ## Pausing and resuming delivery
 

@@ -331,7 +331,7 @@ def test_an_in_page_link_is_greyed_out_as_its_menu_entry_is(page, component_orig
     page.set_viewport_size({"width": 390, "height": 800})
     page.goto(component_origin + LINKS_PATH)
     line = page.locator("#report-links")
-    directory = line.get_by_role("link", name="Active parishioner family directory")
+    directory = line.get_by_role("link", name="Campaign Family directory")
     assert directory.get_attribute("href") is None
     expect(directory).to_have_attribute("aria-disabled", "true")
     expect(directory).to_have_accessible_description(

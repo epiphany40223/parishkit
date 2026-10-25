@@ -52,6 +52,7 @@ from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.campaigns import campaign_families
 from parishkit.stewardship.campaigns.leader_roles import effective_roles, role_choices
 from parishkit.stewardship.campaigns.single_campaign import (
     first_campaign_admitted,
@@ -67,7 +68,7 @@ from parishkit.stewardship.web.refusals import (
     with_default_code,
 )
 
-from . import admin_navigation, field_tips, setup_help
+from . import admin_navigation, families_choice, field_tips, setup_help
 from .admin_editing import (
     confirm,
     error_response,
@@ -178,6 +179,7 @@ def _page(request, configuration, form, *, status=200, receipt=None):
         {
             "configuration": configuration,
             "form": form,
+            "families": families_choice.section_context(form) if form else None,
             "created": receipt is not None
             and configuration.current_campaign_id is not None,
             # The status polls Change status; nothing follows up on this
@@ -227,7 +229,46 @@ def creation_form(configuration, source, data=None):
     )
     # Same plain-language field help as Campaign settings.
     setup_help.apply(form, setup_help.ADMIN_CAMPAIGN, replace=True)
+    # Families in this campaign (#1393), chosen here once, over the latest
+    # promoted ParishSoft data's Family groups.
+    families_choice.add_fields(form, families_choice.source())
     return any_zone(form)
+
+
+# The fields Create the campaign posts: Campaign settings' and the Families
+# section's; the section's group and status lists repeat.
+CREATE_FIELDS = frozenset(CampaignSettingsForm.base_fields) | set(
+    families_choice.FIELDS
+)
+CREATE_MULTIPLE = MULTIPLE_FIELDS | {families_choice.GROUPS, families_choice.STATUSES}
+
+
+def families_rule(form):
+    """The bound form's Families rule and its counts, or None with the error.
+
+    Returns ``(rule, matching, emailable)``. An incomplete choice, or one
+    that no Family in the latest ParishSoft data matches, is the section's
+    error on the form, as the page's gate says it before Review.
+    """
+    data = form.families_source
+    rule, field, message = families_choice.posted_rule(
+        form.cleaned_data, data.groups if data is not None else ()
+    )
+    if rule is None:
+        form.add_error(field, ValidationError(message, code="families_incomplete"))
+        return None
+    matching, emailable = (
+        families_choice.counts(data, rule) if data is not None else (0, 0)
+    )
+    if not matching:
+        form.add_error(
+            families_choice.PRESET
+            if rule["rule"] in families_choice.PRESET_LABELS
+            else families_choice.GROUPS,
+            ValidationError(families_choice.NO_MATCH, code="families_none"),
+        )
+        return None
+    return rule, matching, emailable
 
 
 def any_zone(form):
@@ -264,6 +305,11 @@ def creation_review(service, actor, state, form):
     # the parish zone: the campaign's dates and schedules are resolved in its
     # own zone (Administrator, 2026-10-15, #1330).
     values = form.values()
+    chosen = families_rule(form)
+    if chosen is None:
+        return None
+    rule, matching, emailable = chosen
+    values[campaign_families.KEY] = rule
     target = str(uuid4())
     # The campaign starts with the default text for every page and email its
     # modules use, added in this same configuration change so it never exists
@@ -290,6 +336,15 @@ def creation_review(service, actor, state, form):
     return {
         # Worked out here, from the modules chosen: the page does not show it.
         "content": len(content),
+        # The Families choice in words and its counts, which the
+        # confirmation repeats with the lock (#1393).
+        "families": {
+            "words": families_choice.describe(
+                rule, form.families_source.groups if form.families_source else ()
+            ),
+            "matches": matching,
+            "emailable": emailable,
+        },
         # Once applied, the dialog opens the next Campaign setup step
         # (#1404): Campaign settings is completed by the creation, and a new
         # campaign has no Families yet, so it is Load ParishSoft data (PR 5).
@@ -341,8 +396,8 @@ def campaign_create(request):
         if request.method == "POST":
             action = form_action(
                 request.POST,
-                preview_fields=set(CampaignSettingsForm.base_fields),
-                multiple_fields=MULTIPLE_FIELDS,
+                preview_fields=CREATE_FIELDS,
+                multiple_fields=CREATE_MULTIPLE,
             )
             if action == "confirm":
                 response = confirm(
@@ -397,5 +452,73 @@ def campaign_create(request):
         LookupError,
         StaleRecordError,
         signing.BadSignature,
+    ) as error:
+        return error_response(error)
+
+
+@require_http_methods(["POST"])
+def campaign_create_families(request):
+    """Create the campaign's Families count preview (#1393): two numbers.
+
+    The page posts its form here each time the Families choice changes
+    (campaign-families-v1.js). Only the section's fields are read, the
+    choice is counted in the latest promoted ParishSoft data, and the
+    answer is the preview line's words: how many Families match and how
+    many of them can be emailed, or what the choice still lacks. No name or
+    Family data is returned. It is passive (it never renews idle time),
+    saves nothing, records no request or audit entry and is never cached;
+    it needs the page's Configure capability and admission, and only the
+    page's own fields may be posted.
+    """
+    from django.http import JsonResponse
+
+    from parishkit.stewardship.web.refusals import unexpected_fields
+
+    try:
+        service = runtime()
+        principal(request, service, passive=True)
+        allowed = {"action", "csrfmiddlewaretoken", *CREATE_FIELDS}
+        if (
+            request.GET
+            or not set(request.POST) <= allowed
+            or any(
+                len(values) != 1 and name not in CREATE_MULTIPLE
+                for name, values in request.POST.lists()
+            )
+        ):
+            raise unexpected_fields(
+                request.GET, request.POST, allowed=allowed, multiple=CREATE_MULTIPLE
+            )
+        with read_transaction():
+            state = _state(service)
+            if not _admitted(state):
+                raise first_campaign_refused()
+            data = families_choice.source()
+            form = families_choice.SectionForm(request.POST, source=data)
+            form.is_valid()
+            rule, _field, message = families_choice.posted_rule(
+                form.cleaned_data, data.groups if data is not None else ()
+            )
+            answer = (
+                {"count": str(message), "emailable": "", "matches": 0}
+                if rule is None
+                else families_choice.preview_line(data, rule)
+            )
+        if not allows(
+            authenticated_admin(request, store=service.store, read_only=True),
+            Capability.CONFIGURE,
+        ):
+            raise PermissionError("Configuration access was revoked.")
+        response = JsonResponse(answer)
+        response["Cache-Control"] = "no-store"
+        return response
+    except (
+        ConfigError,
+        DatabaseError,
+        LimiterUnavailable,
+        PermissionError,
+        ValueError,
+        LookupError,
+        StaleRecordError,
     ) as error:
         return error_response(error)

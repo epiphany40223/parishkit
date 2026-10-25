@@ -21,9 +21,13 @@ from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.db.models import F
 from django.utils import timezone
 
-from parishkit.stewardship.accounts.setup_credentials import stage_credential
+from parishkit.stewardship.accounts.setup_credentials import (
+    credential_status,
+    stage_credential,
+)
 from parishkit.stewardship.accounts.setup_drafts import view_draft
 from parishkit.stewardship.accounts.setup_models import SetupAttempt
+from parishkit.stewardship.accounts.setup_secret_models import SetupSealedCredential
 from parishkit.stewardship.accounts.setup_source import (
     VOID_SETTING,
     start_source_load,
@@ -45,6 +49,7 @@ from parishkit.stewardship.source.setup_execution import setup_source_handler
 from parishkit.stewardship.source.snapshot_models import SourceSnapshot
 from parishkit.stewardship.source.version_models import ENTITY_MODELS
 
+from .setup_lookup_builders import answered_and_chosen
 from .setup_request_budgets import short_request_budgets
 from .test_background_grants_postgresql import task_login
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
@@ -100,18 +105,32 @@ def drained():
 
 
 def stage(request, service, *, candidate=CANDIDATE, organization=1):
-    """Stage a ParishSoft key and organization on the web login."""
+    """Stage a ParishSoft key on the web login and choose its organization.
+
+    The key's organization lookup is answered with ``organization`` and that
+    organization chosen (#1554). Returns the attempt's status and the key's
+    receipt once chosen.
+    """
     attempt = SetupAttempt.objects.get()
     with web_login():
-        return stage_credential(
+        stage_credential(
             request,
             service,
             attempt.pk,
             target="parishsoft",
             candidate=candidate,
             expected_version=attempt.version,
-            organization_id=organization,
         )
+    status = answered_and_chosen(
+        request, service, attempt.pk, organization_id=organization
+    )
+    with web_login():
+        (receipt,) = [
+            item
+            for item in credential_status(request, service, attempt.pk)
+            if item.target == "parishsoft"
+        ]
+    return status, receipt
 
 
 def context(event_type):
@@ -191,15 +210,20 @@ def test_a_failed_load_returns_to_collecting_and_loads_again(
 def test_the_same_connection_keeps_a_load_and_a_change_discards_it(
     setup_service, monkeypatch, change, reason
 ):
-    """Only a different key or organization discards a successful load."""
+    """Only a different key or organization discards a successful load.
+
+    The saved key pasted again starts a new organization lookup (#1554);
+    choosing the same organization keeps the load and the key's version.
+    """
     request, attempt, task, private = queued(setup_service)
     assert dispatch(monkeypatch, private, task.run_id) == "succeeded"
-    before = SetupAttempt.objects.get()
+    before = SetupSealedCredential.objects.get(target="parishsoft").version
     status, receipt = stage(request, setup_service)
     after = SetupAttempt.objects.get()
-    assert (after.version, after.source_task_id) == (before.version, task.run_id)
-    assert status.version == before.version
+    assert after.source_task_id == task.run_id and after.state == "collecting"
+    assert receipt.version == before
     assert not AuditEvent.objects.filter(event_type="setup_source_voided").exists()
+    before = after
 
     # Load again of a still-valid load is refused in SQL, by the same
     # predicate review uses.
@@ -208,9 +232,14 @@ def test_the_same_connection_keeps_a_load_and_a_change_discards_it(
     status, changed = stage(request, setup_service, **change)
     row = SetupAttempt.objects.get()
     assert (row.state, row.source_task_id, row.renewed_at) == ("collecting", None, None)
-    assert changed.version == receipt.version + 1
-    assert context("setup_source_voided") == {
-        "version": row.version - 1,
+    # A new key is sealed and then its organization chosen; the saved key
+    # with another organization is only rechosen.
+    assert changed.version > receipt.version
+    voided = context("setup_source_voided")
+    # The attempt's version when the load was discarded, before the change
+    # that followed it (and, for a new key, its organization choice).
+    assert voided.pop("version") < row.version
+    assert voided == {
         "outcome": "cancelled",
         "void_reason": reason,
         "task_state": "succeeded",

@@ -31,6 +31,7 @@ SOURCE_LOADED = "/setup-source-loaded"
 SOURCE_RELOAD = "/setup-source-reload"
 CREDENTIAL_LOADED = "/setup-credential-loaded"
 TASK_ID = "00000000-0000-4000-8000-000000001353"
+FAILED_ORGANIZATION = "Neighboring Parish 1 (1002)"
 
 
 def progress(now, outcome):
@@ -56,6 +57,8 @@ def progress(now, outcome):
         "setup_state": "collecting",
         "bound": outcome != "voided",
         "loaded": outcome == "done",
+        # A failed load names the organization it was for (#1554).
+        "organization_label": FAILED_ORGANIZATION if outcome == "failed" else None,
         "phase": "validating",
         "current": 9000,
         "total": 9000,
@@ -149,18 +152,14 @@ def components(context, admin, now, status_url):
         wizard("succeeded", "parishsoft"),
         {
             "draft": source_draft("succeeded", True),
-            "form": SetupCredentialForm(
-                "parishsoft",
-                saved=True,
-                organization=4321,
-                initial={"organization_id": 4321},
-            ),
+            "form": SetupCredentialForm("parishsoft", saved=True),
             "target": "parishsoft",
             "label": "ParishSoft",
             "step_label": "ParishSoft connection",
             "saved": True,
             "current": True,
             "organization": 4321,
+            "organization_label": "St. Example Parish (4321)",
         },
     )
     return {

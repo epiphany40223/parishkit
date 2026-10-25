@@ -142,3 +142,114 @@ def components(context, admin):
         REFUSED: page(_form(sent)),
         APPLIED: page(_form(), applied, created=True),
     }
+
+
+# Families in this campaign (#1393): the page with the section drawn over a
+# synthetic snapshot's groups and facts (families_choice.Source). The count
+# preview's post is answered by the test (families_answer), from the same
+# facts, so the page shows exactly what the server would count.
+FAMILIES = "/campaign-create-families"
+FAMILIES_PREVIEW = "/admin/campaign/first/families/"
+
+
+def families_source():
+    """The synthetic snapshot: three Active-group Families, one Staff, one
+    Inactive and one with no group."""
+    from datetime import UTC, datetime
+
+    from parishkit.stewardship.accounts import families_choice as choice
+
+    groups = (
+        choice.Group(7, "Active", 3),
+        choice.Group(8, "Staff", 1),
+        choice.Group(9, "Inactive", 1),
+        choice.Group(0, "(No Family Group)", 1),
+    )
+    active, emailed = frozenset({"Active"}), frozenset({"Active"})
+    facts = (
+        (True, 7, "Active", active, emailed),
+        (True, 7, "Active", active, emailed),
+        (True, 7, "Active", active, frozenset()),
+        (True, 8, "Staff", active, emailed),
+        (True, 9, "Inactive", frozenset({"Unknown"}), frozenset({"Unknown"})),
+        (True, None, None, active, emailed),
+    )
+    return choice.Source(None, datetime(2054, 9, 1, 6, 5, tzinfo=UTC), groups, facts)
+
+
+def posted_fields(request):
+    """A Playwright request's posted form fields, each name to its values.
+
+    The page script posts ``FormData``, which the browser sends as
+    multipart/form-data, so that is parsed as the view's request would be;
+    a urlencoded body is read too.
+    """
+    from email.parser import BytesParser
+    from email.policy import default
+    from urllib.parse import parse_qs
+
+    body = request.post_data_buffer or b""
+    kind = request.headers.get("content-type", "")
+    if not kind.startswith("multipart/form-data"):
+        return parse_qs(body.decode(), keep_blank_values=True)
+    message = BytesParser(policy=default).parsebytes(
+        b"Content-Type: " + kind.encode() + b"\r\n\r\n" + body
+    )
+    fields = {}
+    for part in message.iter_parts():
+        name = part.get_param("name", header="content-disposition")
+        fields.setdefault(name, []).append(part.get_content())
+    return fields
+
+
+def families_answer(posted):
+    """The count preview's JSON answer for posted fields (as the view)."""
+    from parishkit.stewardship.accounts import families_choice as choice
+
+    data = families_source()
+    form = choice.SectionForm(
+        {
+            name: values
+            if len(values) > 1 or name in (choice.GROUPS, choice.STATUSES)
+            else values[0]
+            for name, values in posted.items()
+            if name in choice.FIELDS
+        },
+        source=data,
+    )
+    form.is_valid()
+    rule, _field, message = choice.posted_rule(form.cleaned_data, data.groups)
+    if rule is None:
+        return {"count": str(message), "emailable": "", "matches": 0}
+    return choice.preview_line(data, rule)
+
+
+def families_page(context, admin):
+    """Create the campaign with its Families section, as the view draws it."""
+
+    from parishkit.stewardship.accounts import families_choice as choice
+
+    form = _form()
+    choice.add_fields(form, families_source())
+    return {
+        FAMILIES: (
+            "text/html",
+            render_to_string(
+                "stewardship/campaign-create.html",
+                context
+                | {
+                    "admin_chrome": admin
+                    | {"campaign_wizard": campaign_wizard.creation()},
+                    "configuration": {
+                        "mode": "testing",
+                        "testing_recipient": "testing@example.org",
+                    },
+                    "form": form,
+                    "families": choice.section_context(form),
+                    "created": False,
+                    "page_url": FAMILIES,
+                    "errors": [],
+                },
+            ),
+        )
+    }

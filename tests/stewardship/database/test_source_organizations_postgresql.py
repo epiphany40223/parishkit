@@ -56,7 +56,12 @@ def test_a_refresh_stores_only_the_configured_organization(tmp_path, monkeypatch
         "skipped": {"members": 1},
         "families_without_members": 0,
     }
-    assert snapshot_organizations(result.pk) == {"reached": 2, "skipped": 1}
+    # The loaded organization is named (#1554); this load recorded no name.
+    assert snapshot_organizations(result.pk) == {
+        "reached": 2,
+        "skipped": 1,
+        "organization": "ParishSoft organization 12345",
+    }
 
 
 def test_a_one_organization_refresh_records_nothing_new(tmp_path, monkeypatch):
@@ -73,14 +78,60 @@ def test_a_one_organization_refresh_records_nothing_new(tmp_path, monkeypatch):
 def test_the_parishsoft_settings_page_shows_what_the_key_reaches(
     auth_service, google, monkeypatch
 ):
-    """The line is drawn from the current snapshot's counts, and only then."""
+    """The line is drawn from the current snapshot's counts, and only then,
+    naming the loaded organization (#1554)."""
     browser, _ = signed_in()
     page = browser.get(URL)
     assert page.status_code == 200
     assert b"data-parishsoft-organizations" not in page.content
-    monkeypatch.setattr(
-        loading, "snapshot_organizations", lambda: {"reached": 3, "skipped": 5}
-    )
+    counts = {"reached": 3, "skipped": 5, "organization": "St. Example Parish (12345)"}
+    monkeypatch.setattr(loading, "snapshot_organizations", lambda: counts)
     page = browser.get(URL).content.decode()
     assert "At the last load from ParishSoft, this key reached 3 organizations." in page
+    assert "Only the data of St. Example Parish (12345) is loaded;" in page
     assert "Records of other organizations left out by that load: 5." in page
+
+
+def test_a_full_load_records_the_organization_name_for_the_pages(tmp_path, monkeypatch):
+    """The configured organization's cleaned name is in the load evidence;
+    once that snapshot is current it names the organization "Name (ID)",
+    and only for that organization's ID."""
+    from parishkit.stewardship.source.organization_names import (
+        current_organization_label,
+        current_organization_name,
+        loaded_organization_label,
+        organization_fixed,
+    )
+    from parishkit.stewardship.source.snapshots import promote_snapshot
+
+    from .test_source_snapshots_postgresql import permit
+
+    # No current snapshot yet: the ID alone.
+    assert loaded_organization_label() is None
+    assert current_organization_name(12345) is None
+    assert current_organization_label(12345) == "ParishSoft organization 12345"
+    credential, execution, lease, *_ = setup(tmp_path)
+    values = pages()
+    values[0][0]["organizationReportName"] = "  St. Example\tParish "
+    fake_provider(monkeypatch, values)
+    result = run(credential, execution, lease)
+    assert result.state == "ready"
+    assert result.cursor["load"][loading.ORGANIZATION_KEY] == {
+        "name": "St. Example Parish"
+    }
+    assert loading.snapshot_organization(result.pk) == (12345, "St. Example Parish")
+    with execution.effect():
+        promote_snapshot(result.pk, lease, admit=permit, reconcile=permit)
+    assert current_organization_name(12345) == "St. Example Parish"
+    # The configuration may hold the ID as text.
+    assert current_organization_label("12345") == "St. Example Parish (12345)"
+    # Another organization's ID gets no name from this snapshot.
+    assert current_organization_name(999) is None
+    assert current_organization_label(999) == "ParishSoft organization 999"
+    # The loaded organization, as the key mismatch notice, System health and
+    # every refusal of another organization name it.
+    assert loaded_organization_label() == "St. Example Parish (12345)"
+    assert organization_fixed(999) == (
+        "The ParishSoft organization is St. Example Parish (12345) and can't "
+        "change after setup."
+    )

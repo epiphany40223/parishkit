@@ -266,7 +266,7 @@ def test_a_pledge_is_set_replaced_and_removed(parish):
         (("member", "500001", "memberDUID=7"), "no editable field 'memberDUID'"),
         (("member", "500001", "dateModified=x"), "no editable field"),
         (("family", "100001", "hasMembers=9"), "no editable field"),
-        (("family", "100001", "group=7"), "one of the parish's groups"),
+        (("family", "100001", "group=19"), "one of the parish's groups"),
         (("family", "100001", "envelope=-1"), "whole number"),
         (("family", "100001", "status="), "cannot be empty"),
         (("member", "500001"), "at least one field=value"),

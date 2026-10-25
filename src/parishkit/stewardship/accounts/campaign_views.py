@@ -56,6 +56,7 @@ from . import (
     admin_navigation,
     campaign_wizard,
     campaign_work_status,
+    families_choice,
     field_tips,
     setup_help,
 )
@@ -584,6 +585,10 @@ def _page(
             "end_check": None if live_at is None else end_check_words(),
             # A live campaign's open Ministry list says what a change does.
             "live_ministries": not editable and "ministry_duids" in open_fields,
+            # The campaign's Families rule in words (#1393), always locked.
+            "families_rule": families_choice.locked_words(
+                campaign.active_configuration.values
+            ),
             # Review waits while the Ministries and another setting both
             # changed, in the words the server refuses that with (#1330).
             "ministries_alone": MINISTRIES_ALONE,
