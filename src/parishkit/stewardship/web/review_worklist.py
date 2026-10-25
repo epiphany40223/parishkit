@@ -26,6 +26,8 @@ from typing import Protocol
 from urllib.parse import urlencode
 from uuid import UUID, uuid4
 
+from django.utils.html import format_html
+
 from parishkit.stewardship.pipeline import (
     TERMINAL_STAGES,
     TERMS,
@@ -593,6 +595,17 @@ def stage_choices(counts, stages):
     return choices
 
 
+def clamp_name(name):
+    """A Family's or Member's name for a review work table's cell, as safe
+    HTML: it wraps between words to at most two lines, then is clamped, and
+    shows whole in the shared clipped-name tip on hover and focus (UX
+    conventions, "Table fit and row height", cut-short values, #2124).
+    """
+    return format_html(
+        '<span class="cell-clamp name-clamp" data-clip-tip>{}</span>', name
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class Column:
     """One of a stream's identity columns, in the shared column order.
@@ -604,6 +617,13 @@ class Column:
     the shared Family-name link), and ``link`` names the row's key holding
     the item's own page, which its cell opens for every viewer (UX
     conventions, "Admin tables", R38 finding 13).
+
+    ``detail`` names the row's key of a second value stacked on the line
+    under the first, muted (a name's DUID), headed ``detail_heading`` and
+    sorted by ``detail_sort``; ``dated`` puts the column in the Submitted
+    and Last decision cell as a labelled line instead of a column of its
+    own (a Ministry request's Last contact). Both keep the review work
+    tables narrow (UX conventions, "Review work tables", #2124).
     """
 
     key: str
@@ -612,6 +632,10 @@ class Column:
     numeric: bool = False
     family: bool = False
     link: str = ""
+    detail: str = ""
+    detail_heading: str = ""
+    detail_sort: str = ""
+    dated: bool = False
 
 
 HELD = "Earlier: {decision}, not in force."
@@ -787,15 +811,22 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
     # A bulk Back to review asks for a note while a ticked row is at a
     # terminal stage.
     row["choice"] = REOPEN if reopen else ""
-    # Each identity cell: its value, its column and the item page it opens
-    # (its column's ``link``), if any.
+    # Each identity cell: its value, its column, the item page it opens
+    # (its column's ``link``), if any, and the value stacked under it (its
+    # column's ``detail``). A dated column is a labelled line of the
+    # Submitted and Last decision cell instead (#2124).
     row["identity"] = [
         (
             row.get(column.key, ""),
             column,
             row.get(column.link, "") if column.link else "",
+            row.get(column.detail, "") if column.detail else "",
         )
         for column in columns
+        if not column.dated
+    ]
+    row["dated"] = [
+        (column.heading, row.get(column.key, "")) for column in columns if column.dated
     ]
     row["stage_label"] = placement.stage.label
     row["stage_look"] = STAGE_LOOK.get(placement.stage, "")
@@ -949,10 +980,16 @@ class Worklist:
         return bool(self.bulk) and not self.bulk_too_many
 
     @property
+    def shown_columns(self):
+        """The identity columns drawn as columns of their own (not dated)."""
+        return tuple(column for column in self.columns if not column.dated)
+
+    @property
     def span(self):
-        """How many columns a full-width row (the empty table's) spans."""
-        fixed = 5 + int(self.baseline) + int(self.reviewer) + int(self.shows_now)
-        return len(self.columns) + fixed + int(self.selectable)
+        """How many columns a full-width row (the empty table's) spans: the
+        identity columns, then the values, Stage, Submitted and Last
+        decision, and Actions cells (#2124), and the selection column."""
+        return len(self.shown_columns) + 4 + int(self.selectable)
 
 
 def build(

@@ -48,7 +48,9 @@ def test_one_table_lists_members_and_families(page, component_origin):
     answers = page.locator("#table tbody tr td").all_inner_texts()
     assert "Cannot participate in any ministries" in answers
     assert "Cannot attend Mass or prayer services" in answers
-    assert "New Member" in answers
+    # A Member added on the form shows New Member under its name, where a
+    # Member DUID would be (#2124).
+    assert any(answer.endswith("New Member") for answer in answers)
     export = page.locator("#table-export").bounding_box()
     assert export["y"] > page.locator(".table-scroll").bounding_box()["y"]
     assert page.locator(".stat-tiles").count() == 0

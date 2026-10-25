@@ -38,6 +38,7 @@ from parishkit.stewardship.web.review_worklist import (
     Column,
     StaleDecision,
     build,
+    clamp_name,
     page_address,
 )
 from parishkit.stewardship.web.tables import Sorting, fold, name_order
@@ -92,10 +93,22 @@ def group_stages(groups, contributions=0):
 # The identity columns, in the shared column order (UX conventions, "Table
 # column order"): the Family, then the Member, each with its DUID.
 COLUMNS = (
-    Column("family", "Family", sort="family"),
-    Column("family_duid", "Family DUID", sort="duid", numeric=True),
-    Column("member", "Member", sort="member"),
-    Column("member_duid_cell", "Member DUID", sort="member_duid", numeric=True),
+    Column(
+        "family",
+        "Family",
+        sort="family",
+        detail="family_duid",
+        detail_heading="Family DUID",
+        detail_sort="duid",
+    ),
+    Column(
+        "member",
+        "Member",
+        sort="member",
+        detail="member_duid_cell",
+        detail_heading="Member DUID",
+        detail_sort="member_duid",
+    ),
 )
 # PostgreSQL's SQLSTATE for a unique violation: a racing second decision of
 # the same version, which reads as the stale notice.
@@ -249,7 +262,9 @@ def worklist_rows(rows):
                 "name": answer_name(row),
                 "family": _family(row),
                 "family_duid": duid(row["family_duid"]),
-                "member": row.get("member_name", ""),
+                "member": (
+                    clamp_name(row["member_name"]) if row.get("member_name") else ""
+                ),
                 "member_duid_cell": _member_duid(row),
                 "family_answer": ANSWERS[row["kind"]],
                 "decided_by": (row["decided_by"] or "") if current else "",

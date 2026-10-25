@@ -87,7 +87,8 @@ when it lands.
   [default row order](#default-row-order),
   [Family and Member names](#family-and-member-names),
   [Members and Families no longer in ParishSoft](#members-and-families-no-longer-in-parishsoft),
-  [table fit and row height](#table-fit-and-row-height).
+  [table fit and row height](#table-fit-and-row-height),
+  [review work tables](#review-work-tables).
 - [Downloaded files](#downloaded-files) and the
   [Family portal](#family-portal).
 
@@ -5016,8 +5017,11 @@ match on them, and the command line is host-only
 left is the shared "Ministry n" or "Fund n" label for a record whose
 ParishSoft name is blank.
 
-A DUID never shares a cell with a name. When a table has both a Family name
-column and a DUID column, both sort. **Why.** ParishSoft users never see
+A DUID never shares a cell with a name, except on the
+[review work tables](#review-work-tables), which stack it on its own line
+under the name. When a table has both a Family name
+column and a DUID column, both sort; a review work table's name heading
+holds both sort controls. **Why.** ParishSoft users never see
 Ministry, fund or other record DUIDs in ParishSoft, so those numbers mean
 nothing to staff; Family and Member DUIDs are how staff find a record there.
 A combined cell cannot be sorted or scanned by DUID, reads badly with a
@@ -5296,27 +5300,108 @@ replaced #1544's first chip and "+N" chip), and Census changes' labelled
 Values and Last recorded cells and in-view Actions column
 ([#1472](https://github.com/epiphany40223/parishkit/issues/1472)).
 
+**Cut-short values.** Rule: a value a table cell abbreviates or cuts
+short (an ellipsis, a line clamp, a short label for a longer word) shows
+whole in a tooltip when the pointer rests on it, and on keyboard focus
+where the value, its link or its Show all is focusable; the whole value
+stays the cell's text for screen readers. The shared tip of a clipped name
+(`data-clip-tip`, below) does this, and so does a `title` on a short label.
+Guideline: try hard not to cut short a Family's, a Member's or a
+Ministry's name, which readers scan to tell rows apart. Let it wrap
+between words, to at most two lines, with a maximum width only for an
+extraordinarily long name; past two lines it is clamped, whole in its
+tip. When a table is short of room, shorten another column first (clamp a
+long value, abbreviate a label) before a name.
+**Why.** A value cut short with no way to read it whole forces a trip to
+another page; names are what a reader looks for in a row (Administrator,
+2026-10-25, on
+[#2124](https://github.com/epiphany40223/parishkit/issues/2124)).
+
 Recorded exception: the Users page keeps every row to one line (the
 Administrator asked for one-line rows on #952). A long email or Name is cut
 off with "…"; the full value stays the cell's text, appears in a `title`
 tooltip, and is shown whole on the user's Edit page
 ([Users table](../admin-portal/spec.md#users-table), #952, #963).
-The follow-up queue on Ministry requests does the same for a long Member name, with the
-shared `cell-ellipsis` class
-([Follow-up workflows](../admin-portal/spec.md#follow-up-workflows), #932).
+On Ministry requests a Member name once did the same, with the shared
+`cell-ellipsis` class
+([Follow-up workflows](../admin-portal/spec.md#follow-up-workflows), #932);
+since [#2124](https://github.com/epiphany40223/parishkit/issues/2124) it
+follows the name guideline above, as every name on the
+[review work tables](#review-work-tables) does.
 Its Ministry name, which a leader scans to tell similar Ministries apart,
-wraps instead to at most two lines (`cell-clamp`), so a name as long as any
+wraps to at most two lines (`cell-clamp`), so a name as long as any
 in use shows whole; only a name too long even for two lines ends in "…"
-([#1136](https://github.com/epiphany40223/parishkit/issues/1136)). In the
-queue a name cut short shows whole in a tip on hover, keyboard focus and
-tap (a cut name joins the tab order for that, unless it is a link's text,
-as on a worklist, where focus on the link shows the tip), not in a bare
-`title`, which keyboard and touch cannot reach; the whole name stays the
-cell's text for screen readers. Since
-[#1064](https://github.com/epiphany40223/parishkit/issues/1064) the queue's
-other cells do not wrap, so a row is one line, or two where a Ministry name
-wraps, and the table scrolls sideways in its own box when it is wider than
-the page.
+([#1136](https://github.com/epiphany40223/parishkit/issues/1136)). A name
+cut short this way shows whole in a tip on hover, keyboard focus and
+tap (`data-clip-tip`; a cut name joins the tab order for that, unless it
+is a link's text, as on a worklist, where focus on the link shows the
+tip), not in a bare `title`, which keyboard and touch cannot reach; the
+whole name stays the cell's text for screen readers.
+
+### Review work tables
+
+**Rule.** The review work tables (the
+[review worklist](../review-pipeline/spec.md#review-worklist) of Census
+changes, Ministry requests, Pledges, Additional information and
+Limitations) fit their box without scrolling sideways, and never break a
+name, field or stage into letters. They share one layout, drawn once by the
+shared component:
+
+- **Fewer columns.** Values that belong together share one cell, one line
+  each (`stack-line`), and the heading names them in the same order:
+  - a Family's or Member's name with its **Family DUID** or **Member DUID**
+    on the line under it, muted. The heading holds both sort controls, the
+    name's and the DUID's, one above the other, so both still sort;
+  - the old and new value in one **Baseline → Family's answer** cell (just
+    **Family's answer** for a stream with no Baseline): the Baseline muted
+    on the first line, a blank one as a muted "(blank)", and the Family's
+    answer under it after an arrow. The Reviewer's value and ParishSoft now,
+    on the rows that have them, follow on lines of their own, each with a
+    small visible label;
+  - **Submitted** and **Last decision** in one cell: the submitted time,
+    then who decided and when, then the decision's note. A Ministry
+    request's Last contact is a labelled line in the same cell.
+- **Column sizing.** Names, fields ("What changed", a Ministry) and stages
+  have a minimum width, and wrap only between words
+  (`overflow-wrap: break-word`, which breaks a word only when it is wider
+  than the whole cell); never `anywhere` or `break-all` there. Only free
+  text (a Family's answer, a note) wraps freely, still at word boundaries
+  first. Times never wrap. The Actions cell holds its icons two to a line,
+  so it stays narrow. Every Family, Member and Ministry name wraps
+  between words to at most two lines, then is clamped, whole in its tip,
+  as the [cut-short values](#table-fit-and-row-height) guideline says; a
+  Ministry name's column is wide enough that a name as long as any in use
+  shows whole at a 1,280 px window.
+- **Narrow boxes.** Where the table's box is narrower than 57rem
+  (912 px; with the Admin menu beside it, a window under about 1,265 px,
+  so a 1,280 px laptop window keeps the table), each row stacks as a card
+  instead: the row's name on its first line, between its selection box and
+  its action icons (there, a decision that adds a line to the card never
+  moves them), then each other cell as a small muted label above its value,
+  side by side where the card has room. The headings become a row of sort
+  controls above the cards. Nothing scrolls sideways, page or box.
+- **Long values.** A value longer than two lines' worth of text (a Family's
+  answer, a Reviewer's value, ParishSoft now, a decision's note) is clamped
+  to two lines with a **Show all** button under it. Show all opens the whole
+  value in a bubble that floats over the page (the shared toggletip, see
+  [page help](#page-help)): it moves no control, grows no row and scrolls
+  nothing, and Escape, a click elsewhere or Show all again closes it. The
+  pointer resting on a clamped value shows it whole in the shared tip too;
+  the keyboard reaches it through Show all, so the value itself adds no tab
+  stop. The whole value stays the cell's text for screen readers.
+
+In-place refresh, selection, bulk actions, decision toggles and the default
+order are unchanged by the layout.
+
+**Why.** The tables had up to thirteen columns, so some rows had to be
+scrolled sideways to be read whole, and others squeezed their columns until
+names and values broke letter by letter (Administrator, 2026-10-24).
+**Shared code.** `components/review-worklist.html` and
+`components/clamped-value.html`; `Column.detail`, `Column.dated` and
+`clamp_name` in `web/review_worklist.py` (and `family_link`'s `clamp`);
+the clipped-name tip in `admin-menu-v1.js`; the `review-table` rules in
+`ui-v1.css`; `test_review_worklist_layout.py`. **Precedent.**
+[#2124](https://github.com/epiphany40223/parishkit/issues/2124).
 
 ### Empty tables and lists
 

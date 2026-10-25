@@ -34,10 +34,12 @@ from parishkit.stewardship.web.tables import paginate
 PATH = reverse("admin:census_changes")
 ROWS = 30
 # Row 0 is Automatic and row 1 By hand, both To review; row 2 a Family
-# address (By hand), every later row By hand too.
+# address (By hand), every later row By hand too. The address is long
+# enough that two lines of its cell never hold it, so it shows Show all
+# (#2124).
 ADDRESS = {
     "line1": "9 Census Way",
-    "line2": "",
+    "line2": "Saint Joseph Retirement Residence, Apartment 214",
     "city": "Louisville",
     "region": "KY",
     "postal_code": "40223",

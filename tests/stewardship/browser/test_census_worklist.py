@@ -12,6 +12,7 @@ and its correction (#1773).
 """
 
 import json
+import re
 
 import pytest
 
@@ -121,7 +122,9 @@ def test_filters_page_and_sort_in_place(page, component_origin):
         ),
     )
     page.locator("#table").get_by_role("button", name="Next").first.click()
-    has_text(page.locator("#table tbody th").first, "Family 25")
+    # The row header's first line is the name; its Family DUID follows on
+    # the line under it (#2124).
+    has_text(page.locator("#table tbody th").first, re.compile(r"^Family 25(?!\d)"))
     assert "page=2" in sent[-1] and "stage=all" in sent[-1]
     page.locator("#table").get_by_role("button", name="Who (sort ascending)").click()
     has_attribute(sort_heading(page, "who"), "aria-sort", "descending")
@@ -571,12 +574,12 @@ def test_an_edited_value_shows_as_the_reviewers_value(page, component_origin):
     save.click()
     has_text(page.locator("#census-notice"), EDITED_PHONE_NOTICE)
     assert "decide=edit" in sent[-1] and "value=555-9999" in sent[-1]
-    headings = [
-        node.inner_text().strip() for node in page.locator("#table thead th").all()
-    ]
-    cells = row(page, 0).locator("th, td")
-    reviewer = cells.nth(headings.index("Reviewer's value")).inner_text()
-    assert "555-9999" in reviewer
+    # The Reviewer's value is a labelled line of the row's values cell
+    # (#2124).
+    reviewer = row(page, 0).locator(
+        ".values-cell .stack-line", has_text="Reviewer's value"
+    )
+    assert "555-9999" in reviewer.inner_text()
 
 
 def test_a_new_members_entered_by_hand_asks_for_its_member_id(

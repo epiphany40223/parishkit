@@ -105,8 +105,14 @@ def group_stages(groups):
 # The identity columns, in the shared column order (UX conventions, "Table
 # column order"), each sorted by ``SORTING``'s tokens.
 COLUMNS = (
-    Column("family", "Family", sort="family"),
-    Column("family_duid", "Family DUID", sort="duid", numeric=True),
+    Column(
+        "family",
+        "Family",
+        sort="family",
+        detail="family_duid",
+        detail_heading="Family DUID",
+        detail_sort="duid",
+    ),
 )
 # How much of the Family's text the row shows; its request page shows all.
 EXCERPT = 240

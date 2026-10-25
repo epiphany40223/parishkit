@@ -350,8 +350,8 @@ def test_refresh_checks_show_on_the_worklist(page, component_origin, axe_source,
         "Not seen in ParishSoft (1)",
         "Every stage (8)",
     ]
-    headings = page.locator("#table thead th").all_inner_texts()
-    assert "ParishSoft now" in [text.strip() for text in headings]
+    # ParishSoft now is a labelled line of a row's values cell (#2124).
+    assert page.locator(".values-cell .value-label", has_text="ParishSoft now").count()
     incorrect = row(page, 7)
     chip = incorrect.locator(".stage-chip.status-error")
     assert chip.inner_text().strip() == "Entered incorrectly"

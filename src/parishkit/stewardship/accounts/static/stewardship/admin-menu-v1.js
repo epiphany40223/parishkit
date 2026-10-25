@@ -152,7 +152,8 @@
 
 // Clipped names (#1136): a name in a table cell that its column cuts short
 // ([data-clip-tip], such as the Ministry follow-up queue's Member and a
-// Ministry name too long for two lines) shows whole in a tip styled like
+// Ministry name too long for two lines, and a review work table's clamped
+// value, #2124) shows whole in a tip styled like
 // the menu's. The whole name is already the element's text, so screen
 // readers hear it; the tip only repeats it on screen and is aria-hidden.
 // A name that fits shows no tip. One document-level listener serves every
@@ -245,9 +246,11 @@
     place();
   };
   // Clipped names that are not links join the tab order; a name that fits
-  // again leaves it, except the focused one, which focusout releases.
+  // again leaves it, except the focused one, which focusout releases. A
+  // clamped review value (data-clip-tip="hover") never does: its Show all
+  // is the keyboard's way to it, so it adds no tab stop (#2124).
   const mark = (root) => {
-    root.querySelectorAll(`${SELECTOR}:not(a)`).forEach((name) => {
+    root.querySelectorAll(`${SELECTOR}:not(a):not([data-clip-tip=hover])`).forEach((name) => {
       if (name.closest("a")) return;
       if (clipped(name)) name.setAttribute("tabindex", "0");
       else if (name !== document.activeElement) name.removeAttribute("tabindex");

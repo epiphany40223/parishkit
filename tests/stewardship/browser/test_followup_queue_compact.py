@@ -1,12 +1,13 @@
 """Ministry requests' review worklist stays compact (#1064, #1684).
 
 Its five filters take two rows at laptop width and one row each at phone
-width; a row to review with a short Ministry name is one line, and no row
-is taller than four (a decided row's stage and decision, a long Ministry
-name wrapping onto two, #1136), with the long explanations kept to
-tooltips, screen-reader text and the request's own page; the table
-scrolls sideways in its own box, never the page; and applying the filters
-in place moves no filter control.
+width; a row to review with a short Ministry name is as tall as its two
+lines of action icons (#2124), and no row is taller than two more lines of
+text (a decided row's stage and decision, a long Ministry name wrapping
+onto two, #1136), with the long explanations kept to tooltips,
+screen-reader text and the request's own page; nothing scrolls sideways,
+since a narrow box shows each row as a card (#2124); and applying the
+filters in place moves no filter control.
 """
 
 import pytest
@@ -30,8 +31,10 @@ MAX_FILTER_HEIGHT = 220
 # Ministry name take two lines, about 67 px each. On the review worklist
 # (#1684) a row's Stage chip with its decision line and the Actions icons
 # make even a one-line row about 70 px; 25 rows took about 1,810 px with
-# Linux's wider fonts (CI, R38 and R39 integration).
-MAX_ROWS_HEIGHT = 1900
+# Linux's wider fonts (CI, R38 and R39 integration). Since #2124 the
+# Actions cell holds its icons two to a line, so the table fits beside the
+# Admin menu without scrolling sideways, and a row is about 116 px.
+MAX_ROWS_HEIGHT = 3400
 FIELDS = (
     "#requests-stage",
     "#followup-search",
@@ -45,10 +48,11 @@ CONTROLS = FIELDS + (APPLY,)
 AXE = """async () => (await axe.run(document, {
     runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']}
 })).violations.map(({id,impact}) => ({id,impact}))"""
-# Each row's height and Ministry name, and the most a one-line row may be:
-# its cells' vertical padding plus under two lines of text, measured on the
-# one-word "Join" in a join request's Request cell, whatever the engine's
-# font; a two-line row stays under three.
+# Each row's height and Ministry name, and the most a short row may be:
+# its cells' vertical padding plus its two lines of action icons and one
+# line of text, the line measured on the one-word "Join" in a join
+# request's values cell, whatever the engine's font; a row with two more
+# lines of text stays under that plus two.
 ROWS = """() => {
     const rows = [...document.querySelectorAll('#table table tbody tr')];
     const cell = [...document.querySelectorAll('#table table tbody td')].find(
@@ -58,17 +62,19 @@ ROWS = """() => {
     const style = getComputedStyle(cell);
     const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
     const line = range.getBoundingClientRect().height;
+    const icons = 2 * document.querySelector('#table .review-actions .icon-button')
+        .getBoundingClientRect().height;
     return {
         heights: rows.map((row) => row.getBoundingClientRect().height),
-        ministries: rows.map((row) => row.querySelector('.cell-clamp').textContent),
-        // One line beside the row's action icons, which are taller than text.
-        oneLine: padding + 3 * line,
-        twoLines: padding + 5 * line,
+        ministries: rows.map(
+            (row) => row.querySelector('.cell-clamp:not(.name-clamp)').textContent),
+        oneLine: padding + icons + line,
+        twoLines: padding + icons + 3 * line,
     };
 }"""
 # Each Ministry name's text and whether it is cut short (#1136).
 MINISTRY_NAMES = """() => [
-    ...document.querySelectorAll('#table table tbody .cell-clamp')
+    ...document.querySelectorAll('#table table tbody .cell-clamp:not(.name-clamp)')
 ].map((name) => [
         name.textContent,
         name.scrollHeight > name.clientHeight + 1
@@ -94,11 +100,11 @@ def boxes(page, selectors):
 
 
 def test_queue_is_compact_at_laptop_width(page, component_origin, axe_source):
-    """At 1280 px the five filters take at most two rows, Apply filters
+    """At 1366 px the five filters take at most two rows, Apply filters
     ending the last; the filter form stays within its height bound; and a
     page of 25 requests with long names, every status and both markers is
     one line per row, or two where a long Ministry name wraps (#1136)."""
-    page.set_viewport_size({"width": 1280, "height": 900})
+    page.set_viewport_size({"width": 1366, "height": 900})
     page.goto(component_origin + PAGE)
     visible(page.locator(FILTERS))
     assert page.locator(FILTERS).bounding_box()["height"] <= MAX_FILTER_HEIGHT
@@ -131,20 +137,21 @@ def test_queue_is_compact_at_laptop_width(page, component_origin, axe_source):
 def test_queue_cells_hold_one_short_value(page, component_origin):
     """Request, Status and Ministry hold one short value each; the long
     explanations stay available as tooltips and screen-reader text."""
-    page.set_viewport_size({"width": 1280, "height": 900})
+    page.set_viewport_size({"width": 1366, "height": 900})
     page.goto(component_origin + PAGE)
     # The first cell is the bulk selection box (#1131); the Family's answer
-    # follows Last contact (#1684).
+    # follows the Ministry, Last contact having moved into the Submitted
+    # and Last decision cell (#2124).
     cells = page.locator("#table table tbody tr").nth(0).locator("th, td")
-    assert cells.nth(5).inner_text() == "Leave (cannot participate)"
-    marker = cells.nth(5).locator("span[title]")
+    assert cells.nth(3).inner_text() == "Leave (cannot participate)"
+    marker = cells.nth(3).locator("span[title]")
     assert marker.get_attribute("title") == (
         "Cannot participate in any ministries (physical limitations)"
     )
     stages = [
         " ".join(text.split())
         for text in page.locator(
-            "#table table tbody tr td:nth-child(8)"
+            "#table table tbody tr td.stage-cell"
         ).all_inner_texts()
     ]
     assert "Ignored Declined / no longer interested" in stages
@@ -155,7 +162,7 @@ def test_queue_cells_hold_one_short_value(page, component_origin):
     assert "Ignored No response" in stages
     # The Ministry removed from the campaign (row 7) carries its badge,
     # whose words a screen reader hears in full.
-    removed = page.locator("#table table tbody tr").nth(6).locator("td").nth(2)
+    removed = page.locator("#table table tbody tr").nth(6).locator("td").nth(1)
     badge = removed.locator(".status-badge")
     # The tooltip is on the visible word, which screen readers skip, so the
     # sentence is announced once.
@@ -167,7 +174,11 @@ def test_queue_cells_hold_one_short_value(page, component_origin):
     )
     # Last contact uses the compact form: no "at" and no time zone name.
     contact = (
-        page.locator("#table table tbody tr").nth(1).locator("td").nth(3).inner_text()
+        page.locator("#table table tbody tr")
+        .nth(1)
+        .locator(".dates-cell .stack-line", has_text="Last contact")
+        .locator(".nowrap")
+        .first.inner_text()
     )
     assert contact.startswith("Sep") and " at " not in contact
     assert not contact.endswith(("PDT", "PST"))
@@ -188,12 +199,13 @@ def test_queue_shows_long_ministry_names_whole(page, component_origin, width):
 
 
 def test_queue_clipped_member_name_tip(page, component_origin):
-    """A Member name its column cuts short shows whole in a tip on keyboard
-    focus, which Escape hides; the name stays the link's whole text, so
-    screen readers need no tip (#1136)."""
+    """A Member name too long for two lines wraps onto two and is clamped
+    there, not cut to one line, and shows whole in a tip on keyboard focus,
+    which Escape hides; the name stays the link's whole text, so screen
+    readers need no tip (#1136; cut-short values, #2124)."""
     from playwright.sync_api import expect
 
-    page.set_viewport_size({"width": 1280, "height": 900})
+    page.set_viewport_size({"width": 1366, "height": 900})
     page.goto(component_origin + PAGE)
     link = page.locator("#table table tbody tr").nth(0).locator("th a")
     whole = "Member0 Bartholomew-Fitzgerald <Example>"
@@ -202,7 +214,12 @@ def test_queue_clipped_member_name_tip(page, component_origin):
     # The name's own box is the one cut short; the shared name link (the
     # Family hub's, R38 finding 13) wraps it.
     clipped = link.locator("[data-clip-tip]")
-    assert clipped.evaluate("e => e.scrollWidth > e.clientWidth")
+    assert clipped.evaluate("e => e.scrollHeight > e.clientHeight + 1")
+    # Two lines of the name show, whatever the engine's font.
+    lines = clipped.evaluate(
+        "e => e.clientHeight / parseFloat(getComputedStyle(e).lineHeight)"
+    )
+    assert 1.95 <= lines <= 2.05, lines
     link.focus()
     tip = page.locator(".admin-tip.is-shown")
     expect(tip).to_have_text(whole)
@@ -216,7 +233,7 @@ def test_queue_clipped_name_tip_can_be_hovered(page, component_origin):
     tip vanishing (WCAG 1.4.13), and leaving both hides it (#1136)."""
     from playwright.sync_api import expect
 
-    page.set_viewport_size({"width": 1280, "height": 900})
+    page.set_viewport_size({"width": 1366, "height": 900})
     page.goto(component_origin + PAGE)
     link = page.locator("#table table tbody tr").nth(0).locator("th a")
     link.hover()
@@ -246,9 +263,8 @@ def test_queue_request_page_states_the_whole_reason(page, component_origin):
 
 def test_queue_is_one_column_at_phone_width(page, component_origin, axe_source):
     """At 320 px each filter takes its own row, one under another with
-    nothing overlapping, the page never scrolls sideways, and the rows stay
-    one line, or two for a long Ministry name, the table scrolling in its
-    own box."""
+    nothing overlapping, and neither the page nor the table's box scrolls
+    sideways: each row is a card (#2124)."""
     page.set_viewport_size({"width": 320, "height": 900})
     page.goto(component_origin + PAGE)
     visible(page.locator(FILTERS))
@@ -256,11 +272,14 @@ def test_queue_is_one_column_at_phone_width(page, component_origin, axe_source):
     found = boxes(page, CONTROLS)
     for upper, lower in zip(found, found[1:], strict=False):
         assert lower["y"] >= upper["y"] + upper["height"], (upper, lower)
-    rows = page.evaluate(ROWS)
-    assert max(short_rows(rows)) < rows["oneLine"], rows
-    assert max(rows["heights"]) < rows["twoLines"], rows
     assert page.locator("#table .table-scroll").evaluate(
-        "e => e.scrollWidth > e.clientWidth"
+        "e => e.scrollWidth <= e.clientWidth"
+    )
+    assert (
+        page.locator("#table tbody tr").first.evaluate(
+            "e => getComputedStyle(e).display"
+        )
+        == "flex"
     )
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
