@@ -9,6 +9,9 @@ import pytest
 
 from .automation_components import canonical
 from .test_charts import assert_clean, watch
+from .test_timelines import (
+    assert_each_when_is_one_line_and_the_page_never_scrolls_sideways,
+)
 from .user_timeline_components import NEXT, OLDEST, PAGE, ROLES, VIEWS
 from .waits import (
     focused,
@@ -56,6 +59,15 @@ def test_the_page_is_accessible_and_fits_a_phone(page, component_origin, axe_sou
     page.set_viewport_size({"width": 390, "height": 844})
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert_clean(page, errors)
+
+
+def test_each_when_is_one_line_and_the_page_never_scrolls_sideways(
+    page, component_origin
+):
+    """A user's When values stay on one line, as a Family's do (#2175)."""
+    assert_each_when_is_one_line_and_the_page_never_scrolls_sideways(
+        page, component_origin + PAGE
+    )
 
 
 def test_the_filter_bar_is_one_row_on_a_desktop(page, component_origin):

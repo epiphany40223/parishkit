@@ -8,6 +8,8 @@ timeline; #1570 renamed it, removed its Production / Testing pair and added
 the filter bar.
 """
 
+import re
+
 import pytest
 
 from .automation_components import canonical
@@ -263,6 +265,43 @@ def test_the_filter_bar_is_one_row_on_a_desktop_and_wraps_on_a_phone(
     assert len(bottoms) == 4 and max(bottoms) - min(bottoms) <= 4, bottoms
     page.set_viewport_size({"width": 390, "height": 844})
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+
+def assert_each_when_is_one_line_and_the_page_never_scrolls_sideways(page, url):
+    """Each When keeps its AM/PM on its line; the table scrolls in its box (#2175).
+
+    Shared by the Family and the user Timeline tests: both tables put a
+    compact browser-local time in a nowrap When cell.
+    """
+    from playwright.sync_api import expect
+
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(url)
+    region = "[data-table-region] tbody tr"
+    when = page.locator(region + " td:first-child time[data-local-instant]")
+    # Wait for the script's browser-local form, which ends in AM or PM.
+    expect(when.first).to_have_text(re.compile(r" [AP]M$"))
+    # Real lines carry long Details (an email's subject, a review note), which
+    # squeezed When until its AM/PM wrapped; the fixture's are short.
+    page.locator(region + " td:last-child").evaluate_all(
+        "cells => cells.forEach(c => { c.textContent = 'word '.repeat(80); })"
+    )
+    # An inline element has one client rect per line box it occupies.
+    assert (
+        when.evaluate_all("nodes => nodes.map(n => n.getClientRects().length)")
+        == [1] * when.count()
+    )
+    page.set_viewport_size({"width": 320, "height": 844})
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+
+def test_each_when_is_one_line_and_the_page_never_scrolls_sideways(
+    page, component_origin
+):
+    """The Family's When values stay on one line (#2175)."""
+    assert_each_when_is_one_line_and_the_page_never_scrolls_sideways(
+        page, component_origin + ADMIN
+    )
 
 
 def test_staff_see_the_full_timeline_with_review_lines(page, component_origin):
