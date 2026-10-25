@@ -124,6 +124,7 @@ def test_operator_prepares_private_native_volume_and_public_static_assets(tmp_pa
                     "/run/secrets/postgres-password",
                     "/data",
                     "/run/secrets/valkey.acl",
+                    "/etc/postgresql/hba",
                 }
     finally:
         subprocess.run(
