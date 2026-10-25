@@ -47,11 +47,37 @@ def row(page, index):
     return page.locator(f"#pledges-row-00000000-0000-0000-0000-{index:012x}")
 
 
+ACTIONS = {
+    "Accept": "accept",
+    "Edit": "edit",
+    "Ignore": "ignore",
+    "Mark": "entered_by_hand",
+}
+
+
 def icon(page, index, label):
-    """Row ``index``'s icon whose name is ``label`` followed by the Family."""
-    return row(page, index).get_by_role(
-        "button", name=f"{label} Family {index:02d}", exact=True
+    """Row ``index``'s ``label`` icon (Accept, Edit, Ignore or Mark), by its
+    action: a pressed icon's name says what choosing it does (#2131)."""
+    return row(page, index).locator(f'button[data-row-action="{ACTIONS[label]}"]')
+
+
+def undo(page, index):
+    """Row ``index``'s Back to review: its pressed icon (#2131), or the icon
+    of its own on a row with nothing pressed."""
+    return row(page, index).locator(
+        'button[data-row-undo], button[data-row-action="back_to_review"]'
     )
+
+
+def offered(locator):
+    """The decisions a row's available icons record, in order; a pressed
+    one records Back to review."""
+    return [
+        "back_to_review"
+        if node.get_attribute("data-row-undo") is not None
+        else node.get_attribute("data-row-action")
+        for node in locator.locator(".table-actions button:not([aria-disabled])").all()
+    ]
 
 
 def posts_to(page, origin, answer):
@@ -95,7 +121,8 @@ def test_the_worklist_lists_pledges_to_review(
     assert [
         node.get_attribute("data-row-action")
         for node in row(page, 1).locator(".table-actions button").all()
-    ] == ["accept", "edit", "ignore"]
+    ] == ["accept", "edit", "ignore", "entered_by_hand"]
+    assert offered(row(page, 1)) == ["accept", "edit", "ignore"]
     assert "$1,200.00, Weekly" in row(page, 1).inner_text()
     assert "$0.00, No frequency" in row(page, 2).inner_text()
     bar = page.locator(".bulk-bar")
@@ -115,23 +142,19 @@ def test_the_worklist_lists_pledges_to_review(
 
 def test_every_stage_shows_each_decision_in_force(page, component_origin):
     """An accepted pledge offers Entered by hand and Back to review, its Accept
-    drawn selected; a marked one offers Back to review (#1840); an ignored
-    one can be reopened."""
+    drawn pressed as the undo (#2131); a marked one's pressed mark is its
+    Back to review (#1840); an ignored one can be reopened."""
     page.goto(component_origin + EVERY)
     chosen = icon(page, 4, "Accept")
     assert chosen.get_attribute("aria-pressed") == "true"
+    assert undo(page, 4).get_attribute("data-row-action") == "accept"
     visible(row(page, 4).get_by_role("button", name="Mark Family 04 entered by hand"))
     marked = row(page, 5)
     visible(marked.locator("input[data-select-row]"))
-    visible(marked.get_by_role("button", name="Send Family 05 back to review"))
-    assert (
-        marked.get_by_role(
-            "button", name="Mark Family 05 entered by hand"
-        ).get_attribute("aria-pressed")
-        == "true"
-    )
+    assert undo(page, 5).get_attribute("data-row-action") == "entered_by_hand"
+    assert icon(page, 5, "Mark").get_attribute("aria-pressed") == "true"
     assert "Entered by staff@example.org" in marked.inner_text()
-    visible(row(page, 6).get_by_role("button", name="Send Family 06 back to review"))
+    assert undo(page, 6).get_attribute("data-row-action") == "ignore"
 
 
 def test_a_reload_keeps_the_applied_stage(page, component_origin):
@@ -149,13 +172,14 @@ def test_a_reload_keeps_the_applied_stage(page, component_origin):
 
 
 def test_back_to_review_undoes_a_mark_with_a_note_in_place(page, component_origin):
-    """Back to review on an Entered by hand pledge (#1840): the dialog says
+    """Back to review on an Entered by hand pledge (#1840), its pressed mark
+    chosen again (#2131): the dialog says
     the mark is undone and the decision kept, Record waits for the required
     note, and the answer redraws the row in place at To enter by hand."""
     page.goto(component_origin + EVERY)
     page.evaluate(MARK)
     sent = posts_to(page, component_origin, UNDONE)
-    row(page, 5).get_by_role("button", name="Send Family 05 back to review").click()
+    undo(page, 5).click()
     dialog = page.locator("#pledges-decide-dialog")
     has_text(
         dialog.locator("[data-confirm-body]"),
@@ -173,6 +197,7 @@ def test_back_to_review_undoes_a_mark_with_a_note_in_place(page, component_origi
     assert "decide=back_to_review" in body and "note=Not+typed+yet" in body
     has_text(row(page, 5).locator(".stage-chip .status-word"), "To enter by hand")
     visible(row(page, 5).get_by_role("button", name="Mark Family 05 entered by hand"))
+    assert icon(page, 5, "Mark").get_attribute("aria-pressed") == "false"
     assert page.evaluate(MARKED) == "kept"
 
 
@@ -331,19 +356,14 @@ def test_refresh_checks_show_on_the_worklist(page, component_origin, axe_source,
     chip = incorrect.locator(".stage-chip.status-error")
     assert chip.inner_text().strip() == "Entered incorrectly"
     assert "$1,100.00" in incorrect.inner_text()
-    assert [
-        node.get_attribute("data-row-action")
-        for node in incorrect.locator(
-            ".table-actions button:not([aria-disabled])"
-        ).all()
-    ] == ["back_to_review"]
+    assert offered(incorrect) == ["back_to_review"]
     flagged = row(page, 8)
     flag = flagged.locator(".stage-chip.status-warning")
     assert flag.inner_text().strip() == "Not seen in ParishSoft"
     assert "$0.00" in flagged.inner_text()
     confirmed = row(page, 9)
     assert confirmed.locator(".stage-chip").inner_text().strip() == "Confirmed"
-    visible(confirmed.get_by_role("button", name="Send Family 09 back to review"))
+    visible(undo(page, 9))
     assert "ParishSoft now matches the Family's answer." in row(page, 6).inner_text()
     # #1747: a Conflict is decided again against ParishSoft now. #1890: a
     # pledge ParishSoft already holds keeps its stage and says so: To review
@@ -357,19 +377,14 @@ def test_refresh_checks_show_on_the_worklist(page, component_origin, axe_source,
             visible(icon(page, index, label))
     assert "Earlier: Accepted, not in force." in row(page, 11).inner_text()
     assert "Earlier:" not in row(page, 10).inner_text()
-    for index, stage_word, offered in (
+    for index, stage_word, actions in (
         (12, "To review", ["accept", "edit", "ignore"]),
         (13, "To enter by hand", ["back_to_review", "entered_by_hand"]),
     ):
         already = row(page, index)
         assert already.locator(".stage-chip").inner_text().strip() == stage_word
         assert "ParishSoft already holds this value." in already.inner_text()
-        assert [
-            node.get_attribute("data-row-action")
-            for node in already.locator(
-                ".table-actions button:not([aria-disabled])"
-            ).all()
-        ] == offered
+        assert offered(already) == actions
     assert page.evaluate(
         "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
     )

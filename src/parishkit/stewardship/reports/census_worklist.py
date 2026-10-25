@@ -420,11 +420,11 @@ WITHDRAW_ENTERED_BODY = (
     "History. The Family will no longer see it. Say why."
 )
 NOT_ENTERED = "Not entered yet"
-NOT_ENTERED_LABEL = "Mark {name} not entered yet"
 NOT_ENTERED_TITLE = "Mark {name} not entered yet?"
 NOT_ENTERED_DONE = "marked not entered yet."
-# The selected Entered by hand icon's undo, as Not entered yet names it.
-NOT_ENTERED_UNDO = "Entered by hand; choose Not entered yet to change it"
+# The pressed Entered by hand icon, the mark's undo (#2131), as Not entered
+# yet names it.
+NOT_ENTERED_UNDO = "Entered by hand; select to mark {name} not entered yet"
 OVERLAP = (
     "The Family has an open change of this field too: accepting that one "
     "withdraws this one."
@@ -457,29 +457,26 @@ def _addition_icons(row):
     Withdraw names the field and the Member and says the Family will no
     longer see it; on an entered one it undoes the mark too, so its note
     is required (the ``reopen`` choice). Back to review, offered only on an
-    entered one, is Not entered yet. A selected icon's tooltip names the
-    undo the row offers: Not entered yet for the mark; Accept, drawn
+    entered one, is Not entered yet: choosing the pressed Entered by hand
+    icon again (#2131), whose tooltip and dialog say so. Accept, drawn
     selected as Added by the parish, is undone by no action of its own.
     """
     name = row["name"]
     entered = row["placement"].stage is Stage.ENTERED_BY_HAND
     for icon in row["icons"]:
         action = Action(icon["action"])
-        if icon["selected"]:
+        if icon["undo"] or action is Action.BACK_TO_REVIEW:
+            icon["label"] = icon["title"] = NOT_ENTERED_UNDO.format(name=name)
+            icon["title_one"] = NOT_ENTERED_TITLE
+            icon["done"] = "{name} " + NOT_ENTERED_DONE
+        elif icon["selected"]:
             if action is Action.ACCEPT:
-                icon["title"] = row["placement"].decision.label
-            elif action is Action.ENTERED_BY_HAND:
-                icon["title"] = NOT_ENTERED_UNDO
-            continue
-        if action is Action.WITHDRAW:
+                icon["label"] = icon["title"] = row["placement"].decision.label
+        elif action is Action.WITHDRAW:
             icon["label"] = icon["title"] = WITHDRAW_LABEL.format(name=name)
             icon["title_one"] = WITHDRAW_TITLE
             icon["body"] = WITHDRAW_ENTERED_BODY if entered else WITHDRAW_BODY
             icon["choice"] = REOPEN if entered else ""
-        elif action is Action.BACK_TO_REVIEW:
-            icon["label"] = icon["title"] = NOT_ENTERED_LABEL.format(name=name)
-            icon["title_one"] = NOT_ENTERED_TITLE
-            icon["done"] = "{name} " + NOT_ENTERED_DONE
 
 
 # The icons that accept a Family's change (Edit records Accepted (edited)).
@@ -493,7 +490,7 @@ def _accept_words(row):
     if not added:
         return
     for icon in row["icons"]:
-        if not icon["selected"] and icon["action"] in ACCEPTS:
+        if icon["active"] and not icon["undo"] and icon["action"] in ACCEPTS:
             icon["warning"] = ACCEPT_WITHDRAWS.format(added=added)
 
 

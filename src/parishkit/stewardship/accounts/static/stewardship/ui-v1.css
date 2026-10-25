@@ -834,6 +834,13 @@ button:disabled { cursor: not-allowed; opacity: .55; box-shadow: none; }
    a button's look is decided where it is drawn (#732). */
 .button-secondary { background: var(--paper); color: var(--accent); border-color: var(--accent); box-shadow: none; }
 .button-secondary:not(:disabled):not(:where([aria-disabled=true])):hover { background: var(--accent-soft); color: var(--accent-strong); box-shadow: none; }
+/* A decision toggle with a text label (UX conventions, "Decision toggles",
+   #2131; so far the Ministry request page's Entered by hand): pressed, it
+   is filled in the accent colour, so the state in force shows on the
+   button itself; choosing it again undoes it. Only colours change, so the
+   button keeps its size and place in both states. */
+.toggle-button[aria-pressed=true], .toggle-button[aria-pressed=true]:not(:disabled):not(:where([aria-disabled=true])):hover { background: var(--accent); border-color: var(--accent); color: var(--paper); }
+.toggle-button[aria-pressed=true]:not(:disabled):not(:where([aria-disabled=true])):hover { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--accent); }
 .actions { display: flex; gap: .75rem 1rem; flex-wrap: wrap; align-items: center; }
 /* A button kept focusable but unavailable (aria-disabled; a stepping
    control at the end of its range, #1656) looks as a disabled one does:
@@ -2041,6 +2048,17 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 /* A row action that posts in place (a worklist's Entered by hand) sits in
    its own form, inline, so it lines up as a lone button does. */
 .table-actions form { display: inline; margin: 0; }
+/* A worklist whose table fits its box only by wrapping its text columns
+   (Pledges, #2131) holds its Actions cell's icons two to a line: four
+   44px decision toggles on one line took the room its Family's answer
+   needed, wrapping it onto one more line, so the first row ended below a
+   laptop's window. Its rows are already several lines tall, so two lines
+   of icons fit them. The width is two icons and their two .5rem end
+   margins (the second's is dropped, but the line still fits it), so the
+   pairs never re-break; the row gap matches the icons' gap. */
+.table-actions.paired-actions { white-space: normal; width: calc(2 * var(--button-min-height) + 1rem); min-width: calc(2 * var(--button-min-height) + 1rem); box-sizing: content-box; }
+.table-actions.paired-actions .icon-button:nth-child(even) { margin-inline-end: 0; }
+.table-actions.paired-actions .icon-button:nth-child(n+3) { margin-block-start: .5rem; }
 /* A fixed square, not a minimum: a link (Edit) and a <button> (Delete) must
    draw the same size, and the `.data-table button` rule's smaller padding and
    min-height would otherwise shrink only the button. The doubled-up selector
@@ -2054,9 +2072,14 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
    filled with its status look's line colour (.status-working for an
    accepted decision or a mark, .status-unknown for Ignored) with the glyph
    in --paper (white on the light scheme, dark on the dark one, so it keeps
-   its contrast). It is aria-disabled, never an undo, so it keeps the
-   ordinary pointer rather than the busy one and no hover. */
+   its contrast). It is a toggle (UX conventions, "Decision toggles",
+   #2131): the pressed icon that is the row's undo takes the pointer and,
+   on hover, a ring drawn outside it (a box shadow, so nothing moves); a
+   pressed icon waiting for a later undo is aria-disabled and keeps the
+   ordinary pointer and no hover. */
 .icon-button.is-selected, .icon-button.is-selected:not(:disabled):hover { background: var(--status-line); border-color: var(--status-line); color: var(--paper); cursor: default; }
+.icon-button.is-selected:not(:disabled):not([aria-disabled=true]) { cursor: pointer; }
+.icon-button.is-selected:not(:disabled):not([aria-disabled=true]):hover { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--status-line); }
 /* The Stage column's chip: a plain badge, or for a needs-correction stage
    (Entered incorrectly) and the Not seen in ParishSoft flag the Error and
    Warning looks with their icon (UX conventions, "Status indicators"). */

@@ -2829,7 +2829,8 @@ or the bulk bar, each decision with an optional note, acting
   part of bulk review.
 - **Ignore** (an eye struck through): decision *ignored*, leaving ParishSoft
   as it is.
-- **Back to review** (an arrow turning back): decision *unreviewed*, on an
+- **Back to review** (choosing the pressed Accept or Ignore again,
+  [decision toggles](../ui-conventions/spec.md#decision-toggles); the bulk bar's own button): decision *unreviewed*, on an
   accepted change not yet in its update or entered, or on an ignored one,
   with an optional note either way
   ([#1889](https://github.com/epiphany40223/parishkit/issues/1889)). Back to review
@@ -2975,16 +2976,17 @@ would read as if it had been in review
 enter by hand it offers **Entered by hand** and **Withdraw** (dialog
 "Withdraw the added Nickname for David Taylor? The Family will no longer
 see it."): it moves to *History*, and the field may be added again. Once
-Entered by hand it offers **Not entered yet**, which undoes the mark with a
+Entered by hand it offers **Not entered yet** (its pressed Entered by hand
+chosen again), which undoes the mark with a
 required note, as on every terminal stage
 ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)),
 so the added change is *To enter by hand* again, at its next version, and
 **Withdraw**, which undoes the mark and withdraws it in one action, with the
 same required note (its two steps, `reopened` then `withdrawn`, each with
-its own audit event). An entered one's row draws Accept (selected, Added
-by the parish), Withdraw, Entered by hand (selected), then Not entered yet,
-the undo just right of the mark it undoes
-([row actions](../ui-conventions/spec.md#row-actions-and-confirmation)).
+its own audit event). Its row draws Accept (selected, Added by the parish), Withdraw and Entered
+by hand in both states, Entered by hand pressed once entered: choosing it
+again is Not entered yet
+([decision toggles](../ui-conventions/spec.md#decision-toggles)).
 Every step stays in its history. Entered by hand, Not entered yet (the
 bulk bar's Back to review, whose dialog says so while the
 page lists an entered addition) and Withdraw are in the bulk bar too,
@@ -3609,6 +3611,11 @@ section is the page.
   Reviewer's value, is ParishSoft's upcoming-year amount the latest refresh
   found, shown on a Conflict, Entered incorrectly or Not seen in ParishSoft
   row, as on every worklist; a page with no such row has no such column.
+  The Actions cell holds its four
+  [decision toggles](../ui-conventions/spec.md#decision-toggles) two to a
+  line: on one line they took the room the Family's answer needs, which
+  then wrapped onto one more line and pushed the first row below a laptop's
+  first screen (#2131).
 - **Row and bulk actions** are the role table's for the stream: a To review or
   Conflict row offers Accept, Edit and Ignore (a Conflict's earlier decision
   reads "Earlier: Accepted, not in force." under its stage, and the decision

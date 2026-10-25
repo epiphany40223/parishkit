@@ -188,7 +188,8 @@ def test_an_added_address_sends_only_the_shown_state(page, component_origin):
 
 
 def test_not_entered_yet_undoes_an_added_changes_mark_in_place(page, component_origin):
-    """An added change Entered by hand offers Not entered yet (#1840, #2041):
+    """An added change Entered by hand offers Not entered yet (#1840, #2041),
+    its pressed Entered by hand chosen again (#2131):
     its dialog says the mark is undone and the change goes back to To enter
     by hand, and Record waits for the required note; the redrawn row is To
     enter by hand again, in place."""
@@ -204,9 +205,10 @@ def test_not_entered_yet_undoes_an_added_changes_mark_in_place(page, component_o
     fulfil_post_with(page, "**" + PATH, component_origin, answer)
     added = page.locator("#census-row-add-a1")
     has_text(added.locator(".stage-chip .status-word"), "Entered by hand")
-    undo = added.locator('[data-row-action="back_to_review"]')
+    undo = added.locator('[data-row-action="entered_by_hand"]')
+    assert undo.get_attribute("aria-pressed") == "true"
     assert undo.get_attribute("aria-label") == (
-        "Mark Nickname for Member 03 not entered yet"
+        "Entered by hand; select to mark Nickname for Member 03 not entered yet"
     )
     undo.click()
     dialog = page.locator("#census-decide-dialog")
@@ -247,11 +249,12 @@ def test_withdraw_after_entered_needs_the_undos_note(page, component_origin):
         node.get_attribute("data-row-action")
         for node in added.locator(".table-actions button").all()
     ]
-    # Not entered yet sits just right of the mark it undoes (R45 W, #2041).
-    assert actions == ["accept", "withdraw", "entered_by_hand", "back_to_review"]
+    # The same icons as while To enter by hand; the pressed mark is Not
+    # entered yet (#2131).
+    assert actions == ["accept", "withdraw", "entered_by_hand"]
     assert added.locator('[data-row-action="entered_by_hand"]').get_attribute(
         "title"
-    ) == ("Entered by hand; choose Not entered yet to change it")
+    ) == ("Entered by hand; select to mark Nickname for Member 03 not entered yet")
     added.locator('[data-row-action="withdraw"]').click()
     dialog = page.locator("#census-decide-dialog")
     has_text(dialog.locator("h2"), "Withdraw the added Nickname for Member 03?")
@@ -288,7 +291,7 @@ def test_the_familys_accept_says_it_withdraws_the_addition(page, component_origi
     # dialog with it.
     body = dialog.locator("[data-confirm-body]")
     warning = dialog.locator("[data-confirm-warning]")
-    has_text(body, "Record this decision. Back to review undoes it.")
+    has_text(body, "Record this decision. Choose its icon again to undo it.")
     has_text(warning, "This also withdraws the parish's added Mobile phone (555-0123).")
     visible(warning)
     assert "notice-error" in warning.get_attribute("class").split()
@@ -300,7 +303,7 @@ def test_the_familys_accept_says_it_withdraws_the_addition(page, component_origi
     hidden(dialog)
     other = page.locator("#census-row-4")
     other.locator('[data-row-action="accept"]').click()
-    has_text(body, "Record this decision. Back to review undoes it.")
+    has_text(body, "Record this decision. Choose its icon again to undo it.")
     hidden(warning)
     dialog.get_by_role("button", name="Cancel").click()
     row.locator("input[data-select-row]").check()

@@ -883,6 +883,9 @@ def page_context(rows, stage, extra, roles, *, mutable, notice, prefix=PREFIX):
         items="pledges",
         caption="Pledges",
         baseline=False,
+        # Four toggles on one line squeezed the Family's answer onto one
+        # more line, pushing the first row below a laptop's window (#2131).
+        paired_actions=True,
         fields={"search": extra["search"], "page": str(table.number)},
         filters_template="stewardship/pledges-filters.html",
         editor_template="stewardship/pledges-edit.html",

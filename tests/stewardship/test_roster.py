@@ -344,8 +344,9 @@ def test_staff_views_keep_the_roster_rows_the_review_stages_leave_out():
 
 def test_a_roster_row_offers_entered_by_hand_alone_with_no_note():
     """At To enter by hand an ordinary accepted request offers Back to review
-    and Entered by hand; a Member no longer in ParishSoft's, and one a later
-    response replaced, offer Entered by hand alone. Its dialog hides the
+    (its pressed Accept, #2131) and Entered by hand; a Member no longer in
+    ParishSoft's, and one a later response replaced, offer Entered by hand
+    alone. Its dialog hides the
     note (the ``no_note`` choice), and the bulk bar's Entered by hand does
     too. A replaced row says so, in its name and under its Stage."""
     rows = [
@@ -356,7 +357,7 @@ def test_a_roster_row_offers_entered_by_hand_alone_with_no_note():
     worklist = requests_worklist(rows)
     ordinary, gone, replaced = worklist.rows
     offered = [
-        [icon["action"] for icon in row["icons"] if not icon["selected"]]
+        [icon["decide"] for icon in row["icons"] if icon["active"]]
         for row in worklist.rows
     ]
     assert offered == [
@@ -365,7 +366,7 @@ def test_a_roster_row_offers_entered_by_hand_alone_with_no_note():
         ["entered_by_hand"],
     ]
     assert gone["kinds"] == replaced["kinds"] == "entered_by_hand"
-    assert {icon["choice"] for icon in replaced["icons"] if not icon["selected"]} == {
+    assert {icon["choice"] for icon in replaced["icons"] if icon["active"]} == {
         "no_note"
     }
     bulk = {button["value"]: button["choice"] for button in worklist.bulk}
