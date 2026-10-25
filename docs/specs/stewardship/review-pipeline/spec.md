@@ -1887,6 +1887,8 @@ changes what each role lands on:
     leader's per-Ministry cards link `?ministry=<DUID>` instead. A stage
     link the page cannot use is refused in plain words, as every
     worklist link is.
+  - The counts update themselves while the page is open, card by card
+    ([concurrency](#concurrency), live while open, #2174).
 - **Administrators** keep the full Home and menu, and also get the same
   panels, plus a Ready to update count per stream with its update link.
   As built (#1690), they are one **Review work** panel on Home, just before
@@ -1995,6 +1997,86 @@ it is and the notice says so. Bulk decisions are all or none. A pledge's
 version also advances with every refresh check of it
 ([Financial stream](#financial-stream)), so a decision is never applied over
 a Confirmed or Conflict the reader was not shown.
+
+**Live while open** (Administrator, 2026-10-25,
+[#2174](https://github.com/epiphany40223/parishkit/issues/2174)). Two
+reviewers, such as two Ministry leaders of one Ministry, or a leader and
+Staff, can have the same item open at once. The version check keeps the data
+safe, but each open page also shows a decision made elsewhere without a
+reload, under the general rule
+([pages that update themselves](../ui-conventions/spec.md#pages-that-update-themselves),
+its items others change). Each of these is a **review region**: every review
+worklist's table (Census changes, Ministry requests, Pledges, Additional
+information, Limitations), each Family hub tab's changed rows
+([hub row actions](../admin-portal/spec.md#hub-row-actions)) and the Review
+work counts on Home and My review work ([role views](#role-views)).
+
+- **One read.** About every 60 seconds, and at once when the tab is shown
+  again or the window regains focus, a region sends the items it drew in
+  one passive GET of its page's own address (`live=`): each item as a short
+  key of its id and a token of what its row shows (its identity cells,
+  such as the Family's or Member's name, its version, stage and the
+  stream's line under it, values, Submitted time, last decision and offered
+  actions; a card's count and link). An identity cell's link is not
+  compared: an item page's link carries the page's remembered view
+  (Ministry requests' `queue`), which a check may hold differently while
+  the cell shows the same name. A
+  worklist's read takes those items at every stage (History too, where the
+  stream lists one), within the reader's scope, through the stream page's own reader and row
+  decoration, not through the page's filters: an item that moved to another
+  stage is still found, so its row updates instead of going. A hub tab's
+  read is its tab's own address (the Family's items, every stage but
+  History); the counts' read is My review work's own counts, which Home's
+  panel shows too. Each is one read of its stream, as the page's own, so a
+  region costs no more per check than a view, and never one query per item.
+  Ministry requests reads its remembered view's filters and Members choice,
+  so its rows are decorated as the page decorated them. A region of more
+  than 300 items (All on a long list) sends 300 per check, in turn, so every
+  item is checked.
+- **The answer.** The server answers with the items whose token changed,
+  drawn exactly as the page draws them, or with nothing when none did. The
+  page redraws each changed item in place: its row (stage chip, values, Last
+  decision and icons, enabled or not as its new stage allows) and its own
+  Edit and Entered by hand dialogs, whose forms keep the view the page
+  shows. A worklist's check sends its table's optional columns (ParishSoft
+  now, the selection boxes), and its answer draws them as the page's table
+  does whatever the reader may now decide (a campaign held since the page
+  was drawn offers no bulk action, so a redrawn row's selection cell is
+  empty), so a redrawn row has the cells its table has. A row whose answer
+  still has other cells is a misfit. Only an answer that is the whole
+  region, a hub tab's own page, redraws a misfit's region whole (when a hub
+  tab's columns themselves changed: a Reviewer's value column an Edit
+  brings), its open disclosures kept open. A worklist's answer holds only
+  its changed rows, so it never replaces the table (that would drop the
+  other rows, their sort and the pager): a misfit row keeps its cells, takes
+  the new token and shows its tag, and is redrawn at the reader's own next
+  redraw. The row carries a short **Changed by someone else** tag under its
+  stage until the reader's own next action redraws the table, but only when
+  what it shows changed (its identity, values, stage or last decision): a
+  row whose offered actions alone changed, such as when the campaign was
+  held, is redrawn without one. A card's count changes in place, with no
+  tag.
+- **Nothing moves.** Rows never move, re-sort, appear or disappear: an item
+  no longer at the filtered stage stays where it is with its new stage, and
+  an item new since the page was drawn (a Family's later answer, someone
+  else's Add) is listed at the reader's own next redraw, as is an item that
+  could no longer be found. No card appears or goes. The region waits while
+  the reader is busy as the general rule says and, besides, while focus is
+  in it or the pointer is over it, so nothing changes under the reader's
+  hand; it checks again 5 seconds later.
+- **Audit and sign-in.** A check never extends the sign-in: every stream
+  view, the hub and the counts read a request carrying `live=` passively,
+  whatever its headers say. One that finds nothing changed records nothing.
+  One that brings changed items in records the page's own audited view (its
+  count the items brought in) marked automatic, as a report's re-read for
+  newer figures does. A check that fails records the view's FAILED
+  completion, marked automatic too (the counts, whose dashboard view has
+  no completion, record nothing for one). Ministry requests and Additional
+  information, whose views record a start and a completion, record only the
+  completion then, and the counts record the dashboard view.
+- **Failures.** As every periodic re-read: a failed check is tried again at
+  the region's pace, after three in a row the region says it could not
+  check, and a refusal stops the checks and says so.
 
 ## Review wizard
 
@@ -2321,6 +2403,16 @@ have many:
   the page's own address showing the live stage.
 - **Two tabs.** Each tab has its own run, so positions do not collide; two
   tabs on the same run are last-write-wins for the position.
+- **Live while open** ([#2174](https://github.com/epiphany40223/parishkit/issues/2174)).
+  Each wizard page's sections are review regions as the worklists' are
+  ([concurrency](#concurrency), live while open): a section opts in with the
+  region's one attribute (`data-live-items`, its page's own address), its
+  items already carry their keys and tokens because they are drawn through
+  the shared row includes, and the wizard page's view answers a `live=`
+  read through the same shared helper (`web/review_live.py`) as the stream
+  pages. A changed item is redrawn in place with its tag; the page's
+  subject, sequence and position never change under the reader. Until the
+  wizard's pages adopt it, they are live on load only.
 
 ### Wizard entry points
 

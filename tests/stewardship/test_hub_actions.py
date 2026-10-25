@@ -98,7 +98,7 @@ def test_the_family_tab_draws_the_census_pages_icons_and_dialogs():
     assert 'data-in-place-region data-refresh-url="/admin/reports/families/' in panel
     assert "?tab=family" in panel.split('id="hub-family-content"')[1].split(">")[0]
     assert '<th scope="col">Actions</th>' in region
-    assert f'<tr id="hub-family-census-row-{HOME_ID}">' in region
+    assert f'<tr id="hub-family-census-row-{HOME_ID}"' in region
     for action in ("accept", "edit", "ignore"):
         assert f'data-row-action="{action}"' in region
     # Every icon opens a dialog drawn here, which posts to Census changes.

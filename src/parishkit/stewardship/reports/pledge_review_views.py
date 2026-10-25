@@ -42,7 +42,11 @@ from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.role_refusal import require
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.accounts.sessions import authenticated_admin, database_now
+from parishkit.stewardship.accounts.sessions import (
+    authenticated_admin,
+    automatic_read,
+    database_now,
+)
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.models import Campaign
@@ -57,7 +61,7 @@ from parishkit.stewardship.source.source_status import (
     source_status_label,
 )
 from parishkit.stewardship.storage import StorageInvariantError
-from parishkit.stewardship.web import dates
+from parishkit.stewardship.web import dates, review_live
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import (
     ErrorCode,
@@ -251,8 +255,14 @@ SORTING = Sorting.by_column(
 
 def _principal(request, store, *, read_only=False):
     """Admin and Staff only; a Ministry leader never sees pledges."""
+    # A review region's check (#2174) never extends the sign-in.
     principal = authenticated_admin(
-        request, store=store, activity=not read_only, read_only=read_only
+        request,
+        store=store,
+        activity=not read_only
+        and not automatic_read(request)
+        and not review_live.checking(request),
+        read_only=read_only,
     )
     return require(principal, Capability.FINANCIAL_DETAIL)
 
@@ -590,8 +600,15 @@ def _edit_refusal(error):
     return validation_response(fields, refusal=Refusal(error.message, EDIT_REFUSED))
 
 
-def _audit(action, principal, campaign_id, outcome, count=0):
-    """Retain access evidence as a count only."""
+def _audit(action, principal, campaign_id, outcome, count=0, *, automatic=False):
+    """Retain access evidence as a count only.
+
+    ``automatic`` marks a review region's check that brought changed rows in
+    (#2174), as a report's automatic view is marked (#1620).
+    """
+    context = {"outcome": outcome, "count": count}
+    if automatic:
+        context["automatic"] = True
     with transaction.atomic():
         system = SystemConfiguration.objects.select_related(
             "active_configuration__parish"
@@ -603,7 +620,7 @@ def _audit(action, principal, campaign_id, outcome, count=0):
             subject_id=campaign_id,
             parish_id=system.active_configuration.parish.pk,
             campaign_id=campaign_id,
-            context={"outcome": outcome, "count": count},
+            context=context,
         )
 
 
@@ -676,7 +693,16 @@ def _respond(request, campaign_id, *, export, parameters, private, render):
         principal = _principal(request, service.store)
         admit_report_read(campaign_id)
         try:
-            stage, extra = _choices(parameters, export=export, private=private)
+            # A review region's check (#2174) carries its drawn items alone:
+            # every pledge at every stage, unpaged, kept to those items.
+            live = None if export else review_live.drawn(request)
+            if live is None:
+                stage, extra = _choices(parameters, export=export, private=private)
+            elif not review_live.alone(request):
+                raise ValueError("A live read carries nothing else.")
+            else:
+                stage, extra = EVERY, {"paging": review_live.EVERY_ROW, "search": ""}
+            extra["live"] = live
         except ValueError:
             return _error(status=400)
         finalized, count = False, 0
@@ -687,6 +713,9 @@ def _respond(request, campaign_id, *, export, parameters, private, render):
             if finalized:
                 return
             finalized = True
+            # A check that found nothing changed showed nothing (#2174).
+            if live is not None and completed and not count:
+                return
             try:
                 _audit(
                     action,
@@ -694,6 +723,7 @@ def _respond(request, campaign_id, *, export, parameters, private, render):
                     campaign_id,
                     Outcome.SUCCEEDED if completed else Outcome.FAILED,
                     count,
+                    automatic=live is not None,
                 )
             except (DatabaseError, StorageInvariantError) as error:
                 emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
@@ -711,8 +741,12 @@ def _respond(request, campaign_id, *, export, parameters, private, render):
             """Only detached authorized data reaches the template or file."""
             nonlocal count
             rows, _metadata = pledge_rows(campaign_id, principal, extra["search"])
+            rows = review_live.pick(rows, live)
             count = len(at_stage(rows, stage))
-            return iter((render(rows, stage, extra, principal),))
+            page = render(rows, stage, extra, principal)
+            # A check counts only the changed rows it brought in.
+            count = extra.get("live_count", count)
+            return iter((page,))
 
         response = campaign_response(
             request,
@@ -933,6 +967,15 @@ def _render_page(request, campaign_id, rows, stage, extra, principal, notice):
         mutable=mutable,
         notice=notice,
     )
+    live = extra.get("live")
+    if live is not None:
+        # A review region's check: only the rows that changed, or nothing
+        # (#2174).
+        context["worklist"], context["table"], extra["live_count"] = review_live.narrow(
+            context["worklist"], context["table"], live
+        )
+        if not context["table"].rows:
+            return b""
     return render_to_string(
         "stewardship/pledges-to-enter.html", context, request=request
     ).encode()

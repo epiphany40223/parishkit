@@ -949,10 +949,13 @@ browser reload lands on the same page and view with the current status.
 "should just go right back to where it was, with the updated status"
 ([#1586](https://github.com/epiphany40223/parishkit/issues/1586),
 2026-10-17). **Shared code.** `live-status-v1.js` status regions and
-`ui-v1.js`'s periodic quiet re-read (`a[data-reread-every]`), both built on
-the [in-place controls](#in-place-controls); no other mechanism.
+`ui-v1.js`'s periodic quiet re-read (`a[data-reread-every]`) with its item
+form for review regions (`[data-live-items]`), all built on the
+[in-place controls](#in-place-controls); no other mechanism.
 **Precedent.** System health (#1214), Family email progress (now the
-Mail queue, #1562), #869, #1353.
+Mail queue, #1562), #869, #1353, the review worklists, the Family hub's
+tabs and the Review work counts
+([#2174](https://github.com/epiphany40223/parishkit/issues/2174)).
 
 - **Passive reads only.** Every automatic read is one the page already
   makes: a status region's passive status read
@@ -1035,6 +1038,27 @@ Mail queue, #1562), #869, #1353.
   are tried again once a minute later and, if that read fails too, wait for
   the next ParishSoft data
   ([admin portal](../admin-portal/spec.md#parishsoft-ministry-leaders-without-a-user)).
+- **Items others change.** A page that lists items other readers decide
+  updates each item in place, never the list
+  ([#2174](https://github.com/epiphany40223/parishkit/issues/2174)). Its
+  region (`[data-live-items]`, the page's own address) sends the items it
+  drew, a key and a token of what each shows, in one passive read; the
+  answer holds only the items whose token changed, and each is redrawn where
+  it is, with a short **Changed by someone else** tag when what it shows
+  (not only what it offers) changed. The tag is a small notice in the
+  accent look with the info icon beside the item's stage (under it in a
+  table): easy to spot but not a warning. In a table its words wrap within
+  the column rather than widen it, so showing it never widens a column or
+  re-wraps the headings; the redrawn row itself may grow. An answer of
+  only the changed items never replaces the list. Rows never move,
+  re-sort, appear or disappear: an item that no longer matches the filters
+  keeps its place with its new state until the reader's own next redraw.
+  Besides the waits below, the region waits while focus is in it or the
+  pointer is over it, and checks again 5 seconds later. A read that brings
+  no change records nothing; one that brings changes records the page's
+  audited view marked `automatic`. The review regions are the precedent; the
+  [review pipeline](../review-pipeline/spec.md#concurrency) has their
+  details.
 - **Controls that background work holds.** A setting or button that
   background work holds is shown unavailable with its reason, and the
   reason never tells the reader to reload. The page follows that work
@@ -1070,7 +1094,8 @@ Mail queue, #1562), #869, #1353.
 - **Pace.** While background work is pending a status region reads fast
   (2 s backing off to 10 s, or the fixed pace the page asks for). A page
   whose state changes without the reader's own action re-reads every 30
-  seconds (Background work, Families on the form now; Data to fix in
+  seconds (Background work, Families on the form now; review regions every
+  60 seconds, as their items change at review pace; Data to fix in
   ParishSoft every 60 seconds, because each check runs every section's
   read, [admin portal](../admin-portal/spec.md#data-to-fix-refresh-and-empty-states)), and a report's
   figures status checks every 30 seconds while its figures are current, so

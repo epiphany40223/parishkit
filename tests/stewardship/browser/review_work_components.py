@@ -24,6 +24,9 @@ PATH, LEADER_PATH, HOME_PATH = (
     "/review-work-leader",
     "/review-work-home",
 )
+# The Staff page after someone else accepted one census change (#2174): its
+# To review card counts one fewer, what the page's check is answered with.
+LATER_PATH = "/review-work-later"
 CAMPAIGN = SimpleNamespace(
     pk=UUID(int=1690),
     state="active",
@@ -66,8 +69,10 @@ LEADER = {
 }
 
 
-def chrome(admin, actor, menu_counts):
-    """The chrome the context processor would build for ``actor``."""
+def chrome(admin, actor, menu_counts, stages=None):
+    """The chrome the context processor would build for ``actor``, its menu
+    read by stage ``stages`` (``MENU_STAGES`` by default)."""
+    stages = MENU_STAGES if stages is None else stages
     configuration = SimpleNamespace(mode="production")
     # ParishSoft data is present, so the menu runs no query (it would need a DB).
     items = admin_context._navigation_items(
@@ -86,7 +91,7 @@ def chrome(admin, actor, menu_counts):
     for section in sections:
         for entry in section["items"]:
             entry["count"] = menu_counts.get(entry["name"]) if entry["url"] else None
-            entry["stages"] = MENU_STAGES.get(entry["name"]) if entry["url"] else None
+            entry["stages"] = stages.get(entry["name"]) if entry["url"] else None
     # Staff and leaders see My review work as Review work's first entry, as
     # the context processor draws it (R39 finding 4).
     lands = review_work.lands_here(actor)
@@ -107,12 +112,24 @@ def chrome(admin, actor, menu_counts):
 def components(context, admin):
     """The landing page for Staff and a leader, and an Administrator's Home."""
     pages = {}
-    for path, roles, scope, counts in (
-        (PATH, {"staff"}, frozenset(), COUNTS),
-        (LEADER_PATH, {"ministry_leader"}, frozenset({9, 12}), {"leader": LEADER}),
+    later = MENU_STAGES | {
+        "census_changes": MENU_STAGES["census_changes"] | {"to_review": 1233}
+    }
+    for path, roles, scope, counts, stages in (
+        (PATH, {"staff"}, frozenset(), COUNTS, None),
+        (
+            LEADER_PATH,
+            {"ministry_leader"},
+            frozenset({9, 12}),
+            {"leader": LEADER},
+            None,
+        ),
+        (LATER_PATH, {"staff"}, frozenset(), COUNTS, later),
     ):
         actor = Principal(UUID(int=1690), frozenset(roles), scope)
-        configuration, page_chrome = chrome(admin, actor, {"ministry_report": 8})
+        configuration, page_chrome = chrome(
+            admin, actor, {"ministry_report": 8}, stages
+        )
         pages[path] = (
             "text/html",
             render_to_string(

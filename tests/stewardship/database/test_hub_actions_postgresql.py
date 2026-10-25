@@ -81,7 +81,7 @@ def test_staff_accept_a_change_from_the_family_tab(response_service, google):
     browser = staff_browser(google)
     panel = tab(browser, family_id, "family")
     row_id = f"hub-family-census-row-{home.pk}"
-    assert f'<tr id="{row_id}">' in panel
+    assert f'<tr id="{row_id}"' in panel
     assert 'id="hub-family-content" data-in-place-region' in panel
     assert "data-confirm-answer-page" not in panel
     action, fields = dialog_fields(panel, "hub-family-census-decide")
@@ -153,8 +153,8 @@ def test_the_additional_tab_acts_through_limitations_and_its_queue(
     assert login.status_code == 302
     panel = tab(browser, family_id, "other")
     limitation = f"hub-other-limitations-row-f{duid}"
-    assert f'<tr id="{limitation}">' in panel
-    assert f'<tr id="hub-other-information-row-{item.pk}">' in panel
+    assert f'<tr id="{limitation}"' in panel
+    assert f'<tr id="hub-other-information-row-{item.pk}"' in panel
     action, fields = dialog_fields(panel, "hub-other-limitations-decide")
     assert action == reverse("admin:limitations_report")
     assert dialog_fields(panel, "hub-other-information-decide")[0] == reverse(
@@ -181,7 +181,7 @@ def test_a_ministry_request_is_accepted_from_its_member_tab(response_service, go
     assert login.status_code == 302
     panel = tab(browser, family_id, member.key)
     row_id = f"hub-{member.key}-ministry-row-{leave.pk}"
-    assert f'<tr id="{row_id}">' in panel
+    assert f'<tr id="{row_id}"' in panel
     action, fields = dialog_fields(panel, f"hub-{member.key}-ministry-decide")
     assert action == reverse("admin:ministry_report")
     chosen = fields | icon(panel, row_id, "accept") | {"note": ""}
@@ -212,7 +212,7 @@ def test_a_pledge_is_edited_from_the_financial_tab(response_service, google):
     assert login.status_code == 302
     panel = tab(browser, family_id, "financial")
     row_id = f"hub-financial-pledges-row-{response.pk}"
-    assert f'<tr id="{row_id}">' in panel
+    assert f'<tr id="{row_id}"' in panel
     form_id = f"hub-financial-pledges-edit-{response.pk}"
     action, fields = dialog_fields(panel, form_id)
     assert action == reverse("admin:pledges_to_enter")
@@ -224,6 +224,6 @@ def test_a_pledge_is_edited_from_the_financial_tab(response_service, google):
     assert response.status_code == 200
     panel = tab(browser, family_id, "financial")
     assert '<th scope="col">Reviewer\'s value</th>' in panel
-    annual, frequency = panel.split(f'<tr id="{row_id}">')[1].split("</tr>")[:2]
+    annual, frequency = panel.split(f'<tr id="{row_id}"')[1].split("</tr>")[:2]
     assert "<td>$1,500.00</td>" in annual
     assert "<td>Quarterly ($375.00 each)</td>" in frequency

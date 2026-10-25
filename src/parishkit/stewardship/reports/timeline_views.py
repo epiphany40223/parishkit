@@ -64,7 +64,11 @@ from parishkit.stewardship.accounts.person_identity import family_user_rows
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.role_refusal import require, role_denied_for
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.accounts.sessions import authenticated_admin, database_now
+from parishkit.stewardship.accounts.sessions import (
+    authenticated_admin,
+    automatic_read,
+    database_now,
+)
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.credential_keys import key_set_lock
@@ -80,6 +84,7 @@ from parishkit.stewardship.source.snapshot_names import snapshot_family_facts
 from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 from parishkit.stewardship.source.workgroups import applied_evidence
 from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web import review_live
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.dates import browser_day_start
 from parishkit.stewardship.web.report_errors import report_unavailable
@@ -506,8 +511,14 @@ def export_context(campaign_id, family_id):
 
 def _principal(request, store, *, read_only=False):
     """A current Admin or Staff user, reloaded from policy on every call."""
+    # A tab's review region check (#2174) never extends the sign-in.
     principal = authenticated_admin(
-        request, store=store, activity=not read_only, read_only=read_only
+        request,
+        store=store,
+        activity=not read_only
+        and not automatic_read(request)
+        and not review_live.checking(request),
+        read_only=read_only,
     )
     return require(principal, Capability.CAMPAIGN_REPORT)
 
@@ -523,7 +534,7 @@ def _full(principal):
     return bool({"administrator", "staff"} & principal.roles)
 
 
-def _audit(principal, campaign_id, family_id, outcome):
+def _audit(principal, campaign_id, family_id, outcome, *, automatic=False):
     """Record the view: who, which Family of which campaign, and how it ended.
 
     The subject is the Family's opaque campaign record id, as a Mail message
@@ -532,8 +543,12 @@ def _audit(principal, campaign_id, family_id, outcome):
     in. No name, DUID, code, filter or shown value is copied. The
     Administrator confirmed recording the Family on 2026-10-05 (reports
     spec). An append takes no row locks, so it runs after the read guard
-    closes.
+    closes. ``automatic`` marks a tab's review region check that brought
+    changed rows in (#2174), as a report's automatic view is marked (#1620).
     """
+    context = {"outcome": outcome}
+    if automatic:
+        context["automatic"] = True
     with transaction.atomic():
         system = SystemConfiguration.objects.select_related(
             "active_configuration__parish"
@@ -545,7 +560,7 @@ def _audit(principal, campaign_id, family_id, outcome):
             subject_id=family_id,
             parish_id=system.active_configuration.parish.pk,
             campaign_id=campaign_id,
-            context={"outcome": outcome},
+            context=context,
         )
 
 
@@ -597,11 +612,18 @@ def timeline(request, campaign_id, family_id):
         service = runtime()
         principal = _principal(request, service.store)
         try:
-            query, values = parse_query(request.GET)
+            # A tab's review region check (#2174) reads the tab's own
+            # address with its drawn items; the rest of the address is the
+            # page's as ever.
+            live = review_live.drawn(request)
+            parameters = request.GET.copy()
+            parameters.pop(review_live.LIVE, None)
+            parameters.pop(review_live.COLUMNS, None)
+            query, values = parse_query(parameters)
         except ValueError:
             return private_response("Invalid report filters.\n", status=400)
         admit_report_read(campaign_id)
-        finalized, found = False, False
+        finalized, found, changed = False, False, 0
 
         def finish(completed):
             """Audit completion once, after the read-only transaction closes.
@@ -615,12 +637,16 @@ def timeline(request, campaign_id, family_id):
             if finalized or not found:
                 return
             finalized = True
+            # A check that found nothing changed showed nothing (#2174).
+            if live is not None and completed and not changed:
+                return
             try:
                 _audit(
                     principal,
                     campaign_id,
                     family_id,
                     Outcome.SUCCEEDED if completed else Outcome.FAILED,
+                    automatic=live is not None,
                 )
             except (DatabaseError, StorageInvariantError) as error:
                 emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
@@ -635,8 +661,12 @@ def timeline(request, campaign_id, family_id):
             admit_report_read(campaign_id)
 
         def content():
-            """Read the Family once under the guard and render the page."""
-            nonlocal found
+            """Read the Family once under the guard and render the page.
+
+            A tab's review region check answers the page only when one of
+            its drawn items is drawn differently now, and nothing otherwise.
+            """
+            nonlocal found, changed
             campaign = Campaign.objects.select_related("active_configuration").get(
                 pk=campaign_id
             )
@@ -662,7 +692,7 @@ def timeline(request, campaign_id, family_id):
             # Production records only (#1570): the Testing view was removed.
             # The review lines (#1774) are read only while the Timeline tab
             # is the one drawn, the tab the address chooses or falls back to.
-            chosen = hub_tabs("", request.GET, sections, census).selected
+            chosen = hub_tabs("", parameters, sections, census).selected
             # The chosen census tab's row actions (#2064): its changes as
             # Census changes reads and decorates them, read only while that
             # tab is drawn.
@@ -682,7 +712,7 @@ def timeline(request, campaign_id, family_id):
                 campaign,
                 family,
                 census or HubCensus(),
-                request.GET.get(TAB, ""),
+                parameters.get(TAB, ""),
                 principal=principal,
                 parish_name=system.active_configuration.parish.name,
             )
@@ -690,7 +720,7 @@ def timeline(request, campaign_id, family_id):
             # Timelines (#1867), and only while the Timeline tab (the only
             # panel that shows them) is chosen, as hub_reads reads the other
             # streams: one identity read and one users read.
-            chosen = hub_tabs("", request.GET, sections, census or HubCensus()).selected
+            chosen = hub_tabs("", parameters, sections, census or HubCensus()).selected
             members = ()
             if chosen == "timeline" and allows(principal, Capability.MANAGE_USERS):
                 members = family_user_rows(family.family_duid, principal.identity)
@@ -718,7 +748,7 @@ def timeline(request, campaign_id, family_id):
                 values=values,
                 export=export_context(campaign_id, family.pk) if full else None,
                 mail_links=allows(principal, Capability.BACKGROUND_WORK),
-                parameters=request.GET,
+                parameters=parameters,
                 sections=sections,
                 census=census,
                 ministry="ministry"
@@ -733,6 +763,10 @@ def timeline(request, campaign_id, family_id):
             page = render_to_string(
                 "stewardship/timeline.html", context, request=request
             )
+            if live is not None:
+                changed = review_live.changed_count(page, live)
+                if not changed:
+                    return iter((b"",))
             return iter((page.encode(),))
 
         response = campaign_response(

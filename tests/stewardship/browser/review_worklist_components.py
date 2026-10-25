@@ -18,6 +18,7 @@ from django.template import engines
 
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.pipeline import Decision, Placement, Stage
+from parishkit.stewardship.web import review_live
 from parishkit.stewardship.web.review_worklist import (
     STALE,
     Column,
@@ -46,6 +47,14 @@ STALED = "/review-worklist-staled"
 # reload then loads (R38 finding 6).
 FILTERED = "/review-worklist-filtered"
 FILTERED_ADDRESS = PATH + "?stage=ignored"
+# A check's answer once the campaign was held since the page was drawn
+# (#2174): the stream view passes no roles, so no row offers an action and
+# bulk is gone; row 0 was also accepted. The answer is narrowed to rows 0
+# and 2 alone, with the page's columns (``review_live.narrow``).
+HELD = "/review-worklist-held"
+# The same answer drawn without the page's selection column, as one that
+# misfits its table: the page must keep its table, never swap it for this.
+MISFIT = "/review-worklist-misfit"
 ACCEPTED_NOTICE = "Mobile phone for Member 00 accepted."
 BULK_NOTICE = "2 changes accepted."
 REOPENED_NOTICE = "Mobile phone for Member 04 sent back to review."
@@ -135,9 +144,11 @@ def _page(
     notice=None,
     path=PATH,
     stage="all",
+    live=None,
 ):
     """Render the host page with ``rows`` for a reader holding ``roles``,
-    at Stage ``stage``, naming its own address as a stream's view does."""
+    at Stage ``stage``, naming its own address as a stream's view does;
+    with ``live`` (a check's ``review_live.Drawn``), its narrowed answer."""
     table = paginate(rows, {"size": "25"}, carry=[("stage", stage)])
     table = replace(table, method="post", action=path)
     counts = {}
@@ -161,6 +172,8 @@ def _page(
         add_template=ADD,
         address=page_address(path, [("stage", "" if stage == "all" else stage)]),
     )
+    if live is not None:
+        worklist, table, _count = review_live.narrow(worklist, table, live)
     return (
         "text/html",
         HOST.render(
@@ -210,6 +223,13 @@ def components(context, admin):
     undone = {6: (Stage.TO_ENTER_BY_HAND, Decision.ACCEPTED)}
     staff = {"staff"}
     ignored = [row for row in staff_rows() if row["placement"].stage is Stage.IGNORED]
+    # The staff page's check of rows 0 and 2, with its table's columns.
+    held = review_live.Drawn(
+        {review_live.item_key(str(index)): "aaaaaa" for index in (0, 2)}
+    )
+    held.columns = frozenset({"now", "select"})
+    misfit = review_live.Drawn(held)
+    misfit.columns = frozenset({"now"})
     return {
         PATH: _page(context, admin, staff_rows(), staff),
         ACCEPTED: _page(
@@ -231,6 +251,8 @@ def components(context, admin):
             notice=CONFIRMED_NOTICE,
         ),
         STALED: _page(context, admin, staff_rows(), staff, notice=STALE_NOTICE),
+        HELD: _page(context, admin, staff_rows(accepted), set(), live=held),
+        MISFIT: _page(context, admin, staff_rows(accepted), set(), live=misfit),
         FILTERED: _page(context, admin, ignored, staff, stage="ignored"),
         FILTERED_ADDRESS: _page(context, admin, ignored, staff, stage="ignored"),
         LEADER: _page(

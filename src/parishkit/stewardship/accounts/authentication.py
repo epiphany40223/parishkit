@@ -28,9 +28,10 @@ from django.conf import settings
 from django.core.exceptions import MultipleObjectsReturned
 from django.db import DatabaseError, IntegrityError, transaction
 from django.db.models import F
-from django.http import HttpResponseRedirect
+from django.http import HttpResponse, HttpResponseRedirect
 from django.middleware.csrf import get_token, rotate_token
 from django.shortcuts import render
+from django.template.loader import render_to_string
 from django.views.decorators.http import (
     require_GET,
     require_http_methods,
@@ -617,6 +618,60 @@ def logout(request):
     return HttpResponseRedirect("/admin/login")
 
 
+def _review_counts(request, caller, principal, store, live):
+    """The Review work cards that changed since the page drew them (#2174).
+
+    ``live`` is the cards a review region drew (``review_live.drawn``). The
+    counts are read as My review work reads them (``review_work.observe``),
+    in one snapshot, and the panels built from the viewer's menu, as both
+    My review work and Admin Home draw them. With no card changed the answer
+    is empty and nothing is recorded; otherwise it is the panels, and the
+    dashboard view is recorded once, marked automatic (#1620).
+    """
+    from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
+    from parishkit.stewardship.audit.services import record_action
+    from parishkit.stewardship.web.review_live import item_key, item_token
+
+    from . import review_work
+    from .admin_context import portal_chrome
+
+    observed = review_work.observe(principal, store)
+    if observed is None:
+        return denial(status=503, retry=5)
+    config, review, now = observed
+    request._stewardship_display_now = now
+    request._stewardship_display_configuration = config
+    chrome = portal_chrome(request).get("admin_chrome") or {}
+    panels = review_work.panels(chrome, review) if review["campaign"] else []
+    changed = sum(
+        1
+        for panel in panels
+        for card in panel.cards
+        if live.get(item_key(card.label, panel.stream), item_token(card))
+        != item_token(card)
+    )
+    body = b""
+    if changed:
+        body = render_to_string(
+            "stewardship/review-work-panels.html",
+            {"panels": panels, "nested": not review_work.lands_here(principal)},
+        ).encode()
+        with transaction.atomic():
+            if authenticated_admin(caller, store=store, read_only=True) != principal:
+                return denial(status=403)
+            record_action(
+                Action.DASHBOARD_VIEWED,
+                actor_kind=ActorKind.PORTAL_USER,
+                actor_id=principal.identity,
+                parish_id=config.active_configuration.parish.pk,
+                campaign_id=config.current_campaign_id,
+                context={"outcome": Outcome.SUCCEEDED, "automatic": True},
+            )
+    response = HttpResponse(body, content_type="text/html; charset=utf-8")
+    response["Cache-Control"] = "no-store"
+    return response
+
+
 @require_safe
 def index(request):
     """Show Home, or My review work, under fresh, capability-filtered authorization.
@@ -627,15 +682,29 @@ def index(request):
     """
     from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
     from parishkit.stewardship.audit.services import record_action
+    from parishkit.stewardship.web import review_live
 
     from . import review_work
     from .admin_caller import AdminCaller
     from .admin_dashboard import observe
+    from .sessions import automatic_read
 
+    try:
+        # The Review work cards' review region check (#2174): its drawn
+        # cards, answered by ``_review_counts``. It never extends the
+        # sign-in, whatever its headers say (``review_live.checking``).
+        live = review_live.drawn(request)
+    except ValueError:
+        return denial(status=400)
+    passive = automatic_read(request) or review_live.checking(request)
     try:
         service = runtime()
         caller = AdminCaller.from_request(request)
-        principal = authenticated_admin(caller, store=service.store, activity=True)
+        principal = authenticated_admin(
+            caller, store=service.store, activity=not passive
+        )
+        if live is not None and principal is not None:
+            return _review_counts(request, caller, principal, service.store, live)
         if principal is None:
             # With the ended flag when the browser still had a session
             # (#2058), as every other Admin page load does.

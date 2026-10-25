@@ -9042,6 +9042,9 @@ same icons, selected states, words and dialogs:
   focus back on the same action's icon in the redrawn row
   ([in-place controls](../ui-conventions/spec.md#in-place-controls),
   [row actions and confirmation](../ui-conventions/spec.md#row-actions-and-confirmation)).
+  The tab's content is also a review region: a decision someone else makes
+  on one of its items shows on that row, in place, while the tab is open
+  ([concurrency](../review-pipeline/spec.md#concurrency), live while open, #2174).
 - **Who.** Only Administrators and Staff open the hub. A row shows only the
   actions its stream page shows that reader (hidden, not disabled); a
   reader the stream page would refuse sees the rows without icons. While

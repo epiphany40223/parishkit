@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
-from django.http import HttpResponse
+from django.http import HttpResponse, QueryDict
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
@@ -26,7 +26,11 @@ from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.role_refusal import require
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.accounts.sessions import authenticated_admin, database_now
+from parishkit.stewardship.accounts.sessions import (
+    authenticated_admin,
+    automatic_read,
+    database_now,
+)
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.models import Campaign
@@ -36,7 +40,7 @@ from parishkit.stewardship.responses.census_review import KeyRebound
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.source.snapshot_names import current_snapshot
 from parishkit.stewardship.storage import StorageInvariantError
-from parishkit.stewardship.web import dates
+from parishkit.stewardship.web import dates, review_live
 from parishkit.stewardship.web.contracts import (
     ErrorCode,
     FieldError,
@@ -125,8 +129,14 @@ def export_choice(fmt, zone_name):
 
 def _principal(request, store, *, read_only=False, export=False):
     """Every request reloads current policy; Ministry leaders never qualify."""
+    # A review region's check (#2174) never extends the sign-in.
     principal = authenticated_admin(
-        request, store=store, activity=not read_only, read_only=read_only
+        request,
+        store=store,
+        activity=not read_only
+        and not automatic_read(request)
+        and not review_live.checking(request),
+        read_only=read_only,
     )
     require(principal, Capability.CAMPAIGN_REPORT)
     if export and not allows(principal, Capability.REPORT_EXPORT):
@@ -206,16 +216,28 @@ def _respond(request, campaign_id, *, export, render):
         principal = _principal(request, service.store, export=export)
         admit_report_read(campaign_id)
         try:
+            # A review region's check (#2174) carries its drawn items alone:
+            # every answer at every stage, unpaged, kept to those items.
+            live = None if export else review_live.drawn(request)
             # A page link may carry a Stage alone, a My review work card's
             # ``?stage=`` (#2101), which WorklistQuery.parse checks; the
             # search, Show and table choices stay private POST state.
             if request.GET and (
-                export or request.method != "GET" or set(request.GET) != {"stage"}
+                export
+                or request.method != "GET"
+                or (
+                    not review_live.alone(request)
+                    if live is not None
+                    else set(request.GET) != {"stage"}
+                )
             ):
                 raise ValueError("Limitations filters require private POST state.")
             parameters = (request.GET if request.GET else request.POST).copy()
             parameters.pop("csrfmiddlewaretoken", None)
-            extra = {}
+            if live is not None:
+                parameters = QueryDict(mutable=True)
+                parameters["stage"] = EVERY_STAGE
+            extra = {"live": live}
             if export:
                 fmt = parameters.pop("format", [DEFAULT_EXPORT_FORMAT])
                 # The browser's zone, posted unasked, or an explicit
@@ -238,6 +260,8 @@ def _respond(request, campaign_id, *, export, render):
             else:
                 decision = read_decision(parameters)
                 extra["paging"] = paging_values(parameters)
+                if live is not None:
+                    extra["paging"] = review_live.EVERY_ROW
                 if "stage" not in parameters:
                     # The worklist opens on To review (review pipeline spec,
                     # "Review worklist").
@@ -271,6 +295,14 @@ def _respond(request, campaign_id, *, export, render):
             if finalized:
                 return
             finalized = True
+            # A check that found nothing changed showed nothing (#2174).
+            if live is not None and completed and not count:
+                return
+            choices = audit_choices(query, snapshot)
+            if live is not None:
+                # A check that brought changed answers in, or failed: an
+                # automatic view (#1620).
+                choices["automatic"] = True
             try:
                 _audit(
                     action,
@@ -278,7 +310,7 @@ def _respond(request, campaign_id, *, export, render):
                     campaign_id,
                     Outcome.SUCCEEDED if completed else Outcome.FAILED,
                     count,
-                    audit_choices(query, snapshot),
+                    choices,
                 )
             except (DatabaseError, StorageInvariantError) as error:
                 emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
@@ -306,7 +338,10 @@ def _respond(request, campaign_id, *, export, render):
             if current_snapshot() == before:
                 snapshot = before
             count = row_count(result)
-            return iter((render(result, query, extra),))
+            page = render(result, query, extra)
+            # A check counts only the changed answers it brought in.
+            count = extra.get("live_count", count)
+            return iter((page,))
 
         response = campaign_response(
             request,
@@ -383,7 +418,10 @@ def report(request, campaign_id):
         """The stream's review worklist: one table, redrawn in place."""
         action = reverse("admin:limitations_report")
         worklist_query = extra["worklist"]
-        shown, counts = at_stage(answer_rows(result), worklist_query.stage)
+        live = extra["live"]
+        shown, counts = at_stage(
+            review_live.pick(answer_rows(result), live), worklist_query.stage
+        )
         table = paginate(
             shown,
             extra["paging"],
@@ -403,6 +441,14 @@ def report(request, campaign_id):
         worklist, table = worklist_page(
             counts, worklist_query, table, action, mutable=mutable
         )
+        if live is not None:
+            # A review region's check: only the rows that changed, or
+            # nothing (#2174).
+            worklist, table, extra["live_count"] = review_live.narrow(
+                worklist, table, live
+            )
+            if not table.rows:
+                return b""
         return render_to_string(
             "stewardship/limitations-report.html",
             {

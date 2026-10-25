@@ -29,7 +29,11 @@ from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.role_refusal import require
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.accounts.sessions import authenticated_admin, database_now
+from parishkit.stewardship.accounts.sessions import (
+    authenticated_admin,
+    automatic_read,
+    database_now,
+)
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.models import Campaign
@@ -44,7 +48,7 @@ from parishkit.stewardship.responses.census_review import (
 )
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
-from parishkit.stewardship.web import dates
+from parishkit.stewardship.web import dates, review_live
 from parishkit.stewardship.web.contracts import (
     ErrorCode,
     FieldError,
@@ -172,8 +176,14 @@ def paging_values(parameters):
 
 def _principal(request, store, *, read_only=False, export=False):
     """Every request reloads current policy; Ministry leaders never qualify."""
+    # A review region's check (#2174) never extends the sign-in.
     principal = authenticated_admin(
-        request, store=store, activity=not read_only, read_only=read_only
+        request,
+        store=store,
+        activity=not read_only
+        and not automatic_read(request)
+        and not review_live.checking(request),
+        read_only=read_only,
     )
     require(principal, Capability.VIEW_CENSUS)
     if export and not allows(principal, Capability.REPORT_EXPORT):
@@ -199,8 +209,15 @@ def _error(campaign_id, *, status):
     return with_status_code(response)
 
 
-def _audit(action, principal, campaign_id, outcome, count=0):
-    """Retain access evidence as a count only, never a name or filter."""
+def _audit(action, principal, campaign_id, outcome, count=0, *, automatic=False):
+    """Retain access evidence as a count only, never a name or filter.
+
+    ``automatic`` marks a review region's check that brought changed rows in
+    (#2174), as a report's automatic view is marked (#1620).
+    """
+    context = {"outcome": outcome, "count": count}
+    if automatic:
+        context["automatic"] = True
     with transaction.atomic():
         system = SystemConfiguration.objects.select_related(
             "active_configuration__parish"
@@ -212,7 +229,7 @@ def _audit(action, principal, campaign_id, outcome, count=0):
             subject_id=campaign_id,
             parish_id=system.active_configuration.parish.pk,
             campaign_id=campaign_id,
-            context={"outcome": outcome, "count": count},
+            context=context,
         )
 
 
@@ -301,12 +318,26 @@ def _respond(request, campaign_id, *, export, render):
             # a reload draws the same view; the name search never does.
             # The retired Submitted from and Through (#1888) are dropped
             # unread, from a link and a form alike, never refused.
-            if set(request.GET) - LINK_PARAMETERS - RETIRED_DATES:
+            # A review region's check (#2174) carries its drawn items alone.
+            live = None if export else review_live.drawn(request)
+            if live is not None and not review_live.alone(request):
+                raise ValueError("A live read carries nothing else.")
+            if (
+                set(request.GET)
+                - LINK_PARAMETERS
+                - RETIRED_DATES
+                - {
+                    review_live.LIVE,
+                    review_live.COLUMNS,
+                }
+            ):
                 raise ValueError("Census change links carry no private filter.")
             parameters = drop_retired_dates(
                 (request.GET if request.method == "GET" else request.POST).copy()
             )
             parameters.pop("csrfmiddlewaretoken", None)
+            parameters.pop(review_live.LIVE, None)
+            parameters.pop(review_live.COLUMNS, None)
             decision = None if export else read_decision(parameters)
             extra = _choices(parameters, export=export)
             if not export and "stage" not in parameters:
@@ -314,6 +345,12 @@ def _respond(request, campaign_id, *, export, render):
                 # "Review worklist").
                 parameters["stage"] = Stage.TO_REVIEW.value
             query = CensusQuery.parse(parameters)
+            extra["live"] = live
+            if live is not None:
+                # Every change, History included, whatever the filters, so
+                # a drawn change that moved stage is still found; unpaged.
+                query = CensusQuery(status="all", history="yes")
+                extra["paging"] = review_live.EVERY_ROW
             # Recorded in its own work transaction, before the page's read,
             # so the page that answers shows the result.
             if decision is not None:
@@ -355,6 +392,10 @@ def _respond(request, campaign_id, *, export, render):
             if finalized:
                 return
             finalized = True
+            live = extra.get("live") if not export else None
+            # A check that found nothing changed showed nothing (#2174).
+            if live is not None and completed and not count:
+                return
             try:
                 _audit(
                     action,
@@ -362,6 +403,7 @@ def _respond(request, campaign_id, *, export, render):
                     campaign_id,
                     Outcome.SUCCEEDED if completed else Outcome.FAILED,
                     count,
+                    automatic=live is not None,
                 )
             except (DatabaseError, StorageInvariantError) as error:
                 emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
@@ -380,7 +422,10 @@ def _respond(request, campaign_id, *, export, render):
             nonlocal count
             result = census_changes(campaign_id, query, principal)
             count = len(result["rows"])
-            return iter((render(result, query, extra),))
+            page = render(result, query, extra)
+            # A check counts only the changed rows it brought in.
+            count = extra.get("live_count", count)
+            return iter((page,))
 
         response = campaign_response(
             request,
@@ -421,8 +466,9 @@ def report(request, campaign_id):
     def render(result, query, extra):
         """The census stream's review worklist: one table, redrawn in place."""
         action = reverse("admin:census_changes")
+        live = extra["live"]
         table = paginate(
-            result["rows"],
+            review_live.pick(result["rows"], live),
             extra["paging"],
             carry=list(page_fields(query.form_values()).items()),
             sorting=SORTING,
@@ -441,6 +487,14 @@ def report(request, campaign_id):
         worklist, table = worklist_page(
             result, query, table, action, mutable=mutable, paging=extra["paging"]
         )
+        if live is not None:
+            # A review region's check: only the rows that changed, or
+            # nothing (#2174).
+            worklist, table, extra["live_count"] = review_live.narrow(
+                worklist, table, live
+            )
+            if not table.rows:
+                return b""
         return render_to_string(
             "stewardship/census-changes.html",
             {

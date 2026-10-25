@@ -77,7 +77,7 @@ def steps(body):
     return [
         " ".join(re.sub(r"<[^>]+>", " ", item).split())
         for item in re.findall(
-            r"<li [^>]*data-link-card>(.*?)</li>", body.decode(), re.S
+            r"<li [^>]*data-link-card[^>]*>(.*?)</li>", body.decode(), re.S
         )
     ]
 

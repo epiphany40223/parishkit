@@ -26,6 +26,7 @@ What a reader may do is decided by ``pipeline`` and enforced by
 """
 
 from dataclasses import dataclass, replace
+from urllib.parse import urlencode
 
 from django.db import connection
 from django.urls import reverse
@@ -38,6 +39,7 @@ from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.pipeline import TERMS, Action, Decision, Stage, Stream
 from parishkit.stewardship.responses.refresh_checks import check_states
 from parishkit.stewardship.source.source_status import source_status_label
+from parishkit.stewardship.web import review_live
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.review_worklist import (
@@ -915,6 +917,7 @@ def worklist_context(
     asked=None,
     families=None,
     prefix=PREFIX,
+    live=None,
 ):
     """The worklist and its table for one page of the view.
 
@@ -923,12 +926,14 @@ def worklist_context(
     selection bar and Add are gone; the page's notice says why.
     ``decisions`` and ``asked`` are given only to a detached page
     (``decorate``). ``prefix`` keeps the element ids apart where another
-    page draws these rows (the Family hub's Member tabs, #2064).
+    page draws these rows (the Family hub's Member tabs, #2064). ``live`` is
+    a review region's drawn items (#2174): only those are shown, still
+    decorated against every row, as the page drew them.
     """
     leader = is_leader(principal)
     rows = result["rows"]
     counts = stage_counts(rows)
-    shown = chosen(rows, query.stage)
+    shown = review_live.pick(chosen(rows, query.stage), live)
     last = max(1, -(-len(shown) // query.page_size))
     number = min(query.page, last)
     start = (number - 1) * query.page_size
@@ -984,6 +989,10 @@ def worklist_context(
         add_body=ADD_BODY,
     )
     worklist.stage_choices = stage_choices(counts, leader)
+    # Its review region reads the remembered view, so a redrawn row's links
+    # keep the way back to it (#2174).
+    if token:
+        worklist.live_address = f"{action}?{urlencode({'queue': token})}"
     for row in worklist.rows:
         _withhold(row, bool(roles))
     return {
