@@ -2,4 +2,4 @@
   One past send of a report email (report_email_list.report_sends): when it
   was made, its result and a link to its saved copy, or to Sent mail for an
   Administrator when it needs attention.
-{% endcomment %}<time datetime="{{ send.made_at|instant }}" data-local-instant data-compact>{{ send.made_at|instant }}</time><br>{% include "stewardship/components/report-result.html" %}
+{% endcomment %}<time class="nowrap" datetime="{{ send.made_at|instant }}" data-local-instant data-compact>{{ send.made_at|instant }}</time><br>{% include "stewardship/components/report-result.html" %}

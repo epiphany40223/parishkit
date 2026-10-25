@@ -187,7 +187,7 @@ automatically.
       <th scope="row"><span class="cell-ellipsis" title="{{ row.name }}">{{ row.name }}</span></th>
       <td><span class="cell-ellipsis" title="{{ row.email }}">{{ row.email }}</span></td>
       <td class="nowrap">{% if row.last_login %}<time datetime="{{ row.last_login|instant }}" data-local-instant data-compact>{{ row.last_login|instant }}</time>{% else %}{% translate "Never" %}{% endif %}</td>
-      <td>{% if row.last_emailed %}<time datetime="{{ row.last_emailed|instant }}" data-local-instant data-compact>{{ row.last_emailed|instant }}</time> · {% endif %}{{ row.emailed_label }}</td>
+      <td>{% if row.last_emailed %}<time class="nowrap" datetime="{{ row.last_emailed|instant }}" data-local-instant data-compact>{{ row.last_emailed|instant }}</time> · {% endif %}{{ row.emailed_label }}</td>
     </tr>{% empty %}<tr><td colspan="5">{% translate "No user has the role Ministry leader, so there is nobody to email. Import ParishSoft Ministry leaders above, or give a user that role." %}</td></tr>{% endfor %}
     </tbody>
   </table>

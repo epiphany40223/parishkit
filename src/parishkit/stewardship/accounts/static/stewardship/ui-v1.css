@@ -1079,10 +1079,12 @@ td > :last-child { margin-bottom: 0; }
    under a cell's main value. A dl.cell-pairs lists several labelled values
    in one cell as an aligned grid at every width (the page-wide dl grid's
    zero-minimum value column would collapse in a table cell): muted labels,
-   which may wrap between words, beside values that never wrap. */
+   which may wrap between words, beside values that never wrap. .nowrap
+   works in any table, as several plain tables (Signed-in sessions,
+   Automation access, the directory) carry it too (#2179). */
 .data-table.whole-words th, .data-table.whole-words td { overflow-wrap: normal; padding-inline: .6rem; }
 .data-table.whole-words tbody th, .data-table.whole-words tbody td { vertical-align: top; }
-.data-table .nowrap, .data-table .cell-line { white-space: nowrap; }
+table .nowrap, .data-table .cell-line { white-space: nowrap; }
 .data-table .cell-line { display: block; }
 .data-table .cell-detail { display: block; color: var(--muted); font-size: .875rem; font-weight: 400; }
 .data-table dl.cell-pairs { display: grid; grid-template-columns: auto max-content; gap: .1rem .6rem; margin: 0; }

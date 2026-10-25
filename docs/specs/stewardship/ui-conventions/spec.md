@@ -5314,7 +5314,10 @@ its own controls; tall rows make a table unscannable; a sum or a date broken
 across two lines is easy to misread. **Shared code.** The `table-scroll`
 class in `ui-v1.css`, and the `data-table whole-words` classes with their
 `numeric` and `nowrap` cell classes (a table gets the rule from the shared
-classes, not from a copy of them); the `stack-line` class; the
+classes, not from a copy of them; `nowrap` works in any table, #2179, so
+a table with a `nowrap` cell sits, like any table that may not fit a
+phone, in a `table-scroll` box that is a focusable, named region:
+`tabindex="0"`, `role="region"` and a label); the `stack-line` class; the
 `whole_dollars` template tag; `cell-pairs-wrap` and `sticky-actions`;
 the button-label browser test at 320 px and 1280 px.
 **Precedent.** #614, #952 (Portal users' rows wrapping to several lines), and
