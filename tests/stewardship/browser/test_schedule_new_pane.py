@@ -79,6 +79,21 @@ def pane_prefix(page):
     return name[: -len("kind")]
 
 
+def preview_drawn(page):
+    """Wait for the repeat date list's own answer to be drawn (#2253).
+
+    The list is asked for 150 ms after the rule's last change and drawn
+    when the answer arrives, which grows it and moves everything below it
+    (the refusal's summary, once Review has been refused). A test that
+    clicks Review and then a link or button below the list must let that
+    draw finish first, or the draw can land between the click's mouse-down
+    and mouse-up, so the mouse-up misses its target and no click happens.
+    """
+    page.locator("[data-repeat-preview]:not([aria-busy]) time").first.wait_for(
+        state="attached"
+    )
+
+
 def fill_once(page, prefix, day):
     """Fill the pane with one Once reminder at 9:00 AM on ``day``."""
     page.locator(f'[name="{prefix}kind"]').select_option("reminder")
@@ -211,6 +226,7 @@ def test_a_refused_repeating_review_shows_at_until(
     page.locator(f'[name="{prefix}template_version"]').select_option(index=1)
     review = page.get_by_role("button", name="Review changes")
     available(review)
+    preview_drawn(page)
     with page.expect_response(review_post) as answer:
         review.click()
     assert answer.value.status == 400
@@ -414,6 +430,7 @@ def test_apply_updates_the_page_in_place_and_empties_the_pane(
     page.locator(f'[name="{prefix}template_version"]').select_option(index=1)
     review = page.get_by_role("button", name="Review changes")
     available(review)
+    preview_drawn(page)
     review.click()
     dialog = page.get_by_role("dialog", name="Review dates and mail schedules")
     visible(dialog)
