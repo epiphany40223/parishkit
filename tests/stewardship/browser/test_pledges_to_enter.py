@@ -467,7 +467,9 @@ def test_edit_changes_the_share_methods_in_the_dialog(page, component_origin):
     from playwright.sync_api import expect
 
     page.goto(component_origin + SHARES_EVERY)
-    cells = row(page, 3).locator("td")
+    # The values cell clamps each value (#2124): read the value itself, not
+    # the cell with its Show all control and full-text bubble.
+    cells = row(page, 3).locator(".value-clamp")
     expect(cells.filter(has_text="Stock gift")).to_have_text(
         "$1,200.00, WeeklyOnline giving, Other: Stock gift"
     )
@@ -482,7 +484,7 @@ def test_a_zero_pledge_hides_and_sends_no_share_methods(page, component_origin):
     page.goto(component_origin + PATH)
     sent = posts_to(page, component_origin, EDITED)
     editor, group = share_editor(page, 3)
-    editor.get_by_label("Annual pledge, in dollars").fill("0")
+    editor.get_by_label("Annual pledge in dollars").fill("0")
     editor.get_by_label("Frequency").select_option("")
     hidden(group)
     editor.get_by_role("button", name="Save").click()
