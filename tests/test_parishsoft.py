@@ -18,6 +18,7 @@ from parishkit.parishsoft import (
     family_is_active,
     get_family_heads,
     get_member_public_email,
+    get_member_public_emails,
     get_member_public_phones,
     link_families_and_members,
     load_contribution_details,
@@ -1089,6 +1090,25 @@ def test_workgroup_membership_emails_use_the_shared_parser():
     assert "py emails" not in family_rows[1]
     member_row = members[20]["membership"][0]
     assert member_row["py emailAddresses"] == ["a@x.org", "b@y.net"]
+
+
+def test_public_emails_list_every_valid_address_in_field_order():
+    """Rosters get all valid addresses; a comma value is one fragment, dropped."""
+    member = {
+        "emailAddress": "Ann@Example.org; bob@example.org; ann@example.org; x",
+        "family_PublishEMail": True,
+    }
+    normalize_member_email(member)
+    assert get_member_public_emails(member) == ["ann@example.org", "bob@example.org"]
+    comma = {
+        "emailAddress": "a@example.org, b@example.org",
+        "family_PublishEMail": True,
+    }
+    normalize_member_email(comma)
+    assert get_member_public_emails(comma) == []
+    unpublished = {"emailAddress": "a@example.org", "family_PublishEMail": False}
+    assert get_member_public_emails(unpublished) == []
+    assert get_member_public_emails({"family_PublishEMail": True}) == []
 
 
 def test_normalize_dates_reports_field_and_record_for_bad_api_value():

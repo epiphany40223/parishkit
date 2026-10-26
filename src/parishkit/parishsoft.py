@@ -16,6 +16,7 @@ import datetime as dt
 import hashlib
 import json
 import logging
+import re
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -716,6 +717,13 @@ def _extract_page(data: Any) -> tuple[list[dict[str, Any]], bool]:
         done = paging.get("pageNumber", 1) >= paging.get("totalPages", 1)
         return data["data"], done
     raise ParishSoftAPIError(500, "pagination", f"unexpected page shape: {data!r}")
+
+
+# A deliberately plain shape check for roster output: one "@", a dotted
+# domain, and no whitespace, commas, semicolons or angle brackets. It keeps
+# obvious non-addresses (such as a comma-joined value, which stays one
+# fragment because only ";" separates addresses) off printed rosters.
+_PLAIN_EMAIL = re.compile(r"[^@\s,;<>()]+@[^@\s,;<>()]+\.[^@\s,;<>()]+")
 
 
 def normalize_family_email(family: dict[str, Any]) -> None:
@@ -1964,12 +1972,25 @@ def get_member_public_email(member: dict[str, Any]) -> str | None:
 
     Honors the family's "publish email" privacy flag, returning None when
     publishing is disallowed or when the member has no email; otherwise returns
-    the first normalized address.
+    the first normalized address. Rosters use ``get_member_public_emails``.
     """
     if not member.get("family_PublishEMail"):
         return None
     emails = member.get("py emailAddresses") or []
     return emails[0] if emails else None
+
+
+def get_member_public_emails(member: dict[str, Any]) -> list[str]:
+    """Return all of the member's publishable, plausibly valid email addresses.
+
+    Honors the family's "publish email" privacy flag (an empty list when
+    publishing is disallowed). Addresses come from ``member_email_addresses``
+    (lowercased, de-duplicated, in field order); fragments that are not a
+    plain address, such as a comma-joined value, are dropped (#2260).
+    """
+    if not member.get("family_PublishEMail"):
+        return []
+    return [a for a in member_email_addresses(member) if _PLAIN_EMAIL.fullmatch(a)]
 
 
 def get_member_preferred_first(member: dict[str, Any]) -> str:
