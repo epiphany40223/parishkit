@@ -450,7 +450,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
    so it reads as the panel's main action. The split is a container,
    so the layout follows the room the panel has, whether or not the menu is open. From 48rem
    (a laptop window, menu open) the parts sit side by side; beside the pane the stream names
-   take 7.5rem at a smaller size (1.1rem: in Linux fonts "information" and "Limitations" are
+   take 7.5rem at a smaller size (--heading-3, 1.1rem: in Linux fonts "information" and "Limitations" are
    wider than 7rem at the heading size and broke letter by letter, train t127) and the cards
    8.5rem columns with a little less padding (and the panels a little
    less space), so four cards share a row with the name and My review work still fits a
@@ -481,7 +481,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
   .review-work-or { flex-direction: column; }
   .review-work-or::before, .review-work-or::after { width: 1px; height: auto; }
   .review-work-tables { flex: 1 1 auto; }
-  .review-work-wizard ~ .review-work-tables :is(.review-work > h2, .review-work-stream > h3) { flex-basis: 7.5rem; font-size: 1.1rem; }
+  .review-work-wizard ~ .review-work-tables :is(.review-work > h2, .review-work-stream > h3) { flex-basis: 7.5rem; font-size: var(--heading-3); }
   .review-work-wizard ~ .review-work-tables :is(.review-work, .review-work-stream) > .link-cards { flex-basis: 20rem; grid-template-columns: repeat(auto-fit, minmax(min(8.5rem, 100%), 1fr)); }
   .review-work-wizard ~ .review-work-tables :is(.link-card > a, .link-card.link-card-off) { column-gap: .5rem; padding-inline: .6rem; }
   .review-work-wizard ~ .review-work-tables .link-card :is(.link-card-label, .link-card-note) { overflow-wrap: break-word; }
