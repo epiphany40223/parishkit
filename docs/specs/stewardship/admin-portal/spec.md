@@ -4072,7 +4072,21 @@ scope changes and earlier reminders stay in the series, Review changes
 waits, with the reason in the repeat's summary line above it, as New's
 repeat does ([prerequisite
 gates](../ui-conventions/spec.md#prerequisite-gates)); a From that is too
-early is also said at From. While nothing but a From the scope moved has
+early is also said at From. When one field explains every date that can't
+be used
+([#2235](https://github.com/epiphany40223/parishkit/issues/2235)), that
+field is marked too, as a [field
+error](../ui-conventions/spec.md#field-errors-and-live-checks) in its
+reserved line ([no layout shift](../ui-conventions/spec.md#no-layout-shift)):
+every such date already past, before the campaign or at or before the
+Initial invitation marks From ("Before *the first day that can be used*.
+Choose a later From."), and every one after the campaign's end marks Until
+("After the campaign ends on *its end date*. Choose an earlier Until.");
+the summary line then names the field ("Some dates can't be used. See
+Until."). Mixed causes, or a cause no one field explains (another mailing
+at that moment, the 30-date or schedule limit, a skipped month), keep "Some
+dates can't be used; see the list below.", and the list marks each date
+either way. While nothing but a From the scope moved has
 changed, it waits too, with "Change the time, email or repeat to review
 it."; on Edit of a series' reminder the unchanged hint after the button
 reads "Change the date, time, email or repeat to review it." The
