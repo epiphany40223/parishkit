@@ -105,6 +105,6 @@ def test_sign_out_and_cancel_posts_the_owned_attempt(
     dialog = page.get_by_role("dialog", name="Sign out?")
     visible(dialog)
     dialog.get_by_role("button", name="Sign out and cancel setup").click()
-    page.wait_for_function("window.location.pathname === '/admin/logout'")
+    page.wait_for_url("**/admin/logout")
     assert len(posted) == 1
     assert f"cancel_setup={ATTEMPT}" in posted[0]
