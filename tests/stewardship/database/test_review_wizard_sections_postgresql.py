@@ -135,9 +135,10 @@ def test_a_census_family_page_shows_its_matched_changes(response_service, google
         assert state(opt_out)[:2] == ("unreviewed", "pending")
     # The page's statements: the sign-in and page checks every Admin page
     # makes, then the section's reads (the hub's census read, Census
-    # changes' read narrowed to the Family, one replacement lookup), the
-    # heading's names and the view's audit. Pinned, so a change is seen.
-    assert statements(browser, run)[1] == 76
+    # changes' read narrowed to the Family, one replacement lookup, the
+    # reviewers' Names for the decided rows, #2259), the heading's names and
+    # the view's audit. Pinned, so a change is seen.
+    assert statements(browser, run)[1] == 77
 
 
 def test_a_replaced_change_is_shown_by_its_replacement(response_service, google):

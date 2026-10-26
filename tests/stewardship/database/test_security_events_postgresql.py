@@ -83,9 +83,11 @@ def test_an_expansion_waits_for_another_administrator(auth_service, google):
         rows = open_events(principal)
     assert len(queries) == 1
     assert [row["id"] for row in rows if row["id"] == event.pk] == [event.pk]
-    assert next(row for row in rows if row["id"] == event.pk)["actor"] == (
-        "admin@example.org"
-    )
+    # The granting Administrator by Name, with their Timeline id, in the same
+    # one query (#2259).
+    actor = next(row for row in rows if row["id"] == event.pk)["actor"]
+    assert (actor.label, actor.email) == ("admin", "admin@example.org")
+    assert actor.user_id is not None
     # The actor acknowledges through a second Google identity at the same
     # address: the actor still, by address, so the row is the actor's own,
     # recorded once and audited, and the event is gone for the actor's

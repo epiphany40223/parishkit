@@ -18,6 +18,7 @@ from django.db.models.functions import JSONObject
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 
+from .actor_names import from_parts, user_annotations
 from .policy_models import (
     PolicySecurityAcknowledgement,
     PolicySecurityEvent,
@@ -88,6 +89,9 @@ def open_events(viewer):
     ).values(item=JSONObject(email="email", own="own"))
     events = PolicySecurityEvent.objects.annotate(
         actor_address=Subquery(address),
+        # The granting user's Name and Timeline id, in the same statement
+        # (#2259).
+        **user_annotations(Subquery(address)),
         viewer_address=Subquery(viewer_address),
         acknowledged_by=ArraySubquery(acknowledgements),
     ).order_by("-created_at", "-id")
@@ -113,7 +117,11 @@ def open_events(viewer):
                 if event.kind == "backup_key_replaced"
                 else None,
                 "created_at": event.created_at,
-                "actor": event.actor_address,
+                "actor": from_parts(
+                    event.actor_address, event.actor_user_id, event.actor_user_name
+                )
+                if event.actor_address
+                else None,
                 # The command line names the actor by account, not address.
                 "actor_id": event.actor_id,
             }

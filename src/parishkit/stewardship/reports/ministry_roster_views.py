@@ -26,6 +26,7 @@ from zoneinfo import ZoneInfo
 
 from django.db import connection, transaction
 
+from parishkit.stewardship.accounts.actor_names import actor_text
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin, database_now
 from parishkit.stewardship.audit.schemas import ActorKind
@@ -296,10 +297,10 @@ def export_rows(rows, zone, *, time_text=iso_time):
             row["placement"].decision.label if row["placement"].decision else "",
             # A Family answered again after this change was decided.
             "Yes" if row.get("latest") is False else "",
-            row["roster_by"] if row["roster_entered"] else "",
+            actor_text(row["roster_by"]) if row["roster_entered"] else "",
             instant(row["roster_at"]) if row["roster_entered"] else "",
             instant(row["submitted_at"]),
-            row["decided_by"],
+            actor_text(row["decided_by"]),
             instant(row["decided_at"]),
             row["note"],
         )

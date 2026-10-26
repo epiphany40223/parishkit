@@ -1906,7 +1906,7 @@ def _drop_acceptance(attempt_id):
     """
     from django.db import connection
 
-    from .accounts.policy_models import PortalUser
+    from .accounts.actor_names import actor_names
     from .source.drop_models import SourceDropAcceptance
 
     if attempt_id is None:
@@ -1925,9 +1925,8 @@ def _drop_acceptance(attempt_id):
     status = DropAcceptanceStatus(**row, live=live == row["id"])
     if not status.live:
         return status, None
-    actor = (
-        PortalUser.objects.filter(pk=actor_id).values_list("email", flat=True).first()
-    )
+    # By name, linked to the user's Timeline (#2259); one query, as before.
+    actor = actor_names([actor_id]).get(str(actor_id))
     return status, actor
 
 
@@ -2091,7 +2090,7 @@ def _debug_switch():
     ``(None, None)`` when no switch was ever set. The address is read only
     while the switch is set, the only time the page names who set it.
     """
-    from .accounts.policy_models import PortalUser
+    from .accounts.actor_names import actor_names
     from .jobs.debug_switch_models import DebugOffSwitch
 
     row = (
@@ -2105,9 +2104,8 @@ def _debug_switch():
     status = DebugSwitchStatus(**row)
     if not status.active:
         return status, None
-    actor = (
-        PortalUser.objects.filter(pk=actor_id).values_list("email", flat=True).first()
-    )
+    # By name, linked to the user's Timeline (#2259); one query, as before.
+    actor = actor_names([actor_id]).get(str(actor_id))
     return status, actor
 
 
@@ -2121,16 +2119,17 @@ def _offsite(configuration):
 def _pause(campaign):
     """Who paused live delivery and why, for the page only.
 
-    The reason is what an Administrator typed and the actor is an email
-    address, so neither is part of the read model's document.
+    The reason is what an Administrator typed and the actor is a portal
+    user, so neither is part of the read model's document.
     """
-    from .accounts.policy_models import PortalUser
+    from .accounts.actor_names import actor_names
 
     return {
         "reason": campaign.pause_reason,
-        "actor": PortalUser.objects.filter(pk=campaign.pause_actor_id)
-        .values_list("email", flat=True)
-        .first(),
+        # By name, linked to the user's Timeline (#2259).
+        "actor": actor_names([campaign.pause_actor_id]).get(
+            str(campaign.pause_actor_id)
+        ),
     }
 
 

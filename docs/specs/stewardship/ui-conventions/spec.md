@@ -5445,6 +5445,46 @@ current Members (#1217), so they have nothing to mark. A report email's open
 additional information requests block is an email with no badge, so it names a Family the data no longer has "Not
 in ParishSoft".
 
+### Admin users who acted
+
+**Rule.** Where a staff-facing Admin page names the Admin user who did
+something (the actor: who decided a review, entered a request by hand,
+handled a follow-up, wrote a System log entry), it shows the user's Name
+from the Users page, in its "Last, first" form ("Administrator, IT", as
+[Family and Member names](#family-and-member-names) asks), or the account's
+email address when the user has no Name. The name links to that user's
+[Timeline](../admin-portal/spec.md#user-timeline) for a reader whose role
+may open users' Timelines (Administrators); for any other reader it is the
+same words with no link, so nobody meets a link that would only be refused.
+
+- An account the portal no longer has keeps the page's wording ("Former
+  portal user"), and an address that is no longer a current user keeps its
+  address; neither is linked.
+- The match is by address, as Sent mail matches a recipient to a user: an
+  address removed and later given to a different user names that user for
+  the earlier account's actions too. Records keep the acting account, so
+  the System logs' actor identifier still tells the two apart.
+- System and command-line actors (Background worker, the scheduler,
+  `pk-admin`) keep their own wording, unlinked.
+- Downloads (CSV, PDF, spreadsheets) and `pk-admin` output keep the email
+  address: it is stable and machine-readable, and a file outlives the
+  user's Name.
+- Family-facing pages never name Admin users and do not change.
+
+**Why.** An address is hard to read at a glance, and the Administrator
+wants to go from "who did this" to everything that person did in one click
+(Administrator, 2026-10-26, pk-local R54,
+[#2259](https://github.com/epiphany40223/parishkit/issues/2259)).
+
+**Shared code.** `accounts/actor_names.py` reads a page's actors in one
+query (`actor_names` by account, `address_actors` for a read whose SQL
+already joined the address, or the `ACTOR_USER_JOIN` fragment inside that
+SQL), never one per row. Templates draw an actor with
+`{% actor_link actor %}`, and a sentence that names one (a Timeline line's
+"…; by …") with `{% actor_sentence text %}`, both in
+`accounts/templatetags/stewardship.py`; HTML a view builds itself uses
+`actor_html`. Downloads read `actor_text`, the address.
+
 ### Table fit and row height
 
 **Rule.** A table fits the page at laptop width; a table that cannot scrolls

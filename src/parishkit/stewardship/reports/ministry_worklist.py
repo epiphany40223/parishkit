@@ -34,8 +34,8 @@ from django.utils.datastructures import MultiValueDict
 from django.utils.html import format_html, format_html_join
 from django.utils.safestring import mark_safe
 
+from parishkit.stewardship.accounts.actor_names import actor_html, actor_names, actor_of
 from parishkit.stewardship.accounts.policy import Capability, allows
-from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.pipeline import (
     TERMS,
     Action,
@@ -567,13 +567,12 @@ def chosen(rows, stage):
 
 
 def _labels(identities):
-    """Map retained actor UUIDs to current emails; removed users stay anonymous."""
-    return {
-        str(key): email
-        for key, email in PortalUser.objects.filter(
-            pk__in=set(identities) - {None}
-        ).values_list("id", "email")
-    }
+    """Map retained actor UUIDs (as text) to their ``Actor``, named (#2259).
+
+    One read for them all (``actor_names``); a removed user is absent, so
+    the caller words it ``FORMER``.
+    """
+    return actor_names(identities)
 
 
 def _last_decisions(rows):
@@ -596,10 +595,10 @@ def _last_decisions(rows):
             [ids],
         )
         found = cursor.fetchall()
-    labels = _labels(actor for _key, actor, _at, _note in found)
+    labels = _labels(identity for _key, identity, _at, _note in found)
     return {
-        key: (labels.get(str(actor), FORMER), at, note)
-        for key, actor, at, note in found
+        key: (actor_of(labels, identity, FORMER), at, note)
+        for key, identity, at, note in found
     }
 
 
@@ -778,7 +777,7 @@ def _ministry_cell(row):
     )
 
 
-def _decision_line(row, leader, asked, replaced_by, reader_leads):
+def _decision_line(row, leader, asked, replaced_by, reader_leads, principal=None):
     """The line under a row's stage, as safe HTML (or "").
 
     An ignored request names its stored outcome ("Stayed in the
@@ -834,7 +833,11 @@ def _decision_line(row, leader, asked, replaced_by, reader_leads):
     if not leader and row.get("latest") is False:
         parts.append(format_html("{}", REPLACED))
     if not leader and placement.stage is Stage.ENTERED_BY_HAND:
-        by = format_html("Entered by {}", row["roster_by"] or FORMER)
+        # The marker by name, linked for a reader who may open users'
+        # Timelines (#2259).
+        by = format_html(
+            "Entered by {}", actor_html(row["roster_by"] or FORMER, principal)
+        )
         parts.append(
             format_html("{}, {}", by, _time(row["roster_at"]))
             if row["roster_at"]
@@ -936,7 +939,12 @@ def decorate(
                 "note": note,
                 "edit_choices": _ministry_choices(result, row),
                 "_decision_line": _decision_line(
-                    row, leader, asked.get(key), replacements.get(key), reader_leads
+                    row,
+                    leader,
+                    asked.get(key),
+                    replacements.get(key),
+                    reader_leads,
+                    principal,
                 ),
                 "_leader_stage": row["stage"] == ACCEPTED,
                 "_entry_only": entry,

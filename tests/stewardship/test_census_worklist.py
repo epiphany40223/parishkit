@@ -15,6 +15,7 @@ from parishkit.stewardship.pipeline import (
     Stage,
     census_addition_placement,
 )
+from parishkit.stewardship.reports import census_worklist
 from parishkit.stewardship.reports.census_change_views import SORTING
 from parishkit.stewardship.reports.census_changes import (
     CensusQuery,
@@ -43,6 +44,15 @@ from parishkit.stewardship.web.review_worklist import (
 from parishkit.stewardship.web.tables import paginate
 
 from .test_census_changes import SUBMITTED, row
+
+
+@pytest.fixture(autouse=True)
+def no_user_rows(monkeypatch):
+    """No database here: no address is a current user, so every reviewer
+    keeps the address the rows carry (#2259; the PostgreSQL tests read the
+    Names)."""
+    monkeypatch.setattr(census_worklist, "address_actors", lambda addresses: {})
+
 
 STAFF = frozenset({"staff"})
 ADMINISTRATOR = frozenset({"staff", "administrator"})

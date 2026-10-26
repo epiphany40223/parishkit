@@ -203,8 +203,12 @@ def _read(request, template, *, page):
             response = render(request, template, context)
         else:
             # The fragment needs no Admin chrome, so it skips the context
-            # processors (and their queries) a full page render runs.
-            response = HttpResponse(render_to_string(template, context))
+            # processors (and their queries) a full page render runs. It
+            # still carries the reader, whose role decides the actor links
+            # (#2259), so a poll draws them as the page did.
+            response = HttpResponse(
+                render_to_string(template, context | {"request": request})
+            )
         with transaction.atomic():
             current = _principal(request, service.store, final=True)
             if current.identity != actor.identity:

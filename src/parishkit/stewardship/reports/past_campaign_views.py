@@ -144,11 +144,14 @@ def _administrator(request):
 
 
 def _emails(ids):
-    """Portal user emails by id, for the "by whom" of imports and removals."""
-    from parishkit.stewardship.accounts.policy_models import PortalUser
+    """Who imported, by portal user id (as text), for the "by whom" (#2259).
 
-    ids = {value for value in ids if value is not None}
-    return dict(PortalUser.objects.filter(pk__in=ids).values_list("id", "email"))
+    Each an ``actor_names.Actor``: the user's Name, else the address. One
+    query for the page.
+    """
+    from parishkit.stewardship.accounts.actor_names import actor_names
+
+    return actor_names(ids)
 
 
 def _compact(value):
@@ -164,6 +167,14 @@ def _split_email(email):
     return (local, at + domain) if at else ("", email)
 
 
+def _by(actor):
+    """An importer for the table: the ``Actor`` of a current user, else the
+    address as ``_split_email`` splits it, or None for no account."""
+    if actor is None:
+        return None
+    return actor if actor.user_id else _split_email(actor.email)
+
+
 def _row(archive, emails):
     """One table row: the import and its display texts."""
     provenance = archive.active_families_provenance
@@ -177,8 +188,9 @@ def _row(archive, emails):
         "pledged": money_text(archive.annual_pledged),
         "active": number(archive.active_families),
         "provenance": provenance,
-        # Split before the "@", where the narrow column may break the address.
-        "imported_by": _split_email(emails.get(archive.imported_by_id, "")),
+        # A current user by name (``actor_link``); an address that is no
+        # user split before the "@", where the narrow column may break it.
+        "imported_by": _by(emails.get(str(archive.imported_by_id))),
         "label": str(archive.campaign_year),
         "remove_value": f"{archive.campaign_year}:{archive.version}",
     }
@@ -240,7 +252,7 @@ def _card(actor, preview):
         "archive": pending,
         "action": action,
         "current": current,
-        "current_by": emails.get(current.imported_by_id, "") if current else "",
+        "current_by": emails.get(str(current.imported_by_id), "") if current else "",
         "replace_blocked": bool(
             action == "replace" and current.is_final and not pending.is_final
         ),

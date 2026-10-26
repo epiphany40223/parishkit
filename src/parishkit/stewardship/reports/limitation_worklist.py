@@ -17,6 +17,7 @@ from django.db import IntegrityError
 from django.utils.datastructures import MultiValueDict
 from django.utils.html import format_html
 
+from parishkit.stewardship.accounts.actor_names import FORMER, address_actors
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.pipeline import (
     Stage,
@@ -254,6 +255,15 @@ def worklist_rows(rows):
     response from the Family broke is no longer the row's.
     """
     found = []
+    # The reviewers by name, linked to their Timelines (#2259), in one read
+    # for the page. The read words a reviewer by address (or the gone
+    # account's wording); a Cannot contribute financially row already
+    # carries Pledges' ``Actor``.
+    actors = address_actors(
+        row["decided_by"]
+        for row in rows
+        if isinstance(row.get("decided_by"), str) and row["decided_by"] != FORMER
+    )
     for row in rows:
         current = row["in_force"]
         found.append(
@@ -267,7 +277,9 @@ def worklist_rows(rows):
                 ),
                 "member_duid_cell": _member_duid(row),
                 "family_answer": ANSWERS[row["kind"]],
-                "decided_by": (row["decided_by"] or "") if current else "",
+                "decided_by": (actors.get(row["decided_by"], row["decided_by"]) or "")
+                if current
+                else "",
                 "decided_at": row["decided_at"] if current else None,
                 "note": (row["note"] or "") if current else "",
                 # A Cannot contribute financially row is decided on Pledges:

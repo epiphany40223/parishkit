@@ -55,6 +55,12 @@ from django.utils.html import escape
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.stewardship.accounts.actor_names import (
+    ACTOR_USER_JOIN,
+    WHO,
+    ActorSentence,
+    from_parts,
+)
 from parishkit.stewardship.accounts.leader_import import ministry_names
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.pipeline import (
@@ -125,7 +131,8 @@ SHARE_SHORTS = "share_shorts"
 # rule of ``stewardship_limitation_in_force_v1`` bounded at this row.
 # Takes %(family)s, %(campaign)s, %(response_mode)s and %(epoch)s
 # (``timelines.scope_values``).
-_HISTORY = """
+_HISTORY = (
+    """
 WITH subs AS (
     SELECT s.id, s.answers, s.reviewed_view, s.family_version, s.submitted_at
     FROM stewardship_submission s
@@ -281,7 +288,8 @@ WITH subs AS (
             AND w.action='withdrawn'
             AND w.correlation_id=r.correlation_id))
 )
-SELECT h.stream, h.item, h.step, h.at, u.email, h.entity_kind, h.entity_key,
+SELECT h.stream, h.item, h.step, h.at, u.email, uu.record_id, uu.name,
+    h.entity_kind, h.entity_key,
     h.subject, h.a, h.b, h.c, h.d, h.seed_decision, h.seed_set, h.seed_value,
     h.note, h.added,
     (coalesce(subs.answers->'members'->h.entity_key,
@@ -293,6 +301,10 @@ SELECT h.stream, h.item, h.step, h.at, u.email, h.entity_kind, h.entity_key,
     sm.canonical::jsonb->>'firstName', sm.canonical::jsonb->>'lastName'
 FROM h JOIN subs ON subs.id=h.submission_id
 LEFT JOIN stewardship_portal_user u ON u.id=h.actor_id
+-- The reviewer's current user row, for their Name and Timeline (#2259).
+"""
+    + ACTOR_USER_JOIN.format(alias="uu", user="u")
+    + """
 LEFT JOIN stewardship_source_current sc ON sc.singleton
 LEFT JOIN stewardship_snapshot_member mm ON h.entity_kind='member'
     AND mm.snapshot_id=sc.snapshot_id AND mm.source_key=h.entity_key
@@ -305,12 +317,15 @@ ORDER BY h.at,
         concat_ws(':', h.entity_kind, h.entity_key, h.subject) END,
     h.item, h.step
 """
+)
 COLUMNS = (
     "stream",
     "item",
     "step",
     "at",
     "actor",
+    "actor_user",
+    "actor_name",
     "entity_kind",
     "entity_key",
     "subject",
@@ -782,13 +797,19 @@ def steps(rows, names=None, reader=None):
         note = (row["note"] or "").strip()
         own = row["stream"] != "information" or note != notes.get(key)
         notes[key] = note
-        who = row["actor"] or FORMER_USER
+        # The reviewer by name on the page, linked to their Timeline for a
+        # reader who may open it (#2259); the export and pk-admin keep the
+        # address (``ActorSentence``), as before. The pledge Edit's markup
+        # (#2198) carries the same placeholder, so both draw the actor.
+        who = from_parts(
+            row["actor"], row.get("actor_user"), row.get("actor_name"), FORMER_USER
+        )
         item = item_words(row, names)
-        detail = str(_("%(item)s; by %(who)s") % {"item": item, "who": who})
+        detail = str(_("%(item)s; by %(who)s") % {"item": item, "who": WHO})
         html = getattr(item, "html", None)
         if html:
             html = mark_safe(
-                str(_("%(item)s; by %(who)s")) % {"item": html, "who": escape(who)}
+                str(_("%(item)s; by %(who)s")) % {"item": html, "who": WHO}
             )
         what = word(before, after)
         if row["stream"] == "census_review" and str(what) == str(UPDATED):
@@ -813,7 +834,7 @@ def steps(rows, names=None, reader=None):
                     str(_("%(detail)s; note: %(note)s"))
                     % {"detail": html, "note": escape(note)}
                 )
-        lines.append((row["at"], what, with_markup(detail, html)))
+        lines.append((row["at"], what, ActorSentence(detail, who, html)))
     return lines
 
 
