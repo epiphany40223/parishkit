@@ -168,7 +168,7 @@ a:hover { text-decoration-thickness: .15em; }
    height whatever it holds, so choosing, clearing or replacing the file moves
    nothing below it; the image is scaled to fit, never stretched. */
 .file-preview-title { margin-block: 0 .25rem; font-weight: 600; }
-.file-preview-box { display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 100%; height: 10rem; padding: .5rem; border: 1px dashed var(--border, #888); border-radius: var(--radius-small); overflow: hidden; margin-block-end: 1rem; }
+.file-preview-box { display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 100%; height: 10rem; padding: .5rem; border: 1px dashed var(--border); border-radius: var(--radius-small); overflow: hidden; margin-block-end: 1rem; }
 .file-preview-box img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }
 .file-preview-box img[hidden], .file-preview-empty[hidden] { display: none; }
 .file-preview-empty { margin: 0; text-align: center; }
