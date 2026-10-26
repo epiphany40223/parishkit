@@ -2593,7 +2593,9 @@ earlier unfinished runs in the campaign, and finished ones stay:
     groups, unchanged except that they fit the narrower column: narrower
     stream names and cards, so My review work still fits a laptop window
     under the [overview pages](../ui-conventions/spec.md#overview-pages)
-    rule and its two-line exception.
+    rule and its two-line exception. Beside the pane the stream names are
+    smaller, at the heading-3 token, so words such as "information" fit
+    the narrow name column; stacked, they take the full heading size.
 
   The layout follows the room the panel has, not the window: from 48rem
   (a 1280px laptop window with the menu open) the parts sit side by side;
