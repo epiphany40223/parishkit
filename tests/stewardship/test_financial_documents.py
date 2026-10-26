@@ -208,7 +208,7 @@ def test_share_wording_beyond_a_spreadsheet_cell_continues_in_later_rows():
     # writer's own spelling, and no stored cell exceeds the maximum.
     output = io.BytesIO()
     render_information(built, output, format="xlsx")
-    sheet = load_workbook(io.BytesIO(output.getvalue()))["Financial detail"]
+    sheet = load_workbook(io.BytesIO(output.getvalue()))["Financial stewardship detail"]
     cells = [str(sheet.cell(index, 7).value) for index in range(2, 7)]
     assert all(len(cell) <= 32_767 for cell in cells)
     assert "; ".join(cell.removeprefix("(continued) ") for cell in cells) == expected
@@ -319,7 +319,7 @@ def test_comparison_headings_match_the_page():
     assert header[7:9] == expected
     output = io.BytesIO()
     render_information(document([row()]), output, format="xlsx")
-    sheet = load_workbook(io.BytesIO(output.getvalue()))["Financial detail"]
+    sheet = load_workbook(io.BytesIO(output.getvalue()))["Financial stewardship detail"]
     assert [sheet["H1"].value, sheet["I1"].value] == expected
     template = (
         Path(accounts.__file__).parent / "templates/stewardship/financial-report.html"
@@ -368,7 +368,7 @@ def test_xlsx_money_cells_are_exact_summable_numbers():
     output = io.BytesIO()
     render_information(money_document(), output, format="xlsx")
     book = load_workbook(io.BytesIO(output.getvalue()))
-    sheet = book["Financial detail"]
+    sheet = book["Financial stewardship detail"]
     # Columns C, E, G and H: annual, installment, ParishSoft pledged, contributed.
     for reference, expected in {
         "D2": "1234.50",
@@ -466,7 +466,7 @@ def test_xlsx_money_is_accurate_to_the_cent_despite_doubles():
     output = io.BytesIO()
     render_information(built, output, format="xlsx")
     book = load_workbook(io.BytesIO(output.getvalue()))
-    sheet = book["Financial detail"]
+    sheet = book["Financial stewardship detail"]
     for reference, cents in amounts.items():
         cell = sheet[reference]
         exact = MoneyAmount(cents).decimal

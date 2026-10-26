@@ -417,7 +417,7 @@ def test_the_hub_strip_and_tabs_frame_the_timeline(page, component_origin):
     visible(panel.locator("#table-filters"))
     page.evaluate(MARK)
     loaded = len(requests)
-    for name in ("Financial", "Additional"):
+    for name in ("Financial stewardship", "Additional"):
         other = tablist.get_by_role("tab", name=name, exact=True)
         has_attribute(other, "aria-selected", "false")
         assert other.get_attribute("aria-disabled") is None

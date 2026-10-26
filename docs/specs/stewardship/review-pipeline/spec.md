@@ -1649,7 +1649,7 @@ the reviewer's while that Edit is in force, else the Family's, as for the
 amount and frequency; every page and file that shows an Edit's Reviewer's
 value shows them beside the Family's answer
 ([Pledges](../reports/spec.md#pledges), the
-[Family hub's Financial tab](../admin-portal/spec.md#family-and-member-tabs),
+[Family hub's Financial stewardship tab](../admin-portal/spec.md#family-and-member-tabs),
 the [Timeline](../reports/spec.md#timeline-review-lines) and the
 [reviewed Family form](#what-the-reviewed-form-shows)). An Edit is still
 one decision: no new response, no Staff resubmission and no email; the

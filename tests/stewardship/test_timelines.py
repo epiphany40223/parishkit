@@ -866,7 +866,7 @@ def test_the_page_is_a_hub_with_the_timeline_tab():
     assert 'aria-disabled="true"' not in page and "Coming soon" not in page
     for key in ("financial", "other"):
         assert f'id="family-tabs-panel-{key}"' in page, key
-    for label in ("Financial", "Additional"):
+    for label in ("Financial stewardship", "Additional"):
         assert f">{label}</a>" in page, label
     # A campaign without any content tab: Timeline alone.
     page = render(TIMELINE)

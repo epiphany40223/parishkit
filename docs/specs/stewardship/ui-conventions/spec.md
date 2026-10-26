@@ -71,6 +71,7 @@ when it lands.
   [button labels](#button-labels), [button emphasis](#button-emphasis),
   [review pipeline terms](#review-pipeline-terms),
   [campaign Families wording](#campaign-families-wording),
+  [financial terminology](#financial-terminology),
   [shared visual style](#shared-visual-style),
   [colour scheme](#colour-scheme),
   [status indicators](#status-indicators), [stat tiles](#stat-tiles),
@@ -3453,6 +3454,27 @@ A Member's "Inactive in ParishSoft" badge, "No active Family head" and
 "no longer an active, living Member" are about ParishSoft's Member status
 and stay. The Family portal shows none of these words; a Family that is not
 in the campaign gets the same sign-in answer as an unknown code, as today.
+
+### Financial terminology
+
+**Rule.** In the Admin portal, **Pledge** means the monetary amount (for
+example "Annual pledge", "Pledge distribution", "Pledge amount"), and
+**Financial stewardship** means the whole of that area: the pledge, its
+frequency, its share methods, Cannot contribute and the rest. A label,
+heading, tab, help line, export title or CLI message that names the whole
+says "Financial stewardship", never the bare "Financial"; one that names
+the amount says pledge. The Admin menu's **Pledges** review stream keeps
+its name, although it reviews the amount, frequency and share methods
+(the whole), until the Administrator decides otherwise. The rule covers
+the Admin portal only; the Family portal keeps its own wording this
+campaign. Routes, URLs, stored values, audit event types and database
+column names are unchanged. **Why.** The Admin menu said "Financial
+stewardship" while the Family hub's tab said "Financial", so staff saw two
+names for one thing (Administrator, 2026-10-26,
+[#2256](https://github.com/epiphany40223/parishkit/issues/2256)). Status:
+built (#2256): the Family hub and Timeline tab and heading, the Timeline
+About text, the Campaign settings validation message and the Financial
+stewardship export's sheet name changed together.
 
 ### Shared visual style
 

@@ -277,7 +277,7 @@ def financial_tab(row, metadata):
         item_id=str(row.get("id", "")),
     )
     return HubFinancial(
-        Subject("financial", str(_("Financial")), rows, addition=stage),
+        Subject("financial", str(_("Financial stewardship")), rows, addition=stage),
         contributions=row["source_contributions"],
         years=years,
         through=metadata["giving_through"],
