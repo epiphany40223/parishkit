@@ -172,6 +172,14 @@ a:hover { text-decoration-thickness: .15em; }
 .file-preview-box img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }
 .file-preview-box img[hidden], .file-preview-empty[hidden] { display: none; }
 .file-preview-empty { margin: 0; text-align: center; }
+/* Parish logos' current logos (#2279): one fixed-size preview box per size,
+   above the upload form, in a grid whose columns depend on the window's
+   width alone, so logos appearing or changing never move the form below.
+   The caption is kept to one line for the same reason. */
+.logo-frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr)); gap: 0 1rem; }
+.logo-frame { margin: 0; min-width: 0; }
+.logo-frame .file-preview-box { height: 6rem; margin-block-end: .25rem; }
+.logo-frame figcaption { margin-block-end: .75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* The delivery warning's live region stays in the tree; it takes a full row
    only when its notice is shown, and adds no height while empty. */
 .site-header > [role=status] { order: 11; flex: 1 0 100%; }

@@ -514,6 +514,20 @@ def opening_mode(parish):
     return ADVANCED if mode == ADVANCED else BASIC
 
 
+def logo_frames(assets):
+    """One frame per logo size, in size order, for the current logos.
+
+    Each frame holds the size's title and its saved asset, or ``None`` when
+    that size has none, so the page draws all four frames whatever is saved
+    and the current logos keep one height (#2279, no layout shift).
+    """
+    by_size = {asset.label: asset for asset in assets}
+    return [
+        {"title": slot.title, "asset": by_size.get(name)}
+        for name, slot in SLOTS.items()
+    ]
+
+
 def _page(request, service, configuration, form, *, status=200):
     """Render the upload form and the current logos.
 
@@ -522,10 +536,6 @@ def _page(request, service, configuration, form, *, status=200):
     above the heading.
     """
     current = configuration.active_configuration.parish
-    assets = sorted(
-        current_assets(current).values(),
-        key=lambda asset: asset.label,
-    )
     # The toggle opens in (and Advanced → Basic asks unless) the mode that
     # saved the current logos.
     form.stored_mode = opening_mode(current)
@@ -536,7 +546,7 @@ def _page(request, service, configuration, form, *, status=200):
         "stewardship/branding-settings.html",
         {
             "form": form,
-            "assets": assets,
+            "logos": logo_frames(current_assets(current).values()),
             # The upload's Review and the dialog's Apply post here.
             "page_url": page_url,
             # Once a change is applied, the dialog redraws the form and the

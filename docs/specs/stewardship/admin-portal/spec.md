@@ -2472,7 +2472,8 @@ review and Apply happen in the
 [review dialog](../ui-conventions/spec.md#review-dialog) (#750): an upload
 answers with the dialog's review of the staged logos, and Apply posts the
 signed preview, with the staged bundle it was signed for, to Parish logos.
-Once the change is applied, the form and the current logos below it are
+Once the change is applied, the form and the current logos above it
+([image previews](../ui-conventions/spec.md#image-previews), #2279) are
 redrawn. An upload from a page whose settings changed elsewhere, and an
 Apply of logos that expired, belong to another sign-in or were staged
 against settings changed since, are refused in the dialog, which says to

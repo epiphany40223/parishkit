@@ -952,8 +952,10 @@ never scrolls to show it (Administrator, pk-local review of
   with every generated size, each marked changed or unchanged. The form is
   an in-place region, redrawn after Apply (cleared, and opened in the mode
   that saved the new logos), and the status line sits under it. The current
-  logos are a region of their own below the status line, so logos appearing
-  never move the form or the status line. The form has an id, so a file
+  logos are a region of their own above the form
+  ([image previews](#image-previews), #2279), one fixed-size frame per
+  size, so logos appearing, changing or being absent never move the form
+  or the status line. The form has an id, so a file
   chosen while it is redrawn is said not to be kept.
 - **Review dialog: Parish settings (#750).** Parish settings reviews in the
   [review dialog](#review-dialog) as a compact review (#1356): its button

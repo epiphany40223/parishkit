@@ -231,3 +231,16 @@ def test_unusable_storage_or_configuration_is_unavailable(monkeypatch, failure):
             context=context,
         )
     assert "committed" not in context
+
+
+def test_logo_frames_are_one_per_size_in_size_order():
+    """Parish logos draws one frame per size, in size order, whatever is
+    saved (#2279): a missing size has no asset and an unknown label is
+    ignored, so the current logos keep one height."""
+    from parishkit.stewardship.accounts.branding_views import logo_frames
+
+    menu = SimpleNamespace(label="menu")
+    frames = logo_frames([SimpleNamespace(label="other"), menu])
+    assert [frame["title"] for frame in frames] == [s.title for s in SLOTS.values()]
+    assert [frame["asset"] for frame in frames] == [None, menu, None, None]
+    assert all(frame["asset"] is None for frame in logo_frames([]))

@@ -23,7 +23,7 @@ from parishkit.stewardship.accounts import (
     setup_notification_views as notification_views,
 )
 from parishkit.stewardship.accounts.backup_key import KeyStatus
-from parishkit.stewardship.accounts.branding_views import LogoUploadForm
+from parishkit.stewardship.accounts.branding_views import LogoUploadForm, logo_frames
 from parishkit.stewardship.accounts.campaign_create_views import any_zone
 from parishkit.stewardship.accounts.campaign_family_test_views import FamilyTestForm
 from parishkit.stewardship.accounts.campaign_forms import (
@@ -728,7 +728,7 @@ def component_responses():
             "branding-settings",
             {
                 "form": LogoUploadForm(initial={"base_digest": "a" * 64}),
-                "assets": [branding_asset],
+                "logos": logo_frames([SimpleNamespace(**branding_asset)]),
                 "page_url": "/branding-settings",
                 "refresh_url": "/branding-settings",
             },
