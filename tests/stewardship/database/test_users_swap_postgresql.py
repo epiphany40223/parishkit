@@ -570,6 +570,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # place, which 0110's rerun and 0175's restore bring back older, so its
 # ``CLOSURE_REPLACED_ONLY`` entry takes the place of 0175's and restores
 # 0182's body instead.
+# 0184 (#2202) creates one definer, granted to the web and general worker
+# logins (runtime_grants.CLOSURE_FUNCTIONS); it replaces nothing.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -1077,6 +1079,11 @@ CLOSURE_CREATED = {
     "public.stewardship_backup_destination_v1()": (
         "stewardship_jobs",
         "0038_probe_settings_changed",
+    ),
+    # 0184 (#2202): the statistics capture's pledge Edits in force.
+    "public.stewardship_pledge_edits_in_force_v1(uuid)": (
+        "stewardship_reports",
+        "0051_statistics_in_force",
     ),
 }
 
