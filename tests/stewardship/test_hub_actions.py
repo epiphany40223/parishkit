@@ -185,9 +185,15 @@ def test_accept_carries_the_census_pages_withdraw_warning():
 PLEDGE_ID = UUID("22222222-0000-4000-8000-000000000002")
 
 
-def pledge_tab(fresh=False):
+def pledge_tab(fresh=False, wide=False):
     """The Financial tab with Pledges' worklist for one pledge: an edited one
-    To enter by hand, or with ``fresh`` one To review."""
+    To enter by hand, or with ``fresh`` one To review.
+
+    With ``wide`` every amount is $99,999.99 (#2258): the Family's answer,
+    ParishSoft's Baseline and, when edited, the Reviewer's value, so the
+    browser can check each stays on one line."""
+    from decimal import Decimal
+
     from parishkit.stewardship.reports import pledge_review_views as views
     from parishkit.stewardship.reports.hub_actions import (
         items_of,
@@ -195,14 +201,23 @@ def pledge_tab(fresh=False):
         shown,
     )
     from parishkit.stewardship.reports.hub_streams import financial_tab
+    from parishkit.stewardship.reports.money import MoneyAmount
 
     from .test_hub_streams import METADATA, shaped_pledge
-    from .test_pledge_review import item, pledge_row
+    from .test_pledge_review import item, pledge_row, review
 
-    source = pledge_row(item()) if fresh else pledge_row()
+    money = {}
+    found = None
+    if wide:
+        money = {"annual": MoneyAmount(9999999)}
+        found = item(
+            "to_enter_by_hand",
+            review("accepted_edited", amount=Decimal("99999.99"), frequency="monthly"),
+        )
+    source = pledge_row(item() if fresh else found, **money)
     # One pledge in both states, so a redraw from one to the other finds
     # the same row (the browser's focus-return test).
-    source = pledge_row(replace(source["item"], submission_id=PLEDGE_ID))
+    source = pledge_row(replace(source["item"], submission_id=PLEDGE_ID), **money)
     worklist = views.page_context(
         [source],
         views.EVERY,
@@ -213,7 +228,13 @@ def pledge_tab(fresh=False):
         prefix="hub-financial-pledges",
     )["worklist"]
     worklist.answer_page = False
-    tab = financial_tab(shaped_pledge(id=source["id"]), METADATA)
+    if wide:
+        # The longest amount inside text: "Monthly ($8,333.33 each)".
+        money |= {
+            "source_pledge": MoneyAmount(9999999),
+            "installment": MoneyAmount(833333),
+        }
+    tab = financial_tab(shaped_pledge(id=source["id"], **money), METADATA)
     addition = attach(tab.pledge.addition, items_of(worklist))
     return tab.__class__(
         tab.pledge.__class__(
@@ -252,9 +273,11 @@ def test_the_pledge_edit_offers_every_frequency_and_shows_the_reviewers_value():
     # actions span the pledge's three rows, on the first, which has the id.
     annual, frequency, shares = edited.split("<tr")[2:5]
     assert annual.startswith(' id="hub-financial-pledges-row-')
-    assert "<td>$1,300.00</td>" in annual and 'rowspan="3"' in annual
+    # Each amount is kept on one line (keep_money, #2258).
+    assert '<td><span class="money">$1,300.00</span></td>' in annual
+    assert 'rowspan="3"' in annual
     # Worded as the Family's answer beside it: with its installment.
-    assert "<td>Monthly ($108.33 each)</td>" in frequency
+    assert '<td>Monthly (<span class="money">$108.33</span> each)</td>' in frequency
     assert "rowspan" not in frequency
     assert "<td></td>" in shares
     assert 'action="/admin/reports/financial/pledges/"' in edited

@@ -39,7 +39,7 @@
 <div class="table-scroll"><table>
 <caption>{% translate "Exact saved daily values — Historical as of day" %}</caption>
 <thead><tr>{% for key, heading in columns %}{% sort_heading table key heading %}{% endfor %}</tr></thead>
-<tbody>{% for day, row in table.rows %}<tr>{% for value in row %}<td>{{ value }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+<tbody>{% for day, row in table.rows %}<tr>{% for value in row %}<td>{{ value|keep_money }}</td>{% endfor %}</tr>{% endfor %}</tbody>
 </table></div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>

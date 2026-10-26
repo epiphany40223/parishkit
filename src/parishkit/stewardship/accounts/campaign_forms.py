@@ -379,7 +379,7 @@ class CampaignForm(AdminForm):
         if not data["financial_enabled"]:
             if any(data[name] for name in financial_fields):
                 raise forms.ValidationError(
-                    _("Financial settings require financial stewardship."),
+                    _("Financial settings require Financial stewardship."),
                     code="module_disabled",
                 )
         else:

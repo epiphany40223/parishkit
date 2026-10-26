@@ -101,13 +101,21 @@ def page(client, path):
 
 
 def rows(body):
-    """The timeline's (What happened, Details) pairs, in row order."""
+    """The timeline's (What happened, Details) pairs, in row order, as text
+    (Details keeps each amount in a one-line ``money`` span, #2258)."""
     return [
-        (re.sub(r"<[^>]+>", "", what), detail)
+        (re.sub(r"<[^>]+>", "", what), re.sub(r"<[^>]+>", "", detail))
         for what, detail in re.findall(
             r'<th scope="row">(.*?)</th><td>(.*?)</td></tr>', body
         )
     ]
+
+
+def spoken(body):
+    """``rows`` as a screen reader hears them: the shared Edited chip's
+    shown word is hidden from it, so "Accepted (edited)" reads "Accepted,
+    edited" (#2257)."""
+    return rows(re.sub(r'<span aria-hidden="true">[^<]*</span>', "", body))
 
 
 def test_census_reviews_and_resolutions_reach_both_roles(response_service, google):
@@ -386,8 +394,8 @@ def test_a_replacing_change_on_the_reviewed_form_carries_nothing(
     assert login.status_code == 302
     path = reverse("admin:timeline", args=[family_id]) + "?kind=reviews"
     body, _ = page(client, path)
-    shown = [w for w, detail in rows(body) if detail.startswith("First name for ")]
-    assert shown == ["Accepted", "Accepted (edited)"]
+    shown = [w for w, detail in spoken(body) if detail.startswith("First name for ")]
+    assert shown == ["Accepted", "Accepted, edited"]
 
 
 def test_pledge_decisions_reach_only_financial_readers(response_service, google):
@@ -432,8 +440,9 @@ def test_pledge_decisions_reach_only_financial_readers(response_service, google)
     body, counted = page(client, path)
     assert counted == 1
     # The page escapes the apostrophe in Reviewer's.
-    shown = [(what, unescape(detail)) for what, detail in rows(body)]
-    assert shown == list(reversed(expected))
+    shown = [(what, unescape(detail)) for what, detail in spoken(body)]
+    edited = ("Accepted, edited", expected[0][1])
+    assert shown == list(reversed([edited, *expected[1:]]))
 
 
 def test_the_page_names_share_methods_by_short_label_and_files_by_full(

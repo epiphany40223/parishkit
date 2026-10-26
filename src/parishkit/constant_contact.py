@@ -34,7 +34,7 @@ import requests
 
 from parishkit.config import ConfigError
 from parishkit.files import atomic_write_text
-from parishkit.parishsoft import salutation_for_members
+from parishkit.parishsoft import member_email_addresses, salutation_for_members
 from parishkit.retry import RetryError, RetryPolicy, TransientRetryError, retry_call
 
 LOGGER = logging.getLogger(__name__)
@@ -869,7 +869,7 @@ def link_contacts_to_ps_members(
     for member in ps_members.values():
         # A single member may have multiple email addresses, so index the member
         # under each one to catch contacts reachable by any of them.
-        for email in member.get("py emailAddresses", []):
+        for email in member_email_addresses(member):
             members_by_email.setdefault(email, []).append(member)
     for contact in contacts:
         email = contact["email_address"]["address"].lower()

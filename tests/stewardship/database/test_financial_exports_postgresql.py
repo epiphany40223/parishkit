@@ -291,7 +291,7 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
                 # The real worker's file holds summable dollar-formatted numbers,
                 # in the page's columns, with ParishSoft status split out of
                 # the Family cell (#1216), blank for a current Family.
-                sheet = load_workbook(BytesIO(body))["Financial detail"]
+                sheet = load_workbook(BytesIO(body))["Financial stewardship detail"]
                 assert sheet.cell(1, 2).value == "ParishSoft status"
                 assert sheet.cell(2, 2).value is None
                 assert sheet.cell(1, 8).value == f"ParishSoft pledged ({years})"

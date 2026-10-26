@@ -248,8 +248,9 @@ def test_the_page_marks_an_edited_pledge_with_the_familys_answer(
     edit(harness, admin(), submission, amount="2000", frequency="annual", **STOCK)
     marked = cell()
     assert marked.startswith(b' class="nowrap">$2,000<span aria-hidden="true">/yr')
-    assert b'<span class="status-badge"><span aria-hidden="true">Edited</span>' in (
-        marked
+    assert (
+        b'<span class="status-badge edited-chip"><span aria-hidden="true">Edited</span>'
+        in marked
     )
     assert b'<span class="visually-hidden">Edited on Pledges</span>' in marked
     assert b'aria-controls="financial-edited-1"' in marked

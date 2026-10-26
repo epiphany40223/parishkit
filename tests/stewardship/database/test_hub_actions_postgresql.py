@@ -230,6 +230,6 @@ def test_a_pledge_is_edited_from_the_financial_tab(response_service, google):
     panel = tab(browser, family_id, "financial")
     assert '<th scope="col">Reviewer\'s value</th>' in panel
     annual, frequency, shares = panel.split(f'<tr id="{row_id}"')[1].split("</tr>")[:3]
-    assert "<td>$1,500.00</td>" in annual
-    assert "<td>Quarterly ($375.00 each)</td>" in frequency
+    assert '<td><span class="money">$1,500.00</span></td>' in annual
+    assert '<td>Quarterly (<span class="money">$375.00</span> each)</td>' in frequency
     assert "<td>Bank check</td>" in shares

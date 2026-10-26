@@ -121,6 +121,7 @@ ADDED_ACCEPTED, ADDED_TO_REVIEW, ADDED_IGNORED = (
 )
 # Staff's view of requests for Members no longer in ParishSoft (#1217).
 GONE_QUEUE, GONE_ITEM = "/followup-gone", "/followup-gone-item"
+EDITED_ITEM = "/followup-edited-item"
 # Ministry requests (#1133): the page at its real address, the answer to its
 # "51 join requests" count, and a leader of one Ministry.
 REQUESTS = reverse("admin:ministry_report")
@@ -733,6 +734,9 @@ def components(context, admin):
         ),
         "/followup-closed": values | dict(item=closed, history=[revision]),
         "/followup-item-gated": values | dict(item=row, form=form, mutable=False),
+        # A request an Edit carried forward for another Ministry (#2257).
+        EDITED_ITEM: values
+        | dict(item=row | dict(reviewed_ministry_name="Another Ministry"), form=form),
         # The request page at its real address, before and after a save that
         # moved it to In progress and added an edit to its history.
         ITEM: values | dict(item=row, form=form, history=[revision], next_history=2),

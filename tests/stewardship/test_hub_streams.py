@@ -276,7 +276,9 @@ def test_the_financial_panel_draws_the_pledge():
     assert "ParishSoft contributions for 2026: $900.00." in drawn
     assert "Giving data read through September 30, 2026." in drawn
     assert 'href="/admin/reports/financial/"' in drawn
-    assert "Show unchanged" not in drawn and "The Financial tab shows" in page
+    assert (
+        "Show unchanged" not in drawn and "The Financial stewardship tab shows" in page
+    )
     page = render("financial", sections=("financial",), hub_financial=HubFinancial())
     assert "has not answered the financial questions yet" in panel(page, "financial")
     page = render(

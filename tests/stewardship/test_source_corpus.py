@@ -317,6 +317,34 @@ def test_email_aliases_are_deduplicated_after_normalization():
     assert contact["emails"] == [{"value": "same@example.org", "valid": True}]
 
 
+def test_email_fragments_are_validated_one_by_one():
+    """Only ``;`` separates addresses; bad fragments stay invalid, never sent.
+
+    Blank fragments and repeats drop, valid addresses become their own
+    fragments, and an invalid fragment is kept (marked invalid) for correction.
+    """
+    data = source()
+    data.members[3]["emailAddress"] = (
+        "B@example.org;  Not Valid ;; a@example.org; b@example.org"
+    )
+    contact = normalize_core(data, as_of=TODAY)["contact"]["member:3"]
+    assert contact["emails"] == [
+        {"value": "a@example.org", "valid": True},
+        {"value": "b@example.org", "valid": True},
+        {"value": "not valid", "valid": False},
+    ]
+
+
+def test_comma_value_stays_one_invalid_fragment():
+    """A comma never splits: the whole value is one invalid fragment (#2260)."""
+    data = source()
+    data.members[3]["emailAddress"] = "A@example.org, b@example.org"
+    contact = normalize_core(data, as_of=TODAY)["contact"]["member:3"]
+    assert contact["emails"] == [
+        {"value": "a@example.org, b@example.org", "valid": False}
+    ]
+
+
 @pytest.mark.parametrize(
     "field,value",
     [

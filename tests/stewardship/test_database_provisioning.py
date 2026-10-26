@@ -384,6 +384,13 @@ def test_grants_wait_for_the_users_swap_closures_tables(tmp_path, monkeypatch):
         return {s for s in statements if not any(f'"{t}"' in s for t in shared)}
 
     assert stable(waiting) < stable(granted)
+    # Those shared columns still wait for their migration, while the table's
+    # other columns are granted either way.
+    for (table, column), migration in CLOSURE_COLUMNS.items():
+        if migration in BOTH:
+            assert not [s for s in waiting if f'"{column}"' in s and f'"{table}"' in s]
+            assert [s for s in waiting if f'"{table}" TO ' in s]
+            assert [s for s in granted if f'"{column}"' in s and f'"{table}"' in s]
     assert all(
         names_closure_object(s, set(CLOSURE_TABLES.values()))
         or any(f'"{t}"' in s for t in shared)
