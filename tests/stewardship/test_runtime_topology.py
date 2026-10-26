@@ -14,6 +14,7 @@ from parishkit.stewardship.deployment import (
     load_deployment,
 )
 from parishkit.stewardship.runtime_ingress import MAINTENANCE_PAGE, render_caddy
+from parishkit.stewardship.runtime_network import OFFLINE_PROFILES
 from parishkit.stewardship.runtime_paths import RuntimeLayout
 from parishkit.stewardship.runtime_topology import CADDY_IMAGE, render_runtime
 from parishkit.stewardship.web import design_tokens as tokens
@@ -105,7 +106,10 @@ def test_rendered_foundation_enforces_individual_mounts_and_profiles(
             assert mounts[configuration.paths["backups"]] is False
             assert service["command"][0] == "backup"
             # Egress carries the off-site copies to Google Drive.
-            assert set(service["networks"]) == {"backend", "application-egress"}
+            assert set(service["networks"]) == {
+                "offline-backup-worker",
+                "application-egress",
+            }
         if name in {
             "bootstrap",
             "migration",
@@ -187,7 +191,10 @@ def test_rendered_foundation_enforces_individual_mounts_and_profiles(
         assert caddy["image"] == CADDY_IMAGE
         assert caddy["ports"] == ["80:8080", "443:8443"]
         assert set(caddy["networks"]) == {"proxy", "ingress"}
-        assert set(services["postgres"]["networks"]) == {"backend"}
+        assert set(services["postgres"]["networks"]) == {
+            "backend",
+            *(f"offline-{profile}" for profile in OFFLINE_PROFILES),
+        }
         assert set(services["valkey"]["networks"]) == {"backend"}
         assert "ports" not in web
         assert documents[layout.service_directory / "Caddyfile"] == render_caddy(
@@ -400,6 +407,7 @@ def test_individual_sql_overrides_reach_provisioner_and_only_their_consumers(tmp
         if name == "web":
             allowed.add(expected["download"])
         assert mounts & set(expected.values()) == allowed
+    documents.pop(RuntimeLayout(configuration).hba_directory / "pg_hba.conf")
     for path, document in documents.items():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(document))

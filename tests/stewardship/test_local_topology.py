@@ -42,6 +42,7 @@ from parishkit.stewardship.runtime_ingress import (
     render_caddy,
     render_local_caddy,
 )
+from parishkit.stewardship.runtime_network import OFFLINE_PROFILES
 from parishkit.stewardship.runtime_paths import RuntimeLayout
 from parishkit.stewardship.runtime_topology import (
     DEVELOPMENT_IMAGE,
@@ -130,7 +131,14 @@ def test_local_egress_matches_production_and_ingress_is_loopback_only(tmp_path, 
     )
     assert compose["name"] == "parishkit-local"
     networks = compose["networks"]
-    assert set(networks) == {"backend", "proxy", "application-egress", "ingress"}
+    assert set(networks) == {
+        "backend",
+        "proxy",
+        "application-egress",
+        "ingress",
+        *(f"offline-{profile}" for profile in OFFLINE_PROFILES),
+    }
+    assert networks == production["networks"] | {"ingress": networks["ingress"]}
     assert networks["backend"]["internal"] is True
     assert networks["proxy"]["internal"] is True
     assert (
@@ -382,8 +390,9 @@ def test_local_caddyfile_renders_only_the_local_profile(profile):
 
 def test_local_service_documents_reload_as_local(tmp_path):
     """Each rendered service document carries the LOCAL profile and origin."""
-    _, _, documents, caddyfile = local_rendering(tmp_path)
+    configuration, _, documents, caddyfile = local_rendering(tmp_path)
     documents.pop(caddyfile)
+    documents.pop(RuntimeLayout(configuration).hba_directory / "pg_hba.conf")
     assert documents
     for path, document in documents.items():
         assert path.suffix == ".yaml"
@@ -433,7 +442,7 @@ def rendered_identities(profile):
     )
     result = {}
     for path, document in documents.items():
-        if path.name == "Caddyfile":
+        if path.name in {"Caddyfile", "pg_hba.conf"}:
             continue
         loaded = load_deployment(document=document, environ={})
         result[path.name] = (
