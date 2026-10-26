@@ -213,6 +213,9 @@ def test_background_receipts_bind_real_pid_start_and_exact_loaded_inventory(
         {"service": "web"},
         {"receipts": {}},
         {"extra": 1},
+        {"deferred": "parishsoft"},
+        {"deferred": ["slack"]},
+        {"deferred": ["parishsoft", "parishsoft"]},
     ],
 )
 def test_background_receipts_reject_malformed_or_partial_records(cohort, replacement):
@@ -224,6 +227,52 @@ def test_background_receipts_reject_malformed_or_partial_records(cohort, replace
     path = consumers.DIRECTORY / "background.json"
     value = json.loads(path.read_bytes())
     value.update(replacement)
+    write_private(path, json.dumps(value).encode())
+    with pytest.raises(ConfigError):
+        consumers.loaded_service_receipts(configuration)
+
+
+def _worker(cohort, tmp_path):
+    """A worker with its ParishSoft and key receipts, in a live process."""
+    configuration, _, identities = cohort
+    identities[os.getpid()] = (100, 2001)
+    return replace(
+        configuration,
+        service_role=ServiceRole.WORKER,
+        secrets={
+            "token_public": tmp_path / "token_public",
+            "parishsoft": tmp_path / "parishsoft",
+        },
+    )
+
+
+def test_only_a_recorded_deferral_admits_a_missing_setup_credential(cohort, tmp_path):
+    """#2228: a worker admitted before setup's key exists records that, and only
+    then may its receipts lack ParishSoft; the deferral never widens beyond
+    the setup credentials or to a process that did not record it."""
+    configuration = _worker(cohort, tmp_path)
+    receipts = {"token_public": "f" * 64}
+    with pytest.raises(ConfigError, match="inventory"):
+        consumers.publish_single_process_receipts(configuration, receipts)
+    with pytest.raises(ConfigError, match="inventory"):
+        consumers.publish_single_process_receipts(
+            configuration, receipts, frozenset({"token_public"})
+        )
+    consumers.publish_single_process_receipts(
+        configuration, receipts, frozenset({"parishsoft"})
+    )
+    path = consumers.DIRECTORY / "background.json"
+    assert json.loads(path.read_bytes())["deferred"] == ["parishsoft"]
+    assert consumers.loaded_service_receipts(configuration) == receipts
+    # Once acknowledged the key is in the receipts; the deferral stays.
+    picked = receipts | {"parishsoft": "e" * 64}
+    consumers.publish_single_process_receipts(
+        configuration, picked, frozenset({"parishsoft"})
+    )
+    assert consumers.loaded_service_receipts(configuration) == picked
+    # The same record without its deferral is incomplete evidence.
+    value = json.loads(path.read_bytes())
+    value.update(deferred=[], receipts=receipts)
     write_private(path, json.dumps(value).encode())
     with pytest.raises(ConfigError):
         consumers.loaded_service_receipts(configuration)

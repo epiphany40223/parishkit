@@ -20,6 +20,7 @@ from .deployment import DeploymentProfile, ServiceRole, load_deployment
 from .observability import (
     Event,
     configure_logging,
+    emit,
     emit_failure,
     emit_started,
     installer_request,
@@ -1025,13 +1026,16 @@ def serve_background(configuration, lease, *, source=False, mail=False):
                 heartbeat=heartbeat,
                 idle=idle_status,
             )
-        publish_single_process_receipts(configuration, assembled.receipts)
+        publish_single_process_receipts(
+            configuration, assembled.receipts, assembled.deferred
+        )
         emit_started()
         if configuration.service_role in {
             ServiceRole.WORKER,
             ServiceRole.MAIL_DISPATCH,
         }:
             from .credential_runtime import acknowledge_rotations
+            from .runtime_background import readmission_due
 
             if companion_type is not None and not stop.is_set():
                 companion = companion_type(
@@ -1040,9 +1044,37 @@ def serve_background(configuration, lease, *, source=False, mail=False):
             receipts = dict(assembled.receipts)
 
             def idle():
-                """Acknowledge rotations, then refresh the status record."""
+                """Acknowledge rotations, then refresh the status record.
+
+                Returns True, asking the consumer to drain and exit, once
+                setup has completed in a process that started without a
+                setup credential (#2228): Compose restarts the container,
+                whose mounts now hold the keys, and the fresh process admits
+                with its full handler set. A process admitted with its keys
+                never exits for this, nor does one in a profile that renders
+                no restart policy (development).
+                """
                 try:
-                    acknowledge_rotations(configuration, receipts)
+                    try:
+                        acknowledge_rotations(
+                            configuration, receipts, assembled.deferred
+                        )
+                    except Exception as error:
+                        # Logged as serve_consumer would, and the pass goes
+                        # on: a persistent acknowledgement error must not
+                        # keep a deferred process from its re-admission.
+                        emit_failure(error)
+                    # Only where Compose restarts the service (Production
+                    # and LOCAL render unless-stopped); a development
+                    # process keeps running and is restarted by hand.
+                    if (
+                        assembled.deferred
+                        and configuration.profile.behind_proxy
+                        and readmission_due()
+                    ):
+                        emit(Event.CONSUMER_READMISSION, reason="setup_completed")
+                        return True
+                    return False
                 finally:
                     idle_status()
 

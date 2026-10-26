@@ -636,7 +636,10 @@ from the web after setup:
    the bootstrap exception skipped the tasks that need its missing credential
    (the worker's ParishSoft refresh and publication tasks; mail-dispatch
    registers only setup mail). Only such a process, once its idle pass sees
-   the configured marker, has the service's runtime supervisor stop taking
+   the configured marker (as the end of the bootstrap evidence above, which
+   the marker's own transaction ends by activating the parish's
+   configuration; the mail-dispatch login cannot read the marker itself),
+   has the service's runtime supervisor stop taking
    new messages, drain every consumer process in the container, log one INFO
    `consumer_readmission` line (reason `setup_completed`) and exit with status
    0. A missing Slack file never triggers this. Compose's
@@ -646,7 +649,9 @@ from the web after setup:
    credential and registers its full handler set. This happens once per
    deployment; a consumer admitted with its credentials never exits for this
    reason. The exit waits for the setup finalization task to commit, since
-   the pass runs only between messages.
+   the pass runs only between messages. The development profile renders no
+   restart policy, so there the process does not exit; restart it by hand
+   after setup.
 4. **Cancellation and expiry.** When the installers roll an unfinished setup
    back, the directory mounts show the removal, so no consumer needs
    recreating before another attempt, and the pass drops that target from

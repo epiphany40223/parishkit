@@ -307,3 +307,221 @@ def test_background_ack_does_not_admit_unimplemented_or_wrong_runtime(admitted, 
             replace(configuration, service_role=role), uuid4(), lease=Mock()
         )
     assert not acknowledgements
+
+
+class _Rows:
+    """The awaiting requests a consumer's pass reads, without a database."""
+
+    def __init__(self, rows):
+        self.rows = rows
+
+    def filter(self, **kwargs):
+        """Every filter returns the same fixed rows."""
+        return self
+
+    def exclude(self, **kwargs):
+        """Already-acknowledged requests are left out by the fixture itself."""
+        return self
+
+    def values(self, *args):
+        """The excluded subquery's values."""
+        return self
+
+    def __iter__(self):
+        return iter(self.rows)
+
+
+@pytest.fixture
+def pickup(tmp_path, monkeypatch):
+    """A worker whose ParishSoft folder is mounted, with its pass's SQL faked."""
+    from datetime import UTC, datetime, timedelta
+
+    from parishkit.stewardship.accounts import (
+        credential_installation,
+        secret_models,
+    )
+
+    from .test_runtime_topology import configuration_at
+
+    configuration = configuration_at(tmp_path)
+    configuration = replace(
+        configuration,
+        service_role=ServiceRole.WORKER,
+        secrets={
+            "parishsoft": configuration.paths["credentials"]
+            / "parishsoft"
+            / "credential",
+            "token_public": tmp_path / "token_public",
+        },
+    )
+    folder = configuration.secrets["parishsoft"].parent
+    for path in (*reversed(folder.parents[:2]), folder):
+        path.mkdir(mode=0o700, exist_ok=True)
+        path.chmod(0o700)
+    now = datetime(2054, 10, 1, 12, tzinfo=UTC)
+    monkeypatch.setattr(
+        "parishkit.stewardship.accounts.sessions.database_now", lambda: now
+    )
+    rows = []
+    monkeypatch.setattr(
+        secret_models.SecretReplacementRequest, "objects", _Rows(rows), raising=False
+    )
+    monkeypatch.setattr(
+        secret_models.CredentialConsumerAcknowledgement,
+        "objects",
+        _Rows([]),
+        raising=False,
+    )
+    acks, published, alerts = [], [], []
+    monkeypatch.setattr(
+        credential_installation,
+        "acknowledge_loaded_credential",
+        lambda **kwargs: acks.append(kwargs),
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.consumer_runtime.publish_single_process_receipts",
+        lambda configuration, receipts, deferred: published.append(
+            (dict(receipts), deferred)
+        ),
+    )
+    monkeypatch.setattr(
+        credential_runtime, "emit", lambda event, **kwargs: alerts.append(kwargs)
+    )
+    monkeypatch.setattr(credential_runtime, "_overdue_alerted", {})
+
+    def request(value, *, minutes):
+        """An awaiting request for ``value``, installed ``minutes`` ago."""
+        from parishkit.stewardship.accounts.metrics_credentials import (
+            credential_receipt,
+        )
+
+        row = SimpleNamespace(
+            pk=uuid4(),
+            target="parishsoft",
+            resulting_fingerprint=credential_receipt(value, "parishsoft"),
+            updated_at=now - timedelta(minutes=minutes),
+        )
+        rows.append(row)
+        return row
+
+    return SimpleNamespace(
+        configuration=configuration,
+        request=request,
+        acks=acks,
+        published=published,
+        alerts=alerts,
+        rows=rows,
+    )
+
+
+def _install(configuration, value):
+    """Rename ``value`` into the mounted folder as the installer would."""
+    from parishkit.stewardship.accounts.key_files import write_private
+
+    write_private(configuration.secrets["parishsoft"], value)
+
+
+def test_setup_key_is_acknowledged_from_the_mount_with_its_deferral(pickup):
+    """#2228: setup's first key appears in the mounted folder; the consumer
+    acknowledges exactly those bytes through its own hook and republishes
+    its receipts with the deferral it was admitted with."""
+    row = pickup.request(b"setup-key", minutes=1)
+    _install(pickup.configuration, b"setup-key")
+    receipts = {}
+    deferred = frozenset({"parishsoft"})
+    acknowledged = credential_runtime.acknowledge_rotations(
+        pickup.configuration, receipts, deferred
+    )
+    assert acknowledged == [row.pk]
+    assert pickup.acks == [
+        {"request_id": row.pk, "consumer": "worker", "loaded_value": b"setup-key"}
+    ]
+    assert pickup.published == [({"parishsoft": row.resulting_fingerprint}, deferred)]
+    assert pickup.alerts == []
+
+
+@pytest.mark.parametrize("minutes,logged", [(9, False), (10, True)])
+def test_a_key_not_yet_visible_is_logged_only_once_overdue(pickup, minutes, logged):
+    """No acknowledgement without the installed bytes; after 10 minutes the
+    pass logs credential_pickup_overdue, at most hourly per request."""
+    from parishkit.stewardship.observability import FailureKind
+
+    pickup.request(b"setup-key", minutes=minutes)
+    for _ in range(2):
+        assert credential_runtime.acknowledge_rotations(pickup.configuration, {}) == []
+    assert pickup.acks == [] and pickup.published == []
+    assert pickup.alerts == (
+        [
+            {
+                "level": 40,
+                "failure_kind": FailureKind.CREDENTIAL_PICKUP_OVERDUE,
+            }
+        ]
+        if logged
+        else []
+    )
+
+
+def test_bytes_that_would_fail_readmission_are_never_acknowledged(pickup):
+    """The consumer parses the key as its next start will (#2228): an
+    installed ParishSoft file that SourceCredential refuses is not
+    acknowledged, and the pass goes on to the next request."""
+    bad = pickup.request(b"two\nlines\n", minutes=11)
+    _install(pickup.configuration, b"two\nlines\n")
+    assert credential_runtime.acknowledge_rotations(pickup.configuration, {}) == []
+    assert pickup.acks == []
+    assert len(pickup.alerts) == 1
+    # A later request for parseable bytes still goes through in the same pass.
+    pickup.rows.remove(bad)
+    good = pickup.request(b"setup-key", minutes=11)
+    pickup.rows.insert(0, bad)
+    _install(pickup.configuration, b"setup-key")
+    assert credential_runtime.acknowledge_rotations(pickup.configuration, {}) == [
+        good.pk
+    ]
+
+
+def test_a_refused_acknowledgement_is_logged_and_the_pass_goes_on(pickup, monkeypatch):
+    """A guard refusal (an expired request, say) is per request (#2228)."""
+    from parishkit.stewardship.accounts import credential_installation
+
+    first = pickup.request(b"setup-key", minutes=1)
+    second = pickup.request(b"setup-key", minutes=1)
+    _install(pickup.configuration, b"setup-key")
+
+    def acknowledge(**kwargs):
+        """The SQL guard refuses the first request only."""
+        if kwargs["request_id"] == first.pk:
+            raise ConfigError("synthetic refusal")
+        pickup.acks.append(kwargs)
+
+    failures = Mock()
+    monkeypatch.setattr(
+        credential_installation, "acknowledge_loaded_credential", acknowledge
+    )
+    monkeypatch.setattr(credential_runtime, "emit_failure", failures)
+    assert credential_runtime.acknowledge_rotations(pickup.configuration, {}) == [
+        second.pk
+    ]
+    failures.assert_called_once()
+
+
+def test_a_rolled_back_setup_key_leaves_the_receipts(pickup):
+    """Cancellation removes the installed file; the process no longer claims
+    it, while a required credential's receipt is never dropped."""
+    deferred = frozenset({"parishsoft"})
+    receipts = {"parishsoft": "e" * 64, "token_public": "f" * 64}
+    assert (
+        credential_runtime.acknowledge_rotations(
+            pickup.configuration, receipts, deferred
+        )
+        == []
+    )
+    assert receipts == {"token_public": "f" * 64}
+    assert pickup.published == [({"token_public": "f" * 64}, deferred)]
+    # Without a deferral ParishSoft is required: its receipt stays.
+    receipts = {"parishsoft": "e" * 64, "token_public": "f" * 64}
+    pickup.published.clear()
+    credential_runtime.acknowledge_rotations(pickup.configuration, receipts)
+    assert set(receipts) == {"parishsoft", "token_public"}
+    assert pickup.published == []
