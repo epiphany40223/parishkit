@@ -1236,9 +1236,10 @@ none, even with the same answer as the change it replaced (#2028). **Details** n
 - a pledge: "Pledge", and on an **Accepted (edited)** line the Reviewer's
   value as [Pledges](#pledges) shows it ("Pledge; Reviewer's value:
   $1,300.00, Quarterly"), with the reviewer's share methods when the Edit
-  changed them, each by its short label where one is set
-  ([short labels in tables](../ui-conventions/spec.md#short-labels-in-tables),
-  [#2198](https://github.com/epiphany40223/parishkit/issues/2198)) with any Other text ("Pledge;
+  changed them, each with any Other text, on the page by its short label
+  where one is set ([short labels in tables](../ui-conventions/spec.md#short-labels-in-tables),
+  [#2198](https://github.com/epiphany40223/parishkit/issues/2198)) and in the
+  PDF and `pk-admin` by its full label ("Pledge;
   Reviewer's value: $1,300.00, Quarterly; share methods: Online giving",
   [#2177](https://github.com/epiphany40223/parishkit/issues/2177));
 - a Limitations answer: the answer in [Limitations](#limitations)' words

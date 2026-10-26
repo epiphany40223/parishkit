@@ -419,39 +419,6 @@ def test_the_timeline_names_the_reviewers_share_methods(response_service):
     )
 
 
-def test_the_timeline_names_share_methods_by_short_label(response_service, monkeypatch):
-    """A method with a short label is named by it on the Timeline line, as
-    the Admin tables name it (#2198); one without keeps its full label."""
-    from parishkit.stewardship.reports import timeline_reviews
-
-    harness, _submission = pledged(response_service)
-    # The fixture's options have no short labels: their full labels.
-    full = timeline_reviews.share_labels_for(harness.campaign.pk)
-    worded = timeline_reviews.share_wording
-
-    def shortened(values, **context):
-        """The configuration as if the Administrator set Other's short label."""
-        options = [
-            option | ({"short_label": "Else"} if option["id"] == OTHER else {})
-            for option in values["share_options"]
-        ]
-        return worded(values | {"share_options": options}, **context)
-
-    monkeypatch.setattr(timeline_reviews, "share_wording", shortened)
-    labels = timeline_reviews.share_labels_for(harness.campaign.pk)
-    assert labels == full | {OTHER: "Else"} and full[OTHER] != "Else"
-    row = {
-        "stream": "pledge",
-        "a": "edit",
-        "c": "1234.50",
-        "d": "monthly",
-        "subject": f'{{"{OTHER}": "Stock"}}',
-    }
-    assert timeline_reviews.item_words(
-        row, {timeline_reviews.SHARE_LABELS: labels}
-    ) == ("Pledge; Reviewer's value: $1,234.50, Monthly; share methods: Else: Stock")
-
-
 # --- The frozen file -------------------------------------------------------
 
 

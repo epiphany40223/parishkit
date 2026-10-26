@@ -31,6 +31,7 @@ from parishkit.stewardship.responses.models import (
     ProposedChange,
 )
 
+from ..test_financial_answers import OTHER
 from .auth_builders import signed_in
 from .test_background_grants_postgresql import task_login
 from .test_census_add_page_postgresql import worklist
@@ -433,6 +434,59 @@ def test_pledge_decisions_reach_only_financial_readers(response_service, google)
     # The page escapes the apostrophe in Reviewer's.
     shown = [(what, unescape(detail)) for what, detail in rows(body)]
     assert shown == list(reversed(expected))
+
+
+def test_the_page_names_share_methods_by_short_label_and_files_by_full(
+    response_service, google, monkeypatch
+):
+    """An Edit's share methods are named by short label, with the full label
+    as tooltip, in the page's table only (#2198); the line's text, which the
+    PDF and ``pk-admin`` show, keeps the full label."""
+    from parishkit.stewardship.accounts.policy import Principal
+    from parishkit.stewardship.reports import timeline_reviews
+
+    from .test_pledge_review_postgresql import admin as pledge_admin
+    from .test_pledge_review_postgresql import pledged
+    from .test_pledge_share_methods_postgresql import edit as edit_pledge
+
+    harness, submission = pledged(response_service)
+    edit_pledge(
+        harness,
+        pledge_admin(),
+        submission,
+        amount="1,300",
+        frequency="quarterly",
+        **{f"value_share_{OTHER}": "on", f"value_share_text_{OTHER}": "Stock"},
+    )
+    worded = timeline_reviews.share_wording
+
+    def shortened(values, **context):
+        """The configuration as if the Administrator set Other's short label."""
+        options = [
+            option | ({"short_label": "Else"} if option["id"] == OTHER else {})
+            for option in values["share_options"]
+        ]
+        return worded(values | {"share_options": options}, **context)
+
+    monkeypatch.setattr(timeline_reviews, "share_wording", shortened)
+    reader = Principal(uuid4(), frozenset({"administrator"}), frozenset())
+    (lines, _requests), _ = read(harness.campaign.pk, submission.family_id, reader)
+    (detail,) = [detail for _at, _what, detail in lines]
+    # The text (the PDF, `pk-admin`) has the full label, never the short one.
+    assert "share methods: Other: Stock; by admin@example.org" in detail
+    assert "Else" not in detail
+    assert 'title="Other"' in detail.html and ">Else<" in detail.html
+    assert timeline_reviews.share_labels_for(harness.campaign.pk)[OTHER] == "Other"
+
+    client, login = signed_in()
+    assert login.status_code == 302
+    path = reverse("admin:timeline", args=[submission.family_id]) + "?kind=reviews"
+    body, _counted = page(client, path)
+    assert re.search(
+        r'<span title="Other"><span aria-hidden="true">Else</span>'
+        r'<span class="visually-hidden">Other</span></span>: Stock',
+        body,
+    )
 
 
 def test_limitation_decisions_reach_the_timeline(response_service, google):

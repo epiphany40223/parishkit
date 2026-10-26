@@ -15,6 +15,7 @@ from parishkit.stewardship.reports import timeline_pdf
 from parishkit.stewardship.reports.timeline_reviews import (
     ASKED,
     SHARE_LABELS,
+    SHARE_SHORTS,
     WORDS,
     requests,
     steps,
@@ -512,6 +513,49 @@ def test_an_edits_share_methods_are_named_on_its_line():
         "Pledge; Reviewer's value: $1,300.00, Quarterly; share methods: Bank "
         "check, Other: Bonds, Unavailable share method; by staff@example.org"
     )
+
+
+def test_an_edits_share_methods_are_short_only_in_the_pages_markup():
+    """The line's text, which the PDF and ``pk-admin`` show, names a share
+    method by its full label; only the page's markup (``Event.cell``) names
+    it by its short label, with the full label as tooltip (#2198)."""
+    from parishkit.stewardship.reports.timelines import Event
+
+    first, second = str(uuid4()), str(uuid4())
+    edit = row(
+        "pledge",
+        "7",
+        1,
+        "edit",
+        "accepted_edited",
+        "1300.00",
+        "quarterly",
+        entity_kind=None,
+        entity_key=None,
+        actor="a<b@example.org",
+        subject=f'{{"{second}": "Bonds <i>", "{first}": ""}}',
+    )
+    names = {
+        SHARE_LABELS: {first: "Bank check <b>", second: "Other"},
+        SHARE_SHORTS: {first: "Check", second: "Other"},
+    }
+    (line,) = steps([edit], names, reader=reader("staff"))
+    detail = line[2]
+    full = (
+        "Pledge; Reviewer's value: $1,300.00, Quarterly; share methods: Bank "
+        "check <b>, Other: Bonds <i>; by a<b@example.org"
+    )
+    assert detail == full and type(str(detail)) is str
+    assert (
+        '<span title="Bank check &lt;b&gt;"><span aria-hidden="true">Check</span>'
+        '<span class="visually-hidden">Bank check &lt;b&gt;</span></span>, '
+        "Other: Bonds &lt;i&gt;; by a&lt;b@example.org"
+    ) in Event(line[0], line[1], detail).cell
+    # No short label differs: the page shows the text, escaped by its template.
+    (plain,) = steps(
+        [edit], {SHARE_LABELS: names[SHARE_LABELS]}, reader=reader("staff")
+    )
+    assert Event(plain[0], plain[1], plain[2]).cell == full
 
 
 def test_limitation_lines_read_as_their_decision():

@@ -5298,8 +5298,8 @@ the page.
 
 **Rule.** Every Admin table cell that names a share method names it by its
 short label when the Administrator has set one (Share options), otherwise by
-its full label: a chip, a list of methods in a text cell, and a Timeline line
-alike. Where a cell shows a short label, the full label is the method's
+its full label: a chip, a list of methods in a text cell, and a Timeline line's
+cell alike. Where a cell shows a short label, the full label is the method's
 tooltip (`title`) and its accessible name, so a screen reader hears the full
 label, never the short one. This bare `title` is a recorded exception to
 the rule that help never sits in a hover-only tooltip
@@ -5311,11 +5311,8 @@ Other text a Family gave a method follows the
 name as it does with the full label ("Online: weekly"). Forms keep the full
 labels, worded as the Family form words them: the Family form and the
 pledge editor's choices. Downloaded files keep the full labels too
-([Downloaded files](#downloaded-files)). One exception: a
-Timeline line is one sentence that the page, its PDF and `pk-admin` share,
-so it names a method by its short label in all three, as plain text without
-a tooltip; a reader finds the methods in force on the Family hub's
-Financial tab or on Pledges, and their full labels in Pledges' downloads.
+([Downloaded files](#downloaded-files)), and so do the Timeline's PDF and
+`pk-admin`'s output.
 **Why.** A method's full label is the sentence the
 Family read, often long; the short label is the Administrator's compact name
 for it, so cells stay short ([Table fit and row height](#table-fit-and-row-height))

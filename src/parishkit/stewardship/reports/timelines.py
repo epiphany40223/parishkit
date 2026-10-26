@@ -275,6 +275,16 @@ class Event:
     tag: str = ""
     family_duid: int | None = None
 
+    @property
+    def cell(self):
+        """The detail as the page's table cell shows it (#2198).
+
+        A pledge line's share methods are named by short label there, with the
+        full label as tooltip (``timeline_reviews.Detail``); the PDF and
+        ``pk-admin`` use ``detail``, which is in full labels.
+        """
+        return getattr(self.detail, "html", None) or self.detail
+
 
 @dataclass(frozen=True)
 class Summary:
