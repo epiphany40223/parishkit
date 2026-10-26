@@ -143,6 +143,9 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         REVIEW_WATERMARK_FUNCTION,
         FACT_EDITS_FUNCTION,
         DEBUG_OFF_FUNCTION,
+        # Queue the pending off-site backup check when setup completes
+        # (0186, #2200).
+        "stewardship_setup_backup_check_v1()",
     }
     assert runtime_functions("download") == {LEADER_SCOPE_FUNCTION}
     # Mail dispatch reads one claimed message's link token (0073, #389) and
