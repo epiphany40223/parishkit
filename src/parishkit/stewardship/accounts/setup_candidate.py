@@ -20,7 +20,7 @@ from .setup_configuration import (
     build_users_setup_candidate,
     request_schema_for,
 )
-from .setup_forms import FORMS, validate_values
+from .setup_forms import FORMS, STEP_FORMS, validate_values
 
 
 @dataclass(frozen=True)
@@ -96,8 +96,9 @@ def compile_candidate(
     UUIDs for new public records are scoped to the original attempt. Setup
     (#142) has no campaign, so the candidate holds the Parish profile,
     integrations and login rules only, and no campaign, content or
-    schedules. Only the wizard's steps (``FORMS``) are accepted, and any
-    other section is refused; the setup preview passes no others
+    schedules. Only the wizard's steps (``STEP_FORMS``) are accepted, every
+    required one (``FORMS``) must be there, and any other section is
+    refused; the setup preview passes no others
     (``setup_preview.SYSTEM_SECTIONS``). An attempt
     confirmed before #142 with a campaign finishes from its frozen
     candidate and is never compiled again.
@@ -111,9 +112,9 @@ def compile_candidate(
         raise ConfigError("Complete every required setup section before final preview.")
     # Fail closed: a caller that passed a whole draft, first-campaign steps
     # and all, must not have them silently dropped.
-    if sections.keys() - set(FORMS):
+    if sections.keys() - set(STEP_FORMS):
         raise ConfigError("Only the setup wizard's own sections can be compiled.")
-    values = {step: validate_values(step, sections[step]) for step in FORMS}
+    values = {step: validate_values(step, value) for step, value in sections.items()}
     public = _system_records(
         base, attempt_id, operation_id, values, branding, credentials
     )
@@ -227,4 +228,19 @@ def _integrations(attempt_id, values, credentials):
             },
         }
     )
+    backup = values.get("backup")
+    if backup and backup["enabled"]:
+        # The optional Off-site backups step (#2200): the record the Off-site
+        # backups page would add, the folder alone, with no key of its own
+        # (copies use the Google Workspace key).
+        results.append(
+            {
+                "id": str(uuid5(attempt_id, "integration:backup")),
+                "values": {
+                    "kind": "backup",
+                    "settings": {"target": backup["folder_link"]},
+                    "credential_fingerprint": None,
+                },
+            }
+        )
     return results

@@ -285,6 +285,9 @@ def test_review_page_is_gone_and_finish_follows_the_load(
         response = browser.get("/admin/setup/confirm")
         assert response.status_code == 200, response.content
         content = response.content.decode()
+        # The email test is not accepted here, so the optional Off-site
+        # backups step before it cannot open yet and Back passes over it to
+        # Check parish data (#2200).
         assert (
             '<a class="setup-back" data-nav-slot="back" href="/admin/setup/source">'
             in content

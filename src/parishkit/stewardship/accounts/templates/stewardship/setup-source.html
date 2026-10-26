@@ -31,7 +31,7 @@ state.{% endcomment %}
 <div class="setup-check-slot">{% for state in check_states %}{% if state == check_shown %}{% include 'stewardship/setup-source-status.html' with ghost=False %}{% else %}{% include 'stewardship/setup-source-status.html' with ghost=True %}{% endif %}{% endfor %}</div>
 {% if check_shown == 'waiting' %}{% include 'stewardship/setup-navigation.html' with continue_reason="setup-check-reason" %}
 <p class="help" id="setup-check-reason" data-continue-reason>{{ wait_reason }}</p>
-{% else %}{% if check_shown == 'ready' %}{% translate "Check again" as secondary %}{% include 'stewardship/setup-navigation.html' with continue_url=wizard.next.href secondary_label=secondary secondary_value="check" %}
+{% else %}{% if check_shown == 'ready' %}{% translate "Check again" as secondary %}{% include 'stewardship/setup-navigation.html' with continue_url=wizard.onward.href continue_name=wizard.onward.label secondary_label=secondary secondary_value="check" %}
 {% elif check_shown == 'failed' %}{% translate "Check again" as submit %}{% include 'stewardship/setup-navigation.html' with submit_value="check" %}
 {% else %}{% translate "Check parish data" as submit %}{% include 'stewardship/setup-navigation.html' with submit_value="check" %}
 {% endif %}<p class="help reserve-ghost" aria-hidden="true">{{ wait_reason }}</p>

@@ -20,7 +20,7 @@ from .authentication import runtime
 from .limiting import LimiterUnavailable
 from .setup_checks import start_check
 from .setup_drafts import save_section, view_draft
-from .setup_forms import FORMS, form_values, initial_values
+from .setup_forms import STEP_FORMS, form_values, initial_values
 from .setup_policy import SetupState
 from .setup_staging import _admit, begin_setup, cancel_setup
 from .setup_wizard import BY_KEY, PAGES, continue_after, wizard_for
@@ -209,12 +209,15 @@ def setup_step(request, step):
 
     The Slack step also takes the Slack bot token, which it stages rather
     than saves (``setup_slack_step``, #1578); its page form adds that field.
+    The optional Off-site backups step (#2200) names the saved delegated
+    mailbox user in its folder help and is closed where the local
+    environment does not reach Google Drive (``_backup_options``).
     """
     try:
-        if step not in FORMS:
+        if step not in STEP_FORMS:
             raise LookupError("Unknown setup step.")
         service = runtime()
-        form_type = FORMS[step]
+        form_type = STEP_FORMS[step]
         options = {}
         if step == "slack":
             from . import setup_slack_step
@@ -226,6 +229,8 @@ def setup_step(request, step):
             return _checked(request, service, HttpResponseRedirect("/admin/setup"))
         if step == "slack":
             options["saved"] = setup_slack_step.saved_channel(draft)
+        elif step == "backup":
+            options = _backup_options(draft)
         form = form_type(
             request.POST if request.method == "POST" else None,
             initial=initial_values(step, draft.sections.get(step, {})),
@@ -268,12 +273,46 @@ def setup_step(request, step):
             context
             # A wizard heading uses its stepper label (one name per page).
             | {"form": form, "step": step, "step_label": BY_KEY[step].label}
-            | _slack_context(draft, context["wizard"], options),
+            | _slack_context(draft, context["wizard"], options)
+            | (_backup_context(form, options) if step == "backup" else {}),
             status=status,
         )
         return _checked(request, service, response, draft)
     except ERRORS as error:
         return page_error(request, error, step)
+
+
+def _backup_options(draft):
+    """The Off-site backups step form's options (#2200).
+
+    ``mailbox`` is the delegated mailbox user saved on Outgoing email
+    settings, which the folder must let add files, and ``drive_closed``
+    whether this is the local environment without its Google Drive terms,
+    where the step cannot turn copies on (as Test access cannot there).
+    """
+    from .integration_views import _drive_in_local
+
+    return {
+        "mailbox": draft.sections.get("mail", {}).get("delegated_email"),
+        "drive_closed": _drive_in_local(),
+    }
+
+
+def _backup_context(form, options):
+    """What the Off-site backups step's page draws besides its form (#2200).
+
+    ``backup_on`` is whether the box is ticked as drawn (the posted value on
+    a refused save), which picks the primary's label before the page's
+    script runs; ``backup_mailbox`` the saved delegated mailbox user the
+    Google steps name; ``backup_missing`` the complete gate's hint.
+    """
+    from .setup_forms import BACKUP_MISSING
+
+    return {
+        "backup_on": bool(form["enabled"].value()),
+        "backup_mailbox": options["mailbox"],
+        "backup_missing": BACKUP_MISSING,
+    }
 
 
 def _slack_context(draft, wizard, options):

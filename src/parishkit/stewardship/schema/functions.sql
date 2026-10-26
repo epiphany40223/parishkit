@@ -7524,7 +7524,7 @@ BEGIN
             AND NOT owner.disabled
         JOIN stewardship_address_rule rule ON rule.email=owner.email
             AND rule.configuration_id=runtime.active_configuration_id
-            AND rule.roles @> '["administrator"]'::jsonb
+            AND rule.roles OPERATOR(pg_catalog.@>) '["administrator"]'::jsonb
         WHERE runtime.mode='testing' AND NOT runtime.restore_review_required
             AND runtime.active_configuration_id=attempt.base_id) THEN
         RAISE EXCEPTION 'Setup draft requires its original live Admin'
@@ -7542,6 +7542,8 @@ BEGIN
         WHEN 'slack' THEN ARRAY['channel_id','enabled']
         WHEN 'campaign' THEN ARRAY['campaign','source_result']
         WHEN 'testing' THEN ARRAY['testing_recipient']
+        -- The optional Off-site backups step (#2200): public values only.
+        WHEN 'backup' THEN ARRAY['acknowledged','enabled','folder_link']
         WHEN 'schedules' THEN ARRAY['records']
         ELSE ARRAY['id','values'] END;
     SELECT array_agg(key ORDER BY key) INTO actual

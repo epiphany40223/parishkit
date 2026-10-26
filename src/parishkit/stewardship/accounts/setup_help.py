@@ -102,6 +102,20 @@ SLACK = {
     ),
 }
 
+# The Off-site backups (optional) step (#2200); the folder link's help names
+# the saved delegated mailbox user, so the form adds it.
+BACKUP = {
+    "enabled": _(
+        "Copies each night's encrypted backup to a folder in your Google "
+        "Drive, using the Google Workspace connection set up for mail. You "
+        "can turn this on or change the folder later from Off-site backups "
+        "(Google Drive) in Integrations."
+    ),
+    "acknowledged": _(
+        "See How backups are protected above. Required while copies are on."
+    ),
+}
+
 TESTING = {
     "testing_recipient": _(
         "While the system is in Testing mode, every email it sends goes to this "
@@ -302,6 +316,7 @@ HINTS = {
     "delegated_email": _("A licensed Workspace user, not the service account."),
     "sender": _("The mailbox itself or one of its verified Gmail aliases."),
     "channel_id": _("For example C0123456789 (the ID, not the name)."),
+    "folder_link": _("The folder link from the address bar; it has /folders/."),
     "testing_recipient": _(
         "In Testing mode every email goes to this one address; use a trusted "
         "staff mailbox."

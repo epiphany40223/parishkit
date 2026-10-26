@@ -500,6 +500,11 @@ PLEDGE_REFRESH_ITEMS_FUNCTION = "stewardship_pledge_refresh_items_v2(uuid, uuid,
 # #269): the Google Workspace installer compares a queued "Test access"
 # check with them before it runs it, without reading the applied settings.
 BACKUP_DESTINATION_FUNCTION = "stewardship_backup_destination_v1()"
+# The setup wizard's Off-site backups step (0186, #2200): the general worker,
+# in the transaction writing the configured marker, queues one "Test access"
+# check of the applied folder; the definer reads the folder, the mailbox
+# user and the Administrator itself.
+SETUP_BACKUP_CHECK_FUNCTION = "stewardship_setup_backup_check_v1()"
 # Publication plans and outcomes (#528, DAT-09.01, migration 0087): the
 # worker writes a preflight's plan and each write attempt's outcome; web
 # reads them all and writes only an Administrator's confirmation.
@@ -628,6 +633,8 @@ CLOSURE_FUNCTIONS = {
     FAMILY_ANALYZE_FUNCTION: ("stewardship_campaigns", "0018_family_statistics"),
     # The Test access re-check's backup destination read (0176, #269).
     BACKUP_DESTINATION_FUNCTION: ("stewardship_jobs", "0038_probe_settings_changed"),
+    # The setup folder check (0186, #2200).
+    SETUP_BACKUP_CHECK_FUNCTION: ("stewardship_accounts", "0039_setup_backup_step"),
 }
 
 
@@ -935,7 +942,8 @@ def runtime_functions(role, *, target=None):
     campaign comparison report's aggregates (#1018), and so does the general
     worker, for the daily digest's Compared with past campaigns section.
     The general worker also reads the archive's parts of each live answer
-    to write the campaign archive workbook (#1018).
+    to write the campaign archive workbook (#1018), and queues the setup
+    wizard's one off-site folder check when setup completes (#2200).
     Mail dispatch reads the one link token of a Family message it holds a
     live delivery claim on (#389 L1). Web reads what a delivered email's
     follow-up to its addresses refused for now did (#806); mail dispatch
@@ -1023,6 +1031,7 @@ def runtime_functions(role, *, target=None):
                 PUBLICATION_AUDITED_FUNCTION,
                 PLEDGE_REFRESH_ITEMS_FUNCTION,
                 ADDED_MEMBER_CANDIDATES_FUNCTION,
+                SETUP_BACKUP_CHECK_FUNCTION,
             },
             "download": {LEADER_SCOPE_FUNCTION},
             ServiceRole.ADMIN_RECOVERY: {

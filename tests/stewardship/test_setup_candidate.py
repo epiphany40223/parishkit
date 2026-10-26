@@ -257,3 +257,49 @@ def test_maximum_wizard_can_compile_without_artificial_combined_record_limit():
         )
     result = compile_candidate(base, **args)
     assert 150 < len(result.patch()) < 200
+
+
+BACKUP_LINK = "https://drive.google.com/drive/folders/A1b2C3d4E5f6G7h8I9j0"
+
+
+@pytest.mark.parametrize(
+    "backup",
+    [
+        None,
+        {"enabled": False, "folder_link": "", "acknowledged": False},
+        {"enabled": True, "folder_link": BACKUP_LINK, "acknowledged": True},
+    ],
+)
+def test_the_optional_backup_step_adds_its_folder_only_when_on(backup):
+    """Off-site backups (#2200) is optional: never opened, or off, adds
+    nothing; on, it adds the folder the Off-site backups page would, with no
+    key of its own."""
+    base, args = compilation()
+    if backup is not None:
+        args["sections"]["backup"] = backup
+    integrations = compile_candidate(base, **args).candidate.document()["sections"][
+        "integrations"
+    ]
+    added = [row["values"] for row in integrations if row["values"]["kind"] == "backup"]
+    if backup and backup["enabled"]:
+        assert added == [
+            {
+                "kind": "backup",
+                "settings": {"target": BACKUP_LINK},
+                "credential_fingerprint": None,
+            }
+        ]
+    else:
+        assert added == []
+
+
+def test_a_malformed_backup_section_cannot_compile():
+    """The step's values are checked again as the page's form checks them."""
+    base, args = compilation()
+    args["sections"]["backup"] = {
+        "enabled": True,
+        "folder_link": BACKUP_LINK,
+        "acknowledged": False,
+    }
+    with pytest.raises(ValueError, match="setup values"):
+        compile_candidate(base, **args)

@@ -3,6 +3,8 @@
 from copy import deepcopy
 
 from django import forms
+from django.utils.html import escape
+from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
@@ -198,6 +200,163 @@ class SetupSlackForm(AdminForm):
         return values
 
 
+# What the Off-site backups step's complete gate says while copies are on and
+# the folder link or the private-key checkbox is missing (#2200).
+BACKUP_MISSING = _(
+    "Add the folder link and confirm that the backup private key is kept safe, "
+    "or untick Copy each backup to Google Drive to go on without it."
+)
+# What a refused save says at each field while copies are on (#2200): each
+# says what that field needs (ui-conventions, field errors).
+BACKUP_FIELD_MISSING = {
+    "folder_link": _(
+        "Paste the Google Drive folder link, or untick Copy each backup to "
+        "Google Drive."
+    ),
+    "acknowledged": _(
+        "Tick this box to confirm that the parish keeps the backup private key "
+        "safe, or untick Copy each backup to Google Drive."
+    ),
+}
+# Why the step cannot turn copies on in the local environment while it does
+# not reach Google Drive: the words the Off-site backups page gives for Test
+# access there (integration-settings.html).
+BACKUP_LOCAL_REASON = _(
+    "Off-site copies are not available in this local environment: it reaches "
+    "Google Drive only with a mail redirect (deploy --mail-redirect) and the "
+    "normal clock, so its backups stay inside the VM."
+)
+
+
+class SetupBackupForm(AdminForm):
+    """The optional Off-site backups step: on or off, folder and key word (#2200).
+
+    Only public values: whether copies are on, the canonical folder link (the
+    Off-site backups page's field and form) and whether the Administrator
+    confirmed that the backup private key is kept off the server. The folder
+    and the checkbox are shown, and required, only while copies are ticked
+    (``data-show-when``); hidden, they are disabled and not sent, so turning
+    copies off clears them. ``clean`` is the authority either way.
+    """
+
+    enabled = forms.BooleanField(
+        label=_("Copy each backup to Google Drive"), required=False
+    )
+    folder_link = forms.CharField(
+        label=_("Google Drive folder link"), max_length=500, required=False
+    )
+    acknowledged = forms.BooleanField(
+        label=_(
+            "I know where the parish keeps the backup private key, away from "
+            "this server. Without it no backup can be restored."
+        ),
+        required=False,
+    )
+
+    def __init__(self, *args, mailbox=None, drive_closed=False, **kwargs):
+        """Explain the fields; follow the switch; close copies where Drive is.
+
+        ``mailbox`` is the delegated mailbox user saved on Outgoing email
+        settings, which the folder must let add files. ``drive_closed`` is
+        the local environment without its Drive terms
+        (``integration_views._drive_in_local``): the switch is drawn
+        unticked and unavailable, its help saying why, and ``clean``
+        refuses a tick anyway.
+        """
+        from .integration_forms import ERROR_LINE_TEMPLATE, FOLDER_LINK_PATTERN
+
+        super().__init__(*args, **kwargs)
+        self.drive_closed = drive_closed
+        # Help text may be drawn unescaped (help_text|safe), so the saved
+        # address is escaped here and the whole text marked safe.
+        folder_help = mark_safe(
+            escape(
+                _(
+                    "Open the folder in Google Drive and copy the link from the "
+                    "address bar (it contains /folders/). Each backup is copied "
+                    "there as its own folder of encrypted files; the newest 30 "
+                    "are kept. The delegated mailbox user saved on Outgoing email "
+                    "settings (%(mailbox)s) must be able to add files to the "
+                    "folder, for example as a Content manager of the folder's "
+                    "shared drive."
+                )
+            )
+            % {"mailbox": escape(mailbox or _("not saved yet"))}
+        )
+        texts = setup_help.BACKUP | {"folder_link": folder_help}
+        if drive_closed:
+            # The reason stays visible under the switch (a checkbox's help
+            # is never moved into a tip) and describes it.
+            texts |= {"enabled": BACKUP_LOCAL_REASON}
+        setup_help.apply(self, texts, replace=True)
+        shown = f"{self.add_prefix('enabled')}=on"
+        for name in ("folder_link", "acknowledged"):
+            self.fields[name].widget.attrs.update(
+                {
+                    "data-show-when": shown,
+                    "data-required-when-shown": "",
+                    "data-missing-hint": BACKUP_MISSING,
+                }
+            )
+        self.fields["folder_link"].widget.attrs |= {
+            "pattern": FOLDER_LINK_PATTERN,
+            "spellcheck": "false",
+        }
+        # A reserved error line, shown or not, as on the Off-site backups
+        # page, so a refused link never moves the controls below (no layout
+        # shift). Set after the tip, which only a field with no template of
+        # its own takes.
+        self.fields["folder_link"].template_name = ERROR_LINE_TEMPLATE
+        if drive_closed:
+            # Drawn unticked as well as unavailable: a disabled box is not
+            # sent, so a draft saved on elsewhere would otherwise draw its
+            # folder fields with a switch whose tick the save never sees.
+            self.initial["enabled"] = False
+            self.fields["enabled"].widget.attrs["disabled"] = True
+
+    def clean_folder_link(self):
+        """Store one canonical folder link, whichever form was pasted."""
+        from parishkit.stewardship.backup_drive import folder_id_from_url
+
+        from .backup_destination import folder_link
+
+        value = self.cleaned_data["folder_link"]
+        if not value.strip():
+            return ""
+        try:
+            return folder_link(folder_id_from_url(value))
+        except ValueError as error:
+            raise forms.ValidationError(
+                str(error), code="invalid_folder_link"
+            ) from None
+
+    def clean(self):
+        """Copies on need a folder and the key word; off carries neither."""
+        values = super().clean()
+        if self.errors:
+            return values
+        if values["enabled"] and self.drive_closed:
+            raise forms.ValidationError(BACKUP_LOCAL_REASON, code="drive_not_in_local")
+        if values["enabled"]:
+            for name in ("folder_link", "acknowledged"):
+                if not values[name]:
+                    self.add_error(
+                        name,
+                        forms.ValidationError(
+                            BACKUP_FIELD_MISSING[name], code="required"
+                        ),
+                    )
+        elif values["folder_link"] or values["acknowledged"]:
+            raise forms.ValidationError(
+                _(
+                    "Tick Copy each backup to Google Drive to save a folder, or "
+                    "clear the folder link and the private-key checkbox."
+                ),
+                code="backup_mismatch",
+            )
+        return values
+
+
 class SetupTestingForm(AdminForm):
     """One destination applies to all test mail; no Production switch exists here."""
 
@@ -226,6 +385,17 @@ FORMS = {
     "mail": SetupMailForm,
     "slack": SetupSlackForm,
     "testing": SetupTestingForm,
+}
+# Steps a setup may finish without ever saving (#2200): the draft may hold
+# them, and they are compiled when saved, but no step needs them.
+OPTIONAL_FORMS = {"backup": SetupBackupForm}
+# Every step a draft can save.
+STEP_FORMS = FORMS | OPTIONAL_FORMS
+# The boolean values of each step; every other value is a string, except the
+# access step's lists.
+BOOLEAN_VALUES = {
+    "slack": frozenset({"enabled"}),
+    "backup": frozenset({"enabled", "acknowledged"}),
 }
 
 
@@ -286,7 +456,7 @@ def form_values(form):
 
 def initial_values(step, values):
     """Convert stored access arrays back to bounded text controls for this owner."""
-    if step not in FORMS:
+    if step not in STEP_FORMS:
         raise ValueError("Unknown setup step.")
     return {
         name: "\n".join(value) if step == "access" else deepcopy(value)
@@ -297,11 +467,11 @@ def initial_values(step, values):
 def validate_values(step, values):
     """Service callers cannot inject extra fields, coercions or private payloads.
 
-    Only the wizard's steps (``FORMS``) are accepted. The first-campaign
+    Only the wizard's steps (``STEP_FORMS``) are accepted. The first-campaign
     steps the wizard saved before #142 (campaign, schedules, content) are
     refused like any other unknown step.
     """
-    if step not in FORMS or type(values) is not dict:
+    if step not in STEP_FORMS or type(values) is not dict:
         raise ValueError("Invalid public setup values.")
     if step == "parish" and "online_giving_url" not in values:
         # A parish step saved before the optional giving URL existed means
@@ -312,11 +482,11 @@ def validate_values(step, values):
         values = values | {"sender_name": ""}
     if step == "access" and LEGACY_ACCESS_FIELDS & values.keys():
         values = _without_domains(values)
-    form_type = FORMS[step]
+    form_type = STEP_FORMS[step]
     if set(values) != set(form_type.base_fields):
         raise ValueError("Invalid public setup fields.")
     if step != "access" and any(
-        type(value) is not (bool if step == "slack" and name == "enabled" else str)
+        type(value) is not (bool if name in BOOLEAN_VALUES.get(step, ()) else str)
         for name, value in values.items()
     ):
         raise ValueError("Invalid public setup types.")

@@ -5,7 +5,7 @@ serialization lock without writing files, then commits all SQL effects under
 the normal task/source lock order. No provider call belongs in this transaction.
 """
 
-from django.db import transaction
+from django.db import connection, transaction
 
 from parishkit.stewardship.accounts.installation_lock import installation_lock
 from parishkit.stewardship.accounts.runtime_models import (
@@ -115,6 +115,15 @@ def complete_setup(execution, claim, snapshot_id, *, store, general, mac, public
                 actor_id=scope.owner_id,
                 correlation_id=execution.correlation_id,
             )
+            # The setup wizard's Off-site backups step (#2200): with its folder
+            # applied, queue one "Test access" check of it now, in the
+            # configured marker's own transaction (the definer refuses any
+            # other), as the Administrator and the applied mailbox user it
+            # reads itself. No folder applied queues nothing. It must run at
+            # this transaction's top level, never inside a savepoint: the
+            # definer matches the marker row's xmin to the transaction's id.
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT stewardship_setup_backup_check_v1()")
             attempt = SetupAttempt.objects.select_for_update().get(pk=scope.attempt_id)
             attempt.state = "completed"
             attempt.actor_id = scope.owner_id
