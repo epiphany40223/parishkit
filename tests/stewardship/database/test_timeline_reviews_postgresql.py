@@ -101,9 +101,10 @@ def page(client, path):
 
 
 def rows(body):
-    """The timeline's (What happened, Details) pairs, in row order."""
+    """The timeline's (What happened, Details) pairs, in row order, as text
+    (Details keeps each amount in a one-line ``money`` span, #2258)."""
     return [
-        (re.sub(r"<[^>]+>", "", what), detail)
+        (re.sub(r"<[^>]+>", "", what), re.sub(r"<[^>]+>", "", detail))
         for what, detail in re.findall(
             r'<th scope="row">(.*?)</th><td>(.*?)</td></tr>', body
         )

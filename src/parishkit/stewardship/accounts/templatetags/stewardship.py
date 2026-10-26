@@ -575,6 +575,27 @@ def whole_dollars(amount):
     )
 
 
+# One shown amount: an optional minus, "$", grouped dollars and any cents
+# ("$99,999.99", "-$12.50", "$1,000"), as MoneyAmount and whole_dollars write
+# them.
+MONEY_AMOUNT = re.compile(r"-?\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?")
+
+
+@register.filter
+def keep_money(value):
+    """Text with each amount of money in it kept on one line (#2258).
+
+    Usage: ``{{ row.answer|keep_money }}``. Each amount ("$99,999.99") is
+    wrapped in ``<span class="money">`` (``white-space: nowrap`` in
+    ui-v1.css), so main's ``overflow-wrap: anywhere`` never breaks it inside
+    a squeezed table cell, while the words around it still wrap
+    (ui-conventions "Numbers and money"). Plain text is escaped first;
+    text already marked safe keeps its markup.
+    """
+    text = conditional_escape(value)
+    return mark_safe(MONEY_AMOUNT.sub(r'<span class="money">\g<0></span>', text))
+
+
 @register.simple_tag
 def filter_mark(error, field, described=""):
     """A report filter field's ``aria-describedby``, and its mark if refused.

@@ -159,6 +159,20 @@ Y" also show a percentage; percentages use one fractional digit unless they
 are exact integers. A zero denominator displays an em dash rather than a
 misleading percentage.
 
+**Money on one line.** A shown amount of money never breaks across lines: an
+amount up to "$99,999.99" (and any larger one) stays on one line in every
+Admin table at laptop width, whether it fills its cell or sits in mixed text
+("Monthly ($8,333.33 each)"). The words and names around it wrap first, and
+a table that then cannot fit a phone scrolls sideways inside its own
+focusable, named box (see
+[table fit and row height](#table-fit-and-row-height)), never the page.
+Downloads keep plain text. **Why.** "$3,000.00" broken after "$3," reads as
+two figures (Administrator, 2026-10-26). **Shared code.** The `keep_money`
+template filter (each amount in a `money` span, `white-space: nowrap` in
+`ui-v1.css`) on every money cell that is not already `nowrap` in a
+`whole-words` table; the money-width browser test (`test_money_width.py`). **Precedent.**
+[#2258](https://github.com/epiphany40223/parishkit/issues/2258).
+
 **Money inputs.** Every field that takes an amount of money shows a "$"
 attached before it: a visual prefix the field sits beside, not text the reader
 types or the field holds. The label is the plain name ("Annual pledge", "At
@@ -5426,13 +5440,8 @@ text that goes with one sits in a [toggletip](#page-help) beside it. A chip
 names its item by a short label where the item has one, so a cell can show
 every chip; the chips may wrap onto a second line within their cell, making
 that row taller, which is acceptable where most rows have one chip. So a
-chip cell is not `nowrap`; money and date cells still never wrap. A cell
-that holds a status chip with one short marker chip beside it, where many
-rows carry both (Scheduled emails' Repeats,
-[#2234](https://github.com/epiphany40223/parishkit/issues/2234)), keeps
-the pair on one `nowrap` line instead, so the marker never makes its row
-taller; the marker's longer text is its `title` and its screen-reader
-text, as for a short label (below).
+chip cell is not `nowrap`; money ([numbers and money](#numbers-and-money))
+and date cells still never wrap.
 Where two related values would each need a column, one cell may stack them,
 one line each, when the heading names them in the same order and each value
 carries its name for screen readers (`stack-line`); a row is then as tall

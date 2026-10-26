@@ -177,8 +177,8 @@ def test_when_shows_the_whole_date_and_only_series_rows_say_repeats(
     At 1280 px every When shows its whole compact date and time on one line,
     uncut, and the table fits its box. Only Reminder 1, a series' reminder,
     has the Repeats chip, its rule in Edit's words as its tip and its
-    screen-reader text, beside its status on one line, so the chip never
-    makes the row taller. At 320 px the page never scrolls sideways: the table
+    screen-reader text, on its own line under its status (#2250); a one-off
+    row has no chip. At 320 px the page never scrolls sideways: the table
     scrolls inside its focusable, named box instead.
     """
     page.set_viewport_size({"width": width, "height": 900})
@@ -197,7 +197,7 @@ def test_when_shows_the_whole_date_and_only_series_rows_say_repeats(
     assert chips.get_attribute("title") == f"Repeats: {rule}"
     assert chips.locator(".visually-hidden").text_content() == f"Repeats: {rule}"
     assert chips.locator("[aria-hidden=true]").inner_text() == "Repeats"
-    # The chip is the shared status chip, beside the row's status.
+    # The chip is the shared status chip, under the row's status.
     status = series_row.locator(".status-badge").first
     assert status.inner_text() == "Upcoming"
     assert chips.evaluate("node => node.classList.contains('status-badge')")
@@ -250,10 +250,10 @@ def test_when_shows_the_whole_date_and_only_series_rows_say_repeats(
         )
         assert email_lines > 1, email_lines
         assert region.evaluate("node => node.scrollWidth <= node.clientWidth")
-        # Beside the status on its one line, so the row is no taller.
+        # Under the status, left-aligned with it, so the row is a line taller.
         chip, badge = chips.bounding_box(), status.bounding_box()
-        assert chip["x"] > badge["x"] + badge["width"], (chip, badge)
-        assert same_place(chip["y"], badge["y"]), (chip, badge)
+        assert chip["y"] >= badge["y"] + badge["height"], (chip, badge)
+        assert abs(chip["x"] - badge["x"]) < 1, (chip, badge)
     assert not failures
 
 
