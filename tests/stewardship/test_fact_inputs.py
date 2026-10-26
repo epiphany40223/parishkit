@@ -16,7 +16,15 @@ from parishkit.stewardship.reports.inputs import (
 
 def inputs():
     """A valid frozen identity independent of database contents."""
-    return FactInputs(uuid4(), "historical", uuid4(), 0, uuid4(), date(2026, 10, 2))
+    return FactInputs(
+        uuid4(),
+        "historical",
+        uuid4(),
+        0,
+        uuid4(),
+        date(2026, 10, 2),
+        review_watermark=0,
+    )
 
 
 @pytest.mark.parametrize(
@@ -29,6 +37,10 @@ def inputs():
         ("submission_watermark", True),
         ("submission_watermark", -1),
         ("submission_watermark", 2**63),
+        ("review_watermark", True),
+        ("review_watermark", -1),
+        ("review_watermark", 2**63),
+        ("review_watermark", None),
         ("through_date", datetime(2026, 10, 2, tzinfo=UTC)),
     ],
 )
@@ -36,6 +48,14 @@ def test_fact_inputs_reject_ambiguous_or_coerced_values(field, value):
     """Exact storage identities never silently change meaning during coercion."""
     with pytest.raises(ValueError):
         replace(inputs(), **{field: value})
+
+
+def test_fact_inputs_require_the_review_watermark_by_keyword():
+    """No caller can leave the pledge review watermark out (#2202)."""
+    with pytest.raises(TypeError):
+        FactInputs(uuid4(), "historical", uuid4(), 0, uuid4(), date(2026, 10, 2))
+    with pytest.raises(TypeError):
+        FactInputs(uuid4(), "historical", uuid4(), 0, uuid4(), date(2026, 10, 2), 0)
 
 
 def test_dates_are_inclusive_bounded_and_include_leap_days():

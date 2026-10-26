@@ -260,6 +260,7 @@ sections:
     "Population and calculation rules": [RPT-02]
     "Participation graph": [RPT-03]
     "Participation fact materialization": [RPT-03]
+    "Pledge values in the participation facts": [RPT-03, RPT-08]
     "Campaign statistics": [RPT-03]
     "Response funnel": [RPT-03]
     "Funnel stages": [RPT-03]

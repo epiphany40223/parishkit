@@ -2528,7 +2528,7 @@ CREATE FUNCTION public.stewardship_daily_fact_set_mutable_v1() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
             BEGIN
-                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."campaign_id" IS DISTINCT FROM OLD."campaign_id" OR NEW."population_scope" IS DISTINCT FROM OLD."population_scope" OR NEW."source_id" IS DISTINCT FROM OLD."source_id" OR NEW."source_generation" IS DISTINCT FROM OLD."source_generation" OR NEW."submission_watermark" IS DISTINCT FROM OLD."submission_watermark" OR NEW."timezone_configuration_id" IS DISTINCT FROM OLD."timezone_configuration_id" OR NEW."through_date" IS DISTINCT FROM OLD."through_date" OR NEW."first_date" IS DISTINCT FROM OLD."first_date" OR NEW."last_date" IS DISTINCT FROM OLD."last_date" OR NEW."expected_count" IS DISTINCT FROM OLD."expected_count" THEN
+                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."campaign_id" IS DISTINCT FROM OLD."campaign_id" OR NEW."population_scope" IS DISTINCT FROM OLD."population_scope" OR NEW."source_id" IS DISTINCT FROM OLD."source_id" OR NEW."source_generation" IS DISTINCT FROM OLD."source_generation" OR NEW."submission_watermark" IS DISTINCT FROM OLD."submission_watermark" OR NEW."review_watermark" IS DISTINCT FROM OLD."review_watermark" OR NEW."pledge_edits" IS DISTINCT FROM OLD."pledge_edits" OR NEW."timezone_configuration_id" IS DISTINCT FROM OLD."timezone_configuration_id" OR NEW."through_date" IS DISTINCT FROM OLD."through_date" OR NEW."first_date" IS DISTINCT FROM OLD."first_date" OR NEW."last_date" IS DISTINCT FROM OLD."last_date" OR NEW."expected_count" IS DISTINCT FROM OLD."expected_count" THEN
                     RAISE EXCEPTION 'Record identity and bindings are immutable'
                         USING ERRCODE = '23514';
                 END IF;
@@ -2744,9 +2744,11 @@ BEGIN
     END IF;
     requested_changed := ROW(NEW.requested_source_id,
         NEW.requested_source_generation,NEW.requested_submission_watermark,
+        NEW.requested_review_watermark,
         NEW.requested_timezone_configuration_id,NEW.requested_through_date)
         IS DISTINCT FROM ROW(OLD.requested_source_id,
         OLD.requested_source_generation,OLD.requested_submission_watermark,
+        OLD.requested_review_watermark,
         OLD.requested_timezone_configuration_id,OLD.requested_through_date);
     claim_changed := ROW(NEW.claimed_revision,NEW.claimed_generation_id,
         NEW.claimed_task_id,NEW.claimed_task_fence,NEW.claimed_worker_id)
@@ -2763,6 +2765,8 @@ BEGIN
         IF claim_changed OR NEW.pending_revision<>OLD.pending_revision+1
             OR NEW.requested_source_generation<OLD.requested_source_generation
             OR NEW.requested_submission_watermark<OLD.requested_submission_watermark
+            -- The pledge review watermark (0185, #2202) never regresses either.
+            OR NEW.requested_review_watermark<OLD.requested_review_watermark
             OR (NEW.requested_timezone_configuration_id=OLD.requested_timezone_configuration_id
                 AND NEW.requested_through_date<OLD.requested_through_date)
             OR NEW.pending_first_at IS DISTINCT FROM
@@ -2784,10 +2788,11 @@ BEGIN
             OR NOT stewardship_fact_live(NEW.claimed_task_id,
                 NEW.claimed_task_fence,NEW.claimed_worker_id)
             OR ROW(target.campaign_id,target.population_scope,target.source_id,
-                target.submission_watermark,target.timezone_configuration_id,
+                target.submission_watermark,target.review_watermark,
+                target.timezone_configuration_id,
                 target.through_date) IS DISTINCT FROM ROW(NEW.campaign_id,
                 NEW.population_scope,NEW.requested_source_id,
-                NEW.requested_submission_watermark,
+                NEW.requested_submission_watermark,NEW.requested_review_watermark,
                 NEW.requested_timezone_configuration_id,NEW.requested_through_date)
             OR (target.state<>'ready' AND (target.state<>'building' OR
                 ROW(target.task_id,target.task_fence,target.worker_id)
@@ -2861,6 +2866,8 @@ CREATE FUNCTION public.stewardship_fact_disposable(identifier uuid) RETURNS bool
             AND newer.id<>old.id AND newer.created_at>=old.created_at
             AND newer.source_generation>=old.source_generation
             AND newer.submission_watermark>=old.submission_watermark
+            -- A newer pledge review watermark too (0185, #2202).
+            AND newer.review_watermark>=old.review_watermark
             AND ((newer.timezone_configuration_id=old.timezone_configuration_id
                     AND newer.through_date>=old.through_date)
                 OR (newer.timezone_configuration_id<>old.timezone_configuration_id
@@ -2877,9 +2884,9 @@ CREATE FUNCTION public.stewardship_fact_disposable(identifier uuid) RETURNS bool
     AND NOT EXISTS(SELECT 1 FROM stewardship_exact_export_request r
         JOIN stewardship_daily_fact_set f ON f.id=identifier
         WHERE ROW(r.campaign_id,r.population_scope,r.source_id,r.submission_watermark,
-                r.timezone_configuration_id,r.through_date)=
+                r.review_watermark,r.timezone_configuration_id,r.through_date)=
             ROW(f.campaign_id,f.population_scope,f.source_id,f.submission_watermark,
-                f.timezone_configuration_id,f.through_date)
+                f.review_watermark,f.timezone_configuration_id,f.through_date)
             -- A latest-data export that has ended keeps nothing (#1398).
             AND NOT EXISTS(SELECT 1 FROM stewardship_export_discard d
                 WHERE d.exact_request_id=r.id))
@@ -2972,6 +2979,7 @@ BEGIN
                 WHERE id=OLD.fact_set_id;
             IF target.source_generation<prior.source_generation
                 OR target.submission_watermark<prior.submission_watermark
+                OR target.review_watermark<prior.review_watermark
                 OR (target.timezone_configuration_id=prior.timezone_configuration_id
                     AND target.through_date<prior.through_date) THEN
                 RAISE EXCEPTION 'Fact pointer cannot regress' USING ERRCODE='23514';

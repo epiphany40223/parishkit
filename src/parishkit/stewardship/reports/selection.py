@@ -49,10 +49,12 @@ class ParticipationSelection:
 
 
 def current_inputs(campaign_id, population_scope):
-    """Capture configuration/source/live watermark/clock in one SQL snapshot.
+    """Capture configuration/source/live+review watermarks/clock in one snapshot.
 
     Separate READ COMMITTED queries could combine an old source with a newer
-    submission or configuration. No locks or long transactions block writers;
+    submission or configuration. The pledge review watermark (#2202) comes
+    from 0185's count-only definer in the same statement. No locks or long
+    transactions block writers;
     freshness is explicitly relative to this statement's captured instant.
     The caller owns authorization and the campaign read guard.
     """
@@ -62,7 +64,8 @@ def current_inputs(campaign_id, population_scope):
             "CASE WHEN c.state='archived' THEN pc.source_snapshot_id "
             "ELSE s.snapshot_id END, COALESCE((SELECT max(r.campaign_sequence) "
             "FROM stewardship_submission r WHERE r.campaign_id=c.id "
-            "AND r.mode='live'),0), stewardship_campaign_now_v1() "
+            "AND r.mode='live'),0), stewardship_campaign_now_v1(), "
+            "public.stewardship_pledge_review_watermark_v1(c.id) "
             "FROM stewardship_campaign c "
             "JOIN stewardship_campaign_configuration p "
             "ON p.id=c.active_configuration_id "
@@ -74,7 +77,7 @@ def current_inputs(campaign_id, population_scope):
         row = cursor.fetchone()
     if row is None:
         raise FactUnavailable("Campaign report inputs are unavailable.")
-    configuration, end, zone, source, watermark, instant = row
+    configuration, end, zone, source, watermark, instant, reviews = row
     if source is None:
         return None, instant
     return FactInputs(
@@ -84,6 +87,7 @@ def current_inputs(campaign_id, population_scope):
         watermark,
         configuration,
         min(end, instant.astimezone(ZoneInfo(zone)).date()),
+        review_watermark=reviews,
     ), instant
 
 
@@ -97,6 +101,7 @@ def _exact_ready(campaign_id, population_scope, expected):
             population_scope=population_scope,
             source_id=expected.source_id,
             submission_watermark=expected.submission_watermark,
+            review_watermark=expected.review_watermark,
             timezone_configuration_id=expected.timezone_configuration_id,
             through_date=expected.through_date,
             state="ready",

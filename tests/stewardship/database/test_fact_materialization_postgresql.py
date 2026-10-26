@@ -33,8 +33,13 @@ from .test_source_snapshots_postgresql import permit
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
-def allocation(harness, *, population="historical", watermark=0, source=None):
-    """Bind an actual task lease and exact immutable campaign/source configuration."""
+def allocation(
+    harness, *, population="historical", watermark=0, source=None, reviews=0
+):
+    """Bind an actual task lease and exact immutable campaign/source configuration.
+
+    ``reviews`` is the generation's pledge review watermark (#2202).
+    """
     values = running_source_task()
     claim = TaskClaim(values["task_id"], values["task_fence"], values["worker_id"])
     inputs = FactInputs(
@@ -44,6 +49,7 @@ def allocation(harness, *, population="historical", watermark=0, source=None):
         watermark,
         harness.campaign.active_configuration_id,
         harness.campaign.active_configuration.start_date + timedelta(days=1),
+        review_watermark=reviews,
     )
     with work_transaction():
         record = begin_fact_set(inputs, claim, admit=permit)

@@ -123,6 +123,7 @@ def add_response_web_grants(tables, columns):
             "requested_source_id",
             "requested_source_generation",
             "requested_submission_watermark",
+            "requested_review_watermark",
             "requested_timezone_configuration_id",
             "requested_through_date",
             "pending_revision",

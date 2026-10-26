@@ -507,6 +507,14 @@ BACKUP_DESTINATION_FUNCTION = "stewardship_backup_destination_v1()"
 # keeps the capture it was granted (its daily digest retired in 0171), with
 # no grant on response answers or pledge reviews.
 EDITS_IN_FORCE_FUNCTION = "stewardship_pledge_edits_in_force_v1(uuid)"
+# The campaign's pledge review watermark, a count only (0185, #2202): web
+# (the dashboard's and comparison's current inputs, exact exports and the
+# archive offer), the worker (report email inputs) and the scheduler (fact
+# reconciliation) put it in a fact generation's exact inputs.
+REVIEW_WATERMARK_FUNCTION = "stewardship_pledge_review_watermark_v1(uuid)"
+# The pledge Edits a new fact generation records (0185, #2202): only the
+# worker allocates generations, and the database's own trigger reads it.
+FACT_EDITS_FUNCTION = "stewardship_fact_pledge_edits_v1(uuid)"
 # Publication plans and outcomes (#528, DAT-09.01, migration 0087): the
 # worker writes a preflight's plan and each write attempt's outcome; web
 # reads them all and writes only an Administrator's confirmation.
@@ -637,6 +645,11 @@ CLOSURE_FUNCTIONS = {
     BACKUP_DESTINATION_FUNCTION: ("stewardship_jobs", "0038_probe_settings_changed"),
     # The statistics capture's pledge Edits in force (0184, #2202).
     EDITS_IN_FORCE_FUNCTION: ("stewardship_reports", "0051_statistics_in_force"),
+    # The fact generations' pledge review watermark and Edits (0185, #2202).
+    **dict.fromkeys(
+        (REVIEW_WATERMARK_FUNCTION, FACT_EDITS_FUNCTION),
+        ("stewardship_reports", "0052_series_in_force"),
+    ),
 }
 
 
@@ -843,6 +856,12 @@ CLOSURE_COLUMNS = {
         "stewardship_accounts",
         "0038_setup_source_check",
     ),
+    # The pledge review watermark a Family's response keeps on the rebuild
+    # demand (0185, #2202): web updates it with the other requested inputs.
+    ("stewardship_fact_demand", "requested_review_watermark"): (
+        "stewardship_reports",
+        "0052_series_in_force",
+    ),
 }
 
 
@@ -946,7 +965,10 @@ def runtime_functions(role, *, target=None):
     The general worker also reads the archive's parts of each live answer
     to write the campaign archive workbook (#1018). Web and the general
     worker read each Family's pledge Edit in force (its response and annual
-    pledge only) for the campaign statistics (#2202).
+    pledge only) for the campaign statistics (#2202). Web, the general worker
+    and the scheduler read the campaign's pledge review watermark (a count)
+    for a fact generation's exact inputs, and the general worker the pledge
+    Edits a new generation records (#2202).
     Mail dispatch reads the one link token of a Family message it holds a
     live delivery claim on (#389 L1). Web reads what a delivered email's
     follow-up to its addresses refused for now did (#806); mail dispatch
@@ -1007,6 +1029,7 @@ def runtime_functions(role, *, target=None):
                 ADDRESS_LEADER_SCOPE_FUNCTION,
                 DEBUG_OFF_FUNCTION,
                 EDITS_IN_FORCE_FUNCTION,
+                REVIEW_WATERMARK_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {
                 MINISTRY_CATALOG_FUNCTION,
@@ -1019,7 +1042,11 @@ def runtime_functions(role, *, target=None):
                 ADDRESS_RETRY_TOKEN_FUNCTION,
                 DEBUG_OFF_FUNCTION,
             },
-            ServiceRole.SCHEDULER: {DEBUG_OFF_FUNCTION, EXPORT_DISCARD_FUNCTION},
+            ServiceRole.SCHEDULER: {
+                DEBUG_OFF_FUNCTION,
+                EXPORT_DISCARD_FUNCTION,
+                REVIEW_WATERMARK_FUNCTION,
+            },
             ServiceRole.WORKER: {
                 SESSION_PURGE_FUNCTION,
                 READ_GUARD_KILLS_FUNCTION,
@@ -1036,6 +1063,8 @@ def runtime_functions(role, *, target=None):
                 PLEDGE_REFRESH_ITEMS_FUNCTION,
                 ADDED_MEMBER_CANDIDATES_FUNCTION,
                 EDITS_IN_FORCE_FUNCTION,
+                REVIEW_WATERMARK_FUNCTION,
+                FACT_EDITS_FUNCTION,
             },
             "download": {LEADER_SCOPE_FUNCTION},
             ServiceRole.ADMIN_RECOVERY: {

@@ -77,6 +77,10 @@ class ReportEmailPreparation(MutableRecord):
     report_day = models.DateField(null=True)
     source_id = models.UUIDField(null=True)
     submission_watermark = models.PositiveBigIntegerField(null=True)
+    # The pledge review watermark, recorded with the other inputs (0185,
+    # #2202); None on a send whose inputs were recorded before 0185, which
+    # pinned a generation of watermark 0.
+    review_watermark = models.PositiveBigIntegerField(null=True)
     timezone_configuration_id = models.UUIDField(null=True)
     through_date = models.DateField(null=True)
 
@@ -119,6 +123,12 @@ class ReportEmailPreparation(MutableRecord):
                     timezone_configuration_id__isnull=False,
                 ),
                 name="report_email_inputs",
+            ),
+            # The pledge review watermark only with the other inputs.
+            models.CheckConstraint(
+                condition=models.Q(review_watermark__isnull=True)
+                | models.Q(submission_watermark__isnull=False),
+                name="report_email_review_inputs",
             ),
         ]
         indexes = [

@@ -161,6 +161,7 @@ def seed_daily(
             statistics.submission_watermark,
             statistics.configuration_id,
             through,
+            review_watermark=0,
         ),
         claim,
         admit=permit,

@@ -102,14 +102,14 @@ class Preview:
 
 
 def _observe(campaign_id):
-    """The database clock, the promoted source and the live watermark now."""
+    """The database clock, the promoted source, and the live and review watermarks."""
     with connection.cursor() as cursor:
-        cursor.execute(OBSERVE, [campaign_id])
+        cursor.execute(OBSERVE, {"campaign": campaign_id})
         observed = cursor.fetchone()
     if observed is None:
         raise NoSource("A preview needs a promoted ParishSoft source.")
-    instant, source_id, watermark = observed
-    return instant.astimezone(UTC), source_id, watermark
+    instant, source_id, watermark, reviews = observed
+    return instant.astimezone(UTC), source_id, watermark, reviews
 
 
 def select_facts(campaign_id, expected):
@@ -128,6 +128,7 @@ def select_facts(campaign_id, expected):
         ready.filter(
             source_id=expected.source_id,
             submission_watermark=expected.submission_watermark,
+            review_watermark=expected.review_watermark,
             timezone_configuration_id=expected.timezone_configuration_id,
             through_date=expected.through_date,
         )
@@ -137,7 +138,12 @@ def select_facts(campaign_id, expected):
     if exact is not None:
         return exact, False
     newest = (
-        ready.order_by("-source_generation", "-submission_watermark", "-through_date")
+        ready.order_by(
+            "-source_generation",
+            "-submission_watermark",
+            "-review_watermark",
+            "-through_date",
+        )
         .values_list("id", flat=True)
         .first()
     )
@@ -276,7 +282,7 @@ def preview_report(values, system, campaign, *, public_origin):
     they are read, and the chart renderer's error when a chart cannot be
     drawn.
     """
-    observed_at, source_id, watermark = _observe(campaign.pk)
+    observed_at, source_id, watermark, reviews = _observe(campaign.pk)
     projection = campaign.active_configuration
     inputs = recorded_inputs(
         values,
@@ -295,6 +301,7 @@ def preview_report(values, system, campaign, *, public_origin):
             watermark,
             projection.pk,
             inputs.through_date,
+            review_watermark=reviews,
         )
         fact_set_id, updating = select_facts(campaign.pk, expected)
     version = system.active_configuration

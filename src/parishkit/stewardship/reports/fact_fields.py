@@ -6,6 +6,7 @@ REQUEST_UPDATE_FIELDS = (
     "requested_source",
     "requested_source_generation",
     "requested_submission_watermark",
+    "requested_review_watermark",
     "requested_timezone_configuration",
     "requested_through_date",
     "pending_revision",

@@ -74,7 +74,8 @@ PIN_KIND = "digest"
 
 OBSERVE = """SELECT stewardship_campaign_now_v1(), c.snapshot_id,
     coalesce((SELECT max(campaign_sequence) FROM stewardship_submission
-        WHERE campaign_id=%s AND mode='live'),0)
+        WHERE campaign_id=%(campaign)s AND mode='live'),0),
+    public.stewardship_pledge_review_watermark_v1(%(campaign)s)
     FROM stewardship_source_current c JOIN stewardship_source_snapshot s
         ON s.id=c.snapshot_id AND s.state='promoted' AND s.compacted_at IS NULL"""
 
@@ -101,7 +102,8 @@ def record_inputs(claim):
 
     The capture instant is the database clock in this transaction, so the
     guard can check that it is this observation; the watermark is the last
-    live submission committed by then.
+    live submission committed by then, and the review watermark the pledge
+    review rows by then (#2202).
     """
     row, scope = _bound(claim, "inputs")
     configuration = scope.campaign.active_configuration
@@ -111,11 +113,11 @@ def record_inputs(claim):
             [row.occurrence_id, row.mode],
         )
         covered = json.loads(cursor.fetchone()[0])
-        cursor.execute(OBSERVE, [row.campaign_id])
+        cursor.execute(OBSERVE, {"campaign": row.campaign_id})
         observed = cursor.fetchone()
     if observed is None:
         raise FactUnavailable("Report inputs need a promoted ParishSoft source.")
-    captured_at, source_id, watermark = observed
+    captured_at, source_id, watermark, reviews = observed
     values = _values(row)
     inputs = recorded_inputs(
         values,
@@ -143,6 +145,7 @@ def record_inputs(claim):
         report_day=inputs.report_day,
         source_id=source_id,
         submission_watermark=watermark,
+        review_watermark=reviews,
         timezone_configuration_id=configuration.pk,
         through_date=inputs.through_date,
     )

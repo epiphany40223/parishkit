@@ -578,6 +578,20 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # check in place. Its file, whole, puts all of it back, last.
 # 0184 (#2202) creates one definer, granted to the web and general worker
 # logins (runtime_grants.CLOSURE_FUNCTIONS); it replaces nothing.
+# 0185 (#2202, part 2) creates two granted definers
+# (runtime_grants.CLOSURE_FUNCTIONS) and the trigger that records a fact
+# generation's pledge Edits, adds columns its file adds again only if
+# missing (so it may run whole again), and replaces in place functions
+# that 0095's, 0156's and 0161's reinstalled files bring back older, so
+# ``CLOSURE_REPLACED_ONLY`` restores 0185's bodies last.
+# The columns 0185 (#2202) adds, by table.
+SERIES_IN_FORCE_COLUMNS = (
+    ("stewardship_daily_fact_set", "pledge_edits"),
+    ("stewardship_daily_fact_set", "review_watermark"),
+    ("stewardship_fact_demand", "requested_review_watermark"),
+    ("stewardship_exact_export_request", "review_watermark"),
+    ("stewardship_report_email_preparation", "review_watermark"),
+)
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -1108,6 +1122,16 @@ CLOSURE_CREATED = {
         "stewardship_reports",
         "0051_statistics_in_force",
     ),
+    # 0185 (#2202): the fact generations' pledge review watermark and
+    # Edits, and the trigger that records the Edits.
+    **dict.fromkeys(
+        (
+            "public.stewardship_pledge_review_watermark_v1(uuid)",
+            "public.stewardship_fact_pledge_edits_v1(uuid)",
+            "public.stewardship_fact_pledge_edits_record_v1()",
+        ),
+        ("stewardship_reports", "0052_series_in_force"),
+    ),
 }
 
 
@@ -1144,6 +1168,10 @@ CLOSURE_RERUN = {
 # ``before_*`` statements) and, unless the test's full migration added it
 # again, installs it again afterwards from its migration's frozen file.
 CLOSURE_ALTERED = {
+    # 0185 (#2202): the fact identity's pledge review watermark and Edits.
+    **dict.fromkeys(
+        SERIES_IN_FORCE_COLUMNS, ("stewardship_reports", "0052_series_in_force")
+    ),
     ("stewardship_submission", "entered_by_id"): (
         "stewardship_responses",
         "0003_staff_entered",
@@ -1731,6 +1759,19 @@ CLOSURE_REPLACED_ONLY = {
         ("stewardship_reports", "0050_financial_in_force"),
         "CROSS JOIN LATERAL stewardship_pledge_review_states_v1(x.id,NULL) k",
     ),
+    # 0185 (#2202) replaces, with the pledge review watermark and the
+    # generation's Edits, functions that 0095's, 0156's and 0161's files
+    # (run again above) bring back older; only its replacements run again.
+    **{
+        name: (("stewardship_reports", "0052_series_in_force"), phrase)
+        for name, phrase in (
+            ("stewardship_fact_disposable", "newer.review_watermark"),
+            ("stewardship_fact_runtime_binding_v1", "requested_review_watermark"),
+            ("stewardship_report_email_preparation_guard_v1", "review_watermark"),
+            ("stewardship_report_email_snapshot_guard_v1", "review_watermark"),
+            ("stewardship_campaign_comparison_v1", "selected.pledge_edits"),
+        )
+    },
 }
 
 
@@ -1973,6 +2014,35 @@ def before_submission_upcoming_pledge():
     return [
         "DROP FUNCTION public.stewardship_submission_pledge_guard_v1() CASCADE",
         "ALTER TABLE public.stewardship_submission DROP COLUMN upcoming_pledge",
+    ]
+
+
+PRE_SERIES_IN_FORCE = Path(__file__).with_name("pre_series_in_force_functions.sql")
+
+
+def before_series_in_force():
+    """The statements that put the fact identity back as it was before 0185.
+
+    #2202's 0185 adds the pledge review watermark and Edits columns (its
+    unique exact-input key and report email check go with them), and
+    replaces base functions that read them; their earlier bodies come from
+    ``PRE_SERIES_IN_FORCE``. Its routines are in ``CLOSURE_CREATED``, so
+    ``swap_pending`` already dropped them (and the recording trigger); the
+    functions of 0095's, 0156's and 0161's files are dropped or put back
+    older there too. 0185's frozen file (or the full migration) installs
+    all of it again.
+    """
+    return [
+        *(
+            # 0156's report email table is a closure table, dropped already.
+            f"ALTER TABLE IF EXISTS public.{table} DROP COLUMN IF EXISTS {column}"
+            for table, column in SERIES_IN_FORCE_COLUMNS
+        ),
+        "ALTER TABLE public.stewardship_daily_fact_set ADD CONSTRAINT "
+        "daily_fact_exact_inputs UNIQUE (campaign_id, population_scope, "
+        "source_generation, submission_watermark, timezone_configuration_id, "
+        "through_date)",
+        PRE_SERIES_IN_FORCE.read_text(encoding="utf-8"),
     ]
 
 
@@ -2299,6 +2369,7 @@ def swap_pending():
             *before_submission_upcoming_pledge(),
             *before_reviewed_form_shown_items(),
             *before_setup_source_check(),
+            *before_series_in_force(),
         ):
             cursor.execute(statement)
         before_report_conversion(cursor, views_before)
@@ -2404,6 +2475,17 @@ def closure_functions_absent():
             module = sys.modules[migrations[key].__module__]
             text = Path(module.FROZEN_SQL).read_text(encoding="utf-8")
             for name in re.findall(r"^CREATE FUNCTION public\.(\w+)\(", text, re.M):
+                # A trigger function's triggers go first (0185's recording
+                # trigger, #2202); the file makes them again.
+                cursor.execute(
+                    "SELECT format('DROP TRIGGER %%I ON %%s', t.tgname, "
+                    "t.tgrelid::regclass) FROM pg_trigger t "
+                    "JOIN pg_proc p ON p.oid=t.tgfoid WHERE NOT t.tgisinternal "
+                    "AND p.pronamespace='public'::regnamespace AND p.proname=%s",
+                    [name],
+                )
+                for (statement,) in cursor.fetchall():
+                    cursor.execute(statement)
                 cursor.execute(f"DROP FUNCTION IF EXISTS public.{name}")
     try:
         yield
