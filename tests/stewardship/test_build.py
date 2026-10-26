@@ -241,15 +241,14 @@ def test_release_runs_only_for_scoped_stewardship_tags(tmp_path):
     notes = release_step("validate-build", "Generate release notes")["run"]
     assert '--version "${GITHUB_REF_NAME#stewardship-v}"' in notes
     name = release_step("publish-image", "Name the image")["run"]
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "git").write_text("#!/bin/sh\necho abc123\n")
-    (bin_dir / "git").chmod(0o755)
     output = tmp_path / "output"
     result = subprocess.run(
-        ["bash", "-e", "-c", name],
+        # A shell function stands in for git: the in-image test run mounts
+        # /tmp noexec, so a stub script there would never execute and the
+        # real git (no repository) would answer instead.
+        ["bash", "-e", "-c", "git() { echo abc123; }\n" + name],
         env={
-            "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+            "PATH": os.environ["PATH"],
             "GITHUB_REF_NAME": "stewardship-v1.24.0",
             "GITHUB_REPOSITORY": "Owner/Repository",
             "GITHUB_OUTPUT": str(output),
