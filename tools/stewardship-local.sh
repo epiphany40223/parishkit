@@ -53,8 +53,9 @@
 #                                    new Reminder send with --during-send
 #   wizard                           complete the setup wizard unattended, then
 #                                    create the campaign and load its Families
-#   finish-setup                     after the browser wizard stops at Finishing setup,
-#                                    acknowledge its credentials (runbook step 5)
+#   finish-setup                     after the browser wizard reaches Finishing setup,
+#                                    wait for it to complete (the fallback only when
+#                                    a credential is overdue)
 #   status                           VM, services, Docker and VM disk use
 #   down                             stop the services; never removes data
 #   sign-in --email E                print a local test sign-in link
