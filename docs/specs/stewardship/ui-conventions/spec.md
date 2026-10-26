@@ -54,6 +54,7 @@ when it lands.
   [prerequisite gates](#prerequisite-gates),
   [field errors and live checks](#field-errors-and-live-checks),
   [secret fields](#secret-fields),
+  [image previews](#image-previews),
   [Review, Apply and Change status](#review-apply-and-change-status),
   [review dialog](#review-dialog),
   [conditional fields](#conditional-fields),
@@ -1749,6 +1750,32 @@ refused value is not drawn again, and the control shows only what was typed
 in this page view. The page script never logs, stores or sends the value.
 A multi-line secret (the Google service-account JSON key) stays a visible
 text area.
+
+### Image previews
+
+**Rule.** Wherever an Admin uploads an image that sets or replaces one the
+site shows (a logo or a campaign image), the image's preview sits above the
+file field: first what is there now, then the control that changes it.
+**Why.** One place for the preview on every upload page means an Admin
+never has to look for it, and reading down the page goes from the current
+image to the way to change it. **Shared code.** Parish logos' frames and the setup
+Parish logos box use the fixed-size `file-preview-box` (`ui-v1.css`), which
+the setup box also fills with the chosen file (`wireFilePreview` in
+`ui-v1.js`); Campaign images uses its fixed slot frame (`artwork-box`). **Precedent.**
+[#2279](https://github.com/epiphany40223/parishkit/issues/2279)
+(Administrator, 2026-10-26), after
+[#2270](https://github.com/epiphany40223/parishkit/issues/2270).
+
+The preview keeps a fixed size whether it holds an image or not, so an
+image appearing, being replaced or being removed never moves the field
+below it ([no layout shift](#no-layout-shift)). The field's own lines (its
+reserved error line and a gate's hint after the action row) stay with the
+field, under the preview. The pages that follow it are Parish logos (the
+current logos, one frame per size), Campaign images (each slot's current
+image) and the setup wizard's Parish logos step (the "Your logo" box). An
+upload that adds a file rather than replacing an image, such as Hosted
+files, has no preview of its field: its files are listed, with thumbnails,
+in its table.
 
 ### Review, Apply and Change status
 
