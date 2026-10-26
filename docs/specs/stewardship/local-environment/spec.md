@@ -1866,9 +1866,10 @@ keeps its original dates and grows older each day. Re-seed (`reseed`, then
 seeded snapshot.
 
 **Checkouts after the source rules (#2111).** Every `deploy`,
-`deploy --rollback`, `reset` and `snapshot restore` uploads the VM half,
-and all but `reset` the upgrade's host half, from the checkout it runs
-from. Once pk-local runs the
+`deploy --rollback`, `reset` and `snapshot restore` uploads the VM half
+from the checkout it runs from, and `deploy`, `deploy --rollback` and a
+`snapshot restore` of a snapshot taken on another image also upload and
+run the upgrade's host half from it. Once pk-local runs the
 [database connection sources](../operations/spec.md#database-connection-sources)
 topology, each of them MUST run from a checkout that has that change, until
 every branch in use does. A checkout from before it fails and can leave
