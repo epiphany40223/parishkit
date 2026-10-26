@@ -96,11 +96,11 @@ def test_source_work_routes_to_the_source_queue_and_short_work_does_not():
 def test_worker_handlers_bind_source_work_to_the_source_queue():
     """The worker's own registry agrees with the scheduler's routing."""
     from parishkit.stewardship.source.execution import refresh_handler
+    from parishkit.stewardship.source.setup_admission import retired_handler
     from parishkit.stewardship.source.setup_cleanup import cleanup_handler
-    from parishkit.stewardship.source.setup_execution import setup_source_handler
 
     refresh = refresh_handler(credential_path=Path("/synthetic"), reconcile=Mock())
-    for handler in (refresh, setup_source_handler(), cleanup_handler()):
+    for handler in (refresh, retired_handler(), cleanup_handler()):
         assert handler.queue is WorkQueue.SOURCE
 
 

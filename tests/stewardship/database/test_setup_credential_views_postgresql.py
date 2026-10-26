@@ -41,8 +41,9 @@ def choose_on_page(browser, **changes):
     return post(browser, URL, lookup_values(**changes))
 
 
-def test_original_browser_starts_one_source_load_with_csrf(setup_http, google):
-    """The real start form redirects to its original correlated progress route."""
+def test_original_browser_starts_one_parish_data_check_with_csrf(setup_http, google):
+    """The real Check parish data form queues one check, never a load (#2201)."""
+    from parishkit.stewardship.accounts.setup_check_models import SetupSourceCheck
     from parishkit.stewardship.jobs.models import TaskRun
 
     publish("parishsoft")
@@ -77,20 +78,28 @@ def test_original_browser_starts_one_source_load_with_csrf(setup_http, google):
         assert choose_on_page(browser).status_code == 302
         attempt = SetupAttempt.objects.get()
         values = {
-            "action": "load",
+            "action": "check",
             "attempt": str(attempt.pk),
             "version": str(attempt.version),
         }
-        assert browser.post("/admin/setup", values).status_code == 403
         response = post(browser, "/admin/setup", values)
         assert response.status_code == 302, response.content
-        task = TaskRun.objects.get()
-        assert str(task.pk) in response["Location"]
-        assert browser.get(response["Location"]).status_code == 200
+        assert response["Location"] == "/admin/setup/source#setup-source-panel"
+        assert browser.get("/admin/setup/source").status_code == 200
+        # A second press while the check waits queues nothing more.
         repeated = post(browser, "/admin/setup", values)
-        assert repeated["Location"] == response["Location"]
-        assert TaskRun.objects.count() == 1
-        assert SetupAttempt.objects.get().state == "loading"
+        assert repeated.status_code == 302
+        assert SetupSourceCheck.objects.get().state == "queued"
+        assert not TaskRun.objects.exists()
+        assert SetupAttempt.objects.get().state == "collecting"
+        # The retired load action is refused.
+        refused = post(browser, "/admin/setup", values | {"action": "load"})
+        assert refused.status_code == 400
+    # Without its CSRF token nothing is queued. Last: the test client's
+    # refused request leaves this connection outside the web login.
+    with web_login():
+        assert browser.post("/admin/setup", values).status_code == 403
+    assert SetupSourceCheck.objects.count() == 1
     assert not setup_http.configured()
 
 
@@ -138,7 +147,7 @@ def test_write_only_form_real_csrf_staging_and_cancellation(setup_http, google):
         assert b"No, enter a different key" in page.content
         assert b"data-reread-every" not in page.content
         chosen = choose_on_page(browser)
-        # Load parish data is blocked until the Parish profile is saved too,
+        # Check parish data is blocked until the Parish profile is saved too,
         # so the choice opens that step needing work (#1476).
         assert chosen.status_code == 302 and chosen["Location"] == "/admin/setup/parish"
         page = browser.get(URL)

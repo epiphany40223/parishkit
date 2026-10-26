@@ -403,15 +403,22 @@ def serve_credential_installer(configuration, lease):
         """
         worked = [installer.run_once() is not None]
         if configuration.credential_target == "parishsoft":
-            from .accounts import setup_lookups
-            from .source.setup_exchange import relay_pending
+            from .accounts import setup_checks, setup_lookups
 
-            lease.check()
-            worked.append(relay_pending(installer.files.private))
             # The setup wizard's organization lookup (#1554).
             lease.check()
             worked.append(
                 setup_lookups.run_pending(
+                    installer.files.private,
+                    check=lease.check,
+                    profile=configuration.profile,
+                    base_url=configuration.parishsoft_base_url,
+                )
+            )
+            # The setup wizard's parish data check (#2201).
+            lease.check()
+            worked.append(
+                setup_checks.run_pending(
                     installer.files.private,
                     check=lease.check,
                     profile=configuration.profile,
@@ -467,13 +474,20 @@ def installer_pending(installer, target):
     is up, even while full passes are backed off).
     """
     from . import backup_probes
+    from .accounts import (
+        setup_checks,
+        setup_lookups,
+        setup_mail_exchange,
+        setup_notifications,
+    )
     from .accounts import setup_credential_installation as initial
-    from .accounts import setup_lookups, setup_mail_exchange, setup_notifications
-    from .source import setup_exchange
 
     checks = [installer.pending]
     if target == "parishsoft":
-        checks += [setup_exchange.has_pending, setup_lookups.has_pending]
+        checks += [
+            setup_lookups.has_pending,
+            setup_checks.has_pending,
+        ]
     elif target == "google_workspace":
         checks += [setup_mail_exchange.has_pending, backup_probes.has_pending]
     elif target == "slack":

@@ -995,7 +995,8 @@ compared, matched or used to choose an organization.
   cursor.
 - **Before the first load.** The setup wizard shows the name its
   [organization lookup](../admin-portal/spec.md#parishsoft-organization-choice)
-  read, held with the lookup, until the setup load records its own.
+  read, held with the lookup, until the final load at Finish setup records
+  its own.
 - **Existing installs.** A snapshot recorded before this change has no
   `organization` value, so the portal names the organization by its ID
   alone until the next full load records the name. Nothing is backfilled

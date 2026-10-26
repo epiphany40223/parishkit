@@ -21,7 +21,8 @@ The only SQL that inserts a task is the SECURITY DEFINER
 ``stewardship_address_retry_open_v1``; they run as the schema owner, which
 the guard exempts, so they need no creator entry. The address follow-up's
 type (#806, frozen migration 0077) is created only that way, so its creator
-entry names no login (``OWNER_ONLY_TYPES``).
+entry names no login (``OWNER_ONLY_TYPES``). A retired type's entry
+(``RETIRED_TYPES``) stays in the SQL maps without a code site.
 
 Logins: ``web`` covers the Admin and Family pages, the Admin command line
 (which runs as the web login) and the LOCAL seeder's web entry points;
@@ -50,6 +51,10 @@ OWNER_ONLY_SQL = {
 }
 # Task types only an owner-only SQL definer creates: no login may insert them.
 OWNER_ONLY_TYPES = {"family_address_retry"}
+# Task types whose code was removed (#2201, #2233) but whose frozen SQL creator
+# and execution map entries stay until a later migration: no code site
+# creates them, so the SQL map lists a login the code no longer uses.
+RETIRED_TYPES = {"setup_source_load"}
 
 
 class Site(NamedTuple):
@@ -104,11 +109,6 @@ SITES = {
         "setup_mail_test",
         WEB,
         {"accounts/setup_mail_views.py", "local/seed_web.py"},
-    ),
-    "accounts/setup_source.py::start_source_load": site(
-        "setup_source_load",
-        WEB,
-        {"accounts/setup_views.py", "local/seed_web.py"},
     ),
     "campaigns/cleanup_requests.py::retry_cleanup": site(
         "production_cleanup", WEB, {"accounts/go_live_progress.py"}
@@ -621,9 +621,11 @@ def test_only_the_definer_confirmation_effect_inserts_tasks_in_sql():
 
 def test_sql_creator_map_equals_the_derived_map():
     """No login may create more, or less, than its code does."""
-    assert sql_creators() == derived_creators() | dict.fromkeys(
-        OWNER_ONLY_TYPES, frozenset()
-    )
+    creators = sql_creators()
+    assert set(creators) >= RETIRED_TYPES
+    assert {
+        name: logins for name, logins in creators.items() if name not in RETIRED_TYPES
+    } == derived_creators() | dict.fromkeys(OWNER_ONLY_TYPES, frozenset())
 
 
 def test_every_executed_task_type_has_a_creator():

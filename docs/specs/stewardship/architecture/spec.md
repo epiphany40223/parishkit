@@ -428,16 +428,12 @@ the Admin page whose load found the session ended
 ([ended sessions](../admin-portal/spec.md#login-and-denial-behavior)).
 
 Passive presence heartbeat and ordinary background polling never refresh idle
-expiry. The sole setup exception is the first-Admin wizard's correlated staged-
-source-load progress page: while that exact TaskRun remains nonterminal, its
-CSRF-protected authenticated progress request may renew the bootstrap Admin's
-60-minute idle deadline at most once every five minutes, but only while the
-worker lease has a current valid heartbeat and for no more than two hours from
-TaskRun creation. It carries only the wizard/task correlation, verifies the
-same Admin/session server-side, and never extends the two-hour setup watchdog or
-12-hour session lifetime. Renewal stops as soon as the task is terminal, the
-worker heartbeat is stale, the watchdog expires, or the page stops polling; no
-other wizard task, tab, Admin session, or ordinary background request qualifies.
+expiry. The first-Admin wizard's staged-source-load progress page, which could
+renew the bootstrap Admin's idle deadline, was removed with the setup load
+([#2233](https://github.com/epiphany40223/parishkit/issues/2233)): no
+wizard task, tab, Admin session, or ordinary background request renews idle
+expiry, and none extends the two-hour setup watchdog or 12-hour session
+lifetime.
 
 While a Family form is visible, the conforming client schedules a CSRF-protected
 activity keepalive after keyboard, input, pointer, or touch interaction, at most

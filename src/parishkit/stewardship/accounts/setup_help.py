@@ -30,8 +30,7 @@ PARISH = {
     ),
     "timezone": _(
         "The parish's local time zone, for example America/New_York. Emails "
-        "show times in it. Starting the parish data load fixes it for this "
-        "setup attempt."
+        "show times in it."
     ),
     "phone": _(
         "The parish office's main telephone number, shown to Families who need "
@@ -265,8 +264,7 @@ CONTENT = {
 PARISH_NEW_TIMEZONE = _(
     "The parish's local time zone, for example America/New_York. Your "
     "browser's time zone is selected when it is on the list; otherwise choose "
-    "one. Emails show times in it. Starting the parish data load fixes it for "
-    "this setup attempt."
+    "one. Emails show times in it."
 )
 
 # Create the campaign's time zone help (#1330): its menu starts on the

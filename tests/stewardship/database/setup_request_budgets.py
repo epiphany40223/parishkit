@@ -5,9 +5,10 @@ from parishkit.stewardship.source import (
     setup_final_execution,
     setup_final_loading,
     setup_final_tasks,
-    setup_loading,
 )
 from parishkit.stewardship.source.leases import reserve_source_request
+
+from . import legacy_setup_loading as setup_loading
 
 
 def short_request_budgets(monkeypatch):

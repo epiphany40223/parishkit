@@ -388,7 +388,7 @@ def setup_credential(request, target):
                     if lookup is not None:
                         # The saved key pasted again, then kept (#1554): its
                         # lookup (a failed one, at the key field) goes, and
-                        # only it, so Load parish data is not held back by a
+                        # only it, so Check parish data is not held back by a
                         # lookup nobody will answer. The key keeps its
                         # organization and any load bound to it.
                         discard_key(

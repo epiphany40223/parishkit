@@ -849,7 +849,6 @@ NON_PAGES = frozenset(
         "setup_notification",
         "setup_notification_status",
         "setup_source",
-        "setup_source_progress",
         "setup_step",
         # Menu group roots only redirect to the group's first open entry.
         "campaign_root",

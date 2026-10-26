@@ -506,10 +506,6 @@ def test_credential_service_publishes_only_after_admission(
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.handoff_discovery.publish_handoff", publish
     )
-    relay = Mock()
-    monkeypatch.setattr(
-        "parishkit.stewardship.source.setup_exchange.relay_pending", relay
-    )
     mail_relay = Mock()
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.setup_mail_exchange.relay_pending", mail_relay
@@ -521,6 +517,10 @@ def test_credential_service_publishes_only_after_admission(
     lookup = Mock()
     monkeypatch.setattr(
         "parishkit.stewardship.accounts.setup_lookups.run_pending", lookup
+    )
+    source_check = Mock()
+    monkeypatch.setattr(
+        "parishkit.stewardship.accounts.setup_checks.run_pending", source_check
     )
     probes = Mock()
     monkeypatch.setattr(
@@ -536,7 +536,7 @@ def test_credential_service_publishes_only_after_admission(
             stage_initial
             if failure == "stage"
             else {
-                "parishsoft": relay,
+                "parishsoft": lookup,
                 "google_workspace": mail_relay,
                 "slack": slack_send,
             }[target]
@@ -565,7 +565,6 @@ def test_credential_service_publishes_only_after_admission(
         assert run_once() is True
         installer.run_once.assert_called_once()
         if target == "parishsoft":
-            relay.assert_called_once_with(installer.files.private)
             # The setup wizard's organization lookup (#1554).
             lookup.assert_called_once_with(
                 installer.files.private,
@@ -573,10 +572,17 @@ def test_credential_service_publishes_only_after_admission(
                 profile=configuration.profile,
                 base_url=configuration.parishsoft_base_url,
             )
+            # The setup wizard's parish data check (#2201).
+            source_check.assert_called_once_with(
+                installer.files.private,
+                check=lease.check,
+                profile=configuration.profile,
+                base_url=configuration.parishsoft_base_url,
+            )
             assert lease.check.call_count == 4
         else:
-            relay.assert_not_called()
             lookup.assert_not_called()
+            source_check.assert_not_called()
         if target == "google_workspace":
             mail_relay.assert_called_once_with(installer.files.private)
             # Off-site backup access checks use this key and its egress.
@@ -604,7 +610,7 @@ def test_credential_service_publishes_only_after_admission(
             # Idle steps report no work; a recorded installation's receipt
             # counts only while its request is still pending (#639).
             installer.run_once.return_value = None
-            for step in (relay, mail_relay, slack_send, lookup):
+            for step in (mail_relay, slack_send, lookup, source_check):
                 step.return_value = False
             probes.return_value = 0
             stage_initial.return_value = SimpleNamespace(state="applied")

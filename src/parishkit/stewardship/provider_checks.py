@@ -335,14 +335,10 @@ LOOKUP_SECONDS = 120
 MAX_LOOKUP_OUTPUT = 4 * 1024 * 1024
 
 
-def _lookup_answer(output):
-    """The helper's answer once checked for its exact shape, else None."""
+def _lookup_answer(answer):
+    """The decoded lookup answer once checked for its exact shape, else None."""
     from parishkit.parishsoft_source import MAXIMUM_ORGANIZATIONS
 
-    try:
-        answer = json.loads(output.decode("utf-8"))
-    except (ValueError, UnicodeDecodeError, RecursionError):
-        return None
     if type(answer) is not dict or answer.get("outcome") not in {
         "ok",
         "refused",
@@ -386,36 +382,20 @@ def _lookup_answer(output):
     return answer
 
 
-def lookup_organizations(value, *, check, profile, base_url=None):
-    """Ask ParishSoft which organizations a staged key reaches (#1554).
+def _ask_helper(request, *, check, validate):
+    """Send one lookup-style request to the isolated helper; its checked answer.
 
-    Runs only the isolated helper, as ``check_candidate`` does, with the
-    request's profile and base URL and one overall limit of
-    ``LOOKUP_SECONDS``. Returns the helper's checked answer
-    (``provider_check_worker.lookup_organizations``); a helper that
-    answers nothing usable, or that the limit stops, is ``unavailable``.
-    ``check`` is the caller's ownership check, run while it waits.
+    Shared by the organization lookup (#1554) and the parish data check
+    (#2201): one run of ``provider_check_worker`` with an empty
+    environment, a deadline a little past ``LOOKUP_SECONDS`` (so the
+    helper's own answer arrives before the deadline stops it) and the
+    caller's ownership ``check`` run while it waits. ``validate`` checks the
+    decoded answer's exact shape; a helper that answers nothing usable, or
+    that the limit stops, is ``unavailable``.
     """
-    if (
-        type(value) is not bytes
-        or not 0 < len(value) <= MAX_FILE_BYTES
-        or not callable(check)
-        or not isinstance(profile, DeploymentProfile)
-    ):
-        raise ValueError("Invalid organization lookup invocation.")
-    payload = json.dumps(
-        {
-            "operation": "organizations",
-            "candidate": base64.b64encode(value).decode("ascii"),
-            "profile": profile.value,
-            "base_url": source_base_url(profile, base_url),
-            "seconds": LOOKUP_SECONDS,
-        }
-    ).encode()
+    payload = json.dumps(request).encode()
     process = None
     _check_owner(check)
-    # A little past the helper's own limit, so its answer with what it
-    # checked arrives before this deadline stops it.
     deadline = time.monotonic() + LOOKUP_SECONDS + 5
     on_timeout = helper_timeout_recorder(
         "provider_check_worker", what="provider_check", seconds=LOOKUP_SECONDS + 5
@@ -444,11 +424,12 @@ def lookup_organizations(value, *, check, profile, base_url=None):
             )
         except (OSError, CredentialValidationUnavailable):
             return {"outcome": "unavailable"}
-        answer = (
-            _lookup_answer(output)
-            if process.returncode == 0 and len(output) <= MAX_LOOKUP_OUTPUT
-            else None
-        )
+        answer = None
+        if process.returncode == 0 and len(output) <= MAX_LOOKUP_OUTPUT:
+            try:
+                answer = validate(json.loads(output.decode("utf-8")))
+            except (ValueError, UnicodeDecodeError, RecursionError):
+                answer = None
         return answer or {"outcome": "unavailable"}
     except ProviderCheckDrainFailure:
         # As in check_candidate: never close a pipe a live exchange owns.
@@ -460,3 +441,84 @@ def lookup_organizations(value, *, check, profile, base_url=None):
             for stream in (process.stdin, process.stdout):
                 if stream is not None:
                     stream.close()
+
+
+def _request(operation, value, *, profile, base_url, **extra):
+    """The JSON request a lookup-style helper run reads from its stdin."""
+    if type(value) is not bytes or not 0 < len(value) <= MAX_FILE_BYTES:
+        raise ValueError("Invalid organization lookup invocation.")
+    if not isinstance(profile, DeploymentProfile):
+        raise ValueError("Invalid organization lookup invocation.")
+    return {
+        "operation": operation,
+        "candidate": base64.b64encode(value).decode("ascii"),
+        "profile": profile.value,
+        "base_url": source_base_url(profile, base_url),
+        "seconds": LOOKUP_SECONDS,
+        **extra,
+    }
+
+
+def lookup_organizations(value, *, check, profile, base_url=None):
+    """Ask ParishSoft which organizations a staged key reaches (#1554).
+
+    Runs only the isolated helper, as ``check_candidate`` does, with the
+    request's profile and base URL and one overall limit of
+    ``LOOKUP_SECONDS``. Returns the helper's checked answer
+    (``provider_check_worker.lookup_organizations``); a helper that
+    answers nothing usable, or that the limit stops, is ``unavailable``.
+    ``check`` is the caller's ownership check, run while it waits.
+    """
+    if not callable(check):
+        raise ValueError("Invalid organization lookup invocation.")
+    request = _request("organizations", value, profile=profile, base_url=base_url)
+    return _ask_helper(request, check=check, validate=_lookup_answer)
+
+
+# The outcomes a parish data check answers with (#2201).
+CHECK_OUTCOMES = frozenset(
+    {"ok", "refused", "not_reached", "unreadable", "unavailable"}
+)
+
+
+def _check_answer(answer):
+    """A parish data check's answer once checked for its exact shape, else None."""
+    if type(answer) is not dict or answer.get("outcome") not in CHECK_OUTCOMES:
+        return None
+    if answer["outcome"] != "ok":
+        return answer if set(answer) == {"outcome"} else None
+    name = answer.get("name")
+    if (
+        set(answer) != {"outcome", "name", "families", "members"}
+        or (name is not None and (type(name) is not str or not 1 <= len(name) <= 200))
+        or any(
+            type(answer[key]) is not int or not 0 <= answer[key] < 2**31
+            for key in ("families", "members")
+        )
+    ):
+        return None
+    return answer
+
+
+def check_source(value, *, organization, check, profile, base_url=None):
+    """The setup wizard's quick parish data check (#2201).
+
+    Runs the isolated helper as the organization lookup does, under the
+    same limit, for the staged key ``value`` and its chosen
+    ``organization``. Returns the helper's checked answer
+    (``provider_check_worker.check_source``) or ``unavailable``.
+    """
+    if (
+        not callable(check)
+        or type(organization) is not int
+        or not 1 <= organization < 2**31
+    ):
+        raise ValueError("Invalid parish data check invocation.")
+    request = _request(
+        "source_check",
+        value,
+        profile=profile,
+        base_url=base_url,
+        organization=organization,
+    )
+    return _ask_helper(request, check=check, validate=_check_answer)

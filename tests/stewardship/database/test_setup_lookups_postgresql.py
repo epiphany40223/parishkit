@@ -37,7 +37,6 @@ from parishkit.stewardship.accounts.setup_lookups import (
 )
 from parishkit.stewardship.accounts.setup_models import SetupAttempt
 from parishkit.stewardship.accounts.setup_secret_models import SetupSealedCredential
-from parishkit.stewardship.accounts.setup_source import start_source_load
 from parishkit.stewardship.accounts.setup_staging import cancel_setup
 from parishkit.stewardship.accounts.setup_wizard import wizard_for
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
@@ -45,6 +44,7 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.storage import StaleRecordError
 
 from ..test_setup_forms import VALUES
+from .legacy_setup_source import start_source_load
 from .setup_lookup_builders import answer_lookup, choose, found
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_runtime_auth_grants_postgresql import web_login
@@ -186,7 +186,7 @@ def test_the_load_needs_a_chosen_organization(setup_service):
             start_source_load(
                 request, setup_service, attempt_id, expected_version=status.version
             )
-    from .test_setup_progress_postgresql import bind_load
+    from .legacy_setup_source import bind_load
 
     with pytest.raises(IntegrityError, match="chosen ParishSoft organization"):
         bind_load(attempt_id, claimed=False)
@@ -472,7 +472,7 @@ def test_keeping_the_saved_key_after_a_failed_lookup_clears_the_lookup(
 ):
     """The saved key pasted again, its lookup failed, then kept by leaving
     the field empty: the failed lookup goes, the key keeps its organization,
-    and nothing holds Load parish data back."""
+    and nothing holds Check parish data back."""
     from .test_setup_credentials_postgresql import publish
 
     private = publish("parishsoft")

@@ -17,7 +17,6 @@ from parishkit.stewardship.accounts import setup_mail_views as mail_views
 from parishkit.stewardship.accounts import (
     setup_notification_views as notification_views,
 )
-from parishkit.stewardship.accounts import setup_progress_views as progress_views
 from parishkit.stewardship.accounts.setup_mail_views import SetupMailForm
 from parishkit.stewardship.accounts.setup_notification_views import (
     SetupNotificationForm,
@@ -63,14 +62,6 @@ def mail_status(items, *, pending):
 def finishing_status(context):
     """The Finishing setup status fragment for a ``finishing_context``."""
     return render_to_string("stewardship/setup-finishing-status.html", context)
-
-
-def load_status(progress, wizard):
-    """The Load parish data status fragment for one progress observation."""
-    return render_to_string(
-        "stewardship/setup-source-progress-status.html",
-        progress_views._status_context(progress) | {"wizard": wizard},
-    )
 
 
 def components(context, admin, now, status_url, setup_draft):

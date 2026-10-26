@@ -3738,87 +3738,9 @@
     document.querySelectorAll("form").forEach(gateAcknowledgments);
   });
 
-  // The setup wizard's status pages (Test email, Test Slack, Load parish
+  // The setup wizard's status pages (Test email, Test Slack, Check parish
   // data, Finishing setup) follow their work through live-status-v1.js
-  // regions (#1354). Only the source-load idle renewal stays here: while the
-  // exact source-progress page is visible and its load is active, a
-  // CSRF-only POST renews the setup's idle deadline every 15 seconds. The
-  // server checks the original login, task/source leases and five-minute
-  // limit; visibility and local deadlines merely stop unnecessary requests.
-  // The renewal draws no status (the live region does); it only keeps the
-  // deadlines it stops at current and says when it could not renew.
-  document.querySelectorAll("form[data-setup-renew]").forEach((form) => {
-    const warning = document.querySelector("[data-progress-unavailable]");
-    const deadlines = [...form.querySelectorAll("[data-progress-deadline]")];
-    let active = form.dataset.progressActive === "true";
-    let closed = false, pending = false, timer = null, controller = null;
-    // Anchor server instants to monotonic elapsed time, not the browser's wall
-    // clock. Clock skew or a later system-clock correction must not stop renewal.
-    let serverAt = Date.parse(form.dataset.progressNow), observedAt = performance.now();
-    const live = () => {
-      const until = Math.min(...deadlines.map((node) => Date.parse(node.dateTime)));
-      const now = serverAt + performance.now() - observedAt;
-      return !closed && active && Number.isFinite(until) && Number.isFinite(now) && now < until;
-    };
-    const schedule = () => {
-      window.clearTimeout(timer);
-      if (live()) timer = window.setTimeout(renew, 15000);
-    };
-    async function renew() {
-      if (!live() || pending) return;
-      if (document.hidden) { schedule(); return; }
-      pending = true;
-      controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 5000);
-      try {
-        const response = await fetch(form.dataset.progressUrl, {
-          method: "POST", credentials: "same-origin", cache: "no-store",
-          headers: {"Content-Type": "application/x-www-form-urlencoded"},
-          body: new URLSearchParams(new FormData(form)), signal: controller.signal
-        });
-        if (!response.ok) throw new Error("unavailable");
-        const data = await response.json();
-        if (data.task_id !== form.dataset.progressTask || typeof data.active !== "boolean"
-            || !Number.isFinite(Date.parse(data.server_now))
-            || deadlines.some((node) => !Number.isFinite(Date.parse(data[node.dataset.progressDeadline])))) {
-          throw new Error("unavailable");
-        }
-        if (closed) return;
-        serverAt = Date.parse(data.server_now);
-        observedAt = performance.now();
-        active = data.active;
-        deadlines.forEach((node) => { node.dateTime = data[node.dataset.progressDeadline]; });
-        if (warning) warning.hidden = true;
-      } catch (_) {
-        // Tried again on the next turn while the load is still live.
-        if (!closed && !document.hidden && warning) warning.hidden = false;
-      } finally {
-        window.clearTimeout(timeout);
-        pending = false;
-        controller = null;
-        schedule();
-      }
-    }
-    // A page kept in the back/forward cache (persisted) renews again when
-    // it is shown; one that goes away for good stops.
-    // Either way the page is marked closed while it is away, so a renewal
-    // aborted by leaving shows no "could not be reached" warning; showing
-    // the page again reopens it.
-    window.addEventListener("pagehide", () => {
-      window.clearTimeout(timer);
-      if (controller) controller.abort();
-      closed = true;
-    });
-    window.addEventListener("pageshow", (event) => {
-      closed = false;
-      if (event.persisted) renew();
-    });
-    document.addEventListener("visibilitychange", () => {
-      if (document.hidden && controller) controller.abort();
-      if (!document.hidden) renew();
-    });
-    renew();
-  });
+  // regions (#1354).
 
   // A settled Test email / Test Slack page restored from the back/forward
   // cache (#563) still shows what it showed when it was left, such as
@@ -3827,12 +3749,12 @@
   // a test settles, re-reads this address's panel in place, so the panel is
   // drawn again from the server's current state; if a test is in flight
   // again, the fresh region is watched anew. A pending region is already
-  // polled. Load parish data does the same with its hidden
-  // a[data-reread-on-show] link (#1353), since its load may have been
-  // discarded from another tab while the page was away; it also re-reads
-  // when its tab is shown again, as its progress page's status does
-  // (live-status-v1.js). Each re-read refreshes every in-place region on
-  // the page, the step bar included.
+  // polled. Check parish data does the same with its hidden
+  // a[data-reread-on-show] link (#1353, #2201), since its ParishSoft
+  // connection may have changed in another tab while the page was away;
+  // it also re-reads when its tab is shown again, as a Loading parish data
+  // page's status does (live-status-v1.js). Each re-read refreshes every
+  // in-place region on the page, the step bar included.
   const reread = (selector) => {
     const follow = document.querySelector(selector);
     const id = follow?.getAttribute("href").replace(/^#/, "");

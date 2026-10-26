@@ -22,7 +22,6 @@ from parishkit.stewardship.accounts import setup_mail_views as mail_views
 from parishkit.stewardship.accounts import (
     setup_notification_views as notification_views,
 )
-from parishkit.stewardship.accounts import setup_progress_views as progress_views
 from parishkit.stewardship.accounts.backup_key import KeyStatus
 from parishkit.stewardship.accounts.branding_views import LogoUploadForm
 from parishkit.stewardship.accounts.campaign_create_views import any_zone
@@ -66,6 +65,7 @@ from parishkit.stewardship.accounts.setup_notification_views import (
     SetupNotificationForm,
 )
 from parishkit.stewardship.accounts.setup_slack_step import SetupSlackStepForm
+from parishkit.stewardship.accounts.setup_views import check_page
 from parishkit.stewardship.accounts.setup_wizard import BY_KEY as SETUP_STEPS
 from parishkit.stewardship.accounts.setup_wizard import build as setup_wizard
 from parishkit.stewardship.accounts.share_forms import (
@@ -191,6 +191,7 @@ from .send_progress_components import components as send_progress_components
 from .settings_components import POSTS as SETTINGS_POSTS
 from .settings_components import components as settings_components
 from .setup_back_path_components import components as setup_back_path_components
+from .setup_check_components import components as setup_check_components
 from .setup_live_components import POSTS as SETUP_LIVE_POSTS
 from .setup_live_components import components as setup_live_components
 from .setup_order_components import POSTS as SETUP_ORDER_POSTS
@@ -296,7 +297,6 @@ def _history(events):
 SETUP_MAIL_STATUS = "/admin/setup/mail-test/status?format=status"
 SETUP_SLACK_STATUS = "/admin/setup/slack-test/status?format=status"
 SETUP_FINISHING_STATUS = "/admin/setup/finishing?format=status"
-SETUP_LOAD_STATUS = "/admin/setup/source/progress-status?format=status"
 
 
 def finishing_context(**status):
@@ -379,28 +379,6 @@ def page(browser_engine):
     page = context.new_page()
     yield page
     context.close()
-
-
-def load_collections(done=0, *, finished=None, expected=None):
-    """Decoded download collections with the first ``done`` of them finished."""
-    return [
-        {
-            "key": key,
-            "count": 1234 if index < done else 0,
-            "done": index < done,
-            "finished": finished if key == "ministry_roster" else None,
-            "expected": expected if key == "ministry_roster" else None,
-        }
-        for index, key in enumerate(progress_views.COLLECTIONS)
-    ]
-
-
-def progress_page(progress, wizard):
-    """The source-load progress page context, built by the view's own helpers."""
-    return progress_views._status_context(progress) | {
-        "wizard": wizard,
-        "status_url": SETUP_LOAD_STATUS,
-    }
 
 
 class TimeListForm(forms.Form):
@@ -691,9 +669,7 @@ def component_responses():
         "idle_at": NOW + timedelta(minutes=30),
         "absolute_at": NOW + timedelta(hours=12),
         "watchdog_at": None,
-        "source_task_id": None,
-        "source_task_state": None,
-        "source_loaded": False,
+        "source_checked": False,
     }
     # A stepper with done, current, open and blocked steps for axe/layout checks.
     wizard = setup_wizard(
@@ -706,11 +682,9 @@ def component_responses():
                     "reply_to": "office@example.org",
                 }
             },
-            source_task_id=None,
-            # No load yet, so Load parish data is not done (#1353): the
-            # stepper reads whether a still-valid staged load exists.
-            source_task_state=None,
-            source_loaded=False,
+            # No check yet, so Check parish data is not done (#2201): the
+            # stepper reads whether a current parish data check exists.
+            source_checked=False,
         ),
         "testing",
     )
@@ -1086,8 +1060,12 @@ def component_responses():
                 ),
             },
         ),
-        # Load parish data before the load starts (#227: its time-zone caution).
-        ("/setup-source", "setup-source", {"draft": setup_draft}),
+        # Check parish data before any check (#2201).
+        (
+            "/setup-source",
+            "setup-source",
+            {"draft": setup_draft} | check_page(None, "St. Example Parish (1234)"),
+        ),
         (
             "/setup-slack-test",
             "setup-notification",
@@ -1701,29 +1679,6 @@ def component_responses():
             },
         ),
         (
-            "/setup-source-progress",
-            "setup-source-progress",
-            progress_page(
-                {
-                    "server_now": NOW.isoformat(),
-                    "task_id": uuid4(),
-                    "task_state": "running",
-                    "setup_state": "loading",
-                    "phase": "fetching",
-                    "current": 0,
-                    "total": 0,
-                    "active": True,
-                    "collections": load_collections(),
-                    "started_at": (NOW - timedelta(seconds=75)).isoformat(),
-                    "heartbeat_at": (NOW - timedelta(seconds=3)).isoformat(),
-                    "idle_at": (NOW + timedelta(minutes=30)).isoformat(),
-                    "watchdog_at": (NOW + timedelta(hours=2)).isoformat(),
-                    "absolute_at": (NOW + timedelta(hours=12)).isoformat(),
-                },
-                wizard,
-            ),
-        ),
-        (
             "/source-refresh",
             "source-refresh",
             {
@@ -2332,7 +2287,8 @@ def component_responses():
     responses.update(
         setup_live_components(context, admin, NOW, SETUP_MAIL_STATUS, setup_draft)
     )
-    responses.update(setup_back_path_components(context, admin, NOW, SETUP_LOAD_STATUS))
+    responses.update(setup_back_path_components(context, admin, NOW))
+    responses.update(setup_check_components(context, admin, NOW))
     responses.update(in_place_commands_components(context, admin))
     responses.update(campaign_test_components(context, admin))
     responses.update(

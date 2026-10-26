@@ -4592,7 +4592,7 @@ backup`, and backup status is part of `status`.
 
 ### Setup wizard
 
-`setup`, `setup_finishing`, `setup_source`, `setup_source_progress`,
+`setup`, `setup_finishing`, `setup_source`,
 `setup_branding`, `setup_branding_asset`, `setup_credential`,
 `setup_confirmation`, `setup_mail`, `setup_mail_status`,
 `setup_notification`, `setup_notification_status` and `setup_step` are

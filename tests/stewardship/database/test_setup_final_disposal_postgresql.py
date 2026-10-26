@@ -59,9 +59,13 @@ def cleanup(service, browser, attempt, task):
         final = TaskRun.objects.get(pk=task.run_id)
         deadlines = [lease.external_deadline, lease.expires_at, final.lease_expires_at]
         remaining = max(
-            (deadline - database_now()).total_seconds()
-            for deadline in deadlines
-            if deadline is not None
+            (
+                (deadline - database_now()).total_seconds()
+                for deadline in deadlines
+                if deadline is not None
+            ),
+            # A final load that never started holds no deadline (#2201).
+            default=0,
         )
     assert remaining < 90
     if remaining > 0:
@@ -84,19 +88,21 @@ def cleanup(service, browser, attempt, task):
 def test_cancel_cleans_catalog_and_its_final_load_but_keeps_bound_receipts(
     setup_service, monkeypatch, tmp_path, config_role, loaded
 ):
-    """Both queued and abandoned-after-staging finalization have a real cleanup path."""
+    """Both queued and abandoned-after-staging finalization have a real cleanup path.
+
+    Setup has no catalog load since #2201 (its parish data is checked), so
+    the final load's staging is the only source data cleanup disposes of.
+    """
     browser, attempt, identifier = prepared(setup_service, monkeypatch, tmp_path)
     task = queued(setup_service, identifier)
     if loaded:
         fake_provider(monkeypatch, pages())
         load(setup_service, task, tmp_path / "parishsoft" / "credential")
-    assert SourceSnapshot.objects.count() == (2 if loaded else 1)
+    assert SourceSnapshot.objects.count() == int(loaded)
     cleanup(setup_service, browser, attempt, task)
     with work_transaction():
-        assert owned_snapshots(attempt.attempt_id).count() == (2 if loaded else 1)
-    assert SourceSnapshot.objects.filter(state="rejected").count() == (
-        2 if loaded else 1
-    )
+        assert owned_snapshots(attempt.attempt_id).count() == int(loaded)
+    assert SourceSnapshot.objects.filter(state="rejected").count() == int(loaded)
     for payload, membership in ENTITY_MODELS.values():
         assert not payload.objects.exists() and not membership.objects.exists()
     assert SetupPreparationReceipt.objects.get().pk == identifier

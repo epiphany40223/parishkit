@@ -570,6 +570,12 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # place, which 0110's rerun and 0175's restore bring back older, so its
 # ``CLOSURE_REPLACED_ONLY`` entry takes the place of 0175's and restores
 # 0182's body instead.
+# 0183 (#2201) creates the setup parish data check table (in CLOSURE_TABLES)
+# with its three functions (below), adds the readiness record's check column
+# (runtime_grants.CLOSURE_COLUMNS; ``before_setup_source_check`` drops it
+# and restores the staged load's NOT NULL while the swap is pending) and
+# replaces the readiness and attempt guards and the installers' readiness
+# check in place. Its file, whole, puts all of it back, last.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -1083,6 +1089,17 @@ CLOSURE_CREATED = {
     "public.stewardship_review_run_guard_v1()": (
         "stewardship_reports",
         "0048_review_run",
+    ),
+    # 0183 (#2201): the setup parish data check's guards, its end-of-setup
+    # discard and the setup attempt's freeze check.
+    **dict.fromkeys(
+        (
+            "public.stewardship_setup_source_check_mutable_v1()",
+            "public.stewardship_setup_source_check_guard_v1()",
+            "public.stewardship_setup_discard_checks_v1()",
+            "public.stewardship_setup_freeze_check_v1()",
+        ),
+        ("stewardship_accounts", "0038_setup_source_check"),
     ),
 }
 
@@ -2174,6 +2191,25 @@ def before_information_limitation_review():
     ]
 
 
+def before_setup_source_check():
+    """The statements that put the setup readiness record back before 0183.
+
+    #2201's 0183 adds ``source_check_id`` (its foreign key goes with the
+    check table, its check and index with the column) and lets
+    ``source_result_id`` be null, as no readiness record made since binds a
+    staged load. These drop the column and restore the NOT NULL, as on
+    production's base, so 0183's frozen file (or the full migration) installs
+    again; the functions it replaced keep their 0183 bodies, which its file
+    replaces again.
+    """
+    return [
+        "ALTER TABLE public.stewardship_setup_readiness_binding "
+        "DROP COLUMN source_check_id",
+        "ALTER TABLE public.stewardship_setup_readiness_binding "
+        "ALTER COLUMN source_result_id SET NOT NULL",
+    ]
+
+
 @contextmanager
 def swap_pending():
     """Put the database in the state `migrate --users-upgrade-base` leaves.
@@ -2255,6 +2291,7 @@ def swap_pending():
             *before_information_limitation_review(),
             *before_submission_upcoming_pledge(),
             *before_reviewed_form_shown_items(),
+            *before_setup_source_check(),
         ):
             cursor.execute(statement)
         before_report_conversion(cursor, views_before)

@@ -223,23 +223,18 @@ def test_active_attempt_cleanup_is_nonmutating_and_anonymous_is_denied(setup_ser
 
 @pytest.mark.parametrize("state", ["collecting", "loading", "frozen"])
 def test_frozen_attempt_cannot_resume_or_change_attribution(setup_service, state):
-    """The frozen-state predicate is a rejection, not a transition allowlist."""
-    request = login(setup_service)
-    attempt = begin_setup(request, setup_service)
-    row = SetupAttempt.objects.get(pk=attempt.attempt_id)
-    task = new(
-        task_type="setup_source_load", actor_id=row.owner_id, domain_request_id=row.pk
-    )
+    """The frozen-state predicate is a rejection, not a transition allowlist.
+
+    Freezing needs the attempt's current parish data check (#2201), which
+    ``checked_setup`` makes; no load is bound.
+    """
+    from .setup_check_builders import checked_setup
+
+    _, row = checked_setup(setup_service)
     with work_transaction():
         SetupAttempt.objects.filter(pk=row.pk).update(
-            source_task_id=task.run_id, state="loading", version=F("version") + 1
+            state="frozen", version=F("version") + 1
         )
-    act(act(task, "claim"), "complete")
-    with work_transaction():
-        for target in ("collecting", "frozen"):
-            SetupAttempt.objects.filter(pk=row.pk).update(
-                state=target, version=F("version") + 1
-            )
     before = AuditEvent.objects.count()
     for actor in (row.owner_id, uuid4(), None):
         with pytest.raises(IntegrityError, match="owning work"), work_transaction():

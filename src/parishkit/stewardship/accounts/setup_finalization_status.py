@@ -14,6 +14,39 @@ from .setup_models import SetupConfigurationIntent, SetupDraftSection
 from .setup_staging import _status, _window
 
 
+def _last_failure(source):
+    """The closed failure word and HTTP status that ended the final load.
+
+    Each failed read logs its ``failure`` word (and a ParishSoft error
+    answer's ``status``) with the task's id and outcome (``source.failures``),
+    so the Finishing setup page can say what went wrong (#2201). Only a load
+    that failed for good has a reason: its permanent failure's entry, never
+    an earlier retry's; an abandoned or cancelled load gets the generic
+    words. The read is bounded to entries logged since the load was queued,
+    one setup's final load on a new install's small log. Empty otherwise;
+    never provider text.
+    """
+    from parishkit.stewardship.audit.models import OperationalLog
+    from parishkit.stewardship.audit.schemas import Outcome
+
+    if source["state"] != "failed":
+        return {}
+    context = (
+        OperationalLog.objects.filter(
+            created_at__gte=source["created_at"],
+            context__task_id=str(source["id"]),
+            context__outcome=str(Outcome.FAILED),
+            context__has_key="failure",
+        )
+        .order_by("-created_at", "-id")
+        .values_list("context", flat=True)
+        .first()
+    )
+    if not context:
+        return {}
+    return {"failure": context["failure"], "failure_status": context.get("status")}
+
+
 def finalization_status(request, service):
     """Return only exact-owning metadata; do not renew idle time or grant editing."""
     with work_transaction():
@@ -75,13 +108,21 @@ def finalization_status(request, service):
                     initiated_by_id=attempt.owner_id,
                 )
                 .order_by("-created_at", "-id")
-                .values("id", "state", "phase", "progress_current", "progress_total")
+                .values(
+                    "id",
+                    "state",
+                    "phase",
+                    "progress_current",
+                    "progress_total",
+                    "created_at",
+                )
                 .first()
             )
             if source is not None:
                 source["progress"] = Percentage(
                     source["progress_current"], source["progress_total"]
                 )
+                source |= _last_failure(source)
         return {
             "attempt": _status(attempt),
             "checkpoint": checkpoint,

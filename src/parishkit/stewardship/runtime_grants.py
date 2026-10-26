@@ -794,6 +794,13 @@ CLOSURE_TABLES = {
     ),
     # The review wizard's runs (0178, #2123), which web starts and moves.
     "stewardship_review_run": ("stewardship_reports", "0048_review_run"),
+    # The setup wizard's parish data check (0183, #2201): web requests and
+    # discards, the ParishSoft installer answers, and every credential
+    # installer reads a check's binding columns.
+    "stewardship_setup_source_check": (
+        "stewardship_accounts",
+        "0038_setup_source_check",
+    ),
 }
 
 
@@ -820,6 +827,12 @@ CLOSURE_COLUMNS = {
     ("stewardship_ministry_request", "reviewed_ministry_duid"): (
         "stewardship_workflows",
         "0003_ministry_review_pipeline",
+    ),
+    # The parish data check (0183, #2201): every credential installer reads
+    # the readiness record's check binding.
+    ("stewardship_setup_readiness_binding", "source_check_id"): (
+        "stewardship_accounts",
+        "0038_setup_source_check",
     ),
 }
 
@@ -1322,6 +1335,10 @@ def runtime_grants(role, *, target=None):
 
         # The setup wizard's ParishSoft organization lookup (#1554).
         add_web_lookup_grants(tables, columns)
+        from .accounts.setup_check_grants import add_web_check_grants
+
+        # The setup wizard's parish data check (#2201).
+        add_web_check_grants(tables, columns)
         from .accounts.setup_mail_grants import add_setup_mail_cleanup_grants
 
         add_setup_mail_cleanup_grants(tables, columns, read_payload=True)

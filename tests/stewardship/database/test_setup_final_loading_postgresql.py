@@ -97,12 +97,14 @@ def wait_for_source():
     from parishkit.stewardship.jobs.ownership import database_now
     from parishkit.stewardship.source.models import SourceMutationLease
 
-    # The catalog's real HTTP deadline survives release. Never weaken that
-    # exclusion by rewriting the database clock or bypassing admission in tests.
+    # A catalog load's real HTTP deadline survives release. Never weaken that
+    # exclusion by rewriting the database clock or bypassing admission in
+    # tests. A setup checked with no load (#2201) has no deadline to wait for.
     with work_transaction():
+        deadline = SourceMutationLease.objects.get().external_deadline
         remaining = (
-            SourceMutationLease.objects.get().external_deadline - database_now()
-        ).total_seconds()
+            0 if deadline is None else (deadline - database_now()).total_seconds()
+        )
     assert remaining < 60
     if remaining > 0:
         Event().wait(remaining + 0.05)
@@ -152,11 +154,15 @@ def load(service, task, credential_path, *, finalize=None):
 def test_final_load_has_new_fences_and_exact_selected_financial_coverage(
     setup_service, monkeypatch, tmp_path, config_role, financial
 ):
-    """The initial catalog never masquerades as coverage for selected giving."""
+    """The final load is setup's only load (#2201), with its own fences.
+
+    Its parish data was only checked, so no earlier snapshot can be mistaken
+    for coverage of the selected giving (one bound before #2201 never is).
+    """
     _, attempt, identifier = prepared(
         setup_service, monkeypatch, tmp_path, financial=financial
     )
-    original = SourceSnapshot.objects.get()
+    earlier = set(SourceSnapshot.objects.values_list("pk", flat=True))
     task = queued(setup_service, identifier)
     with task_login(ServiceRole.WORKER, exact=True), work_transaction():
         scope = require_prepared_setup(setup_service.store, identifier)
@@ -175,16 +181,13 @@ def test_final_load_has_new_fences_and_exact_selected_financial_coverage(
     remaining, calls = fake_provider(monkeypatch, responses)
     snapshot = load(setup_service, task, tmp_path / "parishsoft" / "credential")
     assert not remaining and len(calls) == len(responses)
-    assert snapshot.pk != original.pk and snapshot.task_id == task.run_id
-    assert snapshot.source_fence > original.source_fence
+    assert snapshot.task_id == task.run_id and snapshot.pk not in earlier
     assert snapshot.cursor["window_digest"] == scope.window.digest
     assert (
         snapshot.counts["pledge"] == snapshot.counts["contribution"] == int(financial)
     )
     assert SourceCurrent.objects.get().snapshot_id is None
-    original.refresh_from_db()
-    assert original.state == snapshot.state == "ready"
-    assert original.counts["pledge"] == original.counts["contribution"] == 0
+    assert snapshot.state == "ready"
     assert TaskRun.objects.get(pk=task.run_id).state == "running"
     assert SetupAttempt.objects.get().state == "frozen"
     assert not setup_service.configured()
@@ -201,7 +204,7 @@ def test_wrong_mounted_key_prevents_final_provider_reads(
     _, calls = fake_provider(monkeypatch, [])
     with pytest.raises(PermissionError, match="credential"):
         load(setup_service, task, path)
-    assert not calls and SourceSnapshot.objects.count() == 1
+    assert not calls and not SourceSnapshot.objects.exists()
 
 
 def test_cancelled_preparation_cannot_enqueue_or_read_under_new_authority(

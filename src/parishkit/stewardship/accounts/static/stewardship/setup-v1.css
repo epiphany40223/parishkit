@@ -57,7 +57,7 @@
 }
 .setup-load-result h2 { margin-top: 0; }
 .setup-load-result .setup-actions { margin-block: .75rem 0; }
-/* Load parish data's summary sentence shares one grid cell with invisible
+/* Loading parish data's summary sentence shares one grid cell with invisible
    copies of its other wordings (.reserve-ghost, ui-v1.css), so it is as
    tall as the longest at every width and the stage boxes below it never
    move when the load moves on (#1903). The cell keeps a paragraph's
@@ -83,3 +83,9 @@
 .organization-choices li { margin-block: .375rem; }
 .organization-choices li > label { display: inline; margin: 0; }
 .organization-choices li > label:has(input:disabled) { color: var(--muted); }
+/* Check parish data (#2201) draws its status in one grid cell over
+   invisible copies of its other states (setup-source-status.html), so the
+   slot is as tall as its tallest state at every width and the action row
+   below never moves as the check moves on (no layout shift). */
+.setup-check-slot { display: grid; }
+.setup-check-slot > * { grid-area: 1 / 1; min-width: 0; }

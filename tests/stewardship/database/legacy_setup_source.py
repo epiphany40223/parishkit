@@ -1,28 +1,42 @@
-"""Authenticated intake for setup's source-load Task, and discarding a load."""
+"""Test support: the retired setup source-load intake and discard (#2233).
 
+Production no longer queues or discards a setup load. The SQL that guards a
+load stays, and these functions bind and void one so its tests still run.
+"""
+
+from datetime import timedelta
 from uuid import uuid5
 
-from django.db import connection
+from django.db import connection, transaction
 from django.db.models import F
+from psycopg import sql
 
+from parishkit.stewardship.accounts.sessions import authenticated_admin, database_now
+from parishkit.stewardship.accounts.setup_drafts import _owned
+from parishkit.stewardship.accounts.setup_lookup_models import (
+    OPEN_STATES,
+    SetupParishSoftLookup,
+)
+from parishkit.stewardship.accounts.setup_models import SetupAttempt, SetupDraftSection
+from parishkit.stewardship.accounts.setup_policy import SetupState
+from parishkit.stewardship.accounts.setup_secret_models import SetupSealedCredential
+from parishkit.stewardship.accounts.setup_staging import _expiry
 from parishkit.stewardship.campaigns.work_locks import (
     require_work_order,
     work_transaction,
 )
+from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.storage import _status as task_status
 from parishkit.stewardship.jobs.storage import enqueue
 from parishkit.stewardship.observability import current_correlation
+from parishkit.stewardship.source.leases import acquire_source
+from parishkit.stewardship.source.models import SourceMutationLease
 from parishkit.stewardship.source.setup_admission import TASK_TYPE
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.contracts import check_version
 
-from .sessions import authenticated_admin, database_now
-from .setup_drafts import _owned, staged_load
-from .setup_lookup_models import OPEN_STATES, SetupParishSoftLookup
-from .setup_models import SetupAttempt, SetupDraftSection
-from .setup_policy import SetupState
-from .setup_secret_models import SetupSealedCredential
-from .setup_staging import _expiry
+from .legacy_setup_loading import staged_load
+from .test_taskrun_postgresql import act, new
 
 # The transaction-local setting that names why a load is discarded; the
 # attempt's audit trigger reads it into setup_source_voided and clears it.
@@ -157,3 +171,56 @@ def start_source_load(request, service, attempt_id, *, expected_version):
         )
         authenticated_admin(request, store=service.store, activity=True)
         return result
+
+
+def bind_load(attempt_id, *, claimed=True, source=True):
+    """Provide synthetic work for service and HTTP tests without changing sessions."""
+    SourceMutationLease.objects.get_or_create(singleton=True)
+    row = SetupAttempt.objects.get(pk=attempt_id)
+    task = new(
+        task_type="setup_source_load", actor_id=row.owner_id, domain_request_id=row.pk
+    )
+    with work_transaction():
+        SetupAttempt.objects.filter(pk=row.pk).update(
+            source_task_id=task.run_id, state="loading", version=F("version") + 1
+        )
+    claim = None
+    if claimed:
+        task = act(task, "claim", lease_seconds=300)
+        if source:
+            run = TaskRun.objects.get(pk=task.run_id)
+            claim = acquire_source(
+                task_id=run.pk,
+                task_fence=run.fence,
+                worker_id=run.worker_id,
+                phase="full",
+                lease_seconds=300,
+            )
+    return task, claim
+
+
+def aged_original_load(task_id, *, minutes):
+    """Model a restored historical creation clock, never patch production time rules.
+
+    This disposable schema-owner fixture changes only original creation instants.
+    The tests that use it keep every trigger enabled for the rest of the run.
+    """
+    attempt_id = SetupAttempt.objects.get(source_task_id=task_id).pk
+    with transaction.atomic(), connection.cursor() as cursor:
+        for table, identifier in (
+            ("stewardship_setup_attempt", attempt_id),
+            ("stewardship_task_run", task_id),
+        ):
+            name = sql.Identifier(table)
+            cursor.execute(sql.SQL("ALTER TABLE {} DISABLE TRIGGER USER").format(name))
+            try:
+                cursor.execute(
+                    sql.SQL(
+                        "UPDATE {} SET created_at=created_at-%s WHERE id=%s"
+                    ).format(name),
+                    [timedelta(minutes=minutes), identifier],
+                )
+            finally:
+                cursor.execute(
+                    sql.SQL("ALTER TABLE {} ENABLE TRIGGER USER").format(name)
+                )

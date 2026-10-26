@@ -13,11 +13,11 @@ pages.
 import pytest
 
 from .setup_back_path_components import (
-    CREDENTIAL_LOADED,
-    PROGRESS_DONE,
-    SOURCE_LOADED,
-    SOURCE_RELOAD,
+    CREDENTIAL_CHECKED,
+    SOURCE_CHECKED,
+    SOURCE_STALE,
 )
+from .setup_check_components import CHECK_FAILED, CHECK_WAITING
 from .stepper_components import (
     CONTENT,
     EDITOR,
@@ -36,13 +36,13 @@ pytestmark = pytest.mark.parametrize(
 # Each flow's pages, with the slots each one fills, so a slot a step leaves
 # empty is checked to be empty as well.
 SETUP = [
-    (CREDENTIAL_LOADED, {"back", "next"}),
-    (SOURCE_LOADED, {"back", "next"}),
-    (SOURCE_RELOAD, {"back", "next"}),
-    # Loading parish data: Continue unavailable while the load runs, then
-    # a link once it is done (#1968), in the same place.
-    ("/setup-source-progress", {"back", "next"}),
-    (PROGRESS_DONE, {"back", "next"}),
+    (CREDENTIAL_CHECKED, {"back", "next"}),
+    # Check parish data (#2201): Continue unavailable while the check waits,
+    # then a link beside Check again; Check again alone after a failure.
+    (CHECK_WAITING, {"back", "next"}),
+    (SOURCE_CHECKED, {"back", "action", "next"}),
+    (SOURCE_STALE, {"back", "next"}),
+    (CHECK_FAILED, {"back", "next"}),
 ]
 CAMPAIGN = [
     (PATH, {"back", "next"}),

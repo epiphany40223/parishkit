@@ -144,10 +144,15 @@ def queue_lookup(attempt, credential, *, actor_id):
 
     The caller holds the work order and has just staged (or kept) the key
     for the attempt's owner. Any earlier open lookup is discarded first:
-    at most one is open per attempt.
+    at most one is open per attempt. So is a parish data check still
+    waiting for its answer (#2201): it checked the key or organization that
+    this lookup may change.
     """
+    from .setup_checks import discard_waiting
+
     require_work_order()
     discard_open(attempt, actor_id=actor_id)
+    discard_waiting(attempt, actor_id=actor_id)
     return SetupParishSoftLookup.objects.create(
         id=uuid4(),
         attempt=attempt,
@@ -176,7 +181,7 @@ def current_lookup(attempt_id):
 def chosen_name(attempt_id, organization_id):
     """The name the attempt's lookup read for its chosen organization, or None.
 
-    Held with the latest chosen lookup until the setup load records the
+    Held with the latest chosen lookup until the final load records the
     name in its snapshot (data spec "ParishSoft organization name"); a
     later choice clears the names earlier ones kept.
     """
@@ -296,12 +301,6 @@ def choose_organization(
         )
         settings = {"organization_id": organization_id}
         if dict(credential.settings) != settings:
-            if attempt.source_task_id is not None:
-                from .setup_source import void_source_load
-
-                attempt = void_source_load(
-                    attempt, reason="organization_changed", actor_id=actor.identity
-                )
             SetupSealedCredential.objects.filter(
                 pk=credential.pk, version=credential.version
             ).update(

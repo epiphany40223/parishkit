@@ -14,7 +14,6 @@ from parishkit import parishsoft_transport
 from parishkit.stewardship.accounts.setup_drafts import save_section
 from parishkit.stewardship.accounts.setup_exchange_models import SetupSourceResult
 from parishkit.stewardship.accounts.setup_models import SetupAttempt
-from parishkit.stewardship.accounts.setup_source import start_source_load
 from parishkit.stewardship.accounts.setup_staging import cancel_setup
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
@@ -34,31 +33,31 @@ from parishkit.stewardship.source.credentials import SourceCredential
 from parishkit.stewardship.source.load_progress import collections
 from parishkit.stewardship.source.models import SourceMutationLease
 from parishkit.stewardship.source.setup_admission import admit_setup_task
-from parishkit.stewardship.source.setup_exchange import (
-    publish_recipient,
-    receive_credential,
-    relay_pending,
-)
-from parishkit.stewardship.source.setup_execution import (
-    complete_setup_load,
-    setup_source_handler,
-)
 from parishkit.stewardship.source.setup_handoff import (
     EphemeralSetupRecipient,
     SetupCredentialScope,
 )
-from parishkit.stewardship.source.setup_loading import load_setup_source
 from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSnapshot
 from parishkit.stewardship.storage import StorageInvariantError
 
 from ..test_setup_forms import VALUES
 from ..test_source_loading import provider_pages
+from .legacy_setup_exchange import (
+    publish_recipient,
+    receive_credential,
+    relay_pending,
+)
+from .legacy_setup_execution import (
+    complete_setup_load,
+    setup_source_handler,
+)
+from .legacy_setup_loading import load_setup_source
+from .legacy_setup_source import bind_load, start_source_load
 from .test_background_grants_postgresql import task_login
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_runtime_auth_grants_postgresql import web_login
 from .test_setup_credentials_postgresql import staged
 from .test_setup_exchange_postgresql import target_login
-from .test_setup_progress_postgresql import bind_load
 from .test_setup_staging_postgresql import setup_service  # noqa: F401
 from .test_source_refreshing_postgresql import fake_provider
 
@@ -252,7 +251,7 @@ def installer_reply(monkeypatch, private):
     Only this disposable superuser-backed fixture can switch SQL identities.
     The production worker has no ability to create or assume the target role.
     """
-    from parishkit.stewardship.source import setup_execution
+    from . import legacy_setup_execution as setup_execution
 
     original = setup_execution.receive_credential
 
@@ -349,7 +348,7 @@ def test_cancel_during_private_handoff_settles_without_provider_reads(
     from unittest.mock import Mock
     from uuid import uuid4
 
-    from parishkit.stewardship.source import setup_execution
+    from . import legacy_setup_execution as setup_execution
 
     request, attempt, task, _ = queued(setup_service)
     name = "EphemeralSetupRecipient" if stage == "publish" else "monotonic"
@@ -512,3 +511,14 @@ def test_setup_load_reads_another_reachable_organization_whole(
     )
     assert snapshot.cursor["load"]["organization"] == {"name": "Neighboring Parish 1"}
     assert len(calls) > 30
+
+
+def test_web_can_observe_but_not_change_source_lease_metadata():
+    """Progress grants do not turn a browser into a provider mutation owner."""
+    with (
+        web_login(),
+        pytest.raises(DatabaseError),
+        transaction.atomic(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute("UPDATE stewardship_source_lease SET expires_at=now()")
