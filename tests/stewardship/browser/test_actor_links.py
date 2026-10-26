@@ -44,6 +44,22 @@ def test_an_administrator_sees_the_reviewers_name_linked(page, component_origin)
     assert_clean(page, errors)
 
 
+def test_a_pledge_edit_line_keeps_its_short_labels_and_the_linked_name(
+    page, component_origin
+):
+    """The markup of a pledge Edit (#2198) and its reviewer's link (#2259)
+    share one cell."""
+    errors = watch(page)
+    page.goto(component_origin + ACTORS_ADMIN)
+    updated = row(page, "Updated")
+    visible(updated)
+    assert updated.locator("td [title]").count() >= 1
+    assert "; by Administrator, IT" in updated.inner_text()
+    link = updated.get_by_role("link", name="Administrator, IT")
+    assert link.get_attribute("href") == ACTOR_LINK
+    assert_clean(page, errors)
+
+
 def test_staff_see_the_name_with_no_link(page, component_origin):
     """A reader who may not open users' Timelines gets no link to refuse."""
     errors = watch(page)

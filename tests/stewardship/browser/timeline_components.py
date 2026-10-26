@@ -176,6 +176,17 @@ ACTED = Timeline(
                 "Handled",
                 ActorSentence(f"Additional information; by {WHO}", gone()),
             ),
+            # A pledge Edit keeps its short-label markup (#2198) and still
+            # names its reviewer, linked (#2259).
+            (
+                SECOND.at + timedelta(hours=3),
+                "Updated",
+                ActorSentence(
+                    f"{_EDIT}; by {WHO}",
+                    NAMED,
+                    mark_safe(f"{_EDIT.html}; by {WHO}"),
+                ),
+            ),
         ],
     ),
     ENGAGEMENT,

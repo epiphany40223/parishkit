@@ -484,7 +484,8 @@ def test_the_page_names_share_methods_by_short_label_and_files_by_full(
     # The text (the PDF, `pk-admin`) has the full label, never the short one.
     assert "share methods: Other: Stock; by admin@example.org" in detail
     assert "Else" not in detail
-    assert 'title="Other"' in detail.html and ">Else<" in detail.html
+    drawn = detail.before + detail.after
+    assert 'title="Other"' in drawn and ">Else<" in drawn
     assert timeline_reviews.share_labels_for(harness.campaign.pk)[OTHER] == "Other"
 
     client, login = signed_in()

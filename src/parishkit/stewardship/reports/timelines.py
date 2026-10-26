@@ -281,7 +281,10 @@ class Event:
 
         A pledge line's share methods are named by short label there, with the
         full label as tooltip (``timeline_reviews.Detail``); the PDF and
-        ``pk-admin`` use ``detail``, which is in full labels.
+        ``pk-admin`` use ``detail``, which is in full labels. A line that
+        names an Admin user (``actor_names.ActorSentence``) is its own cell:
+        its ``before`` and ``after`` hold that markup (#2259) around the
+        actor, which ``{% actor_sentence %}`` draws.
         """
         return getattr(self.detail, "html", None) or self.detail
 
