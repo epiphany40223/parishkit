@@ -201,6 +201,9 @@ def test_web_admission_requires_exactly_the_login_function(family_service):  # n
         "stewardship_pledge_edits_in_force_v1(uuid)",
         "stewardship_pledge_review_watermark_v1(uuid)",
         "stewardship_fact_pledge_edits_v1(uuid)",
+        # Queue the pending off-site backup check when setup completes
+        # (0186, #2200).
+        "stewardship_setup_backup_check_v1()",
     }
     tables, columns = runtime_grants(ServiceRole.WEB)
     allowed = {table: set(grants) for table, grants in tables.items()}
