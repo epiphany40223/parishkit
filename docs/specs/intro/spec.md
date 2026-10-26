@@ -379,7 +379,13 @@ contains both the HTTP client and the parish data model.
   groups, family/member workgroups + their memberships, member contact info,
   ministry types + rosters, and optionally funds/pledges/contributions),
   cross-links them (members↔families, workgroups, ministries, giving), derives
-  friendly display names and normalized email lists, then filters per flags
+  friendly display names and normalized email lists (an email field's
+  addresses, separated by `;` only, are split by the shared
+  `split_email_addresses`, which lowercases them and drops blanks and repeats;
+  a value containing `,` stays one fragment, which Stewardship flags invalid
+  and never sends to, #2260;
+  the raw field is rewritten as those addresses joined by `"; "`), then
+  filters per flags
   (`active_only`, `parishioners_only`, `include_deceased`,
   `load_contributions`). Derived fields are namespaced with a `"py "` prefix
   (e.g. `"py members"`, `"py ministries"`, `"py emailAddresses"`) to separate

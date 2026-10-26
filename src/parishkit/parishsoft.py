@@ -722,9 +722,10 @@ def normalize_family_email(family: dict[str, Any]) -> None:
     """Lowercase a family's email field and split it into a derived address list.
 
     ParishSoft stores possibly multiple addresses in one semicolon-delimited
-    string. This lowercases the original field in place and adds a derived
-    ``"py eMailAddresses"`` list (the ``py`` prefix marks fields synthesized by
-    this library). Does nothing when no email is present.
+    string. This rewrites the original field in place as the cleaned
+    addresses joined by ``"; "`` and adds a derived ``"py eMailAddresses"``
+    list (the ``py`` prefix marks fields synthesized by this library). Does
+    nothing when no email is present.
     """
     value = family.get("eMailAddress")
     if value:
@@ -763,13 +764,16 @@ def member_email_addresses(member: Mapping[str, Any]) -> list[str]:
 
 
 def split_email_addresses(value: str | Sequence[str]) -> list[str]:
-    """Split, lowercase, de-duplicate, and drop blank email fragments."""
-    raw_items: list[str] = []
-    if isinstance(value, str):
-        raw_items = value.split(";")
-    else:
-        for item in value:
-            raw_items.extend(item.split(";"))
+    """Split, lowercase, de-duplicate, and drop blank email fragments.
+
+    ParishSoft separates several addresses in one field with ``;`` only. A
+    value containing ``,`` therefore stays one fragment, which callers treat as
+    invalid (Stewardship never sends to it). Fragments are not validated here;
+    callers decide what an invalid fragment means. A sequence is treated as
+    several such fields.
+    """
+    items = [value] if isinstance(value, str) else value
+    raw_items = [part for item in items for part in item.split(";")]
     addresses: list[str] = []
     seen: set[str] = set()
     for item in raw_items:
@@ -912,9 +916,7 @@ def load_family_workgroup_memberships(
         for element in elements:
             if element.get("email"):
                 element["email"] = element["email"].lower()
-                element["py emails"] = [
-                    item.strip() for item in element["email"].split(";")
-                ]
+                element["py emails"] = split_email_addresses(element["email"])
             _copy_first_duid(element, ("familyDUID", "familyId"), "py family duid")
         results[duid] = {
             "duid": duid,
@@ -995,9 +997,9 @@ def load_member_workgroup_memberships(
             _copy_first_duid(element, ("familyDUID", "familyId"), "py family duid")
             if element.get("emailAddress"):
                 element["emailAddress"] = element["emailAddress"].lower()
-                element["py emailAddresses"] = [
-                    item.strip() for item in element["emailAddress"].split(";")
-                ]
+                element["py emailAddresses"] = split_email_addresses(
+                    element["emailAddress"]
+                )
         results[duid] = {
             "duid": duid,
             "id": workgroup["id"],

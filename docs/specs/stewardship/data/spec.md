@@ -880,6 +880,8 @@ protection reference wins over cleanup under row locks. Cleanup is idempotent,
 bounded, audited by counts/cutoffs rather than values, and cannot run while a
 source promotion owns the mutation lease.
 
+**Email fields.** A ParishSoft email field may hold several addresses separated by `;`, with any spacing. A load splits it with ParishKit's shared `split_email_addresses` parser (the one the ParishSoft tools also use), so each address becomes its own lowercased contact fragment, with blanks and repeats dropped, and each fragment carries its own validity flag. Only valid fragments are recipients or count toward email eligibility; an invalid one is kept only so it can be shown for correction ([#2260](https://github.com/epiphany40223/parishkit/issues/2260)). A comma never separates addresses: a value containing one (`john,doe@example.org`, or two addresses joined by a comma) stays one fragment, is flagged invalid and is never sent to; the fix is in ParishSoft. The census email baseline is the sorted fragments joined by `", "`, the same form the Family form saves, so an untouched field made of valid addresses is never a change.
+
 #### ParishSoft organization scope
 
 A deployment loads exactly one ParishSoft organization, the configured

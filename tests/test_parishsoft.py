@@ -22,6 +22,9 @@ from parishkit.parishsoft import (
     link_families_and_members,
     load_contribution_details,
     load_families_and_members,
+    load_family_workgroup_memberships,
+    load_member_workgroup_memberships,
+    member_email_addresses,
     member_is_active,
     ministry_membership_is_current,
     normalize_dates,
@@ -29,6 +32,7 @@ from parishkit.parishsoft import (
     normalize_member_email,
     parse_cache_limit,
     salutation_for_members,
+    split_email_addresses,
 )
 
 
@@ -1006,6 +1010,85 @@ def test_email_normalization_drops_blank_fragments_and_deduplicates():
     assert family["py eMailAddresses"] == ["a@example.org"]
     assert member["emailAddress"] == "ann@example.org"
     assert member["py emailAddresses"] == ["ann@example.org"]
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("a@x.org; b@y.net;c@z.com", ["a@x.org", "b@y.net", "c@z.com"]),
+        ("a@x.org;b@y.net;c@z.com", ["a@x.org", "b@y.net", "c@z.com"]),
+        ("  A@X.org  ;\tB@Y.NET ; ", ["a@x.org", "b@y.net"]),
+        (";  ;;", []),
+        ("", []),
+        ("a@x.org; A@X.ORG; a@x.org", ["a@x.org"]),
+        ("b@y.net; a@x.org", ["b@y.net", "a@x.org"]),
+        ("not an address; a@x.org; @", ["not an address", "a@x.org", "@"]),
+        (["A@x.org;b@y.net", " b@Y.net;c@z.com "], ["a@x.org", "b@y.net", "c@z.com"]),
+    ],
+)
+def test_split_email_addresses(value, expected):
+    """Only ``;`` splits; spacing, case, blanks and repeats are cleaned.
+
+    Order follows first appearance, and invalid fragments are kept for the
+    caller to judge (Stewardship marks them invalid; it never sends to them).
+    """
+    assert split_email_addresses(value) == expected
+
+
+def test_comma_value_stays_one_fragment():
+    """A comma never separates addresses: the value stays one (invalid) fragment.
+
+    Stewardship flags such a fragment invalid and never sends to it (#2260).
+    """
+    assert split_email_addresses("A@x.org, b@y.net") == ["a@x.org, b@y.net"]
+    assert split_email_addresses("a@x.org,b@y.net; c@z.com") == [
+        "a@x.org,b@y.net",
+        "c@z.com",
+    ]
+
+
+def test_member_email_addresses_prefers_derived_list_and_splits_raw_field():
+    """The derived list wins when present; otherwise the raw field is split."""
+    assert member_email_addresses({"py emailAddresses": ["A@x.org", "a@x.org"]}) == [
+        "a@x.org"
+    ]
+    assert member_email_addresses({"emailAddress": "A@x.org; b@y.net"}) == [
+        "a@x.org",
+        "b@y.net",
+    ]
+    assert member_email_addresses({"emailAddress": ""}) == []
+    assert member_email_addresses({}) == []
+
+
+class WorkgroupClient:
+    """Stand-in client returning one fixed page of workgroup membership rows."""
+
+    def __init__(self, rows):
+        self.rows = rows
+
+    def get_paginated(self, endpoint, **_options):
+        """Return copies of the fixed rows for any workgroup endpoint."""
+        return [dict(row) for row in self.rows]
+
+
+def test_workgroup_membership_emails_use_the_shared_parser():
+    """Workgroup rows split with the shared parser, dropping blanks and repeats."""
+    raw = "A@x.org; ; b@y.net; a@x.org"
+    families = load_family_workgroup_memberships(
+        WorkgroupClient([{"familyDUID": 1, "email": raw}, {"familyDUID": 2}]),
+        {10: {"id": 10, "name": "Family group"}},
+    )
+    members = load_member_workgroup_memberships(
+        WorkgroupClient([{"memberDUID": 3, "familyDUID": 1, "emailAddress": raw}]),
+        {20: {"id": 20, "name": "Member group"}},
+    )
+
+    family_rows = families[10]["membership"]
+    assert family_rows[0]["email"] == raw.lower()
+    assert family_rows[0]["py emails"] == ["a@x.org", "b@y.net"]
+    assert "py emails" not in family_rows[1]
+    member_row = members[20]["membership"][0]
+    assert member_row["py emailAddresses"] == ["a@x.org", "b@y.net"]
 
 
 def test_normalize_dates_reports_field_and_record_for_bad_api_value():

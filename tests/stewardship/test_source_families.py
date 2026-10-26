@@ -4,7 +4,7 @@ import pytest
 
 from parishkit.stewardship.source.canonical import InvalidSourcePayload
 from parishkit.stewardship.source.corpus import normalize_core
-from parishkit.stewardship.source.families import family_statuses
+from parishkit.stewardship.source.families import family_recipients, family_statuses
 
 from .test_source_corpus import TODAY, source
 
@@ -40,6 +40,22 @@ def test_one_unsuppressed_head_address_is_enough():
     data.members[3]["emailAddress"] = "valid@example.org; another@example.org"
     one, _ = statuses(data, frozenset({"valid@example.org"}))
     assert one.email_deliverable
+
+
+def test_comma_head_value_is_an_invalid_fragment_and_never_a_recipient():
+    """A ``,`` value is one invalid fragment; only ``;`` fragments are sent to."""
+    data = source()
+    data.members[3]["emailAddress"] = (
+        "valid@example.org, Another@Example.org; Third@Example.org"
+    )
+    corpus = normalize_core(data, as_of=TODAY)
+    one, _ = family_statuses(corpus, suppressed_addresses=frozenset())
+    assert one.email_eligible and one.email_deliverable
+    recipients = {
+        row.status.duid: row.eligible
+        for row in family_recipients(corpus, suppressed_addresses=frozenset())
+    }
+    assert recipients[1] == ("third@example.org",)
 
 
 def test_family_email_does_not_replace_missing_head_email():
