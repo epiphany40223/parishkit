@@ -576,6 +576,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # and restores the staged load's NOT NULL while the swap is pending) and
 # replaces the readiness and attempt guards and the installers' readiness
 # check in place. Its file, whole, puts all of it back, last.
+# 0184 (#2202) creates one definer, granted to the web and general worker
+# logins (runtime_grants.CLOSURE_FUNCTIONS); it replaces nothing.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -1100,6 +1102,11 @@ CLOSURE_CREATED = {
             "public.stewardship_setup_freeze_check_v1()",
         ),
         ("stewardship_accounts", "0038_setup_source_check"),
+    ),
+    # 0184 (#2202): the statistics capture's pledge Edits in force.
+    "public.stewardship_pledge_edits_in_force_v1(uuid)": (
+        "stewardship_reports",
+        "0051_statistics_in_force",
     ),
 }
 

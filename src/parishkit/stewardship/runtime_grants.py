@@ -500,6 +500,13 @@ PLEDGE_REFRESH_ITEMS_FUNCTION = "stewardship_pledge_refresh_items_v2(uuid, uuid,
 # #269): the Google Workspace installer compares a queued "Test access"
 # check with them before it runs it, without reading the applied settings.
 BACKUP_DESTINATION_FUNCTION = "stewardship_backup_destination_v1()"
+# Each Family's pledge Edit in force, as the response it is in force on and
+# the Edit's annual pledge (0184, #2202): the campaign statistics capture
+# counts the values in force. Web runs every production capture today (the
+# dashboard, export Summary, pk-admin and load-check); the general worker
+# keeps the capture it was granted (its daily digest retired in 0171), with
+# no grant on response answers or pledge reviews.
+EDITS_IN_FORCE_FUNCTION = "stewardship_pledge_edits_in_force_v1(uuid)"
 # Publication plans and outcomes (#528, DAT-09.01, migration 0087): the
 # worker writes a preflight's plan and each write attempt's outcome; web
 # reads them all and writes only an Administrator's confirmation.
@@ -628,6 +635,8 @@ CLOSURE_FUNCTIONS = {
     FAMILY_ANALYZE_FUNCTION: ("stewardship_campaigns", "0018_family_statistics"),
     # The Test access re-check's backup destination read (0176, #269).
     BACKUP_DESTINATION_FUNCTION: ("stewardship_jobs", "0038_probe_settings_changed"),
+    # The statistics capture's pledge Edits in force (0184, #2202).
+    EDITS_IN_FORCE_FUNCTION: ("stewardship_reports", "0051_statistics_in_force"),
 }
 
 
@@ -935,7 +944,9 @@ def runtime_functions(role, *, target=None):
     campaign comparison report's aggregates (#1018), and so does the general
     worker, for the daily digest's Compared with past campaigns section.
     The general worker also reads the archive's parts of each live answer
-    to write the campaign archive workbook (#1018).
+    to write the campaign archive workbook (#1018). Web and the general
+    worker read each Family's pledge Edit in force (its response and annual
+    pledge only) for the campaign statistics (#2202).
     Mail dispatch reads the one link token of a Family message it holds a
     live delivery claim on (#389 L1). Web reads what a delivered email's
     follow-up to its addresses refused for now did (#806); mail dispatch
@@ -995,6 +1006,7 @@ def runtime_functions(role, *, target=None):
                 REPORT_WAITING_FUNCTION,
                 ADDRESS_LEADER_SCOPE_FUNCTION,
                 DEBUG_OFF_FUNCTION,
+                EDITS_IN_FORCE_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {
                 MINISTRY_CATALOG_FUNCTION,
@@ -1023,6 +1035,7 @@ def runtime_functions(role, *, target=None):
                 PUBLICATION_AUDITED_FUNCTION,
                 PLEDGE_REFRESH_ITEMS_FUNCTION,
                 ADDED_MEMBER_CANDIDATES_FUNCTION,
+                EDITS_IN_FORCE_FUNCTION,
             },
             "download": {LEADER_SCOPE_FUNCTION},
             ServiceRole.ADMIN_RECOVERY: {
