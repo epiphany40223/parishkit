@@ -4622,7 +4622,9 @@ These stay as they are and are not wrapped by `pk-stewardship admin`. They act
 as the host operator (`actor_kind` `operator`), not as a portal user:
 
 - diagnostics: `health`, `load-check`, `source-form-check`, `healthcheck`,
-  `installer-healthcheck`, `upgrade-check`;
+  `installer-healthcheck`, `upgrade-check`, and the database connection
+  source checks `database-sources` and `hba-check` (see
+  [database connection sources](../operations/spec.md#database-connection-sources));
 - one-off data repair: `engagement-backfill`;
 - lifecycle: `bootstrap`, `migrate`, `database-roles`, `database-grants`,
   `provision-runtime`, `retarget-image`, `acknowledge-credential`,
