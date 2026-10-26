@@ -2170,7 +2170,7 @@
       const address = new URL(withFragment(response.url, id), document.baseURI);
       (owner?.getAttribute("data-in-place-forget") || "").split(/\s+/).filter(Boolean)
         .forEach((name) => address.searchParams.delete(name));
-      setAddress(address.href);
+      setAddress(options.quiet ? keepHash(address.href) : address.href);
     } else if (!anywhere && init.method !== "POST") {
       setAddress(options.quiet ? keepHash(url) : url);
     } else if (!anywhere && !refused && address) {
@@ -2388,7 +2388,12 @@
       reconcileBoxes();
     };
     refreshTable(region, control, action.href, init, load,
-      {owner, form: save ? form : null, cleared: clearing})
+      {owner, form: save ? form : null, cleared: clearing,
+        // A form marked data-in-place-quiet is submitted by script, not by
+        // the reader (Check parish data's automatic start, #2271): it keeps
+        // the reader's focus, scroll and address fragment like any quiet
+        // refresh.
+        quiet: Boolean(owner?.hasAttribute("data-in-place-quiet"))})
       .finally(settle);
   }, true);
   // Back or Forward within a page that keeps its views in history
@@ -3773,6 +3778,37 @@
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") reread("a[data-reread-on-show][data-in-place]");
   });
+
+  // Check parish data starts its quick check by itself (#2271). The key and
+  // organization were validated on ParishSoft connection, so a form marked
+  // data-auto-start (drawn only before any check, or when the last one used
+  // an earlier connection) is submitted once when the page opens, through
+  // the same in-place path as a press on its button, but as a quiet refresh
+  // (data-in-place-quiet, set for this one submission): the spinner takes the status slot's place,
+  // nothing moves, and focus, scroll and the address stay as they are. It runs once per page load, so a
+  // start the server refuses shows the setup error page and is not retried, and
+  // a re-read of the panel (which never carries the mark again once a check
+  // exists) cannot start another. The server also returns a check that is
+  // already waiting rather than queueing a second.
+  const autoStart = () => {
+    const form = document.querySelector("form[data-auto-start][data-in-place]");
+    const button = form?.querySelector("button[name=action][value=check]");
+    if (!button) return;
+    // Quiet for this submission only (the submit event reads the mark
+    // synchronously); a press on the button after a refused start is the
+    // reader's own, and moves focus to the answer as any press does.
+    form.setAttribute("data-in-place-quiet", "");
+    try {
+      form.requestSubmit(button);
+    } finally {
+      form.removeAttribute("data-in-place-quiet");
+    }
+  };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", autoStart, {once: true});
+  } else {
+    autoStart();
+  }
 
   // Pages that update themselves (UX conventions, #1586). A page whose state
   // changes without the reader's own action (Background work, Families on

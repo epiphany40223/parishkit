@@ -19,7 +19,77 @@ CHECK_WAITING = "/setup-check-waiting"
 CHECK_READY = "/setup-check-ready"
 CHECK_FAILED = "/setup-check-failed"
 CHECK_UNAVAILABLE = "/setup-check-unavailable"
-PAGES = (CHECK_INITIAL, CHECK_WAITING, CHECK_READY, CHECK_FAILED, CHECK_UNAVAILABLE)
+CHECK_STALE = "/setup-check-stale"
+# The step's address as the start's redirect reads it again (same path).
+CHECK_STARTED = f"{CHECK_INITIAL}?started=1"
+PAGES = (
+    CHECK_INITIAL,
+    CHECK_WAITING,
+    CHECK_READY,
+    CHECK_FAILED,
+    CHECK_UNAVAILABLE,
+    CHECK_STALE,
+)
+# The Check parish data form's start mark (#2271) and the address its
+# automatic start posts to (the setup overview, action ``check``).
+AUTO_START = " data-auto-start"
+START_POST = "**/admin/setup"
+
+
+def posts():
+    """The fixture server's answer to a start: the real view's redirect.
+
+    The setup overview redirects the start POST to the step's address with
+    the panel's fragment. The fixture's address differs only by a query, so
+    the page reads the same path again, as the real flow does; Playwright
+    cannot route a redirected read.
+    """
+    return {"/admin/setup": (303, f"{CHECK_STARTED}#setup-source-panel", "")}
+
+
+def keep_start_manual(page):
+    """Serve every page without its start mark, so it waits for a press.
+
+    A page drawn before any check (or after a stale one) submits its own
+    form once on arrival (#2271). A test of how such a page looks, not of
+    the start, serves it unmarked so no POST goes to the fixture server.
+    """
+
+    def serve(route):
+        """Answer a page load with the mark removed; leave other reads."""
+        if route.request.resource_type != "document":
+            route.fallback()
+            return
+        fetched = route.fetch()
+        route.fulfill(response=fetched, body=fetched.text().replace(AUTO_START, ""))
+
+    page.route("**/*", serve)
+
+
+def answer_start(page, origin, fixture, *, hold=False, status=200):
+    """Answer the page's start POST with the page ``fixture`` (``status``).
+
+    The in-place submit swaps in the answer as it does a redirect's page.
+    Returns ``(posts, routes, body)``: the start requests' bodies, the held
+    routes (with ``hold`` a start stays unanswered until the test fulfils
+    its route with ``body``), and the answer's page.
+    """
+    posts, routes = [], []
+    body = page.request.get(origin + fixture).text()
+
+    def answer(route):
+        """Count a start; answer it now, or when the test says."""
+        if route.request.method != "POST":
+            route.fallback()
+            return
+        posts.append(route.request.post_data)
+        if hold:
+            routes.append(route)
+            return
+        route.fulfill(status=status, content_type="text/html; charset=utf-8", body=body)
+
+    page.route(START_POST, answer)
+    return posts, routes, body
 
 
 def components(context, admin, now):
@@ -55,4 +125,6 @@ def components(context, admin, now):
             check("failed", error="parishsoft_organization_not_reached")
         ),
         CHECK_UNAVAILABLE: page(check("failed", error="parishsoft_unavailable")),
+        CHECK_STALE: page(check("ready", current=False)),
+        CHECK_STARTED: page(check("queued")),
     }

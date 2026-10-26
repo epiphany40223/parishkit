@@ -9,6 +9,9 @@ it up to date with the check's status.{% endcomment %}
 <h1>{% translate "Check parish data" %}</h1>
 {% aboutpage "setup-source" %}<p>{% translate "Check that ParishSoft answers with the connection you entered. The system asks ParishSoft for your parish organization's name and how many Families and Members it holds. It reads no Family or Member details and changes nothing in ParishSoft. It usually takes a few seconds." %}</p>
 <p>{% translate "The parish data itself is loaded when you finish setup. That load takes several minutes, about ten for a parish of a few thousand Families." %}</p>{% endaboutpage %}
+{% comment %}Starting (#2271): in the "initial" and "stale" states the form
+carries data-auto-start, and ui-v1.js submits it once on arrival, so the
+check starts without a press; its button is the same press by hand.{% endcomment %}
 {% comment %}The panel is one in-place region in every state. While a check
 waits, its hidden link re-reads the page every three seconds and swaps the
 answer in (ui-conventions "Pages that update themselves"); the panel is also
@@ -26,7 +29,7 @@ state.{% endcomment %}
 {% if source_step.state == 'blocked' %}
 <p class="notice" role="status">{{ source_step.status }} <a href="{{ source_step.fix_url }}">{% blocktranslate trimmed with step=source_step.fix_label %}Go to “{{ step }}”{% endblocktranslate %}</a></p>
 {% include 'stewardship/setup-navigation.html' %}
-{% else %}<form method="post" action="{% url 'admin:setup' %}#setup-source-panel" class="panel" data-in-place>{% csrf_token %}
+{% else %}<form method="post" action="{% url 'admin:setup' %}#setup-source-panel" class="panel" data-in-place{% if check_shown == 'initial' or check_shown == 'stale' %} data-auto-start{% endif %}>{% csrf_token %}
 <input type="hidden" name="attempt" value="{{ draft.status.attempt_id }}"><input type="hidden" name="version" value="{{ draft.status.version }}">
 <div class="setup-check-slot">{% for state in check_states %}{% if state == check_shown %}{% include 'stewardship/setup-source-status.html' with ghost=False %}{% else %}{% include 'stewardship/setup-source-status.html' with ghost=True %}{% endif %}{% endfor %}</div>
 {% if check_shown == 'waiting' %}{% include 'stewardship/setup-navigation.html' with continue_reason="setup-check-reason" %}

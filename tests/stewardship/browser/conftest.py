@@ -194,6 +194,7 @@ from .setup_back_path_components import components as setup_back_path_components
 from .setup_backup_components import POSTS as SETUP_BACKUP_POSTS
 from .setup_backup_components import components as setup_backup_components
 from .setup_check_components import components as setup_check_components
+from .setup_check_components import posts as setup_check_posts
 from .setup_live_components import POSTS as SETUP_LIVE_POSTS
 from .setup_live_components import components as setup_live_components
 from .setup_order_components import POSTS as SETUP_ORDER_POSTS
@@ -2325,6 +2326,7 @@ def component_responses():
         IN_PLACE_POSTS
         | DELIVERY_POSTS
         | in_place_commands_posts(context, admin)
+        | setup_check_posts()
         | campaign_test_posts(context, admin)
         | backup_test_posts(context, admin)
         | AUTOMATION_POSTS
