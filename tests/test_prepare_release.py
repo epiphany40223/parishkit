@@ -7,6 +7,8 @@ from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
 SCRIPT = Path(__file__).parents[1] / "tools" / "prepare-release.py"
+# The git call that lists reachable release tags under both prefixes (#2203).
+LIST_TAGS = ["tag", "--merged", "HEAD", "--list", "stewardship-v*", "v*"]
 
 
 def load_release_module():
@@ -151,7 +153,7 @@ def test_latest_release_uses_reachable_annotated_tags(monkeypatch):
     """Verify the latest release tag skips lightweight, non-annotated tags.
 
     Among reachable tags, v2.0.0 is lightweight (cat-file reports "commit")
-    and v1.3.0 is excluded, so the newest annotated tag left is v1.2.3.
+    and 1.3.0 is excluded, so the newest annotated tag left is v1.2.3.
     """
     release = load_release_module()
 
@@ -161,7 +163,7 @@ def test_latest_release_uses_reachable_annotated_tags(monkeypatch):
         v2.0.0 is reported as a plain commit (lightweight tag); all others
         report as annotated "tag" objects. Unexpected calls fail loudly.
         """
-        if args == ["tag", "--merged", "HEAD", "--list", "v*"]:
+        if args == LIST_TAGS:
             return "v1.2.3\nv1.3.0\nv2.0.0"
         if args[:2] == ["cat-file", "-t"]:
             if args[-1] == "v2.0.0":
@@ -171,7 +173,97 @@ def test_latest_release_uses_reachable_annotated_tags(monkeypatch):
 
     monkeypatch.setattr(release, "run_git", fake_git)
 
-    assert release.latest_annotated_release_tag(exclude_tag="v1.3.0") == "v1.2.3"
+    assert release.latest_annotated_release_tag(exclude_version=(1, 3, 0)) == "v1.2.3"
+
+
+def test_latest_release_ranks_both_tag_prefixes_by_version(monkeypatch):
+    """Old vX.Y.Z and new stewardship-vX.Y.Z tags rank together (#2203).
+
+    The highest version wins whatever its prefix; a version tagged under both
+    prefixes counts once, as stewardship-v; the excluded version is skipped
+    under either prefix; names that are not release tags never count.
+    """
+    release = load_release_module()
+    listing = "\n".join(
+        [
+            "v1.9.0",
+            "v1.23.0",
+            "stewardship-v1.24.0",
+            "v1.24.0",
+            "stewardship-v1.25.0",
+            "v1.25.0",
+            "stewardship-v1.26.0-rc1",
+            "stewardship-vnext",
+            "sync-v9.0.0",
+        ]
+    )
+
+    def fake_git(args):
+        """Stub run_git: the tag listing above, every tag annotated."""
+        if args == LIST_TAGS:
+            return listing
+        if args[:2] == ["cat-file", "-t"]:
+            return "tag"
+        raise AssertionError(args)
+
+    monkeypatch.setattr(release, "run_git", fake_git)
+
+    assert release.latest_annotated_release_tag() == "stewardship-v1.25.0"
+    assert (
+        release.latest_annotated_release_tag(exclude_version=(1, 25, 0))
+        == "stewardship-v1.24.0"
+    )
+    # fake_git reads listing when called, so a new listing takes effect.
+    listing = "v1.9.0\nv1.23.0\nv1.100.0"
+    assert release.latest_annotated_release_tag() == "v1.100.0"
+
+
+def test_release_version_follows_either_tag_prefix():
+    """The bump base is the previous tag's version under either prefix."""
+    release = load_release_module()
+    for previous in ("v1.23.0", "stewardship-v1.23.0"):
+        assert (
+            release.select_release_version(
+                current_version="1.23.0",
+                previous_tag=previous,
+                bump="minor",
+                explicit_version=None,
+            )
+            == "1.24.0"
+        )
+    assert release.parse_version("stewardship-v1.2.3") == (1, 2, 3)
+    assert release.parse_version("1.2.3") == (1, 2, 3)
+    for invalid in ("1.2", "sync-v1.2.3", "stewardship-1.2.3", "01.2.3"):
+        try:
+            release.parse_version(invalid)
+        except ValueError:
+            continue
+        raise AssertionError(invalid)
+
+
+def test_workflow_release_notes_exclude_the_version_under_both_prefixes(
+    monkeypatch,
+):
+    """A re-run for 1.24.0 ignores stewardship-v1.24.0 and diffs from v1.23.0."""
+    release = load_release_module()
+
+    def fake_git(args):
+        """Stub run_git: v1.23.0 and the release's own new-prefix tag."""
+        if args == LIST_TAGS:
+            return "v1.23.0\nstewardship-v1.24.0"
+        if args[:2] == ["cat-file", "-t"]:
+            return "tag"
+        if args == ["log", "--format=%s%x1f%b%x1e", "v1.23.0..HEAD"]:
+            return "fix: repair release notes\x1f\x1e"
+        raise AssertionError(args)
+
+    monkeypatch.setattr(release, "run_git", fake_git)
+    monkeypatch.setattr(release, "read_project_version", lambda: "1.24.0")
+
+    plan = release.build_release_plan(release_args(version="1.24.0"))
+
+    assert plan.previous_tag == "v1.23.0"
+    assert "Changes since `v1.23.0`." in release.format_release_notes(plan)
 
 
 def test_workflow_release_notes_path_excludes_current_tag(monkeypatch):
@@ -190,7 +282,7 @@ def test_workflow_release_notes_path_excludes_current_tag(monkeypatch):
         lookup, and a single commit for the v1.2.3..HEAD log range.
         """
         calls.append(args)
-        if args == ["tag", "--merged", "HEAD", "--list", "v*"]:
+        if args == LIST_TAGS:
             return "v1.2.3\nv1.3.0"
         if args[:2] == ["cat-file", "-t"]:
             return "tag"
@@ -214,7 +306,7 @@ def test_auto_bump_requires_explicit_bump_for_unclassified_commits(monkeypatch):
 
     def fake_git(args):
         """Stub git so a docs-only post-release history is visible."""
-        if args == ["tag", "--merged", "HEAD", "--list", "v*"]:
+        if args == LIST_TAGS:
             return "v1.2.3"
         if args[:2] == ["cat-file", "-t"]:
             return "tag"
@@ -296,7 +388,8 @@ def test_create_annotated_tag_uses_notes_file(monkeypatch, tmp_path):
     """Verify main(--tag) creates the annotated tag from the notes file.
 
     The full tagging path runs end to end against stubbed git, asserting the
-    tag is created with `git tag -a vX -F -` and the notes file piped as input.
+    tag is created with `git tag -a stewardship-vX -F -` and the notes file
+    piped as input.
 
     The setup stays local to this test so fixtures remain easy to understand
     and change.
@@ -312,7 +405,7 @@ def test_create_annotated_tag_uses_notes_file(monkeypatch, tmp_path):
         Covers tag listing, annotated-type lookups, the commit log range, a
         clean status, and the HEAD pyproject version. Other calls fail loudly.
         """
-        if args == ["tag", "--merged", "HEAD", "--list", "v*"]:
+        if args == LIST_TAGS:
             return "v1.2.3"
         if args[:2] == ["cat-file", "-t"]:
             return "tag"
@@ -337,7 +430,7 @@ def test_create_annotated_tag_uses_notes_file(monkeypatch, tmp_path):
 
     assert tag_calls == [
         (
-            ["git", "tag", "-a", "v1.3.0", "-F", "-"],
+            ["git", "tag", "-a", "stewardship-v1.3.0", "-F", "-"],
             {
                 "cwd": release.ROOT,
                 "check": True,

@@ -828,9 +828,10 @@ must end in the same catalog. The rules:
   function calls them or a definer's write fires them. All of these rest on
   the no-`CREATE` control alone.
 - **Upgrade parity is tested.** `tests/stewardship/database/test_upgrade_parity_postgresql.py`
-  installs the previous release tag's tree (the latest annotated `v*` tag
-  reachable from HEAD) in a second database, migrates it with the current
-  tree and compares the schema inventory with a fresh install of the current
+  installs the previous release tag's tree (the nearest annotated
+  `stewardship-v*` or older `v*` tag reachable from HEAD; see
+  [Versioning and releases](../../intro/spec.md#versioning-and-releases))
+  in a second database, migrates it with the current tree and compares the schema inventory with a fresh install of the current
   tree built in a third database; any difference fails CI, whose database
   shards therefore check out the full history. Downgrade remains by database
   restore only.

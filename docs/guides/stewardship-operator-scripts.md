@@ -63,7 +63,13 @@ A refusal or failure exits with 1, a usage error with 2, and Ctrl-C with
   `CI (jobs: all)` run on the same tree, or one differing only in
   documentation: the run you name, an existing one such as the nightly train
   head's, or, when none passed or is running, one it dispatches with all
-  jobs), pushes the annotated tag after you type its name, waits for the
+  jobs), pushes the annotated tag `stewardship-vVERSION` after you type its
+  name (it refuses when that tag, or the old-form `vVERSION`, already
+  exists; see
+  [Versioning and releases](../specs/intro/spec.md#versioning-and-releases);
+  run it from a checkout of current main, since an older copy would push an
+  old-form tag that no longer starts `release.yml`),
+  waits for the
   release run, verifies the image's
   [build provenance](stewardship-release-image.md#the-pushed-digest-is-smoke-tested-and-attested)
   with `gh attestation verify` (refusing, with nothing on stdout, if it

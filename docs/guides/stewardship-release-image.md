@@ -96,8 +96,12 @@ Before deploying, verify the attestation:
 gh attestation verify oci://ghcr.io/OWNER/REPOSITORY/stewardship@sha256:DIGEST \
   --repo OWNER/REPOSITORY \
   --signer-workflow OWNER/REPOSITORY/.github/workflows/release.yml \
-  --source-ref refs/tags/vX.Y.Z --deny-self-hosted-runners
+  --source-ref refs/tags/stewardship-vX.Y.Z --deny-self-hosted-runners
 ```
+
+Releases up to 1.23.0 were tagged `vX.Y.Z`, so verify one of those (for a
+rollback, say) with `--source-ref refs/tags/vX.Y.Z`. The image tag is the
+bare version either way (`stewardship:1.24.0`).
 
 It needs `gh` signed in to GitHub, but no registry login: the package and
 the repository are public. The

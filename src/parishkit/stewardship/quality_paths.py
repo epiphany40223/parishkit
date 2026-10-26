@@ -68,6 +68,8 @@ DATABASE_INPUTS = (
     "tools/stewardship-ops/*",
     # test_mail_send_report_postgresql.py runs the guide's SQL.
     "docs/guides/stewardship-mail-send-report.md",
+    # test_upgrade_parity_postgresql.py loads the release tag rule (#2203).
+    "tools/release_tags.py",
 )
 
 # Ordered (patterns, groups) rules; the first matching rule wins. A path that

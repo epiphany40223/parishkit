@@ -2,8 +2,11 @@ name: Release
 
 on:
   push:
+    # Stewardship release tags are stewardship-vX.Y.Z since 1.24.0 (#2203;
+    # tools/release_tags.py). The old vX.Y.Z tags no longer trigger a
+    # release, so a version can never race two runs onto one image tag.
     tags:
-      - "v*"
+      - "stewardship-v*"
 
 jobs:
   # CI's full, sharded validation (lint, every PostgreSQL shard with combined
@@ -50,7 +53,7 @@ jobs:
           release_commit="$(git rev-list -n 1 "${GITHUB_REF_NAME}")"
           git merge-base --is-ancestor "${release_commit}" origin/main
           version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
-          test "v${version}" = "${GITHUB_REF_NAME}"
+          test "stewardship-v${version}" = "${GITHUB_REF_NAME}"
           echo "commit=${release_commit}" >> "$GITHUB_OUTPUT"
 
       - name: Require a successful full CI run of the release tree
@@ -139,7 +142,7 @@ jobs:
             cp RELEASE_NOTES.md release-notes.md
           else
             python tools/prepare-release.py \
-              --version "${GITHUB_REF_NAME#v}" \
+              --version "${GITHUB_REF_NAME#stewardship-v}" \
               --write-notes release-notes.md
           fi
           # Name the evidence, as the release log does (#662).
@@ -199,7 +202,8 @@ jobs:
           # commit the tag points to, resolved as validate-build does.
           repository="$(printf '%s' "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
           echo "image=ghcr.io/${repository}/stewardship" >> "$GITHUB_OUTPUT"
-          echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          # The image tag stays the bare version (1.24.0), as before.
+          echo "version=${GITHUB_REF_NAME#stewardship-v}" >> "$GITHUB_OUTPUT"
           echo "commit=$(git rev-list -n 1 "${GITHUB_REF_NAME}")" >> "$GITHUB_OUTPUT"
 
       - name: Pull Docker Hub images through a mirror

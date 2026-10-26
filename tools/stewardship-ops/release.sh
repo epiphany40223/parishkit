@@ -9,8 +9,10 @@
 # Steps, stopping at the first failure:
 #   1. Check that the git remote is the GitHub repository, read main's head
 #      from it, and check that its committed pyproject.toml version (read
-#      with tomllib, as release.yml does) is VERSION and that tag vVERSION
-#      exists neither locally nor on the remote. Land the version bump first.
+#      with tomllib, as release.yml does) is VERSION and that neither tag
+#      stewardship-vVERSION nor the old-prefix vVERSION (releases up to
+#      1.23.0, #2203) exists locally or on the remote, so a release is never
+#      tagged twice. Land the version bump first.
 #      Check too that this gh can run step 6's gh attestation verify with
 #      its flags, so an older gh is refused before anything is tagged.
 #      Refuse a tree whose frozen schema files need an earlier release to
@@ -29,8 +31,8 @@
 #      documentation checks on main's head in a temporary worktree.
 #   4. Ask for the tag name to be typed (skipped with --yes), check once
 #      more that the run still decides and passed, create the annotated
-#      tag vVERSION at that commit and push it; a failed push deletes the
-#      local tag again. Pushing a release tag needs a human's explicit
+#      tag stewardship-vVERSION at that commit and push it; a failed push
+#      deletes the local tag again. Pushing a release tag needs a human's explicit
 #      authorization; running this is that act. git fetch, ls-remote and
 #      push have a two-minute limit each.
 #   5. Wait for the new release.yml run (a push of the tag on that commit)
@@ -91,7 +93,9 @@ fi
 if [ -n "$run" ] && ! [[ $run =~ ^[0-9]+$ ]]; then
     ops_refuse "CI_RUN_ID must be a numeric Actions run id, not '$run'"
 fi
-tag=v$version
+# Release tags are stewardship-vVERSION since 1.24.0 (#2203; the prefix is
+# tools/release_tags.py's TAG_PREFIX); earlier releases were vVERSION.
+tag=stewardship-v$version old_tag=v$version
 repo=${STEWARDSHIP_GH_REPO:-epiphany40223/parishkit}
 remote=${STEWARDSHIP_GIT_REMOTE:-origin}
 image_repo=${STEWARDSHIP_IMAGE_REPO:-ghcr.io/epiphany40223/parishkit/stewardship}
@@ -116,12 +120,16 @@ fi
 if [ "$committed" != "$version" ]; then
     ops_refuse "main ($sha) is version '$committed', not $version; land the version bump first"
 fi
-if "${git[@]}" rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
-    ops_refuse "Tag $tag already exists in this checkout"
-fi
-remote_tag=$(ops_limited 120 "git ls-remote" "${git[@]}" ls-remote --tags "$remote" "refs/tags/$tag")
+# Either name for this version means it was released (or is being): never
+# tag it a second time under the other prefix.
+for existing in "$tag" "$old_tag"; do
+    if "${git[@]}" rev-parse -q --verify "refs/tags/$existing" >/dev/null; then
+        ops_refuse "Tag $existing already exists in this checkout"
+    fi
+done
+remote_tag=$(ops_limited 120 "git ls-remote" "${git[@]}" ls-remote --tags "$remote" "refs/tags/$tag" "refs/tags/$old_tag")
 if [ -n "$remote_tag" ]; then
-    ops_refuse "Tag $tag already exists on $remote"
+    ops_refuse "Tag $tag or $old_tag already exists on $remote"
 fi
 ops_log "main is $sha (version $version)"
 

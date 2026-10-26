@@ -110,7 +110,8 @@ current tree and compares the result with a fresh install of the current tree
 in a third database (both named after the test database and dropped by the
 test), as the
 [post-launch schema policy](../specs/stewardship/operations/spec.md#post-launch-schema-policy)
-requires. It needs `git` with the release tags reachable from the checkout.
+requires. It needs `git` with the release tags reachable from the checkout:
+the nearest annotated `stewardship-v*` tag, or an older `v*` one.
 
 ## Isolated parallel local coverage
 

@@ -839,8 +839,11 @@ compatibility risks visible in code, tests, tool READMEs, or migration notes.
 
 ### Release automation
 
-This repository uses semantic versioning. Releases are annotated git tags named
-`vVERSION`, such as `v1.2.3`.
+This repository uses semantic versioning. Stewardship releases are annotated
+git tags named `stewardship-vVERSION`, such as `stewardship-v1.24.0`. Releases
+up to `v1.23.0` were tagged `vVERSION`; the release tools still count those
+as earlier releases, and a version is never tagged under both names (see
+[Versioning and releases](docs/specs/intro/spec.md#versioning-and-releases)).
 
 Inspect commits since the latest release tag, choose the next version, and
 generate release notes:
@@ -874,8 +877,9 @@ tools/prepare-release.py --tag --notes-file RELEASE_NOTES.md
 
 The tag command requires a clean worktree and verifies that the version in
 `HEAD:pyproject.toml` matches the tag. It never pushes tags. A human must
-explicitly authorize and run any `git push origin vVERSION`. When a `v*` tag is
-pushed, the release GitHub Actions workflow requires an annotated tag reachable
+explicitly authorize and run any `git push origin stewardship-vVERSION`. When
+a `stewardship-v*` tag is pushed (an old-form `v*` tag no longer starts one),
+the release GitHub Actions workflow requires an annotated tag reachable
 from `origin/main`, validates it against `pyproject.toml`, and requires the
 successful `main` CI run of the tagged commit instead of repeating the full
 suite. It waits while that run is still in progress, and refuses a commit that

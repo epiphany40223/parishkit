@@ -614,6 +614,52 @@ def test_release_order_reads_the_remotes_previous_annotated_release(tmp_path, ca
     assert evidence.previous_release(str(work), "origin", head)[0] == "v1.10.0"
 
 
+def test_previous_release_ranks_both_tag_prefixes_by_version(tmp_path):
+    """Old vX.Y.Z and new stewardship-vX.Y.Z tags rank together (#2203).
+
+    After the switch the old tags stay the history: a v1.23.0 ancestor is
+    still found when no scoped tag is, the highest version wins whatever its
+    prefix, a lightweight scoped tag never counts, and a version tagged
+    under both prefixes counts once (as stewardship-v).
+    """
+    work = checkout_with_remote(tmp_path)
+    old = commit_files(work, "conversion", CONVERSION)
+    git(work, "tag", "-a", "v1.23.0", "-m", "old prefix")
+    head = commit_files(work, "retirement", RETIREMENT)
+    # Lightweight tags and non-release names are not releases.
+    git(work, "tag", "stewardship-v1.24.0")
+    git(work, "tag", "-a", "stewardship-v1.24.0-rc1", "-m", "not a release")
+    git(work, "tag", "-a", "sync-v9.0.0", "-m", "another product")
+    git(work, "push", "-q", "--tags", "origin", "main")
+    assert evidence.previous_release(str(work), "origin", head) == ("v1.23.0", old)
+    assert evidence.release_order(str(work), "origin", head) == []
+    # The scoped release outranks the old one ...
+    git(work, "tag", "-d", "stewardship-v1.24.0")
+    git(work, "tag", "-a", "stewardship-v1.24.0", "-m", "new prefix", old)
+    git(work, "push", "-q", "--force", "origin", "stewardship-v1.24.0")
+    assert evidence.previous_release(str(work), "origin", head) == (
+        "stewardship-v1.24.0",
+        old,
+    )
+    # ... and v1.100.0 outranks it numerically, not lexically.
+    git(work, "tag", "-a", "v1.100.0", "-m", "old prefix", old)
+    git(work, "push", "-q", "origin", "v1.100.0")
+    assert evidence.previous_release(str(work), "origin", head)[0] == "v1.100.0"
+    # One version under both prefixes counts once, as the scoped tag.
+    git(work, "tag", "-a", "stewardship-v1.100.0", "-m", "both", old)
+    git(work, "push", "-q", "origin", "stewardship-v1.100.0")
+    assert evidence.previous_release(str(work), "origin", head)[0] == (
+        "stewardship-v1.100.0"
+    )
+    # A same-version tag that is not an ancestor never hides one that is.
+    git(work, "checkout", "-q", "--detach", old)
+    elsewhere = commit_files(work, "elsewhere")
+    git(work, "tag", "-a", "stewardship-v1.200.0", "-m", "elsewhere", elsewhere)
+    git(work, "tag", "-a", "v1.200.0", "-m", "ancestor", old)
+    git(work, "push", "-q", "origin", "stewardship-v1.200.0", "v1.200.0")
+    assert evidence.previous_release(str(work), "origin", head) == ("v1.200.0", old)
+
+
 def test_release_order_refuses_when_the_tags_cannot_be_listed(tmp_path, capsys):
     """An unreachable remote is a refusal (exit 1), never a pass."""
     work = checkout_with_remote(tmp_path)

@@ -24,7 +24,7 @@ def test_image_job_runs_after_validation_with_only_package_scope():
     """No image leaves the workflow before the full validation of the tagged commit."""
     definition = release()
     # PyYAML reads the bare `on:` key as the boolean true.
-    assert definition[True]["push"]["tags"] == ["v*"]
+    assert definition[True]["push"]["tags"] == ["stewardship-v*"]
     job = definition["jobs"]["publish-image"]
     assert job["needs"] == "validate-build"
     assert job["permissions"] == {
@@ -44,7 +44,7 @@ def test_image_job_runs_after_validation_with_only_package_scope():
     naming = steps["Name the image"]["run"]
     assert "tr '[:upper:]' '[:lower:]'" in naming
     assert "image=ghcr.io/${repository}/stewardship" in naming
-    assert "version=${GITHUB_REF_NAME#v}" in naming
+    assert "version=${GITHUB_REF_NAME#stewardship-v}" in naming
     # An annotated tag's GITHUB_SHA may be the tag object: the commit tag is
     # the commit the tag points to, resolved as the validation job does.
     assert 'commit=$(git rev-list -n 1 "${GITHUB_REF_NAME}")' in naming

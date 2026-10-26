@@ -218,6 +218,57 @@ def test_release_build_uses_installed_locked_tools():
     assert "build" in locked_requirements("stewardship.txt")
 
 
+def release_step(job, name):
+    """One named step of a release.yml job."""
+    release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
+    (step,) = [s for s in release["jobs"][job]["steps"] if s.get("name") == name]
+    return step
+
+
+def test_release_runs_only_for_scoped_stewardship_tags(tmp_path):
+    """Release tags are stewardship-vX.Y.Z; the image tag stays bare (#2203).
+
+    Only the scoped prefix triggers a release, so the old vX.Y.Z tags (and a
+    second tag for one version) can never start a run; the tag must match
+    the committed version under that prefix; the notes and the image get the
+    bare version. release.sh and tools/release_tags.py name the same prefix.
+    """
+    release = yaml.safe_load((ROOT / ".github/workflows/release.yml").read_text())
+    # PyYAML reads the bare `on:` key as the boolean true.
+    assert release[True] == {"push": {"tags": ["stewardship-v*"]}}
+    check = release_step("validate-build", "Validate release tag")["run"]
+    assert 'test "stewardship-v${version}" = "${GITHUB_REF_NAME}"' in check
+    notes = release_step("validate-build", "Generate release notes")["run"]
+    assert '--version "${GITHUB_REF_NAME#stewardship-v}"' in notes
+    name = release_step("publish-image", "Name the image")["run"]
+    output = tmp_path / "output"
+    result = subprocess.run(
+        # A shell function stands in for git: the in-image test run mounts
+        # /tmp noexec, so a stub script there would never execute and the
+        # real git (no repository) would answer instead.
+        ["bash", "-e", "-c", "git() { echo abc123; }\n" + name],
+        env={
+            "PATH": os.environ["PATH"],
+            "GITHUB_REF_NAME": "stewardship-v1.24.0",
+            "GITHUB_REPOSITORY": "Owner/Repository",
+            "GITHUB_OUTPUT": str(output),
+        },
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert output.read_text().splitlines() == [
+        "image=ghcr.io/owner/repository/stewardship",
+        "version=1.24.0",
+        "commit=abc123",
+    ]
+    tags = (ROOT / "tools" / "release_tags.py").read_text()
+    assert 'TAG_PREFIX = "stewardship-v"' in tags
+    script = (ROOT / "tools" / "stewardship-ops" / "release.sh").read_text()
+    assert "tag=stewardship-v$version old_tag=v$version" in script
+
+
 GATE = "Require a successful full CI run of the release tree"
 
 
@@ -368,7 +419,7 @@ def test_release_notes_name_a_re_run_evidence_attempt(tmp_path):
             cwd=tmp_path,
             env={
                 "PATH": os.environ["PATH"],
-                "GITHUB_REF_NAME": "v1.2.3",
+                "GITHUB_REF_NAME": "stewardship-v1.2.3",
                 "GITHUB_SERVER_URL": "https://github.com",
                 "GITHUB_REPOSITORY": "owner/repository",
                 "EVIDENCE_RUN": "77",

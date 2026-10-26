@@ -578,16 +578,24 @@ from **smoke tests** (human-run, credential-dependent, never in CI).
 
 ## Versioning and releases
 
-- **Semantic versioning.** Releases are annotated git tags `vVERSION` (e.g.
-  `v1.2.3`). `pyproject.toml` `project.version` is the source of truth.
+- **Semantic versioning.** Stewardship releases are annotated git tags
+  `stewardship-vVERSION` (e.g. `stewardship-v1.24.0`), so another product can
+  release from this repository under its own prefix. Releases up to `v1.23.0`
+  were tagged `vVERSION`; every tool that looks for earlier releases counts
+  both forms for good (`prepare-release.py` and the release-order check in
+  `release_evidence.py` rank them by version; the upgrade-parity test takes
+  the nearest under either), and a version is never tagged under both.
+  `tools/release_tags.py` holds the prefixes. The image tag stays the bare
+  version (`stewardship:1.24.0`). `pyproject.toml` `project.version` is the
+  source of truth.
 - **`tools/prepare-release.py`** infers the semver bump from Conventional-Commit
   messages since the last tag (`feat:` → minor, `fix:`/`perf:` → patch,
   `!`/`BREAKING CHANGE:` → major), can write the version, generate release notes,
   build artifacts, and create the annotated tag. It requires a clean worktree to
   tag, verifies `HEAD:pyproject.toml` matches the tag, and **never pushes**.
 - **Release workflow** (`.github/workflows/release.yml`) triggers on a pushed
-  `v*` tag: it validates the tag is annotated and reachable from `origin/main`
-  and matches `pyproject.toml`, requires a successful full CI run on the tagged
+  `stewardship-v*` tag (not on an old-form `v*` one): it validates the tag is
+  annotated and reachable from `origin/main` and matches `pyproject.toml`, requires a successful full CI run on the tagged
   tree, apart from documentation
   ([release evidence](../../guides/stewardship-test-efficiency.md#release-evidence),
   rather than re-running lint/format/tests), builds sdist+wheel, publishes the
@@ -598,7 +606,8 @@ from **smoke tests** (human-run, credential-dependent, never in CI).
   run with `release_evidence.py` (the same rule `release.yml` applies), waits for
   it, and only then tags. See the
   [operator scripts guide](../../guides/stewardship-operator-scripts.md).
-- **A human must explicitly authorize any `git push origin vVERSION`.** Tags are
+- **A human must explicitly authorize any
+  `git push origin stewardship-vVERSION`.** Tags are
   never auto-pushed.
 
 ## Development guidelines

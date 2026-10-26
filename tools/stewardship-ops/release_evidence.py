@@ -62,15 +62,15 @@ when the commit must not be tagged yet, and exits 0 silently otherwise.
 """
 
 import argparse
+import importlib.util
 import json
 import os
-import re
 import signal
 import subprocess
 import sys
 import tempfile
 import time
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 
 FULL_RUN_TITLE = "CI (jobs: all)"
 CI_WORKFLOW_PATH = ".github/workflows/ci.yml"
@@ -414,7 +414,23 @@ EARLIER_RELEASE_REQUIRED = {
         f"{SCHEMA_MIGRATIONS}/0161_report_conversion.sql"
     ),
 }
-RELEASE_TAG_REF = re.compile(r"^refs/tags/v(\d+)\.(\d+)\.(\d+)\^\{\}$")
+
+
+def load_release_tags():
+    """Load tools/release_tags.py, the release tag naming rule (#2203).
+
+    This script is standalone (release.yml and release.sh run it with a bare
+    Python), so the shared helper is loaded by its path in this checkout.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "release_tags", Path(__file__).resolve().parents[1] / "release_tags.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+release_tags = load_release_tags()
 
 
 def order_refusals(has_path, previous_tag, previous_has_path):
@@ -447,33 +463,42 @@ def tree_has(checkout, commit, path):
 
 
 def previous_release(checkout, remote, commit):
-    """The highest annotated vX.Y.Z tag on the remote that is commit's ancestor.
+    """The highest annotated release tag on the remote that is commit's ancestor.
 
-    The remote's tags decide (release.sh fetches main without tags), read
-    peeled so that only annotated tags count, as prepare-release.py counts
-    them. Returns (tag, tagged commit), or (None, None).
+    Release tags are stewardship-vX.Y.Z, or vX.Y.Z up to v1.23.0
+    (release_tags.py); both count, ranked by version, so the old tags stay
+    the history after the switch (#2203). The remote's tags decide (release.sh
+    fetches main without tags), read peeled so that only annotated tags
+    count, as prepare-release.py counts them. Returns (tag, tagged commit),
+    or (None, None).
     """
+    patterns = [f"refs/tags/{glob}" for glob in release_tags.GLOBS]
     listing = limited(
         f"git ls-remote --tags {remote}",
         GIT_SECONDS,
-        ["git", "-C", checkout, "ls-remote", "--tags", remote, "refs/tags/v*"],
+        ["git", "-C", checkout, "ls-remote", "--tags", remote, *patterns],
     )
     if listing.returncode != 0:
         raise RuntimeError(f"cannot list the release tags on {remote}")
-    tags = []
+    # Only the peeled lines ("refs/tags/NAME^{}") name an annotated tag's
+    # commit; a lightweight tag has no peeled line, so it never counts.
+    peeled = {}
     for line in listing.stdout.splitlines():
         sha, _, ref = line.partition("\t")
-        match = RELEASE_TAG_REF.match(ref)
-        if match:
-            tags.append((tuple(int(part) for part in match.groups()), sha))
-    for version, sha in sorted(tags, reverse=True):
+        name = ref.removeprefix("refs/tags/")
+        if ref.startswith("refs/tags/") and name.endswith("^{}"):
+            peeled[name.removesuffix("^{}")] = sha
+    # Every tag, not one per version: the first ancestor wins, so a stray
+    # non-ancestor tag cannot hide an ancestor tag of the same version.
+    for tag in release_tags.newest_first(peeled, one_per_version=False):
+        sha = peeled[tag]
         ancestor = limited(
             f"git merge-base --is-ancestor {sha} {commit}",
             GIT_SECONDS,
             ["git", "-C", checkout, "merge-base", "--is-ancestor", sha, commit],
         )
         if ancestor.returncode == 0:
-            return "v" + ".".join(map(str, version)), sha
+            return tag, sha
     return None, None
 
 

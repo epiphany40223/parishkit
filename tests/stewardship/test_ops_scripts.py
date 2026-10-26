@@ -423,6 +423,8 @@ def release_repo(tmp_path, version="1.2.3"):
     ops.mkdir(parents=True)
     for name in ("release.sh", "ci-watch.sh", "lib.sh", "release_evidence.py"):
         shutil.copy(OPS / name, ops / name)
+    # release_evidence.py loads the shared release tag rule from tools/.
+    shutil.copy(OPS.parent / "release_tags.py", ops.parent / "release_tags.py")
     (work / "pyproject.toml").write_text(f'[project]\nversion = "{version}"\n')
     git("add", "-A", cwd=work)
     git("commit", "-q", "-m", "release", cwd=work)
@@ -506,7 +508,7 @@ def test_release_refuses_bad_arguments_before_anything(tmp_path):
         assert result.returncode == code, args
         assert needle in result.stderr, args
         assert calls == []
-    assert remote_tag(remote, "v1.2.3") == ""
+    assert remote_tag(remote, "stewardship-v1.2.3") == ""
 
 
 def test_release_refuses_a_remote_that_is_not_the_repository(tmp_path):
@@ -531,24 +533,33 @@ def test_release_refuses_a_version_main_does_not_carry(tmp_path):
     assert "is version '1.2.2', not 1.2.3" in result.stderr
     assert "land the version bump first" in result.stderr
     assert calls == []
-    assert remote_tag(remote, "v1.2.3") == ""
+    assert remote_tag(remote, "stewardship-v1.2.3") == ""
     result, _ = run_release(
         tmp_path / "py", work, "--yes", "1.2.3", STEWARDSHIP_PYTHON="false"
     )
     assert result.returncode == 1 and "Cannot read the project version" in result.stderr
 
 
-def test_release_refuses_an_existing_tag(tmp_path):
-    """A tag already on the remote (or in the checkout) is never moved."""
+@pytest.mark.parametrize("existing", ["stewardship-v1.2.3", "v1.2.3"])
+def test_release_refuses_an_existing_tag(tmp_path, existing):
+    """A tag already on the remote (or in the checkout) is never moved.
+
+    The old-prefix vVERSION counts too (#2203): a version is never tagged
+    a second time under the other prefix.
+    """
     work, remote, _ = release_repo(tmp_path)
-    git("tag", "v1.2.3", cwd=work)
-    git("push", "-q", "origin", "v1.2.3", cwd=work)
+    git("tag", existing, cwd=work)
+    git("push", "-q", "origin", existing, cwd=work)
     result, _ = run_release(tmp_path / "local", work, "--yes", "1.2.3", "77")
-    assert result.returncode == 1 and "already exists in this checkout" in result.stderr
-    git("tag", "-d", "v1.2.3", cwd=work)
+    assert result.returncode == 1
+    assert f"Tag {existing} already exists in this checkout" in result.stderr
+    git("tag", "-d", existing, cwd=work)
     result, calls = run_release(tmp_path / "remote", work, "--yes", "1.2.3", "77")
     assert result.returncode == 1 and "already exists on origin" in result.stderr
     assert calls == []
+    if existing == "v1.2.3":
+        # No scoped tag was created beside the old one.
+        assert remote_tag(remote, "stewardship-v1.2.3") == ""
 
 
 def test_release_refuses_a_tree_that_needs_an_earlier_release(tmp_path):
@@ -569,11 +580,12 @@ def test_release_refuses_a_tree_that_needs_an_earlier_release(tmp_path):
     assert "previous release (v1.2.2) does not" in result.stderr
     assert "cannot be released yet" in result.stderr
     assert calls == []
-    assert remote_tag(remote, "v1.2.3") == ""
+    assert remote_tag(remote, "stewardship-v1.2.3") == ""
     # Once a release carries the conversion, the check passes (the run
-    # named here then fails later for another reason).
-    git("tag", "-a", "v1.2.4", "-m", "release", "HEAD~1", cwd=work)
-    git("push", "-q", "origin", "v1.2.4", cwd=work)
+    # named here then fails later for another reason). A scoped tag
+    # outranks the old-prefix v1.2.2 (#2203).
+    git("tag", "-a", "stewardship-v1.2.4", "-m", "release", "HEAD~1", cwd=work)
+    git("push", "-q", "origin", "stewardship-v1.2.4", cwd=work)
     result, _ = run_release(tmp_path / "after", work, "--yes", "1.2.3", "77")
     assert "cannot be released yet" not in result.stderr
 
@@ -598,7 +610,7 @@ def test_release_refuses_a_run_release_yml_would_not_check(tmp_path):
     assert "run 78 decides instead of run 77" in result.stderr
     assert "gave up re-reading the run listing" in result.stderr
     assert not any("workflow run" in c for c in calls)
-    assert remote_tag(remote, "v1.2.3") == ""
+    assert remote_tag(remote, "stewardship-v1.2.3") == ""
 
 
 def test_release_refuses_a_failed_mismatched_or_superseded_run(tmp_path):
@@ -662,7 +674,7 @@ def test_release_refuses_a_failed_mismatched_or_superseded_run(tmp_path):
     assert result.returncode == 3 and "timed out waiting for Actions run 77" in (
         result.stderr
     )
-    assert remote_tag(remote, "v1.2.3") == ""
+    assert remote_tag(remote, "stewardship-v1.2.3") == ""
 
 
 def test_release_with_a_named_run_tags_and_prints_the_digest(tmp_path):
@@ -673,25 +685,25 @@ def test_release_with_a_named_run_tags_and_prints_the_digest(tmp_path):
         tmp_path / "wrong", work, "1.2.3", "77", stdin="yes\n", **common
     )
     assert result.returncode == 1 and "not confirmed" in result.stderr
-    assert remote_tag(remote, "v1.2.3") == ""
+    assert remote_tag(remote, "stewardship-v1.2.3") == ""
     result, calls = run_release(
         tmp_path / "ok",
         work,
         "1.2.3",
         "77",
-        stdin="v1.2.3\n",
+        stdin="stewardship-v1.2.3\n",
         FAKE_OLD_RELEASE="98",
         **common,
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout == IMAGE + "\n"
-    assert remote_tag(remote, "v1.2.3") == f"tag {sha}"
-    assert git("tag", "-l", "--format=%(contents:subject)", "v1.2.3", cwd=work) == (
-        "ParishKit 1.2.3"
-    )
+    assert remote_tag(remote, "stewardship-v1.2.3") == f"tag {sha}"
+    assert git(
+        "tag", "-l", "--format=%(contents:subject)", "stewardship-v1.2.3", cwd=work
+    ) == ("ParishKit 1.2.3")
     assert not any("workflow run" in c for c in calls)
     release_list = next(c for c in calls if "release.yml" in c)
-    assert f"--branch v1.2.3 --commit {sha} --event push" in release_list
+    assert f"--branch stewardship-v1.2.3 --commit {sha} --event push" in release_list
     # The run that existed before the push (an old run of a re-pushed tag)
     # is never the one watched.
     assert "gh run view 99 --repo epiphany40223/parishkit --log" in calls
@@ -700,7 +712,7 @@ def test_release_with_a_named_run_tags_and_prints_the_digest(tmp_path):
     assert calls[-1] == (
         f"gh attestation verify oci://{IMAGE} --repo epiphany40223/parishkit "
         "--signer-workflow epiphany40223/parishkit/.github/workflows/release.yml "
-        "--source-ref refs/tags/v1.2.3 --deny-self-hosted-runners"
+        "--source-ref refs/tags/stewardship-v1.2.3 --deny-self-hosted-runners"
     )
     assert f"verified the build provenance of {IMAGE}" in result.stderr
 
@@ -725,7 +737,7 @@ def test_release_refuses_an_image_whose_provenance_does_not_verify(tmp_path):
     assert f"The build provenance of {IMAGE} did not verify" in result.stderr
     assert any(c.startswith("gh attestation verify ") for c in calls)
     # The tag was pushed before the release run; it stays.
-    assert remote_tag(remote, "v1.2.3") == f"tag {sha}"
+    assert remote_tag(remote, "stewardship-v1.2.3") == f"tag {sha}"
 
 
 def test_release_reads_the_digest_only_from_the_application_image_line(tmp_path):
@@ -789,7 +801,7 @@ def test_release_refuses_a_gh_that_cannot_verify_before_tagging(tmp_path):
         assert result.stdout == ""
         assert f"cannot run gh attestation verify {flag}" in result.stderr
         assert calls == ["gh attestation verify --help"]
-        assert remote_tag(remote, "v1.2.3") == ""
+        assert remote_tag(remote, "stewardship-v1.2.3") == ""
 
 
 def test_release_shows_why_gh_attestation_help_failed(tmp_path):
@@ -811,7 +823,7 @@ def test_release_shows_why_gh_attestation_help_failed(tmp_path):
     assert 'unknown command "attestation"' in result.stderr
     assert "cannot run gh attestation verify" in result.stderr
     assert calls == ["gh attestation verify --help"]
-    assert remote_tag(remote, "v1.2.3") == ""
+    assert remote_tag(remote, "stewardship-v1.2.3") == ""
 
 
 def test_release_refuses_a_named_run_the_listing_omits(tmp_path):
@@ -839,7 +851,7 @@ def test_release_refuses_a_named_run_the_listing_omits(tmp_path):
     assert "gave up re-reading the run listing" in result.stderr
     assert "gh api repos/epiphany40223/parishkit/actions/runs/77" in calls
     assert not any("status,conclusion,jobs" in c for c in calls)
-    assert remote_tag(remote, "v1.2.3") == ""
+    assert remote_tag(remote, "stewardship-v1.2.3") == ""
 
 
 def test_release_refuses_a_stale_listed_success(tmp_path):
@@ -865,7 +877,7 @@ def test_release_refuses_a_stale_listed_success(tmp_path):
         assert "(that is 'none')" in result.stderr
         assert "no run decides, so the caller refuses" in result.stderr
         assert not any("status,conclusion,jobs" in c for c in calls)
-        assert remote_tag(remote, "v1.2.3") == ""
+        assert remote_tag(remote, "stewardship-v1.2.3") == ""
 
 
 def test_release_deletes_the_local_tag_when_the_push_fails(tmp_path):
@@ -879,7 +891,7 @@ def test_release_deletes_the_local_tag_when_the_push_fails(tmp_path):
     )
     assert result.returncode == 1
     assert "the local tag was deleted again" in result.stderr
-    assert git("tag", "-l", "v1.2.3", cwd=work) == ""
+    assert git("tag", "-l", "stewardship-v1.2.3", cwd=work) == ""
 
 
 def test_release_dispatches_and_finds_a_new_run(tmp_path):
@@ -902,7 +914,7 @@ def test_release_dispatches_and_finds_a_new_run(tmp_path):
     )
     assert any(c.startswith("gh run view 51 ") for c in calls)
     assert not any(c.startswith("gh run view 50 ") for c in calls)
-    assert remote_tag(remote, "v1.2.3") == f"tag {sha}"
+    assert remote_tag(remote, "stewardship-v1.2.3") == f"tag {sha}"
 
 
 def test_release_reuses_a_full_run_on_a_docs_only_different_tree(tmp_path):
@@ -928,7 +940,7 @@ def test_release_reuses_a_full_run_on_a_docs_only_different_tree(tmp_path):
         result.stderr
     )
     assert not any("workflow run" in c for c in calls)
-    assert remote_tag(remote, "v1.2.3") == f"tag {sha}"
+    assert remote_tag(remote, "stewardship-v1.2.3") == f"tag {sha}"
     # The tagged documentation was checked first, in a worktree of main's
     # head that is gone again.
     checks = lines(tmp_path / "named" / "python.calls")
@@ -942,15 +954,15 @@ def test_release_reuses_a_full_run_on_a_docs_only_different_tree(tmp_path):
         "--ds=parishkit.stewardship.settings.test"
     )
     assert git("worktree", "list", "--porcelain", cwd=work).count("worktree ") == 1
-    git("push", "-q", "origin", ":refs/tags/v1.2.3", cwd=work)
-    git("tag", "-d", "v1.2.3", cwd=work)
+    git("push", "-q", "origin", ":refs/tags/stewardship-v1.2.3", cwd=work)
+    git("tag", "-d", "stewardship-v1.2.3", cwd=work)
     result, calls = run_release(tmp_path / "found", work, "--yes", "1.2.3", **common)
     assert result.returncode == 0, result.stderr
     assert "reusing full CI run 60" in result.stderr
     assert not any("workflow run" in c for c in calls)
-    assert remote_tag(remote, "v1.2.3") == f"tag {sha}"
-    git("push", "-q", "origin", ":refs/tags/v1.2.3", cwd=work)
-    git("tag", "-d", "v1.2.3", cwd=work)
+    assert remote_tag(remote, "stewardship-v1.2.3") == f"tag {sha}"
+    git("push", "-q", "origin", ":refs/tags/stewardship-v1.2.3", cwd=work)
+    git("tag", "-d", "stewardship-v1.2.3", cwd=work)
     # Either documentation check failing refuses before anything is tagged;
     # a failed lint is not masked by passing tests.
     for name, status in (("FAKE_LINT_STATUS", "1"), ("FAKE_TESTS_STATUS", "1")):
@@ -959,7 +971,7 @@ def test_release_reuses_a_full_run_on_a_docs_only_different_tree(tmp_path):
         )
         assert result.returncode == 1, name
         assert "documentation checks failed" in result.stderr
-        assert remote_tag(remote, "v1.2.3") == ""
+        assert remote_tag(remote, "stewardship-v1.2.3") == ""
         worktrees = git("worktree", "list", "--porcelain", cwd=work)
         assert worktrees.count("worktree ") == 1
     checks = lines(tmp_path / "FAKE_LINT_STATUS" / "python.calls")
@@ -992,7 +1004,7 @@ def test_release_refuses_evidence_the_remote_does_not_serve(tmp_path):
     assert result.returncode == 1
     assert f"The commit {train} of CI run 60 cannot be fetched" in result.stderr
     assert not any("status,conclusion,jobs" in c for c in calls)
-    assert remote_tag(remote, "v1.2.3") == ""
+    assert remote_tag(remote, "stewardship-v1.2.3") == ""
     # Once the remote serves it again, the same run is accepted.
     git("push", "-q", "origin", "train", cwd=work)
     result, _ = run_release(
@@ -1006,7 +1018,7 @@ def test_release_refuses_evidence_the_remote_does_not_serve(tmp_path):
         FAKE_RELEASE_RUN="99",
     )
     assert result.returncode == 0, result.stderr
-    assert remote_tag(remote, "v1.2.3") == f"tag {sha}"
+    assert remote_tag(remote, "stewardship-v1.2.3") == f"tag {sha}"
 
 
 @pytest.mark.parametrize(
@@ -1046,7 +1058,7 @@ def test_release_dispatches_when_the_tested_tree_differs_beyond_docs(tmp_path, p
     assert result.returncode == 0, result.stderr
     assert any(c.startswith("gh workflow run ci.yml") for c in calls)
     assert "release evidence: CI run 61 on " + sha in result.stderr
-    assert remote_tag(remote, "v1.2.3") == f"tag {sha}"
+    assert remote_tag(remote, "stewardship-v1.2.3") == f"tag {sha}"
 
 
 def test_release_timeouts_are_recorded(tmp_path):
@@ -1064,7 +1076,7 @@ def test_release_timeouts_are_recorded(tmp_path):
     assert result.returncode == 3
     assert "the dispatched CI run on " + sha in result.stderr
     assert "limit 0 minutes, elapsed" in (tmp_path / "ci" / "ops.log").read_text()
-    assert remote_tag(remote, "v1.2.3") == ""
+    assert remote_tag(remote, "stewardship-v1.2.3") == ""
     result, _ = run_release(
         tmp_path / "rel",
         work,
@@ -1077,7 +1089,7 @@ def test_release_timeouts_are_recorded(tmp_path):
         STEWARDSHIP_FIND_MINUTES="0",
     )
     assert result.returncode == 3
-    assert "the release.yml run for v1.2.3 to appear" in result.stderr
+    assert "the release.yml run for stewardship-v1.2.3 to appear" in result.stderr
 
 
 # ---------------------------------------------------------------------------
@@ -1583,6 +1595,8 @@ def train_repo(tmp_path, extra=False):
     ops.mkdir(parents=True)
     for name in ("merge-train.sh", "lib.sh", "release_evidence.py"):
         shutil.copy(OPS / name, ops / name)
+    # release_evidence.py loads the shared release tag rule from tools/.
+    shutil.copy(OPS.parent / "release_tags.py", ops.parent / "release_tags.py")
     git("add", "-A", cwd=work)
     git("commit", "-q", "-m", "base", cwd=work)
     git("remote", "add", "origin", GITHUB_URL, cwd=work)

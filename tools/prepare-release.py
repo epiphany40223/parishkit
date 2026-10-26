@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import re
 import shutil
 import subprocess
@@ -14,11 +15,26 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT = ROOT / "pyproject.toml"
 DIST = ROOT / "dist"
-TAG_RE = re.compile(
-    r"^v(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)$"
-)
+
 BREAKING_RE = re.compile(r"^[a-zA-Z0-9_-]+(?:\([^)]+\))?!:")
 BUMP_ORDER = {"none": 0, "patch": 1, "minor": 2, "major": 3}
+
+
+def load_release_tags():
+    """Load tools/release_tags.py, the release tag naming rule (#2203).
+
+    This script is standalone (not part of the installed package), so the
+    shared helper is loaded by its path next to this file.
+    """
+    spec = importlib.util.spec_from_file_location(
+        "release_tags", Path(__file__).resolve().parent / "release_tags.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+release_tags = load_release_tags()
 
 
 @dataclass(frozen=True)
@@ -49,15 +65,11 @@ def run_git(args: list[str], *, check: bool = True) -> str:
 
 
 def parse_version(value: str) -> tuple[int, int, int]:
-    """Parse a semantic version string."""
-    match = TAG_RE.match(value if value.startswith("v") else f"v{value}")
-    if not match:
+    """Parse a semantic version string, bare or as a release tag name."""
+    version = release_tags.tag_version(value) or release_tags.tag_version(f"v{value}")
+    if version is None:
         raise ValueError(f"invalid semantic version: {value}")
-    return (
-        int(match.group("major")),
-        int(match.group("minor")),
-        int(match.group("patch")),
-    )
+    return version
 
 
 def format_version(version: tuple[int, int, int]) -> str:
@@ -74,29 +86,31 @@ def read_project_version(pyproject: Path = PYPROJECT) -> str:
     return match.group(1)
 
 
-def latest_annotated_release_tag(exclude_tag: str | None = None) -> str | None:
-    """Return the highest annotated vVERSION tag reachable from HEAD.
+def latest_annotated_release_tag(
+    exclude_version: tuple[int, int, int] | None = None,
+) -> str | None:
+    """Return the highest annotated release tag reachable from HEAD.
 
-    Only tags that match the semantic-version pattern and are true annotated
-    tag objects count as releases; lightweight tags are skipped. The optional
-    exclude_tag lets a re-run ignore the tag it is about to create.
+    Release tags are stewardship-vVERSION, or vVERSION up to v1.23.0
+    (release_tags.py); both count, ranked by version, and a version tagged
+    under both counts once. Only true annotated tag objects count as
+    releases; lightweight tags are skipped. The optional exclude_version lets
+    a re-run ignore the release it is about to tag, under either prefix.
     """
-    output = run_git(["tag", "--merged", "HEAD", "--list", "v*"])
+    output = run_git(["tag", "--merged", "HEAD", "--list", *release_tags.GLOBS])
     tags = []
     for tag in output.splitlines():
-        if tag == exclude_tag:
-            continue
-        if not TAG_RE.match(tag):
+        version = release_tags.tag_version(tag)
+        if version is None or version == exclude_version:
             continue
         # "cat-file -t" reports "tag" only for annotated tags, so this filters
         # out lightweight tags that should not be treated as releases.
         object_type = run_git(["cat-file", "-t", tag])
         if object_type == "tag":
             tags.append(tag)
-    if not tags:
-        return None
-    # Compare by parsed version so 0.10.0 sorts above 0.9.0 (not lexically).
-    return max(tags, key=parse_version)
+    # Ranked by parsed version, so 0.10.0 sorts above 0.9.0 (not lexically).
+    ranked = release_tags.newest_first(tags)
+    return ranked[0] if ranked else None
 
 
 def commits_since(tag: str | None) -> list[Commit]:
@@ -168,16 +182,14 @@ def select_release_version(
         return format_version(parse_version(explicit_version))
     if use_current_version or previous_tag is None:
         return current_version
-    return next_version_from(previous_tag.removeprefix("v"), bump)
+    return next_version_from(format_version(parse_version(previous_tag)), bump)
 
 
 def build_release_plan(args: argparse.Namespace) -> ReleasePlan:
     """Build the version and notes plan for a release."""
     current_version = read_project_version()
-    excluded_tag = (
-        f"v{format_version(parse_version(args.version))}" if args.version else None
-    )
-    previous_tag = latest_annotated_release_tag(exclude_tag=excluded_tag)
+    excluded = parse_version(args.version) if args.version else None
+    previous_tag = latest_annotated_release_tag(exclude_version=excluded)
     commits = commits_since(previous_tag)
     detected_bump = determine_bump(commits)
     if (
@@ -300,7 +312,7 @@ def build_artifacts() -> None:
 def create_annotated_tag(plan: ReleasePlan, notes: str) -> None:
     """Create the annotated git release tag."""
     validate_tag_prerequisites(plan)
-    tag = f"v{plan.release_version}"
+    tag = release_tags.tag_for(plan.release_version)
     subprocess.run(
         ["git", "tag", "-a", tag, "-F", "-"],
         cwd=ROOT,
@@ -352,7 +364,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--tag",
         action="store_true",
-        help="create an annotated local vVERSION tag; does not push it",
+        help="create an annotated local stewardship-vVERSION tag; does not push it",
     )
     args = parser.parse_args(argv)
     if args.tag:

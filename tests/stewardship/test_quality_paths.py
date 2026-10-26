@@ -508,6 +508,9 @@ CHECKOUT_READERS = {
     "tests/stewardship/database/test_ops_sql_postgresql.py": (
         "tools/stewardship-ops/predeploy.sql"
     ),
+    "tests/stewardship/database/test_upgrade_parity_postgresql.py": (
+        "tools/release_tags.py"
+    ),
     "tests/stewardship/database/test_mail_send_report_postgresql.py": (
         "docs/guides/stewardship-mail-send-report.md"
     ),
