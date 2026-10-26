@@ -47,6 +47,14 @@ def review_post(response):
     return request.method == "POST" and "/repeat-dates/" not in request.url
 
 
+def apply_post(request):
+    """Whether a request is a dialog's Apply post, not the repeat date
+    list's own preview post (#2092): that one is sent a moment after the
+    rule's last change, so it can still be sent after the dialog opens,
+    including when Apply is clicked (#2243)."""
+    return request.method == "POST" and "/repeat-dates/" not in request.url
+
+
 def page_top(locator):
     """The element's top edge from the top of the page, whatever the scroll."""
     return locator.evaluate("node => node.getBoundingClientRect().top + window.scrollY")
@@ -426,7 +434,7 @@ def test_apply_updates_the_page_in_place_and_empties_the_pane(
     assert "Campaign end date:" in text
     assert "Current schedule" not in text and "None (not scheduled)" not in text
     assert axe_violations(page, axe_source) == []
-    with page.expect_request(lambda request: request.method == "POST") as sent:
+    with page.expect_request(apply_post) as sent:
         dialog.get_by_role("button", name="Apply").click()
     assert sent.value.url.endswith(LIST)
     line = page.locator("#schedule-dates-outcome")
