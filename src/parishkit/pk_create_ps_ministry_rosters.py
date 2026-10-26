@@ -44,7 +44,7 @@ from parishkit.google.drive import (
 from parishkit.logging import log_extra, setup_logging
 from parishkit.parishsoft import (
     ParishSoftData,
-    get_member_public_email,
+    get_member_public_emails,
     get_member_public_phones,
     load_families_and_members,
 )
@@ -916,14 +916,16 @@ def roster_member_rows(
 ) -> list[list[Any]]:
     """Build one or two output rows for a roster member.
 
-    Phone numbers stay on the row with the member name. If an email address is
-    also present, it moves to a continuation row so phone and email are not
+    Phone numbers stay on the row with the member name. If email addresses are
+    also present (all of the member's public ones, one per line in one cell),
+    they move to a continuation row so phone and email are not
     mixed in the same cell. When no phone number is present, email remains on
     the main row.
     """
     member = roster_member.member
     phone_text = member_phone_contact(member)
-    email = get_member_public_email(member) or ""
+    # Several addresses share one cell, one per line, like multiple phones.
+    email = "\n".join(get_member_public_emails(member))
     first_contact = phone_text or email
     first_row = [
         member.get("py friendly name LF") or member_display_name(member),

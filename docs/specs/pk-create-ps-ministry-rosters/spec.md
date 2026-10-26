@@ -231,8 +231,10 @@ endpoints back them):
   `primaryAddress1/2`, `primaryCity/State/PostalCode`).
 - Privacy-aware contact: `get_member_public_phones` (honors
   `family_PublishPhone`, returns mobile→"cell" and home→"home") and
-  `get_member_public_email` (honors `family_PublishEMail`, first normalized
-  address).
+  `get_member_public_emails` (honors `family_PublishEMail`; returns **all**
+  of the member's normalized, plausibly valid addresses in field order. Only `;`
+  separates addresses, so a comma-joined value is one fragment that fails the
+  plain-address check and is omitted, #2260).
 - `member["birthdate"]` — used only when `include_birthday` is set.
 
 The salutation helper `salutation_for_members` is **not** used by this tool;
@@ -326,7 +328,9 @@ For a title and a member list (re-sorted by `member_sort_key`):
     comma-joins city/state then appends the postal code after a space.
   - `phone_text` = `member_phone_contact`: each public phone rendered
     `"{number} {type}"`, newline-joined (e.g. `"502-555-1000 cell"`).
-  - `email` = `get_member_public_email(member) or ""`.
+  - `email` = the `get_member_public_emails(member)` addresses joined by `"\n"`
+    (one address per line inside the one Google Sheets cell, the same way
+    several phone numbers share a cell), or `""` when there are none.
   - `first_contact = phone_text or email` (phone preferred on the main row).
   - `birthday` = `member_birthday`: `"{%B} {day}"` (e.g. `"May 4"`) from
     `birthdate` (date or datetime), else `""`.
