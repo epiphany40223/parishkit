@@ -12,6 +12,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 import jwt
 from allauth.core.exceptions import ImmediateHttpResponse
@@ -558,6 +559,11 @@ def login(request):
                 "stewardship/login.html",
                 {
                     "ended": request.GET.get("ended") == "1",
+                    # A cancelling Sign out during setup (#2272): fixed flags.
+                    "setup_cancelled": request.GET.get("setup")
+                    in {"cancelled", "cancelled-finishing"},
+                    "setup_finishing": request.GET.get("setup")
+                    == "cancelled-finishing",
                     "next": None if destination == ADMIN_HOME else destination,
                 },
             )
@@ -614,8 +620,55 @@ def logout(request):
         refuse_web_session(request.session)
         request.session = AdminSessionStore()
         return HttpResponseRedirect("/admin/login")
+    notice = _cancel_setup_on_logout(request)
     end_admin(request)
-    return HttpResponseRedirect("/admin/login")
+    return HttpResponseRedirect(
+        "/admin/login" + (f"?setup=cancelled{notice}" if notice is not None else "")
+    )
+
+
+def _cancel_setup_on_logout(request):
+    """Cancel the owned setup attempt a Sign out asked to cancel (#2272).
+
+    Only a POST field ``cancel_setup`` (the attempt's id) asks. Returns ""
+    after a cancelled collecting attempt and "-finishing" after a finishing
+    one (the suffix of the sign-in page's fixed ``setup`` flag), or None
+    when nothing was cancelled. Sign out is an escape hatch, so a refused or
+    failed cancellation never blocks it: the session still ends and the
+    scheduler expires the attempt with reason ``session``, as for a plain
+    logout. Ownership is checked by the cancellation itself.
+    """
+    raw = request.POST.get("cancel_setup")
+    if not raw:
+        return None
+    from parishkit.stewardship.storage import StaleRecordError
+
+    from .setup_cancellation import cancel_for_sign_out
+
+    # The cancellation authenticates the request, which may rotate a stale
+    # session (replacing request.session) and then roll that back when the
+    # attempt is refused. Always put the browser's own session back, so the
+    # sign-out revokes the row the cookie names, never a rolled-back new one.
+    original = request.session
+    try:
+        kind = cancel_for_sign_out(request, runtime(), UUID(raw))
+    except (
+        ConfigError,
+        DatabaseError,
+        LimiterUnavailable,
+        LookupError,
+        PermissionError,
+        StaleRecordError,
+        ValueError,
+    ):
+        kind = None
+    except Exception:
+        # Sign out must always end the session, whatever went wrong.
+        LOGGER.exception("Setup cancellation during sign-out failed.")
+        kind = None
+    finally:
+        request.session = original
+    return {"collecting": "", "finishing": "-finishing"}.get(kind)
 
 
 def _review_counts(request, caller, principal, store, live):

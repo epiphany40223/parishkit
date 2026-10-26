@@ -505,6 +505,36 @@ Cancel, idle expiry or absolute expiry marks the staging set expired,
 discards a parish data check still waiting for its answer, and removes staged
 settings, source rows, files, and credentials idempotently.
 Wizard staging is not resumable under a new login in the first release.
+
+**Sign out while setup is owned.** While the signed-in Administrator owns a
+setup attempt (collecting, loading or finishing), Sign out, wherever it is
+drawn (the menu, and the setup overview and Finishing setup pages), first
+asks in the shared
+[confirmation dialog](../ui-conventions/spec.md#row-actions-and-confirmation):
+"Signing out cancels this setup. You'll need to start a new setup with a new
+sign-in.", with **Stay signed in** (the safe choice, which has focus) and
+**Sign out and cancel setup**. Opening the dialog changes nothing on the
+page, so nothing moves. Choosing Sign out and cancel setup posts the logout
+route with the owned attempt's id as `cancel_setup`; the server then runs
+the same cancellation as Cancel setup (synchronously, reason `cancelled`,
+the same cleanup, whether the attempt is collecting, loading or finishing)
+and signs out. The server enforces the rule itself: only the attempt's own
+Administrator, from the attempt's own session, can cancel it this way, and a
+refused cancellation (another attempt, an attempt already ended, an
+unavailable service) still signs out and leaves today's session-expiry
+behavior. A plain logout (no `cancel_setup`, for example the session-ended
+dialog or a script) keeps that behavior: the scheduler then expires the
+attempt with reason `session` within about 30 seconds. Session expiry, idle
+or absolute, is unchanged. After a cancelling sign-out the sign-in page
+carries the fixed flag `setup=cancelled` (or `setup=cancelled-finishing` when
+the attempt was finishing) and shows one information notice, "Setup was
+cancelled."; for a finishing attempt it also repeats Cancel's operator
+advice about restoring the original keys if the worker and mail containers
+were already recreated with the new ones
+([#2272](https://github.com/epiphany40223/parishkit/issues/2272)).
+Only pages drawn with the setup menu ask: the restore review and the
+failure pages keep a plain Sign out, and so does a setup attempt that has
+already ended.
 Finalization freezes the staged setup, runs each target-specific credential
 installer, applies one complete authoritative YAML version through the
 configuration installer, and then runs the final parish data load, the only
@@ -517,7 +547,8 @@ failure resumes idempotently from installer checkpoints only within the original
 Admin session's idle and absolute lifetime. Viewing finalization progress does
 not renew them; the Admin renews idle time only through the inactivity dialog.
 Expiry cancels unfinished setup, and a new
-attempt requires cleanup and a new login. After confirmation, and whenever the
+attempt requires cleanup and a new login. A cancelling Sign out during
+finishing cancels it explicitly (see Sign out while setup is owned, above). After confirmation, and whenever the
 frozen attempt's owner opens the setup overview, the Admin sees a "Finishing
 setup" page on the original login's cancellation route. It lists each step in
 plain language (each credential's installation, the server operator's
@@ -1289,7 +1320,10 @@ Notes on the groups:
 The menu always ends with **Sign out**, set apart from the groups, on every
 signed-in Admin page (including during initial setup). It is a POST form with
 the Admin CSRF token to the logout route, styled like a menu entry, because
-logout is CSRF-protected. Pages carry no product footer.
+logout is CSRF-protected. While the Administrator owns a
+setup attempt it first asks, as the
+[Bootstrap and first-Admin wizard](#bootstrap-and-first-admin-wizard)
+section says; Sign out stays in the menu. Pages carry no product footer.
 
 Every Admin page's header, sign-in and setup included, ends with the
 **Appearance** switch at its top right, which chooses the portal's light or

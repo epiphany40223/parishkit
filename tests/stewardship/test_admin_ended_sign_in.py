@@ -186,7 +186,40 @@ def test_the_sign_in_page_reads_only_the_fixed_flag_and_a_checked_next(
 ):
     """The notice needs exactly ``ended=1``; ``next`` must be an Admin page."""
     context = _login_context(monkeypatch, query)
-    assert context == {"ended": ended, "next": next_path}
+    assert context == {
+        "ended": ended,
+        "next": next_path,
+        "setup_cancelled": False,
+        "setup_finishing": False,
+    }
+
+
+@pytest.mark.parametrize(
+    "flag,cancelled,finishing",
+    [
+        ("cancelled", True, False),
+        ("cancelled-finishing", True, True),
+        ("anything-else", False, False),
+    ],
+)
+def test_the_sign_in_page_reads_only_the_fixed_setup_flags(
+    monkeypatch, flag, cancelled, finishing
+):
+    """A cancelling Sign out (#2272) is shown only for its two fixed flags."""
+    context = _login_context(monkeypatch, {"setup": flag})
+    assert context["setup_cancelled"] is cancelled
+    assert context["setup_finishing"] is finishing
+
+
+def test_the_setup_cancelled_notice_adds_operator_advice_only_when_finishing():
+    """Cancel's advice about the original keys applies to a finishing attempt."""
+    plain = render_to_string("stewardship/login.html", {"setup_cancelled": True})
+    assert "Setup was cancelled." in plain
+    assert "original keys" not in plain
+    finishing = render_to_string(
+        "stewardship/login.html", {"setup_cancelled": True, "setup_finishing": True}
+    )
+    assert "original keys are restored" in finishing
 
 
 def test_the_notice_and_next_show_only_when_given():

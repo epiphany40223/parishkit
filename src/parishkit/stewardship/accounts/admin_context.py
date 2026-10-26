@@ -1035,9 +1035,22 @@ def _setup_chrome(actor, configuration, session):
     and grants or removes no authority.
     """
     now = database_now()
+    # The attempt this sign-in owns (collecting, loading or finishing), which
+    # makes Sign out ask before it cancels the setup (#2272).
+    from .setup_models import SetupAttempt
+    from .setup_staging import EXPIRABLE
+
+    owned = (
+        SetupAttempt.objects.filter(
+            session_id=session.pk, owner_id=actor.identity, state__in=EXPIRABLE
+        )
+        .values_list("pk", flat=True)
+        .first()
+    )
     return {
         "admin": False,
         "setup_pending": True,
+        "setup_attempt": owned,
         "parish_name": None,
         "setup_url": reverse("admin:setup"),
         "sections": [],
