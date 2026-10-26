@@ -33,8 +33,12 @@ CLOSURE_APPLIED = {
     *CLOSURE_COLUMNS.values(),
 }
 # Migrations that create both a granted routine and a granted table (#806's
-# 0077, #530's 0078): their table waits with their routines.
-BOTH = set(CLOSURE_FUNCTIONS.values()) & set(CLOSURE_TABLES.values())
+# 0077, #530's 0078), or a granted table and a granted column of a table the
+# base already has (0183, #2201): their table waits with their routines and
+# columns, so a test cannot apply one registry's entry without the other's.
+BOTH = set(CLOSURE_TABLES.values()) & (
+    set(CLOSURE_FUNCTIONS.values()) | set(CLOSURE_COLUMNS.values())
+)
 # The login that writes each closure table: web (the large-change
 # acceptances, 0080, since System health's button, ADM-13 PR 5b), except the
 # address follow-ups (0077), which mail dispatch updates, and a refused
@@ -370,9 +374,19 @@ def test_grants_wait_for_the_users_swap_closures_tables(tmp_path, monkeypatch):
         writer = TABLE_WRITERS.get(table, "pk_stewardship_web")
         assert not [s for s in waiting if f'"{table}"' in s], table
         assert [s for s in granted if f'"{table}" TO "{writer}"' in s], table
-    assert set(waiting) < set(granted)
+    # A table that also gains a closure column (0183's readiness record)
+    # is granted by one statement whose column list differs between the
+    # two runs, so that table's statements are compared apart.
+    shared = {t for (t, _), m in CLOSURE_COLUMNS.items() if m in BOTH}
+
+    def stable(statements):
+        """The statements that do not name a table with a closure column."""
+        return {s for s in statements if not any(f'"{t}"' in s for t in shared)}
+
+    assert stable(waiting) < stable(granted)
     assert all(
         names_closure_object(s, set(CLOSURE_TABLES.values()))
+        or any(f'"{t}"' in s for t in shared)
         for s in set(granted) - set(waiting)
     )
 
@@ -389,7 +403,11 @@ def test_grants_wait_for_the_users_swap_closures_columns(tmp_path, monkeypatch):
     _, waiting = grant_statements(tmp_path, monkeypatch, others)
     _, granted = grant_statements(tmp_path, monkeypatch, CLOSURE_APPLIED)
     assert len(waiting) == len(granted)
-    for table, column in CLOSURE_COLUMNS:
+    for (table, column), migration in CLOSURE_COLUMNS.items():
+        if migration in BOTH:
+            # Also creates a table, which is applied above, so its column is
+            # granted too; the tables test covers this migration.
+            continue
         assert not [s for s in waiting if f'"{column}"' in s and f'"{table}"' in s]
         assert [s for s in waiting if f'"{table}" TO "pk_stewardship_web"' in s]
         assert [
