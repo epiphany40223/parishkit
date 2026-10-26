@@ -147,9 +147,9 @@ Generate and retain one deployment UUID and select the initial Admin Google emai
    Purpose-bound key inventories are installed before private journal retirement,
    so online key admission does not require a later rotation to become usable.
 7. Start `web`, `worker`, `scheduler`, `mail-dispatch`, `config-installer` and target
-   credential installers. The initial worker/mail profiles omit uninstalled
-   ParishSoft, Workspace and optional Slack files; isolated setup checks use
-   their sealed handoffs. After readiness and authorized ingress prerequisites,
+   credential installers. The worker and mail-dispatch mount the still-empty
+   ParishSoft, Workspace and optional Slack credential directories and start
+   without those files; isolated setup checks use their sealed handoffs. After readiness and authorized ingress prerequisites,
    start `caddy` for production.
 
 Initial bootstrap is not the product setup wizard. The initialized minimal Testing
@@ -159,39 +159,56 @@ initialized authority is not imported or silently adopted.
 
 On the original Admin login's **Finish setup** step, tick the confirmation and
 select **Check readiness and finish setup**. Its progress page, Finishing
-setup, shows each step and, while the operator's steps below are pending, how
-many services have acknowledged each key; it does not repeat these steps.
+setup, shows each step and how many services have acknowledged each key.
 
-Once the initial target installers report `awaiting_ack`, use `compose.json`
-(without Slack) or `compose-slack.json` (with Slack) to recreate the entire
-`worker` and `mail-dispatch` services with `up --detach --force-recreate`.
-Select exactly one Compose file, not an overlay combination: otherwise Compose
-volume merging can retain a superseded configuration mount. Keep the same
-explicit project name. Neither the application nor an installer controls Docker.
-Run `acknowledge-credential` inside each actual recreated consumer using its
-selected service configuration and each exact pending request UUID. Do not use
+No server step follows
+([setup credential pickup](../specs/stewardship/operations/spec.md#setup-credential-pickup)).
+`worker` and `mail-dispatch` already mount the ParishSoft, Google Workspace
+and Slack credential directories read-only, in `compose-initial.json` as in
+`compose.json`. Once a target installer renames its tested key into place
+(`awaiting_ack`), the consumer that needs it reads the file from its own mount
+within about 30 seconds and, when the bytes match the installed fingerprint,
+records its acknowledgement through its own database login. Neither the
+application nor an installer controls Docker. These initial ACKs retain
+rollback files until atomic setup completion; they do not themselves make the
+application configured. After all acknowledgements, the configuration
+installer prepares/selects YAML and the scheduler queues the final worker.
+That worker fetches fresh data for the selected financial periods and
+atomically activates configuration, source and the configured marker. The
+next progress refresh returns the Admin to the main portal. Then `worker` and
+`mail-dispatch`, which started before their keys existed, each drain and exit
+once (`consumer_readmission`, reason `setup_completed`), and Compose's restart
+policy starts them again with their full set of tasks; nothing needs doing on
+the server. The system remains in Testing; no live invitations are sent.
+
+**Fallback.** If Finishing setup says a key is taking longer than expected
+(10 minutes after its installation), check the `worker` and `mail-dispatch`
+logs for `credential_pickup_overdue` or `startup_rejected`. After fixing the
+cause, or when a credential has an individually overridden path (which keeps
+a single-file mount and no automatic pickup), finish the step by hand: use
+the same Compose file the deployment runs (`compose.json`, or
+`compose-slack.json`; select exactly one file, not an overlay combination,
+since Compose volume merging can retain a superseded configuration mount) and
+the same explicit project name to recreate the entire `worker` and
+`mail-dispatch` services with `up --detach --force-recreate`, then run
+`acknowledge-credential` inside each actual recreated consumer using its
+service configuration and each exact pending request UUID. Do not use
 `compose run` for acknowledgement. See the
 [whole-service acknowledgement protocol](stewardship-credential-installers.md).
-These initial ACKs retain rollback files until atomic setup completion; they do
-not themselves make the application configured. After all acknowledgements, the
-configuration installer prepares/selects YAML and the scheduler queues the
-final worker. That worker fetches fresh data for the selected financial periods
-and atomically activates configuration, source, Family codes and the configured
-marker. The next progress refresh returns the Admin to the main portal. The
-system remains in Testing with a draft campaign; no live invitations are sent.
+A repeated acknowledgement is a no-op, so the fallback is safe even when the
+service acknowledged at the same moment.
 
 Progress refreshes do not renew the original login's idle or absolute deadlines.
 If it expires or the Admin cancels before completion, the installer restores
 only unapplied setup state; background owners drain and clean temporary source
 work. A successful completion is never rolled back by the cancellation page.
-If consumers were already recreated with installed provider mounts, cancellation
-or expiry removes those candidate files. After the target installers finish
-rollback, recreate `worker` and `mail-dispatch` from the complete initial-setup
-Compose topology, using the same project name and `up --detach --force-recreate`.
-Do not merely restart the configured consumers: an existing bind mount can retain
-the removed file's inode, and a new container cannot mount that missing file.
-Verify the recreated initial consumers are healthy before another setup attempt.
-The application cannot perform this operator-owned Docker step.
+Cancellation or expiry removes installed candidate files, and the consumers'
+directory mounts show the removal, so no recreation is needed before another
+setup attempt. Only if the fallback above recreated a consumer with an
+individually overridden single-file mount, recreate it again from the same
+Compose file after the target installers finish rollback: an existing
+single-file bind mount can retain the removed file's inode. Verify the
+consumers are healthy before another setup attempt.
 Restarted services recognize the exact prepared-but-unapplied setup without
 admitting ordinary work under mismatched YAML/SQL authority. The complete
 initial-installation Compose demonstration remains under the Phase 2 gate.

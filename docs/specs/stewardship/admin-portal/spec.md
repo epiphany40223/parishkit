@@ -600,7 +600,13 @@ configuration installer, and then commits the promoted source snapshot,
 Testing mode, configured marker, and one redacted setup audit event. It creates
 no campaign, so it creates no Family codes either. The
 configured marker is last and cannot become visible until YAML/DB digests match
-and every required consumer acknowledges its secret fingerprint. A crash or
+and every required consumer acknowledges its secret fingerprint. The
+consumers acknowledge on their own, with no server step: `worker` and
+`mail-dispatch` already mount each provider credential's directory when setup
+starts, see the installed file, and acknowledge it through their own database
+logins, as the
+[setup credential pickup](../operations/spec.md#setup-credential-pickup)
+specifies. The web process never acknowledges for them. A crash or
 failure resumes idempotently from installer checkpoints only within the original
 Admin session's idle and absolute lifetime. Viewing finalization progress does
 not renew them; the Admin renews idle time only through the inactivity dialog.
@@ -608,15 +614,23 @@ Expiry cancels unfinished setup, and a new
 attempt requires cleanup and a new login. After confirmation, and whenever the
 frozen attempt's owner opens the setup overview, the Admin sees a "Finishing
 setup" page on the original login's cancellation route. It lists each step in
-plain language (each credential's installation, the server operator's
-acknowledgement with a count of acknowledged services, applying the
-configuration, the final parish data load, and completion). A step that is
+plain language (each credential's installation, the services picking up the
+new credential with a count of services that have acknowledged it, applying
+the configuration, the final parish data load, and completion). A step that is
 working shows the portal's shared
 [working spinner](../ui-conventions/spec.md#working-spinner) in its box;
 the page shows no time since confirmation and no line under the boxes.
-Each step's words are one short line, and while a credential waits for the
-server operator its box says so in its status and shows only the live
-count. The operator's own steps are in the
+Each step's words are one short line. While the services pick up a
+credential its box shows the spinner and the live count ("0 of 1 services
+acknowledged"), and it names no server operator: nobody has to act. Only when a
+credential has waited 10 minutes after its installation without every
+acknowledgement does its box change, still in place, to the Waiting for the
+server operator state of the
+[stage boxes](../ui-conventions/spec.md#stage-boxes), with the words "Taking
+longer than expected. Ask the server operator to check the worker and
+mail-dispatch services." The count stays live, and the box returns to done by itself if
+the acknowledgements then arrive, whether the services caught up or the
+operator used the fallback. The operator's fallback steps are in the
 [runtime guide](../../../guides/stewardship-runtime.md#first-database-and-application-startup),
 not on the page
 ([#2145](https://github.com/epiphany40223/parishkit/issues/2145)). Each

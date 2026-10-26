@@ -144,16 +144,24 @@ The internal consumer hook attests the credential bytes loaded by a whole
 single-instance Compose service, not one arbitrary child process. Its owning
 runtime supervisor must wait for all children to load the same replacement.
 Individual file bind mounts retain their original inode: replacing the host file
-does not update that mount. OPS-04 must recreate the affected consumer container
-and verify its fingerprint; a reload signal alone is insufficient. The installer
-does not mount the Docker socket or get authority to restart other services.
+does not update that mount. A consumer with such a mount must be recreated and
+then confirmed with the operator command below; a reload signal alone is
+insufficient. The ParishSoft, Google Workspace and Slack consumers avoid this by
+mounting the target's directory instead (see
+[replacing an integration key](#replacing-an-integration-key-from-the-web) and
+the operations specification's
+[setup credential pickup](../specs/stewardship/operations/spec.md#setup-credential-pickup)).
+The installer does not mount the Docker socket or get authority to restart
+other services, and no consumer gets authority over another service.
 
 Phase 2 connects provider-specific validation/testing, handoff-key provisioning,
 whole-service startup and current-Admin/CSRF web admission. The
 internal orchestrator requires the compiled target-specific validator; it never
 supplies a production always-successful validator. Initial installation follows
-the [runtime setup protocol](stewardship-runtime.md), including explicit host-side
-consumer recreation rather than granting web access to Docker.
+the [runtime setup protocol](stewardship-runtime.md#first-database-and-application-startup):
+the consumers acknowledge setup's keys from their directory mounts as in step 4
+below, with host-side recreation and the operator command kept as the fallback,
+rather than granting web access to Docker.
 Keyring retirement additionally needs the separate online-migration and retained-
 backup compatibility workflow; successful file replacement does not retire keys.
 
@@ -206,6 +214,9 @@ lists any other setting saved with it; **Apply** then sends the key:
    must acknowledge. When the file it reads matches the installed fingerprint,
    it records its acknowledgement through its own database login, exactly as
    the operator command below would, and republishes its loaded receipts.
+   Setup's first keys are acknowledged the same way: the initial topology
+   mounts the same directories, still empty, so a consumer started before
+   setup sees the first key appear.
 5. The installer finishes the replacement, and the configuration installer,
    which held the selection request as retryable while the replacement was in
    progress, applies the new fingerprint and settings.
