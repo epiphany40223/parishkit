@@ -63,6 +63,9 @@ MONEY = re.compile(r"(0|[1-9][0-9]{0,8})(\.[0-9]{2})?")
 SHARE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 # A chosen method the configuration no longer offers.
 UNAVAILABLE_SHARE = "Unavailable share method"
+# A Family that cannot contribute financially, as Pledges and this report
+# word its answer.
+CANNOT_GIVE = "Cannot contribute"
 FREQUENCY_LABELS = {
     "weekly": "Weekly",
     "monthly": "Monthly",
@@ -366,12 +369,79 @@ def name_families(result):
     return result
 
 
+def family_answers(result):
+    """Put each row's Family's own answer back where the values in force are.
+
+    Since frozen migration 0182 (#2196) a row's annual pledge, frequency,
+    Cannot contribute and share methods are the values in force, a
+    reviewer's Edit while it is in force, with the Family's own answer
+    beside it (``family_answer``). Pledges and the Family hub show the
+    Family's answer with the Reviewer's value beside it, so they call this
+    on the raw selection, before ``shape_result``; their rows then carry no
+    Edited marker.
+    """
+    for row in result["rows"]:
+        row.pop("edited", None)
+        row.update(row.pop("family_answer", None) or {})
+    return result
+
+
+def word_shares(shares, labels, named):
+    """``shares`` (option id to its Other text) as the page and files word them.
+
+    In the order of ``labels`` (each option's ``(label, short label)``),
+    unknown options last, each worded by ``labels`` or, when it has none,
+    as an unavailable method. ``named`` holds the current options' short
+    labels (None when unset), which name a method in every row (#1569).
+    """
+    unavailable = (UNAVAILABLE_SHARE, UNAVAILABLE_SHARE)
+    worded = []
+    for key, text in in_offered_order(shares, labels):
+        label, short = labels.get(key, unavailable)
+        if key in named:
+            short = named[key] or label
+        # ``id`` is the option's identity, which Pledges reads to word a
+        # reviewer's share methods beside these (#2177).
+        worded.append({"id": key, "label": label, "short": short, "text": text})
+    return worded
+
+
+def share_text(shares):
+    """Worded share methods as one line: each full label, with its Other text.
+
+    Pledges' cells and files and this report's Edited tip share it.
+    """
+    return ", ".join(
+        f"{share['label']}: {share['text']}" if share["text"] else share["label"]
+        for share in shares
+    )
+
+
+def answer_text(own, shares):
+    """The Family's own answer as Pledges' Family's answer column words it.
+
+    ``own`` is a row's ``family_answer`` and ``shares`` its share methods
+    worded: "$1,000.00, Monthly; Online", or "Cannot contribute".
+    """
+    if own["cannot_give"]:
+        return CANNOT_GIVE
+    first = (
+        f"{parse_money(own['annual_pledge']).display}, "
+        f"{FREQUENCY_LABELS[own['frequency'] or 'none']}"
+    )
+    methods = share_text(shares)
+    return f"{first}; {methods}" if methods else first
+
+
 def shape_result(result, *, campaign_id, parish_name, configuration):
     """Word and type one projection for display, on the page or in an export.
 
     The page reads its projection live; an export renders the same projection
     from its immutable capture. Both pass through here, so money, wording and
-    ordering cannot mean different things in the two places.
+    ordering cannot mean different things in the two places. A row with an
+    Edit in force (0182, #2196) is marked ``edited`` and words the Family's
+    own answer for the page's marker (``family_answer_text``); a capture
+    made before 0182 has no marker (``edited`` None).
     """
     wording = share_wording(
         configuration, campaign_id=campaign_id, parish_name=parish_name
@@ -405,25 +475,32 @@ def shape_result(result, *, campaign_id, parish_name, configuration):
         row["frequency_short"] = FREQUENCY_UNITS.get(row["frequency"], "")
         # A Family that cannot contribute has no frequency; say why instead.
         row["frequency_label"] = (
-            "Cannot contribute"
+            CANNOT_GIVE
             if row.get("cannot_give")
             else FREQUENCY_LABELS[row["frequency"] or "none"]
         )
         labels = seen.get(row.pop("configuration_id"), {})
+        own = row.pop("family_answer", None)
+        row["edited"] = row.get("edited")
         # ``label`` is the full wording (exports, tips); ``short`` the
         # compact name the page's cell shows (#1569): a current option's
         # short label, else its full label as seen; only an option no longer
-        # offered keeps the short label it had then.
-        unavailable = (UNAVAILABLE_SHARE, UNAVAILABLE_SHARE)
-        shares = []
-        for key, text in in_offered_order(row["shares"], labels):
-            label, short = labels.get(key, unavailable)
-            if key in named:
-                short = named[key] or label
-            # ``id`` is the option's identity, which Pledges reads to word
-            # a reviewer's share methods beside these (#2177).
-            shares.append({"id": key, "label": label, "short": short, "text": text})
-        row["shares"] = shares
+        # offered keeps the short label it had then. A reviewer's share
+        # methods (#2196) were chosen from the current options, so they are
+        # worded as those first, as Pledges words them, and an option the
+        # campaign no longer offers as the Family saw it. 0181 stores a
+        # reviewer's share methods only when they differ from the Family's
+        # own, so differing share methods are exactly a reviewer's.
+        if own is not None and own["shares"] != row["shares"]:
+            current_first = wording | {
+                key: value for key, value in labels.items() if key not in wording
+            }
+            row["shares"] = word_shares(row["shares"], current_first, named)
+        else:
+            row["shares"] = word_shares(row["shares"], labels, named)
+        row["family_answer_text"] = (
+            answer_text(own, word_shares(own["shares"], labels, named)) if own else ""
+        )
         row["source_pledge"] = parse_money(row.pop("pledge_total"))
         row["source_contributions"] = parse_money(row.pop("contribution_total"))
         for field in ("submitted_at", "first_submitted_at"):

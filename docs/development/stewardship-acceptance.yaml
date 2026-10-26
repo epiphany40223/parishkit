@@ -289,6 +289,7 @@ sections:
     "Update audit and logs": [ADM-09, BG-09]
     "Update page delivery": [ADM-09, DAT-09]
     "Financial stewardship detail": [RPT-08]
+    "Values in force on Financial stewardship": [RPT-08]
     "Pledges": [RPT-08]
     "Limitations": [RPT-04]
     "System logs": [RPT-09]

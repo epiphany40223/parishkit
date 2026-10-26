@@ -43,7 +43,7 @@ BEGIN
     -- this closed refusal. An undecidable step refuses.
     bad:=jsonb_typeof(parameters) IS DISTINCT FROM 'object';
     IF NOT bad THEN
-        bad:=coalesce(NOT parameters ?& ARRAY['filters','proof']
+        bad:=coalesce(NOT parameters OPERATOR(pg_catalog.?&) ARRAY['filters','proof']
             OR parameters-ARRAY['filters','proof']<>'{}'::jsonb
             OR jsonb_typeof(f) IS DISTINCT FROM 'object'
             OR jsonb_typeof(proof) NOT IN ('null','object')
@@ -52,7 +52,7 @@ BEGIN
                 AND (page_size IS NULL OR page_size NOT BETWEEN 1 AND 200)),true);
     END IF;
     IF NOT bad AND jsonb_typeof(proof)='object' THEN
-        bad:=coalesce(NOT proof ?& ARRAY['snapshot','configuration']
+        bad:=coalesce(NOT proof OPERATOR(pg_catalog.?&) ARRAY['snapshot','configuration']
             OR proof-ARRAY['snapshot','configuration']<>'{}'::jsonb
             OR jsonb_typeof(proof->'snapshot') IS DISTINCT FROM 'string'
             OR jsonb_typeof(proof->'configuration') IS DISTINCT FROM 'string'
@@ -60,7 +60,7 @@ BEGIN
             OR NOT proof->>'configuration' ~ uuid_text,true);
     END IF;
     IF NOT bad THEN
-        bad:=coalesce(NOT f ?& ARRAY['search','active','first_start','first_end',
+        bad:=coalesce(NOT f OPERATOR(pg_catalog.?&) ARRAY['search','active','first_start','first_end',
                 'latest_start','latest_end','pledge_min','pledge_max','amount',
                 'frequency','share','sort']
             OR f-ARRAY['search','active','first_start','first_end','latest_start',
@@ -92,7 +92,7 @@ BEGIN
             OR coalesce(nullif(f->>'pledge_min','')::numeric
                 >nullif(f->>'pledge_max','')::numeric,false);
     END IF;
-    IF NOT bad AND f ? 'zone' THEN
+    IF NOT bad AND f OPERATOR(pg_catalog.?) 'zone' THEN
         -- Days are the viewer's browser zone (#558): one is required with a
         -- date and is always one the server's time zone catalog knows.
         -- Filters without the key, from a release before migration 0110,
@@ -146,11 +146,57 @@ WITH selected AS MATERIALIZED (
         AND proof->>'configuration'=x.active_configuration_id::text,false)
         AS proven) v
     WHERE s.state='promoted' AND s.compacted_at IS NULL
-        AND x.values->'modules' ? 'financial'
+        AND x.values->'modules' OPERATOR(pg_catalog.?) 'financial'
+), edits AS MATERIALIZED (
+    -- Each Family's pledge Edit in force (#2196): its latest pledge review
+    -- row, when the selection that places Pledges' stages (0181's
+    -- stewardship_pledge_review_states_v1) holds it in force and its
+    -- decision is Accepted (edited). Entered by hand and the undo of a
+    -- terminal step carry that decision with its values, so they count
+    -- too; Back to review of a decision, Accept, Ignore and a newer,
+    -- different pledge answer from the Family leave none.
+    SELECT k.family_id,v.reviewed_annual_pledge,v.reviewed_frequency,v.reviewed_shares
+    FROM source x
+    CROSS JOIN LATERAL stewardship_pledge_review_states_v1(x.id,NULL) k
+    JOIN stewardship_pledge_review v ON v.id=k.review_id
+    WHERE k.in_force AND v.decision='accepted_edited'
 ), responses AS MATERIALIZED (
-    SELECT s.id,s.submitted_at,s.family_version,s.annual_pledge,s.configuration_id,
+    -- The pledge in force (#2196): an Edit's amount, frequency and share
+    -- methods while it is in force, else the Family's own answer. An
+    -- edited pledge reads as the reviewed Family form shows it (0181's
+    -- selection, rule 1): above zero the reviewer's frequency, and the
+    -- reviewer's share methods where the Edit changed them, else the
+    -- Family's own; a zero pledge no frequency and no share methods, with
+    -- the Family's own Cannot contribute answer. The Family's own parts are
+    -- read as 0181's rule reads them (stewardship_pledge_answer_v1), so an
+    -- answer without share methods carries none. Every filter, sort and
+    -- summary below reads these.
+    SELECT s.id,s.submitted_at,s.family_version,
+        coalesce(e.reviewed_annual_pledge,s.annual_pledge) AS annual_pledge,
+        s.configuration_id,
         i.family_duid,first.submitted_at AS first_submitted_at,
-        s.answers->'financial' AS financial,
+        CASE WHEN e.family_id IS NULL THEN s.answers->'financial'
+            ELSE s.answers->'financial'||jsonb_build_object(
+                'frequency',CASE WHEN e.reviewed_annual_pledge>0
+                    THEN coalesce(e.reviewed_frequency,'') ELSE '' END,
+                'cannot_give',CASE WHEN e.reviewed_annual_pledge>0 THEN 'false'::jsonb
+                    ELSE stewardship_pledge_answer_v1(s.answers,s.annual_pledge)->'cannot_give'
+                    END,
+                'shares',CASE WHEN e.reviewed_annual_pledge>0
+                    THEN coalesce(e.reviewed_shares,
+                        stewardship_pledge_answer_v1(s.answers,s.annual_pledge)->'shares')
+                    ELSE '{}'::jsonb END) END AS financial,
+        -- The Family's own answer beside an Edit in force (NULL without
+        -- one), from its current response: the page's Edited marker words
+        -- it, and Pledges and the Family hub show it in the Family's
+        -- answer's place, as they did before 0182. After a reviewed form
+        -- sent the edited pledge back as shown, that answer is the edited
+        -- pledge.
+        CASE WHEN e.family_id IS NOT NULL THEN jsonb_build_object(
+            'annual_pledge',s.annual_pledge::numeric(24,2)::text,
+            'frequency',nullif(s.answers->'financial'->>'frequency',''),
+            'cannot_give',coalesce(s.answers->'financial'->'cannot_give'='true'::jsonb,false),
+            'shares',s.answers->'financial'->'shares') END AS family_answer,
         coalesce(nullif(btrim(p.canonical::jsonb->>'lastName'),''),
             nullif(btrim(p.canonical::jsonb->>'mailingName'),''),
             nullif(btrim(concat_ws(' ',
@@ -171,7 +217,7 @@ WITH selected AS MATERIALIZED (
         -- filter (#1393). A row loaded under a Families rule names the rule
         -- (campaign_families) and its portal_eligible is "matches the rule";
         -- a legacy row names none and keeps ParishSoft's active.
-        CASE WHEN p.canonical::jsonb ? 'campaign_families'
+        CASE WHEN p.canonical::jsonb OPERATOR(pg_catalog.?) 'campaign_families'
                 AND jsonb_typeof(p.canonical::jsonb->'portal_eligible')='boolean'
             THEN (p.canonical::jsonb->'portal_eligible')::boolean
             WHEN jsonb_typeof(p.canonical::jsonb->'active')='boolean'
@@ -184,11 +230,12 @@ WITH selected AS MATERIALIZED (
     FROM source x
     JOIN stewardship_family_campaign i ON i.campaign_id=x.id
     JOIN stewardship_submission s ON s.id=i.effective_submission_id
-        AND s.mode='live' AND s.campaign_id=x.id AND s.answers ? 'financial'
+        AND s.mode='live' AND s.campaign_id=x.id AND s.answers OPERATOR(pg_catalog.?) 'financial'
     JOIN stewardship_submission first ON first.id=i.first_live_submission_id
     LEFT JOIN stewardship_snapshot_family m
         ON m.snapshot_id=x.source_id AND m.source_key=i.family_duid::text
     LEFT JOIN stewardship_source_family p ON p.id=m.payload_id
+    LEFT JOIN edits e ON e.family_id=i.id
 ), head_names AS MATERIALIZED (
     -- Each Family's active heads as the shown name lists them, in DUID order
     -- (stewardship_family_head_part_v1), so search and sort match what the
@@ -247,7 +294,7 @@ WITH selected AS MATERIALIZED (
             OR r.financial->>'frequency'=f->>'frequency')
         AND (f->>'share'='any'
             OR (f->>'share'='none' AND r.financial->'shares'='{}'::jsonb)
-            OR r.financial->'shares' ? (f->>'share'))
+            OR r.financial->'shares' OPERATOR(pg_catalog.?) (f->>'share'))
 ), page AS MATERIALIZED (
     -- A name sort orders by surname, then the whole shown name, as the
     -- directory does; the Family DUID is unique here, so it ends every order.
@@ -275,6 +322,9 @@ WITH selected AS MATERIALIZED (
         -- Responses recorded before this answer existed read as false.
         coalesce(r.financial->'cannot_give'='true'::jsonb,false) AS cannot_give,
         r.financial->'shares' AS shares,
+        -- Whether an Edit is in force (#2196), and the Family's own answer
+        -- beside it.
+        r.family_answer IS NOT NULL AS edited,r.family_answer,
         -- Option wording is versioned with the configuration the Family saw; the
         -- application words it with the Family form's own rule.
         r.configuration_id,
@@ -290,7 +340,7 @@ WITH selected AS MATERIALIZED (
                 JOIN stewardship_source_pledge p ON p.id=m.payload_id
                 WHERE m.snapshot_id=x.source_id AND p.family_key=r.family_duid::text
                     AND x.values->'financial'->'comparison_fund_duids'
-                        @> to_jsonb(p.fund_key::bigint)
+                        OPERATOR(pg_catalog.@>) to_jsonb(p.fund_key::bigint)
                     AND (p.canonical::jsonb->>'effective_date')::date BETWEEN
                         (x.values->'financial'->>'comparison_start')::date
                         AND (x.values->'financial'->>'comparison_end')::date),0)
@@ -301,7 +351,7 @@ WITH selected AS MATERIALIZED (
                 JOIN stewardship_source_contribution p ON p.id=m.payload_id
                 WHERE m.snapshot_id=x.source_id AND p.family_key=r.family_duid::text
                     AND x.values->'financial'->'comparison_fund_duids'
-                        @> to_jsonb(p.fund_key::bigint)
+                        OPERATOR(pg_catalog.@>) to_jsonb(p.fund_key::bigint)
                     AND (p.canonical::jsonb->>'effective_date')::date BETWEEN
                         (x.values->'financial'->>'comparison_start')::date
                         AND least((x.values->'financial'->>'comparison_end')::date,
@@ -309,7 +359,7 @@ WITH selected AS MATERIALIZED (
             END AS contribution_total
     ) g ON true
 )
-SELECT CASE WHEN NOT z.values->'modules' ? 'financial'
+SELECT CASE WHEN NOT z.values->'modules' OPERATOR(pg_catalog.?) 'financial'
     THEN jsonb_build_object('disabled',true)
     WHEN x.id IS NULL THEN jsonb_build_object('unavailable',true)
     ELSE jsonb_build_object(

@@ -113,6 +113,10 @@ def components(context, admin):
             family_name="Smith, John",
             staff_entered=False,
             shares=[dict(label="Other", short="Other", text="Payroll gift")],
+            # A reviewer's Edit on Pledges is in force (#2196): the row is the
+            # reviewer's pledge, with the Family's own answer in its tip.
+            edited=True,
+            family_answer_text="$1,000.00, Weekly; Envelope <gift>",
         ),
     ]
     # Share methods are stable option identities, as the closed grammar requires.

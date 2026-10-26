@@ -45,11 +45,17 @@ HEADINGS = (
     "Latest response",
     "First response",
     "Entered by Staff",
+    # Whether a reviewer's Edit on Pledges is in force, so the row's pledge
+    # is the reviewer's (#2196): the page's Edited chip.
+    "Edited on Pledges",
 )
 # Whether Staff entered the effective response for the Family through Open
 # form (#794). A capture made before migration 0066 has no marker (None):
 # blank, never "No".
 STAFF_ENTERED = {True: "Yes", False: "No", None: ""}
+# The same for the Edited marker: a capture made before migration 0182 has
+# none (None), blank, never "No".
+EDITED = STAFF_ENTERED
 UNPROVEN = (
     "Unavailable: the latest giving data read from ParishSoft is not confirmed "
     "complete for this campaign's comparison period. Unavailable does not mean "
@@ -224,6 +230,7 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
                 instant(row["submitted_at"]),
                 instant(row["first_submitted_at"]),
                 STAFF_ENTERED[row["staff_entered"]],
+                EDITED[row.get("edited")],
             )
         )
         # A continuation row names the Family it continues and carries
@@ -234,7 +241,7 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
                 (row["family_name"] or "", status, str(row["family_duid"]))
                 + ("",) * 3
                 + (CONTINUED + cell,)
-                + ("",) * 5
+                + ("",) * 6
             )
     return FinancialDocument(
         metadata,

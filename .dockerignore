@@ -206,6 +206,7 @@
 !src/parishkit/stewardship/schema/migrations/0179_definer_operators.sql
 !src/parishkit/stewardship/schema/migrations/0180_added_undo_to_review.sql
 !src/parishkit/stewardship/schema/migrations/0181_pledge_share_methods.sql
+!src/parishkit/stewardship/schema/migrations/0182_financial_in_force.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

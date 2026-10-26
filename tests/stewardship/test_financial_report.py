@@ -559,3 +559,98 @@ def test_a_cleared_short_label_shows_the_full_label_for_earlier_answers(monkeypa
         "short": full,
         "text": "Stock",
     }
+
+
+# The Family's own answer beside an Edit in force (0182, #2196), as the
+# selection returns it.
+OWN = {
+    "annual_pledge": "1234.50",
+    "frequency": "monthly",
+    "cannot_give": False,
+    "shares": {OTHER: "Stock"},
+}
+
+
+def test_an_edit_in_force_is_marked_and_words_the_familys_answer(monkeypatch):
+    """A row with an Edit in force (#2196) is marked, words the reviewer's
+    share methods by the current options first (as Pledges does), and words
+    the Family's own answer as the Family saw it for the page's tip."""
+    edited = result(
+        annual_pledge="2000.00",
+        frequency="annual",
+        shares={ONLINE: "", RETIRED: ""},
+        edited=True,
+        family_answer=OWN,
+    )
+    substitute(monkeypatch, (json.dumps(edited),))
+    row = page()["rows"][0]
+    assert row["edited"] is True and "family_answer" not in row
+    assert row["annual"] == parse_money("2000.00")
+    assert row["frequency_label"] == "Annual"
+    assert row["shares"] == [
+        {
+            "id": ONLINE,
+            "label": "This household will give online to Sample Parish",
+            "short": "This household will give online to Sample Parish",
+            "text": "",
+        },
+        # Neither offered now nor in what the Family saw: never guessed.
+        {
+            "id": RETIRED,
+            "label": "Unavailable share method",
+            "short": "Unavailable share method",
+            "text": "",
+        },
+    ]
+    assert row["family_answer_text"] == (
+        f"$1,234.50, Monthly; Another way in Jubilee, {PERIOD}: Stock"
+    )
+
+
+def test_an_edit_that_kept_the_share_methods_words_them_as_the_family_saw(
+    monkeypatch,
+):
+    """An Edit of the amount alone carries the Family's own share methods,
+    which keep the wording the Family saw; a zero edit of a Family that
+    cannot contribute words its answer so."""
+    kept = result(annual_pledge="1500.00", edited=True, family_answer=OWN)
+    kept["rows"][0]["shares"] = OWN["shares"]
+    substitute(monkeypatch, (json.dumps(kept),))
+    row = page()["rows"][0]
+    assert [share["label"] for share in row["shares"]] == [
+        f"Another way in Jubilee, {PERIOD}"
+    ]
+    cannot = OWN | {"annual_pledge": "0.00", "frequency": None, "cannot_give": True}
+    assert financial.answer_text(cannot, []) == "Cannot contribute"
+    assert financial.answer_text(OWN | {"shares": {}}, []) == "$1,234.50, Monthly"
+
+
+def test_rows_without_an_edit_or_from_an_older_capture_are_unmarked(monkeypatch):
+    """No Edit in force reads False; a capture made before 0182 has no
+    marker (None, blank in the files) and no tip."""
+    substitute(monkeypatch, (json.dumps(result(edited=False, family_answer=None)),))
+    row = page()["rows"][0]
+    assert (row["edited"], row["family_answer_text"]) == (False, "")
+    substitute(monkeypatch, (json.dumps(result()),))
+    row = page()["rows"][0]
+    assert (row["edited"], row["family_answer_text"]) == (None, "")
+
+
+def test_family_answers_put_the_familys_own_answer_back():
+    """Pledges and the hub read the Family's answer (#2196): the values in
+    force are replaced by it, and the marker is dropped; a row without an
+    Edit is left as it is."""
+    edited = result(
+        annual_pledge="2000.00",
+        frequency="annual",
+        cannot_give=False,
+        shares={ONLINE: ""},
+        edited=True,
+        family_answer=OWN,
+    )
+    plain = result(edited=False, family_answer=None)
+    rows = financial.family_answers(edited)["rows"]
+    assert {key: rows[0][key] for key in OWN} == OWN
+    assert "edited" not in rows[0] and "family_answer" not in rows[0]
+    (unchanged,) = financial.family_answers(plain)["rows"]
+    assert unchanged["annual_pledge"] == "1234.50" and "edited" not in unchanged

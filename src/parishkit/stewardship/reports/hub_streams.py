@@ -36,7 +36,7 @@ from parishkit.stewardship.source.source_status import (
     source_status_label,
 )
 
-from .financial import FinancialQuery, giving_proof, shape_result
+from .financial import FinancialQuery, family_answers, giving_proof, shape_result
 from .financial_documents import period_years
 from .hub_census import FieldRow, Subject
 from .ministries import outcome_label
@@ -216,8 +216,11 @@ def read_hub_financial(campaign, family_duid, *, parish_name):
     if not result["rows"]:
         # Nothing to word: skip the configurations' read.
         return HubFinancial()
+    # The tab shows the Family's own answer, with an Edit's Reviewer's value
+    # beside it (hub_actions), where the selection has the values in force
+    # (#2196).
     result = shape_result(
-        result,
+        family_answers(result),
         campaign_id=campaign.pk,
         parish_name=parish_name,
         configuration=campaign.active_configuration.values,

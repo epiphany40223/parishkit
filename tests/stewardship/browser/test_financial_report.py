@@ -17,6 +17,8 @@ ONLINE = "00000000-0000-0000-0000-000000000062"
 
 PAGES = (
     "/financial-report",
+    # Its last row has an Edit in force (#2196), with its chip and tip.
+    "/financial-typical",
     "/financial-unproven",
     "/financial-empty",
     "/financial-gated",
@@ -180,8 +182,8 @@ def test_financial_columns_lead_with_family_and_name_the_parishsoft_year(
     Latest response last. The ParishSoft heading names Pledged, then
     Contributed, as its cells stack them. First response and Entered by
     Staff are left to
-    the downloads, whose columns are unchanged (#1544); Latest response
-    shows its day alone with the Staff chip.
+    the downloads (#1544), which end with Edited on Pledges (#2196); Latest
+    response shows its day alone with the Staff chip.
     """
     from parishkit.stewardship.reports.financial_documents import headings
 
@@ -216,9 +218,10 @@ def test_financial_columns_lead_with_family_and_name_the_parishsoft_year(
         for line in lines.all()
     ]
     assert tips == [1, 1]
-    # The downloads keep First response and Entered by Staff (#1544).
+    # The downloads keep First response and Entered by Staff (#1544), then
+    # Edited on Pledges (#2196).
     download = headings("2025-07-01", "2026-06-30")
-    assert download[-2:] == ("First response", "Entered by Staff")
+    assert download[-3:] == ("First response", "Entered by Staff", "Edited on Pledges")
     row = page.locator("[data-table-region] table tbody tr").first
     latest = row.locator("td").last
     assert latest.locator("time").count() == 1
@@ -368,6 +371,40 @@ def test_share_methods_show_every_short_label_chip_with_other_text_tips(
     button.click()
     visible(cell.locator(".toggletip-bubble"))
     assert cell.locator(".toggletip-bubble").inner_text() == "Other: Payroll gift"
+
+
+def test_an_edited_pledge_has_its_chip_and_the_familys_answer_in_a_tip(
+    page, component_origin
+):
+    """An Edit in force (#2196) is an Edited chip at the end of the
+    Installment cell (a text cell, so the right-aligned amounts stay in
+    line), heard as "Edited on Pledges", with an "i" tip giving the
+    Family's own answer, still escaped; opening it never moves the table's
+    box, and the cell stays on one line. A row without an Edit has neither."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + "/financial-typical")
+    rows = page.locator("[data-table-region] table tbody tr")
+    plain, edited = rows.first.locator("td").nth(2), rows.nth(2).locator("td").nth(2)
+    assert plain.locator(".status-badge").count() == 0
+    assert plain.locator(".toggletip").count() == 0
+    chip = edited.locator(".status-badge")
+    # Seen as "Edited"; a screen reader hears only "Edited on Pledges".
+    assert chip.locator("[aria-hidden=true]").inner_text() == "Edited"
+    assert chip.locator(".visually-hidden").text_content() == "Edited on Pledges"
+    assert edited.evaluate("c => getComputedStyle(c).whiteSpace") == "nowrap"
+    button = edited.get_by_role("button", name="More information", exact=True)
+    bubble = edited.locator(".toggletip-bubble")
+    assert bubble.is_hidden()
+    before = page.evaluate(TABLE_BOX)
+    button.focus()
+    page.keyboard.press("Enter")
+    visible(bubble)
+    assert bubble.inner_text() == (
+        "The Family's answer: $1,000.00, Weekly; Envelope <gift>."
+    )
+    assert page.evaluate(TABLE_BOX) == pytest.approx(before, abs=0.01)
+    page.keyboard.press("Escape")
+    assert bubble.is_hidden()
 
 
 # The results table's scroll box (not a chart's exact-values table, #720),

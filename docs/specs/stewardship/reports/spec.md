@@ -3470,10 +3470,12 @@ share-option labels with any Other text; the page uses each option's
 [short label](../admin-portal/spec.md#campaign-configuration) where one is
 set, the exports always the full label), the ParishSoft comparison pledge
 and contribution aggregates, Latest response (the time the Family last
-updated its response), First response (when it first responded) and,
-as the last column, Entered by Staff (described below), in exactly this
-order (the Administrator's decisions B1 and E1, #932), and no format
-carries internal references (Family version or response reference).
+updated its response), First response (when it first responded),
+Entered by Staff (described below) and, as the last column, Edited on
+Pledges (the [values in force](#values-in-force-on-financial-stewardship), since
+[#2196](https://github.com/epiphany40223/parishkit/issues/2196)), in
+exactly this order (the Administrator's decisions B1 and E1, #932), and no
+format carries internal references (Family version or response reference).
 
 The page shows the same pledges in fewer, narrower columns, so rows stay
 short at laptop width
@@ -3592,6 +3594,62 @@ offered matches no Family. A POST with a query string is refused too.
 This report stays the financial stream's statistics page. Reviewing each
 pledge and entering it in ParishSoft is on [Pledges](#pledges).
 
+### Values in force on Financial stewardship
+
+Every row, filter, sort, summary tile and chart of this report, and every
+one of its CSV, XLSX and PDF files, uses each Family's pledge values in
+force ([#2196](https://github.com/epiphany40223/parishkit/issues/2196), the
+Administrator's decision of 2026-10-25): the annual pledge, frequency and
+share methods of a reviewer's Edit on [Pledges](#pledges) (an Administrator
+or Staff member's Accepted (edited) decision) while that Edit is in force,
+else the Family's own answer. Before #2196 the report always showed the
+Family's own answer. Only an Edit in force counts, as on Pledges
+([Financial stream](../review-pipeline/spec.md#financial-stream)): an Edit
+undone by Back to review, or set aside by a newer, different pledge answer
+from the Family, no longer does; an Edit carried through Entered by hand,
+Confirmed or Entered incorrectly still does. Accept and Ignore change
+nothing here. An edited pledge reads as the
+[reviewed Family form](../review-pipeline/spec.md#what-the-reviewed-form-shows)
+shows it: the reviewer's frequency, the reviewer's share methods when the
+Edit changed them and the Family's own otherwise; an edited zero pledge has
+no frequency and no share methods and keeps the Family's Cannot contribute
+answer. A reviewer's share method is worded by the campaign's current
+settings, which the editor offered it from. The selection (frozen migration
+0182) finds the Edit in force with the same SQL that places Pledges' stages,
+so the two pages never disagree; the Family's response dates, Entered by
+Staff and the ParishSoft totals do not change with an Edit.
+
+The page marks an edited pledge the way Latest response marks a Staff
+entry ([table fit](../ui-conventions/spec.md#table-fit-and-row-height)): an
+"Edited" chip at the end of the Installment cell, a text cell, so the
+right-aligned amounts stay in line. A screen reader hears it as "Edited on
+Pledges", and an "i" toggletip beside it gives the Family's own answer as
+Pledges' Family's answer column words it ("The Family's answer: $1,000.00,
+Monthly; Online."). That answer is the Family's current response, as on
+Pledges, so after a reviewed Family form sent the edited pledge back as
+shown it is that pledge. The exports split the marker into their last
+column, Edited on Pledges, Yes or No; a file captured before 0182 leaves it
+blank, never No. The Family's answer and the Reviewer's value side by side,
+column by column, are on Pledges and its downloads, so this report adds no
+columns for them.
+
+Readers of the same selection that show the Family's answer put it back in
+place of the values in force, with the Reviewer's value beside it as
+before: [Pledges](#pledges) and its downloads, `pk-admin pledges`, the
+Cannot contribute rows of [Limitations](#limitations) (an answer the
+Family gave, so an Edit above zero leaves it listed there), and the
+[Family hub's Financial tab](../admin-portal/spec.md#family-and-member-tabs),
+which reads it narrowed to the Family but with no value filter.
+`pk-admin report financial` prints this report's summary, so it counts the
+values in force.
+
+The other pledge totals do not read this selection and stay the Families'
+own answers: the [Response dashboard](#response-dashboard) and its
+participation figures, the campaign comparisons and the campaign archive.
+With an Edit in force their annual total can differ from this report's;
+[#2202](https://github.com/epiphany40223/parishkit/issues/2202) records
+whether they should follow.
+
 ### Pledges
 
 **Access:** Admin and Staff only; no Ministry leader sees it.
@@ -3620,7 +3678,9 @@ section is the page.
 
 - **Rows.** One row per Family whose current live response answers the
   financial questions: the rows of
-  [Financial stewardship detail](#financial-stewardship-detail) with no filter.
+  [Financial stewardship detail](#financial-stewardship-detail) with no
+  filter, each with the Family's own answer (that report shows the
+  [values in force](#values-in-force-on-financial-stewardship) instead).
 - **Filters**, always open: **Stage** first, To review by default, then
   Conflict, To enter by hand, Entered by hand, Entered incorrectly, Confirmed,
   Ignored, Not seen in ParishSoft (only while some pledge has the flag,

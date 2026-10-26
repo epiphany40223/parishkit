@@ -50,6 +50,7 @@ def row(**changes):
         "source_pledge": MoneyAmount(120000),
         "source_contributions": MoneyAmount(10000),
         "staff_entered": False,
+        "edited": False,
     } | changes
 
 
@@ -123,6 +124,8 @@ def test_rows_word_money_status_shares_and_local_instants():
         datetime(2026, 9, 19, 11, 4, tzinfo=NEW_YORK),
         datetime(2026, 9, 1, 11, 4, tzinfo=NEW_YORK),
         # Entered by Staff (#794): the Family submitted it itself.
+        "No",
+        # Edited on Pledges (#2196): no reviewer's Edit is in force.
         "No",
     )
     # The page's columns in its order, without internal references
@@ -201,7 +204,7 @@ def test_share_wording_beyond_a_spreadsheet_cell_continues_in_later_rows():
     assert built.item_count == 2 and len(built.rows) == 6
     assert [cell[2] for cell in built.rows] == ["1234567"] * 5 + ["2"]
     # A continuation row carries the Family and the wording only.
-    assert built.rows[1][3:6] == ("", "", "") and built.rows[1][7:] == ("",) * 5
+    assert built.rows[1][3:6] == ("", "", "") and built.rows[1][7:] == ("",) * 6
     assert built.rows[1][6].startswith("(continued) Option ")
     expected = visible_text("; ".join(f"{s['label']}: {s['text']}" for s in shares))
     # Every character survives a workbook round trip, in order, in the
@@ -481,9 +484,26 @@ def test_entered_by_staff_is_yes_no_or_blank_for_an_older_capture(value, cell):
     """Staff entry for the current response (#794); old captures stay blank.
 
     ``shape_result`` gives an older capture's row (no marker) None, which
-    renders blank, never No. The column is last, after First response, as on
-    the page.
+    renders blank, never No. The column follows First response, as on the
+    page, and comes before Edited on Pledges (#2196).
     """
     built = document([row(staff_entered=value)])
-    assert built.headings[-2:] == ("First response", "Entered by Staff")
+    assert built.headings[-3:-1] == ("First response", "Entered by Staff")
+    assert built.rows[0][-2] == cell
+
+
+@pytest.mark.parametrize("value, cell", [(True, "Yes"), (False, "No"), (None, "")])
+def test_edited_on_pledges_is_yes_no_or_blank_for_an_older_capture(value, cell):
+    """Whether a reviewer's Edit is in force (#2196); old captures stay blank.
+
+    A capture made before migration 0182 has no marker, which ``shape_result``
+    gives as None and renders blank, never No. The column is last, after
+    Entered by Staff.
+    """
+    built = document([row(edited=value)])
+    assert built.headings[-2:] == ("Entered by Staff", "Edited on Pledges")
     assert built.rows[0][-1] == cell
+    # A row built without the key at all (an older shaped row) is blank too.
+    older = row()
+    del older["edited"]
+    assert document([older]).rows[0][-1] == ""
