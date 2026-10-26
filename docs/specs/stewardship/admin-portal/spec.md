@@ -313,10 +313,11 @@ and links the step that fixes it, keeping the HTTP status of the underlying
 refusal; closed JSON errors remain for polling and command endpoints.
 
 The setup Parish logos page previews the logo before the Administrator
-advances (#2270). Under the file field a preview box of fixed height holds
-the logo the field would save. Choosing a file draws it at once from the
-browser's own copy of the file (an object URL, revoked when the file is
-replaced or the page is left), with no upload. With no file chosen, the box
+advances (#2270). Above the file field
+([image previews](../ui-conventions/spec.md#image-previews), #2279) a
+preview box of fixed height holds the logo the field would save. Choosing
+a file draws it at once from the browser's own copy of the file (an object
+URL, revoked when the file is replaced or the page is left), with no upload. With no file chosen, the box
 shows the saved logo from the server, so a revisit shows what is saved, and
 its empty text before either exists. A file the page refuses (over 5 MB, or
 one the browser types as something other than an image) or that the browser

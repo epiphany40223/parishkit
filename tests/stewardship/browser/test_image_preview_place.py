@@ -35,6 +35,8 @@ CASES = {
     "parish-logos-advanced": (ADVANCED_PAGE, "body", "#branding-current"),
     "campaign-images": (ARTWORK, ".artwork-slot", ".artwork-box"),
     "campaign-images-wizard": (ARTWORK_STEP, ".artwork-slot", ".artwork-box"),
+    "setup-logo": ("/setup-branding", "body", "#logo-choice-preview"),
+    "setup-logo-saved": ("/setup-branding-saved", "body", "#logo-choice-preview"),
 }
 
 

@@ -2756,7 +2756,7 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
 .user-entry input[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
 .user-entry input[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 /* A previewed file field's refusal is marked inside its border, not with a
-   thicker one, so the refusal does not push the preview box down (#2270). */
+   thicker one, so the refusal does not push what follows down (#2270). */
 input[type=file][data-preview-target][aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
 input[type=file][data-preview-target][aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 @media (forced-colors: active) { input[type=file][data-preview-target][aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; } }
