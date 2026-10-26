@@ -1095,7 +1095,10 @@ heading, which reverses the order in place. Rows at the same instant are
 listed in the order the Family took them in, reversed with the rest newest
 first, so each line still reads as happening when it did in both
 directions. A Family has few lines, so the table
-shows them all, with no paging or row navigator. What happened keeps a
+shows them all, with no paging or row navigator. When is as wide as its
+longest one-line date and time (in the browser's time zone) and its
+padding, no wider ([#2251](https://github.com/epiphany40223/parishkit/issues/2251)),
+leaving the rest of the width to What happened and Details. What happened keeps a
 minimum width, so its heading and the words its lines start with
 (Submissions, Reminder, Invitation) never wrap mid-label at 1280 px; on a
 phone the table's own box scrolls sideways, as a focusable named region,
