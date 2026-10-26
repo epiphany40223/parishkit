@@ -22,7 +22,10 @@ that answers `t` only when all of these hold at once:
   login, also none of the authority its backup admission refuses);
 * no operator exists outside `pg_catalog` except the `pg_trgm` extension's
   own, and no runtime login may create one, in an application schema or the
-  database (#2166).
+  database (#2166);
+* the SELECT-only inspection login (#2148) exists exactly as provisioned and
+  holds exactly the SELECT grants its catalog rule gives, so the first
+  upgrade that carries it runs `database-grants`.
 
 Anything else, including a query error such as a missing table, means "run
 both commands". The query checks the same conditions the commands check,
@@ -34,6 +37,7 @@ the schema, excess grants and its role's connection limit independently.
 import secrets
 from importlib import import_module
 
+from . import inspect_login
 from .database_provisioning import (
     BACKUP_SEQUENCES,
     ISOLATION_DRIFT,
@@ -322,4 +326,5 @@ def upgrade_noop_query(configuration, deployment_id):
         checks.append(no_excess(login, tables, columns, reader=reader))
         if not reader:
             checks.append(no_create(login))
+    checks += [inspect_login.role_matches(marker), inspect_login.grants_exact()]
     return "SELECT " + "\n AND ".join(f"({check})" for check in checks) + ";\n"

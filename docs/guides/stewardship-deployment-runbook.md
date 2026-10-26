@@ -1384,6 +1384,37 @@ entry in the date range; shorter words read the entries as before.
 
 Each log write now also updates the four new indexes; at Production's rate (tens of thousands of audit events a month and about a hundred operational rows) this is negligible, and the only visible effect would be a rare insert that flushes a GIN index's pending list.
 
+### Database inspection login (#2148)
+
+The release that adds the SELECT-only inspection login,
+`pk_stewardship_inspect`
+([operations spec](../specs/stewardship/operations/spec.md#database-inspection-login)),
+is a grant change with no migration. With the
+[scripted upgrade](#scripted-upgrade), set `STEWARDSHIP_SCHEMA_CHANGE=1`:
+the upgrade check reports `f` (the login is missing; it may instead fail
+with `role "pk_stewardship_inspect" does not exist`, which the script treats
+the same way), and step 4's
+`database-grants` creates the login and grants it SELECT. By hand, run step
+4's `database-grants`. No data, Family code or link changes. An
+application-only [rollback](#rollback) stays possible: the previous image's
+check does not look at this login, which stays in place and unused.
+
+From then on, inspect Production with the wrapper on the host, never as the
+operator:
+
+```sh
+tools/stewardship-ops/pk-inspect                            # interactive
+tools/stewardship-ops/pk-inspect -c "SELECT count(*) FROM stewardship_outbox_message"
+tools/stewardship-ops/pk-inspect -At -v ON_ERROR_STOP=1 -f - < query.sql
+```
+
+Set `PK_INSPECT_PROJECT` when the Compose project is not `stewardship`
+(pk-local's is `parishkit-local`). Every table write, DDL and `SET ROLE` is
+refused, and so is any read of credential material
+(`permission denied for table ...`). A restore of a backup set from before
+this release leaves the login without grants until `database-grants` runs
+again.
+
 ### Refresh schedule modes (#1122)
 
 The release that gives the ParishSoft refresh schedule editor Basic and

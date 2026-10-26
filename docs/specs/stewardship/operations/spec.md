@@ -255,7 +255,9 @@ waits for this design and gets its own source when it lands.
 ### Logins and their sources
 
 The logins are the closed inventory in `runtime_identities.py` plus the
-operator superuser; nothing else may connect over TCP.
+operator superuser; nothing else may connect over TCP. The
+[inspection login](#database-inspection-login) is outside that inventory:
+it has no password and connects only through the socket.
 
 | Login | Used by | Allowed source |
 | --- | --- | --- |
@@ -343,8 +345,10 @@ source address is the identity, and the renderer makes it fixed:
 **The rules.** One rule per login and source, `host` with
 `scram-sha-256` (the backend is an internal network without TLS; adding
 `hostssl` is a separate decision), then a final `host all all all reject`. The
-socket gets `local all pk_stewardship_operator trust` and
-`local all all reject`: the socket lives on a mode-0700 tmpfs inside the
+socket gets `local all pk_stewardship_operator trust`, then
+`local "<postgres.name>" pk_stewardship_inspect trust` for the
+[inspection login](#database-inspection-login) (its one database only),
+then `local all all reject`: the socket lives on a mode-0700 tmpfs inside the
 PostgreSQL container, so only `docker exec` (host root) reaches it, which is
 how the upgrade check, `pk-restore`, the operations scripts and the
 runbook's `ALTER ROLE` commands already connect. The socket rule names `all`
@@ -604,6 +608,94 @@ this with the previous release's image before the release ships.
   plaintext could. Sets are sealed to an off-host key, which is unchanged.
 - The checked-in development Compose file, which uses one login, is out of
   scope.
+
+## Database inspection login
+
+**Status: post-launch (#2148).** Read-only inspection of Production (counts,
+mail-queue checks, pre- and post-deploy checks) uses
+`pk_stewardship_inspect` through the `tools/stewardship-ops/pk-inspect` host
+wrapper, never the operator superuser, whose `READ ONLY` transaction one
+statement can lift. The login holds no table write privilege, so a mistaken
+or pasted statement fails in PostgreSQL itself. Its definition is
+`inspect_login.py`.
+
+- **Attributes.** `LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS NOCREATEDB
+  NOCREATEROLE NOREPLICATION`, connection limit 3 (outside the services'
+  connection budget, like the operator's own sessions, so kept small), the deployment's provisioning marker, and **no password**: every
+  TCP rule is `scram-sha-256`, so it can never sign in over TCP, whatever
+  the rules say. It connects only through the PostgreSQL container's
+  socket, which needs `docker exec` (host root). The stock rules trust the
+  socket for every login; the [source rules](#logins-and-their-sources) add
+  one socket line for it.
+- **Settings.** `default_transaction_read_only = on`,
+  `search_path = pg_catalog, public`, `statement_timeout = 5min`,
+  `lock_timeout = 5s` (an inspection gives up rather than queue behind, and
+  so block, an upgrade's locks), `idle_in_transaction_session_timeout =
+  10min` and `idle_session_timeout = 60min` (a forgotten terminal frees its
+  connection). These are defaults a session can lift; lifting the
+  read-only default still leaves every table write refused by the grants.
+- **Authority.** `CONNECT` (no `TEMP`), `USAGE` on `public`, SELECT as
+  below, and one membership, `pg_read_all_stats` `WITH INHERIT TRUE, SET
+  FALSE`, for `pg_stat_activity` and the statistics views. `SET ROLE` and
+  `SET SESSION AUTHORIZATION` are refused. No sequence privilege, no
+  `EXECUTE` on any SECURITY DEFINER routine, and none of the isolation drift
+  every login is refused for.
+- **What it reads.** SELECT on every relation in `public`, decided from the
+  live catalog each time `database-grants` runs, except credential material:
+  Django's session table, OAuth tokens, every table under row-level security
+  (the credential handoff tables), and named columns (password and secret
+  fields, the Django session key in the portal and Family session records,
+  the automation secret's digest, Family code and link ciphertexts and
+  verifiers, sealed link substitutions, setup exchange ciphertexts). A table
+  with an excluded column gets column grants on the rest. A view reads
+  with its owner's privileges, so a view or materialized view that reads an
+  excluded table or column, a hidden view or a SECURITY DEFINER routine gets
+  no grant, and neither does any view over a table with excluded columns
+  unless it is listed as reviewed (`REVIEWED_VIEWS`): PostgreSQL records a
+  whole-row reference such as `to_jsonb(t)` beside a named column as that
+  column alone, so the catalog cannot rule it out. A change to a reviewed
+  view's definition needs the same review. Partitions and inheritance
+  children of such tables are hidden too. Everything else is readable, names
+  and email addresses included. A PostgreSQL test fails when a column whose
+  name looks like credential material is neither excluded nor reviewed.
+- **Provisioning.** The migration login cannot create roles, so the operator
+  does, with no migration: `database-roles` creates the login (it must exist
+  before a [restore](#restore) loads a dump that carries its grants) and
+  `database-grants` creates it where it is missing (an existing deployment's
+  first upgrade with it) and grants it. An existing login that differs in any
+  attribute, password, setting, membership or write or other-schema grant is
+  refused, never repaired, as for every other login. A SELECT the catalog
+  rule no longer gives (a granted view replaced to read a secret, a table put
+  under row-level security, a newly excluded column) is revoked by
+  `database-grants`, since that only narrows what the login reads; no
+  migration has to name a login that may not exist. The [upgrade check](#production-upgrades)
+  also requires the login and exactly its grants, so the first upgrade that
+  carries it answers `f` and runs `database-grants`. A restore of a set from
+  before it leaves the login without grants until `database-grants` runs.
+- **Wrapper.** `pk-inspect [psql options]` runs `docker exec` into the
+  project's PostgreSQL container (`PK_INSPECT_PROJECT`, default
+  `stewardship`, pk-local's `parishkit-local`, or `PK_INSPECT_CONTAINER`)
+  and opens `psql -X` as the login on the container's `POSTGRES_DB`. The
+  connection options come after the caller's, so they are the ones psql
+  uses; `--`, after which psql would take them from positional arguments,
+  is refused.
+
+**What it does not stop.** It guards against mistakes, not against host
+root: inside `psql`, `\connect` to the operator still works through the
+socket's operator `trust`, and anyone with `docker exec` holds every login
+already. `pg_read_all_stats` shows other sessions' current statement text,
+and Django binds parameters on the client, so a statement running at that
+moment can show a literal value (a code being checked, for example). Like
+any login it can hold `ACCESS SHARE` locks, `NOTIFY`, and take advisory
+locks: never take the application's own keys (the backup, installer and
+review locks and the download slots), which would block that work until
+the session ends; its timeouts are only defaults a session can lift. With
+the read-only default lifted it can also create large objects (`PUBLIC` may
+run `lo_create`); an object it owns is the ownership drift every login is
+refused for, so the next `database-grants` and upgrade check stop until the
+operator removes it. The operations scripts (`tools/stewardship-ops/lib.sh`
+`ops_psql`) still use the operator until the release with this login is
+deployed; switching them is follow-up work.
 
 ## Startup and upgrades
 
