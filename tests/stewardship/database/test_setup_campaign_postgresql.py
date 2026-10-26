@@ -12,13 +12,12 @@ private and keeps the timezone it fixed.
 import pytest
 from django.db import DatabaseError, connection, transaction
 from django.db.models import F
-from django.test import Client
 
 from parishkit.stewardship.accounts.setup_campaign import (
     current_source_check,
     require_source_check,
 )
-from parishkit.stewardship.accounts.setup_drafts import save_section, staged_load
+from parishkit.stewardship.accounts.setup_drafts import save_section
 from parishkit.stewardship.accounts.setup_models import SetupAttempt, SetupDraftSection
 from parishkit.stewardship.accounts.setup_staging import cancel_setup
 from parishkit.stewardship.campaigns.models import Campaign
@@ -26,6 +25,7 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.web.refusals import UserFacingMissing
 
+from .legacy_setup_loading import staged_load
 from .setup_check_builders import checked, checked_setup
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_runtime_auth_grants_postgresql import web_login
@@ -78,29 +78,20 @@ def test_other_login_cannot_use_the_check(setup_service):
             require_source_check(login(setup_service), setup_service, attempt.pk)
 
 
-@pytest.mark.parametrize("direct_sql", [False, True])
-def test_source_bound_timezone_stays_fixed(setup_service, monkeypatch, direct_sql):
-    """Service and SQL preserve the loaded timezone while other profile edits work."""
+def test_source_bound_timezone_stays_fixed_in_sql(setup_service, monkeypatch):
+    """SQL keeps a legacy load's timezone fixed while other profile edits work.
+
+    The web no longer refuses the change itself (#2233): no load can bind now.
+    """
     request, attempt = completed(setup_service, monkeypatch)
     original = SetupDraftSection.objects.get(attempt=attempt, step="parish").values
     changed = original | {"timezone": "Pacific/Honolulu"}
     with web_login():
-        if direct_sql:
-            with pytest.raises(DatabaseError) as failure, work_transaction():
-                SetupDraftSection.objects.filter(attempt=attempt, step="parish").update(
-                    values=changed, version=F("version") + 1
-                )
-            assert failure.value.__cause__.sqlstate == "23514"
-        else:
-            with pytest.raises(ValueError, match="timezone"):
-                save_section(
-                    request,
-                    setup_service,
-                    attempt.pk,
-                    step="parish",
-                    values=changed,
-                    expected_version=attempt.version,
-                )
+        with pytest.raises(DatabaseError) as failure, work_transaction():
+            SetupDraftSection.objects.filter(attempt=attempt, step="parish").update(
+                values=changed, version=F("version") + 1
+            )
+        assert failure.value.__cause__.sqlstate == "23514"
         saved = save_section(
             request,
             setup_service,
@@ -163,31 +154,3 @@ def test_a_checked_setup_keeps_its_timezone_editable(setup_service):
         SetupDraftSection.objects.get(attempt=attempt, step="parish").values["timezone"]
         == "Pacific/Honolulu"
     )
-
-
-def test_loaded_parish_form_explains_fixed_timezone_and_preserves_other_edits(
-    setup_http, monkeypatch
-):
-    """Disabled browser fields retain their trusted initial value even if forged."""
-    request, attempt = completed(setup_http, monkeypatch)
-    browser = Client(enforce_csrf_checks=True)
-    browser.cookies["pk_admin"] = request.session.session_key
-    original = SetupDraftSection.objects.get(attempt=attempt, step="parish").values
-    with web_login():
-        page = browser.get("/admin/setup/parish")
-        assert page.status_code == 200, page.content
-        assert page.context["form"].fields["timezone"].disabled
-        assert b"Cancel and start a new setup" in page.content
-        for supplied in ({}, {"timezone": "Pacific/Honolulu"}):
-            fields = {
-                key: value for key, value in original.items() if key != "timezone"
-            }
-            fields.update(
-                supplied, name="Corrected Parish", version=str(attempt.version)
-            )
-            response = post(browser, "/admin/setup/parish", fields)
-            assert response.status_code == 302, response.content
-            attempt.refresh_from_db()
-            assert SetupDraftSection.objects.get(
-                attempt=attempt, step="parish"
-            ).values == (original | {"name": "Corrected Parish"})

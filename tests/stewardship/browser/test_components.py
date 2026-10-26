@@ -1,14 +1,14 @@
 """WCAG automated checks plus keyboard, mobile, timezone and activity behavior."""
 
 from datetime import timedelta
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs
 
 import pytest
 
 from parishkit.stewardship.accounts.templatetags.stewardship import parish_time
 from parishkit.stewardship.web import dates
 
-from .conftest import NOW, load_collections
+from .conftest import NOW
 from .keyboard import tab_to_next
 from .waits import eventually, hidden, recorded, visible
 
@@ -44,81 +44,6 @@ def test_schedule_preview_shows_send_times_only_in_browser_time(
     assert "When it sends (shown in your computer's time zone):" in text
     assert "not a list of who will receive it" not in text
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
-
-
-def renewal(route, **values):
-    """Answer one source-load renewal POST with a synthetic progress reading."""
-    route.fulfill(
-        json={
-            "server_now": NOW.isoformat(),
-            "task_id": urlsplit(route.request.url).path.split("/")[-1],
-            "task_state": "running",
-            "setup_state": "loading",
-            "phase": "staging",
-            "active": True,
-            "current": 1234,
-            "total": 5000,
-            "collections": load_collections(7),
-            "idle_at": (NOW + timedelta(minutes=30)).isoformat(),
-            "watchdog_at": (NOW + timedelta(hours=2)).isoformat(),
-            "absolute_at": (NOW + timedelta(hours=12)).isoformat(),
-        }
-        | values
-    )
-
-
-@pytest.mark.parametrize("clock_skew_hours", [-48, 0, 48])
-def test_setup_progress_only_renews_visible_correlated_work_and_stops_at_deadline(
-    page, component_origin, clock_skew_hours
-):
-    """Visible-page renewal carries only CSRF and stops at local deadlines."""
-    page.clock.install(time=NOW + timedelta(hours=clock_skew_hours))
-    requests = []
-
-    def observe(route):
-        """The synthetic server response has no Family values or renewal promises."""
-        requests.append(route.request)
-        renewal(route)
-
-    page.route("**/admin/setup/source/*?format=json", observe)
-    page.goto(component_origin + "/setup-source-progress")
-    recorded(page, requests, 1)
-    assert requests[0].method == "POST"
-    assert requests[0].post_data.startswith("csrfmiddlewaretoken=")
-    assert "&" not in requests[0].post_data
-    page.clock.set_system_time(NOW + timedelta(days=7))
-    page.evaluate(
-        "Object.defineProperty(document, 'hidden', {configurable:true, get:()=>true})"
-    )
-    page.clock.fast_forward(60000)
-    assert len(requests) == 1
-    page.evaluate(
-        "Object.defineProperty(document, 'hidden', {configurable:true, get:()=>false})"
-    )
-    with page.expect_response("**/admin/setup/source/*?format=json"):
-        page.clock.fast_forward(15000)
-    assert len(requests) == 2
-    page.clock.fast_forward(13 * 60 * 60 * 1000)
-    assert len(requests) == 2
-
-
-def test_setup_progress_terminal_renewal_stops_automatic_posts(page, component_origin):
-    """A renewal that says the load ended stops renewing, and nothing else posts."""
-    page.clock.install(time=NOW)
-    requests = []
-
-    def expired(route):
-        """A terminal server verdict is final even before the local timer expires."""
-        requests.append(route.request)
-        renewal(route, task_state="cancelled", setup_state="expired", active=False)
-
-    page.route("**/admin/setup/source/*?format=json", expired)
-    page.goto(component_origin + "/setup-source-progress")
-    recorded(page, requests, 1)
-    page.clock.fast_forward(60000)
-    page.wait_for_timeout(200)
-    assert len(requests) == 1
-    assert page.get_by_role("button", name="Check progress now").count() == 0
 
 
 def test_csp_permits_the_fixed_google_form_destination(page, component_origin):
@@ -250,7 +175,6 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/setup-mail",
         "/setup-slack",
         "/setup-testing",
-        "/setup-source-progress",
     ],
 )
 @pytest.mark.parametrize("width", [320, 1280])

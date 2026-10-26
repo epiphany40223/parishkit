@@ -180,8 +180,7 @@ def scheduler_handlers():
     from .source.outcomes import admit_refresh_metadata, recovery_plan
     from .source.requests import TASK_TYPE
     from .source.setup_admission import TASK_TYPE as SETUP_LOAD
-    from .source.setup_admission import admit_setup_task
-    from .source.setup_admission import recovery_plan as setup_recovery
+    from .source.setup_admission import retired_handler as retired_setup_load
     from .source.setup_cleanup import cleanup_handler as setup_cleanup_handler
     from .source.setup_disposal import TASK_TYPE as SETUP_CLEANUP
 
@@ -216,13 +215,7 @@ def scheduler_handlers():
         AUTOMATION_MAINTENANCE: maintenance_handler(scheduler=True),
         SETUP_CLEANUP: setup_cleanup_handler(scheduler=True),
         SETUP_MAIL: setup_mail_handler(scheduler=True),
-        SETUP_LOAD: Handler(
-            queue=WorkQueue.SOURCE,
-            admit=admit_setup_task,
-            execute=unavailable,
-            recover=setup_recovery,
-            scope=work_transaction,
-        ),
+        SETUP_LOAD: retired_setup_load(),
         TASK_TYPE: Handler(
             queue=WorkQueue.SOURCE,
             admit=admit_refresh_metadata,
@@ -403,9 +396,9 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
         from .source.execution import refresh_handler
         from .source.requests import TASK_TYPE
         from .source.setup_admission import TASK_TYPE as SETUP_LOAD
+        from .source.setup_admission import retired_handler as retired_setup_load
         from .source.setup_cleanup import cleanup_handler as setup_cleanup_handler
         from .source.setup_disposal import TASK_TYPE as SETUP_CLEANUP
-        from .source.setup_execution import setup_source_handler
 
         handlers = {
             # Report emails (#1786), which replaced the Daily and Weekly digests.
@@ -445,7 +438,7 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
             BRANDING_CLEANUP: cleanup_handler(configuration.paths["media"]),
             AUTOMATION_MAINTENANCE: maintenance_handler(),
             SETUP_CLEANUP: setup_cleanup_handler(),
-            SETUP_LOAD: setup_source_handler(),
+            SETUP_LOAD: retired_setup_load(),
         }
         if "parishsoft" in loaded:
             handlers[TASK_TYPE] = refresh_handler(

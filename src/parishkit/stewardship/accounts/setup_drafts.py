@@ -31,49 +31,13 @@ class DraftView:
     idle_at: datetime
     absolute_at: datetime
     watchdog_at: datetime | None
-    # A load an attempt bound before #2201 and its Task state; the web no
-    # longer starts one (Check parish data replaced it).
+    # Whether a load bound before #2201 is still on the attempt (it fixes the
+    # timezone); the web starts none now.
     source_task_id: UUID | None = None
-    source_task_state: str | None = None
     # Whether the newest parish data check is ready and checked the staged
     # ParishSoft key and organization saved now (setup_checks.checked_source,
     # #2201): what completes the Check parish data step.
     source_checked: bool = False
-
-
-def staged_load(attempt):
-    """The attempt's exact, still-valid staged load result, or None.
-
-    Valid means: the bound load succeeded, its exchange is unscrubbed and
-    on the Task's fence, the staged ParishSoft credential still has the
-    version and fingerprint the load read, and its snapshot is ready on the
-    same fences. Since #2201 the web starts no load and Finish setup needs the
-    parish data check instead (``setup_checks.checked_source``); this stays
-    for a load an attempt bound earlier, whose progress page and discard
-    (#1353) still read it, and the attempt's audit trigger repeats it in SQL
-    to refuse a Load again of a still-valid load.
-    """
-    from .setup_exchange_models import SetupSourceResult
-
-    if attempt.source_task_id is None:
-        return None
-    return (
-        SetupSourceResult.objects.filter(
-            exchange__attempt=attempt,
-            exchange__scrubbed_at=None,
-            exchange__task__root_id=attempt.source_task_id,
-            exchange__task__state="succeeded",
-            exchange__task_fence=F("exchange__task__fence"),
-            exchange__credential__scrubbed_at=None,
-            exchange__credential_version=F("exchange__credential__version"),
-            exchange__fingerprint=F("exchange__credential__fingerprint"),
-            snapshot__state="ready",
-            snapshot__task_id=F("exchange__task_id"),
-            snapshot__source_fence=F("exchange__source_fence"),
-        )
-        .order_by("-snapshot__completed_at", "-pk")
-        .first()
-    )
 
 
 def _owned(request, service, attempt_id=None):
@@ -125,7 +89,6 @@ def view_draft(request, service, attempt_id=None):
             window.absolute_at,
             window.watchdog_at,
             row.source_task_id,
-            row.source_task.state if row.source_task_id else None,
             row.state == SetupState.COLLECTING and checked_source(row) is not None,
         )
 
@@ -170,6 +133,8 @@ def save_sections(request, service, attempt_id, *, updates, expected_version):
                 link_label=_("Open the setup overview"),
             )
         if "parish" in updates and attempt.source_task_id is not None:
+            # SQL still fixes the timezone of an attempt with a bound
+            # (pre-#2201) load; say so in words rather than fail in the database.
             original = SetupDraftSection.objects.get(attempt=attempt, step="parish")
             if updates["parish"]["timezone"] != original.values["timezone"]:
                 raise UserFacingError(

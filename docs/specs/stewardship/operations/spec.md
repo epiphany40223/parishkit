@@ -2680,11 +2680,8 @@ At minimum, end-to-end tests demonstrate:
    restore mapping: in particular, archived-current preserves its pointer and
    Production until separate Return to Testing, while interrupted purge state
    blocks release pending explicit recovery.
-   First-Admin setup additionally proves that correlated source-load polling
-   renews idle only with a current worker heartbeat, never renews the two-hour
-   watchdog or absolute expiry, stops renewing when the page/task ends, and
-   watchdog/expiry cleanup prevents a late worker from restoring discarded
-   staging. A simulated two-hour overrun is treated as a failed/stuck import and
+   First-Admin setup additionally proves that watchdog/expiry cleanup
+   prevents a late worker from restoring discarded staging. A simulated two-hour overrun is treated as a failed/stuck import and
    leaves redacted diagnostic correlation for operator investigation.
    Wizard and later Admin edits additionally prove that authoritative YAML and
    the active PostgreSQL snapshot expose one matching digest, every induced

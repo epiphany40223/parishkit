@@ -27,12 +27,7 @@ from parishkit.stewardship.accounts.setup_credentials import (
 )
 from parishkit.stewardship.accounts.setup_drafts import view_draft
 from parishkit.stewardship.accounts.setup_models import SetupAttempt
-from parishkit.stewardship.accounts.setup_secret_models import SetupSealedCredential
-from parishkit.stewardship.accounts.setup_source import (
-    VOID_SETTING,
-    start_source_load,
-)
-from parishkit.stewardship.accounts.setup_staging import begin_setup, cancel_setup
+from parishkit.stewardship.accounts.setup_staging import begin_setup
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
@@ -40,28 +35,21 @@ from parishkit.stewardship.jobs.dispatch import execute_hint, recover_hint
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.jobs.queues import WorkQueue
-from parishkit.stewardship.jobs.storage import _status
-from parishkit.stewardship.source.leases import release_source
-from parishkit.stewardship.source.setup_admission import bound_attempt
-from parishkit.stewardship.source.setup_cleanup import _unscheduled
-from parishkit.stewardship.source.setup_disposal import dispose_batch
-from parishkit.stewardship.source.setup_execution import setup_source_handler
-from parishkit.stewardship.source.snapshot_models import SourceSnapshot
-from parishkit.stewardship.source.version_models import ENTITY_MODELS
 
+from .legacy_setup_execution import setup_source_handler
+from .legacy_setup_source import (
+    VOID_SETTING,
+    start_source_load,
+)
 from .setup_lookup_builders import answered_and_chosen
-from .setup_request_budgets import short_request_budgets
 from .test_background_grants_postgresql import task_login
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_runtime_auth_grants_postgresql import web_login
 from .test_setup_credentials_postgresql import CANDIDATE
-from .test_setup_disposal_postgresql import cleanup_claim
 from .test_setup_loading_postgresql import (
     installer_reply,
     pages,
-    prepared,
     queued,
-    run,
 )
 from .test_setup_staging_postgresql import login, setup_service  # noqa: F401
 from .test_source_refreshing_postgresql import fake_provider
@@ -139,124 +127,6 @@ def context(event_type):
     return AuditContext.objects.get(event=event).context
 
 
-def test_a_failed_load_returns_to_collecting_and_loads_again(
-    setup_service, monkeypatch
-):
-    """A permanent failure keeps its binding; Load again discards it."""
-    short_request_budgets(monkeypatch)
-    request, attempt, task, private = queued(setup_service)
-    assert dispatch(monkeypatch, private, task.run_id, invalid=True) == "failed"
-    row = SetupAttempt.objects.get()
-    assert (row.state, row.source_task_id) == ("collecting", task.run_id)
-    assert context("setup_source_completed")["outcome"] == "failed"
-    with web_login():
-        draft = view_draft(request, setup_service, row.pk)
-    assert draft.source_task_state == "failed"
-
-    with web_login():
-        again = start_source_load(
-            request, setup_service, row.pk, expected_version=row.version
-        )
-    assert again.run_id != task.run_id
-    row = SetupAttempt.objects.get()
-    assert (row.state, row.source_task_id) == ("loading", again.run_id)
-    # The discard's audit names why and how the load had ended, never a key.
-    assert context("setup_source_voided") == {
-        "version": row.version - 1,
-        "outcome": "cancelled",
-        "void_reason": "reload",
-        "task_state": "failed",
-    }
-    keys = set(
-        TaskRun.objects.filter(task_type="setup_source_load").values_list(
-            "idempotency_key", flat=True
-        )
-    )
-    assert len(keys) == 2
-    # The discarded Task no longer resolves the attempt, and the worker
-    # cannot return setup to collecting for the new, unfinished load.
-    with work_transaction(), pytest.raises(PermissionError):
-        bound_attempt(_status(TaskRun.objects.get(pk=task.run_id)))
-    with (
-        pytest.raises(IntegrityError, match="validated setup staging"),
-        task_login(ServiceRole.WORKER, exact=True),
-        work_transaction(),
-    ):
-        SetupAttempt.objects.filter(pk=row.pk).update(
-            state="collecting", actor_id=row.owner_id, version=F("version") + 1
-        )
-
-    drained()
-    assert dispatch(monkeypatch, private, again.run_id) == "succeeded"
-    row = SetupAttempt.objects.get()
-    assert (row.state, row.source_task_id) == ("collecting", again.run_id)
-    # A successful load is kept: loading again returns it unchanged.
-    with web_login():
-        assert (
-            start_source_load(
-                request, setup_service, row.pk, expected_version=row.version
-            ).run_id
-            == again.run_id
-        )
-
-
-@pytest.mark.parametrize(
-    "change, reason",
-    [
-        ({"organization": 2}, "organization_changed"),
-        ({"candidate": b"another-synthetic-wizard-key"}, "key_changed"),
-    ],
-)
-def test_the_same_connection_keeps_a_load_and_a_change_discards_it(
-    setup_service, monkeypatch, change, reason
-):
-    """Only a different key or organization discards a successful load.
-
-    The saved key pasted again starts a new organization lookup (#1554);
-    choosing the same organization keeps the load and the key's version.
-    """
-    request, attempt, task, private = queued(setup_service)
-    assert dispatch(monkeypatch, private, task.run_id) == "succeeded"
-    before = SetupSealedCredential.objects.get(target="parishsoft").version
-    status, receipt = stage(request, setup_service)
-    after = SetupAttempt.objects.get()
-    assert after.source_task_id == task.run_id and after.state == "collecting"
-    assert receipt.version == before
-    assert not AuditEvent.objects.filter(event_type="setup_source_voided").exists()
-    before = after
-
-    # Load again of a still-valid load is refused in SQL, by the same
-    # predicate review uses.
-    with pytest.raises(IntegrityError, match="still-valid"):
-        void(before, "reload")
-    status, changed = stage(request, setup_service, **change)
-    row = SetupAttempt.objects.get()
-    assert (row.state, row.source_task_id, row.renewed_at) == ("collecting", None, None)
-    # A new key is sealed and then its organization chosen; the saved key
-    # with another organization is only rechosen.
-    assert changed.version > receipt.version
-    voided = context("setup_source_voided")
-    # The attempt's version when the load was discarded, before the change
-    # that followed it (and, for a new key, its organization choice).
-    assert voided.pop("version") < row.version
-    assert voided == {
-        "outcome": "cancelled",
-        "void_reason": reason,
-        "task_state": "succeeded",
-    }
-    # Nothing is bound now, so a further change discards nothing, and the
-    # next load binds a new Task.
-    stage(request, setup_service, organization=3)
-    assert AuditEvent.objects.filter(event_type="setup_source_voided").count() == 1
-    row = SetupAttempt.objects.get()
-    with web_login():
-        load = start_source_load(
-            request, setup_service, row.pk, expected_version=row.version
-        )
-    assert load.run_id != task.run_id
-    assert SetupAttempt.objects.get().source_task_id == load.run_id
-
-
 def source_page(request, service):
     """The Check parish data page as its view renders it, and the draft."""
     from django.template.loader import render_to_string
@@ -268,53 +138,6 @@ def source_page(request, service):
         context = _context(draft, "source")
     context["source_step"] = context["wizard"].step("source")
     return render_to_string("stewardship/setup-source.html", context), context
-
-
-def test_a_load_whose_credential_version_moved_needs_loading_again(
-    setup_service, monkeypatch
-):
-    """A load bound before #2201 never completes the step, and the SQL still
-    discards one whose staged data is no longer valid (#1353).
-
-    Since #2201 the step is Check parish data: a succeeded legacy load leaves
-    it to do, with the check offered. Its reload path, which nothing in the
-    web starts any more, still discards the load with reason reload once the
-    ParishSoft credential's version moved.
-    """
-    from parishkit.stewardship.accounts.setup_secret_models import (
-        SetupSealedCredential,
-    )
-
-    short_request_budgets(monkeypatch)
-    request, attempt, task, private = queued(setup_service)
-    assert dispatch(monkeypatch, private, task.run_id) == "succeeded"
-    html, page = source_page(request, setup_service)
-    assert not page["draft"].source_checked
-    assert page["wizard"].step("source").state != "done"
-    assert 'value="check"' in html and "Check that ParishSoft answers" in html
-    # The staged credential's version moves on without a new load.
-    with web_login(), work_transaction():
-        SetupSealedCredential.objects.filter(target="parishsoft").update(
-            version=F("version") + 1
-        )
-    html, page = source_page(request, setup_service)
-    draft = page["draft"]
-    assert draft.source_task_state == "succeeded" and not draft.source_checked
-    with web_login():
-        again = start_source_load(
-            request,
-            setup_service,
-            draft.status.attempt_id,
-            expected_version=draft.status.version,
-        )
-    assert again.run_id != task.run_id
-    assert SetupAttempt.objects.get().source_task_id == again.run_id
-    assert context("setup_source_voided") == {
-        "version": draft.status.version + 1,
-        "outcome": "cancelled",
-        "void_reason": "reload",
-        "task_state": "succeeded",
-    }
 
 
 def finished(service, outcome):
@@ -490,36 +313,6 @@ def test_a_failed_load_is_discarded_never_rebound_in_place(setup_service):
             source_task_id=other.run_id, state="loading", version=F("version") + 1
         )
     assert SetupAttempt.objects.get().source_task_id == other.run_id
-
-
-def test_cleanup_disposes_of_a_discarded_load(setup_service, monkeypatch):
-    """A discarded load's staging is removed when the setup ends."""
-    short_request_budgets(monkeypatch)
-    values, request = prepared(setup_service, with_request=True)
-    fake_provider(monkeypatch, pages())
-    snapshot = run(*values, complete=True)
-    stage(request, setup_service, organization=2)
-    attempt = SetupAttempt.objects.get()
-    assert attempt.source_task_id is None
-    with web_login():
-        cancel_setup(request, setup_service, attempt.pk)
-    assert list(_unscheduled().values_list("pk", flat=True)) == [attempt.pk]
-    drained()
-    execution, source = cleanup_claim(attempt.pk)
-    removed = 0
-    with task_login(ServiceRole.WORKER, exact=True):
-        while True:
-            with execution.effect():
-                count = dispose_batch(execution, source)
-            if count is None:
-                break
-            removed += count
-    assert removed == sum(snapshot.counts.values())
-    assert SourceSnapshot.objects.get().state == "rejected"
-    for payload, membership in ENTITY_MODELS.values():
-        assert not payload.objects.exists()
-        assert not membership.objects.exists()
-    release_source(source)
 
 
 # Where each function 0102 replaces had its earlier body: a frozen file, or

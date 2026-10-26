@@ -306,10 +306,7 @@ def setup_source(request):
         _closed(request, set())
         service = runtime()
         draft = view_draft(request, service)
-        if draft is None or draft.status.state not in {
-            SetupState.COLLECTING,
-            SetupState.LOADING,
-        }:
+        if draft is None or draft.status.state != SetupState.COLLECTING:
             return _checked(request, service, HttpResponseRedirect("/admin/setup"))
         context = _context(draft, "source")
         context["source_step"] = context["wizard"].step("source")

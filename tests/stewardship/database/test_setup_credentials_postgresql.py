@@ -31,13 +31,13 @@ from parishkit.stewardship.storage import StaleRecordError
 
 from ..test_integration_candidates import account
 from ..test_setup_forms import VALUES
+from .legacy_setup_source import bind_load
 from .setup_lookup_builders import answered_and_chosen
 from .test_background_grants_postgresql import task_login
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_handoff_discovery_postgresql import key
 from .test_runtime_auth_grants_postgresql import web_login
 from .test_setup_expiry_postgresql import sweep
-from .test_setup_progress_postgresql import bind_load
 from .test_setup_staging_postgresql import login, setup_service  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)

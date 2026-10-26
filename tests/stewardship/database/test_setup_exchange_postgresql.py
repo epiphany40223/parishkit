@@ -18,23 +18,23 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.ownership import TaskClaim
 from parishkit.stewardship.runtime_grants import runtime_functions, runtime_grants
 from parishkit.stewardship.source.leases import release_source
-from parishkit.stewardship.source.setup_exchange import (
-    publish_recipient,
-    receive_credential,
-    relay_pending,
-)
 from parishkit.stewardship.source.setup_handoff import (
     EphemeralSetupRecipient,
     SetupCredentialScope,
 )
 from parishkit.stewardship.storage import StaleRecordError
 
+from .legacy_setup_exchange import (
+    publish_recipient,
+    receive_credential,
+    relay_pending,
+)
+from .legacy_setup_source import bind_load
 from .role_grants import grant_runtime
 from .test_background_grants_postgresql import task_login
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_runtime_auth_grants_postgresql import web_login
 from .test_setup_credentials_postgresql import CANDIDATE, staged
-from .test_setup_progress_postgresql import bind_load
 from .test_setup_staging_postgresql import setup_service  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)

@@ -15,17 +15,8 @@ from parishkit.stewardship.web.refusals import UserFacingMissing
 
 from .sessions import database_now
 from .setup_checks import checked_source
-from .setup_drafts import _owned, staged_load
+from .setup_drafts import _owned
 from .setup_staging import _expiry
-
-
-def _source_result(attempt):
-    """The attempt's exact, still-valid staged load result, or None.
-
-    Only a load bound before #2201 has one; the pre-#142 campaign sections
-    a draft may still hold name it.
-    """
-    return staged_load(attempt)
 
 
 def require_source_check(request, service, attempt_id):

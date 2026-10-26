@@ -1,4 +1,8 @@
-"""Target-isolated relay of a staged key to one ephemeral live source worker."""
+"""Target-isolated relay of a staged key to one ephemeral live source worker.
+
+Test support since #2233: production no longer runs a setup load, but the SQL
+that guards one stays, and its tests bind and run one with this module.
+"""
 
 from django.db import connection
 from django.db.models import F
@@ -18,15 +22,14 @@ from parishkit.stewardship.campaigns.work_locks import (
 )
 from parishkit.stewardship.jobs.ownership import TaskClaim
 from parishkit.stewardship.observability import current_correlation
-from parishkit.stewardship.storage import StaleRecordError
-
-from .setup_handoff import (
+from parishkit.stewardship.source.setup_handoff import (
     EphemeralSetupRecipient,
     SealedSetupCredential,
     SetupCredentialRecipient,
     SetupCredentialScope,
     relay_setup_credential,
 )
+from parishkit.stewardship.storage import StaleRecordError
 
 
 def _live(row):

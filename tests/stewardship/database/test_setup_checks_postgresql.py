@@ -87,7 +87,7 @@ def test_a_check_is_queued_by_the_web_and_answered_by_the_installer(setup_servic
     assert current_check(SetupAttempt.objects.get(pk=attempt.pk)).checked
     with web_login():
         draft = view_draft(request, setup_service, attempt.pk)
-    assert draft.source_checked and draft.source_task_id is None
+    assert draft.source_checked
     # Nothing else is waiting for the installer.
     assert not answer_check(private)
 

@@ -301,12 +301,6 @@ def choose_organization(
         )
         settings = {"organization_id": organization_id}
         if dict(credential.settings) != settings:
-            if attempt.source_task_id is not None:
-                from .setup_source import void_source_load
-
-                attempt = void_source_load(
-                    attempt, reason="organization_changed", actor_id=actor.identity
-                )
             SetupSealedCredential.objects.filter(
                 pk=credential.pk, version=credential.version
             ).update(

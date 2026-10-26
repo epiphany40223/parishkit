@@ -26,11 +26,6 @@ state.{% endcomment %}
 {% if source_step.state == 'blocked' %}
 <p class="notice" role="status">{{ source_step.status }} <a href="{{ source_step.fix_url }}">{% blocktranslate trimmed with step=source_step.fix_label %}Go to “{{ step }}”{% endblocktranslate %}</a></p>
 {% include 'stewardship/setup-navigation.html' %}
-{% elif draft.status.state == 'loading' %}{% comment %}A load this attempt
-started before #2201 is still running: its progress page stays the page to
-follow, and the check waits until it ends.{% endcomment %}
-<p class="notice" role="status">{% translate "A parish data load started before this setup step changed is still running. Check the parish data once it finishes." %} <a href="{% url 'admin:setup_source_progress' draft.source_task_id %}">{% translate "View the load progress" %}</a></p>
-{% include 'stewardship/setup-navigation.html' with back_only=True %}
 {% else %}<form method="post" action="{% url 'admin:setup' %}#setup-source-panel" class="panel" data-in-place>{% csrf_token %}
 <input type="hidden" name="attempt" value="{{ draft.status.attempt_id }}"><input type="hidden" name="version" value="{{ draft.status.version }}">
 <div class="setup-check-slot">{% for state in check_states %}{% if state == check_shown %}{% include 'stewardship/setup-source-status.html' with ghost=False %}{% else %}{% include 'stewardship/setup-source-status.html' with ghost=True %}{% endif %}{% endfor %}</div>

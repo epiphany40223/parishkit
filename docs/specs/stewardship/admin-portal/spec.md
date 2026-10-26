@@ -396,11 +396,9 @@ unknown-delivery acknowledgement come from the server. No page offers a
 manual check or asks for a reload, and a page restored from the browser's
 history checks again by itself: a settled test page re-reads its panel in
 place on `pageshow`, so Continue never outlives a change to an earlier
-step's settings. Check parish data re-reads its panel in place, and so
-does a Loading parish data page left from before
-[#2201](https://github.com/epiphany40223/parishkit/issues/2201), whenever
-the page is shown again (its tab shown, or `pageshow`); each also re-reads
-the step bar in place. So neither shows its step as completed after the
+step's settings. Check parish data re-reads its panel in place whenever
+the page is shown again (its tab shown, or `pageshow`), and re-reads the
+step bar in place. So it never shows its step as completed after the
 ParishSoft connection changed in another tab
 ([#1353](https://github.com/epiphany40223/parishkit/issues/1353)). That
 re-check of a settled status never retries and never adds a line under the
@@ -572,11 +570,15 @@ wizard again, and its data, keys, Family codes and emailed links are
 unchanged. A setup attempt still collecting when the change is installed
 keeps its saved steps, staged credentials and accepted tests; a load it
 bound earlier is never used again, and its Check parish data step is not
-done until a check of its current connection is ready. An attempt still
-loading finishes that load first, under its two-hour watchdog and the
-progress page's idle renewal as before; its Loading parish data page stays
-readable, and Check parish data says the load is still running, links that
-page and offers no check until the load ends. An attempt already confirmed (frozen) finishes as it was
+done until a check of its current connection is ready. The web no longer
+runs, shows or renews a setup load
+([#2233](https://github.com/epiphany40223/parishkit/issues/2233)): there
+is no Loading parish data page (its address is gone, with no redirect), and
+an attempt still marked loading, which no Production deployment has, can
+only expire under its two-hour watchdog. The retired load's database
+tables, task type and audit records stay for a later migration, and the
+scheduler never lets a worker claim a stray load task, and setup cleanup
+settles it when the setup ends. An attempt already confirmed (frozen) finishes as it was
 confirmed.
 
 Restore is an operator command performed before bootstrap/wizard. A restored,
@@ -766,7 +768,6 @@ today, to change to the choice above or to the
 | ParishSoft connection saved notice (`setup-credential.html`) | "A ParishSoft API key is saved (organization 1234)." | "A ParishSoft API key is saved for Name (1234)." |
 | ParishSoft connection form (`setup_credential_views.py`) | "Expected ParishSoft organization ID" field, its whole-number error and "To change the organization ID, enter the ParishSoft API key again as well." | removed (the choice above) |
 | Field help (`setup_help.py`) | `organization_id` help and its "For example 1234." hint | removed; the key's help says the organization is chosen next |
-| Setup load failure (`setup-source-progress-status.html`, two places) | "A wrong ParishSoft API key or organization ID is the most common cause." | "A wrong ParishSoft API key is the most common cause." where setup cannot resume; a failed load that returns to collecting names its organization and offers choosing another ([setup load](#bootstrap-and-first-admin-wizard)) |
 | ParishSoft settings form (`integration_forms.py`) | "Expected ParishSoft organization ID" field, locked, with "Locked: ParishSoft data for this organization is loaded." and its tip | the text line "ParishSoft organization: Name (1234)", with no field, lock or tip |
 | ParishSoft settings refusal (`integration_forms.py`) | "The organization ID can't change after ParishSoft data has been loaded … Keep 1234 here." | removed with the field; a posted organization is refused as unexpected input |
 | ParishSoft key help (`integration_forms.py`) | "It must be a key for the organization above; a key for another organization is refused." | "It must be a key that reaches Name (1234); any other key is refused." |
@@ -1741,7 +1742,6 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `setup_step_access` | Administrative access | Setup stepper | Administrator | (same) | `/admin/setup/access` | (same) |  |
 | `setup_credential_parishsoft` | ParishSoft connection | Setup stepper | Administrator | Setup credential: ParishSoft (stepper: ParishSoft connection) | `/admin/setup/credentials/parishsoft` | (same) |  |
 | `setup_source` | Check parish data | Setup stepper | Administrator | (same) | `/admin/setup/source` | (same) |  |
-| `setup_source_progress` | Loading parish data | Setup stepper | Administrator | (same) | `/admin/setup/source/<task>` | (same) |  |
 | `setup_confirmation` | Finish setup | Setup stepper | Administrator | Finish initial setup (stepper: Finish setup) | `/admin/setup/confirm` | (same) |  |
 | `setup_finishing` | Finishing setup | Setup stepper | Administrator | (same) | `/admin/setup/finishing` | (same) |  |
 | `setup_unavailable` | Setup step not available | Setup stepper | Administrator | (same) | (any setup step whose prerequisites are missing) | (same) |  |

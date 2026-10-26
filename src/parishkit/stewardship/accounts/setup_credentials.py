@@ -213,15 +213,6 @@ def stage_credential(
             authenticated_admin(request, store=service.store, activity=True)
             attempt.refresh_from_db()
             return _status(attempt), _receipt(row)
-        if target == "parishsoft" and attempt.source_task_id is not None:
-            # A load is bound (it succeeded or failed; a running one keeps
-            # setup loading, refused above). A different key discards it
-            # first, so the next load reads the new connection (#1353).
-            from .setup_source import void_source_load
-
-            attempt = void_source_load(
-                attempt, reason="key_changed", actor_id=actor.identity
-            )
         sealed = public_handoff(target).seal(identifier, candidate)
         context = dict(actor_id=actor.identity, correlation_id=current_correlation())
         values = dict(ciphertext=sealed, fingerprint=fingerprint, settings=settings)
