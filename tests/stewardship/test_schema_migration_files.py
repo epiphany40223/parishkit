@@ -575,6 +575,9 @@ FROZEN = {
     "0180_added_undo_to_review.sql": (
         "c4c02b8572c39b30d0028c5030fd40e4a8f0f7eba03627f3b6609e35301fcb6b"
     ),
+    "0181_pledge_share_methods.sql": (
+        "3ef1fe7492c46c02669f643e695610da31936f89ce1fc4b287889c5f656a82ad"
+    ),
 }
 
 

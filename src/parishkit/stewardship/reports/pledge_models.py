@@ -41,7 +41,11 @@ class PledgeReview(ImmutableRecord):
     frozen migration 0135, provisional number): ParishSoft's amount of the
     Conflict the decision was taken on, carried by Back to review and the
     mark while the Family's pledge is unchanged; NULL reads as $0.00. The
-    guard sets it, never the caller.
+    guard sets it, never the caller. ``reviewed_shares`` is the reviewer's
+    share methods on an Accepted (edited) pledge above zero (#2177, frozen
+    migration 0181), as the Family form stores them (option id to its Other
+    text, "" without), only when they differ from the Family's own; NULL
+    carries the Family's own, as on every row before 0181.
     """
 
     family = models.ForeignKey(
@@ -62,6 +66,7 @@ class PledgeReview(ImmutableRecord):
         max_digits=14, decimal_places=2, null=True
     )
     reviewed_frequency = models.CharField(max_length=12, null=True)
+    reviewed_shares = models.JSONField(null=True)
     entered = models.BooleanField()
     answer = models.JSONField()
     marked_pledge = models.DecimalField(max_digits=14, decimal_places=2, null=True)
@@ -167,6 +172,14 @@ class PledgeReview(ImmutableRecord):
                     entered=True,
                 ),
                 name="pledge_review_action_state",
+            ),
+            # The reviewer's share methods ride only on an Edit of a pledge
+            # above zero (#2177): a zero pledge has none, as the Family form
+            # clears them; the guard checks their shape.
+            models.CheckConstraint(
+                condition=models.Q(reviewed_shares__isnull=True)
+                | models.Q(decision="accepted_edited", reviewed_annual_pledge__gt=0),
+                name="pledge_review_shares_shape",
             ),
             models.CheckConstraint(
                 condition=models.Q(marked_pledge_known=True, entered=True)

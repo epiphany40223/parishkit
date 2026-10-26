@@ -5873,6 +5873,10 @@
       if (field instanceof HTMLSelectElement) {
         const first = [...field.options].find((option) => option.defaultSelected) || field.options[0];
         field.value = first ? first.value : "";
+      } else if (field instanceof HTMLInputElement && (field.type === "checkbox" || field.type === "radio")) {
+        // A box starts again ticked as drawn; its value is what it sends
+        // (the pledge editor's share methods, #2177).
+        field.checked = field.defaultChecked;
       } else {
         field.value = field.defaultValue;
       }

@@ -14,6 +14,7 @@ from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.reports import timeline_pdf
 from parishkit.stewardship.reports.timeline_reviews import (
     ASKED,
+    SHARE_LABELS,
     WORDS,
     requests,
     steps,
@@ -486,6 +487,31 @@ def test_pledge_lines_read_as_their_action_for_financial_readers():
         assert [detail for _at, _w, detail in steps([*rows, census], reader=who)] == [
             "Email address for Smith, Anne" + by
         ]
+
+
+def test_an_edits_share_methods_are_named_on_its_line():
+    """An Edit that changed the share methods (#2177) names them by label,
+    in the configured order, with any Other text; one unknown reads as an
+    unavailable method."""
+    first, second, gone = (str(uuid4()) for _ in range(3))
+    edit = row(
+        "pledge",
+        "7",
+        1,
+        "edit",
+        "accepted_edited",
+        "1300.00",
+        "quarterly",
+        entity_kind=None,
+        entity_key=None,
+        subject=f'{{"{gone}": "", "{second}": "Bonds", "{first}": ""}}',
+    )
+    names = {SHARE_LABELS: {first: "Bank check", second: "Other"}}
+    (line,) = steps([edit], names, reader=reader("staff"))
+    assert line[2] == (
+        "Pledge; Reviewer's value: $1,300.00, Quarterly; share methods: Bank "
+        "check, Other: Bonds, Unavailable share method; by staff@example.org"
+    )
 
 
 def test_limitation_lines_read_as_their_decision():

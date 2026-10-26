@@ -420,7 +420,9 @@ def shape_result(result, *, campaign_id, parish_name, configuration):
             label, short = labels.get(key, unavailable)
             if key in named:
                 short = named[key] or label
-            shares.append({"label": label, "short": short, "text": text})
+            # ``id`` is the option's identity, which Pledges reads to word
+            # a reviewer's share methods beside these (#2177).
+            shares.append({"id": key, "label": label, "short": short, "text": text})
         row["shares"] = shares
         row["source_pledge"] = parse_money(row.pop("pledge_total"))
         row["source_contributions"] = parse_money(row.pop("contribution_total"))

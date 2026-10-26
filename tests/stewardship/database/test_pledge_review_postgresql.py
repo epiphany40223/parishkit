@@ -476,10 +476,13 @@ def test_the_page_lists_decides_and_downloads_for_staff_only(response_service, g
         rows = list(csv.reader(io.StringIO(body.decode())))
         assert rows[0][:3] == ["Family", "ParishSoft status", "Family DUID"]
         assert len(rows) == 2
-        # ParishSoft annual pledge (#1704) is blank before any refresh check.
-        assert rows[1][8:13] == [
+        # ParishSoft annual pledge (#1704) is blank before any refresh check;
+        # with no Edit the share methods to enter are the Family's (#2177).
+        assert rows[1][8:15] == [
+            "",
             "$1,234.50",
             "Monthly",
+            "Bank check",
             "",
             "To enter by hand",
             "Accepted",

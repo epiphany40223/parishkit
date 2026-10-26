@@ -19,7 +19,7 @@ from parishkit.stewardship.reports.money import MoneyAmount
 from parishkit.stewardship.reports.pledge_review import placement
 from parishkit.stewardship.responses.refresh_checks import CheckState
 
-from ..test_pledge_review import item, pledge_row, review
+from ..test_pledge_review import ONLINE, item, pledge_row, review
 
 PATH = "/pledges"
 # Pledges a refresh checked (#1704): Entered incorrectly, Not seen in
@@ -41,6 +41,13 @@ UNDONE_NOTICE = "Family 05 sent back to review."
 ACCEPTED_NOTICE = "2 pledges accepted."
 EDITED_NOTICE = "Family 03 accepted (edited)."
 STAFF = frozenset({"staff"})
+# The page after an Edit of Family 03 that kept its amount and frequency and
+# changed only its share methods (#2177), at To review and Every stage; and
+# the page after a stale Edit, with the shared race notice, nothing changed.
+SHARES = "/pledges-shares"
+SHARES_EVERY = "/pledges-shares-every"
+STALE = "/pledges-stale"
+STALE_NOTICE = "Family 03: not recorded, changed by someone else."
 
 
 def _row(index, stage="to_review", latest=None, check=None, *, base=None, **extra):
@@ -121,10 +128,11 @@ def checked_rows():
     ]
 
 
-def rows(edited=False, accepted=False, undone=False):
-    """Every stage a Staff reader meets; ``edited``, ``accepted`` and
-    ``undone`` apply the decisions the tests take (an Edit of Family 03, a
-    bulk Accept of 01, 02, Back to review on Family 05's mark)."""
+def rows(edited=False, accepted=False, undone=False, shares=False):
+    """Every stage a Staff reader meets; ``edited``, ``accepted``,
+    ``undone`` and ``shares`` apply the decisions the tests take (an Edit of
+    Family 03, a bulk Accept of 01, 02, Back to review on Family 05's mark,
+    an Edit of Family 03's share methods alone, #2177)."""
     edit = review("accepted_edited", amount=Decimal("1500.00"), frequency="annual")
     found = [
         _row(1),
@@ -146,6 +154,17 @@ def rows(edited=False, accepted=False, undone=False):
         )
     if edited:
         found[2] = _row(3, "to_enter_by_hand", edit)
+    if shares:
+        found[2] = _row(
+            3,
+            "to_enter_by_hand",
+            review(
+                "accepted_edited",
+                amount=Decimal("1200.00"),
+                frequency="weekly",
+                shares={ONLINE: ""},
+            ),
+        )
     if undone:
         # The undo keeps the Accept: To enter by hand again.
         found[4] = _row(5, "to_enter_by_hand", review("accepted"))
@@ -178,4 +197,7 @@ def components(context, admin):
         EDITED: _page(context, admin, rows(edited=True), "to_review", EDITED_NOTICE),
         CHECKED: _page(context, admin, checked_rows(), "all"),
         UNDONE: _page(context, admin, rows(undone=True), "all", UNDONE_NOTICE),
+        SHARES: _page(context, admin, rows(shares=True), "to_review", EDITED_NOTICE),
+        SHARES_EVERY: _page(context, admin, rows(shares=True), "all"),
+        STALE: _page(context, admin, rows(), "to_review", STALE_NOTICE),
     }

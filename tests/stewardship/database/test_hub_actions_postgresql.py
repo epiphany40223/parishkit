@@ -197,9 +197,10 @@ def test_a_ministry_request_is_accepted_from_its_member_tab(response_service, go
 
 
 def test_a_pledge_is_edited_from_the_financial_tab(response_service, google):
-    """The pledge's Edit posts Pledges' editor fields (an amount and a
-    frequency) to Pledges; the tab then shows the Reviewer's value in its
-    table's column, as an edited census field does."""
+    """The pledge's Edit posts Pledges' editor fields (an amount, a
+    frequency and the share methods ticked, #2177) to Pledges; the tab then
+    shows the Reviewer's value in its table's column, as an edited census
+    field does, Share methods included."""
     harness = response_service
     financial_source(harness, modules=["financial"], options=map(asdict, OPTIONS))
     harness = activate_response_service(harness)
@@ -220,10 +221,15 @@ def test_a_pledge_is_edited_from_the_financial_tab(response_service, google):
     assert 'value="quarterly"' in editor and 'value="annual"' in editor
     chosen = fields | icon(panel, row_id, "edit")
     chosen |= {"note": "", "value_amount": "1500.00", "value_frequency": "quarterly"}
+    # The editor starts from the Family's share methods; the reviewer keeps
+    # only the bank check, as a browser posts the one box left ticked.
+    assert editor.count(" checked ") == 2 and "Stock gift</textarea>" in editor
+    chosen |= {f"value_share_{CHECK}": "on"}
     response, body = search(browser, action, chosen)
     assert response.status_code == 200
     panel = tab(browser, family_id, "financial")
     assert '<th scope="col">Reviewer\'s value</th>' in panel
-    annual, frequency = panel.split(f'<tr id="{row_id}"')[1].split("</tr>")[:2]
+    annual, frequency, shares = panel.split(f'<tr id="{row_id}"')[1].split("</tr>")[:3]
     assert "<td>$1,500.00</td>" in annual
     assert "<td>Quarterly ($375.00 each)</td>" in frequency
+    assert "<td>Bank check</td>" in shares

@@ -703,7 +703,7 @@ when there is one, else the Family's.
 | Proposed Member | the Member's page with the carried-forward names and details, until Entered by hand (ParishSoft then lists the Member itself, so the New Member is not shown again) | not shown; its absence from the submit is rule 1 (it stays Ignored), and a Member added again has a new key, so it is a new item | a current Member, as ParishSoft has them |
 | Ministry join | the carried-forward Ministry selected and listed under "Joining:" (a join added by the parish too, [below](#what-the-reviewed-form-shows)) | not selected | a current Ministry, "Continue in this ministry" |
 | Ministry leave | "Stop participating in this ministry" selected, in the attention colour (a leave added by the parish too, below) | "Continue in this ministry" | not listed (no longer a current Ministry) |
-| Pledge | the carried-forward annual pledge and frequency, with the Family's own share methods and Cannot contribute answer | the Family's own latest answer | the carried-forward answer (ParishSoft holds its amount) |
+| Pledge | the carried-forward annual pledge, frequency and share methods (the reviewer's when the Edit changed them, [#2177](https://github.com/epiphany40223/parishkit/issues/2177)), with the Family's own Cannot contribute answer | the Family's own latest answer | the carried-forward answer (ParishSoft holds its amount) |
 | Cannot participate, cannot attend | the Family's own answer | the Family's own answer | (not confirmable) |
 | Additional information | the Family's own text | the Family's own text | (not confirmable) |
 
@@ -1623,16 +1623,48 @@ per decision on a Family's pledge (frozen migration 0127, provisional
 number): who, when, the note, the response it was made on, that response's
 pledge answer (annual pledge, frequency, cannot contribute and share
 methods), the decision (Accepted, Accepted (edited) with the reviewer's
-annual pledge and frequency, Ignored, or none after Back to review of a
-decision; a Back to review of a terminal step keeps the decision in force,
-[undoing a terminal stage](#undoing-a-terminal-stage)) and the
-Entered by hand mark. The
+annual pledge, frequency and share methods, Ignored, or none after Back to
+review of a decision; a Back to review of a terminal step keeps the
+decision in force, [undoing a terminal stage](#undoing-a-terminal-stage))
+and the Entered by hand mark. The
 [Financial stewardship detail](../reports/spec.md#financial-stewardship-detail)
 report still lists every current pledge, and
 [Pledges](../reports/spec.md#pledges) is the stream's
 worklist and manual report. Staff can still change a pledge through Open
-form (a whole new response marked Entered by Staff), and Edit (amount and
-frequency, decision 4) is the review's own correction.
+form (a whole new response marked Entered by Staff), and Edit (amount,
+frequency and share methods, decision 4) is the review's own correction.
+
+**Share methods on an Edit**
+([#2177](https://github.com/epiphany40223/parishkit/issues/2177), the
+Administrator's option B, 2026-10-25). The pledge editor carries the
+reviewer's share methods beside the amount and frequency, stored on the
+same `stewardship_pledge_review` row (`reviewed_shares`, frozen migration
+0181) next to the Family's answer the row records. They are kept only
+when they differ from the Family's own share methods, and only for an
+edited pledge above zero: an edited zero pledge has none, as the Family
+form clears them for a zero pledge. A row with no reviewer's share
+methods (every row before 0181, an Accept, Ignore, or an Edit that left
+them alone) carries the Family's own. So the share methods in force are
+the reviewer's while that Edit is in force, else the Family's, as for the
+amount and frequency; every page and file that shows an Edit's Reviewer's
+value shows them beside the Family's answer
+([Pledges](../reports/spec.md#pledges), the
+[Family hub's Financial tab](../admin-portal/spec.md#family-and-member-tabs),
+the [Timeline](../reports/spec.md#timeline-review-lines) and the
+[reviewed Family form](#what-the-reviewed-form-shows)). An Edit is still
+one decision: no new response, no Staff resubmission and no email; the
+same version check refuses a save over someone else's change or a newer
+answer from the Family, and the same `pledge_review_updated` event
+records it. The pledge goes where any Edit puts it (To enter by hand). An
+Edit whose amount, frequency and share methods all equal the Family's
+answer is recorded as the Accept it is. Entered by hand and Back to review
+of a terminal step carry the share methods with the rest of the decision.
+The share methods have no ParishSoft read, so they change no refresh
+outcome: C is still the annual amount carried forward. Cannot contribute is
+not edited here; Staff change it through Open form.
+[Financial stewardship detail](../reports/spec.md#financial-stewardship-detail)
+and its exports stay the Family's own answers, Edits' amounts and share
+methods alike: that report is the statistics of what Families answered.
 
 The item is one per Family: its current pledge answer. Its stage is derived
 from its latest row and its latest refresh check (below), by one SQL
@@ -3064,7 +3096,15 @@ additions to 4–7, and answered 9 the same day:
    the Ministry request's Edit ([role-specific actions](#role-specific-actions)).
 4. Does a pledge need review? **Reviewed, with bulk Accept**, and pledges
    can also be **edited** (amount and frequency), so Staff fix a mistyped
-   amount before entering it in ParishSoft.
+   amount before entering it in ParishSoft. **Widened on 2026-10-25**
+   ([#2177](https://github.com/epiphany40223/parishkit/issues/2177), option
+   B): Edit also carries the reviewer's share methods, stored on the pledge
+   review row beside the Family's answer as the amount is, so a reviewer
+   need not leave the page for Open form; Cannot contribute stays with
+   Open form ([Financial stream](#financial-stream)). A staff resubmission
+   through the Family form's submit (option A) was rejected: it would
+   rebuild the whole reviewed-form payload on the server, reopen every
+   reviewed item it drew, add a response and email a receipt.
 5. Confirmation of hand-entered data: **every hand-entered value that a
    ParishSoft read returns is confirmed by the refresh, pledges included**
    ([what is confirmable](#what-is-confirmable)), as a check that it was

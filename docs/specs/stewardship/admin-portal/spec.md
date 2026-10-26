@@ -9367,8 +9367,10 @@ reviewer edits the pledge (Pledges' Edit, also offered here,
 edited annual pledge beside Annual pledge and the edited frequency, with its
 installment as the Family's answer has, beside
 Frequency, as an edited census field shows its value in that column
-(Administrator, 2026-10-23); Share methods has none, since an Edit does not
-change them. A Family whose
+(Administrator, 2026-10-23), and the reviewer's share methods beside Share
+methods when the Edit changed them
+([#2177](https://github.com/epiphany40223/parishkit/issues/2177); before,
+an Edit could not change them). A Family whose
 current response has no financial answers says "This Family has not answered
 the financial questions yet." The panel links to Financial stewardship, or
 to Pledges once the pledge offers its row actions
