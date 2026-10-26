@@ -857,10 +857,14 @@ the Parish profile and ParishSoft connection are done (an organization
 chosen, no lookup still open), the page says so with a link to the step
 that fixes it.
 
-**Errors.** A failed check is shown after the status line, with its stable
-error code, and links ParishSoft connection where a different key or
+**Errors.** A failed check is shown after the status line, in plain
+language, and links ParishSoft connection where a different key or
 organization is the fix (**Choose another organization or enter a
-different key**):
+different key**). It carries its stable error code as the notice's
+`data-source-check-error` attribute and in the stored check, as the
+lookup's errors carry theirs; the code is not drawn as text, because a
+person reads only closed, plain-language messages
+([accessibility and client behavior](../ui-conventions/spec.md#accessibility-and-client-behavior)):
 
 - ParishSoft refuses the key (HTTP 401 or 403), `parishsoft_key_refused`:
   "ParishSoft did not accept the saved key. Paste the key again, or a

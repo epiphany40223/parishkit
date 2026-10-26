@@ -115,7 +115,10 @@ def test_a_failed_check_says_what_to_do(page, component_origin, path, text, link
     page.goto(component_origin + path)
     notice = page.locator("[data-source-check-error]")
     contains(notice, text)
-    assert notice.get_attribute("data-source-check-error").startswith("parishsoft_")
+    code = notice.get_attribute("data-source-check-error")
+    assert code.startswith("parishsoft_")
+    # The code is machine-readable only: a person reads the plain words.
+    assert code not in notice.inner_text()
     link = notice.get_by_role(
         "link", name="Choose another organization or enter a different key"
     )
