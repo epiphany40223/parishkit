@@ -31,7 +31,7 @@ from django.utils import timezone
 from django.utils.translation import gettext, ngettext
 from django.utils.translation import gettext_lazy as _
 
-from parishkit.stewardship.accounts.models import PortalUser
+from parishkit.stewardship.accounts.actor_names import actor_names, actor_of
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.audit.schemas import Action
@@ -443,13 +443,10 @@ def confirm_refusal(error, plan):
 
 
 def _checked_by(plan):
-    """The sign-in address of whoever asked for the plan's check."""
-    email = (
-        PortalUser.objects.filter(pk=plan.actor_id)
-        .values_list("email", flat=True)
-        .first()
+    """Whoever asked for the plan's check, by name for the page (#2259)."""
+    return actor_of(
+        actor_names([plan.actor_id]), plan.actor_id, _("a former portal user")
     )
-    return email or _("a former portal user")
 
 
 def _accepted(ids):

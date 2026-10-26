@@ -26,16 +26,16 @@
 <dt>{% translate "Phones" %}</dt><dd>{% for kind, value in owner.phones %}{{ kind }}: {{ value|phone }}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "None recorded" %}{% endfor %}</dd></dl>{% endfor %}
 {% elif contacts.state == 'missing' %}<p>{% translate "This Family is not in the current ParishSoft data, so no contact details are available." %}</p>
 {% else %}{# The data was replaced while the page read it: the notice brings the details in by itself once newer data is in use (#1863). #}{% include "stewardship/components/part-status.html" with part_status=contacts.status %}{% endif %}</section>{% endif %}
-{% if item.followed_up_at %}<p>{% translate "Handled by" %} {{ item.completed_by }} <time datetime="{{ item.followed_up_at|date:'c' }}" data-local-instant>{{ item.followed_up_at|date:'c' }}</time></p>{% endif %}
+{% if item.followed_up_at %}<p>{% translate "Handled by" %} {% actor_link item.completed_by %} <time datetime="{{ item.followed_up_at|date:'c' }}" data-local-instant>{{ item.followed_up_at|date:'c' }}</time></p>{% endif %}
 <p>{% translate "Decide this request on the Additional information list, where its row offers the decisions its stage allows." %}</p>
 {# The history pages in place by itself (data-in-place-only) (#519). #}
 <div id="information-history" data-in-place-region>
 <h2>{% translate "History" %}</h2>
 {% for revision in history %}<section aria-label="{% translate 'Staff decision' %} {{ revision.expected_version|add:1 }}">
 <h3>{% translate "Version" %} {{ revision.expected_version|add:1|number }}{% if revision.decision_label %}: {{ revision.decision_label }}{% endif %}</h3>
-<p>{{ revision.actor_label }} — <time datetime="{{ revision.created_at|date:'c' }}" data-local-instant>{{ revision.created_at|date:'c' }}</time></p>
+<p>{% actor_link revision.actor_label %} — <time datetime="{{ revision.created_at|date:'c' }}" data-local-instant>{{ revision.created_at|date:'c' }}</time></p>
 {% if not revision.decision_label %}<p>{% translate "Follow-up needed:" %} {% if revision.follow_up_needed %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}; {% translate "completed:" %} {% if revision.followed_up %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}</p>{% endif %}
-{% if revision.followed_up_at %}<p>{{ revision.completer_label }} — <time datetime="{{ revision.followed_up_at|date:'c' }}" data-local-instant>{{ revision.followed_up_at|date:'c' }}</time></p>{% endif %}
+{% if revision.followed_up_at %}<p>{% actor_link revision.completer_label %} — <time datetime="{{ revision.followed_up_at|date:'c' }}" data-local-instant>{{ revision.followed_up_at|date:'c' }}</time></p>{% endif %}
 <div>{{ revision.notes|linebreaksbr }}</div></section>
 {% empty %}<p>{% if previous_history %}{% translate "No Staff decisions on this page of the history. Use Newer history to see the rest." %}{% else %}{% translate "No Staff decisions yet. Each decision made on the Additional information list is listed here." %}{% endif %}</p>{% endfor %}
 <nav aria-label="{% translate 'Staff history pages' %}">{% if previous_history %}<a href="?page={{ previous_history }}#information-history" data-in-place="history-newer" data-in-place-fallback="history-older" data-in-place-only data-in-place-message="{% translate 'Newer history shown.' %}">{% translate "Newer history" %}</a>{% endif %} {% if next_history %}<a href="?page={{ next_history }}#information-history" data-in-place="history-older" data-in-place-fallback="history-newer" data-in-place-only data-in-place-message="{% translate 'Older history shown.' %}">{% translate "Older history" %}</a>{% endif %}</nav>

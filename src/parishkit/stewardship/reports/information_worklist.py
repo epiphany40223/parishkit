@@ -21,7 +21,7 @@ from django.utils.datastructures import MultiValueDict
 from django.utils.html import format_html
 from django.utils.text import Truncator
 
-from parishkit.stewardship.accounts.models import PortalUser
+from parishkit.stewardship.accounts.actor_names import actor_names, actor_of
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.pipeline import Stage, Stream, information_placement
 from parishkit.stewardship.responses.information import (
@@ -239,19 +239,13 @@ def requests(campaign_id, query, *, history=False):
     result = information_page(campaign_id, query.information, whole=True)
     rows = result["rows"]
     latest = _latest([row["id"] for row in rows])
-    labels = dict(
-        PortalUser.objects.filter(
-            pk__in={revision.actor_id for revision in latest.values()}
-        ).values_list("id", "email")
-    )
+    labels = actor_names(revision.actor_id for revision in latest.values())
     counts = {}
     shown = []
     for row in rows:
         revision = latest.get(row["id"])
         row["placement"] = information_stage(RowItem(row), revision)
-        row["decided_by"] = (
-            labels.get(revision.actor_id, "Former portal user") if revision else ""
-        )
+        row["decided_by"] = actor_of(labels, revision.actor_id) if revision else ""
         row["decided_at"] = revision.created_at if revision else None
         row["note"] = revision.notes if revision else ""
         stage = row["placement"].stage.value

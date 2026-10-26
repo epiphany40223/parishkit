@@ -23,8 +23,8 @@ from uuid import UUID, uuid5
 
 from django.db.models import OuterRef, Subquery
 
+from parishkit.stewardship.accounts.actor_names import actor_names, actor_of
 from parishkit.stewardship.accounts.policy import Capability, allows, current_principal
-from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
@@ -81,11 +81,8 @@ def roster_marks(request_ids):
         .values("request_id", "entered", "sequence", "created_at", "actor_id")
     )
     rows = list(rows)
-    emails = dict(
-        PortalUser.objects.filter(pk__in={row["actor_id"] for row in rows}).values_list(
-            "pk", "email"
-        )
-    )
+    # By name for the pages, by address for the files (#2259).
+    names = actor_names(row["actor_id"] for row in rows)
     return {
         str(row["request_id"]): {
             "entered": row["entered"],
@@ -93,7 +90,7 @@ def roster_marks(request_ids):
             "at": row["created_at"],
             # A marker whose portal user is gone, named as the other
             # worklists name one.
-            "by": emails.get(row["actor_id"], "Former portal user"),
+            "by": actor_of(names, row["actor_id"]),
         }
         for row in rows
     }

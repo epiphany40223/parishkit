@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from openpyxl import load_workbook
 
-from parishkit.stewardship.reports import pdf_design
+from parishkit.stewardship.reports import limitation_worklist, pdf_design
 from parishkit.stewardship.reports.limitations import (
     FAMILY_CAPTION,
     MEMBER_CAPTION,
@@ -60,6 +60,14 @@ CONTEXT = dict(
     campaign="Stewardship 2055",
     as_of=datetime.fromisoformat(WHEN),
 )
+
+
+@pytest.fixture(autouse=True)
+def no_user_rows(monkeypatch):
+    """No database here: no address is a current user, so every reviewer
+    keeps the address the rows carry (#2259; the PostgreSQL tests read the
+    Names)."""
+    monkeypatch.setattr(limitation_worklist, "address_actors", lambda addresses: {})
 
 
 def workbook(shaped, zone=UTC_ZONE):

@@ -16,10 +16,10 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.web.refusals import with_default_code
 
 from . import family_maintenance
+from .actor_names import actor_names
 from .admin_editing import error_response, principal
 from .authentication import runtime
 from .limiting import LimiterUnavailable
-from .policy_models import PortalUser
 from .runtime_models import SystemConfiguration
 from .setup_views import _closed
 
@@ -40,11 +40,8 @@ def _page(request, *, message="", error=None):
         "stewardship/family-portal-maintenance.html",
         {
             "state": state,
-            "closed_by": PortalUser.objects.filter(pk=state.actor_id)
-            .values_list("email", flat=True)
-            .first()
-            if state.actor_id
-            else None,
+            # By name, linked to the user's Timeline (#2259).
+            "closed_by": actor_names([state.actor_id]).get(str(state.actor_id)),
             "message_limit": family_maintenance.MESSAGE_LIMIT,
             "delivery_url": reverse("admin:delivery_control")
             if campaign_id and mode == "production"

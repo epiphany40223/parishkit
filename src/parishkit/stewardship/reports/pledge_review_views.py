@@ -38,9 +38,14 @@ from django.utils.html import format_html, format_html_join
 from django.utils.safestring import mark_safe
 from django.views.decorators.http import require_http_methods, require_POST
 
+from parishkit.stewardship.accounts.actor_names import (
+    actor_html,
+    actor_names,
+    actor_of,
+    actor_text,
+)
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
-from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.role_refusal import require
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import (
@@ -283,16 +288,6 @@ def _principal(request, store, *, read_only=False):
     return require(principal, Capability.FINANCIAL_DETAIL)
 
 
-def _labels(identities):
-    """Map retained actor UUIDs to current emails; removed users stay anonymous."""
-    return {
-        key: email
-        for key, email in PortalUser.objects.filter(
-            pk__in=set(identities) - {None}
-        ).values_list("id", "email")
-    }
-
-
 def pledge_rows(campaign_id, principal, search=""):
     """Every Family's current pledge with its item, stage and last decision.
 
@@ -346,7 +341,7 @@ def pledge_rows(campaign_id, principal, search=""):
     name_families(result)
     items = read_items(campaign_id)
     checks = pledge_check_states(items.values())
-    names = _labels(item.review.actor_id for item in items.values() if item.review)
+    names = actor_names(item.review.actor_id for item in items.values() if item.review)
     rows = []
     for row in result["rows"]:
         item = items.get(UUID(row["id"]))
@@ -367,7 +362,7 @@ def pledge_rows(campaign_id, principal, search=""):
             row["check"]
             and row["check"].not_seen(row["placement"].stage is Stage.ENTERED_BY_HAND)
         )
-        row["decided_by"] = names.get(review.actor_id, FORMER) if review else ""
+        row["decided_by"] = actor_of(names, review.actor_id, FORMER) if review else ""
         row["decided_at"] = review.created_at if review else None
         row["note"] = review.note if review else ""
         rows.append(row)
@@ -609,10 +604,10 @@ def export_rows(rows, zone, *, time_text=iso_time):
                 parishsoft_amount(row),
                 stage_text(row),
                 decision.label if decision else "",
-                entered_by or "",
+                actor_text(entered_by),
                 instant(entered_at),
                 instant(row["submitted_at"]),
-                row["decided_by"] if in_force else "",
+                actor_text(row["decided_by"]) if in_force else "",
                 instant(row["decided_at"]) if in_force else "",
                 row["note"] if in_force else "",
             )
@@ -940,7 +935,7 @@ def row_label(row):
     return row["family_name"] or f"Family {row['family_duid']}"
 
 
-def _stage_line(row, decision):
+def _stage_line(row, decision, principal=None):
     """The line under a row's Stage, as safe HTML (or "").
 
     The decision the stage word does not already say (Accepted (edited)),
@@ -948,7 +943,8 @@ def _stage_line(row, decision):
     keeps its stage (#1890; its latest counting check, or the submit's,
     found the amount to enter), or at $0.00 that there is nothing to enter
     (#1747), who marked an entered
-    pledge and when, and, for a pledge the Family changed after its last
+    pledge and when (by name, linked for a ``principal`` who may open users'
+    Timelines, #2259), and, for a pledge the Family changed after its last
     decision, that the decision is no longer in force.
     """
     parts = [format_html("{}", decision)] if decision else []
@@ -966,7 +962,7 @@ def _stage_line(row, decision):
             at.isoformat(),
             at.isoformat(),
         )
-        parts.append(format_html("Entered by {}, {}", by, when))
+        parts.append(format_html("Entered by {}, {}", actor_html(by, principal), when))
     return format_html_join(mark_safe("<br>"), "{}", ((part,) for part in parts))
 
 
@@ -1061,14 +1057,17 @@ def stage_table(rows, stage, extra, *, action):
     return replace(table, method="post", action=action), counts
 
 
-def page_context(rows, stage, extra, roles, *, mutable, notice, prefix=PREFIX):
+def page_context(
+    rows, stage, extra, roles, *, mutable, notice, prefix=PREFIX, principal=None
+):
     """The page's template context for the applied view.
 
     ``roles`` are the reader's pipeline roles, or none while other campaign
     work holds the list (``mutable`` False): every row is then drawn with no
     action and the selection bar is gone, and the page's notice says why.
     ``prefix`` keeps the element ids apart where another page draws these
-    rows (the Family hub's Financial tab, #2064).
+    rows (the Family hub's Financial tab, #2064). ``principal`` is the
+    reader, whose role decides whether an Entered by name links (#2259).
     """
     action = reverse("admin:pledges_to_enter")
     table, counts = stage_table(rows, stage, extra, action=action)
@@ -1100,7 +1099,9 @@ def page_context(rows, stage, extra, roles, *, mutable, notice, prefix=PREFIX):
         ),
     )
     for row in worklist.rows:
-        row["decision_label"] = _stage_line(row.pop("_source"), row["decision_label"])
+        row["decision_label"] = _stage_line(
+            row.pop("_source"), row["decision_label"], principal
+        )
     return {
         "worklist": worklist,
         # The component draws the table's rows: the decorated ones.
@@ -1128,6 +1129,7 @@ def _render_page(request, campaign_id, rows, stage, extra, principal, notice):
         reader_roles(principal) if mutable else frozenset(),
         mutable=mutable,
         notice=notice,
+        principal=principal,
     )
     live = extra.get("live")
     if live is not None:

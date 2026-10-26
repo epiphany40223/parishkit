@@ -244,6 +244,45 @@ def user_timeline_url(context, user_id):
 
 
 @register.simple_tag(takes_context=True)
+def actor_link(context, actor, default=""):
+    """The Admin user who acted, by name, linked to their Timeline (#2259).
+
+    Usage: ``{% actor_link row.decided_by %}``. ``actor`` is an
+    ``accounts.actor_names.Actor``: its label (the user's Name, else the
+    address, else the page's wording for an account that is gone) links to
+    the user's Timeline when it names a current user and the viewer may
+    open users' Timelines (``actor_names.actor_url``); otherwise the label
+    is shown unlinked, so no reader meets a link that would be refused.
+    Plain text (a page's own wording for a system or command-line actor)
+    is shown as it is. A blank ``actor`` shows ``default``.
+    """
+    from parishkit.stewardship.accounts.actor_names import actor_html
+
+    if not actor:
+        return default
+    request = getattr(context, "request", None) or context.get("request")
+    return actor_html(actor, getattr(request, "principal", None))
+
+
+@register.simple_tag(takes_context=True)
+def actor_sentence(context, value):
+    """A sentence that names an actor, the actor drawn by ``actor_link`` (#2259).
+
+    Usage: ``{{ event.detail }}`` becomes ``{% actor_sentence event.detail %}``.
+    An ``accounts.actor_names.ActorSentence`` shows its words with the actor
+    by name, linked as ``actor_link`` links it; any other value is shown as
+    plain, escaped text.
+    """
+    from parishkit.stewardship.accounts.actor_names import ActorSentence
+
+    if not isinstance(value, ActorSentence):
+        return conditional_escape(value)
+    return format_html(
+        "{}{}{}", value.before, actor_link(context, value.actor), value.after
+    )
+
+
+@register.simple_tag(takes_context=True)
 def family_timeline_url(context, family_id):
     """A Family's Timeline address, or "" when the page draws no link (#1570).
 

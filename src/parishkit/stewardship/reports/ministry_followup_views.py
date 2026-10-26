@@ -20,10 +20,10 @@ from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from parishkit.stewardship import pipeline
+from parishkit.stewardship.accounts.actor_names import actor_names, actor_of
 from parishkit.stewardship.accounts.admin_navigation import PAGES
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
-from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin, automatic_read
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
@@ -249,13 +249,12 @@ def _audit(principal, campaign_id, outcome, ministry=None, *, automatic=False):
 
 
 def _labels(identities):
-    """Map retained actor UUIDs to current emails; removed users stay anonymous."""
-    return {
-        str(key): email
-        for key, email in PortalUser.objects.filter(
-            pk__in=set(identities) - {None}
-        ).values_list("id", "email")
-    }
+    """Map retained actor UUIDs (as text) to their ``Actor``, named (#2259).
+
+    One read for them all (``actor_names``); a removed user is absent, so
+    the caller words it ``FORMER``.
+    """
+    return actor_names(identities)
 
 
 # What each correctable refusal says, and the form fields (by name) it
@@ -702,9 +701,9 @@ def _page_response(
                 ministry["duid"]: ministry["name"] for ministry in result["ministries"]
             }
             for row in history:
-                row.actor_label = labels.get(str(row.actor_id), FORMER)
+                row.actor_label = actor_of(labels, row.actor_id, FORMER)
                 row.assignee_label = (
-                    labels.get(str(row.assignee_id), FORMER) if row.assignee_id else ""
+                    actor_of(labels, row.assignee_id, FORMER) if row.assignee_id else ""
                 )
                 row.state_label = HISTORY_STATES[row.state]
                 row.outcome_label = outcome_label(row.outcome, item["action"])

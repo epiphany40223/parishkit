@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 from django.db import DatabaseError, connection, transaction
 from django.urls import reverse
 
-from parishkit.stewardship.accounts.policy_models import PortalUser
+from parishkit.stewardship.accounts.actor_names import actor_names, actor_text
 from parishkit.stewardship.campaigns.read_guards import DEFAULT_LIMITS
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.observability import Event
@@ -222,19 +222,21 @@ def _keys(rows, depth, *, oldest):
 def _annotate(page):
     """Add display-only actor names and task links to one page's rows."""
     # Shown on screen only, for the actors on this page; never audited or logged.
+    # Each portal account is its user's Name (else address), linked on the
+    # page to the user's Timeline (#2259); downloads keep the address.
     identities = {row["actor_id"] for row in page if row["actor_id"]}
-    actors = dict(
-        PortalUser.objects.filter(pk__in=identities).values_list("id", "email")
-    )
+    actors = actor_names(identities)
     # Most other actors are background worker processes (each task claim is
     # recorded under the claiming worker's identity), not people.
     workers = set(
-        TaskRun.objects.filter(worker_id__in=identities - set(actors))
+        TaskRun.objects.filter(
+            worker_id__in={key for key in identities if str(key) not in actors}
+        )
         .values_list("worker_id", flat=True)
         .distinct()
     )
     for row in page:
-        row["actor"] = actors.get(row["actor_id"])
+        row["actor"] = actors.get(str(row["actor_id"]))
         row["actor_worker"] = row["actor_id"] in workers
         row["task_subject"] = task_subject(row)
     return page
@@ -419,7 +421,7 @@ def export_body(rows, fmt, zone, *, as_of):
             "source": str(row["source"]),
             "level": row["level"] or "",
             "type": row["event"],
-            "actor_email": row["actor"] or "",
+            "actor_email": actor_text(row["actor"]),
             "actor_id": str(row["actor_id"] or ""),
             "correlation_id": str(row["correlation_id"] or ""),
             "campaign_id": str(row["campaign_id"] or ""),

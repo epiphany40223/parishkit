@@ -255,6 +255,9 @@ def lines_digest(table, *, mail_links=False, filtered_out=False):
             event.at.isoformat(),
             str(event.what),
             str(event.detail),
+            # A line's actor as the page draws it (#2259): a reviewer's
+            # Name can change while their address stays.
+            str(getattr(event.detail, "actor", "")),
             str(event.message_id or ""),
         ]
         for event in table.rows

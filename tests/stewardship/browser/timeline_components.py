@@ -19,11 +19,19 @@ at each content tab's own address, which a tab's first choice fetches.
 """
 
 from datetime import timedelta
+from types import SimpleNamespace
 from urllib.parse import urlencode
 from uuid import UUID
 
 from django.template.loader import render_to_string
 
+from parishkit.stewardship.accounts.actor_names import (
+    WHO,
+    Actor,
+    ActorSentence,
+    gone,
+)
+from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.reports.hub_census import shape
 from parishkit.stewardship.reports.hub_streams import (
     financial_tab,
@@ -126,6 +134,48 @@ REVIEWED = Timeline(
     ),
     ENGAGEMENT,
 )
+# The review lines' actors by name (#2259): a current user (their Name,
+# linked to their Timeline for an Administrator), an address that is no
+# user (shown as it is, unlinked) and an account the portal no longer has
+# (the page's wording, unlinked).
+ACTOR_USER = UUID(int=2259)
+ACTOR_LINK = f"/admin/users/{ACTOR_USER}/timeline/"
+NAMED = Actor("Administrator, IT", "itadmin@example.org", ACTOR_USER)
+ADDRESS = Actor("old.reviewer@example.org", "old.reviewer@example.org")
+ACTED = Timeline(
+    TIMELINE.summary,
+    events(
+        [INVITATION, REMINDER, RECEIPT],
+        [FIRST, SECOND],
+        engagement=ENGAGEMENT,
+        reviews=[
+            (SECOND.at, "Accepted", ActorSentence(f"Email address; by {WHO}", NAMED)),
+            (
+                SECOND.at + timedelta(hours=1),
+                "Ignored",
+                ActorSentence(f"Home phone; by {WHO}", ADDRESS),
+            ),
+            (
+                SECOND.at + timedelta(hours=2),
+                "Handled",
+                ActorSentence(f"Additional information; by {WHO}", gone()),
+            ),
+        ],
+    ),
+    ENGAGEMENT,
+)
+# The same page for an Administrator (who may open users' Timelines) and
+# for Staff (who may not: the same words, no link).
+ACTORS_ADMIN = "/timeline-actors-admin"
+ACTORS_STAFF = "/timeline-actors-staff"
+VIEWERS = {
+    ACTORS_ADMIN: SimpleNamespace(
+        principal=Principal(UUID(int=1), frozenset({"administrator"}))
+    ),
+    ACTORS_STAFF: SimpleNamespace(
+        principal=Principal(UUID(int=2), frozenset({"staff"}))
+    ),
+}
 # The Administrator's page a minute later, with Staff's two review lines
 # added: what the table's periodic re-read (#2197) brings in.
 LIVE = "/timeline-live"
@@ -236,6 +286,8 @@ def components(context, admin):
         # Staff see the full timeline and export it (#1774, #1799) but may
         # not open Mail message pages.
         STAFF: (REVIEWED, {"full": True, "mail_links": False}),
+        ACTORS_ADMIN: (ACTED, {"full": True}),
+        ACTORS_STAFF: (ACTED, {"full": True, "mail_links": False}),
         LIVE: (REVIEWED, {"full": True}),
         UNAVAILABLE: (
             TIMELINE,
@@ -290,5 +342,11 @@ def components(context, admin):
                 "census": CENSUS,
                 "ministry": True,
             } | options
-            responses[path] = ("text/html", render(context, admin, timeline, **options))
+            # The actor pages carry their viewer, whose role decides the
+            # actor links (#2259); the others carry none, as before.
+            viewer = {"request": VIEWERS[path]} if path in VIEWERS else {}
+            responses[path] = (
+                "text/html",
+                render(context | viewer, admin, timeline, **options),
+            )
     return responses

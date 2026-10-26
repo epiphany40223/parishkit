@@ -30,8 +30,8 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy
 from django.views.decorators.http import require_GET, require_http_methods
 
+from parishkit.stewardship.accounts.actor_names import actor_names, actor_of
 from parishkit.stewardship.accounts.authentication import denial, runtime
-from parishkit.stewardship.accounts.models import PortalUser
 from parishkit.stewardship.accounts.policy import Capability
 from parishkit.stewardship.accounts.role_refusal import require
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
@@ -279,23 +279,16 @@ def _item_context(campaign_id, item_id, history_page, principal, history_only):
         )
     ids = {row.actor_id for row in history} | {row.followed_up_by_id for row in history}
     ids.add(item["followed_up_by_id"])
-    labels = {
-        str(key): email
-        for key, email in PortalUser.objects.filter(pk__in=ids - {None}).values_list(
-            "id", "email"
-        )
-    }
-    item["completed_by"] = labels.get(
-        str(item["followed_up_by_id"]), "Former portal user"
-    )
+    # By name, linked to the user's Timeline for a reader who may open it
+    # (#2259); one read for the page.
+    labels = actor_names(ids)
+    item["completed_by"] = actor_of(labels, item["followed_up_by_id"])
     item["placement"] = information_stage(RowItem(item), latest_revision(item_id))
     # The request page's Family name opens its Timeline (#1570).
     link_families(campaign_id, result["rows"])
     for row in history:
-        row.actor_label = labels.get(str(row.actor_id), "Former portal user")
-        row.completer_label = labels.get(
-            str(row.followed_up_by_id), "Former portal user"
-        )
+        row.actor_label = actor_of(labels, row.actor_id)
+        row.completer_label = actor_of(labels, row.followed_up_by_id)
         row.decision_label = decision_label(row)
     return {
         "metadata": result["metadata"],

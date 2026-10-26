@@ -240,6 +240,7 @@ def financial_tab(campaign_id, family_duid, financial, principal):
         mutable=writable,
         notice=None,
         prefix="hub-financial-pledges",
+        principal=principal,
     )["worklist"]
     worklist.answer_page = False
     items = items_of(worklist)
