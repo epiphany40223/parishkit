@@ -515,6 +515,11 @@ REVIEW_WATERMARK_FUNCTION = "stewardship_pledge_review_watermark_v1(uuid)"
 # The pledge Edits a new fact generation records (0185, #2202): only the
 # worker allocates generations, and the database's own trigger reads it.
 FACT_EDITS_FUNCTION = "stewardship_fact_pledge_edits_v1(uuid)"
+# The setup wizard's Off-site backups step (0186, #2200): the general worker,
+# in the transaction writing the configured marker, queues one "Test access"
+# check of the applied folder; the definer reads the folder, the mailbox
+# user and the Administrator itself.
+SETUP_BACKUP_CHECK_FUNCTION = "stewardship_setup_backup_check_v1()"
 # Publication plans and outcomes (#528, DAT-09.01, migration 0087): the
 # worker writes a preflight's plan and each write attempt's outcome; web
 # reads them all and writes only an Administrator's confirmation.
@@ -650,6 +655,8 @@ CLOSURE_FUNCTIONS = {
         (REVIEW_WATERMARK_FUNCTION, FACT_EDITS_FUNCTION),
         ("stewardship_reports", "0052_series_in_force"),
     ),
+    # The setup folder check (0186, #2200).
+    SETUP_BACKUP_CHECK_FUNCTION: ("stewardship_accounts", "0039_setup_backup_step"),
 }
 
 
@@ -968,7 +975,9 @@ def runtime_functions(role, *, target=None):
     pledge only) for the campaign statistics (#2202). Web, the general worker
     and the scheduler read the campaign's pledge review watermark (a count)
     for a fact generation's exact inputs, and the general worker the pledge
-    Edits a new generation records (#2202).
+    Edits a new generation records (#2202). The general worker also queues
+    the setup wizard's one off-site folder check when setup completes
+    (#2200).
     Mail dispatch reads the one link token of a Family message it holds a
     live delivery claim on (#389 L1). Web reads what a delivered email's
     follow-up to its addresses refused for now did (#806); mail dispatch
@@ -1065,6 +1074,7 @@ def runtime_functions(role, *, target=None):
                 EDITS_IN_FORCE_FUNCTION,
                 REVIEW_WATERMARK_FUNCTION,
                 FACT_EDITS_FUNCTION,
+                SETUP_BACKUP_CHECK_FUNCTION,
             },
             "download": {LEADER_SCOPE_FUNCTION},
             ServiceRole.ADMIN_RECOVERY: {

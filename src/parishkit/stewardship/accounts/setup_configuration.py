@@ -175,6 +175,8 @@ def _complete_shape(sections):
         "email",
         "google_oauth",
         "slack",
+        # The optional Off-site backups step's folder (#2200).
+        "backup",
     }:
         _invalid()
     for kind, values in integrations.items():
@@ -183,5 +185,7 @@ def _complete_shape(sections):
             and values["credential_fingerprint"] is None
         ):
             _invalid()
-        if kind == "email" and values["credential_fingerprint"] is not None:
+        # The mail addresses and the off-site folder have no key of their
+        # own (copies use the Google Workspace key).
+        if kind in {"email", "backup"} and values["credential_fingerprint"] is not None:
             _invalid()

@@ -171,6 +171,7 @@ def test_finish_checks_readiness_as_its_primary_action():
         "finish",
         form=SetupConfirmationForm(initial={"preview_token": "token"}),
         candidate_digest="a" * 64,
+        wizard=wizard("finish", tests=frozenset({"mail_test"})),
     )
     row = actions(html)
     assert (
@@ -178,9 +179,10 @@ def test_finish_checks_readiness_as_its_primary_action():
         "Check readiness and finish setup</button>" in row
     )
     assert "setup-continue" not in row
-    # No Review page comes before it (#2145): Back is Check parish data.
-    source = reverse("admin:setup_source")
-    assert f'class="setup-back" data-nav-slot="back" href="{source}"' in row
+    # No Review page comes before it (#2145): Back is the optional Off-site
+    # backups step, which follows Check parish data (#2200).
+    backup = reverse("admin:setup_step", args=("backup",))
+    assert f'class="setup-back" data-nav-slot="back" href="{backup}"' in row
 
 
 def test_only_an_accepted_test_of_the_current_settings_counts():

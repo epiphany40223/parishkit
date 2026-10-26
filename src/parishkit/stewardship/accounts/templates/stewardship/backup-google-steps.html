@@ -1,0 +1,7 @@
+{% load i18n %}{% comment %}
+  The first one-time Google steps for off-site backup copies, shared by the
+  Off-site backups page's help (backup-settings-help.html) and the setup
+  wizard's Off-site backups step (setup-backup.html, #2200). The same steps
+  are in the backup runbook; keep them in step.
+{% endcomment %}<li>{% translate "In the Google Cloud project that owns the service account used for mail, enable the Google Drive API (APIs & Services → Library → Google Drive API → Enable)." %}</li>
+<li>{% translate "In the Google Admin console, open Security → Access and data control → API controls → Manage domain-wide delegation. Edit the service account's client ID and add this scope next to the existing mail scope:" %} <code>https://www.googleapis.com/auth/drive</code></li>

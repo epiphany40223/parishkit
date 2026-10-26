@@ -210,6 +210,7 @@
 !src/parishkit/stewardship/schema/migrations/0183_setup_source_check.sql
 !src/parishkit/stewardship/schema/migrations/0184_statistics_in_force.sql
 !src/parishkit/stewardship/schema/migrations/0185_series_in_force.sql
+!src/parishkit/stewardship/schema/migrations/0186_setup_backup_step.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

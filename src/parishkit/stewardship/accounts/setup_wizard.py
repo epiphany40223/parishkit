@@ -45,10 +45,13 @@ class Page:
 # organization is one step after the page that fixes it. The check reads
 # only the organization's name and ParishSoft's Family and Member totals;
 # the final load at Finish setup is the only full load, and no data-entry
-# page needs ParishSoft's data. Finish setup comes last; it checks the
-# tests' results itself (#1476), and no separate Review page comes before it
-# (#2145). Setup collects nothing about a campaign (#142): an Administrator
-# creates it afterwards from Home, with Create the campaign.
+# page needs ParishSoft's data. Off-site backups (optional) is the last
+# optional step, just before Finish setup (Administrator, 2026-10-26, #2200):
+# it needs only the mail settings, saved much earlier, and Finish setup never
+# waits for it. Finish setup comes last; it checks the tests' results itself
+# (#1476), and no separate Review page comes before it (#2145). Setup
+# collects nothing about a campaign (#142): an Administrator creates it
+# afterwards from Home, with Create the campaign.
 PAGES = (
     Page("parish", _("Parish profile"), "admin:setup_step", ("parish",)),
     Page("mail", _("Outgoing email settings"), "admin:setup_step", ("mail",)),
@@ -71,6 +74,13 @@ PAGES = (
         ("parishsoft",),
     ),
     Page("source", _("Check parish data"), "admin:setup_source"),
+    Page(
+        "backup",
+        _("Off-site backups (optional)"),
+        "admin:setup_step",
+        ("backup",),
+        required=False,
+    ),
     Page("finish", _("Finish setup"), "admin:setup_confirmation"),
 )
 BY_KEY = {page.key: page for page in PAGES}
@@ -128,11 +138,17 @@ class Wizard:
         blocked (its view refuses it, e.g. Test email behind a stale key), it
         is the step needing work instead, so the save never lands on the
         "complete the earlier steps first" page. A merely "locked" step is
-        ordering only and its page opens, so it is kept.
+        ordering only and its page opens, so it is kept, unless it is
+        optional (Off-site backups, #2200): an earlier required step still
+        needs work then, and that is the one opened.
         """
         later = self.steps[self.current.number :] if self.current else ()
         chosen = next((step for step in later if step.state != "done"), self.next)
-        return self.resume if chosen and chosen.state == "blocked" else chosen
+        detour = chosen and (
+            chosen.state == "blocked"
+            or (chosen.state == "locked" and not BY_KEY[chosen.key].required)
+        )
+        return self.resume if detour else chosen
 
     @property
     def resume(self):
@@ -299,9 +315,15 @@ def build(draft, current=None, *, credentials=None, tests=frozenset()):
         )
     keys = [step.key for step in steps]
     index = keys.index(current) if current in keys else None
+    previous = steps[index - 1] if index else None
+    # Back passes over an optional step that cannot open yet (Off-site
+    # backups while an earlier required step needs work, #2200), so the page
+    # after it keeps a Back to the step before.
+    if previous and previous.url is None and not BY_KEY[previous.key].required:
+        previous = steps[index - 2] if index > 1 else None
     return Wizard(
         steps=tuple(steps),
-        previous=steps[index - 1] if index else None,
+        previous=previous,
         next=steps[index + 1] if index is not None and index + 1 < len(steps) else None,
         completed=sum(step.state == "done" for step in steps),
         total=len(steps),

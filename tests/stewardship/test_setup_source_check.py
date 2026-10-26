@@ -445,3 +445,31 @@ def test_the_page_draws_one_state_over_the_others(shown, expected):
         assert 'href="/admin/setup/credentials/parishsoft"' in slot
     else:
         assert "/admin/setup/credentials/parishsoft" not in slot
+
+
+@pytest.mark.parametrize("backup", [False, True])
+def test_a_ready_checks_continue_opens_the_next_step_not_done(backup):
+    """Continue after a ready check opens the optional Off-site backups step
+    until it is saved, then Finish setup (wizard rule 8, #2200)."""
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.accounts.setup_views import check_page
+
+    from .test_setup_wizard import final
+
+    wizard = final("source", tests=frozenset({"mail_test"}), backup=backup)
+    html = render_to_string(
+        "stewardship/setup-source.html",
+        check_page(view("ready"), "St. Example Parish (1234)")
+        | {
+            "draft": {"status": {"attempt_id": "a", "version": 2}},
+            "wizard": wizard,
+            "source_step": None,
+        },
+    )
+    target = "/admin/setup/confirm" if backup else "/admin/setup/backup"
+    label = "Finish setup" if backup else "Off-site backups (optional)"
+    assert (
+        f'<a class="setup-continue" data-nav-slot="next" href="{target}">'
+        f'Continue<span class="setup-sr-only">: {label}</span></a>' in html
+    )

@@ -13,7 +13,7 @@ from .request_patch import PatchedConfiguration
 from .setup_campaign import require_source_check
 from .setup_candidate import CandidateCredential, compile_candidate
 from .setup_drafts import DraftView, view_draft
-from .setup_forms import FORMS
+from .setup_forms import FORMS, STEP_FORMS
 from .setup_secret_models import SetupSealedCredential
 
 PREVIEW_SALT = "stewardship-initial-setup-preview-v1"
@@ -44,7 +44,8 @@ class SetupPreview:
 # draft's campaign, content, share and schedule sections, which only an
 # attempt saved before that release can hold, are never read again; they are
 # scrubbed with the rest of the draft when the attempt completes or expires.
-SYSTEM_SECTIONS = frozenset(FORMS)
+# The optional Off-site backups step (#2200) is compiled when saved.
+SYSTEM_SECTIONS = frozenset(STEP_FORMS)
 
 
 def prepare_preview(request, service):
