@@ -16,6 +16,7 @@ import datetime as dt
 import hashlib
 import json
 import logging
+import re
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -718,13 +719,21 @@ def _extract_page(data: Any) -> tuple[list[dict[str, Any]], bool]:
     raise ParishSoftAPIError(500, "pagination", f"unexpected page shape: {data!r}")
 
 
+# A deliberately plain shape check for roster output: one "@", a dotted
+# domain, and no whitespace, commas, semicolons or angle brackets. It keeps
+# obvious non-addresses (such as a comma-joined value, which stays one
+# fragment because only ";" separates addresses) off printed rosters.
+_PLAIN_EMAIL = re.compile(r"[^@\s,;<>()]+@[^@\s,;<>()]+\.[^@\s,;<>()]+")
+
+
 def normalize_family_email(family: dict[str, Any]) -> None:
     """Lowercase a family's email field and split it into a derived address list.
 
     ParishSoft stores possibly multiple addresses in one semicolon-delimited
-    string. This lowercases the original field in place and adds a derived
-    ``"py eMailAddresses"`` list (the ``py`` prefix marks fields synthesized by
-    this library). Does nothing when no email is present.
+    string. This rewrites the original field in place as the cleaned
+    addresses joined by ``"; "`` and adds a derived ``"py eMailAddresses"``
+    list (the ``py`` prefix marks fields synthesized by this library). Does
+    nothing when no email is present.
     """
     value = family.get("eMailAddress")
     if value:
@@ -763,13 +772,16 @@ def member_email_addresses(member: Mapping[str, Any]) -> list[str]:
 
 
 def split_email_addresses(value: str | Sequence[str]) -> list[str]:
-    """Split, lowercase, de-duplicate, and drop blank email fragments."""
-    raw_items: list[str] = []
-    if isinstance(value, str):
-        raw_items = value.split(";")
-    else:
-        for item in value:
-            raw_items.extend(item.split(";"))
+    """Split, lowercase, de-duplicate, and drop blank email fragments.
+
+    ParishSoft separates several addresses in one field with ``;`` only. A
+    value containing ``,`` therefore stays one fragment, which callers treat as
+    invalid (Stewardship never sends to it). Fragments are not validated here;
+    callers decide what an invalid fragment means. A sequence is treated as
+    several such fields.
+    """
+    items = [value] if isinstance(value, str) else value
+    raw_items = [part for item in items for part in item.split(";")]
     addresses: list[str] = []
     seen: set[str] = set()
     for item in raw_items:
@@ -912,9 +924,7 @@ def load_family_workgroup_memberships(
         for element in elements:
             if element.get("email"):
                 element["email"] = element["email"].lower()
-                element["py emails"] = [
-                    item.strip() for item in element["email"].split(";")
-                ]
+                element["py emails"] = split_email_addresses(element["email"])
             _copy_first_duid(element, ("familyDUID", "familyId"), "py family duid")
         results[duid] = {
             "duid": duid,
@@ -995,9 +1005,9 @@ def load_member_workgroup_memberships(
             _copy_first_duid(element, ("familyDUID", "familyId"), "py family duid")
             if element.get("emailAddress"):
                 element["emailAddress"] = element["emailAddress"].lower()
-                element["py emailAddresses"] = [
-                    item.strip() for item in element["emailAddress"].split(";")
-                ]
+                element["py emailAddresses"] = split_email_addresses(
+                    element["emailAddress"]
+                )
         results[duid] = {
             "duid": duid,
             "id": workgroup["id"],
@@ -1962,12 +1972,25 @@ def get_member_public_email(member: dict[str, Any]) -> str | None:
 
     Honors the family's "publish email" privacy flag, returning None when
     publishing is disallowed or when the member has no email; otherwise returns
-    the first normalized address.
+    the first normalized address. Rosters use ``get_member_public_emails``.
     """
     if not member.get("family_PublishEMail"):
         return None
     emails = member.get("py emailAddresses") or []
     return emails[0] if emails else None
+
+
+def get_member_public_emails(member: dict[str, Any]) -> list[str]:
+    """Return all of the member's publishable, plausibly valid email addresses.
+
+    Honors the family's "publish email" privacy flag (an empty list when
+    publishing is disallowed). Addresses come from ``member_email_addresses``
+    (lowercased, de-duplicated, in field order); fragments that are not a
+    plain address, such as a comma-joined value, are dropped (#2260).
+    """
+    if not member.get("family_PublishEMail"):
+        return []
+    return [a for a in member_email_addresses(member) if _PLAIN_EMAIL.fullmatch(a)]
 
 
 def get_member_preferred_first(member: dict[str, Any]) -> str:

@@ -25,6 +25,7 @@ from parishkit.pk_create_ps_ministry_rosters import (
     ministry_roster_members,
     roster_config_from_yaml,
     roster_drive_name,
+    roster_member_rows,
     roster_role_matches,
     roster_values,
     roster_workbook,
@@ -470,6 +471,28 @@ def test_roster_generation_for_ministries_and_workgroups():
         (1, "Member"),
     ]
     assert roster_role_matches("Lead, Member", {"Lead"})
+
+
+def test_roster_cell_lists_all_public_emails_one_per_line():
+    """Every valid public address shares the contact cell, newline-separated."""
+    member = {
+        "firstName": "Ann",
+        "lastName": "Smith",
+        "family_PublishEMail": True,
+        "py emailAddresses": ["ann@example.org", "bob@example.org", "bad, one"],
+    }
+    rows = roster_member_rows(
+        RosterMember(member=member, role="Member"), include_birthday=False
+    )
+    assert [row[2] for row in rows] == ["ann@example.org\nbob@example.org"]
+    with_phone = {**member, "family_PublishPhone": True, "mobilePhone": "555-1000"}
+    rows = roster_member_rows(
+        RosterMember(member=with_phone, role="Member"), include_birthday=False
+    )
+    assert [row[2] for row in rows] == [
+        "555-1000 cell",
+        "ann@example.org\nbob@example.org",
+    ]
 
 
 def test_roster_values_separate_phone_and_email_rows():
