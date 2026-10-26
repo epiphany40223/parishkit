@@ -123,7 +123,7 @@
   /* An uploaded image (the parish logo, a Campaign image, a hosted image)
      is drawn for the light Family pages and emails; a white backing behind
      its transparent parts keeps a dark logo visible. It adds no size. */
-  html.admin-document[data-theme="dark"] :is(.brand img, img.branding-preview, .branding-preview img, .hosted-file-thumbnail) { background-color: #fff; border-radius: var(--radius-small); }
+  html.admin-document[data-theme="dark"] :is(.brand img, img.branding-preview, .branding-preview img, .hosted-file-thumbnail, .file-preview-box img) { background-color: #fff; border-radius: var(--radius-small); }
   /* A light card keeps its edge clear of the email's text on the dark page. */
   html.admin-document[data-theme="dark"] .light-card:not(.content-sample) { padding: 1rem; border-radius: var(--radius-small); }
 }
@@ -164,6 +164,14 @@ a:hover { text-decoration-thickness: .15em; }
    at its own size, centred on the line; it is never stretched to fill it. */
 .brand:has(img) { display: flex; align-items: center; min-height: 4rem; }
 .branding-preview { max-width: 100%; height: auto; }
+/* A chosen image's preview (setup's Parish logos, #2270). The box has a fixed
+   height whatever it holds, so choosing, clearing or replacing the file moves
+   nothing below it; the image is scaled to fit, never stretched. */
+.file-preview-title { margin-block: 0 .25rem; font-weight: 600; }
+.file-preview-box { display: flex; align-items: center; justify-content: center; box-sizing: border-box; width: 100%; height: 10rem; padding: .5rem; border: 1px dashed var(--border); border-radius: var(--radius-small); overflow: hidden; margin-block-end: 1rem; }
+.file-preview-box img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }
+.file-preview-box img[hidden], .file-preview-empty[hidden] { display: none; }
+.file-preview-empty { margin: 0; text-align: center; }
 /* The delivery warning's live region stays in the tree; it takes a full row
    only when its notice is shown, and adds no height while empty. */
 .site-header > [role=status] { order: 11; flex: 1 0 100%; }
@@ -2739,6 +2747,11 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
    row controls do: the second pixel of its error border is a shadow. */
 .user-entry input[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
 .user-entry input[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+/* A previewed file field's refusal is marked inside its border, not with a
+   thicker one, so the refusal does not push the preview box down (#2270). */
+input[type=file][data-preview-target][aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
+input[type=file][data-preview-target][aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+@media (forced-colors: active) { input[type=file][data-preview-target][aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; } }
 @media (forced-colors: active) {
   .user-entry input[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
 }

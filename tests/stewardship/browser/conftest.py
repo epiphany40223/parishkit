@@ -79,7 +79,7 @@ from parishkit.stewardship.reports.chart_assets import VENDORED
 from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.web.contracts import PageWindow
-from parishkit.stewardship.web.security import CSP
+from parishkit.stewardship.web.security import CSP, CSP_BLOB_IMAGES
 from parishkit.stewardship.web.tables import paginate, window_table
 from parishkit.stewardship.web.time_entry_fields import (
     FlexibleTimeListField,
@@ -1519,10 +1519,15 @@ def component_responses():
             {"draft": setup_draft, "form": SetupLogoForm(), "assets": []},
         ),
         (
-            # The setup logo step once a logo is saved: its previews.
+            # The setup logo step once a logo is saved: its preview box.
             "/setup-branding-saved",
             "setup-branding",
-            {"draft": setup_draft, "form": SetupLogoForm(), "assets": [branding_asset]},
+            {
+                "draft": setup_draft,
+                "form": SetupLogoForm(),
+                "assets": [branding_asset],
+                "stored": branding_asset,
+            },
         ),
         (
             "/setup-credential",
@@ -2517,7 +2522,12 @@ def component_origin(component_responses):
                 "Content-Type",
                 kind if kind == "image/png" else kind + "; charset=utf-8",
             )
-            self.send_header("Content-Security-Policy", CSP)
+            # Setup's Parish logos previews the chosen file as a blob: image,
+            # so its response asks for that policy as the real view does.
+            self.send_header(
+                "Content-Security-Policy",
+                CSP_BLOB_IMAGES if path.startswith("/setup-branding") else CSP,
+            )
             self.end_headers()
             self.wfile.write(body if isinstance(body, bytes) else body.encode())
 

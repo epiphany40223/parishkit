@@ -35,6 +35,16 @@ def test_setup_upload_selects_only_temporary_receipt_and_serves_private_png(requ
         page = browser.get("/admin/setup/branding")
         assert page.status_code == 200
         assert b"private-original.png" not in page.content
+        # The revisit's preview box holds the saved logo's largest size, and
+        # only this page lets the chosen file be drawn from a blob: URL
+        # (#2270).
+        largest = max(BrandingAsset.objects.all(), key=lambda asset: asset.width)
+        html = page.content.decode()
+        assert (
+            f'data-stored-src="/admin/setup/branding/assets/{largest.pk}.png"' in html
+        )
+        assert "img-src 'self' blob:" in page["Content-Security-Policy"]
+        assert 'data-preview-target="logo-choice-preview"' in html
         for asset in BrandingAsset.objects.all():
             image = browser.get(f"/admin/setup/branding/assets/{asset.pk}.png")
             assert image.status_code == 200
@@ -137,6 +147,9 @@ def test_setup_logo_over_the_limit_is_refused_at_its_field(request):
         )
         assert "Parish logo: the file is " in line
         assert "the limit is 5 MB." in line
+        # The refused page keeps an empty preview box (nothing is saved).
+        assert 'id="logo-choice-preview"' in html
+        assert "data-stored-src" not in html
         assert not BrandingBundle.objects.exists()
         assert not SetupDraftSection.objects.exists()
 

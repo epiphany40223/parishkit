@@ -467,7 +467,7 @@ def test_appearance_switch_sits_at_the_top_right(page, component_origin, path, w
 # slice 4). The parish logo in the header is covered by the same rule.
 IMAGE_PREVIEWS = {
     "/branding-settings": "img.branding-preview",
-    "/setup-branding-saved": ".branding-preview img",
+    "/setup-branding-saved": ".file-preview-box img",
     ARTWORK: "img.branding-preview",
     "/hosted-files": ".hosted-file-thumbnail",
 }

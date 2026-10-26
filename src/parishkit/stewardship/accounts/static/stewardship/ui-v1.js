@@ -5343,6 +5343,64 @@
   const fileSize = (bytes) => (bytes >= 1048576
     ? `${Math.ceil(bytes * 10 / 1048576) / 10} MB`
     : `${Math.ceil(bytes / 1024).toLocaleString("en-US")} KB`);
+  // A file field marked data-preview-target shows the chosen image at once
+  // in that box (setup's Parish logos, #2270), drawn from the browser's own
+  // copy through a blob: object URL, so nothing is uploaded to be seen. The
+  // box (file-preview in ui-v1.css) has a fixed size, so nothing moves. With
+  // no usable file chosen (none, not an image, over data-max-bytes, or one
+  // the browser cannot draw) the box shows the saved image named by its
+  // data-stored-src, or its empty text. Each object URL is revoked as it is
+  // replaced and when the page is left. The server still checks every file.
+  const wireFilePreview = (root) => {
+    within(root, "input[type=file][data-preview-target]").forEach((input) => {
+      const box = document.getElementById(input.dataset.previewTarget);
+      const image = box && box.querySelector("img");
+      const empty = box && box.querySelector(".file-preview-empty");
+      if (!image || input.dataset.previewWired) return;
+      input.dataset.previewWired = "1";
+      let url = "";
+      const forget = () => {
+        if (url) URL.revokeObjectURL(url);
+        url = "";
+      };
+      const show = (src, alt) => {
+        if (src) {
+          image.alt = alt;
+          image.src = src;
+        } else {
+          image.removeAttribute("src");
+          image.alt = "";
+        }
+        image.hidden = !src;
+        if (empty) empty.hidden = Boolean(src);
+      };
+      const saved = () => {
+        forget();
+        show(box.dataset.storedSrc || "", box.dataset.storedAlt || "");
+      };
+      const update = () => {
+        const file = !input.disabled && input.files && input.files[0];
+        forget();
+        if (!file || !file.type.startsWith("image/") || file.size === 0
+          || file.size > Number(input.dataset.maxBytes || Infinity)) {
+          saved();
+          return;
+        }
+        url = URL.createObjectURL(file);
+        show(url, box.dataset.chosenAlt || "");
+      };
+      // A file the browser cannot draw is not kept as the preview.
+      image.addEventListener("error", () => {
+        if (url && image.src === url) saved();
+      });
+      input.addEventListener("change", update);
+      window.addEventListener("pagehide", forget);
+      // A page restored from the back/forward cache may keep a chosen file
+      // in the field whose object URL was revoked on leaving.
+      window.addEventListener("pageshow", update);
+      update();
+    });
+  };
   // Each field's check (edited: whether it is the field just changed); a
   // change to any file field re-checks its form's others, so a total that
   // fits again releases the field that was refused for it.
@@ -5367,6 +5425,13 @@
           // A 0-byte file, which the server's file field refuses too, in
           // its words (data-empty-file-message, #1577).
           message = input.dataset.emptyFileMessage;
+          rule = "own";
+        } else if (file && file.type && !file.type.startsWith("image/")
+          && input.dataset.notImageMessage) {
+          // A file the browser types as something other than an image
+          // (data-not-image-message, the server's words; Parish logos,
+          // #2270). An untyped file is left to the server's check.
+          message = input.dataset.notImageMessage;
           rule = "own";
         } else if (file && file.size > Number(input.dataset.maxBytes)) {
           // A field marked before #1062 (Past campaigns' archive, #1018)
@@ -5431,6 +5496,7 @@
   };
   const wireConditional = (root) => {
     wireMaxBytes(root);
+    wireFilePreview(root);
     showWhenUpdates = showWhenUpdates.filter(({node}) => node.isConnected);
     choiceUpdates = choiceUpdates.filter(({node}) => node.isConnected);
     lockedUpdates = lockedUpdates.filter(({node}) => node.isConnected);
