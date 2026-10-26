@@ -20,6 +20,8 @@ CHECK_READY = "/setup-check-ready"
 CHECK_FAILED = "/setup-check-failed"
 CHECK_UNAVAILABLE = "/setup-check-unavailable"
 CHECK_STALE = "/setup-check-stale"
+# The step's address as the start's redirect reads it again (same path).
+CHECK_STARTED = f"{CHECK_INITIAL}?started=1"
 PAGES = (
     CHECK_INITIAL,
     CHECK_WAITING,
@@ -32,6 +34,17 @@ PAGES = (
 # automatic start posts to (the setup overview, action ``check``).
 AUTO_START = " data-auto-start"
 START_POST = "**/admin/setup"
+
+
+def posts():
+    """The fixture server's answer to a start: the real view's redirect.
+
+    The setup overview redirects the start POST to the step's address with
+    the panel's fragment. The fixture's address differs only by a query, so
+    the page reads the same path again, as the real flow does; Playwright
+    cannot route a redirected read.
+    """
+    return {"/admin/setup": (303, f"{CHECK_STARTED}#setup-source-panel", "")}
 
 
 def keep_start_manual(page):
@@ -53,8 +66,8 @@ def keep_start_manual(page):
     page.route("**/*", serve)
 
 
-def answer_start(page, origin, fixture, *, hold=False):
-    """Answer the page's start POST with the page ``fixture`` (HTTP 200).
+def answer_start(page, origin, fixture, *, hold=False, status=200):
+    """Answer the page's start POST with the page ``fixture`` (``status``).
 
     The in-place submit swaps in the answer as it does a redirect's page.
     Returns ``(posts, routes, body)``: the start requests' bodies, the held
@@ -73,7 +86,7 @@ def answer_start(page, origin, fixture, *, hold=False):
         if hold:
             routes.append(route)
             return
-        route.fulfill(status=200, content_type="text/html; charset=utf-8", body=body)
+        route.fulfill(status=status, content_type="text/html; charset=utf-8", body=body)
 
     page.route(START_POST, answer)
     return posts, routes, body
@@ -113,4 +126,5 @@ def components(context, admin, now):
         ),
         CHECK_UNAVAILABLE: page(check("failed", error="parishsoft_unavailable")),
         CHECK_STALE: page(check("ready", current=False)),
+        CHECK_STARTED: page(check("queued")),
     }

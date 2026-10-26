@@ -17,13 +17,14 @@ from .setup_check_components import (
     CHECK_INITIAL,
     CHECK_READY,
     CHECK_STALE,
+    CHECK_STARTED,
     CHECK_UNAVAILABLE,
     CHECK_WAITING,
     PAGES,
     answer_start,
     keep_start_manual,
 )
-from .test_in_place import MARK, MARKED
+from .test_in_place import MARK, MARKED, count_requests
 from .test_live_status_in_place import answer_reads
 from .test_setup_mail import place
 from .waits import same_place, visible
@@ -168,7 +169,14 @@ def test_the_check_starts_on_arrival_without_moving_anything(
     page.goto(component_origin + CHECK_WAITING)
     visible(page.locator("[data-source-check-waiting]"))
     expected = (place(page, NEXT), place(page, BACK))
-    posts, _, _ = answer_start(page, component_origin, CHECK_WAITING)
+    if path == CHECK_INITIAL:
+        # The real flow: the fixture server redirects the POST to the step's
+        # own path, which is read again and shows the waiting check.
+        posts = count_requests(page, "POST", "/admin/setup")
+        address = CHECK_STARTED
+    else:
+        posts, _, _ = answer_start(page, component_origin, CHECK_WAITING)
+        address = path
     # The start is so quick that a mark set by script could land after the
     # swap: count the page loads instead, which must stay one.
     loads = []
@@ -178,9 +186,12 @@ def test_the_check_starts_on_arrival_without_moving_anything(
     page.goto(component_origin + path)
     visible(page.locator("[data-source-check-waiting]"))
     contains(page.locator(REGION), "Checking the parish data in ParishSoft")
-    assert len(posts) == 1 and "action=check" in posts[0]
+    assert len(posts) == 1
     assert loads == [component_origin + path]
-    assert page.url == component_origin + path
+    # Quiet: the address gains no fragment, and focus and scroll stay put.
+    assert page.url == component_origin + address
+    assert page.evaluate("document.activeElement === document.body")
+    assert page.evaluate("window.scrollY") == 0
     assert same_place(place(page, NEXT), expected[0])
     assert same_place(place(page, BACK), expected[1])
     # Nothing starts a second check later.
@@ -236,4 +247,15 @@ def test_a_double_start_queues_one_check(page, component_origin):
     assert len(posts) == 1
     routes[0].fulfill(status=200, content_type="text/html; charset=utf-8", body=body)
     visible(page.locator("[data-source-check-waiting]"))
+    assert len(posts) == 1
+
+
+def test_a_refused_start_shows_the_error_and_is_not_retried(page, component_origin):
+    """When the server refuses the automatic start (setup changed, say), its
+    error page is shown whole, as for a refused press, and the page sends no
+    second start (#2271)."""
+    posts, _, _ = answer_start(page, component_origin, "/critical-refused", status=400)
+    page.goto(component_origin + CHECK_INITIAL)
+    visible(page.get_by_role("heading", name="This request could not be completed"))
+    page.wait_for_timeout(1000)
     assert len(posts) == 1

@@ -856,15 +856,17 @@ arrival, through the same in-place path as a press on the button
 working spinner takes the status slot's place and nothing moves
 ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). A check
 already done for the current connection, ready or failed, is not run again
-when the page is revisited; **Check again** starts a new one. A start the
-server refuses is shown in place and is not retried by the page. The start is
+when the page is revisited; **Check again** starts a new one. The
+automatic start is a quiet refresh: it does not move focus, scroll or the
+address fragment. A start the server refuses shows the setup error page, as
+a refused press does, and is not retried by the page. The start is
 idempotent on the server: a start while a check is waiting or running returns
 that check and queues no second one, so a repeated page load, a second tab or
 a double submission cannot start two.
 
 **The page.** Its action row has Back (to ParishSoft connection) and the
-step's primary action: **Check parish data** (the button the page presses on
-arrival, left available if that start was refused), **Continue**
+step's primary action: **Check parish data** (the button the page presses
+on arrival), **Continue**
 (to Finish setup) once a check of the current connection succeeded, with **Check
 again** as a secondary button, and **Check again** after a failed check.
 While a check waits, the primary action is an unavailable Continue with the
