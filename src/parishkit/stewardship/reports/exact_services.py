@@ -104,6 +104,7 @@ def create_exact_export(
             population_scope=population_scope,
             source_id=inputs.source_id,
             submission_watermark=inputs.submission_watermark,
+            review_watermark=inputs.review_watermark,
             timezone_configuration_id=inputs.timezone_configuration_id,
             through_date=inputs.through_date,
             format=format,

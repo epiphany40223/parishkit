@@ -76,10 +76,14 @@ BEGIN
         SELECT p.* INTO exact_request FROM stewardship_report_email_preparation p
             WHERE p.id=owned_task.domain_request_id AND p.task_id=owned_task.root_id
               AND p.phase='capture';
+        -- A send whose inputs were recorded before 0185 (#2202) has no
+        -- pledge review watermark; it pinned a generation of watermark 0.
         IF NOT FOUND OR ROW(NEW.campaign_id,NEW.population_scope,NEW.source_id,
-            NEW.submission_watermark,NEW.timezone_configuration_id,NEW.through_date)
+            NEW.submission_watermark,NEW.review_watermark,
+            NEW.timezone_configuration_id,NEW.through_date)
             IS DISTINCT FROM ROW(exact_request.campaign_id,'historical'::varchar,
                 exact_request.source_id,exact_request.submission_watermark,
+                coalesce(exact_request.review_watermark,0),
                 exact_request.timezone_configuration_id,exact_request.through_date)
             OR NOT stewardship_report_email_live_v1(exact_request.id,
                 NEW.task_id,NEW.task_fence,NEW.worker_id) THEN
@@ -100,9 +104,11 @@ BEGIN
         SELECT * INTO exact_request FROM stewardship_exact_export_request
             WHERE id=owned_task.domain_request_id AND task_id=owned_task.root_id;
         IF NOT FOUND OR ROW(NEW.campaign_id,NEW.population_scope,NEW.source_id,
-            NEW.submission_watermark,NEW.timezone_configuration_id,NEW.through_date)
+            NEW.submission_watermark,NEW.review_watermark,
+            NEW.timezone_configuration_id,NEW.through_date)
             IS DISTINCT FROM ROW(exact_request.campaign_id,exact_request.population_scope,
                 exact_request.source_id,exact_request.submission_watermark,
+                exact_request.review_watermark,
                 exact_request.timezone_configuration_id,exact_request.through_date)
             OR NOT stewardship_export_authorized_v1(exact_request.requester_id)
             OR NOT stewardship_export_admitted_v1(exact_request.campaign_id,true)
@@ -130,8 +136,10 @@ BEGIN
     END IF;
     IF TG_OP='INSERT' THEN
         IF demand.claimed_generation_id IS NOT NULL
-            OR ROW(NEW.source_id,NEW.submission_watermark,NEW.timezone_configuration_id,NEW.through_date)
+            OR ROW(NEW.source_id,NEW.submission_watermark,NEW.review_watermark,
+                NEW.timezone_configuration_id,NEW.through_date)
                 IS DISTINCT FROM ROW(demand.requested_source_id,demand.requested_submission_watermark,
+                    demand.requested_review_watermark,
                     demand.requested_timezone_configuration_id,demand.requested_through_date)
             OR EXISTS(SELECT 1 FROM stewardship_daily_fact_set f
                 JOIN stewardship_task_run t ON t.id=f.task_id WHERE t.root_id=owned_task.root_id) THEN
@@ -139,8 +147,10 @@ BEGIN
         END IF;
     ELSIF demand.claimed_generation_id IS NULL
         AND demand.pending_due_at<=clock_timestamp()
-        AND ROW(NEW.source_id,NEW.submission_watermark,NEW.timezone_configuration_id,NEW.through_date)
+        AND ROW(NEW.source_id,NEW.submission_watermark,NEW.review_watermark,
+                NEW.timezone_configuration_id,NEW.through_date)
             IS NOT DISTINCT FROM ROW(demand.requested_source_id,demand.requested_submission_watermark,
+                demand.requested_review_watermark,
                 demand.requested_timezone_configuration_id,demand.requested_through_date)
         AND EXISTS(SELECT 1 FROM stewardship_task_run prior
             WHERE prior.id=OLD.task_id AND prior.task_type IN ('report_exact_export','daily_digest_prepare','report_email_prepare')

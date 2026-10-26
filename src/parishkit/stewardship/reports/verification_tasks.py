@@ -1,5 +1,7 @@
 """Fenced recalculation checks with bounded read lifetimes and durable outcomes."""
 
+from dataclasses import replace
+
 from django.db import connection
 
 from parishkit.stewardship.audit.schemas import Action, ActorKind, ContextKind, Outcome
@@ -188,10 +190,16 @@ def _execute(execution):
     ) as guard:
 
         def admit_read(action, inputs):
-            """The held generation and frozen request must describe the same inputs."""
+            """The held generation and frozen request must describe the same inputs.
+
+            The request names its generation by id and records no pledge
+            review watermark (#2202), so that one input is the generation's.
+            """
             guard.check()
             execution.check()
-            return action == "read" and inputs == fact_inputs(request)
+            return action == "read" and inputs == replace(
+                fact_inputs(request), review_watermark=inputs.review_watermark
+            )
 
         context, actual = load_verification(request.fact_set_id, admit=admit_read)
         guard.check()

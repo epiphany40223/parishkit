@@ -488,16 +488,25 @@ def write_source(source, *, check, on_timeout=None):
 # --- The database read ------------------------------------------------------------
 
 
-def _version(row, answer):
+def _version(row, answer, edit=None):
     """A ``Version`` from one submission row and its answer's archive parts.
 
     ``answer`` is the row of ``stewardship_campaign_archive_answers_v1`` for
     the same version: its frequency, cannot-give box (both None without a
     financial answer), Ministry choices and the chosen Ministries' names.
+    ``edit`` is the Family's pledge Edit that the pinned fact set recorded
+    (#2202): from the response it reviewed on, the version carries the
+    value in force, as the reviewed Family form shows it (the Edit's amount
+    and frequency; an edited zero pledge has no frequency and keeps the
+    Family's Cannot contribute answer), as the fact rows count it.
     """
     amount = row["annual_pledge"]
     if amount is None or answer["cannot_give"] is None:
         annual = frequency = cannot_give = None
+    elif edit is not None and row["campaign_sequence"] >= edit.from_sequence:
+        annual = edit.annual_pledge.quantize(CENT)
+        frequency = edit.frequency
+        cannot_give = False if annual > 0 else answer["cannot_give"]
     else:
         annual = Decimal(amount).quantize(CENT)
         frequency = answer["frequency"]
@@ -562,12 +571,15 @@ def read_source(fact_set_id, *, cutoff_date, final, converted_at):
     lacks the cutoff day, or its watermark does not yet cover every version
     submitted before the cutoff (the export waits), and
     ``ArchiveUnavailable`` when the stewardship year cannot be resolved.
+    Each version carries the pledge value in force from the Edits the fact
+    set recorded (#2202), so the sheets count what its fact rows count.
     """
     from django.db import connection
 
     from parishkit.stewardship.archive.imports import ArchiveRefusal, year_from_values
     from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
     from parishkit.stewardship.campaigns.models import Campaign, CampaignConfiguration
+    from parishkit.stewardship.reports.facts import pledge_edits
     from parishkit.stewardship.reports.models import (
         CampaignDailyFact,
         CampaignDailyFactSet,
@@ -645,8 +657,9 @@ def read_source(fact_set_id, *, cutoff_date, final, converted_at):
         # Both reads take the same versions under the same pins and snapshot.
         raise FactUnavailable("The archive's answers disagree with its versions.")
     outside = {row["family_id"] for row in rows if row["family_id"] not in cohort}
+    edits = pledge_edits(record)
     versions = tuple(
-        _version(row, answers[row["campaign_sequence"]])
+        _version(row, answers[row["campaign_sequence"]], edits.get(row["family_id"]))
         for row in rows
         if row["family_id"] in cohort
     )

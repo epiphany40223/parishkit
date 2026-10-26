@@ -581,6 +581,9 @@ FROZEN = {
     "0184_statistics_in_force.sql": (
         "e1d9fe2450634542eae6d11b7290fc379aa797aaacf3e48b5a755e9675d4e651"
     ),
+    "0185_series_in_force.sql": (
+        "e7e6fda4a7233d977d66e30d46f4a8210deac58692609815925fe9125257fb93"
+    ),
 }
 
 

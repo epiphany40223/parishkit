@@ -6,6 +6,8 @@ Historical scope uses permanent manifests/provenance, not source membership maps
 """
 
 from contextlib import contextmanager
+from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from uuid import UUID, uuid4
 
 from django.db import connection, transaction
@@ -36,8 +38,83 @@ def _admit(admit, action, inputs):
         raise PermissionError("Fact workflow admission was denied.")
 
 
+@dataclass(frozen=True)
+class PledgeEdit:
+    """A Family's pledge Edit in force that a generation recorded (#2202).
+
+    It applies to the Family's live versions from ``from_sequence`` (the
+    campaign sequence of the response it reviewed) on; ``frequency`` is
+    None for an edited zero pledge.
+    """
+
+    from_sequence: int
+    annual_pledge: Decimal
+    frequency: str | None
+
+
+FREQUENCIES = frozenset({"weekly", "monthly", "quarterly", "annual"})
+
+
+def pledge_edits(record):
+    """The generation's recorded pledge Edits, by Family id (#2202).
+
+    The database writes ``pledge_edits`` when the generation is created
+    (0185), so this only checks its shape and raises ``FactUnavailable``
+    on anything else rather than calculating from a malformed input.
+    """
+    edits = {}
+    values = record.pledge_edits
+    if type(values) is not list:
+        raise FactUnavailable("Fact pledge Edits are malformed.")
+    for value in values:
+        try:
+            if type(value) is not dict or set(value) != {
+                "family_id",
+                "from_sequence",
+                "annual_pledge",
+                "frequency",
+            }:
+                raise ValueError
+            family, sequence = UUID(value["family_id"]), value["from_sequence"]
+            amount = Decimal(value["annual_pledge"])
+            frequency = value["frequency"]
+            if (
+                type(sequence) is not int
+                or not 0 < sequence < 2**63
+                or not amount.is_finite()
+                or not Decimal(0) <= amount <= Decimal("999999999.99")
+                or amount.as_tuple().exponent < -2
+                or (amount > 0) != (frequency in FREQUENCIES)
+                or (amount == 0 and frequency is not None)
+                or family in edits
+            ):
+                raise ValueError
+        except (TypeError, ValueError, InvalidOperation):
+            raise FactUnavailable("Fact pledge Edits are malformed.") from None
+        edits[family] = PledgeEdit(sequence, amount, frequency)
+    return edits
+
+
+def review_watermark(campaign_id):
+    """The campaign's pledge review watermark now (#2202).
+
+    0185's count-only definer: the scheduler and worker read no pledge
+    reviews themselves.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT public.stewardship_pledge_review_watermark_v1(%s)", [campaign_id]
+        )
+        return cursor.fetchone()[0]
+
+
 def fact_inputs(record):
-    """Reconstruct exact identity without exposing mutable ORM state to callbacks."""
+    """Reconstruct exact identity without exposing mutable ORM state to callbacks.
+
+    A record without a pledge review watermark (a report email whose inputs
+    were recorded before 0185, a retired daily digest or a verification
+    request, which names its generation by id) reads 0 (#2202).
+    """
     return FactInputs(
         record.campaign_id,
         record.population_scope,
@@ -45,6 +122,7 @@ def fact_inputs(record):
         record.submission_watermark,
         record.timezone_configuration_id,
         record.through_date,
+        review_watermark=getattr(record, "review_watermark", None) or 0,
     )
 
 
@@ -88,6 +166,7 @@ def begin_fact_set(inputs, claim, *, admit):
             population_scope=inputs.population_scope,
             source_generation=source.generation,
             submission_watermark=inputs.submission_watermark,
+            review_watermark=inputs.review_watermark,
             timezone_configuration_id=inputs.timezone_configuration_id,
             through_date=inputs.through_date,
         )
@@ -204,6 +283,7 @@ def _publish_pointer(record):
     if (
         record.source_generation < prior.source_generation
         or record.submission_watermark < prior.submission_watermark
+        or record.review_watermark < prior.review_watermark
         or (
             record.timezone_configuration_id == prior.timezone_configuration_id
             and record.through_date < prior.through_date

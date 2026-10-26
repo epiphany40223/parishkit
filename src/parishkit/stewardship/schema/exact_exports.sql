@@ -39,18 +39,18 @@ CREATE INDEX exact_resolution_correlation ON stewardship_exact_export_resolution
 CREATE INDEX exact_resolution_facts ON stewardship_exact_export_resolution(fact_set_id);
 CREATE INDEX exact_resolution_run ON stewardship_exact_export_resolution(run_id);
 
-CREATE FUNCTION stewardship_exact_matches_v1(request_uuid uuid, fact_uuid uuid)
+CREATE FUNCTION public.stewardship_exact_matches_v1(request_uuid uuid, fact_uuid uuid)
 RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
     SELECT EXISTS(SELECT 1 FROM stewardship_exact_export_request r
         JOIN stewardship_daily_fact_set f ON f.id=fact_uuid
         WHERE r.id=request_uuid AND
           ROW(r.campaign_id,r.population_scope,r.source_id,r.submission_watermark,
-              r.timezone_configuration_id,r.through_date)=
+              r.review_watermark,r.timezone_configuration_id,r.through_date)=
           ROW(f.campaign_id,f.population_scope,f.source_id,f.submission_watermark,
-              f.timezone_configuration_id,f.through_date))
+              f.review_watermark,f.timezone_configuration_id,f.through_date))
 $$;
 
-CREATE FUNCTION stewardship_exact_claimable_v1(request_uuid uuid)
+CREATE FUNCTION public.stewardship_exact_claimable_v1(request_uuid uuid)
 RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
     SELECT EXISTS(SELECT 1 FROM stewardship_exact_export_request r WHERE r.id=request_uuid
       -- Root claiming commits before generation allocation. Serialize identical
@@ -59,9 +59,11 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
         JOIN stewardship_task_run t ON t.root_id=other.task_id
         WHERE other.task_id<>r.task_id AND t.state='running'
           AND ROW(other.campaign_id,other.population_scope,other.source_id,
-              other.submission_watermark,other.timezone_configuration_id,other.through_date)=
+              other.submission_watermark,other.review_watermark,
+              other.timezone_configuration_id,other.through_date)=
             ROW(r.campaign_id,r.population_scope,r.source_id,
-              r.submission_watermark,r.timezone_configuration_id,r.through_date))
+              r.submission_watermark,r.review_watermark,
+              r.timezone_configuration_id,r.through_date))
       -- Do not overtake an ordinary owner that has claimed but not frozen yet.
       AND NOT EXISTS(SELECT 1 FROM stewardship_fact_demand d
         JOIN stewardship_task_run t ON t.domain_request_id=d.id AND t.task_type='report_facts'
@@ -70,9 +72,9 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
       AND NOT EXISTS(SELECT 1 FROM stewardship_daily_fact_set f
         JOIN stewardship_task_run owner ON owner.id=f.task_id
         WHERE ROW(r.campaign_id,r.population_scope,r.source_id,r.submission_watermark,
-                r.timezone_configuration_id,r.through_date)=
+                r.review_watermark,r.timezone_configuration_id,r.through_date)=
             ROW(f.campaign_id,f.population_scope,f.source_id,f.submission_watermark,
-                f.timezone_configuration_id,f.through_date) AND f.state<>'ready'
+                f.review_watermark,f.timezone_configuration_id,f.through_date) AND f.state<>'ready'
           AND owner.root_id<>r.task_id
           AND EXISTS(SELECT 1 FROM stewardship_task_run live
             WHERE live.root_id=owner.root_id AND live.state IN ('queued','running','retry_wait','abandoned'))))
@@ -91,7 +93,7 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
           AND stewardship_exact_claimable_v1(r.id))
 $$;
 
-CREATE FUNCTION stewardship_exact_request_guard_v1() RETURNS trigger
+CREATE FUNCTION public.stewardship_exact_request_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
@@ -108,6 +110,8 @@ BEGIN
             (stewardship_campaign_now_v1() AT TIME ZONE stewardship_timezone_name_v1(p.timezone))::date))
       OR NEW.submission_watermark<>coalesce((SELECT max(campaign_sequence)
         FROM stewardship_submission WHERE campaign_id=NEW.campaign_id AND mode='live'),0)
+      -- The campaign's current pledge review watermark too (0185, #2202).
+      OR NEW.review_watermark<>public.stewardship_pledge_review_watermark_v1(NEW.campaign_id)
       OR NOT EXISTS(SELECT 1 FROM pg_timezone_names
         WHERE name=stewardship_timezone_name_v1(NEW.browser_timezone))
       OR NOT EXISTS(SELECT 1 FROM stewardship_task_run WHERE id=NEW.task_id
