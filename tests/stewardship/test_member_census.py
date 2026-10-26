@@ -281,6 +281,39 @@ def test_member_line_separators_are_rejected_before_sql(name, separator):
         validate(name, "before" + separator + "after")
 
 
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "a@example.org",
+        "b@example.org; A@example.org",
+        "c@example.org; b@example.org; a@example.org",
+    ],
+)
+def test_email_source_baseline_matches_a_saved_unchanged_form(raw):
+    """Order and case give one baseline, so an untouched form is no change.
+
+    The census baseline (sorted fragments joined by ``", "``), the value the
+    Family form saves when left as shown, and a fresh ParishSoft read after a
+    publication must all agree, or a refresh would report a false change.
+    """
+    from parishkit.stewardship.responses.inputs import member_field_value
+    from parishkit.stewardship.responses.publication import decode_member_value
+    from parishkit.stewardship.source.corpus import normalize_core
+
+    from .test_source_corpus import TODAY as SOURCE_TODAY
+    from .test_source_corpus import source
+
+    data = source()
+    data.members[3]["emailAddress"] = raw
+    corpus = normalize_core(data, as_of=SOURCE_TODAY)
+    baseline = member_field_value(
+        corpus["member"]["3"], corpus["contact"]["member:3"], FIELDS["email"]
+    )
+    assert baseline.available
+    assert validate("email", baseline.value, baseline) == baseline.value
+    assert decode_member_value("email", raw) == baseline.value
+
+
 def test_email_length_is_bounded_after_join_expansion():
     addresses = [f"person{index:02d}@example-domain.org" for index in range(9)]
     raw = ",".join(addresses)
