@@ -577,8 +577,9 @@ each marked `automatic: true` in its audit context so it reads as an
 automatic refresh, not as the reader opening the page. A pinned export or
 report email waits/retries for its exact generation and fails visibly rather than
 substituting a different cutoff.
-Recalculation from the pinned source/submission inputs must reproduce every
-stored fact, and a verification job detects drift.
+Recalculation from the pinned source/submission inputs and the generation's
+own pledge Edits must reproduce every stored fact, and a verification job
+detects drift.
 
 Superseded, unpinned calculated generations are automatically compacted under
 [derived fact retention](../data/spec.md#derived-fact-retention). Current,
@@ -621,6 +622,57 @@ daily chart, its table and the export
 segment links to the page with that scope, keeping the mode, the daily
 table's sort and page size and the browser's time zone (its page returns to
 the first), and choosing one refreshes the page in place.
+
+#### Pledge values in the participation facts
+
+The participation facts count each Family's pledge
+[value in force](#values-in-force-on-financial-stewardship), so the
+dashboard's Effective annual pledges line and daily table, the
+[campaign comparisons](../campaign-history/spec.md#comparison-report) and the
+[campaign archive export](../campaign-history/spec.md#archive-export) agree
+with Financial stewardship on every day
+(the Administrator's decision of 2026-10-26 on
+[#2202](https://github.com/epiphany40223/parishkit/issues/2202)). A reviewer's Edit in force
+counts on every day from the response it reviewed onward: each of that
+Family's live versions from the reviewed one on carries the Edit's annual
+pledge, so making an Edit changes the figures of the days before it was
+made, and undoing it (Back to review) or a newer, different pledge answer
+from the Family puts the Family's own answers back on those days.
+
+A generation records two more inputs (frozen migration 0185):
+
+- its **pledge-review watermark**, the number of pledge review rows of the
+  campaign's Families when its inputs were taken. Review rows are never
+  changed or removed, so it only grows, and every review action advances
+  it. It is part of the generation's exact-input key beside the submission
+  watermark, so an Edit, an undo or any other review makes the current
+  inputs differ and a new generation is built, like a new response, so the
+  dashboard shows Updating for a moment after each review action, Accept
+  and Ignore included. The
+  scheduler's reconciliation records it in the rebuild demand; a Family's
+  response keeps the demand's watermark, so the Family portal reads nothing
+  more. An export, a report email and the campaign archive export take the
+  current watermark when they pin their inputs, as they take the current
+  submission watermark.
+- its **pledge Edits**: each Family's Edit in force when the generation is
+  allocated, found with the same selection as Financial stewardship (frozen
+  migration 0184's), with the response it reviewed and the Edit's annual
+  pledge and frequency. The database writes them on the generation itself
+  when the generation is created, and they never change, so verification
+  recalculates exactly what was built however later reviews change. They
+  hold at least the reviews its watermark counts: a review made between a
+  request and its build is in them too, and its own, higher watermark makes
+  the next generation. The database refuses a watermark ahead of the
+  campaign's, and an Edit in force it cannot trace to the reviewer's Edit.
+
+Published generations stay immutable: a newer generation supersedes them
+and the older ones are compacted like any superseded generation. Archives
+already imported, and exports and report email captures already made, keep
+what they recorded. Generations built before 0185 record watermark zero and
+no Edits, the inputs they were built from. After the upgrade, a campaign
+with any pledge review has a higher watermark, so the scheduler's first
+reconciliation builds one new generation per population scope with the
+Edits in force, and the dashboard shows Updating until it is ready.
 
 ## Campaign statistics
 
@@ -3642,9 +3694,9 @@ returns only each Edit's response and amount, so the general worker, which
 also counts these statistics, still reads no answers or pledge reviews.
 The day-by-day figures (the dashboard's Effective annual pledges line and
 daily table, the comparisons' day figures and the archive export, which is
-checked against them) read the values in force through the
-[participation facts](#participation-fact-materialization); that work is
-[#2202](https://github.com/epiphany40223/parishkit/issues/2202).
+checked against them) read the values in force through the participation
+facts, from the response each Edit reviewed onward
+([pledge values in the participation facts](#pledge-values-in-the-participation-facts)).
 
 ### Pledges
 

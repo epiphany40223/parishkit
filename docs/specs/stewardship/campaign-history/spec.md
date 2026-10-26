@@ -344,6 +344,19 @@ without it. The request's pin on that fact set protects it from
 request's [download window](../operations/spec.md#point-in-time-exports) ends,
 like any export's.
 
+Each live version carries the Family's
+[pledge value in force](../reports/spec.md#pledge-values-in-the-participation-facts)
+as the pinned fact set recorded it
+([#2202](https://github.com/epiphany40223/parishkit/issues/2202)): from the
+response a reviewer's Edit in force reviewed onward, the Edit's annual
+pledge and frequency (an edited zero pledge has no frequency and keeps the
+Family's Cannot contribute answer, as the reviewed Family form shows it),
+else the Family's own answer. So `families`, `submissions` and `daily`
+carry the same amounts as the fact rows they are checked against, and a
+download is offered only with a fact set whose pledge-review watermark is
+the campaign's current one, as for the submission watermark; while the
+newest set predates a review, the download waits for the next one.
+
 The Families are the [participation graph's](../reports/spec.md#participation-graph)
 respondents: Families of the campaign's historical cohort with a live
 version under those pins, the population the fact rows count, so `daily`
@@ -882,7 +895,11 @@ and the average of all imported years:
 - "Pledging Families as of day N's end", the current median and pledge
   distribution, and the current renewal count need a read of each Family's
   latest live submission version committed by that instant, the rule the
-  participation graph's pledge total already follows. They come from one
+  participation graph's pledge total already follows, with the
+  [pledge value in force](../reports/spec.md#pledge-values-in-the-participation-facts)
+  that the day's fact generation recorded
+  ([#2202](https://github.com/epiphany40223/parishkit/issues/2202)), so they
+  agree with the Annual pledges figure taken from its fact row. They come from one
   new narrow SQL function, returning aggregates only, not from a second
   implementation in Python. It is added by its own forward migration in the
   slice that uses it, since the import slice's migration is frozen once it
