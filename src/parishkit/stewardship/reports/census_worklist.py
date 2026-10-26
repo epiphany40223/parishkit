@@ -16,6 +16,7 @@ from uuid import UUID
 from django.db import IntegrityError
 from django.utils.html import format_html
 
+from parishkit.stewardship.accounts.actor_names import FORMER, address_actors
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.templatetags.stewardship import source_status
 from parishkit.stewardship.campaigns.work_locks import work_transaction
@@ -292,8 +293,17 @@ def worklist_rows(rows):
     cells and the shared value and decision columns.
     """
     found = []
+    # The reviewers by name, linked to their Timelines (#2259), in one read
+    # for the page; "Family" and the gone-account wording stay as they are.
+    words = {"Family", FORMER}
+    actors = address_actors(
+        row.get("resolution_by")
+        for row in rows
+        if row.get("resolution_action") and row.get("resolution_by") not in words
+    )
     for row in rows:
         decided_by, decided_at, note = _last_decision(row)
+        decided_by = actors.get(decided_by, decided_by)
         found.append(
             row
             | {

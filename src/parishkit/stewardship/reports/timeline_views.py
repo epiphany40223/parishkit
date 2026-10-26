@@ -259,6 +259,11 @@ def lines_digest(table, *, mail_links=False, filtered_out=False):
             event.at.isoformat(),
             str(event.what),
             str(event.cell),  # as drawn: a pledge line's short labels (#2198)
+            # A line's actor and the words around it as the page draws them
+            # (#2259): a reviewer's Name can change while their address stays.
+            str(getattr(event.cell, "before", "")),
+            str(getattr(event.cell, "actor", "")),
+            str(getattr(event.cell, "after", "")),
             str(event.message_id or ""),
         ]
         for event in table.rows

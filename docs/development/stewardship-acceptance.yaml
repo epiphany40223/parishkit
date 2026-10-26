@@ -519,6 +519,7 @@ sections:
     "Default row order": [ADM-03, RPT-01]
     "Family and Member names": [ADM-03, RPT-01]
     "Members and Families no longer in ParishSoft": [ADM-03, RPT-01]
+    "Admin users who acted": [ADM-03]
     "Table fit and row height": [ADM-03]
     "Review work tables": [ADM-03]
     "Short labels in tables": [ADM-03, RPT-01]

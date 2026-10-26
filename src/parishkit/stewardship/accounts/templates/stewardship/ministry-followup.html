@@ -63,8 +63,8 @@
 <div id="followup-history" data-in-place-region>
 <h2>{% translate "Follow-up history" %}</h2>
 {% for revision in history %}<section aria-label="{% translate 'Follow-up edit' %} {{ forloop.counter }}">
-<h3>{{ revision.actor_label }} — <time datetime="{{ revision.created_at|date:'c' }}" data-local-instant>{{ revision.created_at|date:'c' }}</time></h3>
-<p>{{ revision.state_label }}{% if revision.outcome_label %} — {{ revision.outcome_label }}{% endif %}{% if revision.assignee_label %}; {% translate "assigned to" %} {{ revision.assignee_label }}{% endif %}{% if revision.bulk %} {% translate "(bulk)" %}<span class="visually-hidden">{% translate ": recorded for several requests at once on Ministry requests" %}</span>{% endif %}</p>
+<h3>{% actor_link revision.actor_label %} — <time datetime="{{ revision.created_at|date:'c' }}" data-local-instant>{{ revision.created_at|date:'c' }}</time></h3>
+<p>{{ revision.state_label }}{% if revision.outcome_label %} — {{ revision.outcome_label }}{% endif %}{% if revision.assignee_label %}; {% translate "assigned to" %} {% actor_link revision.assignee_label %}{% endif %}{% if revision.bulk %} {% translate "(bulk)" %}<span class="visually-hidden">{% translate ": recorded for several requests at once on Ministry requests" %}</span>{% endif %}</p>
 {% if revision.reviewed_label %}<p>{% blocktranslate with name=revision.reviewed_label %}Edited into {{ name }}{% endblocktranslate %}</p>{% endif %}{% if revision.decision_note %}<p>{% translate "Note:" %} {{ revision.decision_note|linebreaksbr }}</p>{% endif %}
 {% if revision.contact_at %}<p>{{ revision.channel_label }} {% translate "contact" %} <time datetime="{{ revision.contact_at|date:'c' }}" data-local-instant>{{ revision.contact_at|date:'c' }}</time>{% if revision.contact_notes %}: {{ revision.contact_notes|linebreaksbr }}{% endif %}</p>{% endif %}
 <div>{{ revision.notes|linebreaksbr }}</div></section>

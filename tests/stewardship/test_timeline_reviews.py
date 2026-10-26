@@ -549,8 +549,13 @@ def test_an_edits_share_methods_are_short_only_in_the_pages_markup():
     assert (
         '<span title="Bank check &lt;b&gt;"><span aria-hidden="true">Check</span>'
         '<span class="visually-hidden">Bank check &lt;b&gt;</span></span>, '
-        "Other: Bonds &lt;i&gt;; by a&lt;b@example.org"
-    ) in Event(line[0], line[1], detail).cell
+        "Other: Bonds &lt;i&gt;; by "
+    ) in detail.before
+    assert detail.after == ""
+    assert detail.actor.email == "a<b@example.org"
+    # The page draws the actor by name between the two halves (#2259), so the
+    # cell is the sentence itself, not the markup string alone.
+    assert Event(line[0], line[1], detail).cell is detail
     # No short label differs: the page shows the text, escaped by its template.
     (plain,) = steps(
         [edit], {SHARE_LABELS: names[SHARE_LABELS]}, reader=reader("staff")

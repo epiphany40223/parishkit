@@ -13,7 +13,7 @@
 {% if state.closed %}
 <section class="panel notice notice-error" aria-labelledby="portal-state">
   <h2 id="portal-state">{% translate "The Family portal is closed for maintenance" %}</h2>
-  <p>{% translate "Closed" %} <time data-local-instant datetime="{{ state.since|instant }}">{{ state.since|instant }}</time>{% if closed_by %} {% translate "by" %} {{ closed_by }}{% endif %}.</p>
+  <p>{% translate "Closed" %} <time data-local-instant datetime="{{ state.since|instant }}">{{ state.since|instant }}</time>{% if closed_by %} {% translate "by" %} {% actor_link closed_by %}{% endif %}.</p>
   {% if state.message %}<p>{% translate "Families see this message:" %} {{ state.message }}</p>{% endif %}
   <form method="post">{% csrf_token %}<input type="hidden" name="action" value="open"><input type="hidden" name="message" value="">
     {% button type="submit" %}{% translate "Reopen the Family portal" %}{% endbutton %}

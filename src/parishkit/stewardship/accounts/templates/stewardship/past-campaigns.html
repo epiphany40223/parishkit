@@ -29,7 +29,7 @@ data-refresh-url (this page's address, with its sort).
 <td class="numeric nowrap">{{ row.pledged }}</td>
 <td class="numeric nowrap">{{ row.active }} {% blocktranslate asvar tip with source=row.provenance %}Counted from: {{ source }}{% endblocktranslate %}{% include "stewardship/components/toggletip.html" with tip_id="provenance-"|add:row.label tip_text=tip %}</td>
 <td>{% if row.archive.family_rows_kept %}{% translate "Yes" %}{% else %}{% translate "No" %}{% endif %}</td>
-<td><time class="nowrap" datetime="{{ row.archive.imported_at|instant }}" data-local-instant data-compact>{{ row.archive.imported_at|instant }}</time>{% if row.imported_by %}<span class="cell-detail">{% translate "by" %} {{ row.imported_by.0 }}<wbr>{{ row.imported_by.1 }}</span>{% endif %}</td>
+<td><time class="nowrap" datetime="{{ row.archive.imported_at|instant }}" data-local-instant data-compact>{{ row.archive.imported_at|instant }}</time>{% if row.imported_by %}<span class="cell-detail">{% translate "by" %} {% if row.imported_by.user_id %}{% actor_link row.imported_by %}{% else %}{{ row.imported_by.0 }}<wbr>{{ row.imported_by.1 }}{% endif %}</span>{% endif %}</td>
 {% table_actions name=row.label delete=row.remove_value confirm="past-campaign-remove" field="archive" verb="remove" %}
 </tr>{% endfor %}</tbody>
 </table>

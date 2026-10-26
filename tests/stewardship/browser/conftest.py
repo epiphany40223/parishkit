@@ -328,6 +328,26 @@ def browser_opt_in():
         pytest.skip("Browser component tests require PARISHKIT_RUN_BROWSER_TESTS=1.")
 
 
+@pytest.fixture(scope="session", autouse=True)
+def no_reviewer_name_reads():
+    """The component pages have no database: their census and Limitations
+    reviewers keep the addresses the rows carry (#2259), as the unit tests
+    have them. The Timeline's actor pages give their ``Actor``s directly."""
+    from unittest import mock
+
+    from parishkit.stewardship.reports import census_worklist, limitation_worklist
+
+    def none(addresses):
+        """No address is a current user."""
+        return {}
+
+    with (
+        mock.patch.object(census_worklist, "address_actors", none),
+        mock.patch.object(limitation_worklist, "address_actors", none),
+    ):
+        yield
+
+
 @pytest.fixture(scope="session")
 def browser_processes():
     """Cache expensive startup, preserving fresh WebKit drivers and browsers."""

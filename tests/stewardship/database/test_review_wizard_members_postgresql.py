@@ -99,8 +99,9 @@ def test_census_member_and_new_member_pages(response_service, google):
     assert statements(browser, run, at)[1] == STATEMENTS["census"]
 
 
-# Each Member page's statements on the web login (see the census test).
-STATEMENTS = {"census": 76, "ministry": 84, "limitations": 75}
+# Each Member page's statements on the web login (see the census test). The
+# census page reads its reviewers' Names once (#2259).
+STATEMENTS = {"census": 77, "ministry": 84, "limitations": 75}
 
 
 def test_a_ministry_page_for_staff_and_for_a_leader(response_service, google):

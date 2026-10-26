@@ -38,6 +38,7 @@ from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_POST
 
+from parishkit.stewardship.accounts.actor_names import actor_text
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import database_now
@@ -242,7 +243,9 @@ def queue_document(
                 row["decision_label"],
                 reviewer_value(row),
                 "Yes" if roster and row.get("latest") is False else "",
-                (row["roster_by"] or "Former portal user") if entered else "",
+                (actor_text(row["roster_by"]) or "Former portal user")
+                if entered
+                else "",
                 instant(row["roster_at"]) if entered else "",
                 instant(row["last_contact_at"]) or NO_CONTACT,
             )

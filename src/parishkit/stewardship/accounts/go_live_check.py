@@ -44,8 +44,8 @@ from parishkit.stewardship.campaigns.withdrawal_models import ProductionWithdraw
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
 
+from .actor_names import actor_names
 from .admin_editing import editable_configuration, principal
-from .policy_models import PortalUser
 from .setup_wizard import Step, Wizard
 
 # The signed-in session's last public web address check (admin-portal spec,
@@ -68,19 +68,20 @@ class Progress:
     """The go-live in progress or being stopped, as the Check step shows it.
 
     ``request`` is the campaign's latest go-live request; ``started_by``
-    the email of the Administrator who started it; ``stop_kind`` what a
-    stop is still doing ("cleanup" or "links"); ``done``/``total`` its
-    progress; ``retry`` the signed Retry stopping go-live control, and
-    ``failed`` the failed disposal it retries as ``(preparation, task)``.
-    ``stopped_by_other`` is set when another Administrator than the viewer
-    stopped it, for the line that says so (#1585). ``cancelled_at`` is when
-    Cancel go-live returned the campaign to a Testing draft after Production
-    was confirmed, for Check's "Go-live cancelled at" line (#1585 slice 5).
+    the Administrator who started it (an ``actor_names.Actor``, #2259);
+    ``stop_kind`` what a stop is still doing ("cleanup" or "links");
+    ``done``/``total`` its progress; ``retry`` the signed Retry stopping
+    go-live control, and ``failed`` the failed disposal it retries as
+    ``(preparation, task)``. ``stopped_by_other`` is set when another
+    Administrator than the viewer stopped it, for the line that says so
+    (#1585). ``cancelled_at`` is when Cancel go-live returned the campaign
+    to a Testing draft after Production was confirmed, for Check's
+    "Go-live cancelled at" line (#1585 slice 5).
     """
 
     state: str
     request: ProductionTransitionRequest | None = None
-    started_by: str | None = None
+    started_by: object | None = None
     stop_kind: str | None = None
     done: int = 0
     total: int = 0
@@ -188,12 +189,9 @@ def progress(request, service, campaign_id):
         # The line "Another Administrator stopped go-live." (#1585).
         other = stopping and stop.actor_id != actor.identity
         if row.state in OPEN_STATES and not stopping:
-            email = (
-                PortalUser.objects.filter(pk=row.initiated_by_id)
-                .values_list("email", flat=True)
-                .first()
-            )
-            return Progress("started", row, started_by=email)
+            # By name, linked to the user's Timeline (#2259).
+            who = actor_names([row.initiated_by_id]).get(str(row.initiated_by_id))
+            return Progress("started", row, started_by=who)
         if row.state != "cancelled":
             return Progress(
                 "stopping",

@@ -88,17 +88,18 @@ def portal_chrome(request):
     )
     delivery_pause = None
     if admin and campaign and configuration.mode == "production":
+        from .actor_names import actor_names
         from .delivery_control_commands import inventory
-        from .policy_models import PortalUser
 
         if campaign.delivery_paused:
             delivery_pause = {
                 "inventory": inventory(campaign.pk),
                 "reason": campaign.pause_reason,
                 "since": campaign.paused_at,
-                "actor": PortalUser.objects.filter(pk=campaign.pause_actor_id)
-                .values_list("email", flat=True)
-                .first(),
+                # By name, linked to the user's Timeline (#2259).
+                "actor": actor_names([campaign.pause_actor_id]).get(
+                    str(campaign.pause_actor_id)
+                ),
                 "url": reverse("admin:delivery_control"),
             }
     # A view may place the page more precisely than its route can (#196).
