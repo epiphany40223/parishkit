@@ -112,9 +112,17 @@ BACKUP = {
         "(Google Drive) in Integrations."
     ),
     "acknowledged": _(
-        "See How backups are protected above. Required while copies are on."
+        "See How backups are protected in About this page. Required while "
+        "copies are on."
     ),
 }
+# The one line that stays under Copy each backup to Google Drive; BACKUP's
+# full text opens from the "i" beside its words (#2283). Not in HINTS, which
+# is keyed by field name: Slack's switch is also called "enabled".
+BACKUP_ENABLED_HINT = _(
+    "Copies each night's encrypted backup to a folder in your Google Drive, "
+    "using the Google Workspace connection set up for mail."
+)
 
 TESTING = {
     "testing_recipient": _(

@@ -1,13 +1,10 @@
 {% load i18n %}{% comment %}
   The setup wizard's Off-site backups (optional) step, above its form (#2200):
-  what protects every backup, shown whether or not copies are turned on (it is
-  true of every backup), and the one-time Google steps. Nothing
-  here is shown or hidden in place, so nothing moves under the pointer.
-{% endcomment %}<section class="panel">
-<h2>{% translate "How backups are protected" %}</h2>
-<p>{% translate "Every backup is encrypted to the backup encryption key the server operator installed. Only its private key, which the parish keeps away from this server, can open them: without it no backup can be restored. This system never holds the private key and cannot show or send it. After setup an Administrator can replace the key from Backup encryption key in Integrations." %}</p>
-</section>
-<details class="panel"><summary>{% translate "One-time setup in Google (for your Google Workspace administrator)" %}</summary>
+  the one-time Google steps. What protects every backup, true whether or not
+  copies are turned on, is in the page's About panel (setup-step.html, #2283).
+  Nothing here is shown or hidden in place, so nothing moves under the
+  pointer.
+{% endcomment %}<details class="panel"><summary>{% translate "One-time setup in Google (for your Google Workspace administrator)" %}</summary>
 <ol>
 {% include 'stewardship/backup-google-steps.html' %}
 <li>{% blocktranslate trimmed with mailbox=backup_mailbox|default:_("the delegated mailbox user") %}Create a folder for the backups, preferably in a shared drive so it does not belong to one person's account. Add the delegated mailbox user saved on Outgoing email settings ({{ mailbox }}) as a member of that shared drive with Content manager access.{% endblocktranslate %}</li>

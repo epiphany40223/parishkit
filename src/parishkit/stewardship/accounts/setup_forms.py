@@ -21,7 +21,7 @@ from parishkit.stewardship.web.field_rules import (
 from parishkit.stewardship.web.refusals import UserFacingError
 from parishkit.stewardship.web.sender_name_field import SenderNameField
 
-from . import setup_help
+from . import field_tips, setup_help
 from .integration_forms import MISSING_HINTS, SLACK_CHANNEL
 from .parish_views import ParishForm
 from .policy_schema import normalized_email
@@ -285,10 +285,14 @@ class SetupBackupForm(AdminForm):
         )
         texts = setup_help.BACKUP | {"folder_link": folder_help}
         if drive_closed:
-            # The reason stays visible under the switch (a checkbox's help
-            # is never moved into a tip) and describes it.
+            # The reason stays visible under the switch (a checkbox with no
+            # one-line hint keeps its help, field_tips.eligible) and describes it.
             texts |= {"enabled": BACKUP_LOCAL_REASON}
         setup_help.apply(self, texts, replace=True)
+        if not drive_closed:
+            # The switch's long help opens from its "i", leaving one line
+            # under its words (one help line under a field, #2283).
+            field_tips.shorten(self, {"enabled": setup_help.BACKUP_ENABLED_HINT})
         shown = f"{self.add_prefix('enabled')}=on"
         for name in ("folder_link", "acknowledged"):
             self.fields[name].widget.attrs.update(
