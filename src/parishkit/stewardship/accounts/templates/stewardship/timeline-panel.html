@@ -25,7 +25,7 @@
 <div id="table" data-table-region data-reread-seen="{{ table_digest }}">
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="events-caption"><table class="data-table timeline-table"><caption id="events-caption">{% translate "Everything recorded for this Family" %}</caption>
 <thead><tr>{% translate "When" as heading %}{% sort_heading table "when" heading %}<th scope="col" class="timeline-what">{% translate "What happened" %}</th><th scope="col">{% translate "Details" %}</th></tr></thead><tbody>
-{% for event in table.rows %}<tr><td class="nowrap"><time datetime="{{ event.at|instant }}" data-local-instant data-compact>{{ event.at|instant }}</time></td><th scope="row">{% if event.message_id and mail_links %}<a href="{% url 'admin:delivery' event.message_id %}">{{ event.what }}</a>{% else %}{{ event.what }}{% endif %}</th><td>{{ event.detail }}</td></tr>
+{% for event in table.rows %}<tr><td class="nowrap"><time datetime="{{ event.at|instant }}" data-local-instant data-compact>{{ event.at|instant }}</time></td><th scope="row">{% if event.message_id and mail_links %}<a href="{% url 'admin:delivery' event.message_id %}">{{ event.what }}</a>{% else %}{{ event.what }}{% endif %}</th><td>{{ event.detail|keep_money }}</td></tr>
 {% empty %}<tr><td colspan="3">{% if filtered_out %}{% translate "No lines match these filters. Choose All in Kind and clear From and Through to see every line." %}{% else %}{% translate "Nothing recorded for this Family yet. Emails, sign-ins, submissions and review actions appear here as they happen." %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
 </div>
 </section>{% endif %}

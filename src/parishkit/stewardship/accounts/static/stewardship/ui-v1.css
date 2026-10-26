@@ -1148,6 +1148,13 @@ td > :last-child { margin-bottom: 0; }
 .data-table.whole-words th, .data-table.whole-words td { overflow-wrap: normal; padding-inline: .6rem; }
 .data-table.whole-words tbody th, .data-table.whole-words tbody td { vertical-align: top; }
 table .nowrap, .data-table .cell-line { white-space: nowrap; }
+/* An amount of money never breaks across lines (#2258): main's
+   overflow-wrap: anywhere broke "$3,000.00" in the hub's pledge table when a
+   long Share methods cell squeezed its column. The keep_money template
+   filter wraps each amount in mixed or plain text in .money, so the words
+   and names around it wrap first; a table too wide for a phone scrolls in
+   its own table-scroll box, never the page. */
+.money { white-space: nowrap; }
 .data-table .cell-line { display: block; }
 .data-table .cell-detail { display: block; color: var(--muted); font-size: .875rem; font-weight: 400; }
 .data-table dl.cell-pairs { display: grid; grid-template-columns: auto max-content; gap: .1rem .6rem; margin: 0; }

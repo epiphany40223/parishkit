@@ -63,6 +63,8 @@ FOCUS_PATH = "/review-wizard-2-from-next"
 BACK_PATH = "/review-wizard-2-from-previous"
 PLEDGE_PATH = "/review-wizard-pledge"
 PLEDGE_EDITED_PATH = "/review-wizard-pledge-edited"
+# The edited pledge page with every amount at $99,999.99 (#2258).
+PLEDGE_WIDE_PATH = "/review-wizard-pledge-wide"
 # The hub unit tests' deceased Member 5, its two changes, and the Member the
 # Family added, with the ids their census worklist items carry.
 DECEASED = "11111111-0000-4000-8000-000000000005"
@@ -213,14 +215,15 @@ def new_member_section():
     )
 
 
-def pledge_context(fresh):
+def pledge_context(fresh, wide=False):
     """A Pledges page of a one-page run: the pledge To review (``fresh``)
     or edited, drawn as review_sections draws it, with the Financial tab's
-    Pledges row actions (its pledge editor's frequencies too)."""
+    Pledges row actions (its pledge editor's frequencies too); ``wide``
+    makes every amount $99,999.99 (``pledge_tab``)."""
     from parishkit.stewardship.reports.financial import FREQUENCY_LABELS
     from parishkit.stewardship.responses.financial import FREQUENCIES
 
-    financial = pledge_tab(fresh=fresh)
+    financial = pledge_tab(fresh=fresh, wide=wide)
     return page_context(1) | {
         "stream": next(stream for stream in STREAMS if stream.key == "pledges"),
         "previous_url": None,
@@ -332,11 +335,16 @@ def components(context, admin):
                 base | page_context(2, focus=focus),
             ),
         )
-    for path, fresh in ((PLEDGE_PATH, True), (PLEDGE_EDITED_PATH, False)):
+    for path, fresh, wide in (
+        (PLEDGE_PATH, True, False),
+        (PLEDGE_EDITED_PATH, False, False),
+        (PLEDGE_WIDE_PATH, False, True),
+    ):
         pages[path] = (
             "text/html",
             render_to_string(
-                "stewardship/review-wizard-page.html", base | pledge_context(fresh)
+                "stewardship/review-wizard-page.html",
+                base | pledge_context(fresh, wide),
             ),
         )
     review = {"campaign": CAMPAIGN, "counts": COUNTS}

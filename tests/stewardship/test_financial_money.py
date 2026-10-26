@@ -131,3 +131,19 @@ def test_whole_dollars_tag_keeps_cents_for_screen_readers():
         '<span aria-hidden="true">$1,235</span>'
         '<span class="visually-hidden">$1,234.50</span>'
     )
+
+
+def test_keep_money_wraps_each_amount_and_escapes_the_rest():
+    """Each amount sits in one no-wrap span; plain text is escaped (#2258)."""
+    from django.utils.safestring import mark_safe
+
+    from parishkit.stewardship.accounts.templatetags.stewardship import keep_money
+
+    span = '<span class="money">{}</span>'.format
+    assert keep_money("$99,999.99") == span("$99,999.99")
+    assert keep_money("Monthly ($8,333.33 each) <b>") == (
+        f"Monthly ({span('$8,333.33')} each) &lt;b&gt;"
+    )
+    assert keep_money("-$12.50 and $1,000") == f"{span('-$12.50')} and {span('$1,000')}"
+    assert keep_money("Cannot give") == "Cannot give"
+    assert keep_money(mark_safe("$5.00<br>x")) == f"{span('$5.00')}<br>x"

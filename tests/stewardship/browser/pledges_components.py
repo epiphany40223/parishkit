@@ -48,6 +48,8 @@ SHARES = "/pledges-shares"
 SHARES_EVERY = "/pledges-shares-every"
 STALE = "/pledges-stale"
 STALE_NOTICE = "Family 03: not recorded, changed by someone else."
+# Every amount at $99,999.99: answer, Reviewer's value, ParishSoft (#2258).
+WIDE = "/pledges-wide"
 
 
 def _row(index, stage="to_review", latest=None, check=None, *, base=None, **extra):
@@ -171,6 +173,21 @@ def rows(edited=False, accepted=False, undone=False, shares=False):
     return found
 
 
+def wide_rows():
+    """One edited pledge whose every amount is $99,999.99 (#2258)."""
+    amount = Decimal("99999.99")
+    return [
+        _row(
+            3,
+            "conflict",
+            review("accepted_edited", amount=amount, frequency="monthly"),
+            CheckState("conflict", amount, 0, 2),
+            base="to_enter_by_hand",
+            annual=MoneyAmount(9999999),
+        )
+    ]
+
+
 def _page(context, admin, found, stage, notice=None):
     """The real page for ``found`` at ``stage``, for a Staff reader."""
     extra = {"paging": {"size": "25"}, "search": ""}
@@ -200,4 +217,5 @@ def components(context, admin):
         SHARES: _page(context, admin, rows(shares=True), "to_review", EDITED_NOTICE),
         SHARES_EVERY: _page(context, admin, rows(shares=True), "all"),
         STALE: _page(context, admin, rows(), "to_review", STALE_NOTICE),
+        WIDE: _page(context, admin, wide_rows(), "all"),
     }
