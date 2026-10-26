@@ -250,3 +250,44 @@ def test_what_happened_keeps_its_words_whole(page, component_origin, path):
         "() => document.documentElement.scrollWidth"
         " <= document.documentElement.clientWidth",
     )
+
+
+# The When column's width and the widest one-line value in it. The
+# measuring span clones the cell's own text styling, so the value is the
+# width the browser-local date and time needs on one line (heading
+# included), unaffected by how the table shares room (#2251).
+WHEN_WIDTHS = """() => {
+  const column = document.querySelector("thead th:first-child");
+  const widest = (cell) => {
+    const probe = document.createElement("span");
+    probe.style.cssText = "position:absolute;visibility:hidden;white-space:nowrap";
+    probe.append(...[...cell.childNodes].map((node) => node.cloneNode(true)));
+    cell.append(probe);
+    const width = probe.getBoundingClientRect().width;
+    probe.remove();
+    return width;
+  };
+  const cells = [...document.querySelectorAll("tbody tr td:first-child time")];
+  const padding = (cell) => {
+    const style = getComputedStyle(cell);
+    return parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+  };
+  const longest = Math.max(widest(column), ...cells.map(
+    (time) => widest(time.parentElement)));
+  return {column: column.getBoundingClientRect().width,
+    content: longest, padding: padding(column)};
+}"""
+
+
+@pytest.mark.parametrize("path", [ADMIN, USER_PAGE])
+def test_when_is_no_wider_than_its_longest_value(page, component_origin, path):
+    """At 1280 px the When column is its longest one-line date and time
+    plus the cell's padding, and no more (#2251), even with long Details
+    beside it; What happened keeps its one-line minimum."""
+    page.set_viewport_size(VIEWPORT)
+    page.goto(component_origin + path)
+    # No squeeze here: short Details leave the table room to spare, which
+    # auto layout shares among columns unless When is held to its content.
+    widths = page.evaluate(WHEN_WIDTHS)
+    assert widths["column"] <= widths["content"] + widths["padding"] + 1, widths
+    assert page.locator("thead .timeline-what").bounding_box()["width"] >= 9 * 16 - 0.5

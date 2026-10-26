@@ -1649,6 +1649,14 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
    phone the table scrolls inside its box, never the page. */
 .timeline-table .timeline-what, .timeline-table tbody th { overflow-wrap: normal; }
 .timeline-table .timeline-what { min-width: 9rem; }
+/* The When column is as wide as its longest one-line date and time and no
+   wider (#2251): its cells never wrap (.nowrap), but an auto-layout table
+   wider than its content shares the spare room among every column in
+   proportion, so When grew well past its dates. A width of 1% asks for the
+   least the content allows (as .log-level-cell does), leaving the room to
+   What happened and Details. The empty-state cell spans all columns, so it
+   is left alone. */
+.timeline-table tr > :first-child:not([colspan]) { width: 1%; }
 .log-level { display: inline-flex; padding-top: .15rem; }
 .log-level .level-icon { width: 1.25rem; height: 1.25rem; }
 .level-icon { flex: none; width: 1rem; height: 1rem; vertical-align: -.15em; }
