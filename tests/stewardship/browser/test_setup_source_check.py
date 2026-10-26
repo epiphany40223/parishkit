@@ -133,6 +133,8 @@ def test_before_a_check_the_page_offers_it_with_plain_words(page, component_orig
     main = page.locator("main")
     contains(main, "Check that ParishSoft answers for St. Example Parish (4321)")
     visible(page.get_by_role("button", name="Check parish data"))
+    # The in-place form names its region, so an ordinary load lands on it.
+    assert page.locator("form[data-in-place]").get_attribute("action").endswith(REGION)
     page.locator("details summary", has_text="About this page").click()
     contains(main, "It usually takes a few seconds.")
     contains(main, "The parish data itself is loaded when you finish setup.")
