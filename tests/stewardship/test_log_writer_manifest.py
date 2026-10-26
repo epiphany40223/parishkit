@@ -88,9 +88,6 @@ WRITERS = {
         )
     ],
     "source/production.py": [({"scheduler"}, "schedule", {E.SOURCE_HELD}, {"INFO"})],
-    "source/setup_execution.py": [
-        ({"worker"}, "failure", SOURCE_DECISIONS, {"INFO", "CRITICAL"})
-    ],
     "source/setup_final_execution.py": [
         ({"worker"}, "failure", SOURCE_DECISIONS, {"INFO", "CRITICAL"})
     ],

@@ -592,7 +592,6 @@ LEDGER = {
             "setup",
             "setup_finishing",
             "setup_source",
-            "setup_source_progress",
             "setup_branding",
             "setup_branding_asset",
             "setup_credential",

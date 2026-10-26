@@ -95,7 +95,6 @@ CONVERTED_PAGES = {
     "/setup-source": "Check that ParishSoft answers for",
     "/setup-credential": "never shown again",
     "/setup": "Cancel permanently ends this attempt",
-    "/setup-source-progress": "Downloaded from ParishSoft",
     "/delivery-pause": "Current live-mail inventory",
     "/go-live": "The campaign becomes active at once",
 }

@@ -15,23 +15,16 @@ def draft(
     sections=None,
     *,
     state=SetupState.COLLECTING,
-    source=None,
     checked=False,
-    task_state=None,
 ):
     """A detached stand-in carrying only what the stepper reads.
 
     ``checked`` is whether the parish data check of the current connection
-    is ready (#2201). A load bound before that change (``source``) is
-    running unless ``task_state`` says how it ended.
+    is ready (#2201).
     """
-    if source is not None and task_state is None:
-        task_state = "running"
     return SimpleNamespace(
         status=SimpleNamespace(state=state, attempt_id=uuid4(), version=3),
         sections=sections or {},
-        source_task_id=source,
-        source_task_state=task_state,
         source_checked=checked,
     )
 
@@ -285,36 +278,6 @@ def test_onward_is_the_next_step_when_every_later_one_is_done():
     assert wizard.onward.key == "finish"
     first_pass = build(draft({}), "parish")
     assert first_pass.onward.key == first_pass.next.key == "mail"
-
-
-def test_loading_keeps_completed_steps_but_links_only_the_load():
-    """While a load runs other pages redirect, yet finished work still counts.
-
-    Only an attempt that started a load before #2201 is still loading. The
-    load was the last data-entry step, so every earlier data-entry page
-    is complete while it runs; the email test, not sent here, waits like the
-    rest, and Finish setup is still to come.
-    """
-    sections = {
-        key: VALUES[key] for key in ("parish", "mail", "testing", "slack", "access")
-    } | {"branding": {"bundle_id": str(uuid4())}}
-    wizard = build(
-        draft(sections, state=SetupState.LOADING, source=uuid4()),
-        "source",
-        credentials={"parishsoft": True, "google_workspace": True},
-    )
-    shown = states(wizard)
-    assert wizard.step("source").state == "todo"
-    assert wizard.step("source").status == "In progress"
-    assert wizard.step("source").url == "/admin/setup/source"
-    earlier = ("parish", "mail", "testing", "google_workspace", "slack")
-    for key in (*earlier, "branding", "access", "parishsoft"):
-        assert shown[key] == "done", key
-        assert wizard.step(key).status == "Completed"
-    assert wizard.completed == 8
-    assert {shown[key] for key in ("mail_test", "finish")} == {"blocked"}
-    assert all(step.url is None for step in wizard.steps if step.key != "source")
-    assert wizard.next.key == "finish" and wizard.next.url is None
 
 
 def test_a_failed_check_leaves_the_check_to_do_and_every_page_open():

@@ -186,8 +186,6 @@ def _blocker(key, draft, done):
     These mirror the prerequisites each page's own view enforces. The ordering
     rule (no jumping past unfinished steps) is applied separately in build().
     """
-    if draft.status.state == SetupState.LOADING and key != "source":
-        return _("Available after the parish data load finishes."), "source"
     requirements = {
         "source": (
             ("parish", "parishsoft"),
@@ -229,14 +227,10 @@ def _blocker(key, draft, done):
 def _unordered(key, draft):
     """Whether an unfinished step stays open whatever comes before it.
 
-    The running load's own step stays the page to follow while it runs,
-    even when an earlier step is still to do (an attempt that loaded before
-    the email test, as the order before #1578 had it). A saved Slack step
-    stays a link from every step (#1499), since it is where Slack is turned
-    off, even while its token still needs entering (#1578).
+    A saved Slack step stays a link from every step (#1499), since it is
+    where Slack is turned off, even while its token still needs entering
+    (#1578).
     """
-    if key == "source":
-        return draft.status.state == SetupState.LOADING
     return key == "slack" and "slack" in draft.sections
 
 
@@ -278,9 +272,7 @@ def build(draft, current=None, *, credentials=None, tests=frozenset()):
             and not _unordered(page.key, draft)
         ):
             blocked, locked = (_("Finish the earlier steps first."), frontier), True
-        if page.key == "source" and draft.status.state == SetupState.LOADING:
-            state, status = "todo", _("In progress")
-        elif done[page.key]:
+        if done[page.key]:
             state, status = "done", _("Completed")
         elif blocked:
             state, status = (

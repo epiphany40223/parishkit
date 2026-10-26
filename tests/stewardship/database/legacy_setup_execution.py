@@ -1,4 +1,8 @@
-"""Exact setup-source completion; ready staging is not product activation."""
+"""Exact setup-source completion; ready staging is not product activation.
+
+Test support since #2233: production no longer runs a setup load, but the SQL
+that guards one stays, and its tests bind and run one with this module.
+"""
 
 from time import monotonic
 
@@ -14,22 +18,33 @@ from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.storage import _status, change_run
 from parishkit.stewardship.observability import correlation, current_correlation
-from parishkit.stewardship.storage import StorageInvariantError
-
-from .failures import classify_read_failure, failure_context, record_load_budget
-from .leases import acquire_source, release_source, verify_source
-from .outcomes import failure_action, retry_delay
-from .rejection import reject_snapshot
-from .setup_admission import (
+from parishkit.stewardship.source.failures import (
+    classify_read_failure,
+    failure_context,
+    record_load_budget,
+)
+from parishkit.stewardship.source.leases import (
+    acquire_source,
+    release_source,
+    verify_source,
+)
+from parishkit.stewardship.source.outcomes import failure_action, retry_delay
+from parishkit.stewardship.source.rejection import reject_snapshot
+from parishkit.stewardship.source.setup_admission import (
     admit_setup_task,
     bound_attempt,
     recovery_plan,
     require_live_setup,
 )
-from .setup_exchange import publish_recipient, receive_credential
-from .setup_handoff import EphemeralSetupRecipient, SetupCredentialScope
-from .setup_loading import load_setup_source
-from .snapshot_models import SourceSnapshot
+from parishkit.stewardship.source.setup_handoff import (
+    EphemeralSetupRecipient,
+    SetupCredentialScope,
+)
+from parishkit.stewardship.source.snapshot_models import SourceSnapshot
+from parishkit.stewardship.storage import StorageInvariantError
+
+from .legacy_setup_exchange import publish_recipient, receive_credential
+from .legacy_setup_loading import load_setup_source
 
 
 def setup_source_handler():

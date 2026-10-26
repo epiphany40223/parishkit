@@ -2,6 +2,10 @@
 
 No current-source pointer, Family code or configured marker changes here. The
 immutable result connects final setup preparation to the exact validated load.
+
+
+Test support since #2233: production no longer runs a setup load, but the SQL
+that guards one stays, and its tests bind and run one with this module.
 """
 
 from itertools import batched
@@ -9,6 +13,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from django.db import connection, connections
+from django.db.models import F
 
 from parishkit.parishsoft import ParishSoftConfig
 from parishkit.parishsoft_source import CoherentParishSoftClient
@@ -22,19 +27,33 @@ from parishkit.stewardship.accounts.setup_secret_models import SetupSealedCreden
 from parishkit.stewardship.jobs.ownership import lock_task_claim
 from parishkit.stewardship.jobs.phases import TaskPhase
 from parishkit.stewardship.jobs.storage import _status
+from parishkit.stewardship.source.cursors import refresh_cursor
+from parishkit.stewardship.source.errors import (
+    SourceCredentialChanged,
+    local_read_admission,
+)
+from parishkit.stewardship.source.leases import reserve_source_request, verify_source
+from parishkit.stewardship.source.load_progress import DownloadProgress
+from parishkit.stewardship.source.loading import load_full_source, log_organizations
+from parishkit.stewardship.source.setup_admission import (
+    bound_attempt,
+    require_live_setup,
+)
+from parishkit.stewardship.source.snapshot_models import SourceCurrent
+from parishkit.stewardship.source.snapshots import (
+    begin_snapshot,
+    finish_snapshot,
+    stage_entities,
+)
+from parishkit.stewardship.source.transport import (
+    runtime_base_url,
+    runtime_profile,
+    source_timeout_recorder,
+)
+from parishkit.stewardship.source.windows import RefreshWindow
 from parishkit.stewardship.storage import StorageInvariantError
 
-from .cursors import refresh_cursor
-from .errors import SourceCredentialChanged, local_read_admission
-from .leases import reserve_source_request, verify_source
-from .load_progress import DownloadProgress
-from .loading import load_full_source, log_organizations
-from .setup_admission import bound_attempt, require_live_setup
-from .setup_exchange import _live
-from .snapshot_models import SourceCurrent
-from .snapshots import begin_snapshot, finish_snapshot, stage_entities
-from .transport import runtime_base_url, runtime_profile, source_timeout_recorder
-from .windows import RefreshWindow
+from .legacy_setup_exchange import _live
 
 
 def verify_setup_exchange(execution, claim, exchange_id, credential):
@@ -179,3 +198,34 @@ def load_setup_source(execution, claim, *, exchange_id, credential):
             exchange_id=exchange_id, snapshot=snapshot, actor_id=claim.worker_id
         )
         return snapshot
+
+
+def staged_load(attempt):
+    """The attempt's exact, still-valid staged load result, or None.
+
+    Valid means: the bound load succeeded, its exchange is unscrubbed and
+    on the Task's fence, the staged ParishSoft credential still has the
+    version and fingerprint the load read, and its snapshot is ready on the
+    same fences. The production code no longer reads a legacy load (#2233);
+    the attempt's audit trigger still repeats this in SQL, and the tests that
+    build a legacy-bound setup read it back with this.
+    """
+    if attempt.source_task_id is None:
+        return None
+    return (
+        SetupSourceResult.objects.filter(
+            exchange__attempt=attempt,
+            exchange__scrubbed_at=None,
+            exchange__task__root_id=attempt.source_task_id,
+            exchange__task__state="succeeded",
+            exchange__task_fence=F("exchange__task__fence"),
+            exchange__credential__scrubbed_at=None,
+            exchange__credential_version=F("exchange__credential__version"),
+            exchange__fingerprint=F("exchange__credential__fingerprint"),
+            snapshot__state="ready",
+            snapshot__task_id=F("exchange__task_id"),
+            snapshot__source_fence=F("exchange__source_fence"),
+        )
+        .order_by("-snapshot__completed_at", "-pk")
+        .first()
+    )

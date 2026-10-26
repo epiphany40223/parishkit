@@ -14,7 +14,6 @@ import pytest
 
 from .setup_back_path_components import (
     CREDENTIAL_CHECKED,
-    PROGRESS_DONE,
     SOURCE_CHECKED,
     SOURCE_STALE,
 )
@@ -44,10 +43,6 @@ SETUP = [
     (SOURCE_CHECKED, {"back", "action", "next"}),
     (SOURCE_STALE, {"back", "next"}),
     (CHECK_FAILED, {"back", "next"}),
-    # Loading parish data: Continue unavailable while the load runs, then
-    # a link once it is done (#1968), in the same place.
-    ("/setup-source-progress", {"back", "next"}),
-    (PROGRESS_DONE, {"back", "next"}),
 ]
 CAMPAIGN = [
     (PATH, {"back", "next"}),

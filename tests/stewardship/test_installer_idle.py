@@ -10,6 +10,7 @@ from parishkit.config import ConfigError
 from parishkit.stewardship import runtime_process
 from parishkit.stewardship.accounts import (
     credential_database,
+    setup_checks,
     setup_credential_installation,
     setup_lookups,
     setup_mail_exchange,
@@ -21,7 +22,6 @@ from parishkit.stewardship.accounts.credential_installation import (
     CredentialInstaller,
 )
 from parishkit.stewardship.accounts.cryptography import Key
-from parishkit.stewardship.source import setup_exchange
 
 
 def private(target):
@@ -114,7 +114,7 @@ def refuse(*args, **kwargs):
 
 @pytest.mark.parametrize(
     "module,target",
-    [(setup_exchange, "parishsoft"), (setup_mail_exchange, "google_workspace")],
+    [(setup_mail_exchange, "google_workspace")],
 )
 def test_idle_relay_skips_the_work_order_lock(monkeypatch, module, target):
     """No pending exchange: return before the global work-order transaction."""
@@ -186,7 +186,7 @@ def test_queue_hint_counts_an_interrupted_journal_without_a_query(
     [
         ("metrics", ["queue"]),
         ("google_oauth", ["queue"]),
-        ("parishsoft", ["queue", "source", "lookup", "initial"]),
+        ("parishsoft", ["queue", "lookup", "check", "initial"]),
         ("google_workspace", ["queue", "mail", "probe", "initial"]),
         ("slack", ["queue", "slack", "initial"]),
     ],
@@ -202,8 +202,8 @@ def test_each_target_checks_exactly_its_own_work(monkeypatch, target, expected):
         return lambda *args: asked.append((name, *args)) or False
 
     installer = SimpleNamespace(pending=hint("queue"))
-    monkeypatch.setattr(setup_exchange, "has_pending", hint("source"))
     monkeypatch.setattr(setup_lookups, "has_pending", hint("lookup"))
+    monkeypatch.setattr(setup_checks, "has_pending", hint("check"))
     monkeypatch.setattr(setup_mail_exchange, "has_pending", hint("mail"))
     monkeypatch.setattr(backup_probes, "has_pending", hint("probe"))
     monkeypatch.setattr(setup_notifications, "has_pending", hint("slack"))
@@ -216,8 +216,8 @@ def test_each_target_checks_exactly_its_own_work(monkeypatch, target, expected):
 
 def test_cheap_check_stops_at_the_first_step_with_work(monkeypatch):
     """Work found by the queue check needs no further reads."""
-    monkeypatch.setattr(setup_exchange, "has_pending", refuse)
     monkeypatch.setattr(setup_lookups, "has_pending", refuse)
+    monkeypatch.setattr(setup_checks, "has_pending", refuse)
     monkeypatch.setattr(setup_credential_installation, "has_pending", refuse)
     installer = SimpleNamespace(pending=lambda: True)
     assert runtime_process.installer_pending(installer, "parishsoft")() is True

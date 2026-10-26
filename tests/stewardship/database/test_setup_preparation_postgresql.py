@@ -18,13 +18,13 @@ import pytest
 from django.db import DatabaseError, transaction
 from django.db.models import F
 
-from parishkit.stewardship.accounts.setup_campaign import _source_result
 from parishkit.stewardship.accounts.setup_drafts import save_section
 from parishkit.stewardship.accounts.setup_models import SetupAttempt, SetupDraftSection
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 
 from ..campaign_factory import campaign, schedule
 from ..content_factory import content
+from .legacy_setup_loading import staged_load
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_runtime_auth_grants_postgresql import web_login
 from .test_setup_campaign_postgresql import completed
@@ -73,7 +73,7 @@ def first_campaign(service, monkeypatch, **overrides):
             attempt.pk,
             {
                 "campaign": {
-                    "source_result": str(_source_result(attempt).pk),
+                    "source_result": str(staged_load(attempt).pk),
                     "campaign": campaign(timezone=timezone, **overrides)["values"],
                 }
             },

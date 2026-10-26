@@ -231,12 +231,6 @@ def setup_step(request, step):
             initial=initial_values(step, draft.sections.get(step, {})),
             **options,
         )
-        if step == "parish" and draft.source_task_id is not None:
-            form.fields["timezone"].disabled = True
-            form.fields["timezone"].help_text = (
-                "The source load fixes this setup's timezone. "
-                "Cancel and start a new setup to change it."
-            )
         if request.method == "POST":
             version = expected_version(request.POST.get("version"))
             if version != draft.status.version:
@@ -306,10 +300,7 @@ def setup_source(request):
         _closed(request, set())
         service = runtime()
         draft = view_draft(request, service)
-        if draft is None or draft.status.state not in {
-            SetupState.COLLECTING,
-            SetupState.LOADING,
-        }:
+        if draft is None or draft.status.state != SetupState.COLLECTING:
             return _checked(request, service, HttpResponseRedirect("/admin/setup"))
         context = _context(draft, "source")
         context["source_step"] = context["wizard"].step("source")

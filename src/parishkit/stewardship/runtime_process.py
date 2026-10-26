@@ -404,10 +404,7 @@ def serve_credential_installer(configuration, lease):
         worked = [installer.run_once() is not None]
         if configuration.credential_target == "parishsoft":
             from .accounts import setup_checks, setup_lookups
-            from .source.setup_exchange import relay_pending
 
-            lease.check()
-            worked.append(relay_pending(installer.files.private))
             # The setup wizard's organization lookup (#1554).
             lease.check()
             worked.append(
@@ -484,12 +481,10 @@ def installer_pending(installer, target):
         setup_notifications,
     )
     from .accounts import setup_credential_installation as initial
-    from .source import setup_exchange
 
     checks = [installer.pending]
     if target == "parishsoft":
         checks += [
-            setup_exchange.has_pending,
             setup_lookups.has_pending,
             setup_checks.has_pending,
         ]

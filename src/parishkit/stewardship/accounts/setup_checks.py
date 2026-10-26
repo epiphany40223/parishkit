@@ -182,9 +182,6 @@ def start_check(request, service, attempt_id, *, expected_version):
         if waiting:
             return current_check(attempt)
         check_version(attempt, expected_version)
-        if attempt.state == SetupState.LOADING:
-            # A load started before #2201 is still running.
-            raise PermissionError("Available after the parish data load finishes.")
         credential = _staged_key(attempt)
         if (
             attempt.state != SetupState.COLLECTING

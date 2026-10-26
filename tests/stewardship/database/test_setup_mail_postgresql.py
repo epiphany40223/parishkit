@@ -100,7 +100,7 @@ def test_collecting_mail_is_not_subject_to_finished_loading_watchdog(
     """An active original login may test mail after the two-hour loading bound."""
     from parishkit.stewardship.accounts.setup_models import SetupAttempt
 
-    from .test_setup_progress_postgresql import aged_original_load
+    from .legacy_setup_source import aged_original_load
 
     request, _, _ = complete_draft(setup_service, monkeypatch, tmp_path)
     aged_original_load(SetupAttempt.objects.get().source_task_id, minutes=121)

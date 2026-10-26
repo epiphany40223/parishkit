@@ -445,29 +445,3 @@ def test_the_page_draws_one_state_over_the_others(shown, expected):
         assert 'href="/admin/setup/credentials/parishsoft"' in slot
     else:
         assert "/admin/setup/credentials/parishsoft" not in slot
-
-
-def test_a_running_legacy_load_links_its_progress_and_offers_no_check():
-    """An attempt still loading from before #2201 waits for that load."""
-    from uuid import uuid4
-
-    from django.template.loader import render_to_string
-
-    from parishkit.stewardship.accounts.setup_views import check_page
-
-    task = uuid4()
-    html = render_to_string(
-        "stewardship/setup-source.html",
-        check_page(None, "St. Example Parish (1234)")
-        | {
-            "draft": {
-                "status": {"attempt_id": "a", "version": 2, "state": "loading"},
-                "source_task_id": task,
-            },
-            "wizard": None,
-            "source_step": None,
-        },
-    )
-    assert f'href="/admin/setup/source/{task}"' in html
-    assert "is still running" in html
-    assert 'value="check"' not in html

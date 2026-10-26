@@ -1,4 +1,13 @@
-"""Original-attempt Task admission for staging, never active source publication."""
+"""Admission for the retired ``setup_source_load`` Task type.
+
+Setup no longer loads parish data (#2201, #2233): its Check parish data step
+is a quick check run by the credential installer. The task type stays in the
+frozen SQL creator and execution maps, so a row of that type from an older
+setup can still exist. Nothing creates or executes one any more, but its
+admission and recovery below stay so that the scheduler can still cancel an
+abandoned row and setup cleanup (``setup_cleanup``) can still settle and
+dispose of a legacy load.
+"""
 
 from django.db.models import F
 
@@ -8,10 +17,14 @@ from parishkit.stewardship.accounts.setup_exchange_models import SetupSourceResu
 from parishkit.stewardship.accounts.setup_models import SetupAttempt
 from parishkit.stewardship.accounts.setup_policy import SetupState
 from parishkit.stewardship.accounts.setup_staging import _window
-from parishkit.stewardship.campaigns.work_locks import require_work_order
-from parishkit.stewardship.jobs.dispatch import RecoveryPlan
+from parishkit.stewardship.campaigns.work_locks import (
+    require_work_order,
+    work_transaction,
+)
+from parishkit.stewardship.jobs.dispatch import Handler, RecoveryPlan
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.ownership import database_now
+from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.storage import TaskStatus
 from parishkit.stewardship.storage import StorageInvariantError
 
@@ -158,3 +171,25 @@ def admit_setup_task(action, status):
     if action == "complete":
         return staged_result(status) is not None
     return action in {"heartbeat", "progress", "effect"}
+
+
+def retired_handler():
+    """The registry entry of the retired task type: admission, never execution.
+
+    The scheduler and the worker both register it, so a leftover row of the
+    type is still known to the dispatcher (the registries must list every
+    type the SQL execution map names) and is cancelled or settled by the
+    ordinary recovery. Executing one is refused: the load code is gone.
+    """
+
+    def retired(execution):
+        """Refuse to run a setup load; setup checks the parish data instead."""
+        raise PermissionError("The setup parish data load has been retired.")
+
+    return Handler(
+        queue=WorkQueue.SOURCE,
+        admit=admit_setup_task,
+        execute=retired,
+        recover=recovery_plan,
+        scope=work_transaction,
+    )

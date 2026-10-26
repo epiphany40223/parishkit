@@ -4007,13 +4007,13 @@ with invisible, aria-hidden copies of every one of those forms (with
 counts the size of a large parish's where the real ones are not known
 yet), so neither the box nor its row of boxes grows or shrinks as the
 work moves on. Likewise a
-status sentence above the boxes that changes with the work's state (Load
-parish data's "Current status") shares one grid cell with invisible copies
+status sentence above the boxes that changes with the work's state (a load's
+"Current status") shares one grid cell with invisible copies
 of every wording it can take, so the boxes below it never move; and a
-line under the boxes that appears part-way through (Load parish data's
-"Records saved for this setup" bar) keeps its space, invisible, until it
-appears. Each row of a list whose status words change (Load parish data's
-downloaded items) likewise shares a cell with invisible copies of its label
+line under the boxes that appears part-way through (a load's "Records
+saved for this setup" bar) keeps its space, invisible, until it
+appears. Each row of a list whose status words change (a load's downloaded
+items) likewise shares a cell with invisible copies of its label
 and every status wording, in the heaviest weight the row takes, so a row
 never wraps to another line part-way through. A grid cell, not a fixed line count, because each browser wraps
 the same words differently. The forms reserved are the ones the page can

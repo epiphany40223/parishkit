@@ -27,7 +27,7 @@ def components(context, admin, now):
 
     def page(shown, *, checked=False):
         """One Check parish data page showing the check ``shown`` (or none)."""
-        steps = wizard(None, checked=checked)
+        steps = wizard(checked=checked)
         values = {
             "draft": {
                 "status": {"attempt_id": uuid4(), "state": "collecting", "version": 4},
@@ -35,8 +35,6 @@ def components(context, admin, now):
                 "idle_at": now + timedelta(minutes=30),
                 "absolute_at": now + timedelta(hours=12),
                 "watchdog_at": None,
-                "source_task_id": None,
-                "source_task_state": None,
                 "source_checked": checked,
             },
             "source_step": steps.step("source"),

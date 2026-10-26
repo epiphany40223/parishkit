@@ -9,11 +9,11 @@ from parishkit.stewardship.accounts.setup_models import SetupAttempt
 from parishkit.stewardship.accounts.setup_secret_models import SetupSealedCredential
 
 from ..test_setup_forms import VALUES
+from .legacy_setup_source import bind_load
 from .setup_lookup_builders import answer_lookup
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_runtime_auth_grants_postgresql import web_login
 from .test_setup_credentials_postgresql import CANDIDATE, publish
-from .test_setup_progress_postgresql import bind_load
 from .test_setup_views_postgresql import post, setup_http, started  # noqa: F401
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -45,7 +45,7 @@ def test_before_completion_admin_pages_route_to_the_wizard_only(setup_http, goog
 
 
 def test_background_work_stays_readable_during_setup(setup_http, google):
-    """The header's background link shows the setup load instead of bouncing."""
+    """The header's background link shows a leftover setup load instead of bouncing."""
     browser = started()
     task, _ = bind_load(SetupAttempt.objects.get().pk)
     with web_login():
@@ -54,7 +54,9 @@ def test_background_work_stays_readable_during_setup(setup_http, google):
         page = browser.get("/admin/system/background/")
         assert page.status_code == 200, page.content
         assert b"Initial ParishSoft data load" in page.content
-        assert f"/admin/setup/source/{task.run_id}".encode() in page.content
+        # A leftover load task opens its detail page only: its progress page
+        # is gone (#2233).
+        assert b"/admin/setup/source/" not in page.content
         detail = browser.get(f"/admin/system/background/{task.run_id}/")
         assert detail.status_code == 200
         assert b"Initial ParishSoft data load" in detail.content
@@ -217,7 +219,7 @@ def test_credential_prerequisites_and_format_are_inline_form_errors(setup_http, 
 
 
 def test_stepper_links_completed_steps_and_the_next_one_only(setup_http, google):
-    """No jumping ahead in the stepper; finished work still counts while loading."""
+    """No jumping ahead in the stepper; finished work still counts."""
     with web_login():
         browser = started()
         body = browser.get("/admin/setup").content
@@ -230,8 +232,5 @@ def test_stepper_links_completed_steps_and_the_next_one_only(setup_http, google)
         assert b'href="/admin/setup/testing"' not in body
         # The stepper grants and removes nothing: the page itself still opens.
         assert browser.get("/admin/setup/testing").status_code == 200
-    bind_load(SetupAttempt.objects.get().pk)
-    with web_login():
         body = browser.get("/admin/setup/source").content
         assert b"1 of 11 steps completed" in body
-        assert b"Completed" in body and b'href="/admin/setup/mail"' not in body

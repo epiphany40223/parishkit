@@ -99,7 +99,7 @@ def test_collecting_slack_keeps_original_login_lifetime_after_loading(
     """A completed source load's age does not prematurely expire Slack testing."""
     from parishkit.stewardship.accounts.setup_models import SetupAttempt
 
-    from .test_setup_progress_postgresql import aged_original_load
+    from .legacy_setup_source import aged_original_load
 
     request, _, token, key, _ = ready(
         setup_service, monkeypatch, tmp_path, enqueue=False
