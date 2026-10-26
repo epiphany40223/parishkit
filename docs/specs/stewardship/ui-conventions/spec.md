@@ -3686,6 +3686,25 @@ look per state:
   [#1966](https://github.com/epiphany40223/parishkit/issues/1966)). The
   row's background stays as it is, so a table with several paused reports
   is not loud.
+- **Edited.** A value or decision that a reviewer's Edit put in force is
+  marked by the one shared **Edited** chip, never by "(edited)" text: the
+  decision **Accepted (edited)** shows as "Accepted" followed by the chip,
+  wherever a page shows it (review tables' Stage cells and their decision
+  lines, the Timeline's What happened, Ministry follow-up's edited Ministry
+  line), and a screen reader hears "Accepted, edited". A stage chip that
+  reads by the decision (a leader's accepted Ministry request) has the
+  Edited chip beside it, not inside it. Where a page does not show the
+  Family's own answer beside the chip, the chip's toggletip gives that
+  answer; a review table, which shows it in the
+  same row, adds no tip. Downloads, the Timeline PDF and the command line
+  keep the plain words ("Accepted (edited)", or an Edited column), and the
+  history filters and stage names keep their meaning. **Shared code.**
+  `components/edited-chip.html` (the `status-badge` chip), the
+  `edited_chips` template filter, which draws the decision word with it,
+  and `edited_split`, which puts it beside a stage chip
+  ([#2257](https://github.com/epiphany40223/parishkit/issues/2257), after
+  Financial stewardship's chip,
+  [#2196](https://github.com/epiphany40223/parishkit/issues/2196)).
 - **Contrast.** Text meets 4.5:1, and icons and borders 3:1, against their
   background, checked by a contrast test over the token pairs above. Not
   current uses `--control-border` (3.3:1 on `--paper-soft`), because the
