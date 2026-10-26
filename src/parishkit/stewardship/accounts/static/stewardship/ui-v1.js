@@ -5390,6 +5390,13 @@
           // its words (data-empty-file-message, #1577).
           message = input.dataset.emptyFileMessage;
           rule = "own";
+        } else if (file && file.type && !file.type.startsWith("image/")
+          && input.dataset.notImageMessage) {
+          // A file the browser types as something other than an image
+          // (data-not-image-message, the server's words; Parish logos,
+          // #2270). An untyped file is left to the server's check.
+          message = input.dataset.notImageMessage;
+          rule = "own";
         } else if (file && file.size > Number(input.dataset.maxBytes)) {
           // A field marked before #1062 (Past campaigns' archive, #1018)
           // words its refusal in data-too-large instead.

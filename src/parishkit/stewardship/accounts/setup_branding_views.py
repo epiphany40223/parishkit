@@ -33,6 +33,10 @@ from .setup_policy import SetupState
 from .setup_views import _checked, _context, page_error
 from .setup_wizard import continue_after
 
+# The refusal for a file that is not a usable image, worded once for the
+# server's check and the page's immediate one (data-not-image-message).
+NOT_AN_IMAGE = _("Choose a supported, bounded static image.")
+
 
 class SetupLogoForm(LogoForm):
     """The original attempt pins the base; no active-YAML selector is accepted."""
@@ -55,6 +59,9 @@ class SetupLogoForm(LogoForm):
             {
                 "data-max-bytes": MAX_IMAGE_BYTES,
                 "data-max-bytes-message": LOGO_TOO_LARGE,
+                # A file whose type is not image/* is refused at once too,
+                # in the server's words (ui-v1.js, wireMaxBytes; #2270).
+                "data-not-image-message": NOT_AN_IMAGE,
                 # The chosen file is shown at once in the preview box below
                 # the field (ui-v1.js, wireFilePreview; #2270).
                 "data-preview-target": "logo-choice-preview",
@@ -65,7 +72,7 @@ class SetupLogoForm(LogoForm):
         # box nor the buttons below it (#2270).
         logo.error_sizes = (
             str(LOGO_TOO_LARGE).replace("{size}", "999.9 MB"),
-            str(_("Choose a supported, bounded static image.")),
+            str(NOT_AN_IMAGE),
         )
         setup_help.apply(self, setup_help.LOGO, replace=True)
         # Its template draws a tip (field_tips.TIP_TEMPLATES), so the long
@@ -144,7 +151,7 @@ def setup_branding(request):
                     form.add_error(
                         "logo",
                         forms.ValidationError(
-                            _("Choose a supported, bounded static image."),
+                            NOT_AN_IMAGE,
                             code="unsupported_image",
                         ),
                     )

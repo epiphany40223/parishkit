@@ -307,10 +307,12 @@ the logo the field would save. Choosing a file draws it at once from the
 browser's own copy of the file (an object URL, revoked when the file is
 replaced or the page is left), with no upload. With no file chosen, the box
 shows the saved logo from the server, so a revisit shows what is saved, and
-its empty text before either exists. A file the page refuses (over 5 MB),
-that is not an image, or that the browser cannot draw keeps no preview: the
-box returns to the saved logo or the empty text, and the size refusal
-shows in the field's reserved error line. The box, the error line and the
+its empty text before either exists. A file the page refuses (over 5 MB, or
+one the browser types as something other than an image) or that the browser
+cannot draw keeps no preview: the box returns to the saved logo or the empty
+text, and the refusal shows at once in the field's reserved error line, in the
+server's own words (the page carries them in data attributes), without
+waiting for Save and continue. The box, the error line and the
 buttons below keep their places in every case, including at 320 px
 ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). Only this
 page's response adds `blob:` to the content security policy's `img-src`; the

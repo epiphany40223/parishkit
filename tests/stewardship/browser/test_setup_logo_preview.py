@@ -121,7 +121,18 @@ def test_refused_files_keep_no_preview(page, component_origin):
     assert layout(page) == before
     text = {"name": "notes.txt", "mimeType": "text/plain", "buffer": b"hello"}
     field.set_input_files(text)
+    # The server's words for a file that is not an image, shown at once. The
+    # size refusal was showing, so wait for the text to change (the check
+    # runs a tick after the change event).
+    expect(error).to_have_text("Choose a supported, bounded static image.")
+    expect(page.locator("#id_logo")).to_have_attribute("aria-invalid", "true")
     assert shown(page) is None
+    assert layout(page) == before
+    field.set_input_files(real_png())
+    page.locator(IMAGE).wait_for(state="visible")
+    expect(error).to_be_hidden()
+    field.set_input_files(text)
+    error.wait_for(state="visible")
     # Bytes that are not a picture, though named one: the browser cannot draw
     # them, so the preview is dropped rather than left broken.
     field.set_input_files(
