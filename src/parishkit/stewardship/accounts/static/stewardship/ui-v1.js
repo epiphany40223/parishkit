@@ -8428,18 +8428,69 @@
       .every((name) => name.startsWith("repeat-")) && asDrawn();
     // A From before the first reminder the scope changes is said at From
     // too (#1808 review), in its reserved error line, as the server's
-    // refusal of it is (repeat_rule_start): marked here only while no rule
-    // error (markRepeatRule) holds that line.
-    const fromLine = panel.querySelector("#repeat-from_error");
-    let fromMarked = false;
-    const markFrom = (message) => {
-      if (!fromLine || (!message && !fromMarked)) return;
-      const item = fromLine.querySelector("li") || fromLine.appendChild(document.createElement("li"));
-      if (item.textContent !== message) item.textContent = message;
-      fromLine.hidden = !message;
-      from.setAttribute("aria-invalid", message ? "true" : "false");
-      describeBy(from, fromLine.id, Boolean(message));
-      fromMarked = Boolean(message);
+    // refusal of it is (repeat_rule_start); so is a From or Until that
+    // explains every date that can't be used (#2235, unusableField). Each
+    // is marked here only while no rule error (markRepeatRule) holds that
+    // line, and as there, new words wait for ``show`` (typing paused or
+    // focus left) while unchanged ones stay and gone ones clear at once.
+    const until = panel.querySelector('[data-repeat="until"]');
+    const dateMark = (field) => {
+      const line = panel.querySelector(`#${field.id}_error`);
+      let shown = "";
+      return (message, show = true) => {
+        const words = show || message === shown ? message : "";
+        if (!line || (!words && !shown)) return;
+        // Unchanged words stay untouched, so a screen reader hears them
+        // once; the mark is set again anyway, since the browser's own blur
+        // check (wireValidity) sets a valid date's aria-invalid to false.
+        if (words !== shown) {
+          const item = line.querySelector("li") || line.appendChild(document.createElement("li"));
+          item.textContent = words;
+          line.hidden = !words;
+        }
+        field.setAttribute("aria-invalid", words ? "true" : "false");
+        describeBy(field, line.id, Boolean(words));
+        shown = words;
+      };
+    };
+    const markFrom = dateMark(from);
+    const markUntil = dateMark(until);
+    // The one field that explains every date of ``items`` that can't be
+    // used (#2235), as {field, words, gate}, or null. Every such date too
+    // early (already past, before the campaign, at or before the Initial
+    // invitation) is From's, said with the first campaign day whose send
+    // moment can be used; every one after the campaign's end is Until's.
+    // Any other reason (another mailing then, a limit, a skipped month), a
+    // mix, or no usable day left keeps the summary pointing to the list.
+    const initialAt = existing.find((mailing) => mailing.kind === "initial")?.at;
+    const usable = (date, sendTime) => {
+      const at = localMoment(date, sendTime);
+      return at > Date.now() && at >= bounds.start && at < bounds.end
+        && !(initialAt !== undefined && at <= initialAt);
+    };
+    const side = (item, sendTime) => {
+      if (["passed", "initial"].includes(item.reason)) return "early";
+      if (item.reason !== "outside") return "other";
+      // Outside by its day, or (on an edge day) by its moment.
+      if (item.date < first) return "early";
+      return item.date <= last && localMoment(item.date, sendTime) < bounds.start ? "early" : "late";
+    };
+    const dateWords = (text) => window.ParishDates?.date(text) ?? text;
+    const unusableField = (items, sendTime) => {
+      const sides = new Set(items.filter((item) => item.reason).map((item) => side(item, sendTime)));
+      if (sides.size !== 1) return null;
+      if (sides.has("late")) {
+        return {field: until, gate: panel.dataset.ruleUnusableUntil,
+          words: panel.dataset.ruleAfterEnd.replace("{date}", dateWords(panel.dataset.ruleEndDate))};
+      }
+      if (!sides.has("early")) return null;
+      for (let day = civilDay(first); day && isoDay(day) <= last; day.setUTCDate(day.getUTCDate() + 1)) {
+        if (usable(isoDay(day), sendTime)) {
+          return {field: from, gate: panel.dataset.ruleUnusableFrom,
+            words: panel.dataset.ruleTooEarly.replace("{date}", dateWords(isoDay(day)))};
+        }
+      }
+      return null;
     };
     let pause; // the timer that shows an error typed into a date
     const update = (event) => {
@@ -8454,6 +8505,7 @@
       summary.hidden = !shown;
       if (!on) {
         markFrom("");
+        markUntil("");
         announce(shown ? panel.dataset.ruleScope || "" : "");
         showRepeatDates(list, {items: []});
         markRepeatRule(panel, "", true);
@@ -8479,20 +8531,31 @@
         emails: true,
       });
       const show = !repeatTyping(event);
-      markFrom("");
+      // A rule error takes the From and Until lines (markRepeatRule), so
+      // the dates' own marks leave them first; otherwise they follow it.
+      if (result.error) {
+        markFrom("");
+        markUntil("");
+      }
       const {atField} = markRepeatRule(panel, result.error || "", show);
       if (!show) pause = window.setTimeout(update, TIME_PAUSE);
       const min = scope?.dataset.ruleMin || "";
       const dates = result.items.filter((item) => !item.month).length;
       let reason = "";
+      let marked = null; // {field, words}: the date field said to be at fault
       if (result.error) reason = REPEAT_ERRORS[result.error];
       else if (!result.items.length || !sendTime) reason = result.summary;
       else if (min && from.value < min) {
         reason = scope.dataset.ruleMinHint;
-        if (show) markFrom(reason);
+        marked = {field: from, words: reason};
       }
-      else if (result.items.some((item) => item.reason)) reason = panel.dataset.ruleUnusable;
+      else if (result.items.some((item) => item.reason)) {
+        marked = unusableField(result.items, sendTime);
+        reason = marked ? marked.gate : panel.dataset.ruleUnusable;
+      }
       else if (onlyFollowed()) reason = panel.dataset.ruleUnchanged;
+      markFrom(marked?.field === from ? marked.words : "", show);
+      markUntil(marked?.field === until ? marked.words : "", show);
       const count = `${dates.toLocaleString("en-US")} ${dates === 1 ? "date" : "dates"}`;
       if (result.error) announce(atField ? "" : reason);
       else announce(reason || `The new repeat sends on ${count}.`);

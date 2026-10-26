@@ -280,6 +280,11 @@ RULE_START = _(
     "Start the new repeat on or after %(date)s, the first reminder it "
     "changes; the earlier reminders stay in this series."
 )
+# The page script's words at From or Until when that one field explains
+# every date of a new rule that can't be used (#2235); "{date}" is filled
+# in by the script, in the parish date format.
+RULE_TOO_EARLY = _("Before {date}. Choose a later From.")
+RULE_AFTER_END = _("After the campaign ends on {date}. Choose an earlier Until.")
 # A new rule's date whose send time has already passed (#1808): the page
 # holds such a rule, so only a crafted post meets this; said at From.
 RULE_PASSED = _(
@@ -578,6 +583,36 @@ class RepeatRule(AdminForm):
             raise forms.ValidationError(
                 _("Choose the dates again."), code="invalid_dates"
             ) from None
+
+
+class SeriesRule(RepeatRule):
+    """Edit's Change the repeat rule (#1808), with its dates' own words.
+
+    Besides the rule errors, From's reserved line holds the scope's
+    too-early From (``RULE_START``) and From's or Until's the field that
+    explains every date that can't be used (#2235, ``too_early`` and
+    ``after_end``, which the page script fills in). Both lines are sized for
+    the longest of these with a long date, so a mark moves nothing (UX
+    conventions "No layout shift").
+    """
+
+    too_early = RULE_TOO_EARLY
+    after_end = RULE_AFTER_END
+
+    @property
+    def words(self):
+        """The rule errors' words, with From's and Until's longest message."""
+        day = parish_date(date(2000, 9, 30))  # The longest month's name.
+        longest = max(
+            (
+                str(RULE_ERRORS["dates"]),
+                RULE_START % {"date": day},
+                str(self.too_early).replace("{date}", day),
+                str(self.after_end).replace("{date}", day),
+            ),
+            key=len,
+        )
+        return RULE_ERRORS | {"dates": longest}
 
 
 class SeriesScope(AdminForm):
@@ -1898,7 +1933,7 @@ def _entry(request, campaign_id, schedule_id=None):
                 ),
                 saved_rule["start"],
             )
-            rule_form = RepeatRule(
+            rule_form = SeriesRule(
                 posted, prefix="repeat", initial=rule_initial(saved_rule, start)
             )
             rule_list = rule_mailings(saved, record, read_only, values["timezone"], now)

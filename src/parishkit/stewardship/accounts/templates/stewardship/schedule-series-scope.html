@@ -29,7 +29,12 @@ earliest From the plan accepts while earlier reminders stay
 still free once its reminders are replaced (data-rule-room). The rule panel
 carries the saved mailings other than the series' own unsent reminders
 (data-repeat-mailings) and the campaign's first and last moments, so its
-date list is checked as New's repeat is. A page drawn again is drawn with
+date list is checked as New's repeat is. When one field explains every date
+that can't be used (#2235), the script marks From or Until with
+data-rule-too-early or data-rule-after-end (schedule_entry_views.SeriesRule,
+whose reserved From and Until lines fit them; the end date is
+data-rule-end-date) and the summary line names the field
+(data-rule-unusable-from or -until). A page drawn again is drawn with
 the box and the rule shown as posted, so nothing flashes.
 {% endcomment %}{% with field=series.form.scope %}<fieldset class="field schedule-series" data-not-a-change data-series-scope aria-describedby="series-part-of {{ field.auto_id }}_helptext {{ field.auto_id }}_tip">
 <legend id="{{ field.auto_id }}_legend">{{ field.label }}</legend>{% include "stewardship/components/toggletip.html" with tip_id=field.auto_id|add:"_tip" tip_label_id=field.auto_id|add:"_legend" tip_text=field.field.tip %}
@@ -40,6 +45,6 @@ the box and the rule shown as posted, so nothing flashes.
 </fieldset>{% endwith %}
 {% if series.rule %}{% with box=series.form.rule %}<div class="field schedule-series-rule" data-not-a-change><input type="checkbox" name="{{ box.html_name }}" id="{{ box.auto_id }}" aria-describedby="{{ box.auto_id }}_helptext" data-enabled-when="series-scope!=this"{% if series.changing %} checked{% endif %}{% if not series.scoped %} disabled{% endif %}> <label for="{{ box.auto_id }}">{{ box.label }}</label>
 <div class="helptext" id="{{ box.auto_id }}_helptext">{{ box.help_text }}</div></div>
-<div data-series-rule data-repeat-zone="{{ values.timezone }}" data-repeat-window-start="{{ window_start }}" data-repeat-window-end="{{ window_end }}" data-repeat-mailings="{{ series.mailings }}" data-repeat-limit="{{ limit }}" data-rule-unusable="{% translate "Some dates can't be used; see the list below." %}" data-rule-unchanged="{% translate "Change the time, email or repeat to review it." %}" data-rule-scope="{% translate "Choose “This and following” or “The whole series” to change the repeat." %}"{% if not series.changing %} hidden{% endif %}>
+<div data-series-rule data-repeat-zone="{{ values.timezone }}" data-repeat-window-start="{{ window_start }}" data-repeat-window-end="{{ window_end }}" data-repeat-mailings="{{ series.mailings }}" data-repeat-limit="{{ limit }}" data-rule-unusable="{% translate "Some dates can't be used; see the list below." %}" data-rule-unusable-from="{% translate "Some dates can't be used. See From." %}" data-rule-unusable-until="{% translate "Some dates can't be used. See Until." %}" data-rule-too-early="{{ series.rule.too_early }}" data-rule-after-end="{{ series.rule.after_end }}" data-rule-end-date="{{ values.end_date }}" data-rule-unchanged="{% translate "Change the time, email or repeat to review it." %}" data-rule-scope="{% translate "Choose “This and following” or “The whole series” to change the repeat." %}"{% if not series.changing %} hidden{% endif %}>
 {% include 'stewardship/components/repeat-rule.html' with rule=series.rule named=True %}
 </div>{% endwith %}{% endif %}
