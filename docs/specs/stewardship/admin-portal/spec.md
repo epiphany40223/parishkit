@@ -8647,7 +8647,8 @@ shared confirmation dialog and its optional note):
   Staff and Administrators get every other campaign Ministry. From then on
   the leaders of the Ministry carried forward see the request as theirs and
   may act on it; the leaders of the Family's Ministry still see it, read
-  only, as "Accepted (edited) into Adult Choir".
+  only, as "Accepted (edited) into Adult Choir" (drawn with the
+  [Edited chip](../ui-conventions/spec.md#status-indicators)).
 - **Back to review** returns an accepted or ignored request to To review
   (In progress), clearing an edited Ministry, until Staff tick it Entered in
   ParishSoft; reopening an ignored request takes an optional note

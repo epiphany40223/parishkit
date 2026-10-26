@@ -165,6 +165,25 @@ WIDE_TIMELINE = Timeline(
     ),
     ENGAGEMENT,
 )
+# A Timeline with an Edit's review line, its decision "Accepted (edited)"
+# drawn as Accepted and the Edited chip (#2257).
+EDITED = "/timeline-edited"
+EDITED_TIMELINE = Timeline(
+    TIMELINE.summary,
+    events(
+        [INVITATION, REMINDER, RECEIPT],
+        [FIRST, SECOND],
+        engagement=ENGAGEMENT,
+        reviews=[
+            (
+                SECOND.at,
+                "Accepted (edited)",
+                "Pledge; Reviewer's value: $1,300.00, Monthly; by staff@example.org",
+            ),
+        ],
+    ),
+    ENGAGEMENT,
+)
 UNAVAILABLE = "/timeline-unavailable"
 # A Family ParishSoft no longer lists as active and registered, while other
 # campaign work holds exports: Open form and the export buttons are
@@ -275,6 +294,7 @@ def components(context, admin):
         # not open Mail message pages.
         STAFF: (REVIEWED, {"full": True, "mail_links": False}),
         WIDE: (WIDE_TIMELINE, {"full": True}),
+        EDITED: (EDITED_TIMELINE, {"full": True}),
         LIVE: (REVIEWED, {"full": True}),
         UNAVAILABLE: (
             TIMELINE,

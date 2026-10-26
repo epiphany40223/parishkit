@@ -140,7 +140,9 @@ decision, within the limits of [role-specific actions](#role-specific-actions):
 | **Ignore** | no change should be made | nothing (the baseline stands) |
 | **Add** | a reviewer-created change not tied to any Family answer (add a Member to a different Ministry altogether) | the reviewer's value |
 
-Edit is Accept with a value; it is shown as **Accepted (edited)**. Add
+Edit is Accept with a value; it is shown as **Accepted (edited)**, which
+pages draw as Accepted with the shared
+[Edited chip](../ui-conventions/spec.md#status-indicators). Add
 creates a new item that starts Reviewed (Accepted) under its creator's name,
 shown as **Added by the parish**, and goes through the rest of the pipeline
 like any other item; it may name the item it was added in place of, so the
@@ -199,7 +201,8 @@ Details the table cannot hold:
   decision. When Staff edit a request into another Ministry, leaders of the
   carried-forward Ministry see it as theirs from then on, and leaders of the
   Family's original Ministry see it read-only as Accepted (edited) into
-  that Ministry (for example "Accepted (edited) into Adult Choir").
+  that Ministry (for example "Accepted (edited) into Adult Choir", drawn
+  with the [Edited chip](../ui-conventions/spec.md#status-indicators)).
 - Leaders never Add: adding a Member to a Ministry the Family did not ask
   for is a parish decision. A leader who sees a mistaken request Ignores it
   with a note; Staff Add the right one.
