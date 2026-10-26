@@ -7668,7 +7668,9 @@ history does not keep the name. Its breadcrumb parent is Users.
 [shared Admin table](../ui-conventions/spec.md#admin-tables): When, What
 happened and Details, newest first, with When reversing it in place. A
 person can have thousands of lines, so it is paged, 50 rows a page by
-default, with the shared row navigator. Its lines are:
+default, with the shared row navigator. What happened keeps the Family
+Timeline's [minimum width](../reports/spec.md#timeline) (#2197). Its lines
+are:
 
 - **Sign-ins and sign-outs:** every Admin portal sign-in, confirmed sign-in,
   sign-out, inactivity sign-out, session replaced or ended, and refused

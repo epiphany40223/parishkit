@@ -18,6 +18,7 @@ from uuid import uuid4
 import pytest
 from django.urls import reverse
 
+from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.policy import Capability
 from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.audit.models import AuditEvent
@@ -58,10 +59,13 @@ def lines(body):
     ]
 
 
-def as_web(client, path):
-    """GET ``path`` as the restricted web login, through the real read guard."""
+def as_web(client, path, **headers):
+    """GET ``path`` as the restricted web login, through the real read guard.
+
+    ``headers`` are extra request headers, by their WSGI names.
+    """
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        return get(client, path)
+        return get(client, path, **headers)
 
 
 def test_timeline_for_administrators_and_staff(
@@ -453,3 +457,59 @@ def test_session_ends_follow_their_sign_ins_mode():
         (staff_out, "family_logout", True),
         (switch, "family_session_ended", False),
     ]
+
+
+def test_the_tables_own_reread_is_passive_and_audited_only_with_new_lines(
+    request, auth_service, google
+):
+    """The Timeline table's periodic re-read (#2197) sends the digest of the
+    lines it drew with X-ParishKit-Read: passive. With the same lines the
+    answer is empty and records nothing; with other lines it is the page,
+    recorded as a view marked automatic. Neither extends the sign-in. The
+    reader's own open, even carrying a digest, is drawn, audited unmarked
+    and renews the sign-in."""
+    request.getfixturevalue("funnel")
+    families = dict(FamilyCampaign.objects.values_list("family_duid", "pk"))
+    page = reverse("admin:timeline", args=[families[1]])
+    earlier = set(PortalSession.objects.values_list("pk", flat=True))
+    browser, login = signed_in()
+    assert login.status_code == 302
+    mine = PortalSession.objects.exclude(pk__in=earlier).get().pk
+
+    def activity():
+        """This sign-in's last activity: a renewal moves it."""
+        return PortalSession.objects.get(pk=mine).last_activity_at
+
+    def viewed():
+        """The contexts of this Family's recorded views, oldest first."""
+        return list(
+            AuditEvent.objects.filter(
+                event_type="family_timeline_viewed", subject_id=families[1]
+            )
+            .order_by("created_at", "id")
+            .values_list("auditcontext__context", flat=True)
+        )
+
+    response, body = as_web(browser, page)
+    assert response.status_code == 200
+    digest = re.search(rb'data-reread-seen="([0-9a-f]{32})"', body).group(1)
+    assert viewed() == [{"outcome": "succeeded"}]
+    before = activity()
+    passive = {"HTTP_X_PARISHKIT_READ": "passive"}
+    response, body = as_web(
+        browser, page, **passive, HTTP_X_PARISHKIT_SEEN=digest.decode()
+    )
+    assert response.status_code == 200 and body == b""
+    assert response["Cache-Control"] == "no-store"
+    assert viewed() == [{"outcome": "succeeded"}]
+    assert activity() == before
+    response, body = as_web(browser, page, **passive, HTTP_X_PARISHKIT_SEEN="0" * 32)
+    assert response.status_code == 200 and b'id="table"' in body
+    assert viewed()[-1] == {"outcome": "succeeded", "automatic": True}
+    assert activity() == before
+    # The reader's own open is always drawn, whatever it sends.
+    response, body = as_web(browser, page, HTTP_X_PARISHKIT_SEEN=digest.decode())
+    assert response.status_code == 200 and b'id="table"' in body
+    assert viewed()[-1] == {"outcome": "succeeded"}
+    assert len(viewed()) == 3
+    assert activity() > before

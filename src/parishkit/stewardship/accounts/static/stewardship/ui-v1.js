@@ -1977,6 +1977,15 @@
       else leave(fallback);
       return;
     }
+    // A periodic re-read whose region said what it drew (data-reread-seen,
+    // #2197) is answered empty when nothing changed: there is nothing to
+    // swap, and the read worked.
+    if (background && region.hasAttribute("data-reread-seen") && response.ok
+        && !response.redirected && !text.trim()) {
+      region.removeAttribute("aria-busy");
+      background.ok();
+      return;
+    }
     const parsed = new DOMParser().parseFromString(text, "text/html");
     const fresh = parsed.getElementById(id);
     const answered = new URL(response.url);
@@ -2059,17 +2068,30 @@
     // settled, #869, #1354), so it must not take their focus away: a focused
     // element in a region it replaces is found again in the fresh copy.
     const held = options.quiet ? heldFocus() : null;
+    // A quiet refresh also keeps where the reader scrolled a table's box
+    // sideways (a phone, #2197): each region's .table-scroll boxes, by place.
+    const sideways = new Map();
     swappingFor = control instanceof Element ? control : null;
     try {
       document.querySelectorAll(REGIONS).forEach((other) => {
         const copy = parsed.getElementById(other.id);
         if (only && other !== region && !alsoSwapped.includes(other.id)) return;
         if (ownedElsewhere(other, region) && !alsoSwapped.includes(other.id)) return;
-        if (isRegion(copy)) swapRegion(other, copy);
+        if (!isRegion(copy)) return;
+        if (options.quiet) {
+          sideways.set(other.id, [...other.querySelectorAll(".table-scroll")].map((box) => box.scrollLeft));
+        }
+        swapRegion(other, copy);
       });
     } finally {
       swappingFor = null;
     }
+    sideways.forEach((lefts, id) => {
+      const boxes = document.getElementById(id)?.querySelectorAll(".table-scroll") || [];
+      boxes.forEach((box, index) => {
+        if (lefts[index]) box.scrollLeft = lefts[index];
+      });
+    });
     if (!refused) dropOrphanedSummaries();
     if (!anywhere) syncControls(parsed);
     // Clear filters (#1651) asked the server for the unfiltered view, so the
@@ -2440,6 +2462,8 @@
   // panel unless it is already drawn. `popped` is a Back or Forward: the
   // entry is already there, and the switch is quiet (focus stays where it
   // is and nothing is announced). An unavailable tab does nothing.
+  // Each drawn tab panel's address when another tab was last chosen.
+  const panelAddresses = new WeakMap();
   const chooseTab = (tab, popped = false) => {
     const row = tabRowOf(tab);
     const panel = tabPanel(tab);
@@ -2453,7 +2477,14 @@
       announce("Still saving…");
       return;
     }
-    const address = new URL(tab.href);
+    // A drawn panel comes back at the address it was last shown at, so its
+    // view choices (the Timeline's filters and sort, which only the address
+    // holds) still name what it shows, for a reload and for its own quiet
+    // re-read (#2197).
+    const shown = tabsIn(row).find((other) => other.getAttribute("aria-selected") === "true");
+    // Not on Back or Forward: the address is already the entry popped to.
+    if (!popped && shown && tabPanel(shown)) panelAddresses.set(tabPanel(shown), window.location.href);
+    const address = new URL((panel.hasAttribute("data-tab-loaded") && panelAddresses.get(panel)) || tab.href);
     address.hash = "";
     if (!popped) window.history.pushState(null, "", address.href);
     showTab(row, tab);
@@ -2469,6 +2500,9 @@
       }
       // A click does not focus a link in every engine (Safari).
       if (!popped) tab.focus({preventScroll: true});
+      // A panel that updates itself (the hub's Timeline, #2197) was not
+      // read while hidden: it catches up at once.
+      if (panel.querySelector("a[data-reread-every][data-in-place][href]")) rereadNow();
       return;
     }
     // With no usable answer the page is loaded the ordinary way. The address
@@ -3837,6 +3871,16 @@
   // and says so. Every such read carries PASSIVE_READ, so a view whose own
   // load renews the sign-in (the Response dashboard) reads passively instead.
   //
+  // A list that others add to on an audited page (the Family hub's
+  // Timeline tab, #2197) uses the same link with two additions. Its
+  // data-reread-hold names the part the reader works in (the list and its
+  // filter bar), and a read also waits while focus is in it or the pointer
+  // is over it (readerHolds), trying again REREAD_MIN_MS later. Its region's
+  // data-reread-seen, a digest of the lines it drew, goes with the read
+  // (SEEN_HEADER): the server answers an empty page when the lines are the
+  // same, which records no view and swaps nothing. A region inside a tab
+  // panel that is not shown is not read, and choosing the tab catches it up.
+  //
   // A report whose own view is audited (the Response dashboard, Campaign
   // comparison) is not re-read on a timer: its figures status region
   // (live-status-v1.js) polls a passive status read, and once newer figures
@@ -3901,9 +3945,13 @@
   // A pane selector (Campaign comparison's pledge distribution year) is a
   // presentation choice, applied at once and kept through a swap
   // (swapRegion), so it never holds a read.
+  // A control whose own region is one a re-read never replaces (a tab
+  // panel, data-in-place-own: the hub Timeline's filter bar, whose applied
+  // Kind differs from the one first drawn, #2197) never holds a read either.
   const unapplied = () => [...document.querySelectorAll(REGIONS)].some((region) =>
     [...region.querySelectorAll("input, select, textarea")].some((node) =>
       node.type !== "hidden" && !node.matches("select[data-pane-select]")
+      && !node.closest(REGIONS).hasAttribute("data-in-place-own")
       && controlValue(node, true) !== controlValue(node, false)));
   const readerBusy = () => {
     // Whether a periodic re-read would get in the reader's way now: another
@@ -3920,19 +3968,40 @@
       || (selection && !selection.isCollapsed)
       || document.querySelector("dialog[open]"));
   };
+  // Sent with a periodic re-read whose region carries data-reread-seen
+  // (reports/timeline_views.py SEEN_HEADER).
+  const SEEN_HEADER = "X-ParishKit-Seen";
+  // Whether the reader is working in the part a re-read link names
+  // (data-reread-hold="<id>", a list that grows, #2197): focus is in it
+  // (a filter being chosen) or the pointer is over it, so new lines would
+  // move rows under them. On a touch screen :hover can stay after a tap
+  // until the reader taps elsewhere; it only delays a read.
+  const readerHolds = (link) => {
+    const part = document.getElementById(link?.getAttribute("data-reread-hold") || "");
+    return Boolean(part && (part.contains(document.activeElement) || part.matches(":hover")));
+  };
   const quietRead = (link, done) => {
     // Re-read the page's own address quietly and passively now, into the
     // region ``link``'s fragment names, and tell ``done`` how it went:
     // "ok", "failed", "refused", "busy" (the reader is busy: not read),
     // "aborted" (the reader's own choice overtook it), "hidden" (the tab is
-    // hidden: not read) or "gone" (no such region).
+    // hidden: not read), "unshown" (its tab panel is not shown: not read)
+    // or "gone" (no such region).
     const id = link?.getAttribute("href").split("#")[1];
     const region = id && document.getElementById(id);
     if (!isRegion(region)) return done("gone");
     if (document.visibilityState !== "visible") return done("hidden");
-    if (readerBusy()) return done("busy");
+    // A region in a tab panel that is not shown is not read ("unshown"):
+    // the address now names another tab, whose answer does not draw the
+    // region; choosing its tab again catches it up (#2197).
+    if (region.closest("[hidden]")) return done("unshown");
+    if (readerBusy() || readerHolds(link)) return done("busy");
     const here = new URL(window.location.href);
     here.hash = region.id;
+    // The lines the region drew, so an answer with the same lines can be
+    // empty and recorded nowhere (data-reread-seen, #2197).
+    const seen = region.getAttribute("data-reread-seen");
+    const headers = seen ? {...PASSIVE_READ, [SEEN_HEADER]: seen} : PASSIVE_READ;
     // Whether this read reported back (ok or failed); an aborted read
     // reports nothing.
     let settled = false;
@@ -3951,23 +4020,28 @@
         done(refused ? "refused" : "failed");
       },
     };
-    refreshTable(region, link, here.href, {method: "GET", headers: PASSIVE_READ}, () => {},
+    refreshTable(region, link, here.href, {method: "GET", headers}, () => {},
       {owner: link, quiet: true, background}).finally(() => {
       if (!settled) done("aborted");
     });
   };
-  const scheduleReread = () => {
-    // Arm the next re-read at the link's pace, unless the page has none,
-    // reads were stopped by a refusal, or the tab is hidden.
+  const scheduleReread = (soon = false) => {
+    // Arm the next re-read at the link's pace (or REREAD_MIN_MS when
+    // ``soon``), unless the page has none, reads were stopped by a
+    // refusal, or the tab is hidden.
     window.clearTimeout(rereadTimer);
+    rereadTimer = 0;
     const link = rereadLink();
     const pace = Number(link?.getAttribute("data-reread-every"));
     if (!link || rereadStopped || !(pace > 0) || document.visibilityState !== "visible") return;
-    rereadTimer = window.setTimeout(rereadNow, Math.max(pace, REREAD_MIN_MS));
+    rereadTimer = window.setTimeout(rereadNow, soon ? REREAD_MIN_MS : Math.max(pace, REREAD_MIN_MS));
   };
   const rereadNow = () => {
     // The periodic re-read: read now, or wait for the next tick while the
-    // reader is busy.
+    // reader is busy. No read is armed while this one runs (rereadTimer
+    // 0), so a link drawn meanwhile arms one (parishkit:swap, below).
+    window.clearTimeout(rereadTimer);
+    rereadTimer = 0;
     if (rereadStopped) return;
     const link = rereadLink();
     quietRead(link, (outcome) => {
@@ -3983,11 +4057,23 @@
         rereadFailures += 1;
         if (rereadFailures >= REREAD_FAILURES) rereadProblem(link, UPDATES_RETRYING);
       }
-      // A hidden tab catches up when shown (below); a page without the
-      // region has nothing to read.
-      if (outcome !== "hidden" && outcome !== "gone") scheduleReread();
+      // A hidden tab catches up when shown (below), and a tab panel not
+      // shown when its tab is chosen again (chooseTab); a page without the
+      // region has nothing to read. A list held by the reader
+      // (data-reread-hold) tries again a short tick later, as the review
+      // regions' checks do, so it catches up soon after they are done.
+      if (outcome !== "hidden" && outcome !== "gone" && outcome !== "unshown") {
+        scheduleReread(outcome === "busy" && link?.hasAttribute("data-reread-hold"));
+      }
     });
   };
+  // A re-read link drawn after the page loaded (a tab panel fetched in
+  // place, #2197) arms its reads; an in-place answer that kept the link
+  // leaves the pace already armed alone.
+  document.addEventListener("parishkit:swap", (event) => {
+    if (!rereadTimer && event.target instanceof Element
+        && event.target.querySelector("a[data-reread-every][data-in-place][href]")) scheduleReread();
+  });
   // The figures status's one re-read (see above): its link, until the read
   // works, the link is replaced (another in-place answer redrew the region)
   // or a read is refused.

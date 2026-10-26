@@ -1641,6 +1641,14 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
    overflow-wrap: anywhere would then let "Level" break mid-word, so the
    column wraps only between words. */
 .log-level-cell { width: 1%; overflow-wrap: normal; }
+/* The Timelines' What happened column (Family hub and user, #2197): main's
+   overflow-wrap: anywhere let the long Details column squeeze it until its
+   heading and its lines' first words (Submissions, Reminder, Invitation)
+   broke mid-word. Its cells wrap only between words, and the column keeps a
+   minimum width (the widest of those words in bold, with padding); on a
+   phone the table scrolls inside its box, never the page. */
+.timeline-table .timeline-what, .timeline-table tbody th { overflow-wrap: normal; }
+.timeline-table .timeline-what { min-width: 9rem; }
 .log-level { display: inline-flex; padding-top: .15rem; }
 .log-level .level-icon { width: 1.25rem; height: 1.25rem; }
 .level-icon { flex: none; width: 1rem; height: 1rem; vertical-align: -.15em; }

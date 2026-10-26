@@ -126,6 +126,9 @@ REVIEWED = Timeline(
     ),
     ENGAGEMENT,
 )
+# The Administrator's page a minute later, with Staff's two review lines
+# added: what the table's periodic re-read (#2197) brings in.
+LIVE = "/timeline-live"
 UNAVAILABLE = "/timeline-unavailable"
 # A Family ParishSoft no longer lists as active and registered, while other
 # campaign work holds exports: Open form and the export buttons are
@@ -233,6 +236,7 @@ def components(context, admin):
         # Staff see the full timeline and export it (#1774, #1799) but may
         # not open Mail message pages.
         STAFF: (REVIEWED, {"full": True, "mail_links": False}),
+        LIVE: (REVIEWED, {"full": True}),
         UNAVAILABLE: (
             TIMELINE,
             {"full": True, "testing_codes": True, "family_test_url": ADMIN},

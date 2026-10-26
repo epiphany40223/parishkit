@@ -610,3 +610,11 @@ def test_a_leader_who_never_signed_in_shows_ministries_but_no_logs_control():
     assert "Ministry leader of" in page and "<dd>Choir</dd>" in page
     assert "entries in System logs" not in page
     assert 'name="actor"' not in page
+
+
+def test_what_happened_keeps_the_family_timelines_minimum_width():
+    """The table is marked for What happened's minimum width, as the
+    Family Timeline's is (#2197, ui-v1.css .timeline-table)."""
+    page = render(timeline())
+    assert '<table class="data-table timeline-table">' in page
+    assert '<th scope="col" class="timeline-what">What happened</th>' in page
