@@ -16,9 +16,12 @@ from .setup_check_components import (
     CHECK_FAILED,
     CHECK_INITIAL,
     CHECK_READY,
+    CHECK_STALE,
     CHECK_UNAVAILABLE,
     CHECK_WAITING,
     PAGES,
+    answer_start,
+    keep_start_manual,
 )
 from .test_in_place import MARK, MARKED
 from .test_live_status_in_place import answer_reads
@@ -52,6 +55,7 @@ def test_every_check_state_is_accessible_at_both_widths(
     from .test_components import axe_violations
 
     page.set_viewport_size({"width": width, "height": 900})
+    keep_start_manual(page)
     page.goto(component_origin + path)
     visible(page.get_by_role("heading", name="Check parish data", exact=True))
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
@@ -132,6 +136,7 @@ def test_a_failed_check_says_what_to_do(page, component_origin, path, text, link
 def test_before_a_check_the_page_offers_it_with_plain_words(page, component_origin):
     """The About text says the check is quick and the load comes at Finish
     setup; nothing says it loads everything now or fixes the time zone."""
+    keep_start_manual(page)
     page.goto(component_origin + CHECK_INITIAL)
     main = page.locator("main")
     contains(main, "Check that ParishSoft answers for St. Example Parish (4321)")
@@ -145,3 +150,90 @@ def test_before_a_check_the_page_offers_it_with_plain_words(page, component_orig
     assert "Campaigns offer" not in text
     assert "time zone" not in text
     assert "Load parish data" not in text
+
+
+@pytest.mark.parametrize("path", [CHECK_INITIAL, CHECK_STALE])
+@pytest.mark.parametrize("width", [320, 1280])
+def test_the_check_starts_on_arrival_without_moving_anything(
+    page, component_origin, path, width
+):
+    """Opening the step with no check of the current connection (none yet,
+    or an earlier connection's) starts the check by itself (#2271): one
+    start, the spinner in place of the status, no reload, and the action
+    row where the waiting page draws it."""
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.set_viewport_size({"width": width, "height": 900})
+    # Where the waiting page draws Back and Continue.
+    page.goto(component_origin + CHECK_WAITING)
+    visible(page.locator("[data-source-check-waiting]"))
+    expected = (place(page, NEXT), place(page, BACK))
+    posts, _, _ = answer_start(page, component_origin, CHECK_WAITING)
+    # The start is so quick that a mark set by script could land after the
+    # swap: count the page loads instead, which must stay one.
+    loads = []
+    page.on(
+        "request", lambda r: loads.append(r.url) if r.resource_type == "document" else 0
+    )
+    page.goto(component_origin + path)
+    visible(page.locator("[data-source-check-waiting]"))
+    contains(page.locator(REGION), "Checking the parish data in ParishSoft")
+    assert len(posts) == 1 and "action=check" in posts[0]
+    assert loads == [component_origin + path]
+    assert page.url == component_origin + path
+    assert same_place(place(page, NEXT), expected[0])
+    assert same_place(place(page, BACK), expected[1])
+    # Nothing starts a second check later.
+    page.wait_for_timeout(1000)
+    assert len(posts) == 1
+    assert failures == []
+
+
+@pytest.mark.parametrize("path", [CHECK_READY, CHECK_FAILED, CHECK_UNAVAILABLE])
+def test_a_check_already_made_is_not_run_again_on_a_revisit(
+    page, component_origin, path
+):
+    """A page with a check of the current connection, ready or failed, starts
+    nothing, however often it is opened; a failure offers Check again
+    (#2271)."""
+    posts, _, _ = answer_start(page, component_origin, CHECK_WAITING)
+    for _ in range(2):
+        page.goto(component_origin + path)
+        visible(page.get_by_role("button", name="Check again"))
+        page.wait_for_timeout(500)
+    assert posts == []
+    assert page.locator("[data-source-check-waiting]").count() == 0
+
+
+def test_a_failed_start_shows_check_again_and_is_not_retried(page, component_origin):
+    """When the automatic check comes back failed, the page shows the failure
+    with Check again, and starts nothing more by itself (#2271)."""
+    posts, _, _ = answer_start(page, component_origin, CHECK_FAILED)
+    page.goto(component_origin + CHECK_INITIAL)
+    visible(page.locator("[data-source-check-error]"))
+    visible(page.get_by_role("button", name="Check again"))
+    page.wait_for_timeout(1000)
+    assert len(posts) == 1
+
+
+def test_a_double_start_queues_one_check(page, component_origin):
+    """Pressing the button, submitting again and a page shown again while the
+    first start is unanswered send one start (#2271); the server returns a
+    check already waiting in any case."""
+    posts, routes, body = answer_start(page, component_origin, CHECK_WAITING, hold=True)
+    page.goto(component_origin + CHECK_INITIAL)
+    page.wait_for_timeout(300)
+    assert len(posts) == 1
+    page.evaluate(
+        "() => { const form = document.querySelector('form[data-auto-start]');"
+        " form.requestSubmit(form.querySelector('button[name=action]'));"
+        " form.requestSubmit(); }"
+    )
+    page.evaluate(
+        "window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))"
+    )
+    page.wait_for_timeout(500)
+    assert len(posts) == 1
+    routes[0].fulfill(status=200, content_type="text/html; charset=utf-8", body=body)
+    visible(page.locator("[data-source-check-waiting]"))
+    assert len(posts) == 1

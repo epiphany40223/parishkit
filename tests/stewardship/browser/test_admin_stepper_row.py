@@ -17,7 +17,7 @@ from .setup_back_path_components import (
     SOURCE_CHECKED,
     SOURCE_STALE,
 )
-from .setup_check_components import CHECK_FAILED, CHECK_WAITING
+from .setup_check_components import CHECK_FAILED, CHECK_WAITING, keep_start_manual
 from .stepper_components import (
     CONTENT,
     EDITOR,
@@ -170,6 +170,8 @@ def test_admin_rows_keep_back_left_action_centered_primary_right(
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.emulate_media(color_scheme=scheme)
     page.set_viewport_size({"width": width, "height": 900})
+    # The stale Check parish data page would start its check on arrival.
+    keep_start_manual(page)
     for flow, selector in (
         (SETUP, ".setup-actions"),
         (CAMPAIGN, "[data-campaign-step-actions]"),

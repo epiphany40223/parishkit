@@ -843,8 +843,28 @@ fingerprint and organization it checked; otherwise the page says the parish
 data needs checking again because the ParishSoft connection changed, and the
 step is not done.
 
+**Starting.** The Administrator does not press anything to start the check
+([#2271](https://github.com/epiphany40223/parishkit/issues/2271);
+Administrator decision of 2026-10-26): the key and organization were
+validated on ParishSoft connection, so the page starts the check by itself
+when it opens, whenever no check exists for the current connection (the
+staged key's fingerprint and organization), that is, before any check and in
+the "needs checking again" case above. The Administrator portal requires
+JavaScript, so the page submits its own **Check parish data** form once on
+arrival, through the same in-place path as a press on the button
+([in-place controls](../ui-conventions/spec.md#in-place-controls)): the
+working spinner takes the status slot's place and nothing moves
+([no layout shift](../ui-conventions/spec.md#no-layout-shift)). A check
+already done for the current connection, ready or failed, is not run again
+when the page is revisited; **Check again** starts a new one. A start the
+server refuses is shown in place and is not retried by the page. The start is
+idempotent on the server: a start while a check is waiting or running returns
+that check and queues no second one, so a repeated page load, a second tab or
+a double submission cannot start two.
+
 **The page.** Its action row has Back (to ParishSoft connection) and the
-step's primary action: **Check parish data** before any check, **Continue**
+step's primary action: **Check parish data** (the button the page presses on
+arrival, left available if that start was refused), **Continue**
 (to Finish setup) once a check of the current connection succeeded, with **Check
 again** as a secondary button, and **Check again** after a failed check.
 While a check waits, the primary action is an unavailable Continue with the

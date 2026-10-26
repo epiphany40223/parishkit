@@ -440,6 +440,8 @@ def test_the_page_draws_one_state_over_the_others(shown, expected):
     assert slot.count('role="status"') == (0 if expected == "initial" else 1)
     assert slot.count('aria-hidden="true"') >= len(CHECK_STATES) - 1
     assert ("data-reread-every" in html) is (expected == "waiting")
+    # Only a page with no current answer starts its check by itself (#2271).
+    assert ("data-auto-start" in html) is (expected in {"initial", "stale"})
     assert ('id="setup-check-reason"' in html) is (expected == "waiting")
     if expected == "failed":
         assert 'href="/admin/setup/credentials/parishsoft"' in slot

@@ -3774,6 +3774,27 @@
     if (document.visibilityState === "visible") reread("a[data-reread-on-show][data-in-place]");
   });
 
+  // Check parish data starts its quick check by itself (#2271). The key and
+  // organization were validated on ParishSoft connection, so a form marked
+  // data-auto-start (drawn only before any check, or when the last one used
+  // an earlier connection) is submitted once when the page opens, through
+  // the same in-place path as a press on its button: the spinner takes the
+  // status slot's place and nothing moves. It runs once per page load, so a
+  // start the server refuses is shown and left for the reader's button, and
+  // a re-read of the panel (which never carries the mark again once a check
+  // exists) cannot start another. The server also returns a check that is
+  // already waiting rather than queueing a second.
+  const autoStart = () => {
+    const form = document.querySelector("form[data-auto-start][data-in-place]");
+    const button = form?.querySelector("button[name=action][value=check]");
+    if (button) form.requestSubmit(button);
+  };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", autoStart, {once: true});
+  } else {
+    autoStart();
+  }
+
   // Pages that update themselves (UX conventions, #1586). A page whose state
   // changes without the reader's own action (Background work, Families on
   // the form now) carries one hidden a[data-reread-every="<ms>"][data-in-place]
