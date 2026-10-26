@@ -254,7 +254,7 @@ def lines_digest(table, *, mail_links=False, filtered_out=False):
         [
             event.at.isoformat(),
             str(event.what),
-            str(event.detail),
+            str(event.cell),  # as drawn: a pledge line's short labels (#2198)
             str(event.message_id or ""),
         ]
         for event in table.rows
