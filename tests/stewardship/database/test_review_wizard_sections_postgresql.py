@@ -8,6 +8,7 @@ address. A subject the reader's scoped read no longer lists is not named.
 """
 
 import re
+from unittest import mock
 from uuid import uuid4
 
 import pytest
@@ -15,6 +16,7 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
+from parishkit.stewardship.accounts import family_maintenance
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.review_run_models import ReviewRun
 
@@ -41,12 +43,22 @@ def page(browser, run, position=1):
 
 
 def statements(browser, run, position=1):
-    """GET one run page on the web login: its markup and its statement count."""
+    """GET one run page on the web login: its markup and its statement count.
+
+    The Admin chrome reads the Family portal switch, which each process
+    caches for a few seconds of wall-clock time. A counted view that landed
+    just after the cache expired read it once more: on a slower process,
+    such as a CI partition, every time (#2246: 76 vs 75, as #1965 found for
+    the Timeline). So the switch is read uncounted first, from this test's
+    database, and held for the measurement, as the Home count does.
+    """
     with (
+        mock.patch.object(family_maintenance, "CACHE_SECONDS", 3600),
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
-        CaptureQueriesContext(connection) as queries,
     ):
-        markup = page(browser, run, position)
+        family_maintenance.current_state(cached=False)
+        with CaptureQueriesContext(connection) as queries:
+            markup = page(browser, run, position)
     return markup, len(queries)
 
 
