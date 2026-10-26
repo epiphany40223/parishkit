@@ -63,6 +63,7 @@ sections:
     "Bootstrap and first-Admin wizard": [ADM-02]
     "ParishSoft organization choice": [ADM-02]
     "Turning Slack off during setup": [ADM-02]
+    "Off-site backups during setup": [ADM-02, OPS-05]
     "Navigation and home": [ADM-03]
     "JavaScript requirement": [ADM-12]
     "Admin navigation": [ADM-03, ADM-12]
