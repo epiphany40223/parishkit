@@ -607,6 +607,7 @@ def test_each_stage_shows_its_decision_on_the_icons(page, component_origin):
         "Entered by hand (1)",
         "Ignored (1)",
         "Confirmed (1)",
+        "History (0)",
         "Every stage (7)",
     ]
     for label in ("Accept", "Edit", "Ignore"):
@@ -705,6 +706,7 @@ def test_a_leader_never_sees_the_update_phase(page, component_origin):
         "Accepted (4)",
         "Ignored (1)",
         "Confirmed (1)",
+        "History (0)",
         "Every stage (7)",
     ]
     entered = worklist_row(page, UUID(int=121))

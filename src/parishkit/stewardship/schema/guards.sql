@@ -6268,6 +6268,10 @@ BEGIN
         ORDER BY request.entity_kind,request.entity_key,request.ministry_duid,history.family_version DESC
     LOOP
         IF prior.state IN ('new','assigned','in_progress')
+           -- An open request the parish added is never withdrawn by the
+           -- Family (reviewed rule 3): Staff sent it back to review, and
+           -- it stays parish work until they decide (#2173).
+           AND NOT prior.parish_added
            -- An open request a reviewed form (#1705) showed chosen, left
            -- chosen: it stays as it is (reviewed rule 1).
            AND NOT (NEW.reviewed_view AND EXISTS (
@@ -6276,10 +6280,10 @@ BEGIN
                  AND shown->>'shown'='family'
                  AND coalesce(NEW.answers#>ARRAY['ministries',
                      CASE WHEN prior.entity_kind='member' THEN 'members' ELSE 'proposed_members' END,
-                     prior.entity_key,prior.action] @> to_jsonb(prior.ministry_duid),false)))
+                     prior.entity_key,prior.action] OPERATOR(pg_catalog.@>) to_jsonb(prior.ministry_duid),false)))
            AND public.stewardship_response_ministry_visible_v1(
                NEW.validation_source_id,NEW.configuration_id,NEW.campaign_id,prior.ministry_duid)
-           AND ((prior.entity_kind='member' AND (NEW.answers->'members') ? prior.entity_key)
+           AND ((prior.entity_kind='member' AND (NEW.answers->'members') OPERATOR(pg_catalog.?) prior.entity_key)
                 OR (prior.entity_kind='proposed_member' AND
                     public.stewardship_ministry_proposed_scope_v1(NEW,prior.entity_key))) THEN
             RAISE EXCEPTION 'New informed response must reconcile earlier Ministry work' USING ERRCODE='23514';

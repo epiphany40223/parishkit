@@ -36,7 +36,14 @@ from django.utils.safestring import mark_safe
 
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.policy_models import PortalUser
-from parishkit.stewardship.pipeline import TERMS, Action, Decision, Stage, Stream
+from parishkit.stewardship.pipeline import (
+    TERMS,
+    Action,
+    Decision,
+    Placement,
+    Stage,
+    Stream,
+)
 from parishkit.stewardship.responses.refresh_checks import check_states
 from parishkit.stewardship.source.source_status import source_status_label
 from parishkit.stewardship.web import review_live
@@ -92,10 +99,14 @@ STAFF_STAGES = (
 ACCEPTED = "accepted"
 LEADER_STAGES = (Stage.TO_REVIEW.value, ACCEPTED, Stage.IGNORED.value, "confirmed")
 EVERY = "all"
+# History (#2180): the superseded and cancelled requests, read-only, for
+# every reader in their own scope, after the stages and before Every stage,
+# which leaves it out, as on the other review tables.
+HISTORY = Stage.HISTORY.value
 # Not seen in ParishSoft (#1689) is a flag on Entered by hand, chosen like a
 # stage; only Staff and Administrators see it, as they alone see the update.
 STAGE_VALUES = frozenset(
-    {*(stage.value for stage in STAFF_STAGES), ACCEPTED, NOT_SEEN, EVERY}
+    {*(stage.value for stage in STAFF_STAGES), ACCEPTED, NOT_SEEN, HISTORY, EVERY}
 )
 # The Members filter (Staff only, #1217): the requests for Members ParishSoft
 # still lists in their Family (the default), or only those it no longer does.
@@ -276,7 +287,9 @@ def read_rows(campaign_id, query, principal, *, empty=False):
     choice is always current (the selection refuses the other). Returns the
     selection's result, whose ``rows`` each carry ``placement`` and ``stage``,
     in the view's sort (``WORKLIST_SORTING``), so the table, its pages and its
-    download list them alike.
+    download list them alike. The rows include History's, the superseded
+    and cancelled requests (#2180), in the reader's own scope, which the
+    selection derives in SQL for every reader.
     """
     # Only Staff and Administrators may list the requests for Members no
     # longer in ParishSoft (#1217); a leader asking is a malformed form.
@@ -284,9 +297,21 @@ def read_rows(campaign_id, query, principal, *, empty=False):
     if leader and query.members != "current":
         raise ValueError("Invalid Ministry request filters.")
     if leader:
+        # Every revision, so History's rows come too; a leader's other rows
+        # are the current requests, as the current-only read gave (a leader
+        # has no roster rows, ``roster_only``).
         result = followup_page(
-            campaign_id, query.selection(), principal, whole=True, empty=empty
+            campaign_id,
+            replace(query.selection(), history="all"),
+            principal,
+            whole=True,
+            empty=empty,
         )
+        result["rows"] = [
+            row
+            for row in result["rows"]
+            if row.get("latest") is not False or not eligible(row)
+        ]
         return _ordered(place(result, principal), query.sort)
     # Staff and Administrators read every revision of every Member's
     # requests, as Roster changes to enter did, and keep the view's own
@@ -300,7 +325,11 @@ def read_rows(campaign_id, query, principal, *, empty=False):
         empty=empty,
         every_member=True,
     )
-    result["rows"] = [row for row in result["rows"] if listed(row, query.members)]
+    result["rows"] = [
+        row
+        for row in result["rows"]
+        if listed(row, query.members) or past(row, query.members)
+    ]
     return _ordered(place(result, principal), query.sort)
 
 
@@ -334,6 +363,26 @@ def listed(row, members):
     if members == "gone":
         return gone and (current or eligible(row))
     return (current and not gone) or eligible(row)
+
+
+def outranked(row):
+    """Whether a row is History's (#2180): superseded or cancelled, or one a
+    later request about the same Member and Ministry outranks that is no
+    roster work (an Ignored request the parish added that the Family then
+    chose itself, #2173, which is never replaced)."""
+    return row["state"] in NOT_CURRENT or (
+        row.get("latest") is False and not eligible(row)
+    )
+
+
+def past(row, members):
+    """Whether a row of the every-revision read is History's in a Staff view.
+
+    An ``outranked`` request, for a Member ParishSoft still lists
+    ("current") or no longer lists ("gone"), as the Members choice keeps
+    the view's own rows.
+    """
+    return outranked(row) and bool(row["source_mark"]) == (members == "gone")
 
 
 # Whether the current ParishSoft data lists each request's Member in the
@@ -406,6 +455,9 @@ def place(result, principal, *, marks=None, checks=None):
         # The tick's who and when, for the decision line and the file.
         mark(row, marks)
         placement = ministry_placement_of(row, marks, checks)
+        if outranked(row):
+            # A later request outranks it, whatever its own state (#2180).
+            placement = Placement(Stage.HISTORY)
         check = checks.get(str(row["id"]))
         row["placement"] = placement
         row["stage"] = stage_of(placement, leader)
@@ -482,18 +534,22 @@ def stage_choices(counts, leader):
     )
     if NOT_SEEN in counts and not leader:
         labels.append((NOT_SEEN, TERMS["not_seen"]))
+    labels.append((HISTORY, Stage.HISTORY.label))
     choices = [
         (value, f"{label} ({counts.get(value, 0):,})") for value, label in labels
     ]
-    every = sum(count for value, count in counts.items() if value != NOT_SEEN)
+    every = sum(
+        count for value, count in counts.items() if value not in (NOT_SEEN, HISTORY)
+    )
     choices.append((EVERY, f"Every stage ({every:,})"))
     return choices
 
 
 def _keeps(row, stage):
-    """Whether a row is at the chosen Stage (Every stage keeps every row)."""
+    """Whether a row is at the chosen Stage (Every stage keeps every row but
+    History's, #2180)."""
     if stage == EVERY:
-        return True
+        return row["stage"] != HISTORY
     if stage == NOT_SEEN:
         return bool(row.get("not_seen"))
     if stage == ACCEPTED:
@@ -559,10 +615,19 @@ def _asked_again(rows):
     showed the request chosen (on the Ministry it carries forward) and that
     no longer chooses it "undid" it, which keeps the request in force only
     when the parish added it or Staff entered it in ParishSoft (Family
-    unticked, Family chose to continue). One statement, for the rows shown.
+    unticked, Family chose to continue). A request the parish added that
+    Staff sent back to review (#2173) is read too, since an untick keeps it
+    as well: after its latest revision, as it has no decision in force.
+    One statement, for the rows shown.
     """
     ids = [
-        row["id"] for row in rows if row["state"] in ("resolved", "closed_no_response")
+        row["id"]
+        for row in rows
+        if row["state"] in ("resolved", "closed_no_response")
+        or (
+            row.get("parish_added")
+            and row["state"] in ("new", "assigned", "in_progress")
+        )
     ]
     if not ids:
         return {}
@@ -588,7 +653,10 @@ def _asked_again(rows):
             "JOIN stewardship_submission later ON later.family_id=s.family_id "
             "AND later.campaign_id=s.campaign_id AND later.mode='live' "
             "AND later.family_version>s.family_version "
-            "WHERE r.id=ANY(%s::uuid[]) AND later.submitted_at>r.resolved_at "
+            "WHERE r.id=ANY(%s::uuid[]) AND later.submitted_at>CASE WHEN "
+            "r.state IN ('resolved','closed_no_response') THEN r.resolved_at "
+            "ELSE (SELECT max(v.created_at) FROM stewardship_ministry_revision v "
+            "WHERE v.request_id=r.id) END "
             "GROUP BY r.id",
             [ids],
         )
@@ -726,6 +794,13 @@ def _decision_line(row, leader, asked, replaced_by, reader_leads):
     """
     placement = row["placement"]
     parts = []
+    if placement.stage is Stage.HISTORY:
+        # What ended it: the Family withdrew or replaced it, or (before
+        # #2173) the parish withdrew a request it added, or a later request
+        # outranks it (#2180).
+        if row["state"] in NOT_CURRENT:
+            return format_html("{}", row["state_label"])
+        return format_html("{}", REPLACED)
     if placement.stage is Stage.IGNORED:
         parts.append(
             format_html("{}", outcome_label(row["outcome"], row["action"], "Ignored"))
@@ -752,7 +827,8 @@ def _decision_line(row, leader, asked, replaced_by, reader_leads):
     if undone:
         # A request the parish added, or Staff entered in ParishSoft, that a
         # Family's reviewed form showed chosen and the Family undid (#1705):
-        # it keeps its decision for Staff to decide.
+        # it keeps its decision (or, sent back to review, its stage, #2173)
+        # for Staff to decide.
         undid = UNTICKED if row["action"] == "join" else CONTINUED
         parts.append(format_html("{} {}", undid, _time(undone)))
     if not leader and row.get("latest") is False:
@@ -803,7 +879,8 @@ def decorate(
     asked = _asked_again(rows) if asked is None else asked
     replacements = {}
     for other in every:
-        if other.get("added_in_place_of_id"):
+        # A request in History is no longer in an ignored one's place.
+        if other.get("added_in_place_of_id") and other["stage"] != HISTORY:
             replacements[str(other["added_in_place_of_id"])] = (
                 f"{'Join' if other['action'] == 'join' else 'Leave'} "
                 f"{other['ministry_name']}"

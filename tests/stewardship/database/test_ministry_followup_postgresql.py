@@ -658,10 +658,12 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
             {"size": "all"},
             {"assignee": "any"},
             {"state": "assigned"},
-            {"stage": "history"},
+            # A stage this stream never offers (History is offered, #2180).
+            {"stage": "updating"},
             {"members": "gone"},
         ):
             assert search(browser, route, invalid)[0].status_code == 400
+        assert search(browser, route, {"stage": "history"})[0].status_code == 200
         _, hidden = search(browser, route, {"ministry": "4"})
         assert b"@example.org" not in hidden
         detail = reverse("admin:ministry_followup_item", args=[join.pk])

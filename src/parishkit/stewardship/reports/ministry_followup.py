@@ -422,8 +422,9 @@ def followup_page(
             row["state"] = "new"
         row.pop("assignee_id", None)
         row["state_label"] = STATE_LABELS[row["state"]]
-        # A request the parish added is withdrawn by Back to review, not by
-        # the Family (#1684).
+        # A request the parish added was withdrawn by Back to review until
+        # #2173 (now it goes back to To review), never by the Family (#1684);
+        # those withdrawn before keep this word.
         if row["state"] == "cancelled" and row.get("parish_added"):
             row["state_label"] = WITHDRAWN
         # The packet's exact labels, by the row's kind of request (#1132).

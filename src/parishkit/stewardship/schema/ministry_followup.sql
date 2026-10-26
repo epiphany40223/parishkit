@@ -45,8 +45,8 @@ BEGIN
         WHERE id=target.submission_id AND mode='live';
     -- Cancelled and superseded requests are immutable, and a successor
     -- created by the Family invalidates every form bound to this request. A
-    -- resolved or closed request changes only by going back to review, or,
-    -- one the parish added, by being withdrawn (#1684), below.
+    -- resolved or closed request changes only by going back to review,
+    -- below; one the parish added too, never withdrawn (#2173).
     reopen := target.state IN ('resolved','closed_no_response');
     -- Authority follows the request's current Ministry: the one an Edit
     -- carried forward, once edited (#1684).
@@ -89,9 +89,10 @@ BEGIN
        -- undo below, keeping the decision), with an optional note when
        -- it reopens an ignored request (#1889), and by Staff with a note
        -- when it undoes a refresh's resolution (#1840). A request the
-       -- parish added is withdrawn (cancelled) instead.
+       -- parish added goes back to In progress too: Ignore, not Back to
+       -- review, is how Staff drop one (#2173).
        OR (reopen AND NOT undo
-           AND (NEW.state<>CASE WHEN target.parish_added THEN 'cancelled' ELSE 'in_progress' END
+           AND (NEW.state<>'in_progress'
            OR NEW.outcome IS NOT NULL OR NEW.reviewed_ministry_duid IS NOT NULL
            OR NEW.contact_channel IS NOT NULL OR coalesce(ticked,false)
            OR (confirmed AND target.resolution_source_id IS NULL)
@@ -117,7 +118,7 @@ BEGIN
            OR NEW.outcome IS DISTINCT FROM
                CASE WHEN target.action='join' THEN 'joined' ELSE 'leave_confirmed' END
            OR NEW.reviewed_ministry_duid=target.ministry_duid
-           OR NOT coalesce(asked @> to_jsonb(NEW.reviewed_ministry_duid),false)
+           OR NOT coalesce(asked OPERATOR(pg_catalog.@>) to_jsonb(NEW.reviewed_ministry_duid),false)
            OR NOT stewardship_ministry_followup_authorized_v1(NEW.actor_id,NEW.reviewed_ministry_duid)
            -- Never a second current request about one Member and Ministry.
            OR EXISTS (SELECT 1 FROM stewardship_ministry_request other

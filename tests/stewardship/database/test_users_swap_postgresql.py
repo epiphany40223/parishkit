@@ -1450,17 +1450,22 @@ CLOSURE_REPLACED_ONLY = {
     # 0154 (#1705) replaces 0148's Ministry request guard and 0131's
     # Ministry completeness check, which the reruns of 0131's file
     # (CLOSURE_ALTERED) and 0148's (CLOSURE_REPLACED) put back; only its
-    # replacements run again.
-    **{
-        name: (("stewardship_workflows", "0008_reviewed_ministry_resubmission"), phrase)
-        for name, phrase in (
-            ("stewardship_ministry_request_guard_v1", "AND later.reviewed_view"),
-            (
-                "stewardship_ministry_submission_effects_v1",
-                "AND NOT (NEW.reviewed_view AND EXISTS (",
-            ),
-        )
-    },
+    # replacements run again. 0180 (#2173) replaces the completeness check
+    # last, on 0154's body, so its replacement is the one that runs.
+    "stewardship_ministry_request_guard_v1": (
+        ("stewardship_workflows", "0008_reviewed_ministry_resubmission"),
+        "AND later.reviewed_view",
+    ),
+    # 0180 (#2173) also replaces 0158's Ministry revision guard, which the
+    # reruns above (0131's, 0148's and 0158's files) put back older; it
+    # creates nothing, and only its replacements run again.
+    **dict.fromkeys(
+        (
+            "stewardship_ministry_submission_effects_v1",
+            "stewardship_ministry_revision_guard_v1",
+        ),
+        (("stewardship_workflows", "0009_added_undo_to_review"), "(#2173)"),
+    ),
     # 0155 (#1705) replaces 0127's pledge item selection, which 0127's
     # rerun puts back.
     "stewardship_pledge_review_states_v1": (

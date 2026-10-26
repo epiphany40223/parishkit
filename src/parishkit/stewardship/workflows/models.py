@@ -229,8 +229,8 @@ class MinistryWorkflowRevision(ImmutableRecord):
             ),
             models.CheckConstraint(
                 condition=(
-                    # A cancelled revision withdraws a request the parish
-                    # added (#1684).
+                    # A cancelled revision withdrew a request the parish
+                    # added (#1684), until 0180 (#2173) refused any.
                     models.Q(
                         state__in=[*OPEN_STATES, "cancelled"], outcome__isnull=True
                     )
