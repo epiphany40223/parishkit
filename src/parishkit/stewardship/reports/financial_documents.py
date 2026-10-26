@@ -82,7 +82,7 @@ class FinancialDocument:
     requested_at: datetime
     headings: tuple[str, ...] = HEADINGS
     title: ClassVar[str] = "Financial stewardship detail"
-    sheet_name: ClassVar[str] = "Financial detail"
+    sheet_name: ClassVar[str] = "Financial stewardship detail"
 
 
 def period_years(start, end):

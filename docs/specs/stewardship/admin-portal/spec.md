@@ -8988,7 +8988,7 @@ says which slice delivers it:
 
 1. **Slice 1:** the header strip, the tab row and the Timeline tab.
 2. **Slice 2:** the Family tab and the Member tabs' census fields.
-3. **Slice 3:** the [Financial tab](#hub-financial-tab).
+3. **Slice 3:** the [Financial stewardship tab](#hub-financial-tab).
 4. **Slice 4:** the [Additional tab](#hub-additional-tab), and the Member
    tabs' [Ministry joins and leaves](#member-tabs-ministry-joins-and-leaves).
 
@@ -9059,7 +9059,7 @@ information", with the tabs in this order:
    current Member's. Shown when census or Ministry stewardship is part of the
    campaign, and only once the Family has submitted a response, since the
    Members come from it ([Family and Member tabs](#family-and-member-tabs)).
-4. **Financial**: the Family's financial information. Shown when Financial
+4. **Financial stewardship**: the Family's financial information. Shown when Financial
    stewardship is part of the campaign.
 5. **Additional**: the cannot-participate answers and Additional
    information. Shown when Ministry stewardship (where the
@@ -9101,7 +9101,7 @@ holds a second comparison that could drift from the review worklist:
   shows that Member's census fields and Ministry joins and leaves (the
   [census](../review-pipeline/spec.md#census-stream) and
   [Ministry](../review-pipeline/spec.md#ministry-stream) streams); the
-  Financial tab the [financial stream](../review-pipeline/spec.md#financial-stream);
+  Financial stewardship tab the [financial stream](../review-pipeline/spec.md#financial-stream);
   and the last tab the
   [cannot participate](../review-pipeline/spec.md#cannot-participate-stream)
   and [Additional information](../review-pipeline/spec.md#additional-information-stream)
@@ -9126,7 +9126,7 @@ same icons, selected states, words and dialogs:
 | --- | --- | --- |
 | Family and Member tabs: Changed fields, and a New Member's addition line | [Census changes](../reports/spec.md#pending-census-changes) | as its rows ([census stream](../review-pipeline/spec.md#role-specific-actions)) |
 | Member tabs: Ministry joins and leaves | [Ministry requests](../reports/spec.md#ministry-change-summary), with its [roster entry](#roster-entry-on-ministry-requests) | as its rows |
-| Financial tab: the pledge's table | [Pledges](../reports/spec.md#pledges) | as its rows |
+| Financial stewardship tab: the pledge's table | [Pledges](../reports/spec.md#pledges) | as its rows |
 | Additional tab: each Yes to a cannot answer | [Limitations](../reports/spec.md#limitations) | as its rows |
 | Additional tab: the current Additional information item | [Additional information](../reports/spec.md#additional-information) | as its rows |
 
@@ -9170,7 +9170,7 @@ same icons, selected states, words and dialogs:
 - **Reads.** Only the chosen tab reads its stream, and only when it shows an
   item and the reader may open the stream's page: the census tabs read
   Census changes' own reads narrowed to this Family (its changes, with
-  their refresh checks, and the parish's additions); the Financial tab
+  their refresh checks, and the parish's additions); the Financial stewardship tab
   Pledges' read narrowed by the Family's DUID; the Additional tab the
   Limitations report narrowed by that DUID (without the Cannot contribute
   financially rows, decided on Pledges) and Additional information's
@@ -9325,7 +9325,7 @@ audited.
 
 ### Hub Financial tab
 
-**Slice 3.** The Financial tab shows the Family's current live pledge (its
+**Slice 3.** The Financial stewardship tab shows the Family's current live pledge (its
 effective live response's financial answers) exactly as
 [Financial stewardship detail](../reports/spec.md#financial-stewardship-detail)
 reads and words it: the same selection (`stewardship_financial_report_v1`,
@@ -9378,7 +9378,7 @@ the financial questions yet." The panel links to Financial stewardship, or
 to Pledges once the pledge offers its row actions
 ([hub row actions](#hub-row-actions)).
 
-**Reads.** Only the Financial tab reads them: the proof's two statements
+**Reads.** Only the Financial stewardship tab reads them: the proof's two statements
 (the current or pinned snapshot and its giving cursor), the selection and
 the configurations the Family's response was answered under (for the share
 methods' words), four statements in all. The page's one audited view covers

@@ -116,7 +116,11 @@ SECTIONS = ("family", "members", "financial", "other")
 CENSUS_PANEL = "stewardship/hub-census-panel.html"
 # The last two tabs, with their labels and panels (slices 3 and 4).
 STREAM_TABS = (
-    ("financial", _("Financial"), "stewardship/hub-financial-panel.html"),
+    (
+        "financial",
+        _("Financial stewardship"),
+        "stewardship/hub-financial-panel.html",
+    ),
     (
         "other",
         _("Additional"),
