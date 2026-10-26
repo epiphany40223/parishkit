@@ -2783,7 +2783,9 @@
   // typed into it since it was sent are then gone, so a line says they were
   // not kept: at the top of the region its action names, else after it. A
   // review dialog's Review clears the mark (prepareReview), since what was
-  // typed is in that review and the form cannot change while it is shown.
+  // typed is in that review and the form cannot change while it is shown;
+  // so does a confirmation dialog's post (acceptConfirm), which carries the
+  // dialog form's fields.
   const withdraw = (review) => {
     // Hold the review region (else the review) at what the reader's place
     // needs, which also lets go of any hold an earlier swap no longer needs.
@@ -6108,6 +6110,16 @@
     });
     chosen.forEach((item) => body.append(item.field, item.value));
     state.extra.forEach(([name, value]) => body.append(name, value));
+    // What was typed in the dialog's form so far (an Edit's value, its note)
+    // goes with this post, so the redraw once it is applied, drawing the form
+    // anew (a Family hub tab's or a review wizard page's row editor, #2123),
+    // says no "not kept" line; anything typed after it marks the form again.
+    // A selection table's row action posts only its own row, so that form
+    // keeps its mark and the swap compares the ticks; a bulk action posts
+    // every tick.
+    if (!form.matches("[data-select-table]") || state.opener.hasAttribute("data-bulk-action")) {
+      editedSince.delete(form.id);
+    }
     // The answer's page may carry a data-confirm-announce line (below).
     const answer = await followChange(state, form.action, body);
     if (!answer) return;
@@ -9820,6 +9832,13 @@
   document.addEventListener("submit", (event) => maskSecrets(event.target), true);
   window.addEventListener("pagehide", () => maskSecrets(document));
   window.addEventListener("pageshow", () => maskSecrets(document));
+
+  // The review wizard (#2123, review pipeline spec "Wizard navigation"):
+  // the page Previous or Next opens puts focus on the control used
+  // (data-review-focus), without scrolling. An autofocus would scroll the
+  // page, on a phone in Chromium down to the bottom row's sticky spot, so
+  // both rows would leave the screen spots they keep on every page.
+  document.querySelector("[data-review-focus]")?.focus({preventScroll: true});
 })();
 
 // A review work table's Show all (components/clamped-value.html, #2124):

@@ -1,0 +1,35 @@
+{% extends 'stewardship/admin-base.html' %}{% load static i18n stewardship %}
+{% comment %}
+  One page of a review wizard run (#2123; review pipeline spec, "Wizard
+  pages"), from review_wizard_views.page: the header, one line "Family:
+  Name (DUID n, envelope e)" (the envelope only when set and not 0; the
+  name opens the Family hub) and a second line, always drawn and empty on
+  a Family page, "Member: Name (DUID n)" (the name opens the hub's tab for
+  that Member, for Staff and Administrators; a New Member has the hub's
+  badge and no DUID), then the navigation row with the progress, the
+  section region and the navigation row again at the bottom of the screen
+  (no footer links, R52 Part W: the stream page is in the menu and the hub
+  is the header's Family link). The browser title names the stream and the
+  progress, never the subject. The section is the Family hub's for the same stream, drawn
+  by the shared section components (review-wizard-section.html), with the
+  hub's row dialogs; its region redraws from this page's address after a
+  decision, so nothing reloads. A subject no longer listed for the reader
+  (``listed`` false: none of its items is in the stream's scoped read any
+  more) is not named at all: the heading and the section say only that.
+  A run that is finished, or replaced by a newer start (``closed``), says
+  so, with a link to the start page.
+{% endcomment %}
+{% block title %}{% if closed %}{% translate "Review one at a time" %}{% else %}{% blocktranslate trimmed with stream=stream.label progress=progress %}Review one at a time: {{ stream }}, {{ progress }}{% endblocktranslate %}{% endif %}{% endblock %}
+{% block head %}<link rel="stylesheet" href="{% static 'stewardship/stepper-v1.css' %}">{% endblock %}
+{% block content %}{% if closed %}
+<h1>{% translate "Review one at a time" %}</h1>
+<p data-review-closed>{% translate "This review is no longer open." %} <a href="{{ start_url }}">{% translate "Start a review" %}</a></p>
+{% else %}<div class="review-wizard-page" data-review-page data-review-stream="{{ stream.key }}">
+<div class="review-wizard-body">
+{% with h=heading %}<h1 class="review-wizard-heading" data-review-heading>{% if not listed %}{% translate "No longer listed" %}{% else %}{% translate "Family:" %} {% family_link h.family_id h.family_name %} ({% if h.envelope %}{% blocktranslate with family_duid=h.family_duid envelope=h.envelope %}DUID {{ family_duid }}, envelope {{ envelope }}{% endblocktranslate %}{% else %}{% blocktranslate with family_duid=h.family_duid %}DUID {{ family_duid }}{% endblocktranslate %}{% endif %}){% endif %}</h1>
+{# The Member line is always drawn (empty on a Family page), so the top row sits at the same spot on every page. #}<p class="review-wizard-of" data-review-member>{% if h.member %}{% translate "Member:" %} {% if member_url %}<a href="{{ member_url }}">{{ h.member.name }}</a>{% else %}{{ h.member.name }}{% endif %}{% if h.member.duid %} ({% blocktranslate with member_duid=h.member.duid %}DUID {{ member_duid }}{% endblocktranslate %}){% endif %}{% if h.member.new %} <span class="status-badge">{% translate "New Member" %}</span>{% endif %}{% endif %}</p>{% endwith %}
+{% include "stewardship/components/review-wizard-nav.html" with where="top" focus_previous=focus.previous_top focus_next=focus.next_top %}
+<div id="review-section" class="review-wizard-section" data-in-place-region data-refresh-url="{{ here_url }}" data-review-section>{% include "stewardship/components/review-wizard-section.html" %}</div>
+</div>
+{% include "stewardship/components/review-wizard-nav.html" with where="bottom" focus_previous=focus.previous_bottom focus_next=focus.next_bottom %}
+</div>{% endif %}{% endblock %}

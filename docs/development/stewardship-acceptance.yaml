@@ -606,7 +606,7 @@ sections:
     "Wizard sequence": [ADM-03, ADM-08]
     "Wizard pages": [ADM-03, ADM-08]
     "Wizard navigation": [ADM-03]
-    "Wizard resume": [ADM-03]
+    "Wizard run lifetime": [ADM-03]
     "Wizard run storage": [ADM-03, DAT-07]
     "Wizard concurrency": [DAT-08, ADM-08]
     "Wizard entry points": [ADM-03]

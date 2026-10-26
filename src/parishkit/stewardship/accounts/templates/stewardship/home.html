@@ -48,7 +48,7 @@
   </section>
   {# Review work (#1690; review pipeline spec, "Role views"): the panels Staff and Ministry leaders land on instead of Home, with Ready to update. #}{% if dashboard.review %}{% load review_work %}{% review_panels dashboard.review as review_panels %}{% if review_panels %}<section class="panel" aria-labelledby="review-work-heading" data-review-work data-live-items="{% url 'admin:index' %}">
     <h2 id="review-work-heading">{% translate "Review work" %}</h2>
-    {% include "stewardship/review-work-panels.html" with panels=review_panels nested=True %}
+    {# Review one at a time (#2123) beside the stream groups (R52 Part W): its pane, "or", then the groups by table. #}{% review_wizard_cards dashboard.review as wizard_cards %}{% include "stewardship/review-work-split.html" with panels=review_panels nested=True %}
   </section>{% endif %}{% endif %}
   {% include "stewardship/home-next-steps.html" %}
   {# Detail after the overview (#1673): Ministries ParishSoft changed recently. #}{% if dashboard.ministry_catalog %}{% include "stewardship/ministry-catalog-notice.html" with notice=dashboard.ministry_catalog %}{% endif %}

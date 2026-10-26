@@ -1,0 +1,47 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% comment %}
+  Review one at a time, the review wizard's start page (#2123; review
+  pipeline spec, "Wizard flow" and "Wizard run lifetime"), from
+  review_wizard_views.start. It lists no unfinished runs (R52 Part W).
+
+  - The choices, one form: the stream (a radio group of the streams the
+    reader's menu offers, a greyed one disabled with the menu's reason; not
+    shown when there is one), Basic or Advanced filters and the sort. Each
+    stream's filters are drawn below the group and shown only while it is
+    chosen (data-show-when, which also keeps the hidden ones from being
+    sent): Basic is one name search, with the stream's help under it
+    (what its search matches; blank means every waiting item) and, for
+    Pledges while Limitations is offered, a line saying where its
+    left-out Families are (Basic only, as asked in R52 Part W2), Advanced
+    the stream's Stage (with
+    Waiting, Basic's set, first) and its table's own filter template. Start
+    starts a new run, replacing the reader's earlier open runs; it waits
+    until a stream is chosen (the complete gate, data-require-complete).
+  - A refused start (nothing matches, or more than 5,000 pages) is drawn
+    again as posted, with its words in the reserved line above Start.
+{% endcomment %}
+{% block title %}{% translate "Review one at a time" %}{% endblock %}
+{% block content %}
+<h1>{% translate "Review one at a time" %}</h1>
+{% aboutpage "review-wizard" %}<p>{% translate "Review one Family or Member at a time, with Previous and Next. Each page shows what that Family or Member sent for the stream you choose, with the same actions as the Family's Timeline; acting is optional, and you can finish at any time. The Review work tables remain for deciding many items at once." %}</p>{% endaboutpage %}
+<section class="panel" aria-labelledby="review-start-heading">
+<h2 id="review-start-heading">{% translate "Start a review" %}</h2>
+<form method="post" action="{{ start_url }}" id="review-wizard-start" class="flow" data-review-start data-require-complete data-missing-hint="{% translate 'Choose a stream to start.' %}">{% csrf_token %}
+{% if single %}{% with only=streams.0 %}<input type="hidden" name="stream" value="{{ only.stream.key }}"><p>{% blocktranslate with stream=only.label %}Stream: {{ stream }}{% endblocktranslate %}</p>{% endwith %}
+{% else %}<fieldset class="choice-pair" id="review-stream" aria-labelledby="review-stream-legend"><legend id="review-stream-legend">{% translate "Stream" %}</legend>
+<span class="choice-pair-options">{% for item in streams %}<label for="review-stream-{{ item.stream.key }}"><input type="radio" id="review-stream-{{ item.stream.key }}" name="stream" value="{{ item.stream.key }}"{% if item.stream.key == chosen %} checked{% endif %} required{% if not item.available %} disabled aria-describedby="review-stream-{{ item.stream.key }}-reason"{% endif %}>{{ item.label }}</label>{% endfor %}</span>
+{% for item in streams %}{% if not item.available %}<p class="help" id="review-stream-{{ item.stream.key }}-reason">{{ item.label }}: {{ item.reason }}</p>{% endif %}{% endfor %}
+</fieldset>{% endif %}
+{% include "stewardship/components/choice-pair.html" with pair_id="review-mode" name="mode" legend=_("Filters") first_value="basic" first_label=_("Basic") second_value="advanced" second_label=_("Advanced") chosen=mode %}
+{% for item in streams %}{% if item.available %}<div class="filters" data-show-when="stream={{ item.stream.key }}" data-review-filters="{{ item.stream.key }}">
+<div data-show-when="mode=basic"><div><label for="{{ item.stream.key }}-basic-search">{% translate "Search name" %}</label><input id="{{ item.stream.key }}-basic-search" name="search" maxlength="200" value="{{ item.search }}" aria-describedby="{{ item.stream.key }}-basic-search-help{% if item.note %} {{ item.stream.key }}-basic-note{% endif %}"></div><p class="help" id="{{ item.stream.key }}-basic-search-help" data-review-search-help>{{ item.stream.search_help }}</p>{% if item.note %}<p class="help" id="{{ item.stream.key }}-basic-note" data-review-basic-note>{{ item.note }}</p>{% endif %}</div>
+<div data-show-when="mode=advanced"><div><label for="{{ item.stream.key }}-stage">{% translate "Stage" %}</label><select id="{{ item.stream.key }}-stage" name="stage">{% for value, label in item.stages %}<option value="{{ value }}"{% if item.stage == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+{% with drawn=item.context %}{% include item.stream.filters_template with query=drawn.query search=drawn.search route_choices=drawn.route_choices kind_choices=drawn.kind_choices ministries=drawn.ministries members_choices=drawn.members_choices %}{% endwith %}</div>
+</div>{% endif %}{% endfor %}
+<div><label for="review-sort">{% translate "Sort" %}</label><select id="review-sort" name="sort">{% for value, label in sorts %}<option value="{{ value }}"{% if sort == value %} selected{% endif %}>{% translate label %}</option>{% endfor %}</select></div>
+<p class="action-status" id="review-start-notice" data-review-notice{% if refused %} role="alert"{% endif %}>{{ notice|default:"" }}</p>
+{% button type="submit" name="start" value="1" aria-describedby="review-start-hint" %}{% translate "Start" %}{% endbutton %}
+<p class="help" id="review-start-hint" data-complete-hint="reserve"></p>
+</form>
+</section>
+{% endblock %}

@@ -261,7 +261,8 @@ def request_downloaded(request):
 
 
 def _home_in_review(sections, label, current):
-    """Put My review work first in the viewer's Review work group, in place.
+    """Put My review work first in the viewer's Review work group, in place
+    (after Review one at a time, #2123).
 
     Staff and Ministry leaders land on My review work at ``/admin/``
     (#1690); the menu lists it as the first entry of Review work, beside
@@ -274,8 +275,10 @@ def _home_in_review(sections, label, current):
     review = next((s for s in sections if s["key"] == "review"), None)
     if review is None:
         return False
+    # Review one at a time stays the group's first entry (#2123).
+    first = review["items"][:1]
     review["items"].insert(
-        0,
+        1 if first and first[0]["name"] == "review_wizard" else 0,
         {
             "name": "index",
             "url": reverse("admin:index"),

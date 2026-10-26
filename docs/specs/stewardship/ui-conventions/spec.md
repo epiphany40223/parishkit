@@ -472,6 +472,17 @@ never on the step's labels, so every step of the flow looks the same.
   label (Next, or a sub-page's Return to *step*) wraps inside its own
   button, and the middle action, on the steps that have one, takes its own
   centered line below them.
+- **The review wizard.** Previous, Finish and Next, short labels in the
+  same three slots, both above and below the page's content
+  ([wizard navigation](../review-pipeline/spec.md#wizard-navigation)).
+  The row stays one line at every width, unlike the Admin wizards' (a
+  Finish on a line of its own would make the last page's row, whose
+  Finish is in Next's slot, a line shorter). On a phone the buttons keep
+  their full labels and tap height with a smaller inline padding and gap,
+  so all three fit at 320 px with the side slots sharing the free space
+  equally; a side slot still never gets narrower than its label, so with
+  much larger text the row may sit off center but its buttons never
+  overlap (#2123).
 
 **Why.** The Family form's Next sat at the left on its first step and at the
 right from the second on, and its Cancel and sign out sat below the flow
@@ -3045,7 +3056,7 @@ match.
     unavailable until something changes, and its ordinary review dialog.
 
 **Not a step wizard.** The
-[review wizard](../review-pipeline/spec.md#review-wizard) (#2123, proposed)
+[review wizard](../review-pipeline/spec.md#review-wizard) (#2123)
 pages through review items one at a time: its pages are positions in a run,
 not steps to complete, so the numbered rules do not apply to it, except
 that no page needs an action (rule 9). It

@@ -396,7 +396,28 @@ def observe(principal, store):
             # The chrome reads the current campaign too; give it this row.
             config.current_campaign = campaign
         counts = read_counts(principal, campaign.pk) if campaign else {}
-        return config, {"campaign": campaign, "counts": counts}, database_now()
+        review = {
+            "campaign": campaign,
+            "counts": counts,
+        }
+        return config, review, database_now()
+
+
+def wizard_cards(chrome, review):
+    """The Review one at a time entry on My review work and Home (#2123).
+
+    A one-card list, drawn as the One at a time pane's button beside the
+    stream groups (review-work-split.html, R52 Part W). Shown while the
+    viewer's menu has the wizard's entry (some stream is offered), with the
+    menu's reason instead while the menu greys it out. It always opens the
+    start page: unfinished runs are never offered (R52 Part W). It has no
+    count: the waiting set differs per stream, so a total would add unlike
+    things.
+    """
+    item = (chrome.get("entries") or {}).get("review_wizard")
+    if item is None or not (review or {}).get("campaign"):
+        return []
+    return [Card(item.label, item.url, item.reason)]
 
 
 @dataclass(frozen=True, slots=True)

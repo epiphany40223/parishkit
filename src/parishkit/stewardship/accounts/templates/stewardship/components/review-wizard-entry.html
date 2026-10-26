@@ -1,0 +1,22 @@
+{% load i18n stewardship %}{% comment %}
+  Review these one at a time (review pipeline spec, "Wizard entry points",
+  #2123 slice 4): the first control of a review table's selection bar
+  (components/review-worklist.html), from review_wizard_tables.table_entry
+  as `entry`.
+
+  - Its form posts the table's current view (its Stage and filters, the
+    search included, only ever in the POST body, and its sort mapped to
+    the wizard's) to the wizard's start, which starts a run with it and
+    opens page 1. The form is inside the table region, so each in-place
+    redraw of the table gives it the view the table now shows.
+  - While the table lists nothing the button is unavailable, and its reason
+    is visible text on its own line under the bar's controls (prerequisite
+    gates; ui-v1.css orders it after them), so it never moves Add or the
+    bulk buttons along their line. It is always drawn, so
+    it never moves anything; it changes only when the table is redrawn.
+  - It never asks about unfinished runs (R52 Part W): the start replaces
+    the reader's earlier open runs.
+{% endcomment %}{% with form_id=entry.prefix|add:"-wizard" reason_id=entry.prefix|add:"-wizard-reason" %}<form method="post" action="{% url 'admin:review_wizard' %}" id="{{ form_id }}" class="wizard-entry" data-wizard-entry>{% csrf_token %}{% for name, value in entry.fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}</form>
+{% if entry.reason %}{% button type="submit" variant="secondary" form=form_id enabled=False aria-describedby=reason_id %}{% translate "Review these one at a time" %}{% endbutton %}<span class="help wizard-entry-reason" id="{{ reason_id }}">{{ entry.reason }}</span>
+{% else %}{% button type="submit" variant="secondary" form=form_id %}{% translate "Review these one at a time" %}{% endbutton %}
+{% endif %}{% endwith %}

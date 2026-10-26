@@ -239,6 +239,8 @@ MEMBER_DUID_PAGES = {
     "ministry-requests.html",
     "ministry-worklist-add.html",
     "ministry-roster.html",
+    # A review wizard Member page's heading (#2123), whose items staff act on.
+    "review-wizard-page.html",
     "source-form.html",
     "user-leader-import.html",
     "users.html",

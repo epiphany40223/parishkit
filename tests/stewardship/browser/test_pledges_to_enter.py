@@ -244,6 +244,9 @@ def test_bulk_accept_records_in_place(page, component_origin):
     assert "item=00000000-0000-0000-0000-000000000002%3A0" in body
     assert page.locator("#table tbody tr").count() == 1
     assert page.evaluate(MARKED) == "kept"
+    # The ticks were sent and decided, so no "not kept" line (#2123); the
+    # bulk form is outside the redrawn region, so it is kept as it was.
+    assert page.locator("[data-edits-lost]").count() == 0
 
 
 def test_edit_saves_the_reviewers_pledge(page, component_origin):
@@ -274,6 +277,9 @@ def test_edit_saves_the_reviewers_pledge(page, component_origin):
     # Accepted (edited) rows leave To review; the page answered in place.
     assert page.locator("#table tbody tr").count() == 2
     assert page.evaluate(MARKED) == "kept"
+    # What was typed was saved, so no "not kept" line (#2123); the edited
+    # row leaves the table, so its editor is not drawn again.
+    assert page.locator("[data-edits-lost]").count() == 0
 
 
 def test_a_refused_edit_is_shown_at_its_field(page, component_origin):

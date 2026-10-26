@@ -72,7 +72,7 @@ SPEC_NAMED = {
 # JSON reads that scripts poll; they keep their old addresses (decision 8).
 POLLED = {"background_counts", "background_tasks", "background_task"}
 TASK = UUID(int=7)
-SAMPLES = {"uuid": str(TASK), "str": "parishsoft", "slug": "logo"}
+SAMPLES = {"uuid": str(TASK), "str": "parishsoft", "slug": "logo", "int": "1"}
 
 
 def _example(route):
@@ -109,8 +109,10 @@ def test_every_moved_page_reverses_under_its_group(name):
     shares Reports and queries' ``reports`` segment (R39 finding 4). The
     daily and weekly reports saved before report emails moved to Mail keep
     their Reports addresses, which emails already sent link (#1786)."""
+    # A review wizard page's position is its one number (#2123).
+    values = {"target": "parishsoft", "position": 1}
     arguments = {
-        parameter: "parishsoft" if parameter == "target" else TASK
+        parameter: values.get(parameter, TASK)
         for parameter in navigation.route_parameters()[name]
     }
     url = reverse(f"admin:{name}", kwargs=arguments)
@@ -276,6 +278,8 @@ SLASHLESS_EXPECTED = {
     "/admin/reports/comparison": "/admin/reports/comparison/",
     "/admin/reports/financial": "/admin/reports/financial/",
     "/admin/reports/financial/pledges": "/admin/reports/financial/pledges/",
+    "/admin/reports/review": "/admin/reports/review/",
+    "/admin/reports/review/1": "/admin/reports/review/1/",
     "/admin/reports/limitations": "/admin/reports/limitations/",
     "/admin/reports/census": "/admin/reports/census/",
     "/admin/reports/census/update-parishsoft": (

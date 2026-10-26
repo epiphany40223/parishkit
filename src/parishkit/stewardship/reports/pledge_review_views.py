@@ -23,7 +23,7 @@ import csv
 import io
 import json
 from collections import Counter
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -635,6 +635,37 @@ def export_choice(fmt, zone_name):
     return {"format": fmt, "zone": ZoneInfo(zone_name)}
 
 
+@dataclass(frozen=True, repr=False)
+class PledgeQuery:
+    """Pledges' filters: the Stage and the Family name or DUID search.
+
+    The page (``_choices``) and the review wizard (``review_streams``)
+    parse them here, so both refuse the same values. The search names a
+    Family, so it travels only in POST bodies, never an address.
+    """
+
+    stage: str = DEFAULT_STAGE
+    search: str = ""
+
+    @classmethod
+    def of(cls, stage=DEFAULT_STAGE, search=""):
+        """A checked query: a known Stage, a bounded search; else ValueError."""
+        bounded_text(search)
+        if stage not in STAGE_VALUES or len(search) > 200:
+            raise ValueError("Invalid pledge list choice.")
+        return cls(stage=stage, search=search)
+
+    @classmethod
+    def parse(cls, parameters):
+        """Single values of ``stage`` and ``search`` only (``filters``)."""
+        values = filters(parameters, allowed={"stage", "search"})
+        return cls.of(values.get("stage", DEFAULT_STAGE), values.get("search", ""))
+
+    def form_values(self):
+        """The fields a form posts so its answer shows the same view."""
+        return {"stage": self.stage, "search": self.search}
+
+
 def _choices(parameters, *, export, private):
     """The request's closed choices: Stage, search, and paging or format.
 
@@ -652,11 +683,8 @@ def _choices(parameters, *, export, private):
         else table_parameters()
     )
     values = filters(parameters, allowed=allowed)
-    stage = values.pop("stage", DEFAULT_STAGE)
-    search = values.pop("search", "")
-    bounded_text(search)
-    if stage not in STAGE_VALUES or len(search) > 200:
-        raise ValueError("Invalid pledge list choice.")
+    query = PledgeQuery.of(values.pop("stage", DEFAULT_STAGE), values.pop("search", ""))
+    stage, search = query.stage, query.search
     if export:
         chosen = export_choice(
             values.get("format", DEFAULT_EXPORT_FORMAT),

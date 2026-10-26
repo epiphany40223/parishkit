@@ -177,6 +177,9 @@ class HubFinancial:
     is False when the report's inputs cannot be read now. ``contributions``
     is the ParishSoft Contributed sum (a ``MoneyAmount``), ``years`` the
     comparison period's years and ``through`` the giving data's last day.
+    ``cannot_give`` says the Family answered Cannot contribute financially
+    (a Limitations answer too, which the review wizard's Limitations Family
+    page shows by this pledge, #2123).
     """
 
     pledge: Subject | None = None
@@ -184,6 +187,7 @@ class HubFinancial:
     contributions: object = None
     years: str = ""
     through: object = None
+    cannot_give: bool = False
 
 
 def read_hub_financial(campaign, family_duid, *, parish_name):
@@ -277,6 +281,7 @@ def financial_tab(row, metadata):
         contributions=row["source_contributions"],
         years=years,
         through=metadata["giving_through"],
+        cannot_give=bool(row["cannot_give"]),
     )
 
 

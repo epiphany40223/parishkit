@@ -2080,14 +2080,23 @@ work counts on Home and My review work ([role views](#role-views)).
 
 ## Review wizard
 
-Status: **proposed, for the Administrator's review**
+Status: **approved; slices 1 to 4 built**
 ([#2123](https://github.com/epiphany40223/parishkit/issues/2123)); the
 flow, behaviour and shared-code requirement below, and the page scope,
 waiting set, start page, Limitations pages, navigation rows, keyboard,
 menu and dashboard entries, are the Administrator's decisions of
 2026-10-24, and the spec was approved on 2026-10-24 with three changes:
 Finish opens My review work, runs have no time limit, and a reader may
-have several runs (one per tab). Nothing of it is built yet.
+have several runs (one per tab). The Administrator's pk-local findings of
+2026-10-25 (R52 Part W) then removed unfinished runs from the interface:
+a run is never listed, offered or resumed, and starting one replaces the
+reader's earlier open runs
+([wizard run lifetime](#wizard-run-lifetime)). Its first three slices are built: the
+run storage, the start page, the page frame with its navigation, the menu
+entry and the dashboard card (#2123, slice 1 of the
+[delivery plan](#wizard-delivery-plan)), the shared section component and
+the Family pages (slice 2), then the Member pages (slice 3), and the
+tables' entry buttons (slice 4).
 
 The review wizard is a third view of the same review data, beside each
 stream's [review worklist](#review-worklist) (bulk decisions over a table)
@@ -2103,8 +2112,10 @@ code the other two views already run
 ### Wizard flow
 
 1. **Choose the stream.** Census changes, Ministry requests, Pledges,
-   Additional information or Limitations, in the Review work menu's order,
-   offering only the streams the reader may open
+   Limitations or Additional information, in that order (the wizard's own,
+   `review_streams.STREAMS`; R52 Part W2 moved Additional information
+   last; the Review work menu and tables keep the menu's order), offering
+   only the streams the reader may open
    ([wizard streams and access](#wizard-streams-and-access)). With exactly
    one (a Ministry leader: Ministry requests) the choice is not shown.
 2. **Filter and sort.** Default: everything waiting, sorted by name
@@ -2127,9 +2138,11 @@ paragraph, that the pages show one Family or Member at a time, that acting
 is optional, and that the Review work tables remain for bulk decisions.
 
 A started run is one stream, its filters and sort, the fixed sequence of
-subjects and the reader's position in it; a reader may have several runs
-at once, one per browser tab
-([wizard run storage](#wizard-run-storage)).
+subjects and the reader's position in it
+([wizard run storage](#wizard-run-storage)). Starting a run deletes the
+reader's earlier open runs in the campaign, and an
+unfinished run is never offered again
+([wizard run lifetime](#wizard-run-lifetime)).
 
 ### Wizard streams and access
 
@@ -2141,8 +2154,8 @@ stream one at a time exactly when its Review work page is in their menu:
 | Census changes | `census_changes` (`VIEW_CENSUS`, census on) | Administrators, Staff | the Family, then each changed Member |
 | Ministry requests | `ministry_report` (`MINISTRY_REPORT`, scoped) | Administrators, Staff, Ministry leaders (their Ministries only) | one Member |
 | Pledges | `pledges_to_enter` (`FINANCIAL_DETAIL`) | Administrators, Staff | one Family |
+| Limitations | `limitations_report` (`CAMPAIGN_REPORT`, Ministry stewardship on) | Administrators, Staff | the Family (only with a Family answer: the financial one, its Pledges page, or Cannot attend Mass), then each Member with a Limitations answer |
 | Additional information | `information_queue` (`ADDITIONAL_FOLLOWUP`) | Administrators, Staff | one Family |
-| Limitations | `limitations_report` (`CAMPAIGN_REPORT`, Ministry stewardship on) | Administrators, Staff | the Family (only with the financial answer; its Pledges page), then each Member with a Limitations answer |
 
 - A stream is offered while its menu entry is available
   (`admin_navigation`'s `Entry` for that page, campaign condition
@@ -2163,9 +2176,15 @@ stream one at a time exactly when its Review work page is in their menu:
   page, which is that Family's Pledges page (the Pledges section, which
   lists the answer as the Pledges table does); a Limitations run's Family
   page also re-checks the Pledges access (`FINANCIAL_DETAIL`), and a
-  reader without it gets Member pages only. Every other Limitations
-  answer is per Member and is on that Member's page. A Pledges run's
-  Family page shows the same financial answer.
+  reader without it never sees the financial answer there. **Cannot attend Mass or
+  prayer services** is a Family answer too (the Limitations table's
+  Families table), so it is on the Family page as well, for every reader
+  of Limitations (#2123 slice 1; it has no Member to go to). Every other
+  Limitations answer is per Member and is on that Member's page. While
+  Limitations is offered, a Pledges run leaves a Cannot contribute
+  financially Family out
+  ([wizard filters and sort](#wizard-filters-and-sort)), so that answer
+  is reviewed in Limitations only.
 - While other campaign work holds the campaign, pages draw no action icons,
   with the stream pages' reason, as the hub does (`hub_actions.mutable`).
 
@@ -2183,25 +2202,66 @@ Advanced when it is drawn with an Advanced filter set):
   Entered incorrectly (a Ministry leader: To review; Administrator
   decision, 2026-10-24). Ready to update and
   Updating are not waiting on a reviewer: Update ParishSoft owns them.
+  Under **Search name** a short help line, per stream, says what the
+  stream's table search matches and that a blank search means every
+  waiting item (R52 Part W):
+  - Census changes: "Family name, a Member's name, or the Family DUID.
+    Leave blank for every waiting change."
+  - Ministry requests: "Member's name or the Ministry. Leave blank for
+    every waiting request."
+  - Pledges: "Family name or the Family DUID. Leave blank for every
+    waiting pledge." While Limitations is offered, a second line under
+    it says "Families who answered Cannot contribute are in
+    Limitations." (R52 Part W2; see Pledges below). Only Basic shows
+    that line, as the Administrator asked; Advanced leaves the same
+    Families out.
+  - Limitations: "Family name, a Member's name, or the Family DUID. Leave
+    blank for every waiting answer."
+  - Additional information: "Family name, the Family DUID, or words in
+    the information or notes. Leave blank for every waiting item."
 - **Advanced:** every filter the stream's Review work table has, drawn by
   that table's own filter template and parsed by its own query class: for
   Ministry requests the Stage, Search Member or Ministry name, Ministry,
   Request and Members (Staff); for Census changes the Stage, Search, How
   it reaches ParishSoft and Kind; for Pledges the Stage and Search; for
-  Additional information the Stage and Search; for Limitations the Stage,
-  Search and Show. The Stage filter adds one choice ahead of the table's,
-  **Waiting** (Basic's set), which is its default here; the template
-  takes it as a parameter, so the tables do not offer it. Waiting is
+  Limitations the Stage, Search and Show; for Additional information the
+  Stage and Search. The Stage filter adds one choice ahead of the table's,
+  **Waiting** (Basic's set), which is its default here, and leaves out the
+  table's **History**: the wizard never offers History, its last choice
+  reads **Every stage except History**, a start posted at History is
+  refused as malformed, and a History item is never a wizard page (R52
+  Part W; the Administrator, 2026-10-25; the tables' own Stage filters
+  keep History). On the tables the
+  Stage is drawn by the shared worklist, not by the filter template, so
+  the start page draws its own Stage select from the same stage lists the
+  tables use (`review_streams`), and the tables do not offer Waiting.
+  Waiting is
   applied after the table's own read, which is run at Every stage, by the
   same placements the Stage filter uses.
-- **Sort:** **Name A–Z** (the default), **Oldest submitted first**,
-  **Newest submitted first**. Name A–Z is the deterministic name order of
+- **Sort:** **Last name (A–Z)** (the default; R52 Part W renamed it from
+  Name A–Z, since the shown names are "*Last*, *First*"), **Oldest
+  submitted first**, **Newest submitted first**. Last name (A–Z) is the
+  deterministic name order of
   [#2124](https://github.com/epiphany40223/parishkit/issues/2124) applied
   to subjects: the shown name casefolded (the Family's for a Family
   subject and for grouped streams, the Member's for Ministry requests),
   then the secondary name, then the DUID, then the subject's campaign
   record id. A subject's submitted time is the newest submitted time among
-  its matched items; equal times fall back to Name A–Z.
+  its matched items; equal times fall back to Last name (A–Z).
+
+- **Pledges leave out Cannot contribute:** while the reader is offered
+  Limitations (it needs Ministry stewardship), in Basic and Advanced
+  alike, a Pledges run implicitly leaves out the pledge rows whose Family answered
+  **Cannot contribute financially** (the rows `pledge_rows` marks
+  `cannot_give`), with no filter to bring them back: that answer is
+  reviewed in the Limitations run, which keeps including it on the
+  Family's page ([wizard streams and access](#wizard-streams-and-access)).
+  Only the Pledges wizard sequence leaves them out; the Pledges table
+  keeps listing them, and its **Review these one at a time** button
+  starts a run without them (when it lists only those, the start page
+  says "Nothing matches these filters." and starts nothing). Without
+  Limitations nothing else offers those Families one at a time, so a
+  Pledges run keeps them (R52 Part W2; the Administrator, 2026-10-25).
 
 Nothing a reader types reaches an address: the search travels only in the
 POST that starts the run, as on the tables
@@ -2226,9 +2286,12 @@ subjects:
    changes, Limitations) the sort orders Families, and each Family's pages
    are adjacent: its Family page first, when the Family itself has a
    matching item (a household field in Census changes; in Limitations,
-   the Cannot contribute financially answer), then a page for each Member
-   with a matching item, in the Family hub's Member tab order
-   (`hub_census.shape`'s order). A Family with only Member items has no
+   the Cannot contribute financially or Cannot attend Mass answer), then
+   a page for each Member with a matching item: ParishSoft Members by
+   DUID, then the New Members the Family added, by name, as the Family
+   hub's Member tabs list them (`hub_census.shape`; a Member the hub
+   lists after the others because only earlier requests keep them sorts
+   here by DUID with the rest). A Family with only Member items has no
    Family page. A New Member the Family added is a Member page in that
    order. In Limitations the Family's financial answer is read from the
    Pledges stream's read with the run's Stage and Search, and every other
@@ -2251,20 +2314,32 @@ and starts nothing.
 
 Each page has, top to bottom:
 
-- **Heading:** the subject, as the hub's panel names it: a Family as
-  "*Family name* (DUID *n*)", a Member as "*Member name* (DUID *n*)" with
-  the Member's Family under it ("Member of *Family name*"), and a New
-  Member with the hub's New Member badge. The browser title is
+- **Header:** one consistent header on every page (R52 Part W). Its
+  first line, the page heading, is "Family: *Family name* (DUID *n*,
+  envelope *e*)", the Family's name opening the Family hub (for Staff and
+  Administrators, `family_link`), and ", envelope *e*" only when the
+  Family's ParishSoft envelope number is set and not 0. On a Member page
+  only, a second line reads "Member: *Member name* (DUID *n*)", the
+  Member named as the hub's tab names them, the name opening the hub's
+  tab for that Member (for Staff and Administrators; plain text for a
+  Ministry leader); a New Member the Family added has no DUID yet, so the
+  parenthetical is left out and the hub's New Member badge follows the
+  name. The second line's place is kept, empty, on a Family page, so the
+  navigation row below sits at the same spot on every page. The browser title is
   "Review one at a time: *stream*, *progress*", without the name, as the
   Timeline's title leaves it out.
+  The last breadcrumb says the same, "*stream*, *progress*", so the trail
+  does not repeat its parent crumb, Review one at a time; a run that is
+  no longer open reads "Closed review".
 - **The navigation row, first copy**, with the progress line
   ([wizard navigation](#wizard-navigation)), under the heading and above
   the section. The progress is one line in the
   [stepper](../ui-conventions/spec.md#step-bars)'s place: "Family 12 of
   87" for a Family stream (Pledges, Additional information), "Member 12 of
   87" for Ministry requests, and for a grouped stream the Family's place
-  and, on a Member page, the Member's place in it: "Family 12 of 87" on
-  the Family page, "Family 12 of 87, Member 2 of 3" on a Member page. A
+  only, "Family 12 of 87", on the Family page and on each of its Member
+  pages (R52 Part W dropped a ", Member 2 of 3" suffix, which could read
+  as the Family's number of Members). A
   slim bar under it shows the run's progress by page, with no labels, so it
   never wraps.
 - **The section:** the subject's matched items of the run's stream, drawn by the
@@ -2283,16 +2358,22 @@ Each page has, top to bottom:
   stage but History, and no line when there are none. The line is plain
   text, with no link and no control, so it never moves anything; the full
   subject is on the Family's Timeline.
-- **One link sentence:** "Open *stream page*" (Census changes, Ministry
-  requests, Pledges, Additional information or Limitations), and for
-  Staff and Administrators "Open this Family's Timeline".
-- **The navigation row, second copy**, at the bottom.
+- **The navigation row, second copy**, at the bottom. The page has no
+  footer links (R52 Part W; the Administrator, 2026-10-25): the stream
+  page is in the menu, and the header's Family name opens the Family hub.
 
-A page whose subject has nothing left in the stream (the Family withdrew
-every change, a Member left the Family, a Family left the campaign) says so
-in the section's own empty words, such as "No changes: every answered field
-matched ParishSoft.", or "This Member is no longer listed for this
-stream.", and keeps Previous and Next.
+A page whose subject has nothing left in the stream for this reader (the
+Family withdrew every change, a Member left the Family, a Family left the
+campaign, or the reader lost access to the subject's items, such as a
+Ministry leader who no longer leads the request's Ministry) names nothing:
+its heading reads "No longer listed", the Member line is left empty,
+and the section says "This Family is no longer listed
+for this stream." or "This Member is no longer listed for this stream.".
+It keeps Previous and Next. The stored ids are never shown, so a run
+started earlier never shows a name the reader may no longer see (#2123
+slice 2). No run reaches such a page by its filters alone: the wizard
+offers no History stage ([wizard filters and sort](#wizard-filters-and-sort)),
+which closes the earlier open point about runs started at History.
 
 ### Wizard navigation
 
@@ -2301,8 +2382,11 @@ stream.", and keeps Previous and Next.
   [stepper button row](../ui-conventions/spec.md#stepper-button-row), at
   **both the top and the bottom** of the page: the same controls twice,
   each row carrying the progress ("Family 12 of 87", with the slim bar).
-  Page 1 keeps Previous's slot empty; the last page's Next slot reads
-  **Finish** and the middle slot is then empty. The top row sits directly
+  As in the Family form's row, Previous is always on the left, Finish
+  always in the middle and Next always on the right: page 1 keeps
+  Previous's slot empty, and the last page keeps Next's slot empty while
+  Finish stays in the middle (R52 Part W; the Administrator, 2026-10-25),
+  where it is then the primary button. The top row sits directly
   under the one-line heading, above the section, so nothing above it
   changes height; the bottom row is pinned to the bottom of the screen as
   the Family form's is (#2063). Neither row moves as the content changes:
@@ -2325,60 +2409,76 @@ stream.", and keeps Previous and Next.
   `reports/review/<position>/?run=<run id>`, so the browser's Back and a
   reload show a page, the position survives a sign-out, and a GET never
   writes. A page reached by Previous or Next puts focus on the control that
-  was used (in the top row or the bottom row), so pressing Enter again
-  moves on.
+  was used (in the top row or the bottom row), without scrolling the
+  page, so pressing Enter again moves on and both rows stay at their
+  screen spots.
 - **Finish** marks the run finished and opens **My review work**, whose
   counts reflect what was done in the run. Leaving by the menu or a link
-  keeps the run where it was.
+  leaves the run as it was, but nothing offers it again
+  ([wizard run lifetime](#wizard-run-lifetime)).
 - **Keyboard.** The buttons are ordinary buttons in reading order. There
   are no keyboard shortcuts (Administrator decision, 2026-10-24).
 
-### Wizard resume
+### Wizard run lifetime
 
-The server remembers each of a reader's unfinished runs, per campaign:
-each run's stream, closed filters, sort, sequence and position. A reader
-may have **several** at once, typically one per browser tab; a run started
-in a second tab never replaces the first. Runs have **no time limit**:
-one stays until it is finished, discarded or its campaign is purged.
+Unfinished runs are not resumed (R52 Part W; the Administrator,
+2026-10-25: staff and leaders start the wizard again). Nothing lists or
+offers a reader's unfinished runs: the start page has no list of them,
+the review tables' button never asks about them, and the dashboard pane
+always opens the start page. The run row stays, because Previous and Next
+move through its stored sequence and position
+([wizard run storage](#wizard-run-storage)), so a page's address, the
+browser's Back and a reload keep working while the run is open.
 
-The start page, **Review one at a time**, lists the reader's unfinished
-runs in a panel above the choices, one row each: "*Stream*, *the run's
-filters in words*, *progress words* (for example Family 12 of 87), last
-used *date and time*" (browser-local), with two buttons: **Continue**
-(primary; opens the run's current page) and **Discard** (removes the run
-after a confirmation
-([confirmation](../ui-conventions/spec.md#row-actions-and-confirmation))
-and redraws the list in place). The panel is absent when there are none.
-**Start** on the choices below always creates a new run, leaving the
-others as they are.
+**Start** (on the start page or from a table) deletes the reader's
+earlier unfinished runs in the campaign in the same transaction as the
+new run's insert (two starts at the same moment may each leave a run, which
+nothing lists and the next start deletes); a
+refused start (nothing matches, or too many pages) leaves them as they
+are. A finished run keeps its row and is never offered again.
 
-A page address carries its run's id. A run that was discarded (in this
-or another tab) or finished says "This review is no longer open." with a
-link to the start page; it is never an error page.
+When no stream is offered to the reader, the start page answers 403. A
+Ministry leader who leads no Ministry gets the plain sentence the
+Ministry pages give them ([Ministry leaders from
+ParishSoft](../admin-portal/spec.md#ministry-leaders-from-parishsoft),
+`reports.ministries.unscoped`, #2165), not the generic sign-in denial;
+the page reuses that code, so the wording stays in one place. Any other
+reader keeps the generic denial, and a signed-out reader goes to
+sign-in.
+
+A page address carries its run's id. A run that was finished, or
+replaced by a newer start (in this or another tab), says "This review is
+no longer open." with a link to the start page, **Start a review**; it
+is never an error page.
 
 ### Wizard run storage
 
-One row per run, `stewardship_review_run`; a reader and campaign may
-have many:
+One row per run, `stewardship_review_run`; a start deletes the reader's
+earlier unfinished runs in the campaign, and finished ones stay:
 
-- `id` (uuid), `user_id` (the portal user, on delete cascade),
-  `campaign_id` (on delete cascade), `stream`, `filters` (jsonb: the
+- `id` (uuid), `user_id` (the portal user, deleted with it),
+  `campaign_id` (deleted with it), `stream`, `filters` (jsonb: the
   stream's closed filter values and the Basic or Advanced mode; the
-  search text is never stored, only whether one was used, so the run's
-  row can say "with a name search"), `sort`, `subjects` (jsonb array of
+  search text is never stored, only whether one was used), `sort`, `subjects` (jsonb array of
   subject keys, each with the ids of its matched items, at most 5,000
   subjects), `position`, `finished_at`, `created_at`,
   `updated_at`; indexed on `(user_id, campaign_id)`, not unique.
-- The keys and item ids are record ids and DUIDs only, never names or values, so the
-  row holds nothing the stream tables do not already hold.
-- **Retention:** an unfinished run stays until finished or discarded, with
-  no time limit; Discard deletes its row. A finished run keeps its row
+- The keys and item ids are record ids and DUIDs only, never names or
+  values, so the row holds nothing the stream tables do not already hold.
+- **Retention:** an unfinished run stays, with no time limit, until it is
+  finished or its reader starts another run, which deletes its row
+  ([wizard run lifetime](#wizard-run-lifetime)). A finished run keeps its row
   (it is not offered again) until the user or campaign is removed, which
-  deletes it by cascade. The rows are bounded by the runs readers start,
-  each at most 5,000 subjects of ids.
-- **Migration: yes**, number **0178** (assigned centrally; not yet
-  written). Resume must outlive the sign-in, so the Django
-  session (`report_paging.remember_queue`'s store) cannot hold it. The
+  deletes it by the model's cascade (`on_delete`; the foreign keys are
+  Django's own, which the model contract compares with the installed
+  schema, so the database itself does not cascade, and nothing deletes a
+  portal user or campaign row in SQL). The rows are bounded by the runs
+  readers start, each at most 5,000 subjects of ids.
+- **Migration: yes**, frozen file **0178** (`0178_review_run.sql`,
+  assigned centrally), whose guard keeps a started
+  run's user, campaign, stream, filters, sort and sequence fixed, its
+  position inside the sequence, and a finished run unchanged. A run's
+  position must outlive the sign-in, so the Django session (`report_paging.remember_queue`'s store) cannot hold it. The
   table is one new forward migration with its frozen SQL file under the
   [post-launch schema policy](../operations/spec.md#post-launch-schema-policy),
   with the web role's grants, the schema inventory and baseline entries,
@@ -2401,8 +2501,9 @@ have many:
   first is refused with the stream's notice
   ([concurrency](#concurrency)), and the section is redrawn in place from
   the page's own address showing the live stage.
-- **Two tabs.** Each tab has its own run, so positions do not collide; two
-  tabs on the same run are last-write-wins for the position.
+- **Two tabs.** A run started in another tab replaces this tab's run,
+  whose next page or move says the review is no longer open; two tabs on
+  the same run are last-write-wins for the position.
 - **Live while open** ([#2174](https://github.com/epiphany40223/parishkit/issues/2174)).
   Each wizard page's sections are review regions as the worklists' are
   ([concurrency](#concurrency), live while open): a section opts in with the
@@ -2421,38 +2522,64 @@ have many:
   while at least one stream is offered (a new `Entry` whose availability is any of the five pages'),
   and named in the trail and every "Return to".
 - **From each table.** Each review worklist's selection bar gets
-  **Review these one at a time** (a secondary button, beside Add). It
+  **Review these one at a time** (a secondary button, first, beside Add). It
   posts the table's current view fields (`Worklist.fields`, the search
   included, and the table's sort) to the wizard's start, which starts a
-  run with them and opens page 1, skipping the choice steps. **When the
-  reader has unfinished runs, the button asks first**: a confirmation
-  dialog ([confirmation](../ui-conventions/spec.md#row-actions-and-confirmation))
-  asks to continue an existing run or start a new one: "You have
-  unfinished runs. Continue an existing run or start a new one?" lists
-  them (*stream*, *progress words*, for example Census changes, Family 12
-  of 87), each with **Continue**, and has **Start a new run** (starts the
-  run from the table's view, leaving the others) and **Cancel** (closes
-  the dialog, nothing changes). The server makes the same check on the
-  post, so a run started in another tab since the table was drawn is
-  listed too; finished runs are not. The table's
+  run with them and opens page 1, skipping the choice steps; it never
+  asks about unfinished runs, which the start replaces
+  ([wizard run lifetime](#wizard-run-lifetime)). The table's
   sort maps to the wizard's: its name column ascending (or any column other
-  than Submitted) to Name A–Z, Submitted ascending to Oldest submitted
+  than Submitted) to Last name (A–Z), Submitted ascending to Oldest submitted
   first, Submitted descending to Newest submitted first. The button is
-  unavailable, with its reason, while the table lists nothing
+  unavailable, with its reason ("Nothing is listed to review one at a
+  time.") on its own line under the bar's buttons, while the table lists
+  nothing
   ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)).
-- **Dashboard card.** My review work (for Staff and Ministry leaders) and
-  Administrators' Home Review work panel each get a **Review one at a
-  time** link card, the **first** card, ahead of the stream panels (as the
-  menu entry is first), in the same
-  [overview card](../ui-conventions/spec.md#overview-pages) styling. It
-  opens the wizard's start page. When the reader has exactly one unfinished run it
-  reads "Continue: *stream*, *progress words*" (for example "Continue:
-  Ministry requests, 12 of 87") and opens that run's current page; with
-  several it keeps its plain label and opens the start page, which lists
-  them. The card shows no count
-  of its own: the waiting set differs per stream, so a total would add
-  unlike things and repeat the stream cards' numbers. It is shown to
-  readers for whom the wizard is offered.
+  The shared table component draws the button
+  (`components/review-wizard-entry.html`, from
+  `review_wizard_tables.table_entry`) inside the table's region, so every
+  in-place redraw of the table gives it the view the table then shows. It
+  posts the table's Stage, the stream's own closed filters and the search,
+  in Advanced mode, to the start, which parses, checks and reads them as a
+  start from the start page does.
+- **Dashboard pane.** My review work (for Staff and Ministry leaders) and
+  Administrators' Home Review work panel put the wizard **beside** the
+  stream groups, so the choice reads plainly: review everything one at a
+  time, or open any table to work in bulk (R52 Part W, option B; the
+  Administrator, 2026-10-25). Under the page's or panel's heading is one
+  row, drawn by `review-work-split.html` for both pages:
+  - On the left, a **One at a time** pane about 13rem wide, in the accent's
+    soft fill with its line colour as a 1px border. At its top, as normal
+    flow: the small uppercase label "One at a time" and the muted line
+    "Every stream's waiting items, one Family or Member per page." (the
+    wording the Administrator approved, 2026-10-25; it names no position, which would be wrong once
+    the parts stack and means nothing to a screen reader). Below them, centred in the height left, the
+    portal's primary button **Review one at a time**, a link to the
+    wizard's start page, whatever runs the reader has (R52 Part W: no
+    Continue label). While the menu greys the wizard out, the pane shows
+    the menu's reason as muted text in the button's place, never a link.
+  - In the middle, a thin vertical rule with a small muted "or" at its
+    centre. It is decoration, hidden from screen readers, which read the
+    pane and then the tables.
+  - On the right, a small uppercase **In bulk** label above the stream
+    groups, unchanged except that they fit the narrower column: narrower
+    stream names and cards, so My review work still fits a laptop window
+    under the [overview pages](../ui-conventions/spec.md#overview-pages)
+    rule and its two-line exception.
+
+  The layout follows the room the panel has, not the window: from 48rem
+  (a 1280px laptop window with the menu open) the parts sit side by side;
+  in less (a phone or a narrow window) they stack, the pane at full width
+  with its button after its text (beside it while there is room), then a
+  horizontal rule with "or", then the tables at full width, with no
+  sideways scroll at 320px. The pane shows no count of its own: the
+  waiting set differs per stream, so a total would add unlike things and
+  repeat the stream cards' numbers. It is shown to readers for whom the
+  wizard is offered; without it, the pane, the rule and the In bulk
+  label are left out and the stream groups take the full width. The
+  layout is static: nothing moves on hover, focus or a click
+  ([no layout shift](../ui-conventions/spec.md#no-layout-shift)), and its
+  colours are theme tokens, so dark mode follows.
 - My review work's stream cards keep opening the tables.
 
 ### Wizard shared component
@@ -2500,30 +2627,68 @@ tab, the panel templates carry the tab's heading, its link sentence and
 `hub_tab_url`, and `hub-census-panel.html` also draws the Member's
 Ministry part. The split:
 
-- A new `reports/review_sections.py` with `read_section(stream, campaign,
-  family, subject, principal, *, refresh_url, prefix)`, the code now in
-  `hub_reads` plus `hub_actions.census_tab`, `ministry_tab`,
-  `financial_tab` and `other_tab`, keyed by a stream and a subject instead
-  of a tab key. `hub_reads` becomes a call per chosen tab; the wizard
-  calls it once per page.
-- `census_tab` takes the subject (`HubCensus.subject`) rather than the tab
-  key; `ministry_tab` gains `scoped=True` for the wizard, keeping only the
-  rows its leader-scoped worklist lists (the hub's Staff and Administrator
-  readers see the same rows either way); `other_tab` gains `keep`, the item
-  ids the page shows, so the wizard draws one Member's (or the Family's)
-  cannot answers for Limitations, or the current item for Additional
-  information.
+- As built (#2123 slice 2), the hub's per-stream reads and row actions
+  stay where they are, in `hub_census`, `hub_streams` and `hub_actions`
+  (`census_worklist` with `census_subject`, `financial_tab`, `other_tab`,
+  `ministry_worklist`, `limitations_worklist`), and are the one
+  implementation. A new `reports/review_sections.py`,
+  `read_section(stream, campaign, family, subject, principal, *,
+  parish_name)`, composes those same functions for one wizard page and
+  then narrows their result to the run's matched items. `hub_reads` and
+  the hub's tab functions are unchanged. This replaces the planned
+  `census_tab(subject)`, `other_tab(keep=…)` and `ministry_tab(scoped=True)`
+  parameters, which the narrowing makes unnecessary. A Ministry
+  requests page reads through `hub_actions.ministry_worklist`, whose
+  `read_rows` is the leader-scoped read; it takes the run's Members
+  choice (`members`, the table's default on the hub and always for a
+  Ministry leader), so a run started at Members no longer in ParishSoft
+  reads the list it was started from.
+- **Member pages** (#2123 slice 3) draw the hub Member tab's parts for
+  the run's stream, matching the Member on its entity, never the hub's
+  tab key. Census changes' Member and New Member pages draw the Member's
+  census subject (`census_subject`); a New Member's page shows its
+  "Adding this Member" line and the Family's answers for the Member.
+  Ministry requests' page draws the Member's requests
+  (`hub_streams.read_member_ministry`) decorated by `ministry_worklist`.
+  Limitations' Member page draws the Member's Cannot participate in
+  ministries answer from the hub's Additional answers, named as the hub's
+  tab names the Member. A request
+  or answer the stream's scoped read does not list for the reader is
+  neither drawn nor counted in the filtered-out line, so a Ministry
+  leader never learns of another Ministry's request for the same Member.
+- **Live replacements.** The stored item ids are first followed to their
+  live replacements: a census change or Ministry request through
+  `superseded_by`, an Additional information item through `replacement`.
+  A pledge is the Family's current one. Limitations answer ids do not
+  change. The section then keeps the replacements the stream's scoped read
+  still lists for the reader, and counts the subject's other listed items
+  for the filtered-out line.
+- **Scoped, on every page.** Each page, Member pages included, reads its
+  subject through the stream's own worklist read under the reader's
+  principal. For a Ministry leader that read is `ministry_worklist.read_rows`,
+  limited to their Ministries. The subject is named only while one of its
+  items is listed ([wizard pages](#wizard-pages)).
 - Templates under `components/`: `review-census-section.html` (the
-  addition line, the Changed table, Show unchanged and the dialogs, from
-  `hub-census-panel.html`), `review-ministry-section.html` (from
-  `hub-ministry.html`), `review-pledge-section.html` (from
-  `hub-financial-panel.html`, the contributions line included) and
+  addition line, the Changed table and Show unchanged, from
+  `hub-census-panel.html`; takes `subject`), `review-ministry-section.html`
+  (from `hub-ministry.html`; takes `rows` and `w`),
+  `review-pledge-section.html` (from `hub-financial-panel.html`, the
+  contributions line included; takes `financial` and `pledge`) and
   `review-answers-section.html` (the Answers to handle table, from
-  `hub-other-panel.html`, taking its rows). Each takes the section, its
-  `prefix` and `refresh_url`, and keeps `hub-changed-table.html`,
-  `hub-stage.html` and `hub-dialogs.html` as they are. The hub panels keep
-  their headings and link sentences and include the sections, so the hub
-  draws exactly what it draws today.
+  `hub-other-panel.html`; takes `rows` and `actions_column`). The
+  wizard's Ministry requests pages pass `review-ministry-section.html`
+  Ministry requests' worklist of the drawn rows as `w`, as the hub's
+  Member tab does. Each also
+  takes a `prefix`, which its ids carry. None of them draws the dialogs.
+  They keep
+  `hub-changed-table.html`, `hub-stage.html` and `hub-dialogs.html` as they
+  are. The hub panels keep their regions, headings, link sentences and
+  dialogs (`hub-dialogs.html`) and include the sections, so the hub draws
+  exactly what it drew before (every hub render the hub unit tests make is
+  identical apart from the random request keys). The wizard page draws
+  its parts through `components/review-wizard-section.html`, which
+  includes the same section components, the filtered-out line and the
+  stream's dialogs.
 - The region each section sits in (`data-in-place-region`,
   `data-refresh-url`) redraws from the hub tab's address on the hub and
   from the wizard page's address in the wizard, so an action redraws in
@@ -2545,41 +2710,76 @@ rows, progress words, sort mapping, run limits),
 
 ### Wizard delivery plan
 
-Four pull requests, after this spec's review:
+Four pull requests, after this spec's review (the slices of #2123; the
+start page and the dashboard card come first, the hub's section split
+with the first slice that draws a section). Slices 1 to 3 board one
+train together, after the Administrator's pk-local check of the whole
+flow, since the menu entry and the card open pages whose sections arrive
+in slices 2 and 3:
 
-1. **Shared section component**, no visible change:
-   `review_sections.read_section`, the `census_tab`, `ministry_tab` and
-   `other_tab` parameters, the four `components/review-*-section.html`
-   templates and the hub panels including them, and `PledgeQuery`. Tests:
-   the hub's existing tab, row-action and query-count tests unchanged and
-   passing; render comparisons of each hub tab before and after; unit
-   tests of `other_tab(keep=…)` and `ministry_tab(scoped=True)` (a leader
-   never gets a row for a Ministry they do not lead); `PledgeQuery` parse
-   tests matching today's 400s.
-2. **Run storage**: the `ReviewRun` model and its migration (number from
-   the coordinator, frozen SQL), grants and schema inventory. Tests: model
-   constraints (one row per user and campaign, cascades), the schema audit
-   and migration tests.
-3. **Wizard pages and resume**: `review_streams.py`, `review_wizard.py`,
-   the views, templates, URLs and menu entry. Tests: unit tests of the
-   sequence (Name A–Z ties broken deterministically, grouped Family then
-   Member order, a Family with Member items only, the 5,000-page refusal,
-   the sort mapping); view tests per stream and role (exact 200, 303, 400
-   and 403 statuses; a leader offered only Ministry requests with the
-   choice skipped; a stream the reader may not open refused); resume
-   (several runs per reader, Continue, Discard, a discarded run's page); concurrency (a page drawn after
-   another reviewer's decision shows the live stage; a stale action gets
-   the stream's refusal); only matched items shown with the filtered-out
-   line; Limitations Family page only with the financial answer; the
-   dashboard card's two wordings; query-count tests per page; the navigation
-   inventory tests; browser tests (Chromium and WebKit locally, all three
-   in CI) that Previous and Next, in both rows, keep their screen position across pages
-   of different heights and after an in-place action, and that focus
-   returns to the control used. A pk-local check by the Administrator.
-4. **Table entry buttons**: Review these one at a time on the five
-   tables. Tests: each table's button posts its view and opens page 1
-   with that view's sequence; the sort mapping; the existing-runs dialog (Continue per run, Start a new run, Cancel; finished runs not listed); the unavailable state on
-   an empty table; the renamed-label sweep of every table test.
+1. **Run storage, start page, page frame, menu entry and card**:
+   `ReviewRun` and frozen file 0178, its grants, schema inventory and
+   users-swap entries; `review_streams.py` (each stream's label, access,
+   query class, filter template, read and audit) and
+   `pledge_review_views.PledgeQuery`; `review_wizard.py` (the sequence,
+   the sorts, the progress words, the 5,000-page refusal); the views,
+   templates and URLs of the start page and the run pages with their two
+   navigation rows, Previous, Next and Finish, the resume list with
+   Continue and Discard (removed again in R52 Part W), the menu entry and
+   the Review one at a time card. The run pages' section region is empty. Tests: unit tests of the
+   sequence (name-order ties broken deterministically, grouped Family then
+   Member order, a Family with Member items only, the 5,000-page refusal)
+   and the progress words; view tests under the web login (exact
+   statuses: a run started, moved, finished and no longer open; several
+   runs listed, continued and discarded; another reader's run never
+   shown; the start refusals; a leader offered only Ministry requests
+   with the choice skipped; the run guard); the menu inventory; browser
+   tests of the start page, the rows and the card.
+2. **Shared section component and Family pages** (built):
+   `review_sections.read_section` over the hub's own functions, the four
+   `components/review-*-section.html` templates and the hub panels
+   including them (the hub draws exactly what it drew: a render
+   comparison of every hub render the hub unit tests make, before and
+   after); then the Family pages of Pledges, Additional information,
+   Census changes and Limitations, each with only the matched items, the
+   filtered-out line, and actions posting to the stream pages and
+   redrawing in place from the wizard page's address; and every page,
+   Member pages included, naming its subject only while it is listed.
+   Tests: the hub's tab, row-action and query-count tests unchanged; the
+   narrowing to matched items with the filtered-out line; the Limitations
+   Family page's answers and pledge parts; a replaced item shown by its
+   replacement; a page drawn after a decision shows the live stage and a
+   stale action gets the stream's refusal; a leader who lost the Ministry
+   sees no name; query-count tests per page.
+3. **Member pages** (built): Ministry requests (through
+   `hub_actions.ministry_worklist`, so a leader never gets a row for a
+   Ministry they do not lead), Census
+   Member and New Member pages and Limitations Member pages; browser
+   tests (Chromium and WebKit locally, all three in CI) that Previous and
+   Next, in both rows, keep their screen position across pages of
+   different heights and after an in-place action, and that focus
+   returns to the control used.
+4. **Table entry buttons** (built): Review these one at a time on the
+   five tables. Tests: each table's button posts its view and opens page 1
+   with that view's sequence; the sort mapping; the existing-runs dialog (removed again in R52 Part W); the unavailable state on
+   an empty table (no label is renamed, so no table test needed a sweep).
+   With it, the dashboard card becomes the side-by-side
+   [dashboard pane](#wizard-entry-points) (R52 Part W): browser tests of
+   the side-by-side row at 1280px (the gap below Home's heading, the text
+   at the pane's top and its button centred below it, the greyed
+   state), the stacked parts with no sideways scroll at 320px,
+   and the full-width tables without the wizard. R52 Part W's findings
+   follow in the same pull request: no History in the wizard, Finish
+   always in the middle slot,
+   each stream's Basic search help, the
+   Last name (A–Z) sort label, the Family and Member header lines, the
+   Family-only progress words in the grouped streams, no footer links on
+   the pages, the pane's shorter help line, and no unfinished
+   runs anywhere (a start replaces them); tests of each, with the resume
+   tests removed. R52 Part W2's follow in it too: the pane's **In bulk**
+   label (was By table), the wizard's own stream order with Additional
+   information last, and Pledges runs without the Cannot contribute
+   Families; tests of each.
 
 ## Update phase
 

@@ -792,6 +792,8 @@ CLOSURE_TABLES = {
         "stewardship_accounts",
         "0035_parishsoft_organization_choice",
     ),
+    # The review wizard's runs (0178, #2123), which web starts and moves.
+    "stewardship_review_run": ("stewardship_reports", "0048_review_run"),
 }
 
 
@@ -1363,6 +1365,10 @@ def runtime_grants(role, *, target=None):
         from .reports.archive_grants import add_archive_web_grants
 
         add_archive_web_grants(tables, columns)
+        # The review wizard's runs (0178, #2123): the web starts, moves,
+        # finishes and discards a reader's own runs; its guard keeps a
+        # started run's sequence fixed.
+        tables["stewardship_review_run"] = {"SELECT", "INSERT", "UPDATE", "DELETE"}
 
         columns["stewardship_outbox_message"] = {
             "SELECT": set(METADATA_FIELDS) | {"created_at", "updated_at", "finished_at"}

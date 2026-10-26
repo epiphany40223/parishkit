@@ -233,6 +233,10 @@ PAGES = {
     "campaign_comparison": Page("reports", _("Campaign comparison")),
     "financial_report": Page("reports", _("Financial stewardship")),
     # Review work: each stream's review worklist (review pipeline spec).
+    # The review wizard (#2123): its start page, a menu entry, and its run
+    # pages under it.
+    "review_wizard": Page("review", _("Review one at a time")),
+    "review_wizard_page": Page("review", _("Review one at a time"), "review_wizard"),
     "limitations_report": Page("review", _("Limitations")),
     "census_changes": Page("review", _("Census changes")),
     # Not a menu entry: Census changes links to it (#528, ADM-09; renamed
@@ -490,12 +494,26 @@ class Entry:
     holds through an assigned Ministry. No entry's route names a campaign
     (single-campaign interim, #865); each page finds the current one.
     ``reason`` returns why the entry is unavailable right now, or None.
+    ``any_of`` names other entries instead of a capability: the entry is in
+    the menu while the viewer's menu has any of them, and available while
+    any of them is (the review wizard, which reviews the five streams).
     """
 
     name: str
-    capability: Capability
+    capability: Capability | None
     reason: Callable = _never
     scoped: bool = False
+    any_of: tuple = ()
+
+
+# The Review work streams' pages, which the review wizard reviews (#2123).
+REVIEW_STREAMS = (
+    "census_changes",
+    "ministry_report",
+    "pledges_to_enter",
+    "information_queue",
+    "limitations_report",
+)
 
 
 # The menu, in order within each group (admin-portal spec, "Menu groups").
@@ -523,7 +541,12 @@ MENU = (
     Entry("report_emails", Capability.CAMPAIGN_REPORT, _campaign),
     Entry("family_portal", _ADMIN),
     Entry("presence", _ADMIN),
-    # Review work, in the Administrator's order (R39 finding 1).
+    # Review work, in the Administrator's order (R39 finding 1). Review one
+    # at a time (#2123) comes first, ahead of My review work, offered while
+    # any stream's page is.
+    # Its own reason check is only the access gate's first look (no
+    # campaign); the menu greys it as its streams are greyed (``menu``).
+    Entry("review_wizard", None, _campaign, any_of=REVIEW_STREAMS),
     Entry("census_changes", Capability.VIEW_CENSUS, CENSUS),
     Entry("ministry_report", Capability.MINISTRY_REPORT, MINISTRY, scoped=True),
     Entry("pledges_to_enter", Capability.FINANCIAL_DETAIL, FINANCIAL),
@@ -679,9 +702,21 @@ def menu(state, may_open):
     """
     items = []
     for entry in MENU:
-        if not may_open(entry):
+        if entry.any_of:
+            # Offered with any of its entries, available with any of them.
+            offered = [
+                other
+                for other in MENU
+                if other.name in entry.any_of and may_open(other)
+            ]
+            if not offered:
+                continue
+            reasons = [other.reason(state) for other in offered]
+            reason = None if None in reasons else reasons[0]
+        elif not may_open(entry):
             continue
-        reason = entry.reason(state)
+        else:
+            reason = entry.reason(state)
         url = None
         if reason is None:
             url = reverse(f"{NAMESPACE}:{entry.name}")

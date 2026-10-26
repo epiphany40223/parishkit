@@ -376,6 +376,7 @@ from .report_email_models import (  # noqa: E402,F401
     ReportEmailSnapshot,
     ReportEmailTest,
 )
+from .review_run_models import ReviewRun  # noqa: E402,F401
 from .verification_models import (  # noqa: E402,F401
     FactVerificationRequest,
     FactVerificationResult,

@@ -443,6 +443,50 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
 .review-work > h2, .review-work-stream > h3 { flex: 0 0 10rem; margin: 0; }
 .review-work > .link-cards, .review-work-stream > .link-cards { flex: 1 1 32rem; grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); }
 .review-work-stream + .review-work-stream { margin-top: .75rem; }
+/* Review one at a time beside the tables (review-work-split.html, #2123, R52 Part W): the One
+   at a time pane, a vertical rule with "or", then the In bulk stream groups. The pane's text
+   sits at its top and its button is centred in the height left below it (margin-block: auto,
+   with no justify-content, and no flex gap, which auto margins would leave out of the centring),
+   so it reads as the panel's main action. The split is a container,
+   so the layout follows the room the panel has, whether or not the menu is open. From 48rem
+   (a laptop window, menu open) the parts sit side by side; beside the pane the stream names
+   take 7rem and the cards 8.5rem columns with a little less padding (and the panels a little
+   less space), so four cards share a row with the name and My review work still fits a
+   1366 x 768 window. A label prefers to break between words and a count never breaks (main's
+   overflow-wrap: anywhere would split "review" letter by letter in a narrow card).
+   Below 48rem (a phone or a narrow window) the parts stack: the pane full width with its
+   button after its text (beside it while there is room), a horizontal rule with "or", then the
+   tables at full width. Without the wizard the tables column is alone, as before. */
+.review-work-split { container: review-work / inline-size; }
+.review-work-split-row { display: flex; flex-direction: column; gap: .75rem; }
+.review-work-wizard { display: flex; flex-flow: row wrap; align-items: center; gap: .5rem 1rem; box-sizing: border-box; padding: 1rem; background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: var(--radius-small); }
+.review-work-wizard-text { flex: 1 1 16rem; display: flex; flex-direction: column; gap: .5rem; }
+.review-work-kicker { display: block; font-size: .8rem; font-weight: 600; line-height: 1.4; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.review-work-wizard .review-work-kicker { color: var(--accent-strong); }
+.review-work-wizard-help, .review-work-wizard-off { font-size: .9rem; line-height: 1.45; color: var(--muted); }
+.review-work-wizard > .button, .review-work-wizard-off { flex: 0 1 auto; max-width: 100%; margin-block: 0; }
+.review-work-or { display: flex; align-items: center; gap: .4rem; font-size: .8rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+.review-work-or::before, .review-work-or::after { content: ""; flex: 1 1 auto; height: 1px; background: var(--border); }
+.review-work-tables { min-width: 0; }
+.review-work-tables > .review-work-kicker { margin-bottom: .4rem; }
+/* My review work's stream panels are panels of their own: the first starts level with the pane. */
+.review-work-tables > .review-work-kicker + .panel.review-work { margin-top: 0; }
+@container review-work (width >= 48rem) {
+  .review-work-split-row { flex-direction: row; align-items: stretch; gap: 1.25rem; }
+  .review-work-wizard { flex: 0 0 13rem; flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 0; }
+  .review-work-wizard-text { flex: none; }
+  .review-work-wizard > .button, .review-work-wizard-off { margin-block: auto; }
+  .review-work-or { flex-direction: column; }
+  .review-work-or::before, .review-work-or::after { width: 1px; height: auto; }
+  .review-work-tables { flex: 1 1 auto; }
+  .review-work-wizard ~ .review-work-tables :is(.review-work > h2, .review-work-stream > h3) { flex-basis: 7rem; }
+  .review-work-wizard ~ .review-work-tables :is(.review-work, .review-work-stream) > .link-cards { flex-basis: 20rem; grid-template-columns: repeat(auto-fit, minmax(min(8.5rem, 100%), 1fr)); }
+  .review-work-wizard ~ .review-work-tables :is(.link-card > a, .link-card.link-card-off) { column-gap: .5rem; padding-inline: .6rem; }
+  .review-work-wizard ~ .review-work-tables .link-card :is(.link-card-label, .link-card-note) { overflow-wrap: break-word; }
+  .review-work-wizard ~ .review-work-tables .link-card-count { white-space: nowrap; }
+  .review-work-wizard ~ .review-work-tables .panel.review-work { padding: .4rem .85rem; margin-block: .25rem; }
+  .review-work-wizard ~ .review-work-tables > .review-work-kicker + .panel.review-work { margin-top: 0; }
+}
 /* Stat tiles (ui-conventions "Stat tiles", #1540), drawn by components/stat-tiles.html: a row of
    cards, wrapping, each its label, value and up to two explanation lines; a row's tiles stretch
    to one height. */
@@ -1270,6 +1314,14 @@ table .nowrap, .data-table .cell-line { white-space: nowrap; }
 .bulk-bar [data-select-all-button] { min-width: calc(15ch + 2.5rem + 2 * var(--button-border-width)); }
 .bulk-hint { flex-basis: 100%; margin: 0; min-height: 1.6em; min-height: 1lh; }
 .bulk-hint[data-cleared] { visibility: hidden; }
+/* Review these one at a time (#2123): its form holds only hidden fields and
+   takes no place in the selection bar; its button names it (form=). The
+   reason of an unavailable one is a line of its own after every other
+   control and line of the bar (order), never on the buttons' line, so it
+   moves none of them. The runs it offers to continue are one line each,
+   Continue after the words. */
+.bulk-bar .wizard-entry { display: contents; }
+.wizard-entry-reason { flex-basis: 100%; order: 1; margin: 0; }
 main nav.table-nav { justify-content: space-between; margin-block: .75rem; font-size: .925rem; }
 .table-nav .table-count { margin: 0; }
 main nav.table-nav form { gap: .5rem .75rem; }

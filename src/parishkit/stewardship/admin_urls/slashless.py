@@ -70,6 +70,8 @@ SLASHLESS = (
     ("reports/comparison", "campaign_comparison"),
     ("reports/financial", "financial_report"),
     ("reports/financial/pledges", "pledges_to_enter"),
+    ("reports/review", "review_wizard"),
+    ("reports/review/<int:position>", "review_wizard_page"),
     ("reports/limitations", "limitations_report"),
     ("reports/census", "census_changes"),
     ("reports/census/update-parishsoft", "update_parishsoft"),

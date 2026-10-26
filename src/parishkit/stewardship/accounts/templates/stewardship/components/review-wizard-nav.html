@@ -1,0 +1,29 @@
+{% load i18n stewardship %}{% comment %}
+  One of a review wizard page's two navigation rows (#2123; review pipeline
+  spec, "Wizard navigation"), drawn twice by review-wizard-page.html:
+  ``where`` is "top" (under the heading) or "bottom" (pinned to the bottom
+  of the screen, stepper-v1.css). Each row carries the progress line and a
+  slim bar (a native progress element; the line already says it, so the
+  bar is hidden from screen readers), then Previous, Finish and Next in the
+  stepper's three fixed slots (ui-conventions "Stepper button row"), as the
+  Family form's row: Previous always on the left, Finish always in the
+  middle (on the last page too, R52 Part W) and Next always on the right;
+  page 1 keeps Previous's slot empty and the last page Next's, so no
+  button moves from page to page. Each is a small POST form (CSRF; the
+  address names the run and the target page): Previous and Next post to the page they open, Finish to
+  this page with finish=1. They never ask, save or discard anything. The
+  page a move opens puts focus on the control used (``focus_previous`` or
+  ``focus_next``, from the view's ``focus``; on the last page, which has
+  no Next, Finish takes Next's focus), so Enter moves on again. The control is
+  marked data-review-focus and ui-v1.js focuses it without scrolling: an
+  autofocus would scroll a phone's page down to the bottom row's sticky
+  spot (Chromium), moving both rows off their screen spots.
+{% endcomment %}<div class="review-wizard-nav review-wizard-nav-{{ where }}" data-review-nav="{{ where }}">
+<p class="review-wizard-progress" data-review-progress>{{ progress }}</p>
+<progress class="review-wizard-bar" max="{{ size }}" value="{{ position }}" aria-hidden="true"></progress>
+<div class="review-wizard-actions">
+{% if previous_url %}<form method="post" action="{{ previous_url }}" data-nav-slot="back">{% csrf_token %}<input type="hidden" name="from" value="previous-{{ where }}">{% button type="submit" variant="secondary" data-review-move="previous" data-review-focus=focus_previous %}{% translate "Previous" %}{% endbutton %}</form>{% else %}<span data-nav-slot="back"></span>{% endif %}
+{# Finish is the primary only on the last page, where it is the way on. #}<form method="post" action="{{ here_url }}" data-nav-slot="action">{% csrf_token %}<input type="hidden" name="finish" value="1">{% if next_url %}{% button type="submit" variant="secondary" data-review-move="finish" %}{% translate "Finish" %}{% endbutton %}{% else %}{% button type="submit" data-review-move="finish" data-review-focus=focus_next %}{% translate "Finish" %}{% endbutton %}{% endif %}</form>
+{% if next_url %}<form method="post" action="{{ next_url }}" data-nav-slot="next">{% csrf_token %}<input type="hidden" name="from" value="next-{{ where }}">{% button type="submit" data-review-move="next" data-review-focus=focus_next %}{% translate "Next" %}{% endbutton %}</form>{% else %}<span data-nav-slot="next"></span>{% endif %}
+</div>
+</div>

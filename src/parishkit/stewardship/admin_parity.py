@@ -324,6 +324,16 @@ LEDGER = {
     # PledgeDecisions service, and its rows with their ids and versions are
     # export pledges --format jsonl's.
     "pledges_to_enter": command("report pledges", "pledges decide"),
+    # Review one at a time (#2123) is another view of the five streams'
+    # tables, whose commands already read and decide every item.
+    "review_wizard": permanent(
+        "a browser view of the review tables one subject at a time; the "
+        "streams' report and decide commands cover its reads and actions"
+    ),
+    "review_wizard_page": permanent(
+        "a browser view of the review tables one subject at a time; the "
+        "streams' report and decide commands cover its reads and actions"
+    ),
     "pledges_to_enter_export": command("export pledges"),
     # Limitations (#1685, #1735): counts by stage only, as its rows name
     # Families and Members; its decisions go through the page's own
