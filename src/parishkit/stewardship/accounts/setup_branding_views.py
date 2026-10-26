@@ -64,7 +64,7 @@ class SetupLogoForm(LogoForm):
         # message, so a refusal wrapping at 320 px moves neither the preview
         # box nor the buttons below it (#2270).
         logo.error_sizes = (
-            str(LOGO_TOO_LARGE).replace("{size}", "10.0 MB"),
+            str(LOGO_TOO_LARGE).replace("{size}", "999.9 MB"),
             str(_("Choose a supported, bounded static image.")),
         )
         setup_help.apply(self, setup_help.LOGO, replace=True)

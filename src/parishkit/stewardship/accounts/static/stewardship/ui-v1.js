@@ -5355,7 +5355,7 @@
       };
       // A file the browser cannot draw is not kept as the preview.
       image.addEventListener("error", () => {
-        if (url) saved();
+        if (url && image.src === url) saved();
       });
       input.addEventListener("change", update);
       window.addEventListener("pagehide", forget);

@@ -94,6 +94,10 @@ def test_chosen_logo_is_previewed_without_moving_anything(
     assert first in page.evaluate("() => window.__revoked")
     assert shown(page).startswith("blob:") and shown(page) != first
     assert layout(page) == before
+    # Leaving the page releases the current object URL too.
+    current = shown(page)
+    page.evaluate("() => window.dispatchEvent(new Event('pagehide'))")
+    assert current in page.evaluate("() => window.__revoked")
     field.set_input_files([])
     assert shown(page) is None
     assert layout(page) == before
