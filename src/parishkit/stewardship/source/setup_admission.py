@@ -186,9 +186,15 @@ def retired_handler():
         """Refuse to run a setup load; setup checks the parish data instead."""
         raise PermissionError("The setup parish data load has been retired.")
 
+    def admit(action, status):
+        """Never let a worker claim the retired load; everything else as before."""
+        if action in {"claim", "hint"}:
+            return False
+        return admit_setup_task(action, status)
+
     return Handler(
         queue=WorkQueue.SOURCE,
-        admit=admit_setup_task,
+        admit=admit,
         execute=retired,
         recover=recovery_plan,
         scope=work_transaction,

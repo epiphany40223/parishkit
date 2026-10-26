@@ -13,7 +13,7 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import check_version
-from parishkit.stewardship.web.refusals import UserFacingDenied
+from parishkit.stewardship.web.refusals import UserFacingDenied, UserFacingError
 
 from .sessions import authenticated_admin, database_now
 from .setup_forms import validate_values
@@ -31,6 +31,9 @@ class DraftView:
     idle_at: datetime
     absolute_at: datetime
     watchdog_at: datetime | None
+    # Whether a load bound before #2201 is still on the attempt (it fixes the
+    # timezone); the web starts none now.
+    source_task_id: UUID | None = None
     # Whether the newest parish data check is ready and checked the staged
     # ParishSoft key and organization saved now (setup_checks.checked_source,
     # #2201): what completes the Check parish data step.
@@ -85,6 +88,7 @@ def view_draft(request, service, attempt_id=None):
             window.idle_at,
             window.absolute_at,
             window.watchdog_at,
+            row.source_task_id,
             row.state == SetupState.COLLECTING and checked_source(row) is not None,
         )
 
@@ -128,6 +132,15 @@ def save_sections(request, service, attempt_id, *, updates, expected_version):
                 link=reverse("admin:setup"),
                 link_label=_("Open the setup overview"),
             )
+        if "parish" in updates and attempt.source_task_id is not None:
+            # SQL still fixes the timezone of an attempt with a bound
+            # (pre-#2201) load; say so in words rather than fail in the database.
+            original = SetupDraftSection.objects.get(attempt=attempt, step="parish")
+            if updates["parish"]["timezone"] != original.values["timezone"]:
+                raise UserFacingError(
+                    _("The parish data load fixes this setup's timezone."),
+                    fix=_("Cancel and start a new setup to change it."),
+                )
         if "branding" in updates:
             from .branding_staging import staged_bundle
 

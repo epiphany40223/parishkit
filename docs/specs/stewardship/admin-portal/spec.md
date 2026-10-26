@@ -577,7 +577,8 @@ is no Loading parish data page (its address is gone, with no redirect), and
 an attempt still marked loading, which no Production deployment has, can
 only expire under its two-hour watchdog. The retired load's database
 tables, task type and audit records stay for a later migration, and the
-scheduler still cancels a stray load task. An attempt already confirmed (frozen) finishes as it was
+scheduler never lets a worker claim a stray load task, and setup cleanup
+settles it when the setup ends. An attempt already confirmed (frozen) finishes as it was
 confirmed.
 
 Restore is an operator command performed before bootstrap/wizard. A restored,

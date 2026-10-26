@@ -41,13 +41,6 @@ def answer(page, address, bodies):
     return polls
 
 
-def done_summary():
-    """The summary a finished load announces."""
-    from parishkit.stewardship.accounts.setup_progress_views import SUMMARIES
-
-    return SUMMARIES["done"]
-
-
 def credential(target, state):
     """One credential request row, as ``finalization_status`` reads it."""
     return {

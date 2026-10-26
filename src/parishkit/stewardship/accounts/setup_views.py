@@ -231,6 +231,12 @@ def setup_step(request, step):
             initial=initial_values(step, draft.sections.get(step, {})),
             **options,
         )
+        if step == "parish" and draft.source_task_id is not None:
+            form.fields["timezone"].disabled = True
+            form.fields["timezone"].help_text = (
+                "The source load fixes this setup's timezone. "
+                "Cancel and start a new setup to change it."
+            )
         if request.method == "POST":
             version = expected_version(request.POST.get("version"))
             if version != draft.status.version:
