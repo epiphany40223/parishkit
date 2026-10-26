@@ -6639,7 +6639,7 @@ BEGIN
         FROM stewardship_portal_session s
         JOIN stewardship_portal_user u ON u.id=s.principal_id AND NOT u.disabled
         JOIN stewardship_address_rule rule ON rule.configuration_id=selected
-            AND rule.email=u.email AND rule.roles @> '["administrator"]'::jsonb
+            AND rule.email=u.email AND rule.roles OPERATOR(pg_catalog.@>) '["administrator"]'::jsonb
         WHERE s.id=NEW.session_id AND s.principal_id=NEW.owner_id;
     live=login.id IS NOT NULL AND login.revoked_at IS NULL
         AND login.expires_at>stamp AND login.last_activity_at>stamp-interval '60 minutes';
@@ -6706,7 +6706,11 @@ BEGIN
         -- Only the worker returns a failed load (#1353), in its failure transaction.
         OR (OLD.state='loading' AND NEW.state='collecting' AND (task.state='succeeded'
             OR (task.state='failed' AND current_user='pk_stewardship_worker')))
-        OR (OLD.state='collecting' AND NEW.state='frozen' AND task.state='succeeded')) IS NOT TRUE THEN
+        -- Freezing needs no load since #2201: the readiness guard, in the
+        -- same transaction, requires the current parish data check. A load
+        -- an earlier release bound must have finished.
+        OR (OLD.state='collecting' AND NEW.state='frozen'
+            AND (NEW.source_task_id IS NULL OR task.state IN ('succeeded','failed')))) IS NOT TRUE THEN
         RAISE EXCEPTION 'Setup transition has no completed owning work'
             USING ERRCODE='23514';
     END IF;
@@ -7956,7 +7960,13 @@ CREATE FUNCTION public.stewardship_setup_install_selected_v1(ready_id uuid, cred
             AND credential.version=$3 AND credential.fingerprint=$4
             AND credential.scrubbed_at IS NULL
         WHERE ready.id=$1 AND CASE credential.target
+            -- The parish data check (#2201), or the staged load a binding
+            -- made before it holds.
             WHEN 'parishsoft' THEN EXISTS (
+                SELECT 1 FROM public.stewardship_setup_source_check checked
+                WHERE checked.id=ready.source_check_id AND checked.credential_id=$2
+                    AND checked.credential_version=$3 AND checked.fingerprint=$4)
+                OR EXISTS (
                 SELECT 1 FROM public.stewardship_setup_source_result result
                 JOIN public.stewardship_setup_source_exchange exchange ON exchange.id=result.exchange_id
                 WHERE result.id=ready.source_result_id AND exchange.credential_id=$2
@@ -8434,7 +8444,7 @@ BEGIN
                 ON owner.id=login.principal_id AND NOT owner.disabled
             JOIN public.stewardship_address_rule rule
                 ON rule.configuration_id=attempt.base_id AND rule.email=owner.email
-                AND rule.roles @> '["administrator"]'::jsonb
+                AND rule.roles OPERATOR(pg_catalog.@>) '["administrator"]'::jsonb
             WHERE login.id=attempt.session_id AND login.principal_id=attempt.owner_id
                 AND login.revoked_at IS NULL AND login.expires_at>clock_timestamp()
                 AND login.last_activity_at>clock_timestamp()-interval '60 minutes')
@@ -8442,24 +8452,26 @@ BEGIN
         RAISE EXCEPTION 'Setup readiness requires a live frozen original request'
             USING ERRCODE='23514';
     END IF;
-    IF NOT EXISTS (
-        SELECT 1 FROM public.stewardship_setup_source_result result
-        JOIN public.stewardship_setup_source_exchange exchange
-            ON exchange.id=result.exchange_id AND exchange.attempt_id=attempt.id
-            AND exchange.scrubbed_at IS NULL
-        JOIN public.stewardship_task_run task ON task.id=exchange.task_id
-            AND task.root_id=attempt.source_task_id AND task.state='succeeded'
-            AND task.fence=exchange.task_fence
+    -- The source is the attempt's newest parish data check (#2201): ready,
+    -- of its unscrubbed staged ParishSoft key at the exact version,
+    -- fingerprint and organization it checked, with no later check of the
+    -- attempt that was not discarded. A staged load is never bound any more;
+    -- the final load at Finish setup is the only full load.
+    IF NEW.source_result_id IS NOT NULL OR NOT EXISTS (
+        SELECT 1 FROM public.stewardship_setup_source_check checked
         JOIN public.stewardship_setup_sealed_credential credential
-            ON credential.id=exchange.credential_id AND credential.scrubbed_at IS NULL
-            AND credential.version=exchange.credential_version
-            AND credential.fingerprint=exchange.fingerprint
-        JOIN public.stewardship_source_snapshot snapshot
-            ON snapshot.id=result.snapshot_id
-            AND snapshot.state='ready' AND snapshot.task_id=task.id
-            AND snapshot.source_fence=exchange.source_fence
-        WHERE result.id=NEW.source_result_id) THEN
-        RAISE EXCEPTION 'Setup readiness source is not the exact reviewed catalog'
+            ON credential.id=checked.credential_id AND credential.attempt_id=attempt.id
+            AND credential.target='parishsoft' AND credential.scrubbed_at IS NULL
+            AND credential.version=checked.credential_version
+            AND credential.fingerprint=checked.fingerprint
+            AND (credential.settings OPERATOR(pg_catalog.->>) 'organization_id')
+                =checked.organization_id::text
+        WHERE checked.id=NEW.source_check_id AND checked.attempt_id=attempt.id
+            AND checked.state='ready'
+            AND NOT EXISTS (SELECT 1 FROM public.stewardship_setup_source_check later
+                WHERE later.attempt_id=attempt.id AND later.state<>'discarded'
+                    AND later.created_at>checked.created_at)) THEN
+        RAISE EXCEPTION 'Setup readiness source is not the current parish data check'
             USING ERRCODE='23514';
     END IF;
     IF NOT EXISTS (

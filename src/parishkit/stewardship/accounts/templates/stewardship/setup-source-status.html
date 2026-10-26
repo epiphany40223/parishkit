@@ -1,0 +1,22 @@
+{% load i18n stewardship %}{% comment %}
+  One state of Check parish data's status (#2201), drawn in the page's status
+  slot: ``state`` is "initial", "waiting", "ready", "failed" or "stale".
+  The page draws the current state once and every other state as an
+  invisible, aria-hidden copy (``ghost``) in the same grid cell, so the slot
+  is as tall as its tallest state at every width and the action row below
+  it never moves when the check moves on (ui-conventions "No layout shift").
+  A copy has no role, link or control, and the ready copy holds wide sample
+  totals.
+{% endcomment %}{% if state == 'initial' %}<p{% if ghost %} class="reserve-ghost" aria-hidden="true"{% endif %}>{% blocktranslate trimmed with organization=organization_label %}Check that ParishSoft answers for {{ organization }} with the saved key.{% endblocktranslate %}</p>
+{% elif state == 'waiting' %}<div{% if ghost %} class="reserve-ghost" aria-hidden="true"{% endif %}><p class="notice"{% if not ghost %} role="status" data-source-check-waiting{% endif %}>{% include 'stewardship/components/spinner.html' %} {% translate "Checking the parish data in ParishSoft…" %}</p>
+<p class="help">{% translate "It usually takes a few seconds." %}</p></div>
+{% elif state == 'ready' %}{% if ghost %}{% blocktranslate trimmed count counter=999999 with total=999999|number asvar families %}{{ total }} Family{% plural %}{{ total }} Families{% endblocktranslate %}{% blocktranslate trimmed count counter=999999 with total=999999|number asvar members %}{{ total }} Member{% plural %}{{ total }} Members{% endblocktranslate %}{% else %}{% blocktranslate trimmed count counter=check.families with total=check.families|number asvar families %}{{ total }} Family{% plural %}{{ total }} Families{% endblocktranslate %}{% blocktranslate trimmed count counter=check.members with total=check.members|number asvar members %}{{ total }} Member{% plural %}{{ total }} Members{% endblocktranslate %}{% endif %}<div class="notice{% if ghost %} reserve-ghost{% endif %}"{% if ghost %} aria-hidden="true"{% else %} role="status" data-source-checked{% endif %}>
+<p>{% blocktranslate trimmed with organization=organization_label %}ParishSoft answered for <strong>{{ organization }}</strong>: {{ families }} and {{ members }}.{% endblocktranslate %}</p>
+<p>{% translate "Finish setup loads all of this parish data, which takes several minutes. Its counts can differ a little from these if ParishSoft changes meanwhile." %}</p>
+</div>
+{% elif state == 'failed' %}<div class="notice notice-error{% if ghost %} reserve-ghost{% endif %}"{% if ghost %} aria-hidden="true"{% else %} role="status" data-source-check-error="{{ check.error_code }}"{% endif %}>
+<p>{% if ghost %}{{ check_error_reserve }}{% else %}{{ check_error }}{% endif %}</p>
+<p>{% if ghost or not check_fix %}<span{% if not ghost %} class="reserve-ghost" aria-hidden="true"{% endif %}>{% translate "Choose another organization or enter a different key" %}</span>{% else %}<a href="{% url 'admin:setup_credential' 'parishsoft' %}">{% translate "Choose another organization or enter a different key" %}</a>{% endif %}</p>
+</div>
+{% elif state == 'stale' %}<p class="notice{% if ghost %} reserve-ghost{% endif %}"{% if ghost %} aria-hidden="true"{% else %} role="status" data-source-stale{% endif %}>{% translate "The parish data needs checking again: the last check used an earlier ParishSoft connection." %}</p>
+{% endif %}

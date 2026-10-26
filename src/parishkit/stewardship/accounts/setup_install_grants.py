@@ -1,5 +1,7 @@
 """Safe frozen-setup proof and target-only initial credential intake grants."""
 
+from .setup_check_grants import BINDING_COLUMNS as CHECK_BINDING_COLUMNS
+from .setup_check_grants import TABLE as CHECK_TABLE
 from .setup_exchange_grants import SESSION_COLUMNS
 
 
@@ -22,6 +24,7 @@ def extend_initial_permissions(target, tables, metadata):
                 "id",
                 "intent_id",
                 "source_result_id",
+                "source_check_id",
                 "mail_delivery_id",
                 "slack_delivery_id",
             },
@@ -46,6 +49,8 @@ def extend_initial_permissions(target, tables, metadata):
             "stewardship_setup_source_exchange",
             {"id", "credential_id", "credential_version", "fingerprint"},
         ),
+        # The parish data check's binding (#2201).
+        (CHECK_TABLE, set(CHECK_BINDING_COLUMNS)),
     ):
         if table not in tables:
             tables[table] = {"SELECT"}

@@ -1,7 +1,7 @@
 """The setup wizard's tests and final steps in their order (#1476, #1578).
 
 Test email follows Google Workspace connection and Test Slack the Slack
-notifications step; Finish setup follows Load parish data (no Review page,
+notifications step; Finish setup follows Check parish data (no Review page,
 #2145) and checks the tests' results itself. These pages are drawn from
 the real templates and view helpers:
 

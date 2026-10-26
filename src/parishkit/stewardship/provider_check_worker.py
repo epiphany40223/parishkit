@@ -98,17 +98,26 @@ class CheckSession(requests.Session):
     Workspace check needs before it may reach Google from LOCAL.
     """
 
-    def __init__(self, profile=None, base_url=None, redirect=None, *, families=False):
+    def __init__(
+        self,
+        profile=None,
+        base_url=None,
+        redirect=None,
+        *,
+        families=False,
+        members=False,
+    ):
         """Bind the session to the request's profile, base URL and allowlist.
 
         ``families`` also admits the one-row Family search the setup
-        wizard's organization lookup makes (#1554); no other check may send
-        it.
+        wizard's organization lookup and parish data check make (#1554,
+        #2201), and ``members`` the check's one-row Member search; no other
+        check may send them.
         """
         super().__init__()
         if profile is not None and not isinstance(profile, DeploymentProfile):
             raise ValueError("A provider check requires a deployment profile.")
-        if families and profile is None:
+        if (families or members) and profile is None:
             raise ValueError("A Family search requires a deployment profile.")
         self.trust_env = False
         self.profile = profile
@@ -117,6 +126,8 @@ class CheckSession(requests.Session):
         self.endpoints = endpoints(profile, self.base_url)
         if families:
             self.endpoints |= {("POST", self.base_url + "/families/search")}
+        if members:
+            self.endpoints |= {("POST", self.base_url + "/members/search")}
 
     def request(self, method, url, **kwargs):
         """Forbid redirects/proxies; the subprocess parent supplies a hard timeout."""
@@ -502,10 +513,122 @@ def lookup_organizations(value, *, profile, base_url, seconds):
         return {"outcome": "unavailable"}
 
 
-def lookup_request(request):
-    """Answer one decoded lookup request as a JSON line's dict."""
+# The largest total the parish data check accepts for Families or Members
+# (#2201): far above any parish, and inside the check row's integer column.
+MAX_CHECK_TOTAL = 2**31 - 1
+
+
+def _total(rows, *, total_field, ordinal_field):
+    """ParishSoft's collection total from a one-row search answer, or raise.
+
+    An empty array is none; one row whose ordinal is 1 carries the total as
+    a positive integer. The row's content is never read further. Anything
+    else raises ``ValueError``, which the check reports as unreadable.
+    """
+    if rows == []:
+        return 0
+    if (
+        type(rows) is list
+        and len(rows) == 1
+        and type(rows[0]) is dict
+        and rows[0].get(ordinal_field) == 1
+        and type(rows[0].get(total_field)) is int
+        and 1 <= rows[0][total_field] <= MAX_CHECK_TOTAL
+    ):
+        return rows[0][total_field]
+    raise ValueError("Unrecognized search answer.")
+
+
+def check_source(value, *, organization, profile, base_url, seconds):
+    """The setup wizard's quick parish data check (#2201).
+
+    Three uncached requests with the staged key, each bounded by what is
+    left of ``seconds``: the organization list (``organization`` must be
+    on it; its cleaned name is kept), then one-row Family and Member
+    searches of that organization, whose rows carry ParishSoft's totals.
+    The answer is a dict with ``outcome``: ``refused`` (HTTP 401 or 403 on
+    any request), ``not_reached`` (the key does not reach the
+    organization), ``unreadable`` (a malformed or over-bound answer),
+    ``unavailable`` (unreachable, an error status or out of time), or
+    ``ok`` with ``name`` (None when ParishSoft names nothing),
+    ``families`` and ``members`` (the totals). No Family or Member content
+    leaves this function.
+    """
+    deadline = time.monotonic() + max(1, seconds - LOOKUP_MARGIN_SECONDS)
+
+    def client():
+        """A single-attempt client whose timeout fits the time still left."""
+        remaining = deadline - time.monotonic()
+        if remaining < 1:
+            raise TimeoutError("The parish data check ran out of time.")
+        return _lookup_client(credential, session, min(10, remaining))
+
+    scope = {"organizationIDs": [organization]}
     try:
-        if set(request) != LOOKUP_FIELDS or request["operation"] != "organizations":
+        credential = SourceCredential(value)
+        with CheckSession(profile, base_url, families=True, members=True) as session:
+            try:
+                records = organization_records(
+                    client().post_uncached("organizations/search", {}),
+                    allow_empty=True,
+                )
+            except IncompleteSourceCollection:
+                return {"outcome": "unreadable"}
+            row = dict(records).get(organization)
+            if row is None:
+                return {"outcome": "not_reached"}
+            families = _total(
+                client().post_uncached(
+                    "families/search", scope | {"pageSize": 1, "pageNumber": 1}
+                ),
+                total_field="totalResults",
+                ordinal_field="rowNumber",
+            )
+            members = _total(
+                client().post_uncached(
+                    "members/search",
+                    scope | {"maximumRows": 1, "startRowIndex": 0},
+                ),
+                total_field="recordCount",
+                ordinal_field="rowNum",
+            )
+            return {
+                "outcome": "ok",
+                "name": organization_name(row.get("organizationReportName")),
+                "families": families,
+                "members": members,
+            }
+    except ParishSoftAPIError as error:
+        if error.status_code in {401, 403}:
+            return {"outcome": "refused"}
+        # A success status whose body is not JSON is an unreadable answer.
+        if 200 <= error.status_code < 300:
+            return {"outcome": "unreadable"}
+        return {"outcome": "unavailable"}
+    except (ConfigError, CryptographicError):
+        # The staged key's own format was checked when it was sealed.
+        return {"outcome": "refused"}
+    except ValueError:
+        # An over-bound, redirected or unrecognized answer.
+        return {"outcome": "unreadable"}
+    except Exception:
+        # Unreachable, timed out or any other transport failure.
+        return {"outcome": "unavailable"}
+
+
+def lookup_request(request):
+    """Answer one decoded lookup or check request as a JSON line's dict.
+
+    ``organizations`` is the organization lookup (#1554); ``source_check``
+    is the parish data check (#2201), which also names the ``organization``
+    to check.
+    """
+    try:
+        operation = request.get("operation")
+        fields = LOOKUP_FIELDS | (
+            {"organization"} if operation == "source_check" else set()
+        )
+        if set(request) != fields or operation not in {"organizations", "source_check"}:
             raise ValueError("Invalid lookup request.")
         value = base64.b64decode(request["candidate"], validate=True)
         seconds = request["seconds"]
@@ -515,12 +638,27 @@ def lookup_request(request):
             or not 1 <= seconds <= MAX_LOOKUP_SECONDS
             or type(request["profile"]) is not str
             or type(request["base_url"]) is not str
+            or (
+                operation == "source_check"
+                and (
+                    type(request["organization"]) is not int
+                    or not 1 <= request["organization"] < 2**31
+                )
+            )
         ):
             raise ValueError("Invalid lookup request.")
         profile = DeploymentProfile(request["profile"])
         base_url = source_base_url(profile, request["base_url"])
     except (ValueError, TypeError, ConfigError):
         return {"outcome": "unavailable"}
+    if operation == "source_check":
+        return check_source(
+            value,
+            organization=request["organization"],
+            profile=profile,
+            base_url=base_url,
+            seconds=seconds,
+        )
     return lookup_organizations(
         value, profile=profile, base_url=base_url, seconds=seconds
     )

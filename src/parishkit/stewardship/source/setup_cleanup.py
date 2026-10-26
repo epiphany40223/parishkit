@@ -104,16 +104,28 @@ def _unscheduled():
     """Terminal attempts with source work that no cleanup Task owns yet.
 
     Source work is any load the attempt ever ran, so a load discarded before
-    setup ended (#1353) is still disposed of.
+    setup ended (#1353) is still disposed of, and its final load: since the
+    parish data check replaced the setup load (#2201), that is a new setup's
+    only one.
     """
+    from parishkit.stewardship.accounts.setup_install_models import (
+        SetupPreparationReceipt,
+    )
+
     scheduled = TaskRun.objects.filter(
         task_type=TASK_TYPE, domain_request_id=OuterRef("id")
     )
     loaded = TaskRun.objects.filter(
         task_type="setup_source_load", domain_request_id=OuterRef("id")
     )
+    finalized = SetupPreparationReceipt.objects.filter(
+        readiness__intent__attempt=OuterRef("id"),
+        id__in=TaskRun.objects.filter(task_type="setup_finalize").values(
+            "domain_request_id"
+        ),
+    )
     return SetupAttempt.objects.filter(state__in=("expired", "completed")).filter(
-        Exists(loaded), ~Exists(scheduled)
+        Exists(loaded) | Exists(finalized), ~Exists(scheduled)
     )
 
 

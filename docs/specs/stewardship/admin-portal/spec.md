@@ -211,7 +211,9 @@ configured ([#142](https://github.com/epiphany40223/parishkit/issues/142)):
    Users page. Access is by address only; no list grants a whole domain.
 6. ParishSoft API key, the
    [organization choice](#parishsoft-organization-choice) from the
-   organizations that key reaches, and a complete staged source load.
+   organizations that key reaches, and a
+   [quick check of the parish data](#checking-the-parish-data-during-setup).
+   Finish setup's final load is the only full ParishSoft load.
 7. Final confirmation, which checks readiness (the accepted tests) itself.
 
 The campaign is created afterwards, from Home, by
@@ -220,7 +222,7 @@ pages: the First campaign, Share options, Pages and emails and Dates and
 mail schedules pages it had before #142 are gone, and their old addresses
 are not kept (no redirects). Finishing setup creates no campaign, Families
 or Family codes. The wizard has no Review page either: Finish setup follows
-Load parish data directly, and the old `/admin/setup/preview` address is not
+Check parish data directly, and the old `/admin/setup/preview` address is not
 kept (no redirect;
 [#2145](https://github.com/epiphany40223/parishkit/issues/2145)). Review only
 repeated what the steps show and the exact public configuration, and Finish
@@ -241,12 +243,13 @@ email settings, Testing recipient and Google Workspace connection (its key is
 staged with the outgoing mail and Testing settings as its public scope), then
 Test email; then the one Slack notifications (optional) step, which takes the
 channel and the Slack bot token together, then Test Slack while Slack is on;
-then Parish logos and Administrative access. ParishSoft connection and Load
+then Parish logos and Administrative access. ParishSoft connection and Check
 parish data come last before Finish setup, next to each other
-([#1353](https://github.com/epiphany40223/parishkit/issues/1353)): the load
-can take a few minutes, so the rest of setup is done before the wait, and a
-load that fails on a wrong key is one step after the page that fixes it. No data-entry page needs the loaded data, and neither test needs the logos,
-the access lists, the ParishSoft key or the load. No setup page checks
+([#1353](https://github.com/epiphany40223/parishkit/issues/1353),
+[#2201](https://github.com/epiphany40223/parishkit/issues/2201)): a check
+that fails on a wrong key or organization is one step after the page that
+fixes it. No data-entry page needs ParishSoft's data, and neither test needs
+the logos, the access lists, the ParishSoft key or the check. No setup page checks
 how long ago the Admin signed in
 ([#1547](https://github.com/epiphany40223/parishkit/issues/1547); the
 one-hour setup window of #1402 is gone with it). The SQL guard on staged
@@ -254,8 +257,8 @@ setup credentials admits a credential only for the setup attempt's original
 owner and live, active session while the attempt is collecting, in Testing
 mode with no campaign. Each staged credential's audit entry records how old
 the session's sign-in was, in seconds, when it was sealed. The idle and
-absolute session limits and the two-hour load watchdog still apply. The final
-confirmation follows the load and checks the tests' results itself
+absolute session limits still apply. The final
+confirmation follows the check and checks the tests' results itself
 ([#1476](https://github.com/epiphany40223/parishkit/issues/1476),
 [#2145](https://github.com/epiphany40223/parishkit/issues/2145)). Every page shows a
 compact progress stepper: the current step by number and name, the count of
@@ -270,9 +273,10 @@ available with the reason), open on a wide screen and a collapsed disclosure on 
 conventional: completed steps and the first unfinished required step are
 links; later unfinished steps wait for every earlier required step, and
 optional steps never hold later ones back. A step counts as completed only
-after its own explicit save, credential, load or accepted test; defaults seeded by
-another page never complete a step. While the source load runs, completed
-steps keep their status but are not links. The stepper is presentation only;
+after its own explicit save, credential, current
+[parish data check](#checking-the-parish-data-during-setup) or accepted
+test; defaults seeded by another page never complete a step. The stepper
+is presentation only;
 each page still enforces its own prerequisites. Each page has one identical
 row of Back (secondary) and Save-and-continue (primary) controls (Save and
 continue validates, saves and opens the next applicable page not done yet,
@@ -326,7 +330,7 @@ own inputs ([#1578](https://github.com/epiphany40223/parishkit/issues/1578)):
 Test email opens once Outgoing email settings, Testing recipient and Google
 Workspace connection are done, and Test Slack once the Slack notifications
 step is saved on with a current Slack bot token; neither waits for Parish
-logos, Administrative access, ParishSoft connection or the load. A
+logos, Administrative access, ParishSoft connection or the check. A
 test is bound to the staged credential it used (the same credential, at the
 same version and key fingerprint) and to the settings sealed with that
 credential: the outgoing email settings and Testing recipient for the email
@@ -352,7 +356,7 @@ step that needs work instead. A changed mail or Testing setting makes the
 staged Google Workspace key stale, and with it the email test. Back from
 Test email goes to Google Workspace connection, from Test Slack to Slack
 notifications, from Parish logos to the test before it, and from Finish
-setup to Load parish data. Finish setup's primary action is "Check readiness
+setup to Check parish data. Finish setup's primary action is "Check readiness
 and finish setup", which requires accepted tests of the current
 settings, and the SQL readiness guard admits the same binding and no other;
 when a test is missing or went stale, the page says so and links the tests. A setup
@@ -361,8 +365,8 @@ staged credentials and accepted tests: the stepper opens the first step that
 needs work in the new order, and a test accepted earlier counts while its
 binding is current.
 
-The setup wizard's status pages (Test email, Test Slack, Load parish data and
-Finishing setup) [update themselves](#background-indicators) like every other
+The setup wizard's status pages (Test email, Test Slack, Check parish data
+and Finishing setup) [update themselves](#background-indicators) like every other
 Admin page that follows background work
 ([#1354](https://github.com/epiphany40223/parishkit/issues/1354)). Each draws
 one live status region that it re-reads from a passive status fragment of
@@ -379,9 +383,9 @@ unknown delivery is drawn Not sure it arrived in a neutral, uncertain
 treatment, never as failed. A newest test sent with earlier settings proves
 nothing about the current ones, so its boxes are Not started beside the line
 Sent with earlier settings. A queued test still counts only while setup is
-collecting, so starting Load parish data before the worker has picked a
-queued test up cancels that test (Not sent); nothing is ever sent against a
-frozen view, and the test is sent again from its own step. While it is, Send (or Send another test) is
+collecting, so a test queued when setup is confirmed is cancelled (Not
+sent); nothing is ever sent against a
+frozen view, and the test is sent again from its own step. While a test is on its way, Send (or Send another test) is
 unavailable, named by a line after the action row saying a test is on its
 way, and, while the page cannot check the test's status, by that status line
 too ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates),
@@ -392,11 +396,12 @@ unknown-delivery acknowledgement come from the server. No page offers a
 manual check or asks for a reload, and a page restored from the browser's
 history checks again by itself: a settled test page re-reads its panel in
 place on `pageshow`, so Continue never outlives a change to an earlier
-step's settings. Load parish data re-reads its panel in place, and the
-Loading parish data page reads its settled status region once more, whenever
+step's settings. Check parish data re-reads its panel in place, and so
+does a Loading parish data page left from before
+[#2201](https://github.com/epiphany40223/parishkit/issues/2201), whenever
 the page is shown again (its tab shown, or `pageshow`); each also re-reads
-the step bar in place. So neither says the parish data is loaded, nor shows
-its step as completed, after the load was discarded from another tab
+the step bar in place. So neither shows its step as completed after the
+ParishSoft connection changed in another tab
 ([#1353](https://github.com/epiphany40223/parishkit/issues/1353)). That
 re-check of a settled status never retries and never adds a line under the
 status: a failed read (setup finished meanwhile, say) stops it quietly and
@@ -404,23 +409,13 @@ leaves the page as it was. A status read the server refuses (signed
 out, no longer allowed, or a bad request such as Slack being off) stops the
 watching instead of being retried.
 
-Loading parish data draws its step action row at the bottom of the page from
+Check parish data draws its step action row at the bottom of the page from
 the start, as every setup step does
 ([wizard rule 2](../ui-conventions/spec.md#wizards)): Back at the left and
-Continue to the next step at the right. Until the load is done, Continue is
-unavailable and a line under the row says why (it becomes available once the
-parish data is loaded, or the notice above says what to do because the load
-cannot be used); once the load is done, Continue is a link and the reason
-keeps its line, invisible, so nothing moves
-([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates),
-[no layout shift](../ui-conventions/spec.md#no-layout-shift)). The row is
-re-read in place with the step bar when the status settles. The result notice
-("Parish data is loaded") offers no second Continue
-([#1968](https://github.com/epiphany40223/parishkit/issues/1968)). When the
-key reaches several ParishSoft organizations, the notice adds the
-[reachable-organizations line](#parish-and-integration-configuration) from the
-load's own evidence
-([#1554](https://github.com/epiphany40223/parishkit/issues/1554)).
+the step's primary action at the right, as
+[Checking the parish data during setup](#checking-the-parish-data-during-setup)
+describes. The row is re-read in place with the step bar when the check
+settles.
 
 Acknowledgment checkboxes and incomplete forms hold their submit buttons as the
 [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates) describe.
@@ -487,116 +482,35 @@ The regular page's list, its row actions and the New and Edit scheduled
 email page are described under
 [Dates and mail schedules](#dates-and-mail-schedules).
 
-The staged ParishSoft load is a complete load of Families, Members, Ministries
-and the fund catalog, with no giving window, as any load is before a campaign
-exists; the campaign's giving arrives with the refresh that
-[Create the campaign](#create-the-campaign) queues. Starting that load fixes
-the Parish timezone for this setup attempt, so the source catalog keeps one
-civil-date interpretation (the campaign created later has its own zone, see
-[Create the campaign](#create-the-campaign)).
-The Parish step explains this restriction and keeps other Parish fields editable.
-Until a zone is saved, the Parish step's time zone menu starts on the browser's
+Setup no longer fixes the Parish timezone at any step: the final load
+reads the parish data under the timezone the frozen setup holds, and the
+campaign created later has its own zone (see
+[Create the campaign](#create-the-campaign)). Until a zone is saved, the
+Parish step's time zone menu starts on the browser's
 zone when the list offers it (UTC counts as no zone, as on Create the
 campaign), and otherwise on a blank required "Choose a time
 zone" entry, never on the list's first zone. Its help mentions the browser's
 zone only then
-([#1330](https://github.com/epiphany40223/parishkit/issues/1330)).
-Changing the timezone then requires cancelling and starting a new setup attempt;
-it never silently reinterprets an existing source result.
+([#1330](https://github.com/epiphany40223/parishkit/issues/1330)). An
+attempt that bound a staged load before
+[#2201](https://github.com/epiphany40223/parishkit/issues/2201) keeps the
+timezone that load fixed, and changing it still requires cancelling and
+starting a new setup attempt.
 Wizard progress may be kept in the authenticated session and temporary staging
 tables/files, but no staged configuration is active until installer
-finalization. While the bootstrap Admin remains on the correlated source-load
-progress page, a bounded authenticated renewal POST, sent every 15 seconds
-while the page is visible and the load is active, renews only idle expiry
-under the
-[session-policy exception](../architecture/spec.md#identity-and-session-security).
-It is separate from the page's passive live status reads, and stops at the
-nearest deadline or once a renewal says the load is no longer active.
-Wizard pages do not list the time limits. The shared
+finalization. Wizard pages do not list the time limits. The shared
 [inactivity dialog](../architecture/spec.md#identity-and-session-security)
 warns five minutes before sign-out and lets the Admin stay signed in, which
-also keeps the setup attempt. The progress page names the three parts of the load
-(download, save, check) as
-[stage boxes](../ui-conventions/spec.md#stage-boxes), as Finishing setup
-names its steps; each starts its queued load with the shared Start the
-load box, whose queued sentence the progress page's summary line also
-says while the load waits for a worker
-([#1916](https://github.com/epiphany40223/parishkit/issues/1916)), and a
-load that stopped for good marks the box it stopped in Failed. During the
-download, each ParishSoft collection
-as done, in progress (Ministry rosters as "N of M") or waiting, with its
-record count; the saved-record bar appears once saving starts. The worker
-encodes one step per finished collection in the task's two monotonic
-progress counters and the page decodes the task's append-only event history,
-so this needs no schema change. The page also shows when the load started and the
-loading worker's most recent heartbeat, both counting forward between status
-reads. The page shows no Technical details ([no Technical details panes](../ui-conventions/spec.md#no-technical-details-panes)). On success it shows a prominent
-result with Continue to the next wizard page; on failure it says what to do
-next.
+also keeps the setup attempt.
 
-A load that fails for good (for example, a wrong ParishSoft key, or one that
-no longer reaches the chosen organization, which never retries, or a load
-whose worker stopped on its
-last allowed attempt, which recovery then fails) returns setup to collecting
-with the failed load still bound, so every page is editable again and the
-watchdog, which runs only while loading, stops (#1353). Neither the test
-email nor the test Slack message needs the load (#1578). A load that has
-finished, succeeded or failed, can be discarded, and only then (never one
-running, waiting to retry or abandoned): saving a different ParishSoft key,
-or choosing a different organization for the same key, discards it, saving
-the same key and choosing the same organization keeps it, and Load again
-discards the load and queues a new one. Load again is offered for a load that failed and for one that succeeded
-but whose staged data is no longer valid by the check review uses (its
-credential version or fingerprint changed, its exchange was scrubbed, or its
-snapshot or fences no longer match); the Load parish data page then says the
-data needs loading again, and the step is not done. Only a still-valid load
-shows as loaded. Each discard is audited as
-`setup_source_voided` with why (`key_changed`, `organization_changed` or
-`reload`) and how the load had ended, never the key. A discarded load's
-staging is never used again: finalization and campaign staging bind only to
-the current load. It is disposed of with the attempt's other source staging
-when setup ends, and the time zone the load fixed can change again.
-The progress page of a load that failed for good names the organization it
-was for, as the [organization name rule](../ui-conventions/spec.md#parishsoft-organization-names)
-writes it: "The parish data of St. Example Parish (1234) could not be loaded
-from ParishSoft." (only "The load did not finish." when no organization is
-chosen). It names the most common causes (a wrong key, or an organization
-that is not the parish's) and offers the way back to choose another: a link
-**Choose another organization or enter a different key** to ParishSoft
-connection, where pasting the key again lists the organizations it reaches
-([organization choice](#parishsoft-organization-choice); the failed load is
-discarded when a different organization or key is chosen), and a link to
-Load parish data, whose Load again starts a new load; Back goes to ParishSoft
-connection (pk-local finding of 2026-10-24,
-[#1554](https://github.com/epiphany40223/parishkit/issues/1554)). Only a load that ended with the setup attempt itself (expired)
-still says to cancel setup and start again. A discarded load's progress page
-stays readable, passively only (it is never renewed), and says the load is no
-longer used, with a link to Load parish data and no Continue; a bound load
-that succeeded but is no longer valid is shown the same way. While a
-still-valid load exists, the ParishSoft connection page says that saving a
-different key, or choosing a different organization, discards the loaded
-data and that keeping the saved key keeps it. The page says so in a static line in its saved-key
-notice, so nothing moves as the key is typed
-([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
-
-The two-hour watchdog is an intentional hard, non-extendable fail-safe. A normal
-complete ParishSoft load is expected to take several minutes (about ten for a
-parish of a few thousand Families and 200 Ministries);
-reaching two hours indicates an unhealthy or stuck import that must be discarded
-and diagnosed rather than resumed. The operator uses the task correlation and
-redacted diagnostics to correct the underlying problem before restarting setup.
-
-Cancel, idle expiry after polling stops, the two-hour watchdog, or absolute
-expiry marks the staging set expired, safely cancels/abandons its load TaskRun,
-and removes staged settings, source rows, files, and credentials idempotently.
-The worker checks that state before external-page fetches and before promotion
-to staging, so it cannot repopulate expired setup. At the watchdog deadline the
-server refuses further renewal, requests cancellation, and cleanup proceeds at
-the worker's next safe point; lease expiry handles an unresponsive worker.
+Cancel, idle expiry or absolute expiry marks the staging set expired,
+discards a parish data check still waiting for its answer, and removes staged
+settings, source rows, files, and credentials idempotently.
 Wizard staging is not resumable under a new login in the first release.
 Finalization freezes the staged setup, runs each target-specific credential
 installer, applies one complete authoritative YAML version through the
-configuration installer, and then commits the promoted source snapshot,
+configuration installer, and then runs the final parish data load, the only
+full ParishSoft load of setup, and commits its promoted source snapshot,
 Testing mode, configured marker, and one redacted setup audit event. It creates
 no campaign, so it creates no Family codes either. The
 configured marker is last and cannot become visible until YAML/DB digests match
@@ -626,9 +540,10 @@ drops Cancel setup; the notice gives no backup advice. A failed step stops the u
 rejected repeats the integration page's per-provider advice on what to check,
 one that did not finish in time asks the operator to check the credential
 installers, and each says to cancel and start a new setup (#456). No step
-shows a background task's reference: a failed final parish data load asks the
-operator to check the service logs for that load, which is the attempt's only
-one ([#1969](https://github.com/epiphany40223/parishkit/issues/1969)). Before the marker,
+shows a background task's reference
+([#1969](https://github.com/epiphany40223/parishkit/issues/1969)). A failed
+final parish data load says what went wrong, as
+[A final load that fails](#a-final-load-that-fails) describes. Before the marker,
 normal routes remain unconfigured/fail-closed and cancel cleanup removes sealed
 staging and any wizard-only files without exposing a partial product setup.
 Cancellation after YAML selection uses the
@@ -648,6 +563,21 @@ one-campaign shape, so its campaign and Family codes are created as before,
 and Create the campaign never appears. In the
 [local environment](../local-environment/spec.md#operator-script), resuming the
 browser wizard behaves the same way.
+
+**Upgrading to the parish data check.** Every Production deployment was set
+up before the parish data check replaced the setup load
+([#2201](https://github.com/epiphany40223/parishkit/issues/2201)), so this
+change affects only new setups: a configured deployment never runs the
+wizard again, and its data, keys, Family codes and emailed links are
+unchanged. A setup attempt still collecting when the change is installed
+keeps its saved steps, staged credentials and accepted tests; a load it
+bound earlier is never used again, and its Check parish data step is not
+done until a check of its current connection is ready. An attempt still
+loading finishes that load first, under its two-hour watchdog and the
+progress page's idle renewal as before; its Loading parish data page stays
+readable, and Check parish data says the load is still running, links that
+page and offers no check until the load ends. An attempt already confirmed (frozen) finishes as it was
+confirmed.
 
 Restore is an operator command performed before bootstrap/wizard. A restored,
 valid configured database skips initial setup after version/migration and
@@ -685,7 +615,7 @@ a few seconds.
 
 **Which organizations hold Families.** A key can reach organizations that
 hold no Families (a diocesan or school record, say), and choosing one would
-only fail the first load's empty-data check. After the organization list,
+only fail the [parish data check](#checking-the-parish-data-during-setup). After the organization list,
 the same lookup asks ParishSoft once per listed organization for at most
 one Family: `POST families/search` with `organizationIDs` set to that one
 organization, `pageSize` 1 and `pageNumber` 1, the request and paging
@@ -709,14 +639,14 @@ organization:
 - Unknown: listed and selectable, with "ParishSoft did not say whether it
   has Families" beside its name, and the page offers **Check again**, which
   repeats the whole lookup with the staged key. Choosing it is allowed
-  because the first load's empty-data check still refuses an organization
-  with no Families.
+  because the parish data check still refuses an organization with no
+  Families.
 
 **One organization.** The page says "This key reaches one ParishSoft
 organization: St. Example Parish (1234). Is this your parish?" with **Yes,
 use this organization** (primary) and **No, enter a different key**
 (secondary) in the step's action row. Yes saves the choice and continues to
-Load parish data. No discards the staged key and the lookup and shows the
+Check parish data. No discards the staged key and the lookup and shows the
 key field again, empty, as on a first visit. If that one organization holds
 no Families, the lookup ends with the no-Families error below instead.
 
@@ -757,10 +687,10 @@ different key, and carries its stable error code:
 
 **What is stored.** The choice sets the staged credential's public scope to
 the chosen organization ID, as the organization ID field set it before, so
-the load, its checks and the
+the parish data check, the final load and the
 [Integrations page](#parish-and-integration-configuration) read the same
 setting as today. The chosen organization's name is kept with the lookup
-for the wizard's own pages until the load records it in its snapshot
+for the wizard's own pages until the final load records it in its snapshot
 ([ParishSoft organization name](../data/spec.md#parishsoft-organization-name));
 a later choice clears the name an earlier one kept.
 The other organizations' IDs and names are the one place the system ever
@@ -777,13 +707,15 @@ of them hold no Families or are unknown, counts only, never the key.
 ParishSoft API key is saved for St. Example Parish (1234)." Leaving the key
 field empty keeps the key and the choice, and discards any lookup still open
 for the saved key pasted again (one that failed, say), so it never holds
-Load parish data back. Pasting a key starts a new lookup,
-and the rules above for discarding a finished load apply (a different key,
-or the same key with a different organization chosen, discards it; the
-same key and organization keep it). The load's own organization check
-stays the authority: a key that no longer reaches the chosen organization
-when the load starts fails it as the tenant mismatch
-([organization check](../data/spec.md#parishsoft-organization-scope)).
+Check parish data back. Pasting a key starts a new lookup and discards a
+parish data check still waiting for its answer. A finished check counts
+only while the key and organization it checked are current: a different
+key, or the same key with a different organization chosen, needs a new
+check; the same key and organization keep it. The final load's own
+organization check stays the authority: a key that no longer reaches the
+chosen organization when that load runs fails it as the tenant mismatch
+([organization check](../data/spec.md#parishsoft-organization-scope)),
+and [A final load that fails](#a-final-load-that-fails) says what to do.
 
 **After setup.** The organization cannot change after setup
 (changing it is outside #1554). The Integrations page's ParishSoft settings
@@ -853,6 +785,148 @@ rows keep the integer `organization_id`, and the shared non-Stewardship
 tools keep their `organization_id` and `expected_organization` settings
 (their log line already reads "Validated ParishSoft organization Name
 (1234)"). No email names the organization.
+
+### Checking the parish data during setup
+
+The step after ParishSoft connection is **Check parish data**
+([#2201](https://github.com/epiphany40223/parishkit/issues/2201);
+Administrator decision of 2026-10-25). It replaces the Load parish data
+step, which read every Family, Member, contact, Ministry roster and fund
+from ParishSoft (seven to ten minutes for a large parish) only to be read
+again, in full, when setup finishes. Nothing in setup used the first load's
+data: it only unlocked the next step. Now Finish setup's final load is the only
+full ParishSoft load, and this step proves in a few seconds that ParishSoft
+answers for the chosen organization with the saved key. The step keeps its
+address (`/admin/setup/source`) and its place in the stepper. It never uses
+ParishSoft change detection.
+
+**What the check reads.** Check parish data queues one check bound to the
+staged ParishSoft key's exact version and fingerprint and to its chosen
+organization. The check runs where the
+[organization lookup](#parishsoft-organization-choice) runs, in the
+isolated provider check helper of the ParishSoft installer, never in the web
+process, under the same overall time limit of two minutes (a stopped check
+is logged with what was stopped, the limit and the elapsed time), and makes
+three uncached requests with the key:
+
+1. `POST organizations/search`, bounded as the lookup bounds it. The chosen
+   organization must be on the list; its name is its cleaned
+   `organizationReportName`
+   ([ParishSoft organization name](../data/spec.md#parishsoft-organization-name)).
+2. `POST families/search` with `organizationIDs` set to the chosen
+   organization, `pageSize` 1 and `pageNumber` 1. An empty array is no
+   Families; one row whose `rowNumber` is 1 carries ParishSoft's Family
+   total in `totalResults`.
+3. `POST members/search` with the same `organizationIDs`, `maximumRows` 1
+   and `startRowIndex` 0. An empty array is no Members; one row whose
+   `rowNum` is 1 carries the Member total in `recordCount`.
+
+Only the organization's name and the two totals are kept. No Family or
+Member content is read further, kept, logged or shown, so the step shows no
+sample of Families: the name and the totals identify the parish.
+
+**The result.** The page updates itself in place
+([pages that update themselves](../ui-conventions/spec.md#pages-that-update-themselves))
+while the check waits, with the
+[working spinner](../ui-conventions/spec.md#working-spinner) and "Checking
+the parish data in ParishSoft…"; it usually takes a few seconds. A
+successful check says "ParishSoft answered for St. Example Parish (1234):
+812 Families and 2,034 Members." (named as the
+[organization name rule](../ui-conventions/spec.md#parishsoft-organization-names)
+writes it) and that Finish setup loads all of the parish data, which takes
+several minutes, about ten for a parish of a few thousand Families. The
+totals are ParishSoft's own and the final load's counts can differ a
+little. The step is done once a check of the current key and organization
+has succeeded. A check counts only while the staged key keeps the version,
+fingerprint and organization it checked; otherwise the page says the parish
+data needs checking again because the ParishSoft connection changed, and the
+step is not done.
+
+**The page.** Its action row has Back (to ParishSoft connection) and the
+step's primary action: **Check parish data** before any check, **Continue**
+(to Finish setup) once a check of the current connection succeeded, with **Check
+again** as a secondary button, and **Check again** after a failed check.
+While a check waits, the primary action is an unavailable Continue with the
+reason "Available once the check finishes." in the line under the row
+([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)), and
+that line keeps its place, invisible, once the reason is gone
+([no layout shift](../ui-conventions/spec.md#no-layout-shift)). Each
+button acts in place
+([in-place controls](../ui-conventions/spec.md#in-place-controls)). Until
+the Parish profile and ParishSoft connection are done (an organization
+chosen, no lookup still open), the page says so with a link to the step
+that fixes it.
+
+**Errors.** A failed check is shown after the status line, in plain
+language, and links ParishSoft connection where a different key or
+organization is the fix (**Choose another organization or enter a
+different key**). It carries its stable error code as the notice's
+`data-source-check-error` attribute and in the stored check, as the
+lookup's errors carry theirs; the code is not drawn as text, because a
+person reads only closed, plain-language messages
+([accessibility and client behavior](../ui-conventions/spec.md#accessibility-and-client-behavior)):
+
+- ParishSoft refuses the key (HTTP 401 or 403), `parishsoft_key_refused`:
+  "ParishSoft did not accept the saved key. Paste the key again, or a
+  different one, at ParishSoft connection."
+- The key no longer reaches the chosen organization,
+  `parishsoft_organization_not_reached`: "The saved key no longer reaches
+  St. Example Parish (1234). Choose another organization or enter a
+  different key at ParishSoft connection."
+- The organization holds no Families, `parishsoft_no_families`: "ParishSoft
+  has no Families for St. Example Parish (1234). Check at ParishSoft
+  connection that it is your parish's organization."
+- An answer is malformed or over its bound, `parishsoft_check_unreadable`:
+  "ParishSoft's answer could not be read. Try again in a few minutes; if it
+  keeps happening, tell your IT contact."
+- ParishSoft cannot be reached or a request times out,
+  `parishsoft_unavailable`: "ParishSoft could not be reached. Try again in a
+  few minutes."
+
+**What is stored.** One setup row per check holds its state (queued,
+running, ready, failed or discarded), its binding (the staged key's row,
+version and fingerprint, and the organization ID), the organization's name
+and the two totals, or a failed check's error code. At most one check of an
+attempt waits for its answer at a time. The web queues a check only for the
+attempt's Administrator while their setup sign-in is live and setup is
+collecting, and discards a waiting one when a key is pasted; only the
+isolated ParishSoft installer claims and answers a check. Ending setup
+discards a check still waiting. Final confirmation binds the newest
+successful check of the current connection into the setup readiness record
+instead of a staged load, and the SQL readiness guard admits that binding
+and no other; SQL also lets a setup attempt be confirmed (frozen) only with
+that check. Ending setup also disposes of a final load's staging when no
+earlier load ran. Like the lookup, the check needs a forward migration under the
+[post-launch schema policy](../operations/spec.md#post-launch-schema-policy).
+
+#### A final load that fails
+
+The final load can still fail on what the first load used to find earlier:
+a key ParishSoft refuses or that no longer reaches the chosen organization,
+data that cannot be used (malformed, incomplete, or empty), a contact list
+cut short, a destructive change, or ParishSoft answering too slowly for the
+load's time budget. Setup is frozen by then, so its steps cannot be edited.
+Finishing setup's failed final parish data load step says, from the closed
+failure word the load logged when it failed for good, which of these it
+was, in plain language (a load that was abandoned or cancelled, or logged
+no reason, gets the last words):
+
+- The key was refused (HTTP 401 or 403), or no longer reaches the
+  organization: "ParishSoft did not accept the saved key, or the key no
+  longer reaches the chosen organization."
+- Unusable, incomplete, cut-short or destructively changed data: "ParishSoft's
+  parish data could not be used: it was incomplete or unreadable, or much
+  smaller than expected."
+- ParishSoft too slow, unreachable, or busy (HTTP 429, 502, 503 or 504):
+  "ParishSoft did not answer in time."
+- Anything else, another ParishSoft error status included: "The final
+  parish data load did not finish."
+
+Each then gives the way back to the ParishSoft connection: "Cancel this
+setup, then start a new setup. At its ParishSoft connection step, check the
+key and the organization, then check the parish data again before you
+finish. If it keeps failing, ask the operator to check the service logs for
+the failed final parish data load." Cancel setup stays on the page.
 
 ### Turning Slack off during setup
 
@@ -1666,7 +1740,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `setup_branding` | Parish logos | Setup stepper | Administrator | Parish logo | `/admin/setup/branding` | (same) |  |
 | `setup_step_access` | Administrative access | Setup stepper | Administrator | (same) | `/admin/setup/access` | (same) |  |
 | `setup_credential_parishsoft` | ParishSoft connection | Setup stepper | Administrator | Setup credential: ParishSoft (stepper: ParishSoft connection) | `/admin/setup/credentials/parishsoft` | (same) |  |
-| `setup_source` | Load parish data | Setup stepper | Administrator | (same) | `/admin/setup/source` | (same) |  |
+| `setup_source` | Check parish data | Setup stepper | Administrator | (same) | `/admin/setup/source` | (same) |  |
 | `setup_source_progress` | Loading parish data | Setup stepper | Administrator | (same) | `/admin/setup/source/<task>` | (same) |  |
 | `setup_confirmation` | Finish setup | Setup stepper | Administrator | Finish initial setup (stepper: Finish setup) | `/admin/setup/confirm` | (same) |  |
 | `setup_finishing` | Finishing setup | Setup stepper | Administrator | (same) | `/admin/setup/finishing` | (same) |  |
@@ -2303,8 +2377,8 @@ ParishSoft settings page shows a static information notice above its form:
 "At the last load from ParishSoft, this key reached N organizations. Only the
 data of St. Example Parish (1234) is loaded; the other organizations' data
 is left out.", followed, when that load left any out, by "Records of other
-organizations left out by that load: M." The setup load's result notice and System health's
-[ParishSoft refresh panel](#parishsoft-refresh-panel) show the same line.
+organizations left out by that load: M." System health's
+[ParishSoft refresh panel](#parishsoft-refresh-panel) shows the same line.
 It names counts only, never another organization's ID or name, and a key that
 reaches only the chosen organization shows nothing. The count is the
 load's: a newly pasted key is not counted until data is loaded with it.

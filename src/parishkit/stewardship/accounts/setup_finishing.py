@@ -98,11 +98,70 @@ SOURCE_TEXT = {
 }
 # The final load's states in which it ended without loading anything.
 SOURCE_ENDED = frozenset({"failed", "cancelled", "abandoned"})
-SOURCE_FAILED = _(
-    "The final load did not finish. Ask the operator to check the service logs "
-    "for the failed final parish data load, then cancel this setup before "
-    "starting again."
+# A failed final load, the only full ParishSoft load of setup since #2201,
+# says which kind of problem stopped it, from the closed failure word the
+# load logged (source.failures.classify_read_failure), and then the way back
+# to the ParishSoft connection (admin-portal spec "A final load that fails").
+SOURCE_FAILURES = {
+    "key": _(
+        "ParishSoft did not accept the saved key, or the key no longer reaches "
+        "the chosen organization."
+    ),
+    "data": _(
+        "ParishSoft's parish data could not be used: it was incomplete or "
+        "unreadable, or much smaller than expected."
+    ),
+    "slow": _("ParishSoft did not answer in time."),
+}
+SOURCE_FAILURE_KINDS = {
+    "organization_mismatch": "key",
+    "invalid_payload": "data",
+    "incomplete_collection": "data",
+    "invalid_response": "data",
+    "destructive_change": "data",
+    "shifted_scan": "data",
+    "provider_timeout": "slow",
+    "provider_unreachable": "slow",
+}
+# A ParishSoft error answer's HTTP status: a refused key, or ParishSoft too
+# busy or down to answer; any other status gets the generic words.
+REFUSED_STATUSES = frozenset({401, 403})
+BUSY_STATUSES = frozenset({429, 502, 503, 504})
+SOURCE_FAILED = _("The final parish data load did not finish.")
+SOURCE_FAILED_NEXT = _(
+    "Cancel this setup, then start a new setup. At its ParishSoft connection "
+    "step, check the key and the organization, then check the parish data "
+    "again before you finish. If it keeps failing, ask the operator to check "
+    "the service logs for the failed final parish data load."
 )
+
+
+def source_failed(source):
+    """What a failed final load's step says: what went wrong, then what to do.
+
+    ``source`` is the final load's status (``finalization_status``), whose
+    ``failure`` and ``failure_status`` are the closed failure word and HTTP
+    status its last failure logged, when it logged one. A refused key (HTTP
+    401 or 403) counts as the key's problem, and a busy or down ParishSoft
+    (429, 502, 503 or 504) as ParishSoft not answering in time; any other
+    status gets the generic words.
+    """
+    failure = (source or {}).get("failure")
+    kind = SOURCE_FAILURE_KINDS.get(failure)
+    if failure == "provider_status":
+        status = source.get("failure_status")
+        kind = (
+            "key"
+            if status in REFUSED_STATUSES
+            else "slow"
+            if status in BUSY_STATUSES
+            else None
+        )
+    return format_lazy(
+        "{} {}", SOURCE_FAILURES.get(kind, SOURCE_FAILED), SOURCE_FAILED_NEXT
+    )
+
+
 # Stand-ins for the counts of a reserved form (#1903) that the step cannot
 # show yet: an acknowledgement count of one digit (a deployment has a
 # handful of credential consumers) and a final load as large as a big
@@ -227,7 +286,7 @@ def _start(source, completed):
     if source is None:
         return _row("start", label, "waiting", START_TEXT["waiting"])
     if source["state"] in SOURCE_ENDED:
-        return _row("start", label, "failed", SOURCE_FAILED)
+        return _row("start", label, "failed", source_failed(source))
     return _row("start", label, "active", START_TEXT["active"])
 
 
@@ -276,7 +335,7 @@ def finishing(status, *, completed=False):
     if completed or (source and source["state"] == "succeeded"):
         rows.append(_row("source", label, "done", SOURCE_TEXT["done"]))
     elif picked and source["state"] in SOURCE_ENDED:
-        rows.append(_row("source", label, "failed", SOURCE_FAILED))
+        rows.append(_row("source", label, "failed", source_failed(source)))
     elif picked:
         rows.append(_row("source", label, "active", SOURCE_TEXT["active"]))
         rows[-1]["progress"] = source["progress"]

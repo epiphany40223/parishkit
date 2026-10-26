@@ -16,7 +16,7 @@ production code.
 
 The module also drives the setup wizard through the same service layer the
 wizard pages call (``begin_setup``, ``save_section``, ``stage_credential``,
-``start_source_load``, ``prepare_preview``, ``request_sample``,
+``start_check``, ``prepare_preview``, ``request_sample``,
 ``freeze_setup``), and then Create the campaign through that page's own
 form, review and confirmation (``create_campaign``): a LOCAL-only
 convenience for an unattended install, since the environment is otherwise
@@ -776,12 +776,14 @@ def run_wizard(
     the Workspace credential (the mail-catcher document), the Slack setting
     (off), a generated parish logo through the real branding staging, the
     access lists, the ParishSoft credential (the fake's key and organization),
-    the source load (the worker loads from the fake; ``wait`` blocks until the
-    attempt collects again), the fixed setup test mail (sent to Mailpit by
+    the parish data check (#2201: the ParishSoft installer asks the fake;
+    ``wait`` blocks until it answers), the fixed setup test mail (sent to Mailpit by
     mail-dispatch), the preview and the final confirmation. The caller then
     waits for ``setup_is_complete``. Setup collects no campaign (#142); the
     seeder's ``campaign`` step creates it afterwards (``create_campaign``).
     """
+    from parishkit.stewardship.accounts.setup_check_models import SetupSourceCheck
+    from parishkit.stewardship.accounts.setup_checks import current_check
     from parishkit.stewardship.accounts.setup_models import SetupAttempt
 
     def state():
@@ -794,46 +796,42 @@ def run_wizard(
     if row is not None and row.state == "frozen":
         # Confirmed already; only the installer's finish is outstanding.
         return None
-    if row is None or row.source_task_id is None:
+    if row is None or not SetupSourceCheck.objects.filter(attempt=row).exists():
         attempt_id = wizard_collect(request, service, fake_key=fake_key, wait=wait)
 
-    def loaded():
-        """The attempt collects again once the worker's load has finished.
+    def checked():
+        """The parish data check has answered (#2201); a failed one stops the run."""
+        attempt = SetupAttempt.objects.get(pk=attempt_id)
+        if attempt.state != "collecting":
+            raise SeedWebRefused(f"The setup attempt is {attempt.state}.")
+        check = current_check(attempt)
+        if check is None:
+            raise SeedWebRefused("The parish data check was discarded.")
+        if check.state == "failed":
+            raise SeedWebRefused(f"The parish data check failed: {check.error_code}.")
+        return True if check.checked else "the parish data check"
 
-        A failed load also returns it to collecting (#1353), so the bound
-        Task's state says which: a failed load stops the run.
-        """
-        row = SetupAttempt.objects.select_related("source_task").get(pk=attempt_id)
-        if row.state == "collecting" and row.source_task_id is not None:
-            if row.source_task.state != "succeeded":
-                raise SeedWebRefused(
-                    f"The setup source load ended in {row.source_task.state}."
-                )
-            return True
-        if row.state not in {"loading", "collecting"}:
-            raise SeedWebRefused(f"The setup source load ended in {row.state}.")
-        return "the setup source load"
-
-    wait("the setup source load", loaded)
+    wait("the parish data check", checked)
     return wizard_confirm(request, service, attempt_id, wait=wait)
 
 
 def wizard_collect(request, service, *, fake_key=LOCAL_PARISHSOFT_KEY, wait):
-    """The wizard's data-entry pages, in page order, ending with the source load.
+    """The wizard's data-entry pages, in page order, ending with the data check.
 
     The order follows ``setup_wizard.PAGES`` (#1353, #1578): ParishSoft
-    connection and Load parish data come last, after the logo and access
-    pages, so the load is the only step left to wait for before the review.
+    connection and Check parish data come last, after the logo and access
+    pages, so the check (#2201) is the only step left to wait for before the
+    review.
     The ParishSoft connection page asks only for the key, then confirms the
     organization once the installer's lookup answers (#1554,
     ``wizard_organization``). The email test, which belongs right after
     Google Workspace connection, is sent by ``wizard_confirm`` after the
-    load: it needs only the mail settings, so where it is sent does not
+    check: it needs only the mail settings, so where it is sent does not
     change what it proves.
     """
+    from parishkit.stewardship.accounts.setup_checks import start_check
     from parishkit.stewardship.accounts.setup_credentials import stage_credential
     from parishkit.stewardship.accounts.setup_drafts import save_section
-    from parishkit.stewardship.accounts.setup_source import start_source_load
     from parishkit.stewardship.accounts.setup_staging import begin_setup
     from parishkit.stewardship.mail_catcher import MAIL_CATCHER_DOCUMENT
 
@@ -877,7 +875,7 @@ def wizard_collect(request, service, *, fake_key=LOCAL_PARISHSOFT_KEY, wait):
         expected_version=status.version,
     )
     status = wizard_organization(request, service, attempt_id, wait=wait)
-    start_source_load(request, service, attempt_id, expected_version=status.version)
+    start_check(request, service, attempt_id, expected_version=status.version)
     return attempt_id
 
 

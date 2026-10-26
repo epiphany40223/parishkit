@@ -472,7 +472,7 @@ def test_keeping_the_saved_key_after_a_failed_lookup_clears_the_lookup(
 ):
     """The saved key pasted again, its lookup failed, then kept by leaving
     the field empty: the failed lookup goes, the key keeps its organization,
-    and nothing holds Load parish data back."""
+    and nothing holds Check parish data back."""
     from .test_setup_credentials_postgresql import publish
 
     private = publish("parishsoft")

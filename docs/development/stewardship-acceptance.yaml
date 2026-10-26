@@ -62,6 +62,8 @@ sections:
     "Login and denial behavior": [ADM-01]
     "Bootstrap and first-Admin wizard": [ADM-02]
     "ParishSoft organization choice": [ADM-02]
+    "Checking the parish data during setup": [ADM-02]
+    "A final load that fails": [ADM-02]
     "Turning Slack off during setup": [ADM-02]
     "Navigation and home": [ADM-03]
     "JavaScript requirement": [ADM-12]

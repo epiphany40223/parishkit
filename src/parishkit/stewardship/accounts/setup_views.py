@@ -18,10 +18,10 @@ from .access_gate import status_page
 from .admin_editing import error_response
 from .authentication import runtime
 from .limiting import LimiterUnavailable
+from .setup_checks import start_check
 from .setup_drafts import save_section, view_draft
 from .setup_forms import FORMS, form_values, initial_values
 from .setup_policy import SetupState
-from .setup_source import start_source_load
 from .setup_staging import _admit, begin_setup, cancel_setup
 from .setup_wizard import BY_KEY, PAGES, continue_after, wizard_for
 
@@ -156,7 +156,7 @@ def setup(request):
         if request.method == "POST":
             action = request.POST.get("action")
             fields = {"action"} if action == "start" else {"action", "attempt"}
-            if action == "load":
+            if action == "check":
                 fields.add("version")
             _closed(request, fields)
             if action == "start":
@@ -169,8 +169,10 @@ def setup(request):
             elif action == "cancel":
                 cancel_setup(request, service, UUID(request.POST.get("attempt", "")))
                 destination = "/admin/setup"
-            elif action == "load":
-                task = start_source_load(
+            elif action == "check":
+                # Check parish data, or Check again (#2201): the page itself
+                # shows the check and re-reads it in place until it answers.
+                start_check(
                     request,
                     service,
                     UUID(request.POST.get("attempt", "")),
@@ -178,7 +180,7 @@ def setup(request):
                 )
                 from django.urls import reverse
 
-                destination = reverse("admin:setup_source_progress", args=[task.run_id])
+                destination = reverse("admin:setup_source") + "#setup-source-panel"
             else:
                 raise ValueError("Unknown setup action.")
             return _checked(request, service, HttpResponseRedirect(destination))
@@ -294,7 +296,12 @@ def _slack_context(draft, wizard, options):
 
 @require_http_methods(["GET", "HEAD"])
 def setup_source(request):
-    """Explain and offer the one source load; the load itself is a hub POST."""
+    """Check parish data (#2201): explain and offer the quick check.
+
+    The check itself is a POST to the setup overview (action ``check``),
+    which answers with this page again; while the check waits, the page
+    re-reads its panel in place until the installer answers.
+    """
     try:
         _closed(request, set())
         service = runtime()
@@ -306,7 +313,120 @@ def setup_source(request):
             return _checked(request, service, HttpResponseRedirect("/admin/setup"))
         context = _context(draft, "source")
         context["source_step"] = context["wizard"].step("source")
+        context |= source_check_context(draft.status.attempt_id)
         response = render(request, "stewardship/setup-source.html", context)
         return _checked(request, service, response, draft)
     except ERRORS as error:
         return page_error(request, error, "source")
+
+
+# What the Check parish data page says for a failed check, by its stable
+# error code (#2201, admin-portal spec "Checking the parish data during
+# setup"). ``{organization}`` is the chosen organization as the
+# organization name rule writes it.
+CHECK_ERRORS = {
+    "parishsoft_key_refused": _(
+        "ParishSoft did not accept the saved key. Paste the key again, or a "
+        "different one, at ParishSoft connection."
+    ),
+    "parishsoft_organization_not_reached": _(
+        "The saved key no longer reaches %(organization)s. Choose another "
+        "organization or enter a different key at ParishSoft connection."
+    ),
+    "parishsoft_no_families": _(
+        "ParishSoft has no Families for %(organization)s. Check at ParishSoft "
+        "connection that it is your parish's organization."
+    ),
+    "parishsoft_check_unreadable": _(
+        "ParishSoft's answer could not be read. Try again in a few minutes; if "
+        "it keeps happening, tell your IT contact."
+    ),
+    "parishsoft_unavailable": _(
+        "ParishSoft could not be reached. Try again in a few minutes."
+    ),
+}
+# The failures a different key or organization fixes, which link to
+# ParishSoft connection.
+CHECK_FIXED_AT_CONNECTION = frozenset(
+    {
+        "parishsoft_key_refused",
+        "parishsoft_organization_not_reached",
+        "parishsoft_no_families",
+    }
+)
+
+
+def source_check_context(attempt_id):
+    """What the Check parish data page shows of the attempt's newest check.
+
+    Reads the attempt's newest check (``setup_checks.current_check``) and
+    names the staged key's chosen organization, by the name the check read
+    or else the lookup's, as the organization name rule writes it; the page
+    context itself is ``check_page``'s.
+    """
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+    from parishkit.stewardship.source.organization_names import organization_label
+
+    from .setup_checks import _staged_key, current_check
+    from .setup_lookups import chosen_name
+    from .setup_models import SetupAttempt
+
+    with work_transaction():
+        attempt = SetupAttempt.objects.get(pk=attempt_id)
+        check = current_check(attempt)
+        credential = _staged_key(attempt)
+        organization = (credential.settings if credential else {}).get(
+            "organization_id"
+        )
+        name = None
+        if organization is not None:
+            name = (
+                check.organization_name
+                if check is not None and check.current and check.organization_name
+                else chosen_name(attempt_id, organization)
+            )
+    return check_page(
+        check, organization_label(organization, name) if organization else None
+    )
+
+
+# The states Check parish data draws, each in the one status slot.
+CHECK_STATES = ("initial", "waiting", "ready", "failed", "stale")
+
+
+def check_page(check, label):
+    """The Check parish data page's context for ``check`` (or None).
+
+    ``check_shown`` is the state drawn: "initial" before any check,
+    "waiting" while it waits, "ready" for a current ready check, "failed"
+    for a current failed one, and "stale" for a check of an earlier
+    connection. The page draws every other state as an invisible copy in
+    the same slot, so ``check_error_reserve`` is the longest failure
+    message, for that copy. A failed check adds its message and whether
+    ParishSoft connection is the fix.
+    """
+    if check is None:
+        shown = "initial"
+    elif check.waiting:
+        shown = "waiting"
+    elif not check.current:
+        shown = "stale"
+    else:
+        shown = "ready" if check.state == "ready" else "failed"
+    messages = [
+        str(message % {"organization": label or ""})
+        for message in CHECK_ERRORS.values()
+    ]
+    context = {
+        "check": check,
+        "organization_label": label,
+        "check_shown": shown,
+        "check_states": CHECK_STATES,
+        "check_error_reserve": max(messages, key=len),
+    }
+    if shown == "failed":
+        context["check_error"] = CHECK_ERRORS[check.error_code] % {
+            "organization": label or ""
+        }
+        context["check_fix"] = check.error_code in CHECK_FIXED_AT_CONNECTION
+    return context

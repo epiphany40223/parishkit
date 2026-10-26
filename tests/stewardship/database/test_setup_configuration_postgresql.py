@@ -41,16 +41,19 @@ from .test_configuration_service_postgresql import (  # noqa: F401
     config_role,
 )
 from .test_setup_staging_postgresql import login, setup_service  # noqa: F401
-from .test_taskrun_postgresql import act, new
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
 def frozen(service, *, branding=False):
-    """Complete a synthetic task with all guards enabled, then freeze its attempt."""
-    request = login(service)
-    attempt = begin_setup(request, service)
-    row = SetupAttempt.objects.get(pk=attempt.attempt_id)
+    """Check the parish data with all guards enabled, then freeze its attempt.
+
+    Freezing needs the attempt's current parish data check (#2201); no load
+    is bound.
+    """
+    from .setup_check_builders import checked_setup
+
+    request, row = checked_setup(service)
     if branding:
         from parishkit.stewardship.accounts.branding_staging import (
             stage_branding,
@@ -71,19 +74,10 @@ def frozen(service, *, branding=False):
         )
         _, assets = staged_bundle(request, service, bundle, setup_attempt_id=row.pk)
         row._test_branding = {asset.label: str(asset.pk) for asset in assets}
-    task = new(
-        task_type="setup_source_load", actor_id=row.owner_id, domain_request_id=row.pk
-    )
     with work_transaction():
         SetupAttempt.objects.filter(pk=row.pk).update(
-            source_task_id=task.run_id, state="loading", version=F("version") + 1
+            state="frozen", version=F("version") + 1
         )
-    act(act(task, "claim"), "complete")
-    with work_transaction():
-        for state in ("collecting", "frozen"):
-            SetupAttempt.objects.filter(pk=row.pk).update(
-                state=state, version=F("version") + 1
-            )
     row.refresh_from_db()
     return request, row
 

@@ -375,15 +375,15 @@ def test_create_campaign_fields_fill_the_real_form_and_validator():
 
 
 def test_unattended_wizard_saves_its_pages_in_the_wizards_order(monkeypatch):
-    """`wizard` follows setup_wizard.PAGES, ending with the source load (#1353).
+    """`wizard` follows setup_wizard.PAGES, ending with the data check (#2201).
 
     The page services are recorded instead of run, so this pins only the
     order in which the unattended wizard calls them.
     """
     from parishkit.stewardship.accounts import (
+        setup_checks,
         setup_credentials,
         setup_drafts,
-        setup_source,
         setup_staging,
     )
     from parishkit.stewardship.accounts.setup_wizard import PAGES
@@ -403,7 +403,7 @@ def test_unattended_wizard_saves_its_pages_in_the_wizards_order(monkeypatch):
         return status, None
 
     def started(*_, **__):
-        """Record the source load."""
+        """Record the parish data check."""
         calls.append("source")
 
     def organization(request, service, attempt_id, *, wait):
@@ -420,13 +420,13 @@ def test_unattended_wizard_saves_its_pages_in_the_wizards_order(monkeypatch):
         setup_drafts, "view_draft", lambda *_: SimpleNamespace(status=status)
     )
     monkeypatch.setattr(setup_credentials, "stage_credential", stage_credential)
-    monkeypatch.setattr(setup_source, "start_source_load", started)
+    monkeypatch.setattr(setup_checks, "start_check", started)
     monkeypatch.setattr(seed_web, "stage_logo", lambda *_: "bundle")
     monkeypatch.setattr(seed_web, "wizard_organization", organization)
     assert seed_web.wizard_collect(None, None, wait=waiting) == "attempt"
     # Slack is off, so Test Slack is skipped. The tests need only their own
     # inputs (#1578), so the email test, sent in wizard_confirm after the
-    # load, proves the same settings; Review onwards follow there too.
+    # check, proves the same settings; Review onwards follow there too.
     tests = {"mail_test", "slack_test"}
     pages = [page.key for page in PAGES if page.key not in tests]
     assert calls == pages[: pages.index("source") + 1]

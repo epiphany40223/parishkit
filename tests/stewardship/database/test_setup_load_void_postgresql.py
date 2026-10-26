@@ -258,7 +258,7 @@ def test_the_same_connection_keeps_a_load_and_a_change_discards_it(
 
 
 def source_page(request, service):
-    """The Load parish data page as its view renders it, and the draft."""
+    """The Check parish data page as its view renders it, and the draft."""
     from django.template.loader import render_to_string
 
     from parishkit.stewardship.accounts.setup_views import _context
@@ -273,12 +273,13 @@ def source_page(request, service):
 def test_a_load_whose_credential_version_moved_needs_loading_again(
     setup_service, monkeypatch
 ):
-    """A succeeded load that review would refuse is not shown as loaded (#1353).
+    """A load bound before #2201 never completes the step, and the SQL still
+    discards one whose staged data is no longer valid (#1353).
 
-    The Administrator's dead end: after a successful load the ParishSoft
-    credential's version moved, so review refused ("Load the parish data
-    before reviewing setup") while Load parish data still said loaded and
-    offered no action. Load again now discards it with reason reload.
+    Since #2201 the step is Check parish data: a succeeded legacy load leaves
+    it to do, with the check offered. Its reload path, which nothing in the
+    web starts any more, still discards the load with reason reload once the
+    ParishSoft credential's version moved.
     """
     from parishkit.stewardship.accounts.setup_secret_models import (
         SetupSealedCredential,
@@ -288,9 +289,9 @@ def test_a_load_whose_credential_version_moved_needs_loading_again(
     request, attempt, task, private = queued(setup_service)
     assert dispatch(monkeypatch, private, task.run_id) == "succeeded"
     html, page = source_page(request, setup_service)
-    assert page["draft"].source_loaded
-    assert page["wizard"].step("source").state == "done"
-    assert "Parish data is loaded" in html
+    assert not page["draft"].source_checked
+    assert page["wizard"].step("source").state != "done"
+    assert 'value="check"' in html and "Check that ParishSoft answers" in html
     # The staged credential's version moves on without a new load.
     with web_login(), work_transaction():
         SetupSealedCredential.objects.filter(target="parishsoft").update(
@@ -298,10 +299,7 @@ def test_a_load_whose_credential_version_moved_needs_loading_again(
         )
     html, page = source_page(request, setup_service)
     draft = page["draft"]
-    assert draft.source_task_state == "succeeded" and not draft.source_loaded
-    assert page["wizard"].step("source").state != "done"
-    assert "Parish data is loaded" not in html
-    assert "data-source-stale" in html and 'value="load"' in html
+    assert draft.source_task_state == "succeeded" and not draft.source_checked
     with web_login():
         again = start_source_load(
             request,

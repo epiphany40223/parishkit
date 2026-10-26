@@ -16,21 +16,23 @@ def draft(
     *,
     state=SetupState.COLLECTING,
     source=None,
+    checked=False,
     task_state=None,
 ):
     """A detached stand-in carrying only what the stepper reads.
 
-    A bound load (``source``) is running while loading and has succeeded
-    otherwise, unless ``task_state`` says how it ended.
+    ``checked`` is whether the parish data check of the current connection
+    is ready (#2201). A load bound before that change (``source``) is
+    running unless ``task_state`` says how it ended.
     """
     if source is not None and task_state is None:
-        task_state = "running" if state == SetupState.LOADING else "succeeded"
+        task_state = "running"
     return SimpleNamespace(
         status=SimpleNamespace(state=state, attempt_id=uuid4(), version=3),
         sections=sections or {},
         source_task_id=source,
         source_task_state=task_state,
-        source_loaded=task_state == "succeeded",
+        source_checked=checked,
     )
 
 
@@ -48,13 +50,13 @@ def test_every_page_has_a_unique_key_and_resolvable_url():
 
 def test_each_test_follows_its_own_input_step_and_finish_is_last():
     """Test email follows Google Workspace connection and Test Slack the one
-    Slack step (#1578); ParishSoft connection and Load parish data are the
+    Slack step (#1578); ParishSoft connection and Check parish data are the
     last data-entry pages, then Finish setup.
 
-    Each test is one step after the page that fixes it. The load can take
-    minutes, so every other data-entry page comes first, and a failed load is
-    one step after the page that fixes its key (#1353). No Review page comes
-    before Finish setup (#2145), which checks the tests itself (#1476).
+    Each test is one step after the page that fixes it, and a failed parish
+    data check is one step after the page that fixes its key (#1353,
+    #2201). No Review page comes before Finish setup (#2145), which checks
+    the tests itself (#1476).
     """
     assert [page.key for page in PAGES] == [
         "parish",
@@ -112,7 +114,7 @@ def test_done_state_next_and_previous_follow_saved_choices():
     }
     credentials = {"parishsoft": True, "google_workspace": True, "slack": False}
     wizard = build(
-        draft(sections, source=uuid4()),
+        draft(sections, checked=True),
         "slack",
         credentials=credentials,
         tests=frozenset({"mail_test"}),
@@ -137,7 +139,7 @@ def test_done_state_next_and_previous_follow_saved_choices():
     assert ordered[ordered.index("source") :] == ["source", "finish"]
     # With a current token the step is done and its save opens Test Slack.
     keyed = build(
-        draft(sections, source=uuid4()),
+        draft(sections, checked=True),
         "slack",
         credentials=credentials | {"slack": True},
         tests=frozenset({"mail_test"}),
@@ -150,9 +152,9 @@ def test_done_state_next_and_previous_follow_saved_choices():
 
 
 def final(current, *, tests=frozenset()):
-    """The stepper of a draft whose data-entry steps and load are all done."""
+    """The stepper of a draft whose data-entry steps and check are all done."""
     sections = VALUES | {"branding": {"bundle_id": str(uuid4())}}
-    completed = draft(sections, source=uuid4())
+    completed = draft(sections, checked=True)
     return build(
         completed,
         current,
@@ -161,10 +163,10 @@ def final(current, *, tests=frozenset()):
     )
 
 
-def test_the_email_test_opens_without_the_later_steps_or_the_load():
+def test_the_email_test_opens_without_the_later_steps_or_the_check():
     """Test email needs only Outgoing email settings, Testing recipient and
     Google Workspace connection (#1578): it opens before Parish logos,
-    Administrative access, ParishSoft connection and the load; Finish setup
+    Administrative access, ParishSoft connection and the check; Finish setup
     waits for it."""
     sections = {key: VALUES[key] for key in ("parish", "mail", "testing")}
     wizard = build(
@@ -191,13 +193,13 @@ def test_the_email_test_opens_without_the_later_steps_or_the_load():
     assert keyless.step("mail_test").fix_url == (
         "/admin/setup/credentials/google_workspace"
     )
-    # After the load, Finish setup follows it: its Back is Load parish data.
+    # After the check, Finish setup follows it: its Back is Check parish data.
     assert final("finish", tests=frozenset({"mail_test"})).previous.key == "source"
 
 
-def test_finish_follows_the_load_and_opens_only_after_the_tests():
+def test_finish_follows_the_check_and_opens_only_after_the_tests():
     """Finish setup opens once the tests are accepted, straight after the
-    load (no Review page, #2145), and is never done before setup finishes."""
+    check (no Review page, #2145), and is never done before setup finishes."""
     tests = frozenset({"mail_test"})
     wizard = final("source", tests=tests)
     shown = states(wizard)
@@ -223,7 +225,7 @@ def test_a_later_save_keeps_the_tests_and_opens_finish(slack):
     }
     credentials = {"parishsoft": True, "google_workspace": True, "slack": True}
     tests = frozenset({"mail_test", "slack_test"} if slack else {"mail_test"})
-    saved = draft(sections, source=uuid4())
+    saved = draft(sections, checked=True)
     saved.status.version = 4
     wizard = build(saved, "access", credentials=credentials, tests=tests)
     shown = states(wizard)
@@ -242,14 +244,14 @@ def test_a_changed_mail_setting_opens_the_stale_key_then_the_email_test():
     opens Test email, never Finish setup (#1476, #1578)."""
     sections = VALUES | {"branding": {"bundle_id": str(uuid4())}}
     stale = build(
-        draft(sections, source=uuid4()),
+        draft(sections, checked=True),
         "mail",
         credentials={"parishsoft": True, "google_workspace": False},
     )
     assert states(stale)["mail_test"] == "blocked"
     assert stale.next.key == "testing" and stale.onward.key == "google_workspace"
     keyed = build(
-        draft(sections, source=uuid4()),
+        draft(sections, checked=True),
         "google_workspace",
         credentials={"parishsoft": True, "google_workspace": True},
     )
@@ -263,7 +265,7 @@ def test_onward_opens_the_step_needing_work_when_the_next_one_is_blocked(current
     not open the blocked Test email: it opens the stale key step instead."""
     sections = VALUES | {"branding": {"bundle_id": str(uuid4())}}
     wizard = build(
-        draft(sections, source=uuid4()),
+        draft(sections, checked=True),
         current,
         credentials={"parishsoft": True, "google_workspace": False},
     )
@@ -286,9 +288,10 @@ def test_onward_is_the_next_step_when_every_later_one_is_done():
 
 
 def test_loading_keeps_completed_steps_but_links_only_the_load():
-    """While the load runs other pages redirect, yet finished work still counts.
+    """While a load runs other pages redirect, yet finished work still counts.
 
-    The load is the last data-entry step, so every earlier data-entry page
+    Only an attempt that started a load before #2201 is still loading. The
+    load was the last data-entry step, so every earlier data-entry page
     is complete while it runs; the email test, not sent here, waits like the
     rest, and Finish setup is still to come.
     """
@@ -314,14 +317,14 @@ def test_loading_keeps_completed_steps_but_links_only_the_load():
     assert wizard.next.key == "finish" and wizard.next.url is None
 
 
-def test_a_failed_load_leaves_the_load_to_do_and_every_page_open():
-    """A failed load returns setup to collecting (#1353) but is not done."""
-    # Parish logos and Administrative access come before the load (#1389).
+def test_a_failed_check_leaves_the_check_to_do_and_every_page_open():
+    """A failed or stale parish data check is not done (#2201)."""
+    # Parish logos and Administrative access come before the check (#1389).
     sections = {
         key: VALUES[key] for key in ("parish", "mail", "testing", "slack", "access")
     } | {"branding": {"bundle_id": str(uuid4())}}
     wizard = build(
-        draft(sections, source=uuid4(), task_state="failed"),
+        draft(sections),
         "source",
         credentials={"parishsoft": True, "google_workspace": True},
         tests=frozenset({"mail_test"}),
@@ -331,23 +334,13 @@ def test_a_failed_load_leaves_the_load_to_do_and_every_page_open():
     assert wizard.step("source").url == "/admin/setup/source"
     assert shown["parishsoft"] == "done"
     assert wizard.step("parishsoft").url == "/admin/setup/credentials/parishsoft"
-    # Unlike while loading, the earlier pages are links again, and the email
-    # test needs no load (#1578).
+    # The earlier pages stay links, and the email test needs no check (#1578).
     for key in ("parish", "mail", "testing", "google_workspace", "slack"):
         assert wizard.step(key).url is not None, key
     assert wizard.step("mail_test").url == "/admin/setup/mail-test"
-    # A discarded load (no binding) is not done either.
-    voided = build(
-        draft(sections),
-        "source",
-        credentials={"parishsoft": True, "google_workspace": True},
-        tests=frozenset({"mail_test"}),
-    )
-    assert voided.step("source").state == "todo"
-    # An attempt that loaded before sending the email test (the order before
-    # #1578) is sent to Test email first.
+    # An attempt whose email test is not sent yet is sent to Test email first.
     untested = build(
-        draft(sections, source=uuid4(), task_state="failed"),
+        draft(sections),
         "source",
         credentials={"parishsoft": True, "google_workspace": True},
     )
@@ -502,27 +495,25 @@ SLACK_ON = {"enabled": True, "channel_id": "C0123456789"}
 
 
 @pytest.mark.parametrize(
-    ("credentials", "source", "task_state"),
+    ("credentials", "checked"),
     [
-        # Slack's token is stale (the step itself then needs it), the load
-        # succeeded.
-        ({"parishsoft": True, "google_workspace": True, "slack": False}, True, None),
+        # Slack's token is stale (the step itself then needs it), the
+        # parish data is checked.
+        ({"parishsoft": True, "google_workspace": True, "slack": False}, True),
         # The Google Workspace key, an earlier step, is stale.
-        ({"parishsoft": True, "google_workspace": False, "slack": True}, True, None),
-        # No load yet, and the ParishSoft key is missing.
-        ({"google_workspace": True, "slack": True}, False, None),
-        # The load failed.
-        ({"parishsoft": True, "google_workspace": True, "slack": True}, True, "failed"),
+        ({"parishsoft": True, "google_workspace": False, "slack": True}, True),
+        # No check yet, and the ParishSoft key is missing.
+        ({"google_workspace": True, "slack": True}, False),
+        # The check failed.
+        ({"parishsoft": True, "google_workspace": True, "slack": True}, False),
     ],
 )
-def test_the_slack_step_is_linked_from_every_step_once_saved(
-    credentials, source, task_state
-):
+def test_the_slack_step_is_linked_from_every_step_once_saved(credentials, checked):
     """Slack notifications (optional) has no prerequisite, so once saved it is
     a link from every step whatever else is stale or not done (#1499): that
     is where Slack is turned off. A later ordering change must not lock it."""
     sections = VALUES | {"branding": {"bundle_id": str(uuid4())}, "slack": SLACK_ON}
-    saved = draft(sections, source=uuid4() if source else None, task_state=task_state)
+    saved = draft(sections, checked=checked)
     for page in PAGES:
         wizard = build(saved, page.key, credentials=credentials)
         step = wizard.step("slack")
@@ -538,7 +529,7 @@ def test_turning_slack_off_drops_its_test_and_finish_needs_no_slack_test():
     Finish setup, which needs no Slack test (#1499)."""
     sections = VALUES | {"branding": {"bundle_id": str(uuid4())}}
     credentials = {"parishsoft": True, "google_workspace": True}
-    off = draft(sections, source=uuid4())
+    off = draft(sections, checked=True)
     off.status.version = 4
     wizard = build(off, "slack", credentials=credentials)
     assert "slack_test" not in states(wizard)

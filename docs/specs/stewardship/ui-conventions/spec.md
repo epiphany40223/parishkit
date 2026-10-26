@@ -457,7 +457,7 @@ never on the step's labels, so every step of the flow looks the same.
 - **Admin wizards.** Back is Back (Return to *step* on a step's sub-page).
   Next holds the step's one primary control
   ([wizards](#wizards) rule 2): Continue to *next step*, Save and continue,
-  Save and go back, or the step's own submit (such as Load parish data or
+  Save and go back, or the step's own submit (such as Check parish data or
   Check readiness), and is empty while the step has none. The middle holds
   the step's secondary alternative where it has one (Continue without
   schedules for now beside the suggested schedules, Stop go-live on Go

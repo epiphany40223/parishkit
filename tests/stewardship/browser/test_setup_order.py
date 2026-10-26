@@ -1,7 +1,7 @@
 """The setup wizard runs each test right after its own input step (#1578).
 
 Test email follows Google Workspace connection and Test Slack (when Slack
-is on) the one Slack notifications step; Finish setup follows Load parish
+is on) the one Slack notifications step; Finish setup follows Check parish
 data (no Review page, #2145) and checks the tests' results itself (#1476).
 A test that was not sent links the steps that fix it, and saving a fix
 leads back to the test, never to Finish setup first.
@@ -79,14 +79,14 @@ def test_finish_follows_the_load_and_checks_the_accepted_test(
     page, component_origin, axe_source
 ):
     """The step bar runs Google Workspace connection, Test email, and later
-    Load parish data, then Finish setup (#1578; no Review page, #2145); with
-    the test accepted, Finish setup offers its own submit, Back to the load."""
+    Check parish data, then Finish setup (#1578; no Review page, #2145); with
+    the test accepted, Finish setup offers its own submit, Back to the check."""
     from .test_components import axe_violations
 
     page.goto(component_origin + FINISH_READY)
     labels = track_labels(page)
-    assert labels[labels.index("Load parish data") :] == [
-        "Load parish data",
+    assert labels[labels.index("Check parish data") :] == [
+        "Check parish data",
         "Finish setup",
     ]
     assert "Review" not in labels

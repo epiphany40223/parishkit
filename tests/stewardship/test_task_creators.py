@@ -105,11 +105,10 @@ SITES = {
         WEB,
         {"accounts/setup_mail_views.py", "local/seed_web.py"},
     ),
-    "accounts/setup_source.py::start_source_load": site(
-        "setup_source_load",
-        WEB,
-        {"accounts/setup_views.py", "local/seed_web.py"},
-    ),
+    # Dormant since #2201: Check parish data replaced the setup load, so no
+    # page or seeder imports it any more; the SQL creator map still names
+    # its type until the load path is removed.
+    "accounts/setup_source.py::start_source_load": site("setup_source_load", WEB),
     "campaigns/cleanup_requests.py::retry_cleanup": site(
         "production_cleanup", WEB, {"accounts/go_live_progress.py"}
     ),

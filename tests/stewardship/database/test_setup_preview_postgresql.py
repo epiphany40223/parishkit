@@ -28,10 +28,10 @@ from parishkit.stewardship.storage import StaleRecordError
 from ..content_factory import content
 from ..test_integration_candidates import account
 from ..test_setup_forms import VALUES
+from .setup_check_builders import checked, checked_setup
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_branding_setup_postgresql import graphics
 from .test_runtime_auth_grants_postgresql import web_login
-from .test_setup_campaign_postgresql import completed
 from .test_setup_credentials_postgresql import publish
 from .test_setup_preparation_postgresql import with_schedules
 from .test_setup_staging_postgresql import login, setup_service  # noqa: F401
@@ -43,15 +43,19 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def complete_draft(service, monkeypatch, tmp_path, *, campaign=False):
     """Prepare all public inputs and sealed credentials through actual owner APIs.
 
-    The draft is the loaded system setup, with no first-campaign sections, as
-    the wizard saves since #142. ``campaign`` also stages first-campaign,
-    content and schedule sections, as an attempt saved before #142 may hold.
+    The draft is the checked system setup (#2201: its parish data checked,
+    with no setup load), with no first-campaign sections, as the wizard saves
+    since #142. ``campaign`` instead stages first-campaign, content and
+    schedule sections on a staged load, as an attempt saved before #142 may
+    hold, and then checks its parish data too, which its final confirmation
+    needs since #2201.
     """
     if campaign:
         request, status, _, _ = with_schedules(service, monkeypatch)
+        attempt = checked(request, service, status.attempt_id)
     else:
-        request, attempt = completed(service, monkeypatch)
-        status = SimpleNamespace(attempt_id=attempt.pk, version=attempt.version)
+        request, attempt = checked_setup(service)
+    status = SimpleNamespace(attempt_id=attempt.pk, version=attempt.version)
     publish("google_workspace", material=b"g" * 32)
     media = tmp_path / "media"
     media.mkdir(mode=0o700)
@@ -111,12 +115,15 @@ def before_142(monkeypatch):
     )
     monkeypatch.setattr(setup_preview, "compile_candidate", one_campaign_candidate)
 
-    def staged(service, monkeypatch):
-        """The loaded draft with its first campaign, content and schedules."""
-        request, status, _, _ = with_schedules(service, monkeypatch)
-        return request, SimpleNamespace(pk=status.attempt_id, version=status.version)
+    def staged(service):
+        """The loaded draft with its first campaign, content and schedules.
 
-    monkeypatch.setattr(module, "completed", staged)
+        Its parish data is checked too (#2201), as a confirmation needs.
+        """
+        request, status, _, _ = with_schedules(service, monkeypatch)
+        return request, checked(request, service, status.attempt_id)
+
+    monkeypatch.setattr(module, "checked_setup", staged)
 
 
 def one_campaign_candidate(base, *, attempt_id, operation_id, sections, **kwargs):
@@ -267,7 +274,7 @@ def test_review_page_is_gone_and_finish_follows_the_load(
     setup_http, monkeypatch, tmp_path, settings
 ):
     """Setup has no Review page (#2145): its old address is not kept (no
-    redirect), and Finish setup's Back is Load parish data. Finish setup
+    redirect), and Finish setup's Back is Check parish data. Finish setup
     still compiles the exact preview and shows no private bytes."""
     request, _, media = complete_draft(setup_http, monkeypatch, tmp_path)
     settings.STEWARDSHIP_MEDIA_ROOT = media

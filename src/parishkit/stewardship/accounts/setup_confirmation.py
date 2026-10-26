@@ -19,7 +19,7 @@ from parishkit.stewardship.web.refusals import load_preview
 from .configuration_requests import _status, check_historical_additions
 from .models import ConfigurationChangeRequest
 from .sessions import authenticated_admin, database_now
-from .setup_campaign import staged_source_result
+from .setup_campaign import current_source_check
 from .setup_configuration import request_schema_for
 from .setup_delivery_models import SetupMailDelivery
 from .setup_drafts import _owned
@@ -35,7 +35,7 @@ from .setup_wizard import accepted_tests
 class ReadyInputs:
     """Only stable receipt identities cross into the frozen installation journal."""
 
-    source_result: UUID
+    source_check: UUID
     mail_delivery: UUID
     slack_delivery: UUID | None
 
@@ -61,9 +61,9 @@ def ready_inputs(preview):
         if required and selected[name] is None:
             raise ValueError("A successful test of the current settings is required.")
     return ReadyInputs(
-        # Setup collects no campaign (#142): the source result is the
-        # attempt's staged load, never a saved campaign section's.
-        staged_source_result(draft.status.attempt_id),
+        # Setup collects no campaign (#142), and since #2201 the source is
+        # the attempt's current parish data check, never a staged load.
+        current_source_check(draft.status.attempt_id),
         selected["mail_test"],
         selected["slack_test"],
     )
@@ -138,7 +138,7 @@ def freeze_setup(request, service, *, preview_token):
         )
         SetupReadinessBinding.objects.create(
             intent=intent,
-            source_result_id=ready.source_result,
+            source_check_id=ready.source_check,
             mail_delivery_id=ready.mail_delivery,
             slack_delivery_id=ready.slack_delivery,
             testing_recipient=preview.draft.sections["testing"]["testing_recipient"],

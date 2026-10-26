@@ -47,13 +47,13 @@ SUMMARIES = {
     "working": _("The load is running."),
     "done": _("Parish data is loaded. Continue to the next setup step."),
     "failed": _(
-        "The load did not finish. Check the ParishSoft connection, then load "
-        "the parish data again."
+        "The load did not finish. Check the ParishSoft connection, then check "
+        "the parish data."
     ),
     "ended": _("The load did not finish."),
     "voided": _(
-        "This load is no longer used. Load the parish data again from the "
-        "Load parish data step."
+        "This load is no longer used. Check the parish data from the Check "
+        "parish data step."
     ),
 }
 

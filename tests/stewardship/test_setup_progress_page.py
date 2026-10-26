@@ -347,7 +347,7 @@ def test_continue_sits_in_the_bottom_action_row_from_the_start(key):
         "slack": {"enabled": False, "channel_id": ""},
     }
     wizard = build(
-        draft(sections, source=uuid4(), task_state="succeeded"),
+        draft(sections, source=uuid4(), checked=True),
         "source",
         credentials={"parishsoft": True, "google_workspace": True},
     )

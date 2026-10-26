@@ -92,7 +92,7 @@ CONVERTED_PAGES = {
     "/setup-confirmation": "only this sign-in can continue or cancel setup",
     "/setup-mail-test": "The test goes only to the designated Testing recipient",
     "/setup-branding": "This logo is private",
-    "/setup-source": "Starting the load fixes the parish time zone",
+    "/setup-source": "Check that ParishSoft answers for",
     "/setup-credential": "never shown again",
     "/setup": "Cancel permanently ends this attempt",
     "/setup-source-progress": "Downloaded from ParishSoft",
