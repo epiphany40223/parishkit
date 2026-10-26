@@ -1034,12 +1034,14 @@ save never opens it while an earlier required step still needs work: that
 step opens instead. The wizard gains no test step for it (see **Checking the
 folder** below).
 
-**What it asks.** The step's introduction says, in plain language, that the
+**What it asks.** The step's About panel says, in plain language, that the
 server makes an encrypted backup every night, that a copy kept somewhere
 else protects the parish if the server is lost, and that copies can be
 turned on now or later from Off-site backups (Google Drive). A short
-paragraph about the backup private key follows, shown whether or not copies
-are turned on, since it is true of every backup: backups are encrypted to
+paragraph about the backup private key, How backups are protected, follows
+in the same panel ([page help](../ui-conventions/spec.md#page-help))
+whether or not copies are turned on, since it is true of every backup:
+backups are encrypted to
 the backup encryption key the server operator installed; only its private
 key, which the parish keeps away from this server, can open them, and
 without it no backup can be restored; this system never holds the private
@@ -1047,7 +1049,8 @@ key and cannot show or send it; after setup an Administrator can replace
 the key from Backup encryption key. Then:
 
 1. **Copy each backup to Google Drive**, a checkbox, unticked on a first
-   visit.
+   visit. One help line stays under its words; the rest of its help opens
+   from the "i" beside them.
 2. Shown only while it is ticked
    ([conditional fields](../ui-conventions/spec.md#conditional-fields)):
    - **Google Drive folder link**, the same field, help, browser pattern,
@@ -1059,8 +1062,8 @@ the key from Backup encryption key. Then:
      (for example, a Content manager of the folder's shared drive).
    - **The backup private key is kept safe**, a required checkbox: "I know
      where the parish keeps the backup private key, away from this server.
-     Without it no backup can be restored." Its help points to the
-     paragraph above.
+     Without it no backup can be restored." Its help points to How backups
+     are protected in About this page.
 
 Above the form, whether or not the box is ticked, the step shows the
 one-time Google steps of the
