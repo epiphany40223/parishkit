@@ -3861,7 +3861,8 @@ state and In progress stage boxes
 stages shows them as one row of stage boxes: one box per stage, in order,
 left to right, wrapping onto more rows on a phone with no sideways scroll.
 Each box names its stage and its state in words, Not started, In progress,
-Done or Failed (Finishing setup also has Waiting for the server operator;
+Done or Failed (Finishing setup also has Waiting for the server operator,
+used only when a credential's automatic pickup is overdue;
 a finished piece of work whose outcome nobody can confirm, such as a test
 email the mail service did not acknowledge, shows its own words in a neutral
 uncertain box with a "?" mark and a dashed outline, never as Failed),
