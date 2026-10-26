@@ -270,7 +270,9 @@ no secret.
 ## Off-site copies to Google Drive
 
 An Administrator can turn on off-site copies from the portal: Integrations,
-then **Off-site backups (Google Drive)**. After each successful backup, the
+then **Off-site backups (Google Drive)**, or during initial setup, in its
+optional **Off-site backups** step, which queues one Test access check of
+the folder when setup completes. After each successful backup, the
 same `backup-worker` run uploads the new set's three files (the two sealed
 files and `manifest.json`, never anything unencrypted) into a subfolder named
 like the set, inside the Drive folder the Administrator chose. It then moves

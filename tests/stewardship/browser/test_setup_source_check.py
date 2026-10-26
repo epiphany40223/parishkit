@@ -84,7 +84,8 @@ def test_the_wait_swaps_in_the_answer_in_place(page, component_origin):
     )
     continuing = page.locator(f"{NEXT}.setup-continue")
     visible(continuing)
-    assert continuing.get_attribute("href") == "/admin/setup/confirm"
+    # The next step not done yet: the optional Off-site backups (#2200).
+    assert continuing.get_attribute("href") == "/admin/setup/backup"
     visible(page.get_by_role("button", name="Check again"))
     assert page.evaluate(MARKED) == "kept"
     assert page.url == component_origin + CHECK_WAITING

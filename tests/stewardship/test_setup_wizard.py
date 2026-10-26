@@ -44,7 +44,8 @@ def test_every_page_has_a_unique_key_and_resolvable_url():
 def test_each_test_follows_its_own_input_step_and_finish_is_last():
     """Test email follows Google Workspace connection and Test Slack the one
     Slack step (#1578); ParishSoft connection and Check parish data are the
-    last data-entry pages, then Finish setup.
+    last data-entry pages, then the optional Off-site backups step (#2200),
+    then Finish setup.
 
     Each test is one step after the page that fixes it, and a failed parish
     data check is one step after the page that fixes its key (#1353,
@@ -63,6 +64,7 @@ def test_each_test_follows_its_own_input_step_and_finish_is_last():
         "access",
         "parishsoft",
         "source",
+        "backup",
         "finish",
     ]
 
@@ -129,7 +131,7 @@ def test_done_state_next_and_previous_follow_saved_choices():
     ordered = [step.key for step in wizard.steps]
     assert ordered.index("access") < ordered.index("parishsoft")
     assert ordered.index("parishsoft") + 1 == ordered.index("source")
-    assert ordered[ordered.index("source") :] == ["source", "finish"]
+    assert ordered[ordered.index("source") :] == ["source", "backup", "finish"]
     # With a current token the step is done and its save opens Test Slack.
     keyed = build(
         draft(sections, checked=True),
@@ -144,9 +146,18 @@ def test_done_state_next_and_previous_follow_saved_choices():
     assert build(draft(sections), "branding").previous.key == "slack_test"
 
 
-def final(current, *, tests=frozenset()):
-    """The stepper of a draft whose data-entry steps and check are all done."""
+# The optional Off-site backups step saved off (#2200).
+BACKUP_OFF = {"enabled": False, "folder_link": "", "acknowledged": False}
+
+
+def final(current, *, tests=frozenset(), backup=True):
+    """The stepper of a draft whose data-entry steps and check are all done.
+
+    ``backup`` is whether the optional Off-site backups step is saved (off).
+    """
     sections = VALUES | {"branding": {"bundle_id": str(uuid4())}}
+    if backup:
+        sections |= {"backup": BACKUP_OFF}
     completed = draft(sections, checked=True)
     return build(
         completed,
@@ -186,22 +197,24 @@ def test_the_email_test_opens_without_the_later_steps_or_the_check():
     assert keyless.step("mail_test").fix_url == (
         "/admin/setup/credentials/google_workspace"
     )
-    # After the check, Finish setup follows it: its Back is Check parish data.
-    assert final("finish", tests=frozenset({"mail_test"})).previous.key == "source"
+    # After the check comes Off-site backups (optional), then Finish setup:
+    # its Back is the backups step (#2200).
+    assert final("finish", tests=frozenset({"mail_test"})).previous.key == "backup"
 
 
 def test_finish_follows_the_check_and_opens_only_after_the_tests():
-    """Finish setup opens once the tests are accepted, straight after the
-    check (no Review page, #2145), and is never done before setup finishes."""
+    """Finish setup opens once the tests are accepted, after the check and the
+    optional Off-site backups step (no Review page, #2145), and is never done
+    before setup finishes."""
     tests = frozenset({"mail_test"})
     wizard = final("source", tests=tests)
     shown = states(wizard)
     assert shown["mail_test"] == "done"
     assert shown["finish"] == "todo" and wizard.step("finish").url is not None
     assert wizard.resume.key == "finish"
-    assert wizard.next.key == "finish" and wizard.onward.key == "finish"
+    assert wizard.next.key == "backup" and wizard.onward.key == "finish"
     on_finish = final("finish", tests=tests)
-    assert on_finish.previous.key == "source" and on_finish.next is None
+    assert on_finish.previous.key == "backup" and on_finish.next is None
     # Without an accepted test, Finish setup is blocked and the test fixes it.
     untested = final("finish")
     assert states(untested)["finish"] == "blocked"
@@ -215,6 +228,7 @@ def test_a_later_save_keeps_the_tests_and_opens_finish(slack):
     sections = VALUES | {
         "branding": {"bundle_id": str(uuid4())},
         "slack": {"enabled": slack, "channel_id": "C0123456789" if slack else ""},
+        "backup": BACKUP_OFF,
     }
     credentials = {"parishsoft": True, "google_workspace": True, "slack": True}
     tests = frozenset({"mail_test", "slack_test"} if slack else {"mail_test"})
@@ -326,8 +340,8 @@ def test_stepper_marks_current_step_with_text_not_color_alone():
     assert "Not available yet" in html
     assert 'href="/admin/setup/source"' not in html  # blocked: shown as text
     # Compact summary: the current step by number and name, and the count.
-    assert "Step 3 of 11:" in html and "<strong>Testing recipient</strong>" in html
-    assert "1 of 11 steps completed" in html
+    assert "Step 3 of 12:" in html and "<strong>Testing recipient</strong>" in html
+    assert "1 of 12 steps completed" in html
     # On a narrow screen the full list is collapsed by default (and stays as
     # the reader left it across an in-place swap, #519); the step bar is a
     # list of links.
@@ -368,7 +382,7 @@ def test_step_bar_links_each_open_step_and_explains_the_others():
     wizard = build(draft({"mail": VALUES["mail"]}), "testing")
     html = render_to_string("stewardship/setup-wizard.html", {"wizard": wizard})
     segments = track_segments(html)
-    assert len(segments) == len(wizard.steps) == 11
+    assert len(segments) == len(wizard.steps) == 12
     for step, segment in zip(wizard.steps, segments, strict=True):
         if step.url:
             assert f'href="{step.url}"' in segment, step.key
@@ -385,12 +399,12 @@ def test_step_bar_links_each_open_step_and_explains_the_others():
     # The tooltip and the accessible name say the same; the current step
     # says so, and Back/Next are untouched (the bar saves nothing).
     current = segments[2]
-    assert 'data-tip="Step 3 of 11: Testing recipient — Current step — ' in current
+    assert 'data-tip="Step 3 of 12: Testing recipient — Current step — ' in current
     assert (
-        '<span class="setup-sr-only">Step 3 of 11: Testing recipient — Current step'
+        '<span class="setup-sr-only">Step 3 of 12: Testing recipient — Current step'
         in html
     )
-    assert 'data-tip="Step 2 of 11: Outgoing email settings — Completed"' in html
+    assert 'data-tip="Step 2 of 12: Outgoing email settings — Completed"' in html
     assert " title=" not in html.split('<ol class="setup-track"')[1].split("</ol>")[0]
 
 
@@ -501,7 +515,67 @@ def test_turning_slack_off_drops_its_test_and_finish_needs_no_slack_test():
     # opens the test.
     assert wizard.onward.key == "mail_test"
     # Every other step done: the save opens Finish setup, open without a
-    # Slack test.
+    # Slack test (or, while it is not saved, Off-site backups, #2200).
+    tested = build(off, "slack", credentials=credentials, tests={"mail_test"})
+    assert tested.onward.key == "backup"
+    assert states(tested)["finish"] == "todo"
+    off.sections = sections | {"backup": BACKUP_OFF}
     tested = build(off, "slack", credentials=credentials, tests={"mail_test"})
     assert tested.onward.key == "finish"
-    assert states(tested)["finish"] == "todo"
+
+
+def test_off_site_backups_is_optional_last_and_never_holds_finish_back():
+    """Off-site backups (optional) comes just before Finish setup (#2200,
+    Administrator 2026-10-26). Unsaved it reads Optional and Finish setup
+    opens without it; saving Check parish data opens it, and saving it opens
+    Finish setup. Its Back is Check parish data."""
+    tests = frozenset({"mail_test"})
+    unsaved = final("source", tests=tests, backup=False)
+    step = unsaved.step("backup")
+    assert step.state == "todo" and step.status == "Optional"
+    assert step.url == "/admin/setup/backup"
+    assert states(unsaved)["finish"] == "todo"
+    assert unsaved.resume.key == "finish"
+    assert unsaved.onward.key == "backup"
+    on_backup = final("backup", tests=tests, backup=False)
+    assert on_backup.previous.key == "source" and on_backup.next.key == "finish"
+    assert on_backup.onward.key == "finish"
+    saved = final("backup", tests=tests)
+    assert saved.step("backup").state == "done"
+    assert saved.onward.key == "finish"
+
+
+def test_off_site_backups_waits_for_the_required_steps_before_it():
+    """By the ordering rule the optional step opens only once every required
+    step before it is done, and a save never detours to it while one still
+    needs work: it opens the step needing work instead (#2200)."""
+    sections = VALUES | {"branding": {"bundle_id": str(uuid4())}}
+    # The parish data is not checked yet: Off-site backups waits for it.
+    wizard = build(
+        draft(sections),
+        "parishsoft",
+        credentials={"parishsoft": True, "google_workspace": True},
+        tests=frozenset({"mail_test"}),
+    )
+    assert states(wizard)["backup"] == "locked"
+    assert wizard.step("backup").url is None
+    assert wizard.onward.key == "source"
+    # Every later step but the optional one done, and the email test still
+    # to do: the save opens the test, not the locked backups step.
+    untested = build(
+        draft(sections, checked=True),
+        "access",
+        credentials={"parishsoft": True, "google_workspace": True},
+    )
+    assert states(untested)["backup"] == "locked"
+    assert untested.onward.key == "mail_test"
+
+
+def test_back_passes_over_the_optional_step_while_it_cannot_open():
+    """Finish setup's Back is Off-site backups once it can open, and Check
+    parish data while it cannot (#2200): a Back link never disappears."""
+    assert final("finish", tests=frozenset({"mail_test"})).previous.key == "backup"
+    untested = final("finish", backup=False)
+    assert states(untested)["backup"] == "locked"
+    assert untested.previous.key == "source"
+    assert untested.previous.url is not None

@@ -30,6 +30,7 @@ from .demand import request_rebuild, requested_inputs
 from .export_services import admit_campaign
 from .fact_fields import rebuild_execution_key
 from .fact_tasks import TASK_TYPE
+from .facts import review_watermark
 from .inputs import FactInputs
 from .models import CampaignFactRebuildDemand
 
@@ -64,7 +65,11 @@ def hint_current_facts(campaign_id, *, source_id=None):
 
 
 def _current_inputs(campaign_id, projection, current_source):
-    """Both populations' current fact inputs: source, watermark, local day."""
+    """Both populations' current fact inputs: source, watermarks, local day.
+
+    The pledge review watermark (#2202) is read here too, so a pledge review
+    makes the inputs differ and this pass records new demand.
+    """
     watermark = (
         Submission.objects.filter(campaign_id=campaign_id, mode="live").aggregate(
             value=Max("campaign_sequence")
@@ -74,9 +79,16 @@ def _current_inputs(campaign_id, projection, current_source):
     through = min(
         projection.end_date, _now().astimezone(ZoneInfo(projection.timezone)).date()
     )
+    reviews = review_watermark(campaign_id)
     return tuple(
         FactInputs(
-            campaign_id, population, current_source, watermark, projection.pk, through
+            campaign_id,
+            population,
+            current_source,
+            watermark,
+            projection.pk,
+            through,
+            review_watermark=reviews,
         )
         for population in ("historical", "current")
     )

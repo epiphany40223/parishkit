@@ -233,4 +233,4 @@ def test_stepper_links_completed_steps_and_the_next_one_only(setup_http, google)
         # The stepper grants and removes nothing: the page itself still opens.
         assert browser.get("/admin/setup/testing").status_code == 200
         body = browser.get("/admin/setup/source").content
-        assert b"1 of 11 steps completed" in body
+        assert b"1 of 12 steps completed" in body

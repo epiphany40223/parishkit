@@ -76,10 +76,14 @@ def _live_effects(submission, *, campaign, configuration, family):
                 submission.campaign_sequence,
                 campaign.active_configuration_id,
                 submission.submitted_on,
+                review_watermark=0,
             ),
             admit=lambda action, inputs: (
                 action == "request" and inputs.campaign_id == campaign.pk
             ),
+            # The Family portal reads no pledge review (#2202): the demand
+            # keeps its watermark, which the scheduler advances.
+            keep_review_watermark=True,
         )
 
 

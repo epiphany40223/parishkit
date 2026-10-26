@@ -191,6 +191,8 @@ from .send_progress_components import components as send_progress_components
 from .settings_components import POSTS as SETTINGS_POSTS
 from .settings_components import components as settings_components
 from .setup_back_path_components import components as setup_back_path_components
+from .setup_backup_components import POSTS as SETUP_BACKUP_POSTS
+from .setup_backup_components import components as setup_backup_components
 from .setup_check_components import components as setup_check_components
 from .setup_live_components import POSTS as SETUP_LIVE_POSTS
 from .setup_live_components import components as setup_live_components
@@ -2296,6 +2298,7 @@ def component_responses():
     responses.update(
         setup_order_components(context, admin, NOW, SETUP_MAIL_STATUS, setup_draft)
     )
+    responses.update(setup_backup_components(context, admin, setup_draft))
     responses.update(backup_test_components(context, admin))
     responses.update(family_test_components(context, admin))
     responses.update(upload_defaults_components(context, admin))
@@ -2339,6 +2342,7 @@ def component_responses():
         | INTEGRATION_DIALOG_POSTS
         | STEPPER_POSTS
         | SETUP_ORDER_POSTS
+        | SETUP_BACKUP_POSTS
         | CAMPAIGN_SETTINGS_POSTS
         | CAMPAIGN_CREATE_POSTS
         | SCHEDULE_LIST_POSTS

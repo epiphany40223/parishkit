@@ -3116,7 +3116,10 @@ plan lays out. The setup wizard meets rules 2, 4, 5, 7, 8 and 12, and
 rule 1 except the "Next:" line: a saved page stays completed, while its
 Review is asked for again after any later edit of the draft and its parish
 data load goes stale when the ParishSoft credential changes. Its button
-keeps the single label Save and continue on an unchanged page (rule 3), and
+keeps the single label Save and continue on an unchanged page (rule 3),
+while the Off-site backups (optional) step meets rule 9 with
+**Continue without off-site backups for now**
+([#2200](https://github.com/epiphany40223/parishkit/issues/2200)), and
 it has no Leave setup in its summary (rule 11) and no sub-pages. The
 campaign wizard meets rules 1, 7, 9, 11 and 12 and the Return to *step*
 link of rule 10 ([#1407](https://github.com/epiphany40223/parishkit/pull/1407)):

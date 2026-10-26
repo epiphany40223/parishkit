@@ -33,6 +33,7 @@ from .facts import (
     FactUnavailable,
     _owned,
     fact_inputs,
+    pledge_edits,
     publish_fact_set,
     read_fact_set,
     stage_fact_days,
@@ -96,8 +97,13 @@ def _load_calculation(record):
     Cutoff manifests and first-eligibility fields survive source compaction and
     later inactivation. Never use today's effective-response or eligibility
     pointers. The exact watermark excludes submissions committed during a build.
+    A Family's live versions from the response its pledge Edit reviewed on
+    count that Edit's annual pledge (#2202, option B), from the Edits the
+    generation recorded when it was created, so verification recalculates
+    exactly what was built however later reviews change.
     """
     inputs = fact_inputs(record)
+    edits = pledge_edits(record)
     projection = CampaignConfiguration.objects.get(pk=inputs.timezone_configuration_id)
     source = SourceSnapshot.objects.only(
         "id", "organization_id", "state", "generation", "promoted_at"
@@ -130,7 +136,11 @@ def _load_calculation(record):
             sequence,
             instant,
             MoneyAmount(
-                None if amount is None else Money.from_string(str(amount)).cents
+                None
+                if amount is None
+                else Money.from_string(
+                    str(_in_force(edits.get(family), sequence, amount))
+                ).cents
             ),
         )
         for family, sequence, instant, amount in Submission.objects.filter(
@@ -160,6 +170,13 @@ def _load_calculation(record):
         current,
         responses,
     )
+
+
+def _in_force(edit, sequence, amount):
+    """The annual pledge a live version counts: an Edit's from its response on."""
+    if edit is not None and sequence >= edit.from_sequence:
+        return edit.annual_pledge
+    return amount
 
 
 def materialize_fact_set(fact_set_id, claim, *, admit, interactive=False):

@@ -44,11 +44,14 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         ADDRESS_RETRY_TOKEN_FUNCTION,
         AUTOMATION_REQUEST_FUNCTION,
         DEBUG_OFF_FUNCTION,
+        EDITS_IN_FORCE_FUNCTION,
         EXPORT_DISCARD_FUNCTION,
+        FACT_EDITS_FUNCTION,
         FAMILY_LOGIN_FUNCTION,
         LEADER_CHANGES_FUNCTION,
         LEADER_SCOPE_FUNCTION,
         MINISTRY_CATALOG_FUNCTION,
+        REVIEW_WATERMARK_FUNCTION,
         runtime_functions,
     )
 
@@ -76,7 +79,8 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     # Administrator addresses (#1562), and the Ministries one user's address
     # leads, for an Administrator reading that user's Timeline (#1925), and,
     # for Staff and Administrators, Ministry requests' count-only leader
-    # coverage (#1594).
+    # coverage (#1594), and the statistics capture's pledge Edits in force
+    # and review watermark (0184, 0185, #2202).
     assert runtime_functions(ServiceRole.WEB) == {
         FAMILY_LOGIN_FUNCTION,
         "stewardship_family_daily_sends_v1()",
@@ -103,6 +107,8 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         "stewardship_report_email_waiting_v1(uuid)",
         "stewardship_address_leader_scope_v1(text, uuid)",
         DEBUG_OFF_FUNCTION,
+        EDITS_IN_FORCE_FUNCTION,
+        REVIEW_WATERMARK_FUNCTION,
     }
     # The worker's definer routines purge ended Admin sessions (ADM-11),
     # count an export's read-guard stops (#386) and read a user's
@@ -131,6 +137,11 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         "stewardship_pledge_refresh_items_v2(uuid, uuid, uuid)",
         # The added Members a promotion may link (0141, #1670).
         "stewardship_added_member_candidates_v1(uuid, uuid)",
+        # The fact generations' pledge Edits and review watermark (0184,
+        # 0185, #2202).
+        EDITS_IN_FORCE_FUNCTION,
+        REVIEW_WATERMARK_FUNCTION,
+        FACT_EDITS_FUNCTION,
         DEBUG_OFF_FUNCTION,
     }
     assert runtime_functions("download") == {LEADER_SCOPE_FUNCTION}
@@ -142,10 +153,12 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         ADDRESS_RETRY_TOKEN_FUNCTION,
         DEBUG_OFF_FUNCTION,
     }
-    # The scheduler also discards ended exports' saved data (0109, #1398).
+    # The scheduler also discards ended exports' saved data (0109, #1398) and
+    # reads the review watermark for the fact sweeps (0185, #2202).
     assert runtime_functions(ServiceRole.SCHEDULER) == {
         DEBUG_OFF_FUNCTION,
         EXPORT_DISCARD_FUNCTION,
+        REVIEW_WATERMARK_FUNCTION,
     }
 
 

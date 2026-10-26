@@ -214,7 +214,11 @@ configured ([#142](https://github.com/epiphany40223/parishkit/issues/142)):
    organizations that key reaches, and a
    [quick check of the parish data](#checking-the-parish-data-during-setup).
    Finish setup's final load is the only full ParishSoft load.
-7. Final confirmation, which checks readiness (the accepted tests) itself.
+7. Optional off-site copies of the nightly backups to a Google Drive folder,
+   with the Administrator's word that the backup private key is kept safe
+   off the server
+   ([off-site backups during setup](#off-site-backups-during-setup)).
+8. Final confirmation, which checks readiness (the accepted tests) itself.
 
 The campaign is created afterwards, from Home, by
 [Create the campaign](#create-the-campaign). The wizard has no campaign
@@ -222,7 +226,9 @@ pages: the First campaign, Share options, Pages and emails and Dates and
 mail schedules pages it had before #142 are gone, and their old addresses
 are not kept (no redirects). Finishing setup creates no campaign, Families
 or Family codes. The wizard has no Review page either: Finish setup follows
-Check parish data directly, and the old `/admin/setup/preview` address is not
+Check parish data and the optional
+[Off-site backups step](#off-site-backups-during-setup) directly, and the
+old `/admin/setup/preview` address is not
 kept (no redirect;
 [#2145](https://github.com/epiphany40223/parishkit/issues/2145)). Review only
 repeated what the steps show and the exact public configuration, and Finish
@@ -244,7 +250,10 @@ staged with the outgoing mail and Testing settings as its public scope), then
 Test email; then the one Slack notifications (optional) step, which takes the
 channel and the Slack bot token together, then Test Slack while Slack is on;
 then Parish logos and Administrative access. ParishSoft connection and Check
-parish data come last before Finish setup, next to each other
+parish data come next, then Off-site backups (optional), the last optional
+step, just before Finish setup
+([#2200](https://github.com/epiphany40223/parishkit/issues/2200)).
+ParishSoft connection and Check parish data sit next to each other
 ([#1353](https://github.com/epiphany40223/parishkit/issues/1353),
 [#2201](https://github.com/epiphany40223/parishkit/issues/2201)): a check
 that fails on a wrong key or organization is one step after the page that
@@ -258,7 +267,8 @@ owner and live, active session while the attempt is collecting, in Testing
 mode with no campaign. Each staged credential's audit entry records how old
 the session's sign-in was, in seconds, when it was sealed. The idle and
 absolute session limits still apply. The final
-confirmation follows the check and checks the tests' results itself
+confirmation follows the check (and the optional Off-site backups step) and
+checks the tests' results itself
 ([#1476](https://github.com/epiphany40223/parishkit/issues/1476),
 [#2145](https://github.com/epiphany40223/parishkit/issues/2145)). Every page shows a
 compact progress stepper: the current step by number and name, the count of
@@ -283,7 +293,8 @@ continue validates, saves and opens the next applicable page not done yet,
 or the next page when every later one is done
 ([wizard rule 8](../ui-conventions/spec.md#wizards)), or redisplays
 the page with its errors; on the Parish, Parish logos, Administrative access,
-Outgoing email, Slack and Testing pages it is unavailable until every shown
+Outgoing email, Slack, Testing and Off-site backups pages it is unavailable
+until every shown
 required field is valid, with a short hint after the row saying what is
 missing, as [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)
 describe; a logo file over 5 MB is refused at its field as soon as it is
@@ -355,8 +366,10 @@ Finish setup first; when that step's prerequisites are missing, the save opens t
 step that needs work instead. A changed mail or Testing setting makes the
 staged Google Workspace key stale, and with it the email test. Back from
 Test email goes to Google Workspace connection, from Test Slack to Slack
-notifications, from Parish logos to the test before it, and from Finish
-setup to Check parish data. Finish setup's primary action is "Check readiness
+notifications, from Parish logos to the test before it, from Off-site
+backups (optional) to Check parish data, and from Finish setup to Off-site
+backups (optional), or to Check parish data while that optional step cannot
+open yet. Finish setup's primary action is "Check readiness
 and finish setup", which requires accepted tests of the current
 settings, and the SQL readiness guard admits the same binding and no other;
 when a test is missing or went stale, the page says so and links the tests. A setup
@@ -866,7 +879,8 @@ step is not done.
 
 **The page.** Its action row has Back (to ParishSoft connection) and the
 step's primary action: **Check parish data** before any check, **Continue**
-(to Finish setup) once a check of the current connection succeeded, with **Check
+(to the next step not done yet: Off-site backups (optional) until it is
+saved, then Finish setup) once a check of the current connection succeeded, with **Check
 again** as a secondary button, and **Check again** after a failed check.
 While a check waits, the primary action is an unavailable Continue with the
 reason "Available once the check finishes." in the line under the row
@@ -1011,6 +1025,202 @@ scrubbed row stays as the audit's tombstone, so at most one unscrubbed staged
 credential per target is kept. Slack notifications (optional) itself has no
 prerequisite: once saved it stays a link in the step bar from every step,
 whatever the state of the other steps, except while the parish data load runs.
+
+### Off-site backups during setup
+
+Status: implemented
+([#2200](https://github.com/epiphany40223/parishkit/issues/2200)). The
+Administrator asked for an optional setup step about backups in place of the
+backup paragraphs the Finishing setup notice had before
+[#2152](https://github.com/epiphany40223/parishkit/pull/2152), and decided
+its open questions on 2026-10-26: the step comes just before Finish setup,
+the private-key checkbox is required while copies are on, one Test access
+check is queued when setup completes, and a skipped step is remembered only
+in the existing places.
+
+**Where it goes.** Off-site backups (optional) is the last optional step,
+just before Finish setup, after Check parish data (Administrator, 2026-10-26).
+Its copies use the Google Workspace mail settings and key, as the
+[Off-site backups (Google Drive)](#parish-and-integration-configuration)
+integration does, and those steps come much earlier. Like Slack it is
+optional: the stepper marks it Optional until it is completed, and Finish
+setup does not need it. It has no prerequisite of its own, so, by the
+wizard's ordering rule, it can be opened once every required step before it
+is done, and it stays a link afterwards, except while a parish data load
+bound before [#2201](https://github.com/epiphany40223/parishkit/issues/2201)
+runs. Saving Check parish data opens it while it is not done yet; saving it
+opens Finish setup. Back from it goes to Check parish data, and Back from
+Finish setup to it, or to Check parish data while it cannot open yet. A
+save never opens it while an earlier required step still needs work: that
+step opens instead. The wizard gains no test step for it (see **Checking the
+folder** below).
+
+**What it asks.** The step's introduction says, in plain language, that the
+server makes an encrypted backup every night, that a copy kept somewhere
+else protects the parish if the server is lost, and that copies can be
+turned on now or later from Off-site backups (Google Drive). A short
+paragraph about the backup private key follows, shown whether or not copies
+are turned on, since it is true of every backup: backups are encrypted to
+the backup encryption key the server operator installed; only its private
+key, which the parish keeps away from this server, can open them, and
+without it no backup can be restored; this system never holds the private
+key and cannot show or send it; after setup an Administrator can replace
+the key from Backup encryption key. Then:
+
+1. **Copy each backup to Google Drive**, a checkbox, unticked on a first
+   visit.
+2. Shown only while it is ticked
+   ([conditional fields](../ui-conventions/spec.md#conditional-fields)):
+   - **Google Drive folder link**, the same field, help, browser pattern,
+     reserved error line and canonical
+     `https://drive.google.com/drive/folders/<id>` form as the Off-site
+     backups page, refused with that page's `invalid_folder_link` error.
+     Its help adds that the delegated mailbox user saved on Outgoing email
+     settings (named by address) must be able to add files to the folder
+     (for example, a Content manager of the folder's shared drive).
+   - **The backup private key is kept safe**, a required checkbox: "I know
+     where the parish keeps the backup private key, away from this server.
+     Without it no backup can be restored." Its help points to the
+     paragraph above.
+
+Above the form, whether or not the box is ticked, the step shows the
+one-time Google steps of the
+[backup runbook](../../../guides/stewardship-backup-runbook.md#off-site-copies-to-google-drive)
+in a disclosure, as the Off-site backups page does (the shared Drive API and
+delegation steps are drawn from the same template), naming the saved
+delegated mailbox user.
+
+Nothing else about the backup encryption key is part of the step: setting
+or replacing the key, with its `backup-prove` proof, stays on the
+post-setup Backup encryption key page, and the nightly schedule and
+retention stay host settings
+([backup runbook](../../../guides/stewardship-backup-runbook.md)). In the
+[local environment](../local-environment/spec.md#safety-guarantees), while it
+does not reach Google Drive (no mail redirect, or the fake clock), the
+checkbox is unavailable, with the same reason Test access gives there as
+visible text beside it, and the server refuses a save that ticks it.
+
+**Actions and Skip.** The step follows the
+[wizard rules](../ui-conventions/spec.md#wizards). While Copy each backup to
+Google Drive is unticked, the primary control reads **Continue without
+off-site backups for now** (rule 9): it saves the step as off and opens the
+next step not done yet, and the step counts as completed (reviewed) from
+then on. Once the box is ticked the control reads **Save and continue**
+(its width reserved for the longer label, so the switch moves nothing), and
+it is unavailable until the folder link is well formed and the private-key
+checkbox is ticked
+([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)). The
+hint after the row keeps its line while empty (`data-complete-hint="reserve"`,
+[no layout shift](../ui-conventions/spec.md#no-layout-shift)) and names the
+missing items and the way on: "Add the folder link and confirm that the
+backup private key is kept safe, or untick Copy each backup to Google Drive
+to go on without it." Like the other setup steps, a revisited step saved on
+shows Save and continue (the setup wizard's rule 3 gap, in the
+[wizard Status](../ui-conventions/spec.md#wizards)). Either
+saves directly, with no review dialog (rule 5), under the draft's exact
+version and the page's CSRF token, like every step save; Back never
+saves (rule 6). Revisiting the step shows its saved values. Unticking the box
+and continuing clears the saved folder and acknowledgement.
+
+**What is stored.** The step is one new setup draft section, `backup`, whose
+values are only `enabled`, `folder_link` (the canonical folder link, empty
+while off) and `acknowledged` (whether the private key was acknowledged).
+The folder link is a public setting, as it is on the Off-site backups
+page; the step collects no key, token or credential, so nothing secret
+reaches the draft, the audit, a log line or the page. The section is scrubbed with the attempt's other draft sections
+when setup completes, is cancelled or expires.
+
+**At finalization.** When the saved step is on, the complete configuration
+version that finalization applies includes the Off-site backups
+integration record with that folder, exactly as the Off-site backups page
+would have added it; it has no credential, so it adds no installer step and
+no box on Finishing setup. When the step is off, or was never opened, the
+version has no such record and off-site copies stay off, as they are today.
+The applied configuration version records the integration, as it does
+when the page adds it; the setup audit events are unchanged, so no audit
+context carries the folder link.
+
+**Checking the folder.** Test access cannot run during setup: it is
+answered by the Google Workspace credential installer with the installed
+key, as the applied delegated mailbox user, and during setup that key is
+only staged and nothing is applied. So in the same transaction as the
+configured marker, an argument-free definer routine queues one Test access
+of the applied folder, as the attempt's Administrator and the applied
+delegated mailbox user, both read from the applied configuration (so no
+caller chooses whom the installer impersonates). The routine refuses unless
+the configured marker is being written in the same transaction, and queues
+nothing when this attempt already queued its check, so a resumed
+finalization still queues exactly one. It is an ordinary check:
+the installer answers it as soon as it runs with the installed key, and
+the Off-site backups page shows its result to that Administrator by the
+page's usual rules. A setup with the step off queues nothing.
+
+**Remembering a skipped step.** A skipped step leaves off-site copies off,
+and the existing places remind the Administrator, unchanged: the
+Integrations list's **Set up off-site backups** link, the System health
+Backups panel's "Off-site copies are not set up." line with the same link
+in Testing, and in Production the `offsite_missing` warning, which Home
+counts in its system problems line
+([Administrator decision 5](#administrator-decisions-2026-10-13)). Home
+gets no line of its own, keeping #1673's overview (the off-site line lives
+on System health) and that decision, as the Administrator confirmed on
+2026-10-26: no Home line for a skipped step or a failed check, and nothing to
+dismiss. A folder that fails the queued check is shown on the
+Off-site backups page; if it is still unreachable, the first nightly copy
+fails and raises `backup_offsite_failed`, which System health and Home's
+count report as today.
+
+**Interactions.** Whatever answers Test access answers the queued check,
+so moving uploads and checks to the
+[dedicated uploader](https://github.com/epiphany40223/parishkit/issues/235)
+changes nothing here, and the step stores the same folder link the Off-site
+backups page does, so the
+[`drive.file` evaluation](https://github.com/epiphany40223/parishkit/pull/2093)
+applies to both alike. With
+[automatic credential pickup](https://github.com/epiphany40223/parishkit/issues/2228)
+the check still waits for the configured marker, after every key is
+acknowledged.
+
+**Upgrading during setup.** A setup attempt still collecting when this
+step is installed shows it as Optional and not done; nothing else about the
+attempt changes, and it can finish without it.
+
+**Schema.** The setup draft section's `setup_public_step` check gains
+`backup`, and the definer routine that queues the check is new: one forward
+migration under the
+[post-launch schema policy](../operations/spec.md#post-launch-schema-policy),
+with its frozen SQL file. The probe table and its insert guard (only the
+applied delegated mailbox user) are unchanged.
+
+**Testing.**
+
+- Unit: the step order and Back targets; the step is optional and never
+  holds Finish setup or a later step back; the Continue without and Save
+  and continue labels by state; the folder link canonicalization and its
+  refusal; the private-key checkbox is required only while copies are on;
+  the configuration candidate includes the integration record only when
+  the step is on; the local-environment refusal. Home is unchanged.
+- PostgreSQL: the migration admits the `backup` draft section and its SQL
+  guard refuses any other field; the step's saves and refusals over HTTP;
+  completion queues exactly one check as the attempt's Administrator and
+  the applied delegated user when the step is on and none when it is off or
+  never opened (a failed finalization rolls its check back with the rest);
+  the routine takes no arguments, cannot be called by other logins and
+  refuses a call outside the configured marker's transaction; the section
+  is scrubbed with the rest of the draft; the users-swap,
+  [traceability](../../../development/stewardship-acceptance.md) and
+  schema-baseline tests.
+- Browser (Chromium and WebKit locally, Firefox in CI): the step's place
+  and Back; the folder and private-key fields appear only while the box is
+  ticked; the primary's label switch moves nothing; Save and continue waits
+  for both fields; the skip and the save open Finish setup; the local
+  environment's unavailable switch. The setup wizard does not yet ask
+  before Back discards changes (wizard rule 6, its
+  [Status](../ui-conventions/spec.md#wizards)), so neither does this step.
+- pk-local: the Administrator walks setup once skipping the step (the
+  System health Backups panel and Integrations then offer Set up off-site
+  backups) and once turning it on with the mail redirect, then checks the
+  queued result on Off-site backups.
 
 ## Navigation and home
 
@@ -2554,8 +2764,11 @@ without pasting the link again. The Integrations list always links to this
 page: "Set up off-site backups" before it is configured, and "Change" after.
 The page and the administration home show
 the last successful off-host copy; until the integration is added, the home
-page invites the Administrator to set it up. The setup wizard's completion
-notice does not mention it. The copies themselves, their retention and
+page invites the Administrator to set it up. The setup
+wizard's optional
+[Off-site backups step](#off-site-backups-during-setup) sets the same
+folder before setup finishes; its completion notice does not mention
+backups. The copies themselves, their retention and
 their alert are defined by the
 [backup runbook](../../../guides/stewardship-backup-runbook.md#off-site-copies-to-google-drive).
 

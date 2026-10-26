@@ -8,6 +8,8 @@ binds the newest ready check, which the readiness guard repeats in SQL.
 
 # ruff: noqa: F811 -- imported fixtures are injected by pytest name.
 
+import re
+
 import pytest
 from django.db import DatabaseError, connection, transaction
 from django.db.models import F
@@ -360,10 +362,11 @@ def test_the_page_shows_the_check_and_check_again(setup_http):
         "ParishSoft answered for <strong>St. Example Parish (1)</strong>: "
         "812 Families and 2,034 Members." in ready
     )
-    assert (
-        'class="setup-continue" data-nav-slot="next" href="/admin/setup/confirm"'
-        in (ready)
-    )
+    # Continue opens the next step needing work (wizard rule 8, #2200): this
+    # attempt saved no mail settings, so Outgoing email settings, never the
+    # optional Off-site backups step or a blocked Finish setup.
+    continuing = re.findall(r'class="setup-continue"[^>]* href="([^"]*)"', ready)
+    assert continuing == ["/admin/setup/mail"], continuing
     assert ">Check again<" in ready and "data-reread-every" not in ready
 
 

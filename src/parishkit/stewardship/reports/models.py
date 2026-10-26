@@ -67,10 +67,19 @@ class CampaignDailyFactSet(MutableRecord):
     )
     source_generation = models.PositiveBigIntegerField()
     submission_watermark = models.PositiveBigIntegerField()
+    # The campaign's pledge review row count when the inputs were taken
+    # (0185, #2202): part of the exact-input key, so a review makes a new
+    # generation. Generations built before 0185 hold 0.
+    review_watermark = models.PositiveBigIntegerField(default=0)
     timezone_configuration = models.ForeignKey(
         "stewardship_campaigns.CampaignConfiguration", on_delete=models.PROTECT
     )
     through_date = models.DateField()
+    # Each Family's pledge Edit in force when the generation was allocated
+    # (0185, #2202): [{family_id, from_sequence, annual_pledge, frequency}].
+    # The database writes it on INSERT (any value given is replaced) and it
+    # never changes, so verification recalculates exactly what was built.
+    pledge_edits = models.JSONField(default=list)
     first_date = models.DateField(null=True, blank=True)
     last_date = models.DateField(null=True, blank=True)
     expected_count = models.PositiveIntegerField()
@@ -90,6 +99,7 @@ class CampaignDailyFactSet(MutableRecord):
                     "population_scope",
                     "source_generation",
                     "submission_watermark",
+                    "review_watermark",
                     "timezone_configuration",
                     "through_date",
                 ),
@@ -263,6 +273,8 @@ class CampaignFactRebuildDemand(MutableRecord):
     )
     requested_source_generation = models.PositiveBigIntegerField()
     requested_submission_watermark = models.PositiveBigIntegerField()
+    # The pledge review watermark the latest event requested (0185, #2202).
+    requested_review_watermark = models.PositiveBigIntegerField(default=0)
     requested_timezone_configuration = models.ForeignKey(
         "stewardship_campaigns.CampaignConfiguration", on_delete=models.PROTECT
     )

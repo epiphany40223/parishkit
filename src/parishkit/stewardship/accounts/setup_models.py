@@ -124,6 +124,7 @@ class SetupDraftSection(MutableRecord):
                         "mail",
                         "slack",
                         "testing",
+                        "backup",
                         "campaign",
                         "schedules",
                         *CONTENT_STEPS,

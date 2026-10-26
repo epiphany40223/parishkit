@@ -5,6 +5,7 @@ change and requested calculation commit together. Exact exports/digests call
 begin_fact_set directly and never consume interactive pending revisions.
 """
 
+from dataclasses import replace
 from datetime import timedelta
 
 from django.db import transaction
@@ -37,11 +38,19 @@ def requested_inputs(demand):
         demand.requested_submission_watermark,
         demand.requested_timezone_configuration_id,
         demand.requested_through_date,
+        review_watermark=demand.requested_review_watermark,
     )
 
 
-def request_rebuild(inputs, *, admit):
-    """Atomically hint current inputs; repeated identical hints do not delay work."""
+def request_rebuild(inputs, *, admit, keep_review_watermark=False):
+    """Atomically hint current inputs; repeated identical hints do not delay work.
+
+    ``keep_review_watermark`` keeps the demand's requested pledge review
+    watermark instead of ``inputs.review_watermark`` (#2202): a Family's
+    response hints its new submission watermark without reading pledge
+    reviews, and the scheduler's reconciliation records a newer review
+    watermark on its next pass.
+    """
     require_fact_transaction()
     if not isinstance(inputs, FactInputs):
         raise ValueError("A frozen fact input tuple is required.")
@@ -59,12 +68,18 @@ def request_rebuild(inputs, *, admit):
         )
         .first()
     )
+    if keep_review_watermark:
+        inputs = replace(
+            inputs,
+            review_watermark=0 if row is None else row.requested_review_watermark,
+        )
     if row is not None:
         if requested_inputs(row) == inputs:
             return row
         if (
             source.generation < row.requested_source_generation
             or inputs.submission_watermark < row.requested_submission_watermark
+            or inputs.review_watermark < row.requested_review_watermark
             or (
                 inputs.timezone_configuration_id
                 == row.requested_timezone_configuration_id
@@ -86,6 +101,7 @@ def request_rebuild(inputs, *, admit):
     row.requested_source = source
     row.requested_source_generation = source.generation
     row.requested_submission_watermark = inputs.submission_watermark
+    row.requested_review_watermark = inputs.review_watermark
     row.requested_timezone_configuration_id = inputs.timezone_configuration_id
     row.requested_through_date = inputs.through_date
     row.pending_last_at = now

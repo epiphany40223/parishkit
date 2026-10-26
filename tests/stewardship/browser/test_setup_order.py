@@ -79,14 +79,16 @@ def test_finish_follows_the_load_and_checks_the_accepted_test(
     page, component_origin, axe_source
 ):
     """The step bar runs Google Workspace connection, Test email, and later
-    Check parish data, then Finish setup (#1578; no Review page, #2145); with
-    the test accepted, Finish setup offers its own submit, Back to the check."""
+    Check parish data, the optional Off-site backups step (#2200), then Finish
+    setup (#1578; no Review page, #2145); with the test accepted, Finish setup
+    offers its own submit, Back to the backups step."""
     from .test_components import axe_violations
 
     page.goto(component_origin + FINISH_READY)
     labels = track_labels(page)
     assert labels[labels.index("Check parish data") :] == [
         "Check parish data",
+        "Off-site backups (optional)",
         "Finish setup",
     ]
     assert "Review" not in labels
@@ -100,7 +102,7 @@ def test_finish_follows_the_load_and_checks_the_accepted_test(
     page.get_by_label("I checked the settings in each step").check()
     assert submit.is_enabled()
     back = page.locator(".setup-actions a.setup-back")
-    assert back.get_attribute("href") == "/admin/setup/source"
+    assert back.get_attribute("href") == "/admin/setup/backup"
     assert axe_violations(page, axe_source) == []
 
 

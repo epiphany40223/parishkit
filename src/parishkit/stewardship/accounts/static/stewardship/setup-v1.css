@@ -72,10 +72,13 @@
 @media print { .setup-actions { display: none; } }
 /* The Slack step's saved-token statements share one grid cell and the hidden
    one keeps its space (invisible), so editing the channel swaps the words in
-   place and moves nothing below (no layout shift). */
-.setup-saved-state { display: grid; }
-.setup-saved-state > * { grid-area: 1 / 1; }
-.setup-saved-state > [hidden] { display: block !important; visibility: hidden; }
+   place and moves nothing below (no layout shift). The Off-site backups
+   step's primary (#2200) draws its two labels the same way, so ticking the
+   box swaps the words and the button keeps the wider one's width. */
+.setup-saved-state, .setup-label-switch { display: grid; }
+.setup-label-switch { justify-items: center; }
+.setup-saved-state > *, .setup-label-switch > * { grid-area: 1 / 1; }
+.setup-saved-state > [hidden], .setup-label-switch > [hidden] { display: block !important; visibility: hidden; }
 /* ParishSoft connection's organization choice (#1554): one radio per line,
    with no bullets; an organization with no Families is greyed (its radio
    is disabled), and its "No Families in ParishSoft" note stays readable. */

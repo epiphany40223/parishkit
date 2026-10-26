@@ -27,6 +27,8 @@ class ExactExportRequest(ImmutableRecord):
         "stewardship_source.SourceSnapshot", on_delete=models.PROTECT
     )
     submission_watermark = models.PositiveBigIntegerField()
+    # The campaign's pledge review watermark at the request (0185, #2202).
+    review_watermark = models.PositiveBigIntegerField(default=0)
     timezone_configuration = models.ForeignKey(
         "stewardship_campaigns.CampaignConfiguration", on_delete=models.PROTECT
     )

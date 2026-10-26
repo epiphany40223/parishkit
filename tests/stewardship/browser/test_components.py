@@ -924,8 +924,8 @@ def test_setup_stepper_is_compact_and_its_full_list_stays_accessible(
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/setup-testing")
     stepper = page.locator(".setup-stepper")
-    assert "Step 3 of 11: Testing recipient" in stepper.inner_text()
-    assert "1 of 11 steps completed" in stepper.inner_text()
+    assert "Step 3 of 12: Testing recipient" in stepper.inner_text()
+    assert "1 of 12 steps completed" in stepper.inner_text()
     # Far shorter than fifteen stacked cards, even at phone width (where the
     # list is still collapsed), and with the list open in two columns. At
     # 320px the step bar's twelve 44px segments wrap into two rows of eight
@@ -986,12 +986,12 @@ def test_setup_step_bar_links_open_steps_and_explains_the_rest(
         "item.querySelector('.setup-step-label').lastChild.textContent.trim(),"
         "item.querySelector('.setup-step-status').textContent.trim()])"
     )
-    assert segments.count() == len(steps) == 11
+    assert segments.count() == len(steps) == 12
     names = segments.evaluate_all("nodes => nodes.map(n => n.textContent.trim())")
     tips = segments.evaluate_all("nodes => nodes.map(n => n.dataset.tip)")
     assert names == tips
     for number, (name, (label, status)) in enumerate(zip(names, steps, strict=True), 1):
-        assert name.startswith(f"Step {number} of 11: {label} — "), name
+        assert name.startswith(f"Step {number} of 12: {label} — "), name
         assert name.endswith(status), name
     assert "— Current step — " in names[2]
     assert segments.nth(2).get_attribute("aria-current") == "step"

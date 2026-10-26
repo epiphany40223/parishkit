@@ -415,6 +415,10 @@ def test_grants_wait_for_the_users_swap_closures_columns(tmp_path, monkeypatch):
             # Also creates a table, which is applied above, so its column is
             # granted too; the tables test covers this migration.
             continue
+        if migration in CLOSURE_FUNCTIONS.values():
+            # Also creates a granted routine (0185, #2202), which is applied
+            # above, so its column is granted too, as with a table.
+            continue
         assert not [s for s in waiting if f'"{column}"' in s and f'"{table}"' in s]
         assert [s for s in waiting if f'"{table}" TO "pk_stewardship_web"' in s]
         assert [

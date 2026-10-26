@@ -584,6 +584,15 @@ FROZEN = {
     "0183_setup_source_check.sql": (
         "d99b9f649146f707ac7c6165b7ef7a127f767ed7d34ca26cdd4fdbcba9150315"
     ),
+    "0184_statistics_in_force.sql": (
+        "e1d9fe2450634542eae6d11b7290fc379aa797aaacf3e48b5a755e9675d4e651"
+    ),
+    "0185_series_in_force.sql": (
+        "e7e6fda4a7233d977d66e30d46f4a8210deac58692609815925fe9125257fb93"
+    ),
+    "0186_setup_backup_step.sql": (
+        "bf4cff3481b51e13bb947aff2369d5257c39d4fe9d9319c387366079533677c9"
+    ),
 }
 
 

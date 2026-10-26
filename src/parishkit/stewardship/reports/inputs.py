@@ -1,6 +1,6 @@
 """Frozen report-input identity and inclusive campaign-local date ranges."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
@@ -58,7 +58,12 @@ def validate_day(values):
 
 @dataclass(frozen=True)
 class FactInputs:
-    """Exact reusable input context, including the graph's local-date upper bound."""
+    """Exact reusable input context, including the graph's local-date upper bound.
+
+    ``review_watermark`` is the campaign's pledge review row count when the
+    inputs were taken (#2202): keyword-only and required, so no caller can
+    leave it out and silently ask for a generation without the Edits.
+    """
 
     campaign_id: UUID
     population_scope: str
@@ -66,6 +71,7 @@ class FactInputs:
     submission_watermark: int
     timezone_configuration_id: UUID
     through_date: date
+    review_watermark: int = field(kw_only=True)
 
     def __post_init__(self):
         """Reject malformed identities, numeric coercion and timestamp confusion."""
@@ -85,6 +91,11 @@ class FactInputs:
             or not 0 <= self.submission_watermark < 2**63
         ):
             raise ValueError("Fact submission watermark must be a nonnegative integer.")
+        if (
+            type(self.review_watermark) is not int
+            or not 0 <= self.review_watermark < 2**63
+        ):
+            raise ValueError("Fact review watermark must be a nonnegative integer.")
         if type(self.through_date) is not date:
             raise ValueError("Fact through-date must be a calendar date.")
 

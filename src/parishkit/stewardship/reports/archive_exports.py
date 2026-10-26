@@ -128,16 +128,19 @@ def require_administrator(store, user_id):
 def _fact_set(campaign_id, cutoff_date, cutoff):
     """The newest ready historical fact set that covers the cutoff, or None.
 
-    A set covers it when it holds the cutoff day's row and its submission
+    A set covers it when it holds the cutoff day's row, its submission
     watermark reaches every live version submitted before the cutoff
-    instant. A set built during the cutoff day can hold that day's row yet
-    miss a later response; pinning it would make every worker attempt
-    refuse (``read_source``), so such a set is never offered.
+    instant, and its pledge review watermark is the campaign's current one,
+    so the file counts the pledge values in force (#2202). A set built
+    during the cutoff day can hold that day's row yet miss a later
+    response; pinning it would make every worker attempt refuse
+    (``read_source``), so such a set is never offered.
     """
     from django.db.models import Exists, Max, OuterRef
 
     from parishkit.stewardship.responses.models import Submission
 
+    from .facts import review_watermark
     from .models import CampaignDailyFact, CampaignDailyFactSet
 
     latest = (
@@ -152,6 +155,7 @@ def _fact_set(campaign_id, cutoff_date, cutoff):
             population_scope="historical",
             state="ready",
             submission_watermark__gte=latest,
+            review_watermark__gte=review_watermark(campaign_id),
         )
         .filter(
             Exists(
@@ -160,7 +164,7 @@ def _fact_set(campaign_id, cutoff_date, cutoff):
                 )
             )
         )
-        .order_by("-submission_watermark", "-ready_at")
+        .order_by("-submission_watermark", "-review_watermark", "-ready_at")
         .values_list("id", flat=True)
         .first()
     )

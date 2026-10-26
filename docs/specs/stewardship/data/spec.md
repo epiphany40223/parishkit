@@ -1008,7 +1008,7 @@ compared, matched or used to choose an organization.
 ### Campaign daily report facts
 
 `CampaignFactRebuildDemand` has a unique `(campaign, population scope)` key and
-stores requested source/submission watermarks, pending first/last-event and due
+stores requested source/submission/pledge-review watermarks, pending first/last-event and due
 UTC instants, pending revision, and the claimed generation/TaskRun reference.
 Event transactions atomically advance this row; claims freeze a coherent input
 tuple and consume only the claimed pending revision under its row lock. Events
@@ -1019,7 +1019,12 @@ and exact-input request behavior is authoritative in
 
 `CampaignDailyFactSet` records one immutable, complete graph-calculation
 generation for a Campaign, population scope, promoted-source generation cutoff,
-submission-version cutoff, and campaign-timezone version. Its state is
+submission-version cutoff, pledge-review watermark, and campaign-timezone
+version. It also stores the pledge Edits in force that the database recorded
+when it was created
+([pledge values in the participation facts](../reports/spec.md#pledge-values-in-the-participation-facts));
+a verification request names its generation by id, so it records no
+watermark of its own. Its state is
 `building`, `ready`, or `failed`; at most one generation for an exact input key
 may become ready. Child `CampaignDailyFact` rows hold one campaign-local date's
 first-response count, cumulative response count, cohort denominator, percentage

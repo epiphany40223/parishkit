@@ -1,7 +1,8 @@
 """Single-statement private input capture and authorized current statistics reads.
 
 READ COMMITTED does not give multiple SELECTs the same snapshot. Capture source,
-configuration, latest live responses and unresolved refusals together, detaching
+configuration, latest live responses (each with its annual pledge in force,
+#2202) and unresolved refusals together, detaching
 only the projections required for calculations. PostgreSQL MVCC keeps rows
 visible through this statement even if compaction commits concurrently. No
 FOR SHARE or source read_snapshot is used inside the read-only campaign guard.
@@ -113,14 +114,34 @@ WITH selected AS MATERIALIZED (
         AND p.canonical::jsonb->>'effective_date' BETWEEN
             x.configuration->'financial'->>'comparison_start' AND
             x.configuration->'financial'->>'comparison_end'
-), latest AS (
+), edits AS MATERIALIZED (
+    -- Each Family's pledge Edit in force (#2202), found exactly as
+    -- Financial stewardship finds it (0182), by 0184's narrow definer: the
+    -- general worker captures too and reads no answers or pledge reviews.
+    -- submission_id is the response the Edit is in force on.
+    SELECT e.family_id,e.submission_id,e.annual_pledge
+    FROM selected x
+    CROSS JOIN LATERAL stewardship_pledge_edits_in_force_v1(x.id) e
+), newest AS (
     SELECT DISTINCT ON (r.family_id)
-        f.family_duid, r.campaign_sequence, r.annual_pledge
+        f.family_duid, r.id, r.family_id, r.campaign_sequence, r.annual_pledge
     FROM selected x
     JOIN stewardship_submission r ON r.campaign_id=x.id
         AND r.mode='live' AND r.campaign_sequence<=x.watermark
     JOIN stewardship_family_campaign f ON f.id=r.family_id
     ORDER BY r.family_id, r.campaign_sequence DESC
+), latest AS (
+    -- The annual pledge in force (#2202): the Edit's amount while it is in
+    -- force on this latest response, else the Family's own answer. The
+    -- response match keeps an Edit off any other response. 0181's selection
+    -- names the Family's effective response, and every new live response
+    -- becomes the effective one in its own commit (responses/submission.py
+    -- _live_effects), so within this one statement the latest response is
+    -- that one and no Edit in force is dropped.
+    SELECT n.family_duid, n.campaign_sequence,
+        coalesce(e.annual_pledge, n.annual_pledge) AS annual_pledge
+    FROM newest n
+    LEFT JOIN edits e ON e.family_id=n.family_id AND e.submission_id=n.id
 )
 SELECT jsonb_build_object(
     'schema','campaign-statistics-v1',

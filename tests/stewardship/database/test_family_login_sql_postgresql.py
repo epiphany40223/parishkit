@@ -196,6 +196,11 @@ def test_web_admission_requires_exactly_the_login_function(family_service):  # n
         "stewardship_pledge_refresh_items_v2(uuid, uuid, uuid)",
         # The added Members a promotion may link (0141, #1670).
         "stewardship_added_member_candidates_v1(uuid, uuid)",
+        # The fact generations' pledge Edits and review watermark (0184,
+        # 0185, #2202).
+        "stewardship_pledge_edits_in_force_v1(uuid)",
+        "stewardship_pledge_review_watermark_v1(uuid)",
+        "stewardship_fact_pledge_edits_v1(uuid)",
     }
     tables, columns = runtime_grants(ServiceRole.WEB)
     allowed = {table: set(grants) for table, grants in tables.items()}

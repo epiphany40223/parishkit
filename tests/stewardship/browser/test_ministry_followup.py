@@ -524,9 +524,9 @@ def test_members_no_longer_in_parishsoft_are_marked_with_nothing_to_record(
     page, component_origin
 ):
     """Staff's Members choice (#1217) lists requests for Members no longer in
-    ParishSoft, each marked beside the name with #1216's phrase and offering
-    no action, so the rows stay one line; its request page says exactly why
-    and has no form. A Ministry leader is not offered the choice."""
+    ParishSoft, each marked beside the name (or under it when the column is
+    narrow) with #1216's phrase and offering no action; its request page
+    says exactly why and has no form. A Ministry leader is not offered the choice."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + "/followup-queue")
     members = page.get_by_label("Members")
@@ -551,12 +551,22 @@ def test_members_no_longer_in_parishsoft_are_marked_with_nothing_to_record(
         mark = marks.nth(index)
         visible(mark)
         assert mark.inner_text() == phrase
-    # The mark sits beside the name on the same line, so a long name cut
-    # short and a short one take the same height.
-    heights = page.locator(ROWS).evaluate_all(
-        "rows => rows.map((row) => row.getBoundingClientRect().height)"
+    # The mark sits in the name's cell, beside the name or, when the
+    # column is too narrow for both, under it (the review tables let a
+    # chip wrap, "Table fit and row height"), and never over the name.
+    # Whether it fits beside the name depends on the host's fonts, so rows
+    # need not be one line (#2268): macOS's fonts fit a short name and its
+    # mark on one line where Linux's DejaVu Sans does not, so the rows'
+    # heights differ there.
+    apart = page.locator(ROWS).evaluate_all(
+        """rows => rows.map((row) => {
+          const name = row.querySelector('.name-clamp').getBoundingClientRect();
+          const mark = row.querySelector('.cell-with-badge [data-source-status]')
+            .getBoundingClientRect();
+          return mark.left >= name.right - 1 || mark.top >= name.bottom - 1;
+        })"""
     )
-    assert max(heights) - min(heights) < 1
+    assert apart == [True, True]
     page.goto(component_origin + GONE_ITEM)
     notice = page.locator("#followup-not-in-source")
     visible(notice)
