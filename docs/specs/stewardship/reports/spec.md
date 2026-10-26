@@ -633,7 +633,8 @@ Cards show:
 - active Families with deliverable email out of active Families and percentage;
 - active Families with first live response out of active Families and
   percentage;
-- effective campaign annual pledge total, when enabled; and
+- effective campaign annual pledge total, when enabled, with each Family's
+  [value in force](#values-in-force-on-financial-stewardship); and
 - "Last year's pledges (all Families)": every Family-linked ParishSoft pledge
   record in the mapped comparison funds and period (pledges with no Family are
   not stored), across all Families in the source
@@ -3622,12 +3623,28 @@ which reads it narrowed to the Family but with no value filter.
 `pk-admin report financial` prints this report's summary, so it counts the
 values in force.
 
-The other pledge totals do not read this selection and stay the Families'
-own answers: the [Response dashboard](#response-dashboard) and its
-participation figures, the campaign comparisons and the campaign archive.
-With an Edit in force their annual total can differ from this report's;
-[#2202](https://github.com/epiphany40223/parishkit/issues/2202) records
-whether they should follow.
+The other pledge totals use the values in force too, so they agree with
+this report ([#2202](https://github.com/epiphany40223/parishkit/issues/2202),
+the Administrator's decision of 2026-10-25): the
+[Response dashboard](#response-dashboard) and its participation figures, the
+[campaign comparisons](../campaign-history/spec.md#comparison-report) and
+the [campaign archive export](../campaign-history/spec.md#archive-export).
+Archives already imported, and exports and captures already made, keep what
+they recorded, so no past campaign changes afterwards.
+
+The [campaign statistics](#campaign-statistics) (the dashboard's Current
+annual pledges tile, the Summary of its export and `pk-admin report
+participation`) count each Family's latest response with the annual pledge
+in force: the Edit's amount while an Edit is in force on that response,
+found with the same selection as above, else the Family's own answer.
+Frozen migration 0184 reads it for them through a narrow definer that
+returns only each Edit's response and amount, so the general worker, which
+also counts these statistics, still reads no answers or pledge reviews.
+The day-by-day figures (the dashboard's Effective annual pledges line and
+daily table, the comparisons' day figures and the archive export, which is
+checked against them) read the values in force through the
+[participation facts](#participation-fact-materialization); that work is
+[#2202](https://github.com/epiphany40223/parishkit/issues/2202).
 
 ### Pledges
 
