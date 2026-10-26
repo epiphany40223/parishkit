@@ -187,7 +187,9 @@ def test_admin_replaces_the_key_after_proving_the_private_key(auth_service, goog
     )
     home = browser.get("/admin/").content.decode()
     assert "Backup encryption key replaced" in home
-    assert f"<code>{fingerprint}</code>" in home
+    # The key IDs are not on the page (no Technical details panes, #2199);
+    # the alert email and the audit trail above carry them.
+    assert f"<code>{fingerprint}</code>" not in home
 
 
 def private_key_text(*, top_bit):
