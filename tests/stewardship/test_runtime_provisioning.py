@@ -42,8 +42,13 @@ def test_fresh_provisioning_creates_narrow_files_but_no_provider_or_app_secrets(
     assert not layout.credential("token_private").exists()
     compose = json.loads(read_private(layout.service_directory / "compose.json"))
     assert "web" in compose["services"]
+    # compose-initial.json is the configured topology itself (#2228).
+    assert read_private(layout.service_directory / "compose-initial.json") == (
+        read_private(layout.service_directory / "compose.json")
+    )
+    assert not (layout.service_directory / "worker-initial.yaml").exists()
     for filename, worker_file in (
-        ("compose-initial.json", "worker-initial.yaml"),
+        ("compose-initial.json", "worker.yaml"),
         ("compose-slack.json", "worker-slack.yaml"),
     ):
         variant = json.loads(read_private(layout.service_directory / filename))
