@@ -11,6 +11,7 @@ check is tested against the definitions it replaced.
 
 import re
 from datetime import date
+from html import unescape
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -36,6 +37,7 @@ from parishkit.stewardship.accounts.schedule_changes import (
     SERIES_UNMATCHED,
     preview_salt,
 )
+from parishkit.stewardship.accounts.series_edits import rule_text
 from parishkit.stewardship.accounts.series_schema import SCHEMA, SECTION
 from parishkit.stewardship.accounts.users_schema import (
     CREDENTIAL_SCHEMA,
@@ -47,6 +49,7 @@ from parishkit.stewardship.campaigns.recurrence import canonical_rule, expand
 
 from ..campaign_factory import schedule
 from ..content_factory import content
+from .auth_builders import signed_in
 from .automation_builders import paired
 from .campaign_builders import change, initialized
 from .test_admin_schedule_cli_postgresql import (  # noqa: F401
@@ -157,6 +160,25 @@ def series_deployment(store):
     # Remembering a series replaces no reminder's revision or work.
     assert revisions() == before
     return campaign, identifier
+
+
+def test_the_list_marks_only_the_series_reminders(admin, google):  # noqa: F811
+    """Scheduled emails' Repeats chip (#2234) reads the applied series.
+
+    The two remembered reminders show it, with the rule in Edit's words;
+    the Initial invitation and any other reminder, outside the series, do not.
+    """
+    series_deployment(admin.service.store)
+    browser, _ = signed_in()
+    response = browser.get("/admin/campaign/schedules/")
+    assert response.status_code == 200
+    page = unescape(response.content.decode())
+    rows = re.findall(r"<tr data-schedule-state=.*?</tr>", page, re.S)
+    marked = [row for row in rows if "data-series-chip" in row]
+    assert len(marked) == 2 and len(rows) > 2
+    for row in marked:
+        assert f'title="Repeats: {rule_text(RULE)}"' in row
+        assert "Initial invitation" not in row
 
 
 def apply_preview(admin, secret, document):  # noqa: F811

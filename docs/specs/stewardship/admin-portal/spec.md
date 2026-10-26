@@ -3437,6 +3437,26 @@ scheduler, a hold or catch-up may still send it). The
 status reads the same counts-only schedule work summary as the review, never
 Family data. A short line under the table states the rules between schedules.
 
+The When column shows the whole [compact](../ui-conventions/spec.md#date-format)
+date and time on one line at laptop width (1280 px); the other columns give
+way first, as the [table fit](../ui-conventions/spec.md#table-fit-and-row-height)
+rules say. On a phone the table scrolls sideways inside its own focusable,
+named box, never the page
+([#2234](https://github.com/epiphany40223/parishkit/issues/2234)).
+A reminder that belongs to a remembered series (one that New scheduled
+email's Repeating added,
+[#469](https://github.com/epiphany40223/parishkit/issues/469)) also shows a **Repeats** chip after its status, in the shared chip style; a
+one-off schedule shows none, so the two can be told apart at a glance. The
+chip is a short label for the series' rule: its tooltip and its accessible
+name give the rule in the words Edit's "Part of" line uses ("Repeats: Every
+Sunday, October 4, 2054 – November 8, 2054";
+[New and Edit scheduled email](#new-and-edit-scheduled-email)). The two
+chips share one line, as the
+[table fit](../ui-conventions/spec.md#table-fit-and-row-height) rule says
+for a status with a marker chip, so the chip never makes its row taller;
+the Status column is as wide as its two chips, and names and email names
+wrap first.
+
 A schedule that has run or has work prepared (Preparing, Sending, Sent, "Sent
 (failed)" or Done) is read-only: its row is muted and has no selection box and
 no actions, because moving or removing a send that already happened would make

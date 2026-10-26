@@ -95,6 +95,9 @@ class ScheduleRow:
     ``slot`` is one report email send's slot key on the Campaign calendar,
     which its Edit link names (``?send=``) so that send's box is ticked for
     Skip (or Send) selected sends.
+    ``repeat`` is the rule of the remembered series a reminder belongs to,
+    in Edit's plain words (``series_edits.rule_text``), or empty for a
+    one-off schedule; the list's Repeats chip shows it (#2234).
     """
 
     id: str
@@ -109,6 +112,7 @@ class ScheduleRow:
     failed: int = 0
     open: bool = False
     slot: str | None = None
+    repeat: str = ""
     # A report email's send on the Campaign calendar (#1786) opens its own
     # Edit page on Report emails, not Edit scheduled email.
     link: str | None = None
@@ -223,7 +227,7 @@ def status(kind, due, counts, now):
     return "missed"
 
 
-def schedule_rows(previous, campaign, summary, now, names=None):
+def schedule_rows(previous, campaign, summary, now, names=None, repeats=None):
     """Describe each saved schedule, in the given (sending) order.
 
     ``previous`` is the formset's sorted saved records, ``campaign`` the
@@ -231,7 +235,8 @@ def schedule_rows(previous, campaign, summary, now, names=None):
     ``summary`` the work counts by schedule ID. Reminders are numbered in
     sending order, as Family email history numbers them. ``names`` maps an
     email's ID to its readable name; a schedule whose email is not in it
-    (an unresolved legacy reference) shows its saved subject.
+    (an unresolved legacy reference) shows its saved subject. ``repeats``
+    maps a series reminder's ID to its series' rule in words (#2234).
     """
     rows = []
     for position, (record, label) in enumerate(
@@ -253,6 +258,7 @@ def schedule_rows(previous, campaign, summary, now, names=None):
                 due=plan.one_time_due,
                 delivered=counts.get("delivered", 0),
                 failed=counts.get("failed", 0),
+                repeat=(repeats or {}).get(str(record["id"]), ""),
             )
         )
     return rows

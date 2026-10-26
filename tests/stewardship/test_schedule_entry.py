@@ -7,6 +7,7 @@ page, and what the list shows and offers per row.
 """
 
 from datetime import UTC, date, datetime, time
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -52,7 +53,8 @@ from parishkit.stewardship.accounts.schedule_forms import (
     window_text,
 )
 from parishkit.stewardship.accounts.schedule_table import SORTING, schedule_rows
-from parishkit.stewardship.accounts.series_edits import SeriesEditError
+from parishkit.stewardship.accounts.schedule_views import series_rules
+from parishkit.stewardship.accounts.series_edits import SeriesEditError, rule_text
 from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.refusals import UserFacingError
 from parishkit.stewardship.web.tables import whole_table
@@ -124,6 +126,43 @@ def test_rows_show_each_email_by_its_readable_name():
     described = schedule_rows(rows, VALUES, {}, NOW, names)
     assert described[1].email == "Please respond (1a2b3c4d)"
     assert described[0].email == rows[0]["values"]["subject"]
+
+
+def test_only_a_series_reminder_carries_its_rule_in_edits_words():
+    """The list's Repeats chip (#2234): Edit's "Part of" words, by reminder.
+
+    Another campaign's series is not this campaign's, and a one-off
+    reminder and the Initial invitation carry no rule.
+    """
+    rows = saved(emails())
+    rule = {"frequency": "daily", "start": "2054-10-01", "end": "2054-10-31"}
+
+    def series(campaign_id, members):
+        """A remembered series record of ``members``."""
+        values = {"campaign_id": campaign_id, "rule": rule, "schedules": members}
+        return {"id": str(uuid4()), "values": values}
+
+    document = {
+        "sections": {
+            "schedule_series": [
+                series(OWNER["id"], [rows[1]["id"]]),
+                series(str(uuid4()), [rows[2]["id"]]),
+            ]
+        }
+    }
+    configuration = SimpleNamespace(
+        active_configuration=SimpleNamespace(canonical_document=document)
+    )
+    repeats = series_rules(configuration, OWNER["id"])
+    assert repeats == {rows[1]["id"]: rule_text(rule)}
+    described = schedule_rows(rows, VALUES, {}, NOW, repeats=repeats)
+    assert [row.repeat for row in described] == ["", rule_text(rule), ""]
+    assert rule_text(rule) == "Every day, October 1, 2054 – October 31, 2054"
+    # A configuration that never remembered a series has no section at all.
+    empty = SimpleNamespace(
+        active_configuration=SimpleNamespace(canonical_document={"sections": {}})
+    )
+    assert series_rules(empty, OWNER["id"]) == {}
 
 
 def test_when_sorts_chronologically_or_the_reverse():

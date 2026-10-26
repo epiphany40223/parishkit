@@ -18,6 +18,10 @@ The Delete confirmation's caution (email already sent is never recalled) is
 said only when a chosen schedule has sent email (R40b): the row's Delete and
 box carry data-confirm-caution while its delivered count is above zero, the
 same count as the review's notice (schedule-changes.html).
+A reminder of a remembered series (#469) shows a Repeats chip after its
+status (#2234): the shared status-badge, its rule in Edit's words
+(schedule_views.series_rules) as its title and its screen-reader text, the
+short word hidden from screen readers so they hear the rule once.
 While the campaign wizard proposes them (admin_chrome.campaign_wizard
 .suggest, #1404 PR 6), the Suggested schedules panel after the table lists
 the suggested starting schedules (schedule_suggestions) as the table lists
@@ -49,7 +53,7 @@ error line.
 {% if table.rows %}<form method="post" action="{{ delete_url }}" id="schedule-actions" data-select-table data-row-actions data-missing-hint="{% translate 'Select at least one scheduled email to delete.' %}" data-none-hint="{% translate 'Every scheduled email on this page has already started or run, so none can be deleted.' %}">{% csrf_token %}<input type="hidden" name="base_digest" value="{{ base_digest }}">
 <div class="bulk-bar">{% button type="button" variant="secondary" data-bulk-action data-confirm-open="schedule-delete" %}{% translate "Delete selected" %}{% endbutton %}{% include "stewardship/table-selection.html" %}</div>
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="schedule-table-caption">
-<table class="data-table schedule-table">
+<table class="data-table schedule-table schedule-list-table">
   <caption id="schedule-table-caption" class="visually-hidden">{{ caption }}</caption>
   <thead><tr>
     <th scope="col" class="select-col"><input type="checkbox" data-select-all aria-label="{% translate 'Select every scheduled email that can be deleted' %}"></th>
@@ -66,7 +70,7 @@ error line.
     <th scope="row">{{ row.label }}</th>
     <td class="nowrap"><time datetime="{{ row.due|instant }}" data-local-instant data-compact>{{ row.due|instant }}</time></td>
     <td>{{ row.email }}</td>
-    <td><span class="status-badge{% if row.status == 'upcoming' %} status-badge-on{% endif %}">{{ row.status_label }}</span></td>
+    <td class="nowrap"><span class="status-badge{% if row.status == 'upcoming' %} status-badge-on{% endif %}">{{ row.status_label }}</span>{% if row.repeat %} {% blocktranslate trimmed asvar repeats with rule=row.repeat %}Repeats: {{ rule }}{% endblocktranslate %}<span class="status-badge series-chip" title="{{ repeats }}" data-series-chip><span aria-hidden="true">{% translate "Repeats" %}</span><span class="visually-hidden">{{ repeats }}</span></span>{% endif %}</td>
     <td>{% if row.last_send %}{% blocktranslate trimmed with shown=row.delivered|number count delivered=row.delivered %}{{ shown }} email delivered{% plural %}{{ shown }} emails delivered{% endblocktranslate %}{% if row.failed %}, {% blocktranslate trimmed with shown=row.failed|number count failed=row.failed %}{{ shown }} send failed{% plural %}{{ shown }} sends failed{% endblocktranslate %}{% endif %}<br><a href="{% url 'admin:family_email_sends' %}">{% translate "Family email history" %}</a>{% else %}{% translate "None yet" %}{% endif %}</td>
     {% if row.read_only %}{% table_actions name=row.label %}{% else %}{% table_actions name=row.label edit=row.edit_url delete=row.id confirm="schedule-delete" field="schedule_id" caution=row.delivered %}{% endif %}
   </tr>{% endfor %}

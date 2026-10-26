@@ -57,6 +57,8 @@ from .schedule_forms import (
 from .schedule_preview import work_summary
 from .schedule_reads import campaign_schedules, live_end_at, schedule_state
 from .schedule_table import SORTING, attach, schedule_rows
+from .series_edits import rule_text
+from .series_schema import SECTION as SERIES
 from .sessions import authenticated_admin
 
 # The refusal of a date-change Review that changes nothing. The page's change
@@ -78,6 +80,22 @@ def campaign_email_names(records):
     )
 
 
+def series_rules(configuration, campaign_id):
+    """Each remembered series reminder's rule in Edit's words, by its ID.
+
+    A reminder belongs to at most one ``schedule_series`` record of its
+    campaign (#469); the list marks it with a Repeats chip whose tip is
+    this text, the same words as Edit's "Part of" line (#2234).
+    """
+    sections = configuration.active_configuration.canonical_document["sections"]
+    return {
+        member: rule_text(row["values"]["rule"])
+        for row in sections.get(SERIES, [])
+        if row["values"]["campaign_id"] == str(campaign_id)
+        for member in row["values"]["schedules"]
+    }
+
+
 def _list(
     request, state, campaign, editable, sort, *, end_live=False, reports_form=None
 ):
@@ -96,6 +114,8 @@ def _list(
     ``suggested_reports`` are the report emails' starting points the same
     panel offers with them (#2038, ``suggested_reports``), drawn from
     ``reports_form``: a refused save's bound form, or a fresh one.
+    A reminder of a remembered series carries its rule (``series_rules``),
+    which its Repeats chip shows (#2234).
     """
     configuration = state[0]
     values = campaign.active_configuration.values
@@ -105,7 +125,14 @@ def _list(
     records = _records(configuration, campaign.pk)
     names = campaign_email_names(records)
     now = timezone.now()
-    rows = schedule_rows(previous, values, work_summary(campaign.pk), now, names)
+    rows = schedule_rows(
+        previous,
+        values,
+        work_summary(campaign.pk),
+        now,
+        names,
+        repeats=series_rules(configuration, campaign.pk),
+    )
     suggested = (
         []
         if previous or not editable

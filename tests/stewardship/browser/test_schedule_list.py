@@ -19,6 +19,8 @@ from urllib.parse import parse_qs
 
 import pytest
 
+from parishkit.stewardship.accounts.series_edits import rule_text
+
 from .repeat_dates_components import assert_span_row
 from .schedule_list_components import (
     APPLY,
@@ -53,6 +55,7 @@ from .schedule_list_components import (
     PASSED_REFUSAL,
     REFUSAL,
     REFUSED,
+    SERIES_RULE,
     STALE_REFUSAL,
     TEST_SEND,
 )
@@ -163,6 +166,95 @@ def test_row_action_icons_are_the_same_size(page, component_origin, width):
     assert sizes[0][0] == sizes[0][1], sizes
     # Side by side on one line, top edges aligned.
     assert abs(edit["y"] - delete["y"]) < 0.5, (edit, delete)
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_when_shows_the_whole_date_and_only_series_rows_say_repeats(
+    page, component_origin, width
+):
+    """The When column and the Repeats chip (#2234).
+
+    At 1280 px every When shows its whole compact date and time on one line,
+    uncut, and the table fits its box. Only Reminder 1, a series' reminder,
+    has the Repeats chip, its rule in Edit's words as its tip and its
+    screen-reader text, beside its status on one line, so the chip never
+    makes the row taller. At 320 px the page never scrolls sideways: the table
+    scrolls inside its focusable, named box instead.
+    """
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + LIST)
+    failures = watch(page)
+    from playwright.sync_api import expect
+
+    # The browser has rewritten each ISO instant into its local words.
+    for time in rows(page).locator("time").all():
+        expect(time).not_to_have_text(re.compile(r"\dT\d"))
+    rule = rule_text(SERIES_RULE)
+    chips = page.locator("[data-series-chip]")
+    has_count(chips, 1)
+    series_row = rows(page).filter(has=chips)
+    assert series_row.locator("th").inner_text().strip() == "Reminder 1"
+    assert chips.get_attribute("title") == f"Repeats: {rule}"
+    assert chips.locator(".visually-hidden").text_content() == f"Repeats: {rule}"
+    assert chips.locator("[aria-hidden=true]").inner_text() == "Repeats"
+    # The chip is the shared status chip, beside the row's status.
+    status = series_row.locator(".status-badge").first
+    assert status.inner_text() == "Upcoming"
+    assert chips.evaluate("node => node.classList.contains('status-badge')")
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    # The table's own scroll box: a focusable region named by its caption.
+    region = page.locator(".table-scroll:has(> table.schedule-table)")
+    assert region.get_attribute("role") == "region"
+    assert region.get_attribute("tabindex") == "0"
+    assert region.get_attribute("aria-labelledby") == "schedule-table-caption"
+    if width == 1280:
+        # A long email name gives way (wraps) before the When column does.
+        rows(page).locator("td:nth-child(4)").evaluate_all(
+            """cells => cells.forEach(cell => {
+                cell.textContent = 'A rather long reminder email name, as a '
+                    + 'parish might give one (1a2b3c4d)';
+            })"""
+        )
+        cells = rows(page).locator("td:has(> time)")
+        lines = cells.evaluate_all(
+            """cells => cells.map(cell => {
+                const time = cell.querySelector('time');
+                const box = time.getBoundingClientRect();
+                const room = cell.getBoundingClientRect();
+                return {
+                    text: time.textContent,
+                    lines: time.getClientRects().length,
+                    inside: box.left >= room.left && box.right <= room.right,
+                    uncut: cell.scrollWidth <= cell.clientWidth,
+                };
+            })"""
+        )
+        for line in lines:
+            assert line["lines"] == 1 and line["inside"] and line["uncut"], line
+            # The whole date: its year as well as its time of day.
+            assert "2054" in line["text"] and re.search(r"\d:\d\d", line["text"])
+        # The email name did wrap: it gave way, not the When column.
+        email_lines = (
+            rows(page)
+            .nth(1)
+            .locator("td:nth-child(4)")
+            .evaluate(
+                """cell => {
+                    const range = document.createRange();
+                    range.selectNodeContents(cell);
+                    const boxes = [...range.getClientRects()];
+                    const tops = boxes.map(b => Math.round(b.top));
+                    return new Set(tops).size;
+                }"""
+            )
+        )
+        assert email_lines > 1, email_lines
+        assert region.evaluate("node => node.scrollWidth <= node.clientWidth")
+        # Beside the status on its one line, so the row is no taller.
+        chip, badge = chips.bounding_box(), status.bounding_box()
+        assert chip["x"] > badge["x"] + badge["width"], (chip, badge)
+        assert same_place(chip["y"], badge["y"]), (chip, badge)
+    assert not failures
 
 
 def test_when_heading_sorts_the_table_in_place(page, component_origin):

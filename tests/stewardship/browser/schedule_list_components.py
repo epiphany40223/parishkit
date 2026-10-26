@@ -4,7 +4,8 @@ Rendered from the real templates with the views' own helpers, so the browser
 checks need no database:
 
 - ``LIST``: a sent invitation and two upcoming reminders (Reminder 2 with
-  email already delivered, as a re-planned send may have), sorted by When
+  email already delivered, as a re-planned send may have; Reminder 1 of a
+  remembered series, with its Repeats chip, #2234), sorted by When
   either way (``?sort=-when``, ``?sort=when``). Its Delete
   posts to ``DELETE``, which answers as the server does: a redirect to the
   change's status page, here already Applied, after which the dialog redraws
@@ -188,7 +189,10 @@ from parishkit.stewardship.accounts.schedule_table import (
     schedule_rows,
 )
 from parishkit.stewardship.accounts.schedule_views import _summary as dates_summary
-from parishkit.stewardship.accounts.schedule_views import pane_confirmation
+from parishkit.stewardship.accounts.schedule_views import (
+    pane_confirmation,
+    series_rules,
+)
 from parishkit.stewardship.accounts.series_edits import plan, rule_text
 from parishkit.stewardship.reports import report_email_list
 from parishkit.stewardship.web.refusals import send_time_passed
@@ -448,16 +452,32 @@ def _list(values, owner, emails, rows, *, sort="when", **extra):
 
     The October 20 reminder has delivered email too while its time is still
     ahead, as a send re-planned by a campaign change may have, so it stays
-    deletable with the confirmation's caution (R40b).
+    deletable with the confirmation's caution (R40b). The October 10
+    reminder belongs to a remembered series (SERIES_RULE) and the other is
+    one-off, so only the first shows the Repeats chip (#2234), its rule in
+    the words the view's ``series_rules`` gives.
     """
     names = email_names([row for row in emails if row["values"]["kind"] == "email"])
+    member = [row["id"] for row in rows if row["values"]["date"] == "2054-10-10"]
+    series = {"campaign_id": owner["id"], "rule": SERIES_RULE, "schedules": member}
+    document = {"sections": {"schedule_series": [{"values": series}]}}
+    configuration = SimpleNamespace(
+        active_configuration=SimpleNamespace(canonical_document=document)
+    )
     summary = {
         row["id"]: {"delivered": 4}
         for row in rows
         if row["values"]["date"] == "2054-10-20"
     }
     summary[rows[0]["id"]] = {"delivered": 1031, "failed": 2}
-    described = schedule_rows(rows, owner["values"], summary, NOW, names)
+    described = schedule_rows(
+        rows,
+        owner["values"],
+        summary,
+        NOW,
+        names,
+        repeats=series_rules(configuration, owner["id"]),
+    )
     context = {
         "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
         "values": owner["values"],
