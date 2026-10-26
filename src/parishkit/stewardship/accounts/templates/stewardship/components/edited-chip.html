@@ -1,0 +1,12 @@
+{% load i18n %}{% comment %}
+  The shared Edited chip (#2257, UX conventions "Status indicators"): a
+  reviewer's Edit is in force on the value or decision before it. It is the
+  chip Financial stewardship gave an edited pledge (#2196), drawn once here
+  so every page marks an edit alike, never as "(edited)" text. The chip
+  shows "Edited"; screen readers hear spoken instead (default "edited", so
+  "Accepted" before it reads "Accepted, edited" with the filter's comma).
+  With tip and tip_id, a toggletip after it gives the Family's own answer,
+  for a page that does not show that answer beside it; tip_id must be
+  unique on the page. The edited_chips filter (templatetags) draws it in
+  place of the decision word "Accepted (edited)".
+{% endcomment %}<span class="status-badge edited-chip"><span aria-hidden="true">{% translate "Edited" %}</span><span class="visually-hidden">{% if spoken %}{{ spoken }}{% else %}{% translate "edited" %}{% endif %}</span></span>{% if tip %} {% include "stewardship/components/toggletip.html" with tip_id=tip_id tip_label_id=tip_id tip_text=tip %}{% endif %}

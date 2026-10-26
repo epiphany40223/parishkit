@@ -129,6 +129,25 @@ REVIEWED = Timeline(
 # The Administrator's page a minute later, with Staff's two review lines
 # added: what the table's periodic re-read (#2197) brings in.
 LIVE = "/timeline-live"
+# A Timeline with an Edit's review line, its decision "Accepted (edited)"
+# drawn as Accepted and the Edited chip (#2257).
+EDITED = "/timeline-edited"
+EDITED_TIMELINE = Timeline(
+    TIMELINE.summary,
+    events(
+        [INVITATION, REMINDER, RECEIPT],
+        [FIRST, SECOND],
+        engagement=ENGAGEMENT,
+        reviews=[
+            (
+                SECOND.at,
+                "Accepted (edited)",
+                "Pledge; Reviewer's value: $1,300.00, Monthly; by staff@example.org",
+            ),
+        ],
+    ),
+    ENGAGEMENT,
+)
 UNAVAILABLE = "/timeline-unavailable"
 # A Family ParishSoft no longer lists as active and registered, while other
 # campaign work holds exports: Open form and the export buttons are
@@ -236,6 +255,7 @@ def components(context, admin):
         # Staff see the full timeline and export it (#1774, #1799) but may
         # not open Mail message pages.
         STAFF: (REVIEWED, {"full": True, "mail_links": False}),
+        EDITED: (EDITED_TIMELINE, {"full": True}),
         LIVE: (REVIEWED, {"full": True}),
         UNAVAILABLE: (
             TIMELINE,

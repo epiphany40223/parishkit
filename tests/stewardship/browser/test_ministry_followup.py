@@ -635,7 +635,9 @@ def test_each_stage_shows_its_decision_on_the_icons(page, component_origin):
     has_text(ignored.locator(".stage-chip"), "Ignored")
     assert "Stayed in the Ministry" in ignored.inner_text()
     edited = worklist_row(page, UUID(int=123))
-    assert "Accepted (edited)" in edited.inner_text()
+    # Accepted (edited) is drawn as Accepted with the Edited chip (#2257).
+    visible(edited.locator(".stage-cell .edited-chip"))
+    assert "Accepted" in edited.locator(".stage-cell").inner_text()
     # The edited Ministry is on the values cell's Reviewer's value line (R38
     # finding 11, #2124), not only somewhere in the row.
     reviewer = edited.locator(".values-cell .stack-line", has_text="Reviewer's value")
