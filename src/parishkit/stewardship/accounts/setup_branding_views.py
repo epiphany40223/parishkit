@@ -55,7 +55,17 @@ class SetupLogoForm(LogoForm):
             {
                 "data-max-bytes": MAX_IMAGE_BYTES,
                 "data-max-bytes-message": LOGO_TOO_LARGE,
+                # The chosen file is shown at once in the preview box below
+                # the field (ui-v1.js, wireFilePreview; #2270).
+                "data-preview-target": "logo-choice-preview",
             }
+        )
+        # The field's reserved error line keeps the height of its tallest
+        # message, so a refusal wrapping at 320 px moves neither the preview
+        # box nor the buttons below it (#2270).
+        logo.error_sizes = (
+            str(LOGO_TOO_LARGE).replace("{size}", "10.0 MB"),
+            str(_("Choose a supported, bounded static image.")),
         )
         setup_help.apply(self, setup_help.LOGO, replace=True)
         # Its template draws a tip (field_tips.TIP_TEMPLATES), so the long
@@ -81,6 +91,15 @@ def _draft(request, service):
     if draft is None or draft.status.state != SetupState.COLLECTING:
         raise PermissionError("Setup logo is unavailable.")
     return draft
+
+
+def _stored_logo(assets):
+    """The saved logo's largest generated size, shown in the preview box.
+
+    The box holds what the file field would keep on Save and continue with no
+    file chosen (#2270); ``None`` before a logo is saved.
+    """
+    return max(assets, key=lambda asset: asset.width, default=None)
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
@@ -165,9 +184,12 @@ def setup_branding(request):
         response = render(
             request,
             "stewardship/setup-branding.html",
-            _context(draft, "branding") | {"form": form, "assets": assets},
+            _context(draft, "branding")
+            | {"form": form, "assets": assets, "stored": _stored_logo(assets)},
             status=status,
         )
+        # The preview shows the chosen file from a blob: object URL (#2270).
+        response.stewardship_blob_images = True
         if status == 400:
             image_reason(response, form, "logo")
         return _checked(request, service, response, draft)

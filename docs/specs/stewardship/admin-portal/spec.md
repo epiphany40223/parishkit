@@ -301,6 +301,23 @@ Integrations. A page whose prerequisites are unmet explains what is missing
 and links the step that fixes it, keeping the HTTP status of the underlying
 refusal; closed JSON errors remain for polling and command endpoints.
 
+The setup Parish logos page previews the logo before the Administrator
+advances (#2270). Under the file field a preview box of fixed height holds
+the logo the field would save. Choosing a file draws it at once from the
+browser's own copy of the file (an object URL, revoked when the file is
+replaced or the page is left), with no upload. With no file chosen, the box
+shows the saved logo from the server, so a revisit shows what is saved, and
+its empty text before either exists. A file the page refuses (over 5 MB),
+that is not an image, or that the browser cannot draw keeps no preview: the
+box returns to the saved logo or the empty text, and the size refusal
+shows in the field's reserved error line. The box, the error line and the
+buttons below keep their places in every case, including at 320 px
+([no layout shift](../ui-conventions/spec.md#no-layout-shift)). Only this
+page's response adds `blob:` to the content security policy's `img-src`; the
+server still checks the size and type of every upload. The post-setup
+Parish logos page (Admin menu) keeps its own review dialog, which already
+shows every generated size.
+
 A refusal an Admin can correct, in the wizard or the campaign, content and
 schedule editors, says what was wrong and how to fix it, with a link to the
 page that fixes it when there is one (for example, a template that a mail
