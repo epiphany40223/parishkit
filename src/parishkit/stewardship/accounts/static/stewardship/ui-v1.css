@@ -2568,11 +2568,6 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
    hidden text, which is absolutely positioned: positioned on the chip, it
    is clipped by the table's scroll box instead of widening a phone's page. */
 .schedule-table .series-chip { position: relative; }
-/* The list's seven columns take the whole-words tables' narrower side
-   padding, so with a Status cell holding Upcoming and Repeats on one line
-   the table still fits a laptop's content width and the When column keeps
-   its whole date (#2234). */
-.schedule-list-table :is(th, td) { padding-inline: .6rem; }
 /* The wizard's Suggested report emails (#2038): each Time cell is at least
    the short-field width, its cells sit at the top of their row
    (.whole-words), and its shared time-entry reading takes the cell's width
