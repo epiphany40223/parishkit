@@ -4,6 +4,7 @@ import re
 from datetime import date, time
 
 from django import template
+from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils.html import conditional_escape, format_html, strip_tags
 from django.utils.safestring import mark_safe
@@ -13,6 +14,7 @@ from django.utils.translation import ngettext
 from parishkit.stewardship.accounts import admin_navigation, google_account_help, stages
 from parishkit.stewardship.campaigns import single_campaign
 from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
+from parishkit.stewardship.pipeline import Decision
 from parishkit.stewardship.source.source_status import source_status_label
 from parishkit.stewardship.web import dates, presentation, review_live, stat_tiles
 from parishkit.stewardship.web.buttons import portal_classes
@@ -573,6 +575,62 @@ def whole_dollars(amount):
         shown,
         amount.display,
     )
+
+
+# One shown amount: an optional minus, "$", grouped dollars and any cents
+# ("$99,999.99", "-$12.50", "$1,000"), as MoneyAmount and whole_dollars write
+# them.
+MONEY_AMOUNT = re.compile(r"-?\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?")
+
+
+@register.filter
+def keep_money(value):
+    """Text with each amount of money in it kept on one line (#2258).
+
+    Usage: ``{{ row.answer|keep_money }}``. Each amount ("$99,999.99") is
+    wrapped in ``<span class="money">`` (``white-space: nowrap`` in
+    ui-v1.css), so main's ``overflow-wrap: anywhere`` never breaks it inside
+    a squeezed table cell, while the words around it still wrap
+    (ui-conventions "Numbers and money"). Plain text is escaped first;
+    text already marked safe keeps its markup.
+    """
+    text = conditional_escape(value)
+    return mark_safe(MONEY_AMOUNT.sub(r'<span class="money">\g<0></span>', text))
+
+
+@register.filter
+def edited_chips(value):
+    """A decision's words with "Accepted (edited)" drawn as "Accepted" and
+    the shared Edited chip (#2257, UX conventions "Status indicators").
+
+    Usage: ``{{ row.decision_label|edited_chips }}``. The text is escaped
+    first; every other word is kept as it is, so a held-decision line or a
+    Timeline line reads as before around the chip. A visually hidden comma
+    makes a screen reader say "Accepted, edited". Exports and the CLI keep
+    the plain decision word, which this page-only filter never changes.
+    """
+    text = conditional_escape(value)
+    edited = conditional_escape(Decision.ACCEPTED_EDITED.label)
+    if edited not in text:
+        return text
+    chip = render_to_string("stewardship/components/edited-chip.html")
+    accepted = conditional_escape(Decision.ACCEPTED.label)
+    shown = f'{accepted}<span class="visually-hidden">,</span> {chip}'
+    return mark_safe(text.replace(edited, shown))
+
+
+@register.filter
+def edited_split(label):
+    """A stage chip's word and whether it is the edited decision (#2257).
+
+    Usage: ``{% with stage=row.stage_label|edited_split %}``: ``stage.0``
+    is the chip's word ("Accepted" for "Accepted (edited)", else the label
+    as it is) and ``stage.1`` is True when the Edited chip follows the
+    stage chip, beside it rather than nested inside it.
+    """
+    if label == Decision.ACCEPTED_EDITED.label:
+        return Decision.ACCEPTED.label, True
+    return label, False
 
 
 @register.simple_tag

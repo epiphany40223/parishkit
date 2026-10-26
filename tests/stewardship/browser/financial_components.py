@@ -220,6 +220,22 @@ def components(context, admin):
         ),
         "/financial-empty": values | dict(table=table([], total=0), total=0),
         "/financial-typical": values | dict(table=table(typical)),
+        # Every money cell at $99,999, the table's whole-dollar form of
+        # $99,999.00 (#2258).
+        "/financial-wide": values
+        | dict(
+            table=table(
+                [
+                    found
+                    | dict(
+                        annual=MoneyAmount(9999900),
+                        source_pledge=MoneyAmount(9999900),
+                        source_contributions=MoneyAmount(9999900),
+                    )
+                    for found in typical
+                ]
+            )
+        ),
         # The campaign cannot accept work: the export controls are offered gated.
         "/financial-gated": values | dict(mutable=False),
         # The report as first opened, with no filter applied: its Filters

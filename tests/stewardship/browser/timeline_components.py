@@ -145,6 +145,45 @@ REVIEWED = Timeline(
 # The Administrator's page a minute later, with Staff's two review lines
 # added: what the table's periodic re-read (#2197) brings in.
 LIVE = "/timeline-live"
+# A Timeline whose review line names a $99,999.99 pledge (#2258), the
+# Details column's longest amount.
+WIDE = "/timeline-wide"
+WIDE_TIMELINE = Timeline(
+    TIMELINE.summary,
+    events(
+        [INVITATION, REMINDER, RECEIPT],
+        [FIRST, SECOND],
+        engagement=ENGAGEMENT,
+        reviews=[
+            (
+                SECOND.at,
+                "Accepted (edited)",
+                "Pledge; Reviewer's value: $99,999.99, Monthly; by "
+                "a.reviewer.with.a.long.address@example.org",
+            ),
+        ],
+    ),
+    ENGAGEMENT,
+)
+# A Timeline with an Edit's review line, its decision "Accepted (edited)"
+# drawn as Accepted and the Edited chip (#2257).
+EDITED = "/timeline-edited"
+EDITED_TIMELINE = Timeline(
+    TIMELINE.summary,
+    events(
+        [INVITATION, REMINDER, RECEIPT],
+        [FIRST, SECOND],
+        engagement=ENGAGEMENT,
+        reviews=[
+            (
+                SECOND.at,
+                "Accepted (edited)",
+                "Pledge; Reviewer's value: $1,300.00, Monthly; by staff@example.org",
+            ),
+        ],
+    ),
+    ENGAGEMENT,
+)
 UNAVAILABLE = "/timeline-unavailable"
 # A Family ParishSoft no longer lists as active and registered, while other
 # campaign work holds exports: Open form and the export buttons are
@@ -190,6 +229,8 @@ HUB_ACCEPTED = "/hub-actions-accepted"
 HUB_PLEDGE = "/hub-pledge"
 # The same tab with the pledge To review, before a decision.
 HUB_PLEDGE_FRESH = "/hub-pledge-fresh"
+# The edited pledge with every amount at $99,999.99 (#2258).
+HUB_PLEDGE_WIDE = "/hub-pledge-wide"
 HOME_CHANGE = {
     "id": HOME_ID,
     "entity_kind": "family",
@@ -252,6 +293,8 @@ def components(context, admin):
         # Staff see the full timeline and export it (#1774, #1799) but may
         # not open Mail message pages.
         STAFF: (REVIEWED, {"full": True, "mail_links": False}),
+        WIDE: (WIDE_TIMELINE, {"full": True}),
+        EDITED: (EDITED_TIMELINE, {"full": True}),
         LIVE: (REVIEWED, {"full": True}),
         UNAVAILABLE: (
             TIMELINE,
@@ -292,6 +335,7 @@ def components(context, admin):
         for path, tab in (
             (HUB_PLEDGE, pledge_tab()),
             (HUB_PLEDGE_FRESH, pledge_tab(fresh=True)),
+            (HUB_PLEDGE_WIDE, pledge_tab(wide=True)),
         )
     }
     responses = {}

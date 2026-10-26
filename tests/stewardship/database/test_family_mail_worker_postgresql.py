@@ -456,6 +456,40 @@ def test_mixed_refusals_retry_same_occurrence_only_to_remaining_address(
     assert TaskRun.objects.get(pk=message.task_id).state == "succeeded"
 
 
+def test_comma_value_in_head_field_is_never_a_recipient(dispatch_worker, monkeypatch):
+    """A comma value is one invalid fragment and is never sent to.
+
+    Only the valid ``;`` fragment is a recipient, and a repeated address is
+    sent once (#2260).
+    """
+    from .response_builders import response_source
+    from .test_recipient_suppressions_postgresql import refresh
+
+    harness, path = dispatch_worker
+    harness = activate_response_service(harness)
+    complete_empty_catchup(harness.campaign, uuid4())
+    source = response_source()
+    source.members[3]["emailAddress"] = (
+        "Zother@example.org, not an address,valid@example.org; zother@example.org"
+    )
+    refresh(harness, source)
+    calls = []
+
+    def provider(value, settings, mail, **kwargs):
+        calls.append(mail.recipients)
+        return FamilyDeliveryResult(Status.ACCEPTED, len(mail.recipients))
+
+    monkeypatch.setattr(
+        "parishkit.stewardship.jobs.family_mail_delivery_tasks.submit_family", provider
+    )
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(harness)
+        deliver(harness, path, message)
+    message.refresh_from_db()
+    assert calls == [("zother@example.org",)]
+    assert message.state == "delivered"
+
+
 @pytest.mark.parametrize("status", [Status.ACCEPTED, Status.UNKNOWN, Status.PERMANENT])
 def test_partial_refusals_are_recorded_independently_of_data_outcome(
     dispatch_worker, monkeypatch, status

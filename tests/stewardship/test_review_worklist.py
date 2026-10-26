@@ -747,3 +747,50 @@ def test_a_terminal_undo_says_where_the_item_goes():
         "Undoing an update writes nothing to ParishSoft."
         in (worklist.BODIES[Action.BACK_TO_REVIEW])
     )
+
+
+def test_edited_chips_draws_accepted_edited_as_accepted_with_the_chip():
+    """The decision word becomes "Accepted" plus the shared Edited chip,
+    heard as "Accepted, edited"; other words are escaped and kept (#2257)."""
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.accounts.templatetags.stewardship import edited_chips
+
+    chip = render_to_string("stewardship/components/edited-chip.html")
+    assert chip == (
+        '<span class="status-badge edited-chip"><span aria-hidden="true">Edited'
+        '</span><span class="visually-hidden">edited</span></span>'
+    )
+    accepted = f'Accepted<span class="visually-hidden">,</span> {chip}'
+    assert edited_chips("Accepted (edited).") == f"{accepted}."
+    assert edited_chips("Earlier: Accepted (edited), not in force. <b>") == (
+        f"Earlier: {accepted}, not in force. &lt;b&gt;"
+    )
+    assert edited_chips("Accepted") == "Accepted"
+    assert edited_chips("Ignored: <x>") == "Ignored: &lt;x&gt;"
+
+
+def test_the_edited_chip_can_give_the_familys_answer_in_a_tip():
+    """With a tip, the chip is followed by its toggletip; spoken replaces
+    the screen-reader word (Financial stewardship's "Edited on Pledges")."""
+    from django.template.loader import render_to_string
+
+    chip = render_to_string(
+        "stewardship/components/edited-chip.html",
+        {
+            "spoken": "Edited on Pledges",
+            "tip": "The Family's answer: $5.",
+            "tip_id": "t",
+        },
+    )
+    assert '<span class="visually-hidden">Edited on Pledges</span>' in chip
+    assert 'aria-controls="t"' in chip and "The Family&#x27;s answer: $5." in chip
+
+
+def test_edited_split_puts_the_edited_chip_beside_a_stage_chip():
+    """A stage chip reading Accepted (edited) shows Accepted, with the chip
+    after it; any other word is kept (#2257)."""
+    from parishkit.stewardship.accounts.templatetags.stewardship import edited_split
+
+    assert edited_split("Accepted (edited)") == ("Accepted", True)
+    assert edited_split("To review") == ("To review", False)

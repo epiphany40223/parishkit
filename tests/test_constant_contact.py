@@ -563,6 +563,41 @@ def test_contact_linking_helpers():
     assert members[1]["CONTACT"] is contact
 
 
+def test_contact_linking_reads_raw_email_field_when_not_normalized():
+    """A member without the derived address list still links by every address.
+
+    link_contacts_to_ps_members reads addresses through member_email_addresses,
+    so a raw ParishSoft field works even when normalization
+    was skipped, and an empty derived list does not fall back to the raw field.
+    """
+    members = {
+        1: {
+            "firstName": "Ann",
+            "lastName": "Smith",
+            "emailAddress": "OLD@example.org; Ann@Example.org",
+        },
+        # A derived list, even an empty one, is what normalization decided, so
+        # the raw field must not be split again behind it.
+        2: {
+            "firstName": "Bob",
+            "lastName": "Jones",
+            "emailAddress": "bob@example.org",
+            "py emailAddresses": [],
+        },
+    }
+    contacts = [
+        {"email_address": {"address": "Ann@example.org"}},
+        {"email_address": {"address": "bob@example.org"}},
+    ]
+
+    link_contacts_to_ps_members(contacts, members)
+
+    assert contacts[0]["PS MEMBERS"] == [members[1]]
+    assert members[1]["CONTACT"] is contacts[0]
+    assert "PS MEMBERS" not in contacts[1]
+    assert "CONTACT" not in members[2]
+
+
 def test_get_access_token_refreshes_expired_token(tmp_path):
     """An expired token is refreshed via the token endpoint and persisted.
 

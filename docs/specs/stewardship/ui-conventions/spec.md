@@ -71,6 +71,7 @@ when it lands.
   [button labels](#button-labels), [button emphasis](#button-emphasis),
   [review pipeline terms](#review-pipeline-terms),
   [campaign Families wording](#campaign-families-wording),
+  [financial terminology](#financial-terminology),
   [shared visual style](#shared-visual-style),
   [colour scheme](#colour-scheme),
   [status indicators](#status-indicators), [stat tiles](#stat-tiles),
@@ -157,6 +158,20 @@ fractional digits, except a headline money total a
 Y" also show a percentage; percentages use one fractional digit unless they
 are exact integers. A zero denominator displays an em dash rather than a
 misleading percentage.
+
+**Money on one line.** A shown amount of money never breaks across lines: an
+amount up to "$99,999.99" (and any larger one) stays on one line in every
+Admin table at laptop width, whether it fills its cell or sits in mixed text
+("Monthly ($8,333.33 each)"). The words and names around it wrap first, and
+a table that then cannot fit a phone scrolls sideways inside its own
+focusable, named box (see
+[table fit and row height](#table-fit-and-row-height)), never the page.
+Downloads keep plain text. **Why.** "$3,000.00" broken after "$3," reads as
+two figures (Administrator, 2026-10-26). **Shared code.** The `keep_money`
+template filter (each amount in a `money` span, `white-space: nowrap` in
+`ui-v1.css`) on every money cell that is not already `nowrap` in a
+`whole-words` table; the money-width browser test (`test_money_width.py`). **Precedent.**
+[#2258](https://github.com/epiphany40223/parishkit/issues/2258).
 
 **Money inputs.** Every field that takes an amount of money shows a "$"
 attached before it: a visual prefix the field sits beside, not text the reader
@@ -3455,6 +3470,27 @@ A Member's "Inactive in ParishSoft" badge, "No active Family head" and
 and stay. The Family portal shows none of these words; a Family that is not
 in the campaign gets the same sign-in answer as an unknown code, as today.
 
+### Financial terminology
+
+**Rule.** In the Admin portal, **Pledge** means the monetary amount (for
+example "Annual pledge", "Pledge distribution", "Pledge amount"), and
+**Financial stewardship** means the whole of that area: the pledge, its
+frequency, its share methods, Cannot contribute and the rest. A label,
+heading, tab, help line, export title or CLI message that names the whole
+says "Financial stewardship", never the bare "Financial"; one that names
+the amount says pledge. The Admin menu's **Pledges** review stream keeps
+its name, although it reviews the amount, frequency and share methods
+(the whole), until the Administrator decides otherwise. The rule covers
+the Admin portal only; the Family portal keeps its own wording this
+campaign. Routes, URLs, stored values, audit event types and database
+column names are unchanged. **Why.** The Admin menu said "Financial
+stewardship" while the Family hub's tab said "Financial", so staff saw two
+names for one thing (Administrator, 2026-10-26,
+[#2256](https://github.com/epiphany40223/parishkit/issues/2256)). Status:
+built (#2256): the Family hub and Timeline tab and heading, the Timeline
+About text, the Campaign settings validation message and the Financial
+stewardship export's sheet name changed together.
+
 ### Shared visual style
 
 The portal and the emails share one visual style
@@ -3687,6 +3723,25 @@ look per state:
   [#1966](https://github.com/epiphany40223/parishkit/issues/1966)). The
   row's background stays as it is, so a table with several paused reports
   is not loud.
+- **Edited.** A value or decision that a reviewer's Edit put in force is
+  marked by the one shared **Edited** chip, never by "(edited)" text: the
+  decision **Accepted (edited)** shows as "Accepted" followed by the chip,
+  wherever a page shows it (review tables' Stage cells and their decision
+  lines, the Timeline's What happened, Ministry follow-up's edited Ministry
+  line), and a screen reader hears "Accepted, edited". A stage chip that
+  reads by the decision (a leader's accepted Ministry request) has the
+  Edited chip beside it, not inside it. Where a page does not show the
+  Family's own answer beside the chip, the chip's toggletip gives that
+  answer; a review table, which shows it in the
+  same row, adds no tip. Downloads, the Timeline PDF and the command line
+  keep the plain words ("Accepted (edited)", or an Edited column), and the
+  history filters and stage names keep their meaning. **Shared code.**
+  `components/edited-chip.html` (the `status-badge` chip), the
+  `edited_chips` template filter, which draws the decision word with it,
+  and `edited_split`, which puts it beside a stage chip
+  ([#2257](https://github.com/epiphany40223/parishkit/issues/2257), after
+  Financial stewardship's chip,
+  [#2196](https://github.com/epiphany40223/parishkit/issues/2196)).
 - **Contrast.** Text meets 4.5:1, and icons and borders 3:1, against their
   background, checked by a contrast test over the token pairs above. Not
   current uses `--control-border` (3.3:1 on `--paper-soft`), because the
@@ -5404,7 +5459,8 @@ text that goes with one sits in a [toggletip](#page-help) beside it. A chip
 names its item by a short label where the item has one, so a cell can show
 every chip; the chips may wrap onto a second line within their cell, making
 that row taller, which is acceptable where most rows have one chip. So a
-chip cell is not `nowrap`; money and date cells still never wrap.
+chip cell is not `nowrap`; money ([numbers and money](#numbers-and-money))
+and date cells still never wrap.
 Where two related values would each need a column, one cell may stack them,
 one line each, when the heading names them in the same order and each value
 carries its name for screen readers (`stack-line`); a row is then as tall
