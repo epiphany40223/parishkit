@@ -13,10 +13,33 @@ prepared, or another has passed without sending) is drawn unavailable with
 its reason beside it (UX conventions, "Prerequisite gates"). The error list
 keeps its id, so a refused Review's answer can fill it in place; the help
 line is always shown, never swapped per choice (no layout shift).
+Change the repeat (#1808) follows the fieldset. Its box is always drawn,
+greyed while This reminder only is chosen (data-enabled-when: a reminder
+alone never changes a rule), so choosing a scope moves nothing. Ticked, it
+shows the shared repeat rule below it (components/repeat-rule.html, named,
+prefix repeat), filled in with the series' rule
+(schedule_entry_views.rule_initial); ui-v1.js shows the rule while the box
+is ticked and greys it, unsent, while the box is greyed, so that moves
+nothing either. The box is not a change by itself (data-not-a-change); the
+rule's fields are, once they differ from what was drawn. Each scope's radio carries what the page script needs for the
+rule (schedule_entry_views.rule_scopes): the date its changes start on
+(data-rule-from, which From follows while it holds the date filled in), the
+earliest From the plan accepts while earlier reminders stay
+(data-rule-min, with its words in data-rule-min-hint) and the schedules
+still free once its reminders are replaced (data-rule-room). The rule panel
+carries the saved mailings other than the series' own unsent reminders
+(data-repeat-mailings) and the campaign's first and last moments, so its
+date list is checked as New's repeat is. A page drawn again is drawn with
+the box and the rule shown as posted, so nothing flashes.
 {% endcomment %}{% with field=series.form.scope %}<fieldset class="field schedule-series" data-not-a-change data-series-scope aria-describedby="series-part-of {{ field.auto_id }}_helptext {{ field.auto_id }}_tip">
 <legend id="{{ field.auto_id }}_legend">{{ field.label }}</legend>{% include "stewardship/components/toggletip.html" with tip_id=field.auto_id|add:"_tip" tip_label_id=field.auto_id|add:"_legend" tip_text=field.field.tip %}
 <p id="series-part-of">{% blocktranslate trimmed with rule=series.text %}Part of: {{ rule }}{% endblocktranslate %}</p>
 <ul class="errorlist" id="{{ field.auto_id }}_error"{% if not field.errors %} hidden{% endif %}>{% for error in field.errors %}<li>{{ error }}</li>{% endfor %}</ul>
-{% for option in series.options %}<div><input type="radio" name="{{ field.html_name }}" value="{{ option.value }}" id="{{ field.auto_id }}_{{ forloop.counter0 }}"{% if option.checked %} checked{% endif %}{% if option.reason %} disabled{% endif %}{% if field.errors %} aria-invalid="true"{% endif %}{% if option.reason or field.errors %} aria-describedby="{% if field.errors %}{{ field.auto_id }}_error{% endif %}{% if option.reason %}{% if field.errors %} {% endif %}{{ field.auto_id }}_{{ forloop.counter0 }}_reason{% endif %}"{% endif %}> <label for="{{ field.auto_id }}_{{ forloop.counter0 }}">{{ option.label }}</label>{% if option.reason %} <span class="help" id="{{ field.auto_id }}_{{ forloop.counter0 }}_reason">{% translate "Unavailable:" %} {{ option.reason }}</span>{% endif %}</div>
+{% for option in series.options %}<div><input type="radio" name="{{ field.html_name }}" value="{{ option.value }}" id="{{ field.auto_id }}_{{ forloop.counter0 }}"{% if option.scope %} data-rule-from="{{ option.scope.from }}" data-rule-min="{{ option.scope.min }}" data-rule-min-hint="{{ option.scope.min_hint }}" data-rule-room="{{ option.scope.room }}"{% endif %}{% if option.checked %} checked{% endif %}{% if option.reason %} disabled{% endif %}{% if field.errors %} aria-invalid="true"{% endif %}{% if option.reason or field.errors %} aria-describedby="{% if field.errors %}{{ field.auto_id }}_error{% endif %}{% if option.reason %}{% if field.errors %} {% endif %}{{ field.auto_id }}_{{ forloop.counter0 }}_reason{% endif %}"{% endif %}> <label for="{{ field.auto_id }}_{{ forloop.counter0 }}">{{ option.label }}</label>{% if option.reason %} <span class="help" id="{{ field.auto_id }}_{{ forloop.counter0 }}_reason">{% translate "Unavailable:" %} {{ option.reason }}</span>{% endif %}</div>
 {% endfor %}<p class="help" id="{{ field.auto_id }}_helptext">{{ field.help_text }}</p>
 </fieldset>{% endwith %}
+{% if series.rule %}{% with box=series.form.rule %}<div class="field schedule-series-rule" data-not-a-change><input type="checkbox" name="{{ box.html_name }}" id="{{ box.auto_id }}" aria-describedby="{{ box.auto_id }}_helptext" data-enabled-when="series-scope!=this"{% if series.changing %} checked{% endif %}{% if not series.scoped %} disabled{% endif %}> <label for="{{ box.auto_id }}">{{ box.label }}</label>
+<div class="helptext" id="{{ box.auto_id }}_helptext">{{ box.help_text }}</div></div>
+<div data-series-rule data-repeat-zone="{{ values.timezone }}" data-repeat-window-start="{{ window_start }}" data-repeat-window-end="{{ window_end }}" data-repeat-mailings="{{ series.mailings }}" data-repeat-limit="{{ limit }}" data-rule-unusable="{% translate "Some dates can't be used; see the list below." %}" data-rule-unchanged="{% translate "Change the time, email or repeat to review it." %}" data-rule-scope="{% translate "Choose “This and following” or “The whole series” to change the repeat." %}"{% if not series.changing %} hidden{% endif %}>
+{% include 'stewardship/components/repeat-rule.html' with rule=series.rule named=True %}
+</div>{% endwith %}{% endif %}

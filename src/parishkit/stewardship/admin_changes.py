@@ -186,36 +186,61 @@ def _repeat(entry, label):
     fields = {name: entry[name] for name in REPEAT_FIELDS if name in entry}
     return [
         {"kind": "reminder", "date": day, **fields, LABEL: f"{label}.{day}"}
-        for day in _rule(entry["repeat"])[1]
+        for day in checked_rule(entry["repeat"])[1]
     ]
 
 
-def _rule(value):
-    """A repeat rule's canonical form and dates, or the page's ``ValueError``.
+class RuleRefused(ValueError):
+    """A repeat rule ``checked_rule`` refuses, with why (#1808).
+
+    ``reason`` is ``expand``'s error key for a rule it refuses
+    (``RULE_ERRORS``), ``"missing"`` for a month the rule skips for want of
+    its day (``months``, as ``YYYY-MM``), or ``"count"`` for a rule giving
+    no dates or more than REPEAT_LIMIT (``count``). The message is the
+    command line's; Edit scheduled email words each reason itself.
+    """
+
+    def __init__(self, message, reason, *, months=(), count=0):
+        """Keep the command line's message and the reason's details."""
+        super().__init__(message)
+        self.reason = reason
+        self.months = tuple(months)
+        self.count = count
+
+
+def checked_rule(value):
+    """A repeat rule's canonical form and dates, or ``RuleRefused``.
 
     The rule must be valid in every member (``canonical_rule`` admits no
     stray types), skip no month for want of its day, and give from one to
-    REPEAT_LIMIT dates.
+    REPEAT_LIMIT dates. The command line's repeat and series entries and
+    Edit scheduled email's Change the repeat (#1808) all check a rule here,
+    so they cannot differ.
     """
     rule = canonical_rule(value)
     if rule is None:
         # canonical_rule refuses exactly the rules expand names an error for.
-        raise ValueError(RULE_ERRORS[expand(value)["error"]])
+        error = expand(value)["error"]
+        raise RuleRefused(RULE_ERRORS[error], error)
     expanded = expand(rule)
     if expanded["missing"]:
         months = ", ".join(
             date.fromisoformat(f"{month}-01").strftime("%B %Y")
             for month in expanded["missing"]
         )
-        raise ValueError(
+        raise RuleRefused(
             f"The repeat's day of the month is not in {months}; choose a day "
-            "every month in the range has, or a shorter range."
+            "every month in the range has, or a shorter range.",
+            "missing",
+            months=expanded["missing"],
         )
     dates = expanded["dates"]
     if not 1 <= len(dates) <= REPEAT_LIMIT:
-        raise ValueError(
+        raise RuleRefused(
             f"A repeat adds from 1 to {REPEAT_LIMIT} reminders; this one gives "
-            f"{len(dates)} dates."
+            f"{len(dates)} dates.",
+            "count",
+            count=len(dates),
         )
     return rule, dates
 
@@ -256,7 +281,7 @@ def _series(entry, label):
         "series": entry["series"],
         "scope": scope,
         "start": entry.get("from"),
-        "rule": _rule(entry["repeat"])[0] if "repeat" in entry else None,
+        "rule": checked_rule(entry["repeat"])[0] if "repeat" in entry else None,
         "time_of_day": entry.get("time"),
         "template_version": entry.get("template_version"),
         LABEL: label,

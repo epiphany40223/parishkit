@@ -37,6 +37,7 @@ from .schedule_list_components import (
     EDIT_PASSED,
     EDIT_SERIES,
     EDIT_SERIES_GATED,
+    EDIT_SERIES_RULE,
     EMAIL_REFUSAL,
     FAILED,
     GATED_REASON,
@@ -798,6 +799,128 @@ def test_a_series_reminder_changes_this_and_following_in_place(
     # A reminder outside a series has no scope.
     page.goto(component_origin + EDIT)
     assert page.locator('[name="series-scope"]').count() == 0
+    assert not failures
+
+
+def test_change_the_repeat_reviews_a_new_rule_in_place(
+    page, component_origin, axe_source
+):
+    """Change the repeat (#1808): the box is greyed for This reminder only and
+    opens the shared repeat rule in place, filled in with the series' rule;
+    From follows the scope; Review waits while the rule is as drawn or
+    starts too early, and posts the rule's fields (never New's dates)."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + EDIT_SERIES_RULE)
+    failures = watch(page)
+    form = page.locator("#schedule-entry-form")
+    box = form.get_by_label("Change the repeat")
+    button = page.get_by_role("button", name=REVIEW)
+    summary = form.locator("[data-repeat-summary]")
+    start = form.locator("#repeat-from")
+    until = form.locator("#repeat-until")
+    greyed(box)
+    form.get_by_role("radio", name="This and following").check()
+    available(box)
+    assert not box.is_checked() and button.is_disabled()
+    choice = form.get_by_role("group", name="Apply this edit to", exact=False)
+    places = [choice.bounding_box(), box.bounding_box()]
+    box.check()
+    # The rule opens below the box: nothing above it moves.
+    visible(start)
+    assert same_place([choice.bounding_box(), box.bounding_box()], places)
+    assert form.locator("#repeat-frequency").input_value() == "daily"
+    assert start.input_value() == "2054-10-20"
+    assert until.input_value() == "2054-10-31"
+    # Ticking the box is no change by itself.
+    assert button.is_disabled()
+    has_text(summary, "Change the time, email or repeat to review it.")
+    visible(page.get_by_text("Change the date, time, email or repeat to review it."))
+    # The box sits on its label's line (UX conventions, a lone checkbox).
+    label = form.locator('label[for="id_series-rule"]')
+    assert abs(box.bounding_box()["y"] - label.bounding_box()["y"]) < 12
+    visible(form.get_by_text("Dates of the new repeat:"))
+    assert axe_violations(page, axe_source) == []
+    # A From before this reminder, while Reminder 1 stays: Review waits.
+    start.fill("2054-10-15")
+    start.blur()
+    early = (
+        "Start the new repeat on or after October 20, 2054, the first reminder "
+        "it changes; the earlier reminders stay in this series."
+    )
+    has_text(summary, early)
+    # Said at From too, which is marked.
+    has_text(form.locator("#repeat-from_error"), early)
+    assert start.get_attribute("aria-invalid") == "true"
+    assert button.is_disabled()
+    start.fill("2054-10-20")
+    start.blur()
+    hidden(form.locator("#repeat-from_error"))
+    # Back as drawn: nothing to review again.
+    has_text(summary, "Change the time, email or repeat to review it.")
+    # The whole series starts at Reminder 1: From follows while it holds the
+    # date filled in, and that alone is no change either.
+    page.goto(component_origin + EDIT_SERIES_RULE)
+    form.get_by_role("radio", name="This and following").check()
+    box.check()
+    form.get_by_role("radio", name="The whole series").check()
+    assert start.input_value() == "2054-10-10"
+    has_text(summary, "Change the time, email or repeat to review it.")
+    assert button.is_disabled()
+    until.fill("2054-10-25")
+    until.blur()
+    has_text(summary, "The new repeat sends on 16 dates.")
+    assert button.is_enabled()
+    with page.expect_request(
+        lambda request: request.method == "POST" and "review" in request.url
+    ) as sent:
+        button.click()
+    fields = posted(sent.value)
+    assert fields["series-scope"] == ["series"]
+    assert fields["series-rule"] == ["on"]
+    assert fields["repeat-frequency"] == ["daily"]
+    assert fields["repeat-start"] == ["2054-10-10"]
+    assert fields["repeat-until"] == ["2054-10-25"]
+    assert "repeat-dates" not in fields and "repeat-sends" not in fields
+    review = page.get_by_role("dialog", name="Review scheduled email change")
+    visible(review)
+    text = review.inner_text()
+    assert (
+        "This series now repeats: Every day, October 10, 2054 \u2013 October 25, 2054."
+        in text
+    )
+    assert "2 reminders of this series stay as they are." in text
+    assert not failures
+
+
+def test_this_reminder_only_sends_nothing_of_the_repeat(page, component_origin):
+    """Back to This reminder only, the box and the rule stay in place, greyed
+    and not posted, and the summary line says why; the date list empties.
+    Nothing above the list moves."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + EDIT_SERIES_RULE)
+    failures = watch(page)
+    form = page.locator("#schedule-entry-form")
+    form.get_by_role("radio", name="The whole series").check()
+    form.get_by_label("Change the repeat").check()
+    start = form.locator("#repeat-from")
+    visible(start)
+    button = page.get_by_role("button", name=REVIEW)
+    places = [start.bounding_box(), button.bounding_box()]
+    form.get_by_role("radio", name="This reminder only").check()
+    greyed(form.get_by_label("Change the repeat"))
+    greyed(start)
+    has_text(
+        form.locator("[data-repeat-summary]"),
+        "Choose \u201cThis and following\u201d or \u201cThe whole series\u201d to "
+        "change the repeat.",
+    )
+    assert same_place([start.bounding_box(), button.bounding_box()], places)
+    has_count(form.locator("[data-repeat-dates] > *"), 0)
+    sent = page.evaluate(
+        """() => [...new FormData(document.querySelector("#schedule-entry-form"))]
+          .map(([name]) => name)"""
+    )
+    assert not any(name.startswith("repeat-") or name == "series-rule" for name in sent)
     assert not failures
 
 

@@ -8351,6 +8351,169 @@
     window.addEventListener("pageshow", restore);
   });
 
+  // Edit's Change the repeat (#1808, schedule-series-scope.html): while
+  // "This and following" or "The whole series" is chosen and the box is
+  // ticked, the shared repeat rule gives the series' new rule. The rule is
+  // shown while the box is ticked; while This reminder only greys the box
+  // (data-enabled-when) the rule stays in place, greyed and not sent, and
+  // the summary line says why, so choosing a scope moves nothing (no
+  // layout shift). A field error the server drew on it clears then, as a
+  // greyed field's does (conditional fields). Its dates are listed through the shared schedule preview
+  // (showRepeatDates), checked as New's repeat checks its dates
+  // (repeatDates) against the saved mailings other than the series' own
+  // unsent reminders, which the change replaces (data-repeat-mailings),
+  // with the chosen scope's room (data-rule-room). Unlike New's repeat,
+  // which posts only the dates that fit, the server adds every date the
+  // rule gives (the command line's plan), so the form's buttons wait
+  // (data-repeat-gated) while a date cannot be used or a month is skipped,
+  // and while From is before the first reminder the scope changes with
+  // earlier ones staying (data-rule-min). From follows the chosen scope's
+  // first date (data-rule-from) while it still holds the one filled in, so
+  // a typed From is kept. Choosing a scope or ticking the box is not a
+  // change by itself: while the rule is the one drawn (From at the scope's
+  // date) and nothing else changed, the buttons wait with
+  // data-rule-unchanged's words, as the change gate would (onlyFollowed;
+  // with no change at all the change gate itself holds). Each reason is
+  // said in the summary line above the button.
+  const ruleHints = new WeakMap(); // form -> its visually hidden reason
+  document.querySelectorAll("[data-series-rule]").forEach((panel) => {
+    const form = panel.closest("form");
+    const group = form?.querySelector("[data-series-scope]");
+    const time = form?.querySelector('[data-schedule-field="time"] input');
+    const email = form?.querySelector('[data-schedule-field="template_version"] select');
+    const summary = form?.querySelector("[data-repeat-summary]");
+    const list = form?.querySelector("[data-repeat-dates]");
+    const from = panel.querySelector('[data-repeat="from"]');
+    const box = form?.querySelector('input[name="series-rule"]');
+    if (!group || !time || !email || !summary || !list || !from || !box) return;
+    const controls = [...panel.querySelectorAll("input, select")];
+    let existing = [];
+    try { existing = JSON.parse(panel.dataset.repeatMailings || "[]"); } catch { existing = []; }
+    existing = existing.map((mailing) => ({kind: mailing.kind, at: Date.parse(mailing.at)}))
+      .filter((mailing) => !Number.isNaN(mailing.at));
+    const bounds = {start: Date.parse(panel.dataset.repeatWindowStart),
+      end: Date.parse(panel.dataset.repeatWindowEnd)};
+    const first = localParts(bounds.start).date;
+    const last = localParts(bounds.end - 1).date;
+    const announce = quietLine(summary);
+    const gate = {mark: "data-repeat-gated", hints: ruleHints, suffix: "rule-hint"};
+    const chosen = () => group.querySelector('input[type="radio"]:checked');
+    const scopeDates = [...group.querySelectorAll("input[data-rule-from]")]
+      .map((radio) => radio.dataset.ruleFrom);
+    // The From the page filled in, which follows the scope; null once typed.
+    let filled = scopeDates.includes(from.value) ? from.value : null;
+    const follow = () => {
+      const wanted = chosen()?.dataset.ruleFrom;
+      if (!wanted || filled === null || from.value !== filled) return;
+      from.value = wanted;
+      filled = wanted;
+    };
+    // Whether a rule control still holds what the page drew.
+    const drawn = (control) => {
+      if (control.type === "checkbox") return control.checked === control.defaultChecked;
+      if (control instanceof HTMLSelectElement) {
+        const index = [...control.options].findIndex((option) => option.defaultSelected);
+        return control.selectedIndex === Math.max(index, 0);
+      }
+      return control.value === control.defaultValue;
+    };
+    const asDrawn = () => [...panel.querySelectorAll("[data-repeat]")]
+      .every((control) => control === from || drawn(control))
+      && from.value === (chosen()?.dataset.ruleFrom || from.defaultValue);
+    // Whether nothing but a From the scope moved has changed: the rule as
+    // drawn, and nothing else (the time, the email) changed. The change
+    // gate holds too when nothing changed at all; the summary line then
+    // says the same in the rule's words.
+    const onlyFollowed = () => [...changedNames(form, savedState(form))]
+      .every((name) => name.startsWith("repeat-")) && asDrawn();
+    // A From before the first reminder the scope changes is said at From
+    // too (#1808 review), in its reserved error line, as the server's
+    // refusal of it is (repeat_rule_start): marked here only while no rule
+    // error (markRepeatRule) holds that line.
+    const fromLine = panel.querySelector("#repeat-from_error");
+    let fromMarked = false;
+    const markFrom = (message) => {
+      if (!fromLine || (!message && !fromMarked)) return;
+      const item = fromLine.querySelector("li") || fromLine.appendChild(document.createElement("li"));
+      if (item.textContent !== message) item.textContent = message;
+      fromLine.hidden = !message;
+      from.setAttribute("aria-invalid", message ? "true" : "false");
+      describeBy(from, fromLine.id, Boolean(message));
+      fromMarked = Boolean(message);
+    };
+    let pause; // the timer that shows an error typed into a date
+    const update = (event) => {
+      window.clearTimeout(pause);
+      const shown = box.checked;
+      const on = shown && !box.disabled;
+      panel.hidden = !shown;
+      controls.forEach((control) => {
+        control.disabled = !on;
+        if (!on && control.hasAttribute("data-field-error")) clearFieldError(control);
+      });
+      summary.hidden = !shown;
+      if (!on) {
+        markFrom("");
+        announce(shown ? panel.dataset.ruleScope || "" : "");
+        showRepeatDates(list, {items: []});
+        markRepeatRule(panel, "", true);
+        holdFormButtons(form, gate, "");
+        return;
+      }
+      showRepeatParts(panel);
+      const reading = readTimeEntry(time);
+      const sendTime = time.value.trim() && !reading.error ? canonicalTime(reading.value) : "";
+      const scope = chosen();
+      const room = Number(scope?.dataset.ruleRoom);
+      const result = repeatDates({
+        rule: repeatRule(panel),
+        existing,
+        first,
+        last,
+        at: localMoment,
+        bounds,
+        room: Number.isFinite(room) ? room : Infinity,
+        limit: Number(panel.dataset.repeatLimit),
+        sendTime,
+        email: Boolean(email.value),
+        emails: true,
+      });
+      const show = !repeatTyping(event);
+      markFrom("");
+      const {atField} = markRepeatRule(panel, result.error || "", show);
+      if (!show) pause = window.setTimeout(update, TIME_PAUSE);
+      const min = scope?.dataset.ruleMin || "";
+      const dates = result.items.filter((item) => !item.month).length;
+      let reason = "";
+      if (result.error) reason = REPEAT_ERRORS[result.error];
+      else if (!result.items.length || !sendTime) reason = result.summary;
+      else if (min && from.value < min) {
+        reason = scope.dataset.ruleMinHint;
+        if (show) markFrom(reason);
+      }
+      else if (result.items.some((item) => item.reason)) reason = panel.dataset.ruleUnusable;
+      else if (onlyFollowed()) reason = panel.dataset.ruleUnchanged;
+      const count = `${dates.toLocaleString("en-US")} ${dates === 1 ? "date" : "dates"}`;
+      if (result.error) announce(atField ? "" : reason);
+      else announce(reason || `The new repeat sends on ${count}.`);
+      showRepeatDates(list, {...result, heading: sendTime ? "Dates of the new repeat:" : result.heading}, {
+        form,
+        campaignZone: panel.dataset.repeatZone || "",
+        sendTime,
+      });
+      holdFormButtons(form, gate, reason);
+    };
+    // Before the form's own listeners, so the list and gate see the new From.
+    group.addEventListener("change", follow);
+    form.addEventListener("input", update);
+    form.addEventListener("change", update);
+    from.addEventListener("input", () => { filled = null; });
+    wireRepeatControls(panel, update);
+    // The browser can restore the box, the scope and the rule on Back.
+    window.addEventListener("pageshow", () => update());
+    update();
+  });
+
   // A send date inside the campaign (#1787). On New and Edit scheduled email
   // and the date-change review, an initial invitation's or reminder's send
   // date and time are typed in this browser's zone, and the server refuses

@@ -883,3 +883,53 @@ def test_the_digest_entries_are_gone(entry):
     report emails are changed with ``report-email preview``."""
     with pytest.raises(ValueError, match="not valid"):
         admin_changes.parse_changes(json.dumps({"schedules": [entry]}))
+
+
+@pytest.mark.parametrize(
+    ("rule", "reason", "detail"),
+    [
+        (
+            {"frequency": "weekly", "start": "2054-10-01", "end": "2054-10-31"},
+            "weekdays",
+            None,
+        ),
+        (
+            {
+                "frequency": "monthly",
+                "start": "2054-10-01",
+                "end": "2054-11-30",
+                "monthly": {"day": 31},
+            },
+            "missing",
+            ("months", ("2054-11",)),
+        ),
+        (
+            {"frequency": "daily", "start": "2054-10-01", "end": "2054-11-30"},
+            "count",
+            ("count", 61),
+        ),
+    ],
+)
+def test_checked_rule_says_why_it_refuses(rule, reason, detail):
+    """The command line's repeat check names each refusal's reason (#1808),
+    which Edit scheduled email's Change the repeat words itself; the message
+    stays the command line's, and it is still a ValueError."""
+    with pytest.raises(admin_changes.RuleRefused) as refused:
+        admin_changes.checked_rule(rule)
+    assert isinstance(refused.value, ValueError)
+    assert refused.value.reason == reason
+    if detail is not None:
+        assert getattr(refused.value, detail[0]) == detail[1]
+
+
+def test_checked_rule_returns_the_canonical_rule_and_its_dates():
+    """A rule the check accepts comes back canonical, with its dates."""
+    rule = {
+        "frequency": "weekly",
+        "start": "2054-10-01",
+        "end": "2054-10-14",
+        "weekdays": [6, 2],
+    }
+    checked, dates = admin_changes.checked_rule(rule)
+    assert checked == canonical_rule(rule)
+    assert dates == ["2054-10-04", "2054-10-07", "2054-10-11", "2054-10-14"]
