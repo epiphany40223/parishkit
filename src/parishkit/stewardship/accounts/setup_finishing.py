@@ -1,13 +1,14 @@
 """Plain-language "Finishing setup" steps from the finalization status facts.
 
 After the Admin confirms setup, background owners finish it: each provider
-credential's installer stages, tests and installs its file; the server operator
-recreates the consumers and acknowledges the new credentials; the config
-installer prepares the configuration; the final parish data load runs; and the
-completion transaction configures the system. This module turns the safe
-status facts that ``finalization_status`` reads into one row per step, so the
-page can say what is happening, what is waiting on a person, and what failed.
-It is pure, so every state mapping is unit tested without a database.
+credential's installer stages, tests and installs its file; the consuming
+services pick up and acknowledge the new credentials themselves (#2228, the
+server operator only when that is overdue); the config installer prepares
+the configuration; the final parish data load runs; and the completion
+transaction configures the system. This module turns the safe status facts
+that ``finalization_status`` reads into one row per step, so the page can
+say what is happening, what is waiting on a person, and what failed. It is
+pure, so every state mapping is unit tested without a database.
 """
 
 import hashlib
@@ -17,6 +18,7 @@ from django.utils.text import format_lazy
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.campaigns.domain import Percentage
+from parishkit.stewardship.credential_runtime import PICKUP_OVERDUE_AFTER
 
 from . import stages
 
@@ -28,17 +30,24 @@ TARGET_LABELS = {
 
 # What each credential request state means to the Admin, in one short line,
 # so the box's reserved forms (#1903) stay small and the row is no taller
-# than it needs to be (#2145). While it waits for the server operator the
-# box's status already says so, and its only detail is the live count of
-# acknowledged services (setup-finishing-step.html); the operator's own
-# steps are in the runtime guide, not on the page.
+# than it needs to be (#2145). While the services pick up an installed
+# credential (#2228) the box is In progress and its only detail is the live
+# count of acknowledged services (setup-finishing-step.html): nobody has to
+# act. Only once that is overdue (PICKUP_OVERDUE_AFTER after the
+# installation) does the box wait for the server operator, saying what to
+# ask; the operator's fallback steps are in the runtime guide, not on the
+# page.
 CREDENTIAL_TEXT = {
     "missing": _("Waiting for the installer."),
     "staged": _("Queued to install."),
     "testing": _("Checking with the provider."),
     "installing": _("Installing on the server."),
     # Plain "", never _(""): gettext of an empty string is the catalog header.
-    "operator": "",
+    "pickup": "",
+    "operator": _(
+        "Taking longer than expected. Ask the server operator to check the "
+        "worker and mail-dispatch services."
+    ),
     "acknowledged": _("Installed and acknowledged."),
 }
 
@@ -182,6 +191,7 @@ SAMPLE_PROGRESS = Percentage(888_888, 999_999)
 CREDENTIAL_FORMS = (
     ("waiting", CREDENTIAL_TEXT["missing"], {}),
     *(("active", CREDENTIAL_TEXT[s], {}) for s in ("staged", "testing", "installing")),
+    ("active", CREDENTIAL_TEXT["pickup"], {"count": SAMPLE_COUNT}),
     ("operator", CREDENTIAL_TEXT["operator"], {"count": SAMPLE_COUNT}),
     ("done", CREDENTIAL_TEXT["acknowledged"], {}),
 )
@@ -222,12 +232,16 @@ def _row(key, label, state, text):
     }
 
 
-def _credential(target, item):
+def _credential(target, item, now):
     """Map one credential request to a step row.
 
     For initial setup the request stays ``awaiting_ack`` after every consumer
     acknowledged it, until setup commits; the acknowledgement counts tell the
-    operator's step apart from the finished one.
+    pickup apart from the finished step. ``now`` is the database clock; an
+    ``awaiting_ack`` request's ``updated_at`` is its installation instant,
+    since the request is not written again until it leaves that state, and
+    the pickup is overdue PICKUP_OVERDUE_AFTER later (#2228). The count
+    stays live either way, so the box returns to done by itself.
     """
     label = TARGET_LABELS.get(target, target)
     if item is None:
@@ -238,7 +252,10 @@ def _credential(target, item):
     if state == "awaiting_ack":
         if item["consumers"] and item["acknowledged"] >= item["consumers"]:
             return _row(target, label, "done", CREDENTIAL_TEXT["acknowledged"])
-        row = _row(target, label, "operator", CREDENTIAL_TEXT["operator"])
+        if now - item["request__updated_at"] >= PICKUP_OVERDUE_AFTER:
+            row = _row(target, label, "operator", CREDENTIAL_TEXT["operator"])
+        else:
+            row = _row(target, label, "active", CREDENTIAL_TEXT["pickup"])
         row["count"] = {"done": item["acknowledged"], "total": item["consumers"]}
         return row
     if state == "applied" or (
@@ -295,13 +312,17 @@ def finishing(status, *, completed=False):
 
     ``status`` is ``finalization_status`` output; ``completed`` says the
     system is configured. The overall state is "completed", "failed",
-    "operator" (waiting on the server operator) or "working". A credential's
+    "operator" (a credential's pickup is overdue, so the page asks for the
+    server operator) or "working". A credential's
     installation request records the original sign-in instant, of any age
     (#1547).
     """
     installs = {item["target"]: item for item in status["credentials"]}
     targets = list(dict.fromkeys([*status["targets"], *installs]))
-    rows = [_credential(target, installs.get(target)) for target in targets]
+    rows = [
+        _credential(target, installs.get(target), status["server_now"])
+        for target in targets
+    ]
     credentials_done = all(row["state"] == "done" for row in rows)
 
     checkpoint = status["checkpoint"]

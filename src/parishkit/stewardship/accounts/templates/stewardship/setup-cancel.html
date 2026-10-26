@@ -5,7 +5,7 @@
 <h1>{% translate "Finishing setup" %}</h1>
 {% if attempt.state != 'expired' %}{% aboutpage "setup-finishing" %}<p>{% translate "You confirmed setup. The server is now installing the credentials and applying the configuration in the background. The system stays in Testing mode and no campaign opens to parishioners. This page updates by itself while setup finishes." %}</p>{% endaboutpage %}{% endif %}
 {% if attempt.state == 'expired' %}
-<p class="notice">{% translate "If the worker and mail containers were already recreated with the new keys, ask whoever manages the server to wait until the original keys are restored, then recreate those containers again as the “First database and application startup” section of the operator guide describes. Restarting them is not enough." %}</p>
+<p class="notice">{% translate "If whoever manages the server recreated the worker and mail containers by hand during this setup, ask them to check the “First database and application startup” section of the operator guide before a new attempt." %}</p>
 <p class="notice" role="status">{% translate "Cancellation is recorded. Background cleanup must restore the original configuration and remove temporary setup data before a new attempt can finish." %}</p>
 <p><a href="{% url 'admin:setup' %}">{% translate "Check setup status" %}</a></p>
 {% else %}
