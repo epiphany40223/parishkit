@@ -1654,6 +1654,14 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
    page's edge and made the page scroll sideways in Chromium (#2198 on #2197). The
    table's box contains it, so it is clipped there. */
 .table-scroll:has(.timeline-table) { position: relative; }
+/* The When column is as wide as its longest one-line date and time and no
+   wider (#2251): its cells never wrap (.nowrap), but an auto-layout table
+   wider than its content shares the spare room among every column in
+   proportion, so When grew well past its dates. A width of 1% asks for the
+   least the content allows (as .log-level-cell does), leaving the room to
+   What happened and Details. The empty-state cell spans all columns, so it
+   is left alone. */
+.timeline-table tr > :first-child:not([colspan]) { width: 1%; }
 .log-level { display: inline-flex; padding-top: .15rem; }
 .log-level .level-icon { width: 1.25rem; height: 1.25rem; }
 .level-icon { flex: none; width: 1rem; height: 1rem; vertical-align: -.15em; }
@@ -2573,11 +2581,6 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
    hidden text, which is absolutely positioned: positioned on the chip, it
    is clipped by the table's scroll box instead of widening a phone's page. */
 .schedule-table .series-chip { position: relative; }
-/* The list's seven columns take the whole-words tables' narrower side
-   padding, so with a Status cell holding Upcoming and Repeats on one line
-   the table still fits a laptop's content width and the When column keeps
-   its whole date (#2234). */
-.schedule-list-table :is(th, td) { padding-inline: .6rem; }
 /* The wizard's Suggested report emails (#2038): each Time cell is at least
    the short-field width, its cells sit at the top of their row
    (.whole-words), and its shared time-entry reading takes the cell's width

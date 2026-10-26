@@ -5404,13 +5404,7 @@ text that goes with one sits in a [toggletip](#page-help) beside it. A chip
 names its item by a short label where the item has one, so a cell can show
 every chip; the chips may wrap onto a second line within their cell, making
 that row taller, which is acceptable where most rows have one chip. So a
-chip cell is not `nowrap`; money and date cells still never wrap. A cell
-that holds a status chip with one short marker chip beside it, where many
-rows carry both (Scheduled emails' Repeats,
-[#2234](https://github.com/epiphany40223/parishkit/issues/2234)), keeps
-the pair on one `nowrap` line instead, so the marker never makes its row
-taller; the marker's longer text is its `title` and its screen-reader
-text, as for a short label (below).
+chip cell is not `nowrap`; money and date cells still never wrap.
 Where two related values would each need a column, one cell may stack them,
 one line each, when the heading names them in the same order and each value
 carries its name for screen readers (`stack-line`); a row is then as tall
