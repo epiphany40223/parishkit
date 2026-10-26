@@ -355,6 +355,31 @@ def test_a_rollout_then_a_rollback_keeps_the_data(tmp_path):
             == before
         )
         assert operator("SHOW hba_file") == HBA_FILE
+        # The inspection login (#2148) signs in over the socket to the
+        # deployment's database only; the rendered rule admits nothing else.
+        operator("CREATE ROLE pk_stewardship_inspect LOGIN")
+
+        def inspect_socket(name):
+            """One ``SELECT 1`` as the inspection login over the socket."""
+            return compose(
+                "current",
+                "exec",
+                "-T",
+                "postgres",
+                "psql",
+                "-U",
+                "pk_stewardship_inspect",
+                "-d",
+                name,
+                "-At",
+                "-c",
+                "SELECT 1",
+                check=False,
+            )
+
+        assert inspect_socket(database).stdout.strip() == "1"
+        assert "pg_hba.conf rejects connection" in inspect_socket("postgres").stderr
+        operator("DROP ROLE pk_stewardship_inspect")
         connect = f"host=postgres dbname={database} connect_timeout=10"
         assert (
             probe(

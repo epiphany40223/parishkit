@@ -1865,6 +1865,21 @@ keeps its original dates and grows older each day. Re-seed (`reseed`, then
 `snapshot --seeded`) only when fresh dates are needed; otherwise reset to the
 seeded snapshot.
 
+**Checkouts after the source rules (#2111).** Every `deploy`,
+`deploy --rollback`, `reset` and `snapshot restore` uploads the VM half,
+and all but `reset` the upgrade's host half, from the checkout it runs
+from. Once pk-local runs the
+[database connection sources](../operations/spec.md#database-connection-sources)
+topology, each of them MUST run from a checkout that has that change, until
+every branch in use does. A checkout from before it fails and can leave
+pk-local partly stopped: its host half has no full stop, so the
+"active endpoints" failure leaves web removed with the maintenance page
+up, and its `reset` and other-image `snapshot restore` do not remove the
+containers, so Compose cannot attach them to the recreated networks. A
+snapshot saved while the new topology runs is restorable only from such a
+checkout too. Recovery is the same command again from a checkout with the
+change.
+
 Snapshots are named (#1395). A name is 1 to 32 lowercase letters, digits or
 `-`, starting with a letter or digit; `post-setup` and `seeded` are ordinary
 names that `snapshot [--seeded]` and `reset [--seeded]` keep as aliases.

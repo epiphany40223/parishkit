@@ -14,6 +14,7 @@ import pytest
 from parishkit.config import ConfigError
 from parishkit.stewardship.deployment import DeploymentProfile, load_deployment
 from parishkit.stewardship.deployment_documents import deployment_document
+from parishkit.stewardship.inspect_login import INSPECT_LOGIN
 from parishkit.stewardship.runtime_hba import (
     HBA_FILE,
     HBA_MOUNT,
@@ -126,13 +127,17 @@ def test_every_login_has_exactly_its_own_service_source(profile, mode):
 
 
 @pytest.mark.parametrize("profile", PROFILES)
-def test_no_tcp_trust_and_the_socket_is_the_operators_alone(profile):
-    """The socket keeps trust for the operator only; TCP never trusts or uses md5."""
+def test_no_tcp_trust_and_the_socket_admits_only_the_operator_and_inspector(profile):
+    """The socket trusts the operator and inspector only; TCP never trusts."""
     _, _, hba = rendering(profile)
     rules = [line for line in hba.splitlines() if line and not line.startswith("#")]
-    assert rules[:2] == [f"local all {OPERATOR} trust", "local all all reject"]
-    assert not any(line.startswith("local") for line in rules[2:])
-    for line in rules[2:]:
+    assert rules[:3] == [
+        f"local all {OPERATOR} trust",
+        f'local "stewardship" {INSPECT_LOGIN} trust',
+        "local all all reject",
+    ]
+    assert not any(line.startswith("local") for line in rules[3:])
+    for line in rules[3:]:
         assert line.startswith("host ")
         assert "trust" not in line.split() and "md5" not in line.split()
         assert "hostssl" not in line and "hostnossl" not in line
@@ -409,3 +414,19 @@ def test_the_offline_block_is_validated_and_recorded_only_when_set(tmp_path):
     document = deployment_document(chosen, switches=False)
     assert document["deployment"]["runtime_network"]["offline"] == "10.9.8.0/25"
     assert load_deployment(document=document, environ={}).runtime_network == custom
+
+
+def test_the_inspection_login_has_a_socket_rule_and_no_tcp_rule():
+    """The inspection login is socket-only: not in the inventory, so no TCP rule.
+
+    ``database-sources`` probes each ``database_identities()`` login over TCP;
+    keeping the inspection login out of that list keeps it from being tried.
+    """
+    from parishkit.stewardship.database_sources import inventory
+
+    assert INSPECT_LOGIN not in {entry[1] for entry in database_identities()}
+    assert INSPECT_LOGIN not in inventory()
+    _, _, hba = rendering(DeploymentProfile.PRODUCTION)
+    assert [line for line in hba.splitlines() if INSPECT_LOGIN in line] == [
+        f'local "stewardship" {INSPECT_LOGIN} trust'
+    ]
