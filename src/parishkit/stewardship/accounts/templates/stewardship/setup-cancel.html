@@ -14,5 +14,5 @@
 {% include 'stewardship/setup-finishing-status.html' %}
 <div data-live-mirror-target="setup-cancel">{% include 'stewardship/setup-cancel-form.html' %}</div>
 {% endif %}
-<form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}{% button type="submit" %}{% translate "Sign out" %}{% endbutton %}</form>
+<form method="post" action="{% url 'admin:logout' %}"{% if admin_chrome.setup_attempt %} data-signout-confirm="setup-signout-dialog" data-signout-attempt="{{ admin_chrome.setup_attempt }}"{% endif %}>{% csrf_token %}{% button type="submit" %}{% translate "Sign out" %}{% endbutton %}</form>
 {% endblock %}

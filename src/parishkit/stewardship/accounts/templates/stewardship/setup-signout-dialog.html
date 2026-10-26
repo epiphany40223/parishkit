@@ -1,0 +1,9 @@
+{% load i18n stewardship %}{% comment %}
+  Sign out while the viewer owns a setup attempt (#2272): the shared
+  confirmation dialog (components/confirm-dialog.html) asks first. A form
+  marked data-signout-confirm="setup-signout-dialog" and
+  data-signout-attempt="<attempt id>" opens it instead of submitting; the
+  accept button (ui-v1.js) then posts that form with cancel_setup=<attempt id>.
+  Drawn once, by admin-navigation.html; the setup pages' own Sign out forms
+  use the same dialog. Stay signed in has focus.
+{% endcomment %}{% translate "Signing out cancels this setup. You'll need to start a new setup with a new sign-in." as body %}{% translate "Sign out and cancel setup" as accept %}{% translate "Stay signed in" as stay %}{% translate "Sign out?" as title %}{% include "stewardship/components/confirm-dialog.html" with dialog_id="setup-signout-dialog" form_id="" fallback="" title_one=title title_many=title body=body caution="" accept=accept cancel=stay done_one="" done_many="" only %}

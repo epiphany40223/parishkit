@@ -18,9 +18,9 @@ from .models import PortalSession
 from .policy import Capability, allows
 from .runtime_models import ConfigurationActivation, SystemConfiguration
 from .sessions import authenticated_admin, database_now
-from .setup_models import SetupConfigurationIntent
+from .setup_models import SetupAttempt, SetupConfigurationIntent
 from .setup_policy import ExpiryReason, SetupState
-from .setup_staging import _expire, _expiry, _status
+from .setup_staging import _expire, _expiry, _status, cancel_setup
 
 
 @dataclass(frozen=True)
@@ -121,3 +121,37 @@ def cancel_finalizing_setup(request, service, attempt_id):
         # secret and file cleanup remains with its distinct fenced owner.
         reason = _expiry(attempt, database_now()) or ExpiryReason.CANCELLED
         return _status(_expire(attempt, actor_id=actor.identity, reason=reason))
+
+
+def cancel_for_sign_out(request, service, attempt_id):
+    """Cancel the signed-in Administrator's own attempt as Sign out asks (#2272).
+
+    The same cancellation as Cancel setup, run synchronously (reason
+    ``cancelled``) before the session is revoked. A collecting or loading
+    attempt uses the wizard's cancel; a finishing (frozen) one uses the
+    original-login cancel, which works across the YAML selection gap. Both
+    re-check that this exact attempt belongs to this very session and owner,
+    so a posted id of someone else's attempt is refused. Returns ``"collecting"``
+    or ``"finishing"`` for the sign-in page's notice, or None when this session
+    owns no live attempt with that id (nothing is cancelled).
+    """
+    # The logout view has not authenticated yet, so find this browser's own
+    # session row as _owned does; the cancellation then authenticates and
+    # compares the attempt's session and owner again.
+    session = PortalSession.objects.filter(
+        session_id=stored_key(request.session)
+    ).first()
+    if session is None:
+        return None
+    state = (
+        SetupAttempt.objects.filter(pk=attempt_id, session_id=session.pk)
+        .values_list("state", flat=True)
+        .first()
+    )
+    if state == SetupState.FROZEN:
+        cancel_finalizing_setup(request, service, attempt_id)
+        return "finishing"
+    if state in {SetupState.COLLECTING, SetupState.LOADING}:
+        cancel_setup(request, service, attempt_id)
+        return "collecting"
+    return None

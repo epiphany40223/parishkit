@@ -5762,6 +5762,59 @@
   // from, #2037) takes the same Tab wrap, Escape and Cancel handling; its
   // script still decides what Confirm and closing do.
   window.ParishConfirm = Object.freeze({wire: wireDialog});
+  // Sign out while the viewer owns a setup attempt (#2272). The menu's (and
+  // the setup pages') Sign out form is marked data-signout-confirm="<dialog
+  // id>" and data-signout-attempt="<attempt id>". Submitting it opens the
+  // shared confirmation dialog instead; Sign out and cancel setup adds the
+  // attempt id as cancel_setup and submits the form natively (the server
+  // cancels the setup, then signs out). Stay signed in, Escape or closing
+  // changes nothing and puts focus back on the Sign out button. Opening the
+  // dialog moves nothing on the page. This listener is in the capture phase
+  // so it prevents the submit before the shared busy-button handler marks the
+  // button busy (which would leave it looking disabled after Stay).
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !form.hasAttribute("data-signout-confirm")) return;
+    const dialog = document.getElementById(form.dataset.signoutConfirm);
+    if (!(dialog instanceof HTMLDialogElement)) return;
+    event.preventDefault();
+    wireDialog(dialog);
+    const opener = event.submitter || form.querySelector("button");
+    dialog.parishSignOut = {form, opener, sent: false};
+    if (!dialog.parishSignOutWired) {
+      dialog.parishSignOutWired = true;
+      dialog.querySelector("[data-confirm-accept]")?.addEventListener("click", () => {
+        const state = dialog.parishSignOut;
+        // One request only: a second click while the page leaves does nothing.
+        if (state.sent) return;
+        state.sent = true;
+        let field = state.form.querySelector("input[name='cancel_setup']");
+        if (!field) {
+          field = document.createElement("input");
+          field.type = "hidden";
+          field.name = "cancel_setup";
+          state.form.append(field);
+        }
+        field.value = state.form.dataset.signoutAttempt || "";
+        state.form.submit();
+      });
+      dialog.addEventListener("close", () => dialog.parishSignOut.opener?.focus());
+    }
+    dialog.showModal();
+    // The safe choice takes focus first.
+    dialog.querySelector("[data-confirm-cancel]")?.focus();
+  }, true);
+  // A page restored from the back/forward cache after the cancelling Sign
+  // out left must not keep the field, the open dialog or the "sent" latch.
+  window.addEventListener("pageshow", (event) => {
+    if (!event.persisted) return;
+    document.querySelectorAll("form[data-signout-confirm]").forEach((form) => {
+      form.querySelector("input[name='cancel_setup']")?.remove();
+      const dialog = document.getElementById(form.dataset.signoutConfirm);
+      if (dialog?.parishSignOut) dialog.parishSignOut.sent = false;
+      if (dialog?.open) dialog.close();
+    });
+  });
   // A bulk button may carry its own dialog text and post its own name and
   // value (confirm-dialog.html; the Ministry follow-up queue's bulk
   // outcomes, #1131). One limited to one kind of row is available only

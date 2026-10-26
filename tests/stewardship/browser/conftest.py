@@ -200,6 +200,7 @@ from .setup_live_components import components as setup_live_components
 from .setup_order_components import POSTS as SETUP_ORDER_POSTS
 from .setup_order_components import REDIRECTS as SETUP_ORDER_REDIRECTS
 from .setup_order_components import components as setup_order_components
+from .setup_signout_components import components as setup_signout_components
 from .signed_in_components import POSTS as SIGNED_IN_POSTS
 from .signed_in_components import components as signed_in_components
 from .source_form_components import components as source_form_components
@@ -2291,6 +2292,18 @@ def component_responses():
         setup_live_components(context, admin, NOW, SETUP_MAIL_STATUS, setup_draft)
     )
     responses.update(setup_back_path_components(context, admin, NOW))
+    responses.update(
+        setup_signout_components(
+            context,
+            admin,
+            setup_draft,
+            finishing_context(
+                checkpoint="validating",
+                prepared=False,
+                credentials=[],
+            ),
+        )
+    )
     responses.update(setup_check_components(context, admin, NOW))
     responses.update(in_place_commands_components(context, admin))
     responses.update(campaign_test_components(context, admin))
