@@ -264,7 +264,7 @@ BEGIN
     FOR entry IN SELECT * FROM jsonb_each(NEW.counts) LOOP
         SELECT COALESCE(sum((counts->>entry.key)::numeric),0) INTO prior
             FROM public.stewardship_production_checkpoint WHERE request_id=NEW.request_id;
-        IF NOT (request.inventory_counts ? entry.key)
+        IF NOT (request.inventory_counts OPERATOR(pg_catalog.?) entry.key)
            OR prior+entry.value::text::numeric>(request.inventory_counts->>entry.key)::numeric THEN
             RAISE EXCEPTION 'Cleanup batch exceeds its inventory' USING ERRCODE='23514';
         END IF;

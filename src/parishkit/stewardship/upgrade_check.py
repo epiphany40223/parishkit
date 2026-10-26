@@ -19,7 +19,10 @@ that answers `t` only when all of these hold at once:
 * the operational log writer guard is this release's exact function body;
 * every login already holds every privilege this image's registry grants it,
   and nothing beyond what `database-grants` would admit (for the backup
-  login, also none of the authority its backup admission refuses).
+  login, also none of the authority its backup admission refuses);
+* no operator exists outside `pg_catalog` except the `pg_trgm` extension's
+  own, and no runtime login may create one, in an application schema or the
+  database (#2166).
 
 Anything else, including a query error such as a missing table, means "run
 both commands". The query checks the same conditions the commands check,
@@ -243,6 +246,43 @@ def writer_guard_installed():
     )
 
 
+# The ``excess_authority_checks`` that refuse creating objects, by name.
+CREATE_AUTHORITY = ("CREATE on a schema", "CREATE on the database")
+
+
+def no_foreign_operators():
+    """No operator outside pg_catalog except the pg_trgm extension's (#2166).
+
+    An unqualified operator is resolved through search_path by the closest
+    argument-type match in any schema on it, so a look-alike in public could
+    win over pg_catalog's in a function that runs with its owner's rights.
+    pg_trgm (0117, #765), which the operator installs in public, adds only
+    text similarity and distance operators; those, as members of that
+    extension in its own schema, are the only ones admitted.
+    """
+    return (
+        "NOT EXISTS(SELECT 1 FROM pg_operator o "
+        "JOIN pg_namespace n ON n.oid=o.oprnamespace "
+        "WHERE n.nspname<>'pg_catalog' AND NOT EXISTS(SELECT 1 FROM pg_depend d "
+        "JOIN pg_extension e ON e.oid=d.refobjid "
+        "WHERE d.classid='pg_operator'::regclass AND d.objid=o.oid "
+        "AND d.refclassid='pg_extension'::regclass AND d.deptype='e' "
+        "AND e.extname='pg_trgm' AND e.extnamespace=n.oid))"
+    )
+
+
+def no_create(login):
+    """The login may create nothing in an application schema or the database.
+
+    Every runtime login's admission refuses this at startup; checking it
+    here too means an upgrade onto such a catalog stops before its services
+    would, and that no runtime login could add an operator (#2166). The
+    backup login's ``no_excess`` already renders the same checks.
+    """
+    authority = excess_authority_checks(literal(login), text_array(()), "'USAGE'")
+    return " AND ".join(f"NOT {authority[name]}" for name in CREATE_AUTHORITY)
+
+
 def upgrade_noop_query(configuration, deployment_id):
     """Render the one query answering whether migrate and grants are both no-ops.
 
@@ -262,6 +302,7 @@ def upgrade_noop_query(configuration, deployment_id):
         "(SELECT capacity FROM public.stewardship_download_policy WHERE id=1) "
         f"IS NOT DISTINCT FROM {int(configuration.runtime_budget.download_capacity)}",
         writer_guard_installed(),
+        no_foreign_operators(),
     ]
     for _, login, role, target in database_identities():
         reader = role is ServiceRole.BACKUP_WORKER
@@ -279,4 +320,6 @@ def upgrade_noop_query(configuration, deployment_id):
         tables, columns = runtime_grants(role, target=target)
         checks.append(grants_held(login, tables, columns))
         checks.append(no_excess(login, tables, columns, reader=reader))
+        if not reader:
+            checks.append(no_create(login))
     return "SELECT " + "\n AND ".join(f"({check})" for check in checks) + ";\n"

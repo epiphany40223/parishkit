@@ -97,13 +97,19 @@ def test_worker_finishes_a_setup_load_under_generic_plans(
 def test_the_do_block_passes_installed_and_refuses_each_missing_part(db):
     """0177's closing block passes as installed and refuses 0174's old check.
 
-    Each refusal runs in a transaction that rolls back, so the installed
-    definition stays.
+    Each run is in a transaction that rolls back, so the installed
+    definition stays. 0179 (#2166) has since replaced the body again, with
+    its operator qualified, so each first puts 0177's own body back.
     """
     text = FROZEN.read_text(encoding="utf-8")
     block = text[text.index("DO $check$") :]
+    start = text.index(f"CREATE OR REPLACE FUNCTION {FUNCTION}")
+    own = text[start : text.index("END $$;", start) + len("END $$;")]
     with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(own)
         cursor.execute(block)
+        # Keep 0179's body: roll the restore back.
+        transaction.set_rollback(True)
     # 0174's caller's-rights definition, as 0174 created it.
     old = OLD.read_text(encoding="utf-8")
     start = old.index("CREATE FUNCTION public.stewardship_setup_load_organization_v1()")
@@ -124,5 +130,6 @@ def test_the_do_block_passes_installed_and_refuses_each_missing_part(db):
             transaction.atomic(),
             connection.cursor() as cursor,
         ):
+            cursor.execute(own)
             cursor.execute(undo)
             cursor.execute(block)

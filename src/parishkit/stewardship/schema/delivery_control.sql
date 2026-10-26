@@ -252,7 +252,7 @@ BEGIN
         SELECT coverage,s.preparing INTO current_coverage,preparing
             FROM public.stewardship_delivery_closed_coverage_summary s WHERE campaign_id=campaign.id;
         SELECT coalesce(jsonb_object_agg(key,value),'{}') INTO current_coverage
-            FROM jsonb_each(current_coverage) WHERE selected_types ? key;
+            FROM jsonb_each(current_coverage) WHERE selected_types OPERATOR(pg_catalog.?) key;
         clears_pause:=(current_inventory->>'held')::bigint
                 =selected_count+(current_inventory->>'stranded')::bigint
             AND (current_inventory->>'submitting')::bigint=0 AND (current_inventory->>'unknown')::bigint=0;

@@ -298,7 +298,7 @@ BEGIN
         FROM public.stewardship_outbox_message m
         WHERE m.campaign_id=campaign.id AND m.mode='production' AND m.routing='production'
             AND m.purpose IN ('receipt','daily_digest','weekly_digest','admin_report')
-            AND intent.selection->'types' ? m.purpose
+            AND intent.selection->'types' OPERATOR(pg_catalog.?) m.purpose
             AND m.state IN ('pending','retry_wait') AND m.pause_hold_id IS NOT NULL;
     IF intent.selection->>'decision'='release' THEN
         UPDATE public.stewardship_outbox_message m SET

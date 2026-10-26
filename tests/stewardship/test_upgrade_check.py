@@ -86,6 +86,25 @@ def test_the_backup_login_must_hold_no_excess_authority(tmp_path):
         assert query.count(f"AND NOT {check}") == 1, name
 
 
+def test_no_look_alike_operator_and_no_runtime_create(tmp_path):
+    """The upgrade refuses a foreign operator or a creating login (#2166).
+
+    Every runtime login's CREATE checks appear once (the backup login's
+    through its excess check); the migration login owns the schema and is
+    left out.
+    """
+    from parishkit.stewardship.deployment import ServiceRole
+
+    query = upgrade_check.upgrade_noop_query(configuration_at(tmp_path), uuid4())
+    assert query.count(upgrade_check.no_foreign_operators()) == 1
+    assert "e.extname='pg_trgm'" in upgrade_check.no_foreign_operators()
+    for _, login, role, _ in database_identities():
+        create = upgrade_check.no_create(login)
+        assert "has_schema_privilege" in create and "has_database_privilege" in create
+        expected = 0 if role is ServiceRole.MIGRATION else 1
+        assert query.count(create) == expected, login
+
+
 def test_the_command_prints_the_query(tmp_path, capsys):
     """The CLI renders the same query from a deployment document."""
     configuration = configuration_at(tmp_path)

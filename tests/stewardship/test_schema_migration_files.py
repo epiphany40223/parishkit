@@ -23,6 +23,8 @@ from pathlib import Path
 
 import pytest
 
+from .sql_operators import bare_operators
+
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = ROOT / "src/parishkit/stewardship/schema"
 MIGRATIONS = SCHEMA / "migrations"
@@ -567,6 +569,9 @@ FROZEN = {
     "0178_review_run.sql": (
         "3a2d093d47736144598dc8c81c8a6cc1f70ed97cb4bbfe7dffd9f4eb0b85a9b4"
     ),
+    "0179_definer_operators.sql": (
+        "74f99f0c68e45a78ac42f4ab536b0c4253d199c455dd3713a3c4b06febd9fa43"
+    ),
 }
 
 
@@ -683,6 +688,50 @@ def test_no_frozen_file_needs_the_temp_privilege():
 def test_the_temp_privilege_scan_finds_only_temporary_objects(text, found):
     """The scan above catches spaced or qualified forms, not look-alikes."""
     assert bool(TEMP_OBJECT.search(text)) is found
+
+
+# The last frozen file written before #2166's rule (0178, the review run,
+# applies just before 0179). Applied files are never edited, so the files up
+# to it keep the unqualified operators they were released with; every later
+# file writes them OPERATOR(pg_catalog.x). It names the file before #2166's
+# own (0179): if that file is renumbered, this moves with it.
+LAST_UNQUALIFIED_OPERATOR_FILE = 178
+
+
+def test_new_frozen_files_qualify_jsonb_and_containment_operators():
+    """No frozen file after 0178 writes ?, ?|, ?&, @> or <@ unqualified.
+
+    An unqualified operator is resolved through search_path, where a closer
+    argument-type match in public would win over pg_catalog's (#2166), so new
+    SQL names pg_catalog's (operations spec, post-launch schema policy).
+    """
+    checked = 0
+    for path in sorted(MIGRATIONS.glob("*.sql")):
+        if int(path.name[:4]) <= LAST_UNQUALIFIED_OPERATOR_FILE:
+            continue
+        checked += 1
+        found = bare_operators(path.read_text(encoding="utf-8"))
+        assert not found, f"{path.name}: write {found} as OPERATOR(pg_catalog.x)"
+    assert checked, "no frozen file after the rule was scanned"
+
+
+@pytest.mark.parametrize(
+    "text, found",
+    [
+        ("WHERE a ? 'k' AND b ?| c AND d ?& e", ["?", "?|", "?&"]),
+        ("WHERE a @> b OR a <@ b", ["@>", "<@"]),
+        ("WHERE j @? '$.a'", ["@?"]),
+        ("WHERE x->'k'?y", ["?"]),
+        ("WHERE a OPERATOR(pg_catalog.?) 'k' AND b OPERATOR( pg_catalog.@> ) c", []),
+        ("SELECT 'a ? b @> c' -- d ? e\n", []),
+        ("SELECT E'it\\'s ?', /* a @> b */ \"col?\"", []),
+        ("SELECT 'it''s' || x ? 'y'", ["?"]),
+        ("AS $$ BEGIN RETURN a ? 'k'; END $$", ["?"]),
+    ],
+)
+def test_the_operator_scan_skips_comments_strings_and_qualified_forms(text, found):
+    """The scan finds code operators only, inside function bodies too."""
+    assert bare_operators(text) == found
 
 
 def test_latest_migration_copy_of_each_replaced_function_equals_the_baseline():
