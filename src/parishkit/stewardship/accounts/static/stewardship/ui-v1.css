@@ -1705,6 +1705,33 @@ progress::-moz-progress-bar { background: var(--accent); border-radius: 999px; }
    the viewport at 320 px and widened the page. A positioned cell is its
    containing block, so the box clips it. */
 .log-table .log-level-cell { position: relative; }
+/* Column widths (#2280). main's overflow-wrap: anywhere let the auto
+   layout squeeze Type, Actor and Recorded detail to a few letters wide, so
+   a user's "Last, First" Name took three lines and the detail's values
+   broke letter by letter. Type now wraps only between words. Recorded
+   detail keeps anywhere, so a long checksum or identifier value still
+   breaks rather than widening every row, but has a minimum width. Actor
+   has a set width that keeps a typical Name on one line,
+   wraps a longer one between words and still breaks a long address. Related
+   is only as wide as its icon slots (width: 1px lets the auto layout give
+   it no extra width). Neither takes spare width, so Recorded detail and
+   Type share the rest, and the detail's labelled values keep a readable
+   width (the page-wide dl grid's zero-minimum value column would collapse
+   in a cell). Below these minimums the table scrolls inside its
+   .table-scroll region, never the page. */
+/* The whole-words tables' narrower side padding, so the six columns fit
+   the Admin page's box at 1280 px. */
+.log-table th, .log-table td { padding-inline: .6rem; }
+.log-table .log-type-cell { overflow-wrap: break-word; }
+/* A stacked time (date-format-v1.js) shows its day above its clock time,
+   each on one line, so Time is as narrow as its longer part (#2280). */
+time[data-stacked] > span { display: block; white-space: nowrap; }
+/* width alone gives way to the min-content of an address that may break
+   anywhere when the table is too wide for its box; min-width holds it. */
+.log-table .log-actor-cell { width: 11rem; min-width: 11rem; }
+.log-table .log-links { width: 1px; }
+.log-table .log-detail-cell { min-width: 14rem; }
+.log-table .log-detail-cell dl { grid-template-columns: max-content minmax(5rem, 1fr); gap: .25rem .75rem; }
 .log-filters { margin-block: 1rem; }
 .log-level-choices { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; margin: 0; padding: 0; border: 0; }
 .log-level-choices legend { float: left; margin: 0 .5rem 0 0; padding: 0; font-size: .925rem; font-weight: 600; }
@@ -1714,17 +1741,19 @@ details.log-more-filters > .filter-bar { margin-top: .5rem; }
 /* System logs' cross-link icons (#1065): the row-action icon buttons'
    height and look, a little narrower, in five fixed slots (related, actor,
    subject, campaign, task) so each kind lines up down the column and an
-   absent icon leaves its slot empty. The grid never wraps, so the column
-   keeps one width and rows stay one icon tall. */
-.log-link-slots { display: grid; grid-template-columns: repeat(5, 2.25rem); gap: .25rem; }
+   absent icon leaves its slot empty. The slots are three across and two
+   down (#2280: five across left too little width for the table to fit at
+   1280 px), each kind in its own cell, so the column keeps one width; a
+   row is two icons tall only when it has a campaign or task icon. */
+.log-link-slots { display: grid; grid-template-columns: repeat(3, 2.25rem); gap: .25rem; }
 /* A form slot lays its button out as a flex item, not on a text line whose
    baseline would drop it below the task link beside it. */
 .log-link-slots > form { display: flex; }
-.log-link-related { grid-column: 1; }
-.log-link-actor { grid-column: 2; }
-.log-link-subject { grid-column: 3; }
-.log-link-campaign { grid-column: 4; }
-.log-link-task { grid-column: 5; }
+.log-link-related { grid-area: 1 / 1; }
+.log-link-actor { grid-area: 1 / 2; }
+.log-link-subject { grid-area: 1 / 3; }
+.log-link-campaign { grid-area: 2 / 1; }
+.log-link-task { grid-area: 2 / 2; }
 .data-table .log-link-slots .icon-button { width: 2.25rem; margin: 0; }
 details.inline-help { margin: .35rem 0 0; padding: 0; border: 0; background: none; font-size: .875rem; }
 details.inline-help[open] { padding-bottom: 0; }

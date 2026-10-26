@@ -167,8 +167,8 @@ def test_administrator_reads_both_sources_and_filters_privately(auth_service, go
         body = response.content.decode()
         # DEBUG is hidden until chosen; audit records appear beside diagnostics.
         assert set(levels(response)) == {"info", "warning", "error", "critical"}
-        assert audit_entries(response) >= 2 and "admin_login" in body
-        assert "task_failed" in body and "<dt>Outcome</dt><dd>failed</dd>" in body
+        assert audit_entries(response) >= 2 and "admin_<wbr>login" in body
+        assert "task_<wbr>failed" in body and "<dt>Outcome</dt><dd>failed</dd>" in body
         # The signed-in Administrator is named on screen for their own login.
         assert "admin@example.org" in body
         # Identifiers never travel in a URL. The refusal explains where filters
@@ -187,7 +187,7 @@ def test_administrator_reads_both_sources_and_filters_privately(auth_service, go
         assert levels(only) == [] and audit_entries(only) >= 2
         found = post(browser, {"correlation": str(correlation)})
         assert found.content.count(b'<tr id="log-') == 1  # That one entry.
-        assert b"dashboard_viewed" in found.content
+        assert b"dashboard_<wbr>viewed" in found.content
         typed = post(browser, {"event": "task_failed"})
         assert audit_entries(typed) == 0 and len(levels(typed)) == 4
         # A type its owner writes directly, outside both reviewed vocabularies.
@@ -205,7 +205,7 @@ def test_administrator_reads_both_sources_and_filters_privately(auth_service, go
             browser,
             {"start": today.isoformat(), "end": today.isoformat(), "zone": "UTC"},
         )
-        assert b"task_failed" in during.content
+        assert b"task_<wbr>failed" in during.content
         # A part identifier or a malformed date is refused at its field
         # instead (test_filters_refused_at_their_field, #1332).
         for invalid in (
@@ -555,7 +555,7 @@ def test_logs_are_not_exposed_to_other_roles(auth_service, google, role):
         assert response.status_code == 403
         assert post(browser, {"source": "audit"}).status_code == 403
         home = browser.get("/admin/").content
-    assert b"admin_login" not in response.content
+    assert b"admin_<wbr>login" not in response.content
     # A denied reader submitted nothing that could be corrected.
     assert b"Identifiers must be complete" not in response.content
     assert b'href="/admin/system/logs/"' not in home
@@ -580,7 +580,7 @@ def test_access_lost_during_the_request_discloses_and_audits_nothing(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response = browser.get(URL)
     assert calls == [False, True] and response.status_code == 403
-    assert b"admin_login" not in response.content
+    assert b"admin_<wbr>login" not in response.content
     assert views() == []
 
 
@@ -598,7 +598,7 @@ def test_restore_review_makes_the_logs_unavailable(auth_service, google, monkeyp
         patch.setattr(SystemConfiguration.objects, "first", lambda: runtime)
         response = browser.get(URL)
     assert response.status_code == 503 and response["Retry-After"] == "5"
-    assert b"admin_login" not in response.content and views() == []
+    assert b"admin_<wbr>login" not in response.content and views() == []
     # An outage is not a filter mistake, so no filter guidance is offered.
     assert b"Identifiers must be complete" not in response.content
 
@@ -624,7 +624,7 @@ def test_a_restore_review_beginning_during_the_request_audits_nothing(
         patch.setattr(SystemConfiguration.objects, "filter", restoring)
         response = browser.get(URL)
     assert response.status_code == 503 and response["Retry-After"] == "5"
-    assert b"admin_login" not in response.content and views() == []
+    assert b"admin_<wbr>login" not in response.content and views() == []
 
 
 def test_a_page_costs_a_bounded_number_of_queries(auth_service, google):
@@ -1254,9 +1254,7 @@ def test_sign_in_activity_lists_every_admin_sign_in_type_together(auth_service, 
 
     def types(response):
         """Each listed entry's stored type, top to bottom."""
-        return re.findall(
-            r"<td>([a-z_]+)<br><span class=\"help\">", response.content.decode()
-        )
+        return listed_types(response)
 
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         grouped = post(browser, {"activity": "sign_in"})
@@ -1265,7 +1263,7 @@ def test_sign_in_activity_lists_every_admin_sign_in_type_together(auth_service, 
         # audit record such as the dashboard view or this page's own views.
         assert types(grouped) == expected and levels(grouped) == []
         body = grouped.content.decode()
-        assert body.count("<td>admin@example.org</td>") == 4
+        assert body.count('<td class="log-actor-cell">admin@example.org</td>') == 4
         assert "Someone&#x27;s sign-in to the portal was refused, for" in body
         assert "A Google account&#x27;s sign-in to the portal was refused" in body
         # Same actor keeps the group: that person's sign-in activity only.
@@ -1298,10 +1296,16 @@ def test_sign_in_activity_lists_every_admin_sign_in_type_together(auth_service, 
 
 
 def listed_types(response):
-    """Each listed entry's stored type, top to bottom."""
-    return re.findall(
-        r"<td>([a-z_]+)<br><span class=\"help\">", response.content.decode()
+    """Each listed entry's stored type, top to bottom.
+
+    The page breaks a type after each underscore (``<wbr>``, #2280), which
+    is not part of the type.
+    """
+    found = re.findall(
+        r'<td class="log-type-cell">((?:[a-z_]|<wbr>)+)<br><span class="help">',
+        response.content.decode(),
     )
+    return [listed.replace("<wbr>", "") for listed in found]
 
 
 def test_activity_groups_list_their_own_audit_and_operational_types(

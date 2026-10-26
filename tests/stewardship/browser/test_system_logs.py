@@ -44,6 +44,8 @@ PAGES = (
     "/logs-dated",
     "/logs-error-zone",
     "/logs-detail",
+    # Users' Names and a long address in the Actor column (#2280).
+    "/logs-names",
     # Filters refused at a field (#1332): marked fields and the summary.
     "/logs-refused-dates",
     "/logs-refused-none",
@@ -668,4 +670,50 @@ def test_serious_entries_and_recoveries_say_what_happened(page, component_origin
     assert ended.get_attribute("datetime").endswith("+00:00")
     # The page script shows the end time in the browser's zone.
     expect(ended).to_contain_text("PDT")
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+
+
+# Each Actor cell's text and how many lines it is drawn on (#2280): the
+# distinct tops of its text nodes' line boxes, so a link's padding or focus
+# ring never counts as a line.
+ACTOR_LINES = """() => Object.fromEntries([...document.querySelectorAll(
+    '#table td.log-actor-cell')].map(cell => {
+    const tops = new Set();
+    const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        for (const rect of range.getClientRects()) {
+            if (rect.width > 0) tops.add(Math.round(rect.top));
+        }
+    }
+    return [cell.textContent.trim(), tops.size];
+}))"""
+# Whether System logs' table is no wider than its scroll box.
+TABLE_FITS = """() => {
+    const box = document.querySelector('#table .table-scroll');
+    return box.scrollWidth <= box.clientWidth;
+}"""
+
+
+def test_logs_actor_names_stay_on_one_line(page, component_origin):
+    """A user's Name in the Actor column is one line at laptop width (#2280).
+
+    Before #2280 the auto layout squeezed Actor to a few letters wide, so a
+    "Last, First" Name took three or four lines. A longer Name wraps between
+    words, to at most two lines. The table fits its box at 1280 and 1920 px
+    (a long unbroken detail value breaks in its cell rather than widening
+    it); at phone width it scrolls inside its own box, never the page.
+    """
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + "/logs-names")
+    lines = page.evaluate(ACTOR_LINES)
+    assert lines["Squyres, Jeffrey"] == 1
+    assert lines["Fitzgerald-Ramirez, Mary Catherine"] <= 2
+    # The table fits its box at laptop width (ui-conventions "Table fit and
+    # row height") and at the widest layout.
+    assert page.evaluate(TABLE_FITS)
+    page.set_viewport_size({"width": 1920, "height": 900})
+    assert page.evaluate(TABLE_FITS)
+    page.set_viewport_size({"width": 320, "height": 900})
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")

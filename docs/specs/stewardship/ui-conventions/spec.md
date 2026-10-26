@@ -287,7 +287,10 @@ The full form stays in headings, sentences, summaries and
 detail panels, and downloads keep their own formats (below). System logs rows
 add seconds and the time-zone abbreviation to the compact form, with no UTC
 offset, so entries can be compared exactly
-([Logs](../admin-portal/spec.md#logs)). In templates a table cell's
+([Logs](../admin-portal/spec.md#logs)). Where its column must stay narrow,
+such a time may show its day above its clock time, each on one unbroken
+line, so neither is split (`data-stacked`; System logs, #2280). In
+templates a table cell's
 `<time data-local-instant>` carries `data-compact` (and an in-place refresh
 re-renders it the same way), plus `data-day-only` where the cell shows the
 instant's day without its time (#1544, guarded in every style by the browser

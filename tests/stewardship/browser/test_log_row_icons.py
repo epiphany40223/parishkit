@@ -1,7 +1,8 @@
 """System logs' cross-links as row icons (#1065).
 
 Each entry's cross-links are small icon buttons in the Related column's five
-fixed slots (related, actor, subject, campaign, task), each named and
+fixed slots (related, actor, subject, campaign, task; three across and two
+down since #2280), each named and
 titled for what it shows, present only when it has something to link to,
 and the rows no longer hold a Technical details disclosure.
 """
@@ -55,10 +56,11 @@ WORKER = f"debug-{UUID(int=100)}"
 
 
 @pytest.mark.parametrize("width", [320, 1280])
-def test_icons_are_named_aligned_and_one_row_tall(page, component_origin, width):
+def test_icons_are_named_and_aligned(page, component_origin, width):
     """Each icon has a matching name and tooltip and an inline icon; a row's
-    icons sit on one line, the height of one row-action button, and each
-    kind keeps its slot down the column, so an absent icon leaves a gap
+    icons sit in a grid three across (related, actor, subject) and two down
+    (campaign, task), each the height of one row-action button (#2280), and
+    each kind keeps its slot down the column, so an absent icon leaves a gap
     rather than moving the others. The page never scrolls sideways."""
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/logs")
@@ -72,11 +74,14 @@ def test_icons_are_named_aligned_and_one_row_tall(page, component_origin, width)
         "campaign",
         "task",
     ]
-    # One line of same-size icons, the row-action buttons' 44 px height.
-    assert {icon["top"] for icon in full} == {full[0]["top"]}
+    # Two lines of same-size icons, the row-action buttons' 44 px height:
+    # campaign and task under related and actor.
+    assert {icon["top"] for icon in full[:3]} == {full[0]["top"]}
+    assert full[3]["top"] == full[4]["top"] == full[0]["top"] + 48
+    assert [icon["left"] for icon in full[3:]] == [icon["left"] for icon in full[:2]]
     assert {(icon["width"], icon["height"]) for icon in full} == {(36, 44)}
     boxes = page.evaluate(BOXES, AUDIT)
-    assert boxes["slots"] == 44 and boxes["scroll"]
+    assert boxes["slots"] == 92 and boxes["scroll"]
     # The operational entry shows related and actor in the same slots as
     # the full row, its other slots empty.
     worker = page.evaluate(ICONS, WORKER)
@@ -92,12 +97,16 @@ def test_icons_are_named_aligned_and_one_row_tall(page, component_origin, width)
 
 
 def test_the_icons_never_set_the_row_height(page, component_origin):
-    """At 1280 px the Related cell is one icon tall, so it no longer makes a
-    row taller than its other cells' contents do (#1065): every row's icons
-    are no taller than its tallest other cell's contents."""
+    """At 1280 px a Related cell without a campaign or task icon is one icon
+    tall, so it never makes a row taller than its other cells' contents do
+    (#1065). A row with either is two icons tall (#2280: the slots are three
+    across so the table fits at 1280 px), which may make a row whose other
+    cells are short a little taller; those icons appear only on audit
+    records with a campaign or a task."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + "/logs")
-    for entry in (AUDIT, LOGIN, WORKER):
+    assert page.evaluate(BOXES, AUDIT)["slots"] == 92
+    for entry in (LOGIN, WORKER):
         boxes = page.evaluate(BOXES, entry)
         assert boxes["slots"] == 44
         assert boxes["slots"] <= boxes["tallest"], (entry, boxes)

@@ -65,16 +65,22 @@
     const compact = Boolean(options && options.compact);
     const code = style();
     const text = fields(date.getFullYear(), date.getMonth() + 1, date.getDate(), compact);
-    if (options && options.precise) {
-      const zone = zoneName(date);
-      return `${text} ${clock(date, true)}${zone ? " " + zone : ""}`;
-    }
+    if (options && options.precise) return precise(date, compact).join(" ");
     const time = clock(date);
     if (compact) return `${text} ${time}`;
     const worded = code.endsWith("_long") || code.endsWith("_medium");
     const separator = worded ? (code.startsWith("us_") ? " at " : ", ") : " ";
     const zone = zoneName(date);
     return `${text}${separator}${time}${zone ? " " + zone : ""}`;
+  }
+
+  // A precise instant's two parts, its day and its clock time to the second
+  // with the zone name, which instant() joins with a space and a stacked
+  // <time> (localize) shows one above the other.
+  function precise(date, compact) {
+    const zone = zoneName(date);
+    return [fields(date.getFullYear(), date.getMonth() + 1, date.getDate(), compact),
+      `${clock(date, true)}${zone ? " " + zone : ""}`];
   }
 
   // A campaign calendar date ("2027-01-31") is never shifted into a time zone.
@@ -138,25 +144,36 @@
   // response, #1544), and data-day-time a send in the shared schedule
   // preview's words: its weekday, full date and clock time, with no zone
   // name ("Thursday, October 22, 2026, 9:00 AM"; the Pages and emails
-  // review's schedule list, #1949).
+  // review's schedule list, #1949). data-stacked with data-precise puts the
+  // day and the clock time in a span each, joined by a space, so the text
+  // reads the same while ui-v1.css shows them one above the other (System
+  // logs' narrow Time column, #2280).
   function localize(scope) {
     otherZoneTimes(scope);
     (scope || document).querySelectorAll("time[data-local-instant]").forEach((node) => {
       const date = new Date(node.dateTime);
-      if (Number.isFinite(date.getTime())) {
-        node.textContent = node.hasAttribute("data-day-only")
-          ? fields(date.getFullYear(), date.getMonth() + 1, date.getDate(),
-            node.hasAttribute("data-compact"))
-          : node.hasAttribute("data-day-time")
-          ? `${WEEKDAYS[date.getDay()]}, ${fields(date.getFullYear(), date.getMonth() + 1,
-            date.getDate(), false)}, ${clock(date)}`
-          : node.hasAttribute("data-time-only")
-          ? (node.hasAttribute("data-time-day") ? dayTime(date, new Date()) : clock(date))
-          : instant(date, {
-            compact: node.hasAttribute("data-compact"),
-            precise: node.hasAttribute("data-precise")
-          });
+      if (!Number.isFinite(date.getTime())) return;
+      if (node.hasAttribute("data-stacked") && node.hasAttribute("data-precise")) {
+        const parts = precise(date, node.hasAttribute("data-compact")).map((part) => {
+          const span = document.createElement("span");
+          span.textContent = part;
+          return span;
+        });
+        node.replaceChildren(parts[0], " ", parts[1]);
+        return;
       }
+      node.textContent = node.hasAttribute("data-day-only")
+        ? fields(date.getFullYear(), date.getMonth() + 1, date.getDate(),
+          node.hasAttribute("data-compact"))
+        : node.hasAttribute("data-day-time")
+        ? `${WEEKDAYS[date.getDay()]}, ${fields(date.getFullYear(), date.getMonth() + 1,
+          date.getDate(), false)}, ${clock(date)}`
+        : node.hasAttribute("data-time-only")
+        ? (node.hasAttribute("data-time-day") ? dayTime(date, new Date()) : clock(date))
+        : instant(date, {
+          compact: node.hasAttribute("data-compact"),
+          precise: node.hasAttribute("data-precise")
+        });
     });
     // A control whose name carries an instant's day (Roster changes to
     // enter names a change listed twice "…, resolved Oct 5, 2054") cannot

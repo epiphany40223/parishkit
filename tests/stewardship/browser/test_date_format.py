@@ -124,8 +124,12 @@ def test_pages_localize_with_the_body_style_and_compact_tables(page, component_o
     # Log rows are also precise: seconds and zone name (#391 M3), and no
     # "(UTC-07:00)" offset after it (#635).
     assert cell.get_attribute("data-precise") is not None
-    assert cell.inner_text() == precise(moment, "us_long")
-    assert "UTC" not in cell.inner_text()
+    assert cell.text_content() == precise(moment, "us_long")
+    assert "UTC" not in cell.text_content()
+    # Stacked (#2280): the same text, its day shown above its clock time.
+    day, clock = cell.inner_text().split("\n")
+    assert f"{day} {clock}" == precise(moment, "us_long")
+    assert ":" not in day and clock.endswith(" PDT")
     # The page's own help describes the same form (#635).
     help_text = page.locator("body").text_content()
     assert "followed by that zone's short name" in help_text
@@ -136,7 +140,7 @@ def test_pages_localize_with_the_body_style_and_compact_tables(page, component_o
             ParishDates.localize(document);
         }"""
     )
-    assert cell.inner_text() == precise(moment, "eu_dot")
+    assert cell.text_content() == precise(moment, "eu_dot")
     # Without data-precise, a compact cell keeps the short form.
     for style in ("us_long", "eu_dot"):
         assert browser_text(
