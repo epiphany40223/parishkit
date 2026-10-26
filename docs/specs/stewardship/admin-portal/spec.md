@@ -548,7 +548,14 @@ not on the page
 ([#2145](https://github.com/epiphany40223/parishkit/issues/2145)). Each
 step changes in place while setup finishes. Once setup completes, the page
 says the system is configured, shows a Continue link to the Admin home and
-drops Cancel setup; the notice gives no backup advice. A failed step stops the updates. A failed step explains what to do: a credential the provider
+drops Cancel setup; the notice gives no backup advice. After a cancellation or
+expiry the page asks nothing of the operator: the consumers' directory mounts
+show the removal of the installed keys, so the worker and mail services let go
+of them without being recreated
+([runtime guide](../../../guides/stewardship-runtime.md#first-database-and-application-startup)).
+It names recreating them again only for the operator who finished a key step by
+hand for a credential with its own overridden file path, which keeps a
+single-file mount. A failed step stops the updates. A failed step explains what to do: a credential the provider
 rejected repeats the integration page's per-provider advice on what to check,
 one that did not finish in time asks the operator to check the credential
 installers, and each says to cancel and start a new setup (#456). No step
