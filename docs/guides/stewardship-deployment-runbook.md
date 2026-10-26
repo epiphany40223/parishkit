@@ -867,7 +867,10 @@ that the off-site copy still leaves through `application-egress`, which
 the full stop recreated. A refusal (one generic line, exit `2`) means the
 next cron backup would fail too, and an `offsite` state of `failed` means
 the off-site copies would stop: find the cause before the window ends, or
-roll back.
+roll back. A state of `busy` means another run held the off-site copy
+lock, and that run copies this set too; run the backup once more to see
+`uploaded`. `not_configured` is right only on a deployment with no
+off-site copy set up, such as pk-local.
 
 To see the rules in force, ask
 PostgreSQL which file it read:
