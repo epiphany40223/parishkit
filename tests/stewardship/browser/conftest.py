@@ -1515,7 +1515,7 @@ def component_responses():
             {"draft": setup_draft, "form": SetupLogoForm(), "assets": []},
         ),
         (
-            # The setup logo step once a logo is saved: its previews.
+            # The setup logo step once a logo is saved: its preview box.
             "/setup-branding-saved",
             "setup-branding",
             {

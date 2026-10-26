@@ -6,11 +6,8 @@
 <h1>{% translate "Parish logos" %}</h1>
 {% aboutpage "setup-branding" %}<p>{% translate "Upload the parish logo. It gives Family pages a familiar look so Families trust the site." %}</p>{% endaboutpage %}
 <p class="notice">{% translate "Testing mode. This logo is private to this setup login until final activation." %}</p>
-{% if assets %}<div class="notice setup-saved"><p><strong>{% translate "A logo is saved; its generated sizes are shown below." %}</strong></p>
-<p>{% translate "To keep it, choose no file and select Save and continue. Choose a new image only to replace it." %}</p></div>
-<section class="panel"><h2>{% translate "Generated display sizes" %}</h2>
-<div class="branding-preview">{% for asset in assets %}<figure><img src="{% url 'admin:setup_branding_asset' asset.pk %}" alt="{{ asset.label|capfirst }}"><figcaption>{{ asset.label|capfirst }} — {{ asset.width }} × {{ asset.height }}</figcaption></figure>{% endfor %}</div>
-</section>{% endif %}
+{% if assets %}<div class="notice setup-saved"><p><strong>{% translate "A logo is saved; it is shown in the preview below." %}</strong></p>
+<p>{% translate "To keep it, choose no file and select Save and continue. Choose a new image only to replace it." %}</p></div>{% endif %}
 {% comment %}Save and continue waits for a logo that fits (data-require-complete, data-max-bytes, #1332): a file over 5 MB is refused at the field as soon as it is chosen, and, until a logo is saved, a file must be chosen. The hint follows the action row, so it never moves the buttons.{% endcomment %}<form method="post" enctype="multipart/form-data" class="panel" data-require-complete data-missing-hint="{% translate 'Choose the parish logo image to save.' %}">
 {% csrf_token %}<input type="hidden" name="version" value="{{ draft.status.version }}">
 {{ form.as_div }}

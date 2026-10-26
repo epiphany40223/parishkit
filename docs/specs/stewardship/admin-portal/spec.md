@@ -318,7 +318,8 @@ buttons below keep their places in every case, including at 320 px
 page's response adds `blob:` to the content security policy's `img-src`; the
 server still checks the size and type of every upload. The post-setup
 Parish logos page (Admin menu) keeps its own review dialog, which already
-shows every generated size.
+shows every generated size; the setup page lists no generated sizes, because its
+preview box already shows the saved logo.
 
 A refusal an Admin can correct, in the wizard or the campaign, content and
 schedule editors, says what was wrong and how to fix it, with a link to the
