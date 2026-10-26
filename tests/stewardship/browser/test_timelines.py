@@ -327,10 +327,20 @@ def test_staff_see_the_full_timeline_with_review_lines(page, component_origin):
     # submission's instant is listed above it, as built after it.
     assert shown[0] == "Handled"
     assert shown.index("Accepted") + 1 == shown.index("Submitted a response")
-    row = page.locator("#table tbody tr", has_text="Accepted")
+    row = page.locator("#table tbody tr", has_text="Email address for Adams")
     assert "Email address for Adams, Ann; by staff@example.org" in row.inner_text()
     visible(page.locator("#table th", has_text="Invitation"))
     assert page.locator("#table a[href*='/admin/mail/sent/']").count() == 0
+    # A pledge Edit names its share method by the short label, with the full
+    # label as tooltip and for a screen reader (#2198).
+    share = page.locator("#table td span[title='Other']")
+    assert share.locator("[aria-hidden=true]").inner_text() == "Else"
+    assert share.locator(".visually-hidden").text_content() == "Other"
+    visible(share.locator("[aria-hidden=true]"))
+    # The short label keeps the page within a 320 px phone.
+    page.set_viewport_size({"width": 320, "height": 800})
+    visible(share.locator("[aria-hidden=true]"))
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert_clean(page, errors)
 
 

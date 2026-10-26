@@ -314,6 +314,12 @@ def test_rows_stay_one_line_and_scroll_in_their_box_on_a_phone(
     assert box.get_attribute("role") == "region"
 
 
+# Each chip's visible name: a short label's visible part (its full label is
+# visually hidden text and the tooltip, #2198), else the chip's own text.
+SHOWN = """c => [...c.querySelectorAll('.status-badge')].map(
+    b => (b.querySelector('[aria-hidden="true"]') || b).textContent)"""
+
+
 def test_share_methods_show_every_short_label_chip_with_other_text_tips(
     page, component_origin
 ):
@@ -329,7 +335,11 @@ def test_share_methods_show_every_short_label_chip_with_other_text_tips(
     page.goto(component_origin + "/financial-report")
     row = page.locator("[data-table-region] table tbody tr").first
     cell = row.locator("td").nth(3)
-    assert cell.locator(".status-badge").all_inner_texts() == ["Online", "Another way"]
+    assert cell.evaluate(SHOWN) == ["Online", "Another way"]
+    # A short label's full label is its tooltip and what a screen reader hears.
+    online = cell.locator(".status-badge").first
+    assert online.locator("[title]").get_attribute("title") == "Online <giving>"
+    assert online.locator(".visually-hidden").text_content() == "Online <giving>"
     assert cell.evaluate("c => getComputedStyle(c).whiteSpace") == "normal"
     for index in (1, 4, 5):
         money_or_date = row.locator("td").nth(index)
@@ -354,7 +364,7 @@ def test_share_methods_show_every_short_label_chip_with_other_text_tips(
     page.goto(component_origin + "/financial-typical")
     rows = page.locator("[data-table-region] table tbody tr")
     cell = rows.first.locator("td").nth(3)
-    assert cell.locator(".status-badge").all_inner_texts() == [
+    assert cell.evaluate(SHOWN) == [
         "Online",
         "Envelope",
         "Other",
@@ -366,7 +376,7 @@ def test_share_methods_show_every_short_label_chip_with_other_text_tips(
     )
     # A Family with one method that has Other text: its chip and an "i" tip.
     cell = rows.nth(2).locator("td").nth(3)
-    assert cell.locator(".status-badge").all_inner_texts() == ["Other"]
+    assert cell.evaluate(SHOWN) == ["Other"]
     button = cell.get_by_role("button", name="More information", exact=True)
     button.click()
     visible(cell.locator(".toggletip-bubble"))

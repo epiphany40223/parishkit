@@ -51,6 +51,8 @@ from dataclasses import dataclass, replace
 from decimal import Decimal
 
 from django.db import connection
+from django.utils.html import escape
+from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.accounts.leader_import import ministry_names
@@ -67,7 +69,9 @@ from .financial import (
     FREQUENCY_LABELS,
     UNAVAILABLE_SHARE,
     in_offered_order,
-    share_labels,
+    share_cell,
+    share_text,
+    share_wording,
 )
 from .hub_census import member_label
 from .limitations import ANSWERS as LIMITATION_ANSWERS
@@ -79,6 +83,8 @@ from .money import MoneyAmount
 # (option id to label) for a pledge Edit's share methods (#2177); Ministry
 # names are keyed by DUID, an int, so the two never meet.
 SHARE_LABELS = "share_labels"
+# ... and the same options' short labels, used only for the page's markup (#2198).
+SHARE_SHORTS = "share_shorts"
 
 # One Family's decision history in one scope, oldest first: one row per
 # stored step, across every stream, each with the submission it belongs to
@@ -565,7 +571,7 @@ def item_words(row, names):
     if stream == "information":
         return str(_("Additional information"))
     if stream == "pledge":
-        return pledge_words(row, names.get(SHARE_LABELS))
+        return pledge_words(row, names.get(SHARE_LABELS), names.get(SHARE_SHORTS))
     if stream == "limitation":
         # A proposed Member is named as the Limitations downloads name them.
         subject = (
@@ -603,7 +609,26 @@ def item_words(row, names):
     return f"{words}; {outcome}" if outcome else words
 
 
-def pledge_words(row, labels=None):
+class Detail(str):
+    """A line's detail text, with the page's markup for it when it differs.
+
+    The text is what the PDF and ``pk-admin`` show: full labels only. The
+    Timeline page's table cell shows ``html`` instead, which names a share
+    method by its short label with the full label as its tooltip (#2198;
+    ``Event.cell``). ``html`` is None when the page shows the text.
+    """
+
+    html = None
+
+
+def with_markup(text, html):
+    """``text`` as a ``Detail`` whose page markup is ``html`` (None: none)."""
+    detail = Detail(text)
+    detail.html = html
+    return detail
+
+
+def pledge_words(row, labels=None, shorts=None):
     """A pledge line's item: "Pledge", and an Edit's Reviewer's value.
 
     The value reads as the Pledges page's Reviewer's value cell does
@@ -615,6 +640,8 @@ def pledge_words(row, labels=None):
     that changed the Family's share methods (#2177; ``subject`` holds them
     as stored) adds them, each by the label ``labels`` gives its option
     (``share_labels_for``), with its Other text, in the configured order.
+    The text is always in full labels; ``shorts`` (option id to short label)
+    only adds the page's markup (``Detail``, #2198).
     """
     if row["a"] != "edit":
         return str(_("Pledge"))
@@ -625,22 +652,34 @@ def pledge_words(row, labels=None):
     if not row.get("subject"):
         return words
     labels = labels or {}
-    shares = ", ".join(
-        f"{labels.get(key, UNAVAILABLE_SHARE)}: {text}"
-        if text
-        else labels.get(key, UNAVAILABLE_SHARE)
+    shorts = shorts or {}
+    chosen = [
+        {
+            "label": labels.get(key, UNAVAILABLE_SHARE),
+            "short": shorts.get(key) or labels.get(key, UNAVAILABLE_SHARE),
+            "text": text,
+        }
         for key, text in in_offered_order(json.loads(row["subject"]), labels)
-    )
-    return str(
+    ]
+    shares = share_text(chosen)
+    text = str(
         _("%(words)s; share methods: %(shares)s") % {"words": words, "shares": shares}
     )
+    html = None
+    if any(share["short"] != share["label"] for share in chosen):
+        html = mark_safe(
+            str(_("%(words)s; share methods: %(shares)s"))
+            % {"words": escape(words), "shares": share_cell(chosen)}
+        )
+    return with_markup(text, html)
 
 
-def share_labels_for(campaign_id):
-    """The campaign's share methods by option id, as Pledges words them (#2177).
+def share_wording_for(campaign_id):
+    """The campaign's share methods by option id: ``(label, short label)``.
 
-    Each by its current full label (``share_labels``), the Family form's
-    wording for a household with no listed Member, in configured order.
+    The label is as Pledges words it (#2177): its current full label
+    (``share_wording``, the Family form's wording for a household with no
+    listed Member), in configured order.
     """
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
     from parishkit.stewardship.campaigns.models import Campaign
@@ -651,11 +690,22 @@ def share_labels_for(campaign_id):
     system = SystemConfiguration.objects.select_related(
         "active_configuration__parish"
     ).get()
-    return share_labels(
+    return share_wording(
         campaign.active_configuration.values,
         campaign_id=campaign_id,
         parish_name=system.active_configuration.parish.name,
     )
+
+
+def share_labels_for(campaign_id):
+    """The campaign's share methods by option id, each by its full label.
+
+    What the PDF and ``pk-admin`` word a Reviewer's share methods with;
+    only the page's table cell uses the short labels (#2198).
+    """
+    return {
+        key: label for key, (label, _short) in share_wording_for(campaign_id).items()
+    }
 
 
 def first_state(row):
@@ -733,9 +783,13 @@ def steps(rows, names=None, reader=None):
         own = row["stream"] != "information" or note != notes.get(key)
         notes[key] = note
         who = row["actor"] or FORMER_USER
-        detail = str(
-            _("%(item)s; by %(who)s") % {"item": item_words(row, names), "who": who}
-        )
+        item = item_words(row, names)
+        detail = str(_("%(item)s; by %(who)s") % {"item": item, "who": who})
+        html = getattr(item, "html", None)
+        if html:
+            html = mark_safe(
+                str(_("%(item)s; by %(who)s")) % {"item": html, "who": escape(who)}
+            )
         what = word(before, after)
         if row["stream"] == "census_review" and str(what) == str(UPDATED):
             # A census review always decides, but reconciliation may have
@@ -752,7 +806,14 @@ def steps(rows, names=None, reader=None):
             detail = str(
                 _("%(detail)s; note: %(note)s") % {"detail": detail, "note": note}
             )
-        lines.append((row["at"], what, detail))
+            if html:
+                # Today only a pledge Edit has markup and its line never reads
+                # Back to review; keep the markup in step if that changes.
+                html = mark_safe(
+                    str(_("%(detail)s; note: %(note)s"))
+                    % {"detail": html, "note": escape(note)}
+                )
+        lines.append((row["at"], what, with_markup(detail, html)))
     return lines
 
 
@@ -791,5 +852,10 @@ def read_reviews(values, reader=None):
     if any(row["stream"] == "pledge" and row["subject"] for row in rows):
         # An Edit's share methods (#2177) are worded from the campaign's
         # configuration: two more statements, only when a line needs them.
-        names = {**names, SHARE_LABELS: share_labels_for(values["campaign"])}
+        wording = share_wording_for(values["campaign"])
+        names = {
+            **names,
+            SHARE_LABELS: {key: label for key, (label, _s) in wording.items()},
+            SHARE_SHORTS: {key: short for key, (_l, short) in wording.items()},
+        }
     return steps(rows, names, reader), requests(rows, names)

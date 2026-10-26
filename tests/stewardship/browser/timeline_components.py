@@ -23,12 +23,17 @@ from urllib.parse import urlencode
 from uuid import UUID
 
 from django.template.loader import render_to_string
+from django.utils.safestring import mark_safe
 
 from parishkit.stewardship.reports.hub_census import shape
 from parishkit.stewardship.reports.hub_streams import (
     financial_tab,
     ministry_rows,
     other_tab,
+)
+from parishkit.stewardship.reports.timeline_reviews import (
+    pledge_words,
+    with_markup,
 )
 from parishkit.stewardship.reports.timeline_views import (
     TimelineQuery,
@@ -103,8 +108,18 @@ LATER = canonical(
     )
 )
 STAFF = "/timeline-staff"
-# Staff's page (#1774): the fixture's lines plus two review lines, one at
-# the second submission's instant (built after it) and one later.
+# A pledge Edit's line (#2198): its share method has a short label, which
+# the page's cell shows with the full label as tooltip.
+_EDIT = pledge_words(
+    {"a": "edit", "c": "1300.00", "d": "quarterly", "subject": '{"x": "Bonds"}'},
+    {"x": "Other"},
+    {"x": "Else"},
+)
+SHORT_SHARE = with_markup(
+    f"{_EDIT}; by staff@example.org", mark_safe(f"{_EDIT.html}; by staff@example.org")
+)
+# Staff's page (#1774): the fixture's lines plus three review lines, one at
+# the second submission's instant (built after it) and the others later.
 REVIEWED = Timeline(
     TIMELINE.summary,
     events(
@@ -117,6 +132,7 @@ REVIEWED = Timeline(
                 "Accepted",
                 "Email address for Adams, Ann; by staff@example.org",
             ),
+            (SECOND.at + timedelta(hours=1), "Accepted (edited)", SHORT_SHARE),
             (
                 SECOND.at + timedelta(hours=2),
                 "Handled",

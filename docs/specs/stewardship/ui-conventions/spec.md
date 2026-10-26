@@ -88,7 +88,8 @@ when it lands.
   [Family and Member names](#family-and-member-names),
   [Members and Families no longer in ParishSoft](#members-and-families-no-longer-in-parishsoft),
   [table fit and row height](#table-fit-and-row-height),
-  [review work tables](#review-work-tables).
+  [review work tables](#review-work-tables),
+  [short labels in tables](#short-labels-in-tables).
 - [Downloaded files](#downloaded-files) and the
   [Family portal](#family-portal).
 
@@ -5553,6 +5554,38 @@ names and values broke letter by letter (Administrator, 2026-10-24).
 the clipped-name tip in `admin-menu-v1.js`; the `review-table` rules in
 `ui-v1.css`; `test_review_worklist_layout.py`. **Precedent.**
 [#2124](https://github.com/epiphany40223/parishkit/issues/2124).
+
+### Short labels in tables
+
+**Rule.** Every Admin table cell that names a share method names it by its
+short label when the Administrator has set one (Share options), otherwise by
+its full label: a chip, a list of methods in a text cell, and a Timeline line's
+cell alike. Where a cell shows a short label, the full label is the method's
+tooltip (`title`) and its accessible name, so a screen reader hears the full
+label, never the short one. This bare `title` is a recorded exception to
+the rule that help never sits in a hover-only tooltip
+([Table fit and row height](#table-fit-and-row-height)): the short label is
+itself the Administrator's name for the method, not cut-off text, and the
+full label is also in the downloads and the pledge editor's choices, so a
+toggletip on every chip would add a control per method for little gain.
+Other text a Family gave a method follows the
+name as it does with the full label ("Online: weekly"). Forms keep the full
+labels, worded as the Family form words them: the Family form and the
+pledge editor's choices. Downloaded files keep the full labels too
+([Downloaded files](#downloaded-files)), and so do the Timeline's PDF and
+`pk-admin`'s output.
+**Why.** A method's full label is the sentence the
+Family read, often long; the short label is the Administrator's compact name
+for it, so cells stay short ([Table fit and row height](#table-fit-and-row-height))
+and every table names a method alike. **Shared code.** `share_name` and
+`share_cell` in `reports/financial.py` (with the `share_name` template
+filter), which word each method; `share_text` words them in full for files
+and tips. **Precedent.**
+[#1569](https://github.com/epiphany40223/parishkit/issues/1569) (short
+labels, first on Financial stewardship's chips) and
+[#2198](https://github.com/epiphany40223/parishkit/issues/2198) (every
+table: Pledges, the Family hub's Financial tab, the Timeline and Financial
+stewardship detail).
 
 ### Empty tables and lists
 

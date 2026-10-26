@@ -7,6 +7,7 @@ from datetime import date, datetime
 
 from django.db import connection
 from django.utils.datastructures import MultiValueDict
+from django.utils.html import format_html, format_html_join
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.accounts.policy import Capability, allows
@@ -414,6 +415,40 @@ def share_text(shares):
     return ", ".join(
         f"{share['label']}: {share['text']}" if share["text"] else share["label"]
         for share in shares
+    )
+
+
+def share_name(share):
+    """One worded share method's name as a table cell shows it (#2198).
+
+    Its short label, with the full label as its tooltip and as the text a
+    screen reader hears (UX conventions, "Short labels in tables"); just
+    the label when the two are the same. Forms and files use the full
+    label (``share_text``) instead.
+    """
+    if share["short"] == share["label"]:
+        return format_html("{}", share["label"])
+    return format_html(
+        '<span title="{}"><span aria-hidden="true">{}</span>'
+        '<span class="visually-hidden">{}</span></span>',
+        share["label"],
+        share["short"],
+        share["label"],
+    )
+
+
+def share_cell(shares, separator=", "):
+    """Worded share methods as one table cell's HTML, each by ``share_name``.
+
+    Any Other text follows its method's name, as ``share_text`` words it.
+    """
+    return format_html_join(
+        separator,
+        "{}{}",
+        (
+            (share_name(share), f": {share['text']}" if share["text"] else "")
+            for share in shares
+        ),
     )
 
 
