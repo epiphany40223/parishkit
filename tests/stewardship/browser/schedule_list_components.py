@@ -162,6 +162,7 @@ from parishkit.stewardship.accounts.schedule_entry_views import (
     INITIAL_SENT,
     SERIES_DELETED,
     RepeatRule,
+    SeriesRule,
     _check_repeat,
     _edit_notes,
     _sends_once,
@@ -584,7 +585,7 @@ def _entry(
             ),
             series["values"]["rule"]["start"],
         )
-        rule = RepeatRule(
+        rule = SeriesRule(
             scope_data,
             prefix="repeat",
             initial=rule_initial(series["values"]["rule"], start),

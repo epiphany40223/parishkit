@@ -89,6 +89,9 @@ FORM_DATES = {
     # The Repeat rule's day range (see CALENDAR_INPUTS).
     ("RepeatRule", "start"): "calendar: Repeat range",
     ("RepeatRule", "until"): "calendar: Repeat range",
+    # Edit's Change the repeat (#1808, #2235): the same rule's fields.
+    ("SeriesRule", "start"): "calendar: Repeat range",
+    ("SeriesRule", "until"): "calendar: Repeat range",
     # A send date: read with its time in the browser zone where the formset
     # opts in (schedule_local, browser_times); the retired Copy campaign page
     # keeps campaign-local values (ui-conventions, "Until a page's PR lands").
