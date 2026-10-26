@@ -95,9 +95,9 @@ def test_the_running_page_follows_the_send_and_announces_only_its_end(
     assert (
         page.locator(ANNOUNCER).text_content() == "No Family email send is in progress."
     )
-    # Technical details stay outside the polled region and survive the swap.
+    # The page has no Technical details (#2199).
     assert page.locator(REGION + " details").count() == 0
-    assert page.locator("details.technical-details").count() == 1
+    assert page.get_by_text("Technical details").count() == 0
 
 
 def test_polls_every_five_seconds_and_announces_only_quarter_changes(

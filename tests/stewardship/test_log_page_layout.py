@@ -291,7 +291,7 @@ def test_critical_rows_stand_out():
 
 
 def test_log_rows_show_no_identifiers_or_technical_details():
-    """Rows hold no Technical details disclosure (#1065): the task page shows
+    """Rows hold no Technical details disclosure (#1065, #2199): a download shows
     a task's identifiers, and no identifier is page text anywhere. They still
     travel in hidden inputs and links, which are not text."""
     html = _render()

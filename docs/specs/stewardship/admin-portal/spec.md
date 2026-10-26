@@ -530,7 +530,7 @@ encodes one step per finished collection in the task's two monotonic
 progress counters and the page decodes the task's append-only event history,
 so this needs no schema change. The page also shows when the load started and the
 loading worker's most recent heartbeat, both counting forward between status
-reads; an open Technical details stays open as they update. On success it shows a prominent
+reads. The page shows no Technical details ([no Technical details panes](../ui-conventions/spec.md#no-technical-details-panes)). On success it shows a prominent
 result with Continue to the next wizard page; on failure it says what to do
 next.
 
@@ -6175,9 +6175,7 @@ an hour after they are opened), so a page opened an hour early follows the
 whole send; after that it checks every 30 seconds. It has no manual Refresh
 link. The region's counts change on every read, so it is not itself an ARIA
 live region: screen readers hear only the Family send panel's
-announcements (below). Technical details sit outside the updated region
-and follow it in place ([open disclosures stay
-open](../ui-conventions/spec.md#pages-that-update-themselves)). A
+announcements (below). The page shows no Technical details ([no Technical details panes](../ui-conventions/spec.md#no-technical-details-panes)). A
 restore review that begins while the page renders withholds it, as on Sent
 mail.
 
@@ -6569,7 +6567,8 @@ was created), which the page does not offer as headings.
 a phone, without sideways scrolling) holds:
 
 - **Recipient**: a name, a Family DUID (with or without its thousands
-  commas), an email address, or a delivery ID. A DUID lists that Family's
+  commas), an email address, or a delivery ID (the last part of an email
+  page's web address). A DUID lists that Family's
   emails; an address lists every email whose intended recipients include
   it, in either case, across kinds (a Family member who is also an
   Administrator sees both their Family's emails and their reports); a
@@ -6948,11 +6947,8 @@ from Sent mail's Recipient link; this page is about one email.
    (its panel says Delivered or Not sent (cancelled)) the table waits in a
    closed "Attempt history" disclosure, which stays open across paging once
    opened; otherwise it is shown.
-6. **Technical details** (the delivery ID), closed, as the
-   [page help](../ui-conventions/spec.md#page-help) convention places
-   internal identifiers.
-7. **Latest background task**, linking its page, with its state.
-8. **Did this email bounce?**, a closed disclosure holding Report a bounced address, on a Production Family email only
+6. **Latest background task**, linking its page, with its state.
+7. **Did this email bounce?**, a closed disclosure holding Report a bounced address, on a Production Family email only
    ([#806](https://github.com/epiphany40223/parishkit/issues/806) slice 4).
    When a delivered email later bounces (a non-delivery report arrives in
    the sending mailbox, which the system never reads), an Administrator
@@ -6985,7 +6981,7 @@ from Sent mail's Recipient link; this page is about one email.
    ([#1211](https://github.com/epiphany40223/parishkit/issues/1211)); see
    [data](../data/spec.md#job-outbox-audit-and-purge-records) for the
    record.
-9. **Add a note**: while the evidence note is offered and the outcome
+8. **Add a note**: while the evidence note is offered and the outcome
    panel's question does not already offer it (a delivered, still-sending
    or cancelled email), the note form waits in a closed "Add a note to this
    email's history" disclosure, whose summary is the form's only heading.
@@ -6993,7 +6989,7 @@ from Sent mail's Recipient link; this page is about one email.
    page, is stored with the command, copied into the email's immutable event
    history, shown under Admin evidence and decisions, and never emailed to
    anyone.
-10. **Admin evidence and decisions**: the notes and resolutions recorded on
+9. **Admin evidence and decisions**: the notes and resolutions recorded on
     the email, newest first.
 
 The attempt history and the Admin evidence share one page window, as
@@ -7167,7 +7163,8 @@ tables' shared order
 ([#932](https://github.com/epiphany40223/parishkit/issues/932)): Refused
 at, Family, Family DUID, Address and Email
 ([#935](https://github.com/epiphany40223/parishkit/issues/935)); the
-refusal's ID shows only under Technical details on its own page, though
+refusal's ID is not shown on any page
+([no Technical details panes](../ui-conventions/spec.md#no-technical-details-panes)), though
 the command line can still sort by it (`--sort id`). The Family's name is
 read as Sent mail reads it (the latest ParishSoft data, the same
 snapshot the Family sort reads, for the shown page only, at most two small
@@ -8126,7 +8123,7 @@ in the URL, until another refresh is requested or the sign-in ends; a run that
 can no longer be read is forgotten. Below the button the page shows that run's
 live status, the same status region its Background task page shows, polled
 through the task's passive status read, with a link to that Background task
-page for the history and technical details. When the run ends, the page
+page for the history. When the run ends, the page
 re-reads itself in place, so the data age above and the request key are
 fresh. The breadcrumb is the way back; the page has no Cancel link.
 While the current campaign is a Testing draft being prepared, the page is
@@ -9537,8 +9534,8 @@ actions have landed.
 - **Plain words, help hidden.** Times are shown and entered in the browser's
   local time zone, without "UTC" labels. States use words ("Halted",
   "Waiting for the daily limit"), not internal names. Internal names, such as
-  an incident kind, appear only under a closed "Technical details"
-  disclosure. Each tile shows its state, its summary and, when open, its
+  an incident kind, are not shown
+  ([no Technical details panes](../ui-conventions/spec.md#no-technical-details-panes)). Each tile shows its state, its summary and, when open, its
   button. What each state means, and what a panel cannot see, is in the
   page's "About this page" panel
   ([page help](../ui-conventions/spec.md#page-help)), hidden by default.
@@ -9769,7 +9766,7 @@ Working with a summary that says so ("No current campaign").
 | **Debug logging** | none | in Production, debug logging is in effect in any service (`debug_logging`; a warning because nothing stops working, [decision 11](#administrator-decisions-2026-10-13)) | "Off"; "Turned off from this page by … at …"; "On in 4 services, as expected in Testing" | the [debug logging panel](#debug-logging-panel) | **Turn off debug logging**, drawn only while some service has debug logging in effect; once the switch is set, its status line and, only in Testing, **Allow debug logging again** ([clearing the switch](#turn-off-debug-logging)). |
 | **Families the form cannot open** | none | at least one Family cannot open the form; the check could not run | "Every Family can open the form"; "No current campaign" | the sentence and the link of [Families the form cannot open](#system-health-page) | none; the list's link is in the sentence |
 | **Pages and emails to re-save** | an invitation or reminder cannot be sent until it is fixed (the list's `blocked` items) | other items are marked "Re-save recommended"; the check could not run | "Nothing to re-save"; "No current campaign" | the sentence and the linked list of [pages and emails to re-save](#system-health-page) | none; each item links its editor |
-| **Version and services** | a core service other than mail dispatch is not running or has not reported (the rest of `not_running` and `not_reported`); the services run different versions (`versions_differ`); the database does not match (`schema_mismatch`) | an installer that reports is not running (the installers' part of `not_running`) | "Version 1.12.0, Production, all services running" | the [version panel](#version-panel), then the Technical details disclosure (it follows the poll; [open disclosures stay open](../ui-conventions/spec.md#pages-that-update-themselves)) and the links to System logs and Background work | none; the deployment runbook's upgrade link is in the versions sentence |
+| **Version and services** | a core service other than mail dispatch is not running or has not reported (the rest of `not_running` and `not_reported`); the services run different versions (`versions_differ`); the database does not match (`schema_mismatch`) | an installer that reports is not running (the installers' part of `not_running`) | "Version 1.12.0, Production, all services running" | the [version panel](#version-panel), then the links to System logs and Background work | none; the deployment runbook's upgrade link is in the versions sentence |
 
 Each action region is drawn when the page loads, whatever the tile's
 state, and never removed: when its action does not apply it stays greyed
@@ -10185,7 +10182,7 @@ requests 1206, 1210 and 1213 have merged.
 5. **Backups and Debug logging tiles.** pk-local: Take a backup now and
    Turn off debug logging from their tiles.
 6. **Page-load and services tiles.** Families the form cannot open, pages
-   and emails to re-save, and version and services with Technical details.
+   and emails to re-save, and version and services.
    pk-local: each tile's warning and error.
 7. **Home and the banner.** Home's icons, state words, tile links and
    single display of a shared problem with the notice's links kept; the
@@ -10477,7 +10474,7 @@ server?" (ADM-35):
   `backup_key_changed` incidents are the tile's problems, as below.
 - **Requested backups:** the newest backup requested from this page, with
   its state: waiting for the server, held for a Family email send, running,
-  finished, failed (its category under Technical details), did not finish,
+  finished, failed (its category is in System logs), did not finish,
   not picked up (it waited 30 minutes), or cancelled by a restore. The page
   applies the lapse rules before the next poll records them. See
   [take a backup now](#take-a-backup-now). While a request waits, is held
@@ -11615,15 +11612,13 @@ Only Admins access the combined log screen. It supports:
   [in place](../ui-conventions/spec.md#in-place-controls): the filter form above then shows the
   filters applied ("Filter by identifier" opened), and focus returns to the
   same entry's icon in the filtered list, or to the list when that entry
-  is no longer in it. Rows show no identifiers and no "Technical details"
-  disclosure: a task's page shows its identifiers under its own Technical
-  details, including the correlation its log entries share, and the
+  is no longer in it. Rows show no identifiers, and no page shows them
+  ([no Technical details panes](../ui-conventions/spec.md#no-technical-details-panes)): the
   [download](#logs) keeps every entry's identifiers (the recorded
   exception in the
-  [downloaded files](../ui-conventions/spec.md#downloaded-files) rule). An
-  entry without a task therefore shows no identifiers on any page; its
+  [downloaded files](../ui-conventions/spec.md#downloaded-files) rule). The
   icons filter by them, and "Filter by identifier" says to copy one from a
-  task's page or a download. The table uses the shared Admin table styling;
+  download. The table uses the shared Admin table styling;
 - the shared [table navigator](../ui-conventions/spec.md#admin-tables) in POST mode. The first view
   records a snapshot instant, and every later page, size or sort change lists
   only entries created at or before it, so new entries never shift pages. An

@@ -104,13 +104,12 @@ def archive(year, *, final=True, pk=None, state="active", **fields):
     return SimpleNamespace(**(values | fields))
 
 
-def context_for(active, removed=(), **extra):
+def context_for(active, **extra):
     """The template's context for these imports, as ``views._render`` builds it."""
     emails = {ADMIN: "admin@example.org"}
     rows = [views._row(row, emails) for row in active]
     return {
         "table": whole_table(rows, sorting=views.SORTING, sort="-year"),
-        "tombstones": [views._tombstone(row, emails) for row in [*active, *removed]],
         "refresh_url": REMOVED,
         "year_problem": None,
         "max_bytes": MAX_BYTES,
@@ -125,14 +124,6 @@ def components(context, admin):
     partial = archive(2025, final=False)
     reviewed = archive(2025, pk=PREVIEW, state="pending", file_name="corrected.xlsx")
     replaced = archive(2025, pk=APPLIED, imported_at=datetime(2026, 10, 11, tzinfo=UTC))
-    old = archive(
-        2025,
-        final=False,
-        pk=UUID(int=9),
-        state="removed",
-        removed_by_id=ADMIN,
-        removed_at=datetime(2026, 10, 11, tzinfo=UTC),
-    )
 
     def page(values, action=None):
         """Render the page; ``action`` replaces the Review form's address."""
@@ -209,8 +200,8 @@ def components(context, admin):
     return {
         PAGE: page(context_for([final, partial])),
         f"{PAGE}-apply": page(context_for([final, partial], refresh_url=DONE)),
-        DONE: page(context_for([final, replaced], [old], refresh_url=DONE)),
-        REMOVED: page(context_for([final], [partial])),
+        DONE: page(context_for([final, replaced], refresh_url=DONE)),
+        REMOVED: page(context_for([final])),
         f"{PAGE}-already": page(context_for([final, partial]), action=ALREADY_REVIEW),
         f"{PAGE}-refused": page(context_for([final, partial]), action=REFUSED_REVIEW),
         f"{PAGE}-too-large": page(

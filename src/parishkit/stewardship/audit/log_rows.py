@@ -95,7 +95,7 @@ EARLIEST, LATEST = date(2020, 1, 1), date(2999, 12, 31)
 # shows first, so the two never disagree. Through's message covers both its
 # own date and its order after From.
 IDENTIFIER_MESSAGE = _(
-    "Paste a whole identifier from the Technical details of an entry, or clear it."
+    "Paste a whole identifier from a download of these entries, or clear it."
 )
 # Nothing ticked under an audit-only Activity, whose level boxes are greyed:
 # Audit record's own hint, so the server's refusal says it too (#1332).

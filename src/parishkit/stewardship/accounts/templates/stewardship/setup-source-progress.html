@@ -17,9 +17,6 @@ no longer active, and refreshes the deadlines from each answer. The shared
 Admin inactivity dialog, not this page, warns before sign-out.{% endcomment %}
 <form method="post" hidden data-setup-renew data-progress-now="{{ progress.server_now }}" data-progress-url="{% url 'admin:setup_source_progress' progress.task_id %}?format=json" data-progress-task="{{ progress.task_id }}" data-progress-active="{{ progress.active|yesno:'true,false' }}">{% csrf_token %}<time data-progress-deadline="idle_at" datetime="{{ progress.idle_at }}"></time><time data-progress-deadline="absolute_at" datetime="{{ progress.absolute_at }}"></time>{% if progress.watchdog_at %}<time data-progress-deadline="watchdog_at" datetime="{{ progress.watchdog_at }}"></time>{% endif %}</form>
 <p class="notice" data-progress-unavailable hidden role="status">{% translate "The loading service could not be reached to keep this setup active. This page keeps trying; sign in again if your sign-in has ended." %}</p>
-<details><summary>{% translate "Technical details" %}</summary>
-<div data-live-mirror-target="setup-load-details">{% include 'stewardship/setup-source-progress-details.html' %}</div>
-</details>
 {% comment %}The step action row (#1968): Back at the left and Continue to the
 next step at the right, drawn from the start so nothing moves when the load
 ends. Until the load is done Continue is unavailable, named by the reason

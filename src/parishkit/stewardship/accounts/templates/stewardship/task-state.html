@@ -1,7 +1,6 @@
 {% load i18n %}{% comment %}
   One background task state (jobs.models.TASK_STATES, plus the list page's
-  "nonterminal" and "all" views) in plain words. The stored state name stays
-  under Technical details on the task page. An unknown state falls back to
+  "nonterminal" and "all" views) in plain words. An unknown state falls back to
   its stored name so a new state never renders blank. No final newline
   (none in this file), so a refresh's announced sentence, an attribute,
   reads it inline (background-task-status.html, #1579).

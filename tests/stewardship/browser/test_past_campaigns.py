@@ -421,7 +421,7 @@ def test_remove_asks_then_redraws_the_table(page, component_origin):
         dialog.get_by_role("button", name="Remove", exact=True).click()
     assert "archive=2025%3A2" in (sent.value.post_data or "")
     hidden(dialog)
-    eventually(page, "document.querySelectorAll('#table tbody tr').length", 3)
+    eventually(page, "document.querySelectorAll('#table tbody tr').length", 1)
     assert years(page) == ["2026"]
     assert page.evaluate("window.notReloaded === true")
     assert not failures

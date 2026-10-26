@@ -66,7 +66,7 @@ def test_log_filters_wait_for_ordered_dates_and_whole_identifiers(
     waits_with(
         apply,
         hint,
-        "Paste a whole identifier from the Technical details of an entry, or clear it.",
+        "Paste a whole identifier from a download of these entries, or clear it.",
     )
     actor.fill("01234567-89ab-cdef-0123-456789abcdef")
     assert apply.is_enabled()

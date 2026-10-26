@@ -5,7 +5,7 @@ title names only the type, so browser history does not keep the Family's
 name (as on the Timeline). The page first answers whether anything is left
 to do: the outcome panel (Delivered, Still sending, Needs resolution or Not
 sent (cancelled)) with its resolution question. Then what the email is and
-whom it was for, its attempt history, the technical details and latest
+whom it was for, its attempt history and latest
 background task, the bounce report and the note, both closed, and the Admin
 evidence already recorded.{% endcomment %}
 {% block title %}{{ delivery.purpose|delivery_label }}{% endblock %}
@@ -140,7 +140,6 @@ whole.{% endcomment %}
 <nav aria-label="{% translate 'Attempt history and evidence pages' %}">{% if previous_query %}<a href="?{{ previous_query }}#delivery-history" data-in-place="page-previous" data-in-place-fallback="page-next" data-in-place-message="{% translate 'Previous page shown.' %}">{% translate "Previous page" %}</a>{% endif %} {% if next_query %}<a href="?{{ next_query }}#delivery-history" data-in-place="page-next" data-in-place-fallback="page-previous" data-in-place-message="{% translate 'Next page shown.' %}">{% translate "Next page" %}</a>{% endif %}</nav>
 {% if outcome == "delivered" or outcome == "cancelled" %}</details>{% endif %}
 </div>
-<details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Delivery ID" %}</dt><dd>{{ delivery.id }}</dd></dl></details>
 {% if task %}<p><a href="{% url 'admin:background_task_page' task.id %}">{% translate "Latest background task" %}</a>: {{ task.state|delivery_task_label }}</p>{% endif %}
 {% comment %}Report a bounced address (#806 slice 4): only for a Production
 Family email, in a closed "Did this email bounce?" disclosure (#1563),

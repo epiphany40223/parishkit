@@ -37,8 +37,8 @@ from .delivery_metadata import (
 # Sent mail's does: surname, then the whole shown name, then Family DUID
 # (so each Family's addresses stay together) and address, read from the latest
 # ParishSoft data (delivery_metadata.with_name_keys), with Families that
-# data no longer has last in both directions. id has no column (the
-# refusal's own page shows it under Technical details) but keeps its sort
+# data no longer has last in both directions. id has no column (no
+# page shows it, #2199) but keeps its sort
 # for the command line's --sort id, and is the unique tiebreak. No index
 # orders these keys (the recipient_refusal_identity index leads with
 # organization_id, then family_duid), so each is a top-N sort over the

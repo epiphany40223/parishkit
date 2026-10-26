@@ -203,7 +203,6 @@ OTHER_DUID_LABEL = re.compile(
 FAMILY_ROWS = {
     ("campaign-mail-families.html", "row.duid"),
     ("campaign-mail-families.html", "item.duid"),
-    ("campaign-test-references.html", "item.duid"),
     ("timeline.html", "identity.duid"),
     ("timeline.html", "identity.envelope"),
     # The hub's Family and Member tabs (#1678): a Member's heading names

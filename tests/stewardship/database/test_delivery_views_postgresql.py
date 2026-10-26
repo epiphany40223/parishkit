@@ -269,7 +269,6 @@ def test_sent_mail_names_each_family_with_its_duid(family_mail, google):  # noqa
             "<p>Initial invitation · ",
             f"Family: {escape(name)} · Family DUID: {duid}",
             '<h2 id="attempt-history-heading">Attempt history</h2>',
-            "<summary>Technical details</summary>",
             "Latest background task</a>",
             "<h2>Admin evidence and decisions</h2>",
         )

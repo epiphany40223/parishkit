@@ -152,9 +152,8 @@
 // taken even while the reader holds the region's swap, so a held answer
 // never makes the next checks ask again.
 // A region whose every answer carries a copy that changes more often than
-// the region itself marks it lasting too, so that change alone never
-// redraws the region (the Background task page's Technical details, whose
-// heartbeat moves while its status says the same, #2019).
+// the region itself may mark it lasting too, so that change alone never
+// redraws the region (no page does so now, #2199).
 //
 // An in-place refresh (ui-v1.js, #519) can replace the region itself, such
 // as when Dismiss on an integration's settings page swaps in the page's

@@ -19,8 +19,6 @@
 {% include 'stewardship/components/data-age.html' with age=document.source_age source_as_of=chart.source_as_of %}
 <dt>{% translate "Campaign timezone" %}</dt><dd>{{ chart.campaign_timezone }}</dd>
 </dl>
-<details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "ParishSoft data load" %}</dt><dd>{{ chart.source_generation|number }}</dd>
-<dt>{% translate "Responses included up to number" %}</dt><dd>{{ chart.submission_watermark|number }}</dd></dl></details>
 <section class="panel" aria-labelledby="digest-totals-heading" data-digest-totals><h2 id="digest-totals-heading">{% translate "Campaign totals" %}</h2>
 {% include "stewardship/components/stat-tiles.html" with tiles=total_tiles tiles_labelledby="digest-totals-heading" %}
 </section>

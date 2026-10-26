@@ -80,17 +80,9 @@ def test_send_shows_the_test_and_its_result_in_place(page, component_origin):
     assert polls
     assert posts == [component_origin + PAGE]
     assert page.evaluate(MARKED) == "kept"
-    # Technical details sit after the polled list, never inside it (a poll
-    # would close them), and list each test's reference as Send drew them.
-    details = page.locator("#campaign-tests details.technical-details")
-    expect(details).to_have_count(1)
-    assert page.locator("[data-live-status] .technical-details").count() == 0
-    details.locator("summary").click()
-    for number in (5411, 5410):
-        expect(details.locator("code", has_text=str(UUID(int=number)))).to_be_visible()
-    # Polls keep the references current (test_technical_details_live.py),
-    # so the disclosure never says to reload the page (#1586).
-    expect(details).not_to_contain_text("reload")
+    # No Technical details (#2199): the tests' references are not on the page.
+    expect(page.locator("#campaign-tests details")).to_have_count(0)
+    expect(page.locator("#campaign-tests")).not_to_contain_text(str(UUID(int=5411)))
 
 
 def test_first_settled_test_shows_continue_in_place(page, component_origin):

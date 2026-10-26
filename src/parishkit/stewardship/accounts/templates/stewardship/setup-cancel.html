@@ -12,10 +12,6 @@
 <p class="visually-hidden" role="status" data-live-announcer="setup-finishing"></p>
 
 {% include 'stewardship/setup-finishing-status.html' %}
-<details><summary>{% translate "Technical details" %}</summary>
-<p>{% translate "Configuration checkpoint" %}: {{ checkpoint|default:'—' }}</p>
-<ul>{% for item in credentials %}<li>{{ item.target }}: {{ item.request__state }}</li>{% endfor %}</ul>
-</details>
 <div data-live-mirror-target="setup-cancel">{% include 'stewardship/setup-cancel-form.html' %}</div>
 {% endif %}
 <form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}{% button type="submit" %}{% translate "Sign out" %}{% endbutton %}</form>

@@ -2314,8 +2314,9 @@ still writes, follows the Admin table
 Member: a list's Member DUID has its
 own column next to the Member's name, and a Member added on the form, who has
 no ParishSoft DUID yet, shows "New Member" there, followed by the note that
-the Member was added on the form and the proposed Member's reference under
-technical details; the row header is just the name. By Ministry names each
+the Member was added on the form; the proposed Member's reference is not
+shown ([no Technical details panes](../ui-conventions/spec.md#no-technical-details-panes)).
+The row header is just the name. By Ministry names each
 Ministry and shows no Ministry DUID. The Member DUID column sorts in the
 installed selection's order
 ([#960](https://github.com/epiphany40223/parishkit/issues/960)), with a
@@ -2335,7 +2336,7 @@ page's list, rather than repeat on every row
 Ministry DUID is left out
 ([#1123](https://github.com/epiphany40223/parishkit/issues/1123)). A Member
 added on the form reads "New Member" in the Member DUID column, and the
-proposed Member's reference stays on the page's technical details. When two
+proposed Member's reference is left out. When two
 Members added on the form share a name, they read "New Member 1", "New
 Member 2" and so on in form order, so their rows stay distinct in every
 format. Form order is the order the Family form lists those Members once

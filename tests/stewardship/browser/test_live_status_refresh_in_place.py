@@ -41,22 +41,17 @@ def test_change_status_updates_itself(page, component_origin):
     assert page.locator(".live-status-problem").count() <= 1
 
 
-def test_finished_task_keeps_details_open_and_updates_them(page, component_origin):
-    """When the run ends, the page brings the finished run, its history and
-    its technical details in by itself; the open Technical details stay
-    open."""
+def test_finished_task_brings_its_history_in_place(page, component_origin):
+    """When the run ends, the page brings the finished run and its history
+    in by itself, without a reload; it has no Technical details (#2199)."""
     page.set_viewport_size(VIEWPORT)
     answer_reads(page, component_origin, TASK_STATUS, "/live-task-finished-status")
     page.goto(component_origin + TASK_PAGE)
     page.evaluate(MARK)
     assert refresh_controls(page).count() == 0
-    details = page.locator("details.technical-details")
-    details.locator("summary").click()
-    visible(details.get_by_text("running", exact=True))
+    assert page.get_by_text("Technical details").count() == 0
     reads = answer_reads(page, component_origin, TASK_PAGE, "/live-task-finished")
     visible(page.locator("#task-status").get_by_text("Finished successfully."))
-    visible(details.get_by_text("succeeded", exact=True))
-    assert details.evaluate("node => node.open")
     history = page.locator("[data-table-region]")
     visible(history.get_by_role("cell", name="Finished", exact=True))
     assert page.evaluate(MARKED) == "kept"

@@ -32,9 +32,8 @@ CONFIRM = reverse("admin:go_live_confirm")
 # Where the fixture server's redirect after Production activation's Retry
 # lands: a stand-in for the page once the retry has run, at the same path.
 PRODUCTION_RETRIED = PRODUCTION + "?retried=1"
-# A preparing page, and what its polls read once preparation has moved on.
+# A preparing page.
 PRODUCTION_PREPARING = "/production-preparing"
-PRODUCTION_LATER = "/production-preparing-later"
 # Production activation's Cancel go-live dialog answers (#1585 slice 5).
 CANCEL_INVENTORY = {
     "occurrences": 1234,
@@ -202,23 +201,6 @@ def production_pages(context, admin, campaign):
         (PRODUCTION, production_shown(context, campaign, "failed")),
         (PRODUCTION_RETRIED, production_shown(context, campaign, "prepared")),
         (PRODUCTION_PREPARING, production_shown(context, campaign, "preparing")),
-        # The same preparation a few groups later, in its next phase: only
-        # Technical details' values differ, so a test sees an open
-        # disclosure take them in place (#2016).
-        (
-            PRODUCTION_LATER,
-            production_shown(
-                context,
-                campaign,
-                "preparing",
-                demand=Value(
-                    phase="reports",
-                    groups_completed=2345,
-                    items_completed=5678,
-                    failure_code="",
-                ),
-            ),
-        ),
         # The longest step bar: all four Go live steps, Activation current.
         ("/go-live-steps", production_shown(context, campaign, "preparing")),
         ("/production-retrying", production_shown(context, campaign, "retrying")),

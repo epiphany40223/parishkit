@@ -291,13 +291,10 @@ def test_dashboard_failure_links_open_the_html_task_page(auth_service, google):
         detail = browser.get(path)
         assert detail.status_code == 200
         assert detail["Content-Type"].startswith("text/html")
-    # System logs' rows show no identifiers (#1065), so the task's page shows
-    # the correlation its log entries share, under its Technical details.
+    # No page shows the task's identifiers (#2199): the logs keep them.
     correlation = TaskRun.objects.get(pk=task.run_id).correlation_id
-    technical = re.search(
-        rb'<details class="technical-details">.*?</details>', detail.content, re.S
-    ).group(0)
-    assert f"<dt>Correlation</dt><dd>{correlation}</dd>".encode() in technical
+    assert str(correlation).encode() not in detail.content
+    assert b"Technical details" not in detail.content
 
 
 @pytest.mark.parametrize("revoke", [False, True])

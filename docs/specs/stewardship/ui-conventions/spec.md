@@ -1073,24 +1073,18 @@ tabs and the Review work counts
   [Create the campaign](../admin-portal/spec.md#create-the-campaign)
   ([#1619](https://github.com/epiphany40223/parishkit/issues/1619)).
 - **Open disclosures stay open.** A disclosure about what a status region
-  shows, such as a Technical details list, sits outside the region, so a
-  poll never redraws it and closes it under the reader. Its contents are a
+  shows sits outside the region, so a poll never redraws it and closes it
+  under the reader. Its contents are a
   mirror target of the region: each poll's copy replaces only what is inside
   the disclosure, and only when it changed, so an open disclosure stays
   open, shows the current values and never says it is as of when the page
   was opened or asks for a reload. A disclosure whose height can change
   with its values waits, as the content beside it does, while the pointer
-  is over it. This holds on Send to chosen Families and the Mail page's
-  test results (test references,
-  [#1586](https://github.com/epiphany40223/parishkit/issues/1586)), and on
-  Production activation, the Mail queue and the System health Version and
-  services tile
-  ([#2016](https://github.com/epiphany40223/parishkit/issues/2016)), and on
-  the Background work task page, whose state, phase, attempt, retry
-  sequence, last heartbeat and lease follow the task while it runs; its
-  values that never change for a task (its ID, correlation, type,
-  initiator and creation time) stay as drawn
-  ([#2019](https://github.com/epiphany40223/parishkit/issues/2019)).
+  is over it ([#1586](https://github.com/epiphany40223/parishkit/issues/1586),
+  [#2016](https://github.com/epiphany40223/parishkit/issues/2016)). No page
+  has such a disclosure now: the Technical details lists this was written
+  for are gone ([no Technical details panes](#no-technical-details-panes)),
+  and the rule holds for any added later.
 - **Pace.** While background work is pending a status region reads fast
   (2 s backing off to 10 s, or the fixed pace the page asks for). A page
   whose state changes without the reader's own action re-reads every 30
@@ -3103,8 +3097,7 @@ leads with its data; explanation sits in the "About this page" panel and in
 field tips, with only short visible text. **Why.** Staff come to a page to do
 a task; long visible prose pushes the data below the fold and is skipped.
 **Shared code.** The `{% aboutpage %}` template tag, the field toggletip
-(`field-tip.html`), the "Technical details" disclosure;
-`test_admin_help_guards.py`. **Precedent.** #227.
+(`field-tip.html`); `test_admin_help_guards.py`. **Precedent.** #227.
 
 Admin pages put the page's data first and keep explanation one deliberate
 click away, without removing any of it. A page leads with its heading, its own
@@ -3232,12 +3225,10 @@ page, never an "i" (#1289).
 Internal identifiers and bookkeeping fields that matter only for
 troubleshooting (delivery, refusal and test references, a retained
 configuration version, an export's requester reference and data-load
-numbers) sit in a "Technical details" disclosure, closed by default, instead
-of in the page's main text. Nothing is removed from the page; downloads leave
-these internal fields out of every format
-([downloaded files](#downloaded-files)). System logs' rows are the
-exception: they show no identifiers at all, since a task's identifiers are on its
-own page, which the row's task icon opens, and the log download keeps every
+numbers) are not shown on Admin pages at all
+([no Technical details panes](#no-technical-details-panes)), and downloads
+leave them out of every format ([downloaded files](#downloaded-files)).
+System logs' rows show no identifiers either; the log download keeps every
 entry's (Administrator decision, 2026-10-11,
 [#1065](https://github.com/epiphany40223/parishkit/issues/1065);
 [System logs](../admin-portal/spec.md#logs)). An empty list says what to do
@@ -3257,12 +3248,34 @@ when more than about one line (15 words) of help sentences shows between a
 page's heading and its data outside the About panel, notices and links, one
 fails unless each page's single About panel directly follows its heading, and
 one fails when a label for an internal identifier or worker field (such as a
-heartbeat, lease, data-load number or request ID) appears outside a Technical
-details disclosure. The long-paragraph, introduction and internal-field
+heartbeat, lease, data-load number or request ID) appears on an Admin page.
+The long-paragraph, introduction and internal-field
 checks each keep a short, reviewed list of exceptions, and the long-paragraph
 and introduction exceptions must shrink as their pages are converted. A
 browser test checks on every component fixture with an About panel that the
 closed control is drawn on the heading's line, to its right.
+
+### No Technical details panes
+
+**Rule.** No Admin page has a "Technical details" pane, or any other
+disclosure that holds internal references: task, delivery, refusal and test
+IDs, correlations, internal type and state names, data-load numbers,
+checksums, heartbeats and leases. When such a pane held one fact a reader
+needs in order to act, that fact is a plain line in the page's own words.
+**Why.** The Administrator asked for them to go from the whole Admin portal
+("Those can disappear from the entire admin portal", pk-local R52,
+2026-10-25): they mean nothing to the staff who use the pages, and the
+operator, who does need them, reads them in the logs and with `pk-admin`.
+**Shared code.** `test_admin_help_guards.py` fails when an Admin template
+says "Technical details", uses the `technical-details` class, or shows an
+internal field label. **Precedent.** The setup Finishing page
+([#1969](https://github.com/epiphany40223/parishkit/issues/1969));
+[#2199](https://github.com/epiphany40223/parishkit/issues/2199).
+
+Internal references stay where the operator looks for them: the System
+logs entries and their download, and the `pk-admin` commands. A page may
+still link to the page that explains a record (a task's Background task
+page, an email's page) and say in words what happened.
 
 ### Button labels
 
@@ -5542,8 +5555,8 @@ page frame. Identifiers a reader uses, such as Family and Member DUIDs and
 envelope numbers, are not internal references and stay. **Why.** Staff print
 and share these files; internal references mean nothing to a reader, and a
 column that is in one format and not another makes the files disagree about
-what the report holds. Troubleshooting uses the page's Technical details and
-the audit log, not a download; the recorded exceptions are the System logs
+what the report holds. Troubleshooting uses the audit log and `pk-admin`,
+not a download; the recorded exceptions are the System logs
 export and the command line's Census changes JSON Lines below. Every data export is offered as CSV, XLSX and PDF unless a
 recorded technical or design reason says otherwise (Administrator decision,
 2026-10-10); a page may add a format, such as System logs' JSON Lines. The
