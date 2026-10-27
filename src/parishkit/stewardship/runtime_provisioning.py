@@ -173,6 +173,7 @@ def provisioning_plan(configuration, *, image, checkout=None, bind_source_root=N
         *configuration.paths.values.values(),
         layout.deployment_directory,
         layout.service_directory,
+        layout.hba_directory,
         *(layout.credential_directory(target) for target in HANDOFF_TARGETS),
         *(layout.handoff(target).parent for target in HANDOFF_TARGETS),
         configuration.paths["caddy"] / "data",

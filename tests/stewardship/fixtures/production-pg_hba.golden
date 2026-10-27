@@ -1,0 +1,30 @@
+# Rendered by ParishKit Stewardship from the runtime topology; never edit.
+# Each login is accepted only from its own service's address, only for
+# this deployment's database, and only with scram-sha-256. The socket is
+# reachable only through docker exec, and only the operator may use it.
+local all pk_stewardship_operator trust
+local all all reject
+host "stewardship" pk_stewardship_web 172.29.240.4/32 scram-sha-256
+host "stewardship" pk_stewardship_download 172.29.240.4/32 scram-sha-256
+host "stewardship" pk_stewardship_config_installer 172.29.240.12/32 scram-sha-256
+host "stewardship" pk_stewardship_worker 172.29.240.13/32 scram-sha-256
+host "stewardship" pk_stewardship_mail_dispatch 172.29.240.14/32 scram-sha-256
+host "stewardship" pk_stewardship_scheduler 172.29.240.15/32 scram-sha-256
+host "stewardship" pk_stewardship_credential_backup_data 172.29.240.16/32 scram-sha-256
+host "stewardship" pk_stewardship_credential_backup_target 172.29.240.17/32 scram-sha-256
+host "stewardship" pk_stewardship_credential_django_signing 172.29.240.18/32 scram-sha-256
+host "stewardship" pk_stewardship_credential_family_code_mac 172.29.240.19/32 scram-sha-256
+host "stewardship" pk_stewardship_credential_general_encryption 172.29.240.20/32 scram-sha-256
+host "stewardship" pk_stewardship_credential_google_oauth 172.29.240.21/32 scram-sha-256
+host "stewardship" pk_stewardship_credential_google_workspace 172.29.240.22/32 scram-sha-256
+host "stewardship" pk_stewardship_credential_metrics 172.29.240.23/32 scram-sha-256
+host "stewardship" pk_stewardship_credential_parishsoft 172.29.240.24/32 scram-sha-256
+host "stewardship" pk_stewardship_credential_slack 172.29.240.25/32 scram-sha-256
+host "stewardship" pk_stewardship_credential_token_private 172.29.240.26/32 scram-sha-256
+host "stewardship" pk_stewardship_credential_token_public 172.29.240.27/32 scram-sha-256
+host "stewardship" pk_stewardship_bootstrap 172.29.242.8/29 scram-sha-256
+host "stewardship" pk_stewardship_migration 172.29.242.24/29 scram-sha-256
+host "stewardship" pk_stewardship_admin_recovery 172.29.242.40/29 scram-sha-256
+host "stewardship" pk_stewardship_operator 172.29.242.56/29 scram-sha-256
+host "stewardship" pk_stewardship_backup_worker 172.29.242.72/29 scram-sha-256
+host all all all reject

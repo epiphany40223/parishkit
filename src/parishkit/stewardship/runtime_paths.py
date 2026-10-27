@@ -109,6 +109,16 @@ class RuntimeLayout:
         return self.configuration.paths["config"] / "services"
 
     @property
+    def hba_directory(self):
+        """PostgreSQL's rendered source rules, alone in a directory it mounts.
+
+        A directory mount lets PostgreSQL see a renamed-in replacement on
+        reload without being recreated (operations spec, "Database
+        connection sources").
+        """
+        return self.service_directory / "pg-hba"
+
+    @property
     def provisioning_record(self):
         """The completed provisioning record every later retarget compares against."""
         return explicit_path(self.configuration.paths.root) / PROVISIONING_RECORD

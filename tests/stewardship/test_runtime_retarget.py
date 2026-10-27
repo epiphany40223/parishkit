@@ -336,3 +336,50 @@ def test_retarget_cli_reports_the_change_and_never_echoes_private_input(
     assert not captured.out
     assert captured.err.count("image retarget refused") == 5
     assert images(deployment) == {NEW}
+
+
+def test_a_deployment_without_source_rules_gets_their_directory_and_file(deployment):
+    """A root provisioned before #2111 has no pg-hba directory; retarget adds it.
+
+    Its record carries no ``runtime_network.offline`` (the default is never
+    written), so a release before the setting still reads it, and the same
+    record is accepted here unchanged.
+    """
+    import shutil
+    import stat
+
+    layout = RuntimeLayout(deployment)
+    rules = read_private(layout.hba_directory / "pg_hba.conf")
+    assert (
+        "offline"
+        not in record(deployment)["deployment"]["deployment"]["runtime_network"]
+    )
+    shutil.rmtree(layout.hba_directory)
+    assert retarget.retarget_image(deployment, image=OLD) == {
+        "image_changed": False,
+        "documents_changed": 1,
+        "services_started": False,
+    }
+    assert stat.S_IMODE(layout.hba_directory.stat().st_mode) == 0o700
+    assert read_private(layout.hba_directory / "pg_hba.conf") == rules
+    assert rules.startswith(b"# Rendered by ParishKit Stewardship")
+
+
+def test_a_linked_or_shared_source_rules_directory_is_refused(deployment, tmp_path):
+    """The pg-hba directory must be a real owner-only directory, never a link."""
+    import shutil
+
+    layout = RuntimeLayout(deployment)
+    shutil.rmtree(layout.hba_directory)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir(mode=0o700)
+    layout.hba_directory.symlink_to(elsewhere)
+    with pytest.raises(ConfigError, match="non-symlink"):
+        retarget.retarget_image(deployment, image=NEW)
+    assert list(elsewhere.iterdir()) == []
+    layout.hba_directory.unlink()
+    layout.hba_directory.mkdir(mode=0o755)
+    layout.hba_directory.chmod(0o755)
+    with pytest.raises(ConfigError, match="ownership or mode"):
+        retarget.retarget_image(deployment, image=NEW)
+    assert record(deployment)["image"] == OLD
