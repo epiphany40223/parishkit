@@ -307,6 +307,7 @@ sections:
     "Logins and their sources": [OPS-03, OPS-02]
     "Checks, rollout and rollback": [OPS-04, OPS-09]
     "What source rules cannot stop": [OPS-03]
+    "Database inspection login": [OPS-03, OPS-08]
     "Startup and upgrades": [OPS-04]
     "Online service startup": [OPS-04]
     "Installer idle polling": [OPS-04, OPS-08]

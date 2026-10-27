@@ -1,0 +1,55 @@
+#!/bin/sh
+# Usage: tools/stewardship-ops/pk-inspect [PSQL OPTIONS...]
+#
+# Open psql in the deployment's PostgreSQL container as the SELECT-only
+# inspection login, pk_stewardship_inspect (#2148), over the container's
+# socket. The login can read everything but credential material and holds
+# no table write privilege: its sessions are read-only by default, and even
+# with that lifted every write to a table is refused. See
+# docs/specs/stewardship/operations/spec.md#database-inspection-login.
+#
+#   pk-inspect                         an interactive session
+#   pk-inspect -c 'SELECT ...'         one statement
+#   pk-inspect -At -f - <query.sql     a script from standard input
+#
+# psql's own options pass through (-c, -f -, -v, -A, -t, -F, -x, ...); -f
+# names a file inside the container, so feed a host file on standard input
+# with `-f -`. The connection options come after them and win, so a
+# session cannot be pointed at another login, host or database by an
+# option. `--` is refused (after it psql would take the connection from
+# positional arguments).
+#
+# Environment:
+#   PK_INSPECT_PROJECT    the Compose project name (default stewardship;
+#                         pk-local's is parishkit-local)
+#   PK_INSPECT_CONTAINER  the PostgreSQL container
+#                         (default PROJECT-postgres-1)
+#
+# The database is the container's own POSTGRES_DB. Exit status: psql's own
+# (0 done, 1 a fatal error such as a refused statement with ON_ERROR_STOP,
+# 2 the connection failed, 3 a script error with ON_ERROR_STOP); 2 for the
+# wrapper's own refusal of `--`; 125 to 127 as docker reports them (for
+# example a container that is not running).
+
+set -eu
+
+for argument in "$@"; do
+    if [ "$argument" = -- ]; then
+        echo "pk-inspect: '--' is not accepted; pass psql options only" >&2
+        exit 2
+    fi
+done
+container=${PK_INSPECT_CONTAINER:-${PK_INSPECT_PROJECT:-stewardship}-postgres-1}
+# A terminal gets a terminal (psql's line editing and pager); anything else
+# is a script on standard input.
+tty=-i
+if [ -t 0 ] && [ -t 1 ]; then
+    tty=-it
+fi
+# The inner shell reads POSTGRES_DB inside the container and appends the
+# connection options after the caller's, so they are the ones psql uses.
+# -X skips any psqlrc.
+# shellcheck disable=SC2016 # $POSTGRES_DB and $@ expand in the container
+exec docker exec "$tty" "$container" sh -c \
+    'exec psql -X "$@" -h /var/run/postgresql -U pk_stewardship_inspect -d "$POSTGRES_DB"' \
+    pk-inspect "$@"
