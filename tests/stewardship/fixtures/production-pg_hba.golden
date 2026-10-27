@@ -1,8 +1,10 @@
 # Rendered by ParishKit Stewardship from the runtime topology; never edit.
 # Each login is accepted only from its own service's address, only for
 # this deployment's database, and only with scram-sha-256. The socket is
-# reachable only through docker exec, and only the operator may use it.
+# reachable only through docker exec, and only the operator (any database)
+# and the inspection login (this deployment's database) may use it.
 local all pk_stewardship_operator trust
+local "stewardship" pk_stewardship_inspect trust
 local all all reject
 host "stewardship" pk_stewardship_web 172.29.240.4/32 scram-sha-256
 host "stewardship" pk_stewardship_download 172.29.240.4/32 scram-sha-256

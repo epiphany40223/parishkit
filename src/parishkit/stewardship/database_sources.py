@@ -227,7 +227,7 @@ def hba_query(rendered):
     microsecond precision, unlike ``pg_stat_file``'s whole-second mtime.
     Only the last answer is worth waiting on; the others stop the upgrade.
     The query must be fed to psql on its input, which interpolates
-    ``:'since'``; ``since=infinity`` checks the file alone.
+    ``:'since'``; ``since=-infinity`` checks the file alone.
     """
     digest = hashlib.sha256(rendered).hexdigest()
     current = "current_setting('hba_file')"
