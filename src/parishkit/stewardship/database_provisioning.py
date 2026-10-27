@@ -18,6 +18,7 @@ from parishkit.config import ConfigError
 
 from .accounts.key_files import read_private
 from .deployment import ServiceRole
+from .inspect_login import ensure_inspect_login, grant_inspect
 from .runtime_identities import database_identities
 from .runtime_paths import RuntimeLayout
 
@@ -435,6 +436,10 @@ def provision_roles(configuration, deployment_id):
         # database, which no service login holds (revoked above), so the
         # operator installs it here; the migration then only notices it.
         cursor.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public")
+        # The SELECT-only inspection login (#2148), which has no password
+        # file. It must exist before a pk-restore load, whose dump carries
+        # its grants; database-grants grants it once the tables exist.
+        ensure_inspect_login(cursor, marker, configuration.postgres.name)
         # Migration owns only the application schema, not the database/roles.
         cursor.execute("ALTER SCHEMA public OWNER TO pk_stewardship_migration")
     return {"database_roles_provisioned": True}
@@ -543,6 +548,11 @@ def provision_grants(configuration, deployment_id):
                         sql.SQL(function), sql.Identifier(login)
                     )
                 )
+        # The inspection login (#2148): created here when an existing
+        # deployment does not have it yet, then SELECT on everything but
+        # credential material, decided from the catalog just migrated.
+        ensure_inspect_login(cursor, marker, configuration.postgres.name)
+        grant_inspect(cursor)
     return {"database_grants_provisioned": True}
 
 
