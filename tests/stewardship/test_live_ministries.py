@@ -47,6 +47,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         EDITS_IN_FORCE_FUNCTION,
         EXPORT_DISCARD_FUNCTION,
         FACT_EDITS_FUNCTION,
+        FAMILY_ASSISTED_LOGIN_FUNCTION,
         FAMILY_LOGIN_FUNCTION,
         LEADER_CHANGES_FUNCTION,
         LEADER_SCOPE_FUNCTION,
@@ -80,9 +81,11 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     # leads, for an Administrator reading that user's Timeline (#1925), and,
     # for Staff and Administrators, Ministry requests' count-only leader
     # coverage (#1594), and the statistics capture's pledge Edits in force
-    # and review watermark (0184, 0185, #2202).
+    # and review watermark (0184, 0185, #2202), and Open form's sign-in
+    # (0188, #2294).
     assert runtime_functions(ServiceRole.WEB) == {
         FAMILY_LOGIN_FUNCTION,
+        FAMILY_ASSISTED_LOGIN_FUNCTION,
         "stewardship_family_daily_sends_v1()",
         "stewardship_family_daily_resume_v1()",
         AUTOMATION_REQUEST_FUNCTION,

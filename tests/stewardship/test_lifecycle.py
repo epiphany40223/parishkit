@@ -17,6 +17,7 @@ from parishkit.stewardship.campaigns.lifecycle import (
     campaign_work_admitted,
     draft_creation_admitted,
     portal_admitted,
+    staff_entry_admitted,
     structural_edit_admitted,
     transition_audit_event,
     transition_target,
@@ -53,6 +54,35 @@ def test_portal_boundary_matrix(state, mode, current, restore):
         (INTERVAL.end, False),
     ]:
         assert portal_admitted(facts, now) == (allowed and in_range)
+
+
+@pytest.mark.parametrize(
+    "state,mode,current,restore",
+    list(product(State, Mode, (True, False), (True, False))),
+)
+def test_staff_entry_boundary_matrix(state, mode, current, restore):
+    """#2294: Open form's admission is the portal's, plus a started Production
+    campaign after its end while scheduled, active or closed; never Testing,
+    archived or later, a campaign not current, or during a restore review."""
+    facts = CampaignFacts(state, mode, INTERVAL, current, restore)
+    late = (
+        current
+        and not restore
+        and mode is Mode.PRODUCTION
+        and state in {State.SCHEDULED, State.ACTIVE, State.CLOSED}
+    )
+    for now in [
+        INTERVAL.start - timedelta(microseconds=1),
+        INTERVAL.start,
+        INTERVAL.end - timedelta(microseconds=1),
+        INTERVAL.end,
+        INTERVAL.end + timedelta(days=365),
+    ]:
+        started = now >= INTERVAL.start
+        expected = portal_admitted(facts, now) or (late and started)
+        assert staff_entry_admitted(facts, now) == expected
+    # The Family's own admission never widens: it stays closed after the end.
+    assert not portal_admitted(facts, INTERVAL.end)
 
 
 @pytest.mark.parametrize("state,action", list(product(State, Action)))

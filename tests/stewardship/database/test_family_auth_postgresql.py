@@ -124,9 +124,9 @@ def test_family_login_reuses_only_the_fresh_locked_scope(family_service, monkeyp
 
     original, calls = auth._scope, []
 
-    def observed(service):
+    def observed(service, **options):
         calls.append(True)
-        return original(service)
+        return original(service, **options)
 
     client = Client(enforce_csrf_checks=True)
     assert client.get("/").status_code == 200

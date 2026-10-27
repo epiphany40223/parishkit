@@ -4107,9 +4107,15 @@ BEGIN
        OR campaign_row.id IS DISTINCT FROM runtime_row.current_campaign_id
        OR campaign_config.id IS NULL OR credential_row.id IS NULL
        OR credential_row.go_live_gate OR credential_row.population_dirty
+       -- A live session Staff opened through Open form (assisted_by_id,
+       -- which only stewardship_family_assisted_login_v1 sets) may also
+       -- open the form after the campaign ends or closes (#2294); a
+       -- Family's own session may not.
        OR NOT (campaign_config.starts_at <= public.stewardship_campaign_now_v1()
-               AND public.stewardship_campaign_now_v1() < campaign_config.ends_at)
-       OR (NEW.mode='live' AND campaign_row.state NOT IN ('scheduled','active'))
+               AND (public.stewardship_campaign_now_v1() < campaign_config.ends_at
+                    OR (NEW.mode='live' AND session_row.assisted_by_id IS NOT NULL)))
+       OR (NEW.mode='live' AND campaign_row.state NOT IN ('scheduled','active')
+           AND (session_row.assisted_by_id IS NULL OR campaign_row.state<>'closed'))
        OR (NEW.mode='test' AND (campaign_row.state <> 'draft'
            OR credential_row.rehearsal_epoch_id IS DISTINCT FROM NEW.rehearsal_epoch_id
            OR NOT EXISTS (SELECT 1 FROM public.stewardship_rehearsal_epoch
@@ -4354,10 +4360,14 @@ BEGIN
         OR runtime_row.restore_review_required OR session_row.mode <> runtime_row.mode
         OR NEW.campaign_id IS DISTINCT FROM runtime_row.current_campaign_id
         OR config_row.id IS NULL OR campaign_row.id IS NULL
-        OR NOT (config_row.values->'modules' <@ '["census","ministry","financial"]'::jsonb)
+        OR NOT (config_row.values->'modules' OPERATOR(pg_catalog.<@) '["census","ministry","financial"]'::jsonb)
         OR NEW.submitted_on IS DISTINCT FROM (NEW.submitted_at AT TIME ZONE public.stewardship_timezone_name_v1(config_row.timezone))::date
-        OR NEW.submitted_at < config_row.starts_at OR NEW.submitted_at >= config_row.ends_at
-        OR (NOT (config_row.values->'modules' ? 'financial') AND NEW.annual_pledge IS NOT NULL)
+        OR NEW.submitted_at < config_row.starts_at
+        -- Open form's session (assisted_by_id) may submit a live response
+        -- after the campaign ends or closes (#2294); a Family's own may not.
+        OR (NEW.submitted_at >= config_row.ends_at
+            AND (NEW.mode<>'live' OR session_row.assisted_by_id IS NULL))
+        OR (NOT (config_row.values->'modules' OPERATOR(pg_catalog.?) 'financial') AND NEW.annual_pledge IS NOT NULL)
         OR NOT EXISTS (SELECT 1 FROM public.stewardship_family_campaign
             WHERE id=NEW.family_id AND campaign_id=NEW.campaign_id AND portal_eligible)
         OR NOT EXISTS (SELECT 1 FROM public.stewardship_source_current
@@ -4366,7 +4376,9 @@ BEGIN
             (SELECT family_link_epoch FROM public.stewardship_credential_deployment)
         OR NOT EXISTS (SELECT 1 FROM public.stewardship_campaign_credentials credentials
             WHERE credentials.campaign_id=NEW.campaign_id AND NOT go_live_gate AND NOT population_dirty
-              AND ((NEW.mode='live' AND runtime_row.mode='production' AND campaign_row.state IN ('scheduled','active'))
+              AND ((NEW.mode='live' AND runtime_row.mode='production'
+                    AND (campaign_row.state IN ('scheduled','active')
+                         OR (campaign_row.state='closed' AND session_row.assisted_by_id IS NOT NULL)))
                OR (NEW.mode='test' AND runtime_row.mode='testing' AND campaign_row.state='draft'
                   AND credentials.rehearsal_epoch_id=NEW.rehearsal_epoch_id
                   AND EXISTS (SELECT 1 FROM public.stewardship_rehearsal_epoch
@@ -4386,7 +4398,7 @@ BEGIN
         OR NEW.family_version <> coalesce(previous_version,0)+1
         OR NEW.campaign_sequence <> last_sequence+1
         OR jsonb_typeof(NEW.answers) <> 'object'
-        OR NOT (NEW.answers ?& ARRAY['schema','family','members','proposed_members','ministries','additional_information','cannot_attend','service'])
+        OR NOT (NEW.answers OPERATOR(pg_catalog.?&) ARRAY['schema','family','members','proposed_members','ministries','additional_information','cannot_attend','service'])
         OR NEW.answers - ARRAY['schema','family','members','proposed_members','ministries','additional_information','financial','cannot_attend','service'] <> '{}'::jsonb
         OR jsonb_typeof(NEW.answers->'cannot_attend') <> 'boolean'
         OR NEW.answers->>'schema' IS DISTINCT FROM NEW.form_schema
@@ -4398,14 +4410,14 @@ BEGIN
     THEN
         RAISE EXCEPTION 'Submission aggregate or sequence is invalid' USING ERRCODE='23514';
     END IF;
-    IF config_row.values->'modules' ? 'financial' THEN
+    IF config_row.values->'modules' OPERATOR(pg_catalog.?) 'financial' THEN
         PERFORM public.stewardship_response_financial_guard_v1(
             NEW.answers->'financial',config_row.values->'share_options',NEW.annual_pledge);
-    ELSIF NEW.answers ? 'financial' THEN
+    ELSIF NEW.answers OPERATOR(pg_catalog.?) 'financial' THEN
         RAISE EXCEPTION 'Disabled financial module must omit its answers' USING ERRCODE='23514';
     END IF;
-    IF config_row.values->'modules' ? 'census' THEN
-    IF NOT ((NEW.answers->'family') ?& ARRAY['home_address','mailing_address','email_opt_out','mailing_same_as_home'])
+    IF config_row.values->'modules' OPERATOR(pg_catalog.?) 'census' THEN
+    IF NOT ((NEW.answers->'family') OPERATOR(pg_catalog.?&) ARRAY['home_address','mailing_address','email_opt_out','mailing_same_as_home'])
        OR (NEW.answers->'family')-ARRAY['home_address','mailing_address','email_opt_out','mailing_same_as_home'] <> '{}'::jsonb
        OR jsonb_typeof(NEW.answers#>'{family,mailing_same_as_home}') IS DISTINCT FROM 'boolean'
     THEN
@@ -4436,7 +4448,7 @@ BEGIN
     FOR member_key,member_answer,member_proposed IN
         SELECT key,value,false FROM jsonb_each(NEW.answers->'members')
         UNION ALL SELECT key,value,true FROM jsonb_each(NEW.answers->'proposed_members') LOOP
-        IF NOT (config_row.values->'modules' ? 'census') THEN
+        IF NOT (config_row.values->'modules' OPERATOR(pg_catalog.?) 'census') THEN
             IF member_answer <> '{}'::jsonb THEN
                 RAISE EXCEPTION 'Disabled Member census must be empty' USING ERRCODE='23514';
             END IF;
@@ -4447,16 +4459,16 @@ BEGIN
             RAISE EXCEPTION 'Proposed Member requires canonical local identity' USING ERRCODE='23514';
         END IF;
         IF NOT member_proposed AND jsonb_typeof(member_answer)='object'
-           AND (member_answer ? 'moved_household' OR member_answer ? 'deceased_status') THEN
+           AND (member_answer OPERATOR(pg_catalog.?) 'moved_household' OR member_answer OPERATOR(pg_catalog.?) 'deceased_status') THEN
             IF member_answer->'confirmed' IS DISTINCT FROM 'true'::jsonb THEN
                 RAISE EXCEPTION 'Terminal Member requires explicit confirmation' USING ERRCODE='23514';
             END IF;
-            IF member_answer ? 'moved_household' THEN
+            IF member_answer OPERATOR(pg_catalog.?) 'moved_household' THEN
                 IF member_answer IS DISTINCT FROM '{"moved_household":true,"confirmed":true}'::jsonb THEN
                     RAISE EXCEPTION 'Moved household request has unexpected fields' USING ERRCODE='23514';
                 END IF;
             ELSE
-                IF NOT (member_answer ?& ARRAY['deceased_status','confirmed','death_date'])
+                IF NOT (member_answer OPERATOR(pg_catalog.?&) ARRAY['deceased_status','confirmed','death_date'])
                    OR member_answer-ARRAY['deceased_status','confirmed','death_date'] <> '{}'::jsonb
                    OR member_answer->'deceased_status' IS DISTINCT FROM 'true'::jsonb THEN
                     RAISE EXCEPTION 'Deceased request has unexpected fields' USING ERRCODE='23514';
@@ -4473,7 +4485,7 @@ BEGIN
             END IF;
             CONTINUE;
         END IF;
-        IF jsonb_typeof(member_answer)<>'object' OR NOT (member_answer ?& allowed_fields)
+        IF jsonb_typeof(member_answer)<>'object' OR NOT (member_answer OPERATOR(pg_catalog.?&) allowed_fields)
            OR member_answer-allowed_fields<>'{}'::jsonb THEN
             RAISE EXCEPTION 'Submission member fields are incomplete' USING ERRCODE='23514';
         END IF;

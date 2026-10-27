@@ -397,6 +397,12 @@ class FamilySession(MutableRecord):
     presence_section = models.CharField(max_length=24, default="", blank=True)
     expires_at = UTCDateTimeField()
     revoked_at = UTCDateTimeField(null=True)
+    # The portal user whose Open form hand-off started this session, or None
+    # for a Family's own sign-in (#2294, frozen migration 0188). Only the
+    # assisted login function sets it, at insert, and the session guard
+    # keeps it immutable; it admits the session after the campaign closes.
+    # A soft reference like ``actor_id``: no foreign key.
+    assisted_by_id = models.UUIDField(null=True)
 
     class Meta(MutableRecord.Meta):
         db_table = "stewardship_family_session"
