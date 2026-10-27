@@ -8,12 +8,9 @@ from pathlib import Path
 
 from test_parishsoft_source import page
 
-from parishkit.stewardship.deployment import DeploymentProfile
 from parishkit.stewardship.runtime_paths import RuntimeLayout
-from parishkit.stewardship.runtime_topology import render_runtime
 
 from .test_integration_candidates import account
-from .test_runtime_topology import IMAGE as PRODUCTION_IMAGE
 from .test_setup_forms import VALUES
 from .test_source_giving import contribution, pledge
 from .test_source_loading import provider_pages
@@ -66,10 +63,22 @@ def inject_providers(compose):
 
 
 def complete_setup(file, project, configuration, mountpoint, *, abort=False):
-    """Drive the original browser while the host recreates actual ACK consumers."""
-    from .test_operational_compose import IMAGE, compose_run
+    """Drive the original browser while the consumers acknowledge by themselves.
+
+    worker and mail-dispatch already mount the credential directories (#2228,
+    operations "Setup credential pickup"), so the host neither recreates them
+    nor runs acknowledge-credential: it only watches. After completion a
+    consumer admitted without its key drains and exits once, and in
+    Production Compose's restart policy brings it back with every credential.
+    """
+    from .test_operational_compose import compose_run
 
     layout = RuntimeLayout(configuration)
+    if abort:
+        # Pause YAML preparation before the consumers' automatic ACKs could
+        # permit it. The browser cancels only after both real consumers
+        # acknowledge.
+        compose_run(file, project, "stop", "--timeout", "10", "config-installer")
     compose_run(
         file,
         project,
@@ -82,25 +91,6 @@ def complete_setup(file, project, configuration, mountpoint, *, abort=False):
         "credential-installer-google-workspace",
         timeout=90,
     )
-    # Render another complete topology, not a weakening overlay on initial mounts.
-    configured, _ = render_runtime(
-        configuration,
-        image=PRODUCTION_IMAGE
-        if configuration.profile is DeploymentProfile.PRODUCTION
-        else IMAGE,
-    )
-    inject_providers(configured)
-    for service in configured["services"].values():
-        if service["image"] == PRODUCTION_IMAGE:
-            service["image"] = IMAGE
-        for mount in service["volumes"]:
-            path = Path(mount["source"])
-            if path.is_relative_to(configuration.paths.root):
-                mount["source"] = str(
-                    mountpoint / path.relative_to(configuration.paths.root)
-                )
-    configured_file = file.with_name("configured.json")
-    configured_file.write_text(json.dumps(configured))
     fixture = {
         "steps": VALUES,
         "workspace": account().decode(),
@@ -127,64 +117,7 @@ def complete_setup(file, project, configuration, mountpoint, *, abort=False):
                 compose_run(file, project, "stop", "--timeout", "5", "web", check=False)
 
         cleanup.callback(stop_unfinished_browser)
-        acknowledged = set()
-        deadline = time.monotonic() + 480
-        while not browser.done() and time.monotonic() < deadline:
-            status = compose_run(
-                file,
-                project,
-                "exec",
-                "-T",
-                "postgres",
-                "psql",
-                "-U",
-                "pk_stewardship_operator",
-                "-d",
-                configuration.postgres.name,
-                "-Atc",
-                "SELECT target,id FROM stewardship_secret_request "
-                "WHERE state='awaiting_ack' ORDER BY target",
-            ).stdout.strip()
-            for line in status.splitlines():
-                target, identifier = line.split("|")
-                if identifier in acknowledged:
-                    continue
-                service = "worker" if target == "parishsoft" else "mail-dispatch"
-                if abort and not acknowledged:
-                    # Pause before any ACK can permit YAML preparation. The
-                    # browser cancels only after both real consumers acknowledge.
-                    compose_run(
-                        file, project, "stop", "--timeout", "10", "config-installer"
-                    )
-                compose_run(
-                    configured_file,
-                    project,
-                    "up",
-                    "--detach",
-                    "--no-deps",
-                    "--force-recreate",
-                    "--wait",
-                    "--wait-timeout",
-                    "60",
-                    service,
-                    timeout=90,
-                )
-                compose_run(
-                    configured_file,
-                    project,
-                    "exec",
-                    "-T",
-                    service,
-                    "pk-stewardship",
-                    "acknowledge-credential",
-                    "--config",
-                    str(layout.service_directory / f"{service}.yaml"),
-                    "--request-id",
-                    identifier,
-                )
-                acknowledged.add(identifier)
-            time.sleep(0.5)
-        result = browser.result(timeout=60)
+        result = browser.result(timeout=540)
     if result.returncode:
         state = compose_run(
             file,
@@ -206,7 +139,14 @@ def complete_setup(file, project, configuration, mountpoint, *, abort=False):
         raise AssertionError(
             result.stdout + result.stderr + state.stdout + logs.stdout + logs.stderr
         )
-    assert len(acknowledged) == 2
+    # Both acknowledgements came from the consumers' own idle passes.
+    acknowledged = operator_sql(
+        file,
+        project,
+        configuration,
+        "SELECT count(*) FROM stewardship_credential_consumer_ack",
+    )
+    assert acknowledged == "2", acknowledged
     if abort:
         assert "INITIAL_SETUP_CANCELLED_AFTER_ACK_OK" in result.stdout
         restore_initial_consumers(file, project, configuration)
@@ -231,10 +171,81 @@ def complete_setup(file, project, configuration, mountpoint, *, abort=False):
     # Setup collects no campaign (#142): its final load reads no giving, and
     # it creates no Families, codes or mail schedules.
     assert proof == "promoted|succeeded|0|0|0|0|f|0|0|0|0|0", proof
+    if configuration.profile.behind_proxy:
+        readmitted(file, project)
+
+
+def operator_sql(file, project, configuration, query):
+    """One read-only operator SQL answer, stripped."""
+    from .test_operational_compose import compose_run
+
+    return compose_run(
+        file,
+        project,
+        "exec",
+        "-T",
+        "postgres",
+        "psql",
+        "-U",
+        "pk_stewardship_operator",
+        "-d",
+        configuration.postgres.name,
+        "-Atc",
+        query,
+    ).stdout.strip()
+
+
+def readmitted(file, project):
+    """Wait until worker and mail-dispatch restarted with every credential.
+
+    Each started before setup's keys existed, so after completion it logs
+    consumer_readmission (setup_completed), exits 0 and restarts under
+    Compose's unless-stopped policy; the fresh process records no deferred
+    key in its receipts (#2228).
+    """
+    from .test_operational_compose import compose_run
+
+    deadline = time.monotonic() + 180
+    for service in ("worker", "mail-dispatch"):
+        while True:
+            receipts = compose_run(
+                file,
+                project,
+                "exec",
+                "-T",
+                service,
+                "cat",
+                "/tmp/stewardship-consumer/background.json",
+                check=False,
+            )
+            healthy = compose_run(
+                file,
+                project,
+                "exec",
+                "-T",
+                service,
+                "pk-stewardship",
+                "installer-healthcheck",
+                check=False,
+            )
+            if (
+                receipts.returncode == 0
+                and json.loads(receipts.stdout)["deferred"] == []
+                and healthy.returncode == 0
+            ):
+                break
+            assert time.monotonic() < deadline, (service, receipts.stdout)
+            time.sleep(1)
+        logs = compose_run(file, project, "logs", service, check=False)
+        assert "consumer_readmission" in logs.stdout + logs.stderr, service
 
 
 def restore_initial_consumers(file, project, configuration):
-    """After rollback unlinks candidate files, recreate the no-provider profiles."""
+    """After rollback unlinks candidate files, the running consumers stay healthy.
+
+    Their directory mounts show the removal, so nothing is recreated before
+    another attempt (#2228).
+    """
     from .test_operational_compose import compose_run
 
     compose_run(file, project, "start", "config-installer")
@@ -260,20 +271,6 @@ def restore_initial_consumers(file, project, configuration):
             break
         assert time.monotonic() < deadline, proof
         time.sleep(0.5)
-    compose_run(
-        file,
-        project,
-        "up",
-        "--detach",
-        "--no-deps",
-        "--force-recreate",
-        "--wait",
-        "--wait-timeout",
-        "60",
-        "worker",
-        "mail-dispatch",
-        timeout=90,
-    )
     for service in ("worker", "mail-dispatch"):
         compose_run(
             file,

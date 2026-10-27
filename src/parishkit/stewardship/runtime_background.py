@@ -14,7 +14,7 @@ from .accounts.bootstrap_schema import BOOTSTRAP_SCHEMAS
 from .accounts.cryptography import independent_keyrings
 from .accounts.key_files import parse_keyring, read_private
 from .deployment import ServiceRole
-from .service_boundaries import OPTIONAL_SECRETS
+from .service_boundaries import OPTIONAL_SECRETS, SETUP_DEFERRED_SECRETS
 
 
 @dataclass(frozen=True)
@@ -25,6 +25,47 @@ class BackgroundRuntime:
     handlers: dict = field(repr=False)
     receipts: dict = field(repr=False)
     store: object = field(repr=False)
+    # The setup credentials (SETUP_DEFERRED_SECRETS) this process started
+    # without, on the bootstrap evidence (#2228). Non-empty means it
+    # registered only setup's handlers and must re-admit once setup is
+    # complete (``readmission_due``).
+    deferred: frozenset = frozenset()
+
+
+def bootstrap_evidence(active):
+    """Whether ``active`` is a deployment still in initial setup.
+
+    ``active`` is the admitted SystemConfiguration row (or None). The
+    evidence is all of: an active configuration in Testing, no restore
+    review, no current campaign and a bootstrap validation schema. Only on
+    it may the worker start without its ParishSoft credential, or
+    mail-dispatch without its Google Workspace one (#2228); a configured
+    deployment always requires both.
+    """
+    return (
+        active is not None
+        and active.mode == "testing"
+        and not active.restore_review_required
+        and active.current_campaign_id is None
+        and active.active_configuration.validation_schema in BOOTSTRAP_SCHEMAS
+    )
+
+
+def readmission_due():
+    """Whether setup has completed since a deferred-credential process started.
+
+    Setup's completion commits the configured marker in the same transaction
+    that activates the parish's own (non-bootstrap) configuration, so the
+    bootstrap evidence ending is how a consumer sees the marker: the
+    mail-dispatch login reads the system configuration row, but not the
+    marker's table. Any other end of the evidence (a restore review, say)
+    also calls for a fresh admission, which then refuses a missing
+    credential as for any configured deployment.
+    """
+    from .accounts.runtime_models import SystemConfiguration
+
+    active = SystemConfiguration.objects.select_related("active_configuration").first()
+    return not bootstrap_evidence(active)
 
 
 def matching_authority(store):
@@ -259,10 +300,18 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
         raise ConfigError("Background credential mounts are incomplete.")
     # Slack is optional: its folder is mounted before Slack is set up, and
     # each Slack task reads the installed file only once the YAML selects it.
+    # ParishSoft and Google Workspace folders are mounted before setup
+    # installs them (#2228); a missing one is admitted below only on the
+    # bootstrap evidence.
+    deferred = frozenset(
+        name
+        for name in SETUP_DEFERRED_SECRETS & configuration.secrets.keys()
+        if not configuration.secrets[name].exists()
+    )
     loaded = {
         name: read_private(path)
         for name, path in configuration.secrets.items()
-        if name not in OPTIONAL_SECRETS or path.exists()
+        if name not in deferred and (name not in OPTIONAL_SECRETS or path.exists())
     }
     rings = {
         name: parse_keyring(loaded[name], name) for name in required - {"parishsoft"}
@@ -325,26 +374,14 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
     if (
         role is ServiceRole.WORKER
         and "parishsoft" not in loaded
-        and (
-            active is None
-            or active.mode != "testing"
-            or active.restore_review_required
-            or active.current_campaign_id is not None
-            or active.active_configuration.validation_schema not in BOOTSTRAP_SCHEMAS
-        )
+        and not bootstrap_evidence(active)
     ):
         raise ConfigError("An installed ParishSoft credential is required.")
 
     if role is ServiceRole.SCHEDULER:
         handlers = scheduler_handlers()
     elif role is ServiceRole.MAIL_DISPATCH:
-        if "google_workspace" not in loaded and (
-            active is None
-            or active.mode != "testing"
-            or active.restore_review_required
-            or active.current_campaign_id is not None
-            or active.active_configuration.validation_schema not in BOOTSTRAP_SCHEMAS
-        ):
+        if "google_workspace" not in loaded and not bootstrap_evidence(active):
             raise ConfigError("An installed Workspace credential is required.")
         from .accounts.setup_mail import TASK_TYPE as SETUP_MAIL
         from .accounts.setup_mail_tasks import setup_mail_handler
@@ -521,8 +558,12 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
         )
     # This is not ordinary selected-YAML authority. The compiled setup owner
     # repeats its exact original receipt/login/fences for every admitted action.
+    # A worker that started before setup installed its ParishSoft key runs it
+    # too (#2228): the task is queued only after every consumer acknowledged
+    # the installed key, and its loader reads the mounted file per task and
+    # checks its fingerprint against the setup's own.
     if role is ServiceRole.SCHEDULER or (
-        role is ServiceRole.WORKER and "parishsoft" in loaded
+        role is ServiceRole.WORKER and "parishsoft" in configuration.secrets
     ):
         from dataclasses import replace
 
@@ -622,4 +663,5 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
         handlers,
         {name: credential_receipt(raw, name) for name, raw in loaded.items()},
         store,
+        deferred,
     )

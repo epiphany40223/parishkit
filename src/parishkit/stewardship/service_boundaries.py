@@ -43,6 +43,12 @@ ROTATING_TARGETS = frozenset({"parishsoft", "google_workspace", "slack"})
 # Credentials a consumer mounts before they are installed; Slack is optional
 # and may be added after setup.
 OPTIONAL_SECRETS = frozenset({"slack"})
+# Credentials setup installs into the consumers' already-mounted directories
+# (#2228, operations "Setup credential pickup"). Unlike OPTIONAL_SECRETS, a
+# consumer may start without one only on the bootstrap evidence
+# (runtime_background.bootstrap_evidence), and the process records that it
+# did (consumer_runtime "deferred" receipts); everywhere else it is required.
+SETUP_DEFERRED_SECRETS = frozenset({"parishsoft", "google_workspace"})
 
 
 def rotating_directories(configuration):

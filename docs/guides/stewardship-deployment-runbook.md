@@ -170,12 +170,15 @@ either resumes with the same inputs or refuses; none deletes or adopts data.
    describes, and open the public origin: it must serve the sign-in page over
    HTTPS and deny `/health/` and `/metrics`.
 5. Sign in as the initial Administrator and run the setup wizard, entering
-   the ParishSoft, mail-provider and optional Slack credentials. When the
-   installers report `awaiting_ack`, recreate the `worker` and
-   `mail-dispatch` services from `compose.json` or `compose-slack.json` and
-   acknowledge each request inside the recreated containers, exactly as the
-   runtime guide's setup section and the
-   [credential installer guide](stewardship-credential-installers.md) say.
+   the ParishSoft, mail-provider and optional Slack credentials. Nothing
+   needs doing on the server: `worker` and `mail-dispatch` pick up and
+   acknowledge each installed credential themselves, then restart once on
+   their own after setup completes, as the runtime guide's
+   [setup section](stewardship-runtime.md#first-database-and-application-startup)
+   says. Only if Finishing setup says a key is taking longer than expected,
+   follow that section's fallback (recreate the two services and acknowledge
+   each request inside them, as the
+   [credential installer guide](stewardship-credential-installers.md) says).
    The wizard finishes by importing the parish's data; the deployment stays
    in Testing mode with a draft campaign and sends no Family mail.
 

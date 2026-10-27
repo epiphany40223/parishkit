@@ -208,15 +208,17 @@ credential (OPS-10.05). Those two credentials are installed by the real
 credential installers, exactly as in production, which is part of what the
 environment tests.
 
-At Finishing setup the wizard waits for "the server operator" ("0 of 1
-services acknowledged" for ParishSoft and for Google Workspace): that is the
-runbook's post-wizard step, which in LOCAL is one command,
-`tools/stewardship-local.sh finish-setup`. It recreates `worker` and
-`mail-dispatch` from `compose.json`, acknowledges each credential inside them,
-waits for setup to complete and restarts the services; the wizard page then
-moves on by itself. Running it again is harmless: once setup is complete it
-says so and changes nothing. It refuses while the wizard's pages are still
-unfinished.
+At Finishing setup the page shows "0 of 1 services acknowledged" for
+ParishSoft and for Google Workspace until `worker` and `mail-dispatch` pick up
+the installed credentials, within about a minute, and then moves on by
+itself, as in Production; after completion those two services restart once
+on their own. `tools/stewardship-local.sh finish-setup` waits for all of that
+and reports when setup is complete; only if a credential is still
+unacknowledged 10 minutes after its installation does it run the runbook's
+fallback (recreate `worker` and `mail-dispatch` from `compose.json` and
+acknowledge each credential inside them). Running it again is harmless: once
+setup is complete it says so and changes nothing. It refuses while the
+wizard's pages are still unfinished.
 
 Setup collects no campaign (#142). Once it is complete, open Home and choose
 **Create the campaign**, fill in its form (every module, for the seeder),
@@ -227,8 +229,9 @@ campaign gets its Families and codes.
 For an unattended install, `tools/stewardship-local.sh wizard` completes the
 wizard through the wizard pages' own service layer with the fake ParishSoft
 key, the mail-catcher document and a generated logo, follows the runbook's
-post-wizard step (recreating `worker` and `mail-dispatch` from `compose.json`
-and acknowledging each credential inside them) until setup is complete, and
+waits while `worker` and `mail-dispatch` acknowledge the credentials
+themselves (running the runbook's fallback only if one is overdue) until
+setup is complete, and
 then runs Create the campaign (every module, with its default pages and
 emails) and the campaign's full ParishSoft refresh. The browser wizard and
 Create the campaign remain the developer-facing path.

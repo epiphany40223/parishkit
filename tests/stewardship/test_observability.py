@@ -755,3 +755,20 @@ def test_literals_are_scrubbed_only_inside_a_request(monkeypatch):
     )
     message = json.loads(SafeJsonFormatter().format(record))["extra"]["debug"]
     assert message["message"] == f"saw {TOKEN}"
+
+
+def test_consumer_readmission_carries_only_its_reviewed_reason(caplog):
+    """#2228: the re-admission line names why, from a closed set, and the
+    reason field belongs to that event alone."""
+    with caplog.at_level(logging.INFO, logger="parishkit.stewardship"):
+        emit(Event.CONSUMER_READMISSION, reason="setup_completed")
+    (record,) = [r for r in caplog.records if r.msg is Event.CONSUMER_READMISSION]
+    line = json.loads(SafeJsonFormatter().format(record))
+    assert line["message"] == "consumer_readmission"
+    assert line["extra"]["reason"] == "setup_completed"
+    for event, reason in (
+        (Event.CONSUMER_READMISSION, "anything else"),
+        (Event.TASK_FAILED, "setup_completed"),
+    ):
+        with pytest.raises(ValueError, match="readmission reason"):
+            emit(event, reason=reason)

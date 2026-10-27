@@ -593,6 +593,9 @@ FROZEN = {
     "0186_setup_backup_step.sql": (
         "bf4cff3481b51e13bb947aff2369d5257c39d4fe9d9319c387366079533677c9"
     ),
+    "0187_consumer_readmission_log.sql": (
+        "3eb4fb8e3ce25a8f0f3dd074ebb3eb53838da9307ae862517edc7cbf00c87a4b"
+    ),
 }
 
 

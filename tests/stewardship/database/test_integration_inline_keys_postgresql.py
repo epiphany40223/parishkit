@@ -92,7 +92,9 @@ def working(request, monkeypatch, tmp_path, google):
     published = []
     monkeypatch.setattr(
         "parishkit.stewardship.consumer_runtime.publish_single_process_receipts",
-        lambda configuration, receipts: published.append(dict(receipts)),
+        lambda configuration, receipts, deferred=frozenset(): published.append(
+            dict(receipts)
+        ),
     )
     browser, _ = signed_in()
     return {

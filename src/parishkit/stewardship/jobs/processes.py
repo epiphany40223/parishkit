@@ -71,6 +71,8 @@ def serve_consumer(runtime, *, lease, stop, heartbeat, idle=None, companion=None
     Celery's timer every ``IDLE_SECONDS``; its failures are logged and retried
     on the next run rather than stopping the consumer. It is skipped while a
     message executes, so it never adds a SQL connection beside a running task.
+    An ``idle`` that returns True asks for the same warm drain a SIGTERM does,
+    and the consumer then returns 0 (setup's re-admission, #2228).
 
     An optional ``companion`` is a sibling consumer process sharing this
     container (see runtime_process.SourceConsumer): a stop request is
@@ -124,7 +126,8 @@ def serve_consumer(runtime, *, lease, stop, heartbeat, idle=None, companion=None
         if not runtime.busy.acquire(blocking=False):
             return
         try:
-            idle()
+            if idle() is True:
+                stopping(None, None)
         except Exception as error:
             emit_failure(error)
         finally:

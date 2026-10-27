@@ -1126,10 +1126,10 @@ def wizard_step(request, configuration):
         web, attempt_id = resumed
         LOGGER.info("resuming the setup attempt %s", attempt_id)
     seed_web.run_wizard(web, service, wait=wait_until, attempt_id=attempt_id)
-    # The freeze hands over to the credential installers; the operator script
-    # then recreates the consumers from compose.json and acknowledges each
-    # request inside them (runbook, first installation, step 5), which is
-    # what completes setup.
+    # The freeze hands over to the credential installers; worker and
+    # mail-dispatch then acknowledge each request themselves (#2228), which
+    # is what completes setup. The operator script waits for that, and
+    # acknowledges by hand only in the fallback for an overdue credential.
     requests = frozen_credential_requests()
     if requests is None:
         raise SeedFailed("The setup attempt is not frozen after the wizard.")
@@ -1163,11 +1163,12 @@ def frozen_credential_requests():
 
 
 def credentials_step(request, configuration):
-    """Report the request ids `finish-setup` acknowledges; writes nothing.
+    """Report the request ids `finish-setup` waits on; writes nothing.
 
     The browser wizard's counterpart of wizard_step's answer: after the
     Administrator's wizard freezes its attempt, the operator script looks the
-    ids up here and runs the same runbook step 5 that `wizard` runs.
+    ids up here and waits for setup as `wizard` does, acknowledging them by
+    hand only in the fallback for an overdue credential (#2228).
     """
     configure_web_process(configuration)
     # Model imports only after Django is configured.

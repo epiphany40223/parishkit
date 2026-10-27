@@ -729,7 +729,9 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
     configuration = replace(configuration_at(tmp_path), service_role=role)
     previous = {sig: signal.getsignal(sig) for sig in (signal.SIGINT, signal.SIGTERM)}
     broker, lease, closes, receipts, healthy = Mock(), Mock(), Mock(), Mock(), Mock()
-    assembled = SimpleNamespace(broker=broker, store=object(), handlers={}, receipts={})
+    assembled = SimpleNamespace(
+        broker=broker, store=object(), handlers={}, receipts={}, deferred=frozenset()
+    )
     stops, selected = [], []
     sibling, mail_sibling = Mock(), Mock()
     monkeypatch.setattr(runtime_process, "SourceConsumer", sibling)
@@ -798,7 +800,9 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 ServiceRole.WORKER: sibling.return_value,
                 ServiceRole.MAIL_DISPATCH: mail_sibling.return_value,
             }.get(role)
-            rotations.assert_called_once_with(configuration, assembled.receipts)
+            rotations.assert_called_once_with(
+                configuration, assembled.receipts, frozenset()
+            )
         signal.getsignal(signal.SIGTERM)(signal.SIGTERM, None)
         assert stop.is_set()
         if fail:
@@ -985,7 +989,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         assert runtime_process.serve_background(configuration, lease) == 0
     assert stops[0].is_set()
     assert {sig: signal.getsignal(sig) for sig in previous} == previous
-    receipts.assert_called_once_with(configuration, assembled.receipts)
+    receipts.assert_called_once_with(configuration, assembled.receipts, frozenset())
     healthy.assert_called_once()
     assert lease.check.call_count == 2
     if role is ServiceRole.WORKER:
@@ -1133,7 +1137,13 @@ def test_each_background_process_reports_its_own_status(
 
     def configure(config, *, stop, heartbeat, queues=None):
         """The admitted process, before its loop starts."""
-        return SimpleNamespace(broker=Mock(), store=object(), handlers={}, receipts={})
+        return SimpleNamespace(
+            broker=Mock(),
+            store=object(),
+            handlers={},
+            receipts={},
+            deferred=frozenset(),
+        )
 
     def serve(actual, *, lease, stop, heartbeat, **kwargs):
         """The loop: one heartbeat, and one idle pass for a consumer."""
@@ -1223,3 +1233,82 @@ def test_installer_heartbeat_reports_on_every_wake_and_keeps_the_connection(
     # Idle backoff as before: wakes at 0 to 10 seconds, full passes only at
     # 0 and 4 (the gap doubled to 4, then to 8).
     assert runs.call_count == 2
+
+
+@pytest.mark.parametrize(
+    "deferred,due,exits",
+    [
+        (frozenset({"parishsoft"}), False, False),
+        (frozenset({"parishsoft"}), True, True),
+        # Admitted with its keys: never re-admits, and never asks.
+        (frozenset(), True, False),
+    ],
+)
+@pytest.mark.parametrize("role", [ServiceRole.WORKER, ServiceRole.MAIL_DISPATCH])
+def test_a_consumer_started_without_its_setup_key_exits_once_setup_completes(
+    tmp_path, monkeypatch, role, deferred, due, exits
+):
+    """#2228: the idle pass acknowledges with the process's deferral, then
+    asks the consumer to drain once setup is complete, logging
+    consumer_readmission (setup_completed); only a deferred process asks."""
+    from parishkit.stewardship import runtime_background
+    from parishkit.stewardship.observability import Event as LogEvent
+
+    configuration = replace(
+        configuration_at(tmp_path, production=True), service_role=role
+    )
+    answers, emitted = [], []
+    rotations = Mock()
+    readmission = Mock(return_value=due)
+
+    def configure(config, *, stop, heartbeat, queues=None):
+        """The admitted process, with or without a deferred setup key."""
+        return SimpleNamespace(
+            broker=Mock(), store=object(), handlers={}, receipts={}, deferred=deferred
+        )
+
+    def serve(actual, *, lease, stop, heartbeat, idle, **kwargs):
+        """One idle pass; its answer is what serve_consumer acts on."""
+        answers.append(idle())
+        return 0
+
+    monkeypatch.setattr(runtime_background, "configure_background", configure)
+    monkeypatch.setattr(runtime_background, "readmission_due", readmission)
+    monkeypatch.setattr(runtime_process, "split_source", lambda _: False)
+    monkeypatch.setattr(runtime_process, "split_mail", lambda _: False)
+    monkeypatch.setattr(
+        runtime_process, "emit", lambda event, **kwargs: emitted.append((event, kwargs))
+    )
+    monkeypatch.setattr("parishkit.stewardship.jobs.processes.serve_consumer", serve)
+    monkeypatch.setattr(
+        "parishkit.stewardship.consumer_runtime.publish_single_process_receipts",
+        Mock(),
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.credential_runtime.acknowledge_rotations", rotations
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.installer_health.publish_heartbeat", Mock()
+    )
+    monkeypatch.setattr(
+        "parishkit.stewardship.service_status.ServiceStatusReporter", Mock()
+    )
+    monkeypatch.setattr("parishkit.stewardship.jobs.mail_halt.idle", Mock())
+    monkeypatch.setattr("django.db.connections.close_all", Mock())
+    assert runtime_process.serve_background(configuration, Mock()) == 0
+    rotations.assert_called_once_with(configuration, {}, deferred)
+    assert answers == [exits]
+    # A failing acknowledgement pass is logged and never blocks re-admission.
+    failures = Mock()
+    monkeypatch.setattr(runtime_process, "emit_failure", failures)
+    rotations.side_effect = RuntimeError("synthetic")
+    answers.clear()
+    assert runtime_process.serve_background(configuration, Mock()) == 0
+    assert answers == [exits]
+    failures.assert_called_once()
+    assert readmission.called is bool(deferred)
+    assert emitted == (
+        [(LogEvent.CONSUMER_READMISSION, {"reason": "setup_completed"})] * 2
+        if exits
+        else []
+    )

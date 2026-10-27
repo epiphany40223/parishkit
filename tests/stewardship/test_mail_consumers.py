@@ -347,7 +347,7 @@ def test_only_the_main_mail_process_clears_the_stop_marker(tmp_path, monkeypatch
         """Record the queue choice and exercise the heartbeat."""
         selected.append(queues)
         heartbeat()
-        return Mock(receipts={})
+        return Mock(receipts={}, deferred=frozenset())
 
     def serve(broker, *, lease, stop, heartbeat, **kwargs):
         """Note the companion the process would supervise."""
@@ -406,7 +406,9 @@ def test_each_mail_consumers_idle_pass_runs_the_halt_step(tmp_path, monkeypatch)
     monkeypatch.setattr(
         runtime_background,
         "configure_background",
-        lambda config, *, stop, heartbeat, queues=None: Mock(receipts={}),
+        lambda config, *, stop, heartbeat, queues=None: Mock(
+            receipts={}, deferred=frozenset()
+        ),
     )
 
     def serve(broker, *, lease, stop, heartbeat, idle=None, **kwargs):

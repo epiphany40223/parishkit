@@ -575,7 +575,13 @@ full ParishSoft load of setup, and commits its promoted source snapshot,
 Testing mode, configured marker, and one redacted setup audit event. It creates
 no campaign, so it creates no Family codes either. The
 configured marker is last and cannot become visible until YAML/DB digests match
-and every required consumer acknowledges its secret fingerprint. A crash or
+and every required consumer acknowledges its secret fingerprint. The
+consumers acknowledge on their own, with no server step: `worker` and
+`mail-dispatch` already mount each provider credential's directory when setup
+starts, see the installed file, and acknowledge it through their own database
+logins, as the
+[setup credential pickup](../operations/spec.md#setup-credential-pickup)
+specifies. The web process never acknowledges for them. A crash or
 failure resumes idempotently from installer checkpoints only within the original
 Admin session's idle and absolute lifetime. Viewing finalization progress does
 not renew them; the Admin renews idle time only through the inactivity dialog.
@@ -584,21 +590,38 @@ attempt requires cleanup and a new login. A cancelling Sign out during
 finishing cancels it explicitly (see Sign out while setup is owned, above). After confirmation, and whenever the
 frozen attempt's owner opens the setup overview, the Admin sees a "Finishing
 setup" page on the original login's cancellation route. It lists each step in
-plain language (each credential's installation, the server operator's
-acknowledgement with a count of acknowledged services, applying the
-configuration, the final parish data load, and completion). A step that is
+plain language (each credential's installation, the services picking up the
+new credential with a count of services that have acknowledged it, applying
+the configuration, the final parish data load, and completion). A step that is
 working shows the portal's shared
 [working spinner](../ui-conventions/spec.md#working-spinner) in its box;
 the page shows no time since confirmation and no line under the boxes.
-Each step's words are one short line, and while a credential waits for the
-server operator its box says so in its status and shows only the live
-count. The operator's own steps are in the
+Each step's words are one short line. While the services pick up a
+credential its box shows the spinner and the live count ("0 of 1 services
+acknowledged"), and it names no server operator: nobody has to act. Only when a
+credential has waited 10 minutes after its installation without every
+acknowledgement does its box change, still in place, to the Waiting for the
+server operator state of the
+[stage boxes](../ui-conventions/spec.md#stage-boxes), with the words "Taking
+longer than expected. Ask the server operator to check the worker and
+mail-dispatch services." The count stays live, and the box returns to done by itself if
+the acknowledgements then arrive, whether the services caught up or the
+operator used the fallback. The operator's fallback steps are in the
 [runtime guide](../../../guides/stewardship-runtime.md#first-database-and-application-startup),
 not on the page
 ([#2145](https://github.com/epiphany40223/parishkit/issues/2145)). Each
 step changes in place while setup finishes. Once setup completes, the page
 says the system is configured, shows a Continue link to the Admin home and
-drops Cancel setup; the notice gives no backup advice. A failed step stops the updates. A failed step explains what to do: a credential the provider
+drops Cancel setup; the notice gives no backup advice. After a cancellation or
+expiry the page asks nothing of the operator: the consumers' directory mounts
+show the removal of the installed keys, so the worker and mail services let go
+of them without being recreated
+([runtime guide](../../../guides/stewardship-runtime.md#first-database-and-application-startup)).
+Its notice says nothing is needed; its About panel
+([page help](../ui-conventions/spec.md#page-help)) names recreating them
+again only for the operator who finished a key step by hand for a
+credential with its own overridden file path, which keeps a single-file
+mount. A failed step stops the updates. A failed step explains what to do: a credential the provider
 rejected repeats the integration page's per-provider advice on what to check,
 one that did not finish in time asks the operator to check the credential
 installers, and each says to cancel and start a new setup (#456). No step

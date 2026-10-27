@@ -582,3 +582,171 @@ def test_source_refresh_uses_durable_suppression_owner_in_each_mode(monkeypatch,
     scope = SimpleNamespace(runtime=SimpleNamespace(mode=mode))
     assert background.source_refusal_suppressions(scope) is expected
     assert calls == [scope]
+
+
+def _setup_runtime(bootstrap):
+    """The admitted SystemConfiguration row: in setup when ``bootstrap``."""
+    return SimpleNamespace(
+        mode="testing",
+        restore_review_required=False,
+        current_campaign_id=None,
+        active_configuration=SimpleNamespace(
+            validation_schema=bootstrap or "users-v10"
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    "change,expected",
+    [
+        ({}, True),
+        ({"mode": "production"}, False),
+        ({"restore_review_required": True}, False),
+        ({"current_campaign_id": "campaign"}, False),
+        ({"schema": "users-v10"}, False),
+        ({"schema": "bootstrap-policy-v1"}, True),
+        (None, False),
+    ],
+)
+def test_bootstrap_evidence_needs_every_setup_fact(change, expected):
+    """#2228: one named check, all of Testing, no restore review, no campaign
+    and a bootstrap schema; a missing row is never setup."""
+    if change is None:
+        assert background.bootstrap_evidence(None) is False
+        return
+    active = _setup_runtime(change.pop("schema", "bootstrap-users-v10"))
+    for key, value in change.items():
+        setattr(active, key, value)
+    assert background.bootstrap_evidence(active) is expected
+
+
+@pytest.mark.parametrize("bootstrap", ["bootstrap-users-v10", None])
+def test_worker_with_an_empty_mounted_source_folder_admits_only_in_setup(
+    admitted_configuration, monkeypatch, bootstrap
+):
+    """#2228: the ParishSoft path is mounted before setup installs its file.
+
+    In setup the worker admits without it, records it as deferred, leaves it
+    out of its receipts, skips the refresh and publication tasks and still
+    registers setup's final load, which reads the file per task. Outside
+    setup the same missing file refuses admission.
+    """
+    configuration, _ = admitted_configuration
+    configuration.secrets["parishsoft"].unlink()
+    monkeypatch.setattr(
+        "parishkit.stewardship.accounts.configuration_installation.coherent_configuration",
+        lambda _: _setup_runtime(bootstrap),
+    )
+    if not bootstrap:
+        with pytest.raises(ConfigError, match="installed ParishSoft"):
+            background.configure_background(
+                configuration, stop=Event(), heartbeat=lambda: None
+            )
+        return
+    runtime = background.configure_background(
+        configuration, stop=Event(), heartbeat=lambda: None
+    )
+    try:
+        assert runtime.deferred == {"parishsoft"}
+        assert "parishsoft" not in runtime.receipts
+        assert "setup_finalize" in runtime.handlers
+        assert not {
+            "source_refresh",
+            "census_publication_preflight",
+            "census_publication",
+        } & set(runtime.handlers)
+    finally:
+        runtime.broker.app.close()
+
+
+def test_worker_with_its_source_key_installed_defers_nothing(admitted_configuration):
+    """A worker admitted with its key never re-admits for setup (#2228)."""
+    configuration, _ = admitted_configuration
+    runtime = background.configure_background(
+        configuration, stop=Event(), heartbeat=lambda: None
+    )
+    try:
+        assert runtime.deferred == frozenset()
+        assert "parishsoft" in runtime.receipts
+    finally:
+        runtime.broker.app.close()
+
+
+@pytest.mark.parametrize("bootstrap", ["bootstrap-policy-v1", None])
+def test_mail_with_an_empty_mounted_workspace_folder_admits_only_in_setup(
+    admitted_configuration, monkeypatch, bootstrap
+):
+    """#2228: mail-dispatch mounts the Workspace path before setup installs it."""
+    from parishkit.stewardship.accounts.cryptography import Key, TokenPrivateKeyring
+    from parishkit.stewardship.accounts.key_files import (
+        serialize_keyring,
+        write_private,
+    )
+
+    configuration, _ = admitted_configuration
+    private = configuration.secrets["token_public"].with_name("token_private")
+    write_private(
+        private,
+        serialize_keyring(TokenPrivateKeyring([Key("t1", "active", b"t" * 32)])),
+    )
+    configuration = replace(
+        configuration,
+        service_role=ServiceRole.MAIL_DISPATCH,
+        secrets={
+            "token_private": private,
+            "token_public": configuration.secrets["token_public"],
+            # Mounted, but setup has not installed the file yet.
+            "google_workspace": private.with_name("google_workspace"),
+        },
+    )
+    monkeypatch.setattr(
+        background, "mail_authority", lambda _: _setup_runtime(bootstrap)
+    )
+    if not bootstrap:
+        with pytest.raises(ConfigError, match="installed Workspace"):
+            background.configure_background(
+                configuration, stop=Event(), heartbeat=lambda: None
+            )
+        return
+    runtime = background.configure_background(
+        configuration, stop=Event(), heartbeat=lambda: None
+    )
+    try:
+        assert runtime.deferred == {"google_workspace"}
+        assert set(runtime.handlers) == {"setup_mail_test"}
+        assert set(runtime.receipts) == {"token_private", "token_public"}
+    finally:
+        runtime.broker.app.close()
+
+
+def test_a_missing_slack_file_is_never_deferred(admitted_configuration):
+    """Slack stays optional, not a setup credential: no re-admission for it."""
+    configuration, _ = admitted_configuration
+    configuration.secrets["slack"] = configuration.secrets["parishsoft"].with_name(
+        "slack"
+    )
+    runtime = background.configure_background(
+        configuration, stop=Event(), heartbeat=lambda: None
+    )
+    try:
+        assert runtime.deferred == frozenset()
+        assert "slack" not in runtime.receipts
+    finally:
+        runtime.broker.app.close()
+
+
+@pytest.mark.parametrize(
+    "bootstrap,due", [("bootstrap-users-v10", False), (None, True)]
+)
+def test_readmission_is_due_once_the_bootstrap_evidence_ends(
+    monkeypatch, bootstrap, due
+):
+    """Setup's completion commits the parish configuration with the marker."""
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+
+    monkeypatch.setattr(
+        SystemConfiguration.objects,
+        "select_related",
+        lambda *args: SimpleNamespace(first=lambda: _setup_runtime(bootstrap)),
+    )
+    assert background.readmission_due() is due

@@ -41,13 +41,16 @@ def answer(page, address, bodies):
     return polls
 
 
-def credential(target, state):
-    """One credential request row, as ``finalization_status`` reads it."""
+def credential(target, state, *, installed=timedelta(minutes=1)):
+    """One credential request row, as ``finalization_status`` reads it,
+    installed (``updated_at``) ``installed`` before the server clock of
+    ``finishing_context``."""
     return {
         "target": target,
         "request_id": uuid4(),
         "request__state": state,
         "request__cleanup_reason": "",
+        "request__updated_at": datetime.now(UTC) - installed,
         "consumers": 2,
         "acknowledged": 0,
     }
@@ -135,3 +138,73 @@ def test_finishing_setup_failure_stops_watching(page, component_origin):
     page.wait_for_timeout(200)
     assert len(polls) == 1
     assert page.evaluate(MARKED) == "kept"
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_finishing_setup_asks_for_the_operator_only_once_overdue(
+    page, component_origin, axe_source, width
+):
+    """#2228: an installed credential's box is In progress, with the live
+    count and no server operator, while the services pick it up; 10 minutes
+    after its installation (the server's clock) it changes in place to
+    Waiting for the server operator with what to ask, and returns to done
+    once the acknowledgements arrive."""
+    from .test_components import axe_violations
+
+    page.set_viewport_size({"width": width, "height": 900})
+    page.clock.install(time=NOW)
+
+    def waiting(installed, acknowledged=0):
+        """The ParishSoft key installed ``installed`` ago, acknowledged by
+        ``acknowledged`` of its two services."""
+        return finishing_context(
+            checkpoint="validating",
+            prepared=False,
+            credentials=[
+                credential("parishsoft", "awaiting_ack", installed=installed)
+                | {"acknowledged": acknowledged}
+            ],
+        )
+
+    polls = answer(
+        page,
+        SETUP_FINISHING_STATUS,
+        [
+            finishing_status(waiting(timedelta(minutes=9, seconds=58))),
+            finishing_status(waiting(timedelta(minutes=10))),
+            finishing_status(waiting(timedelta(minutes=12), acknowledged=2)),
+        ],
+    )
+    page.goto(component_origin + "/setup-installation")
+    page.evaluate(MARK)
+    step = page.locator('[data-finishing-step="parishsoft"]')
+    shown = step.locator(".stage-body:not(.reserve-ghost)")
+    page.clock.fast_forward(2000)
+    recorded(page, polls, 1)
+    has_text(shown.locator(".stage-status"), "In progress")
+    visible(shown.get_by_text("0 of 2 services acknowledged."))
+    assert step.locator(".spinner").count() == 1
+    assert "server operator" not in shown.inner_text()
+    # Still working, as before the poll: nothing new to announce.
+    assert "server operator" not in page.locator("[data-live-announcer]").inner_text()
+    box = step.bounding_box()
+    page.clock.fast_forward(2000)
+    recorded(page, polls, 2)
+    has_text(shown.locator(".stage-status"), "Waiting for the server operator")
+    visible(
+        shown.get_by_text(
+            "Taking longer than expected. Ask the server operator to check the "
+            "worker and mail-dispatch services."
+        )
+    )
+    visible(shown.get_by_text("0 of 2 services acknowledged."))
+    assert step.locator(".spinner").count() == 0
+    has_text(page.locator("[data-live-announcer]"), "Waiting for the server operator.")
+    # The box changed in place: the overdue form was reserved from the start.
+    assert step.bounding_box() == box
+    assert axe_violations(page, axe_source) == []
+    page.clock.fast_forward(2000)
+    recorded(page, polls, 3)
+    has_text(shown.locator(".stage-status"), "Done")
+    assert page.evaluate(MARKED) == "kept"
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")

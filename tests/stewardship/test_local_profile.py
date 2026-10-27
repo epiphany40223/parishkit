@@ -70,14 +70,18 @@ GOLDEN_ROOT = Path("/opt/parishkit")
 # fixed order (#480; infrastructure volume lists unchanged).
 # Intentional Production change since: #392 L3 adds oom_score_adj to every
 # application-image service (the Compose digests and fixture only).
+# Intentional change for new installs only (#2228): "initial" renders
+# exactly the "configured" topology, so its digests are configured's; the
+# configured and configured-slack renderings, which Production runs, are
+# unchanged.
 # The "configured" Compose document and the Caddyfile are also committed in
 # full under fixtures/ so a difference can be read, not just detected.
 GOLDEN_DIGESTS = {
     ("initial", "compose"): (
-        "5b8fd171cc1b5cdc1d5bfe9cd3a1a30c95aa48652f5ed532e581cc43322f7d6f"
+        "d8da9f4b57f95ee91775502e393b2f285fac7aa843ba67bffe965440be92f7e3"
     ),
     ("initial", "documents"): (
-        "7e34be432d98fe26781a67030ffb76d1f0ed85f850bb072bad74b4a8c9dfdeba"
+        "9d65bab1d7b28eebd476ee671871d675f86ff81cff6259cd82ded7b936a1d360"
     ),
     ("configured", "compose"): (
         "d8da9f4b57f95ee91775502e393b2f285fac7aa843ba67bffe965440be92f7e3"
