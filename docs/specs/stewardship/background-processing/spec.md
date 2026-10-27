@@ -1396,10 +1396,18 @@ was requested at or after the overdue slot's due time and before the resume
 point, though scheduled refreshes ran within the last day. The
 scheduler holds only until the resume point, `RESUME_LEAD` before the
 allowance ends. `RESUME_LEAD` must leave room for a held full refresh to run
-and promote under send load; it stays 30 minutes
-only if a full refresh under send load is measured to promote within 20
-minutes, and is raised otherwise. A send that runs longer than that gets its
-refreshes back, and a held daytime full refresh then runs mid-send.
+and promote under send load, and it stays 30 minutes because that was
+measured (2026-10-26, v1.24.0 `main`, a synthetic 1,100-Family corpus,
+nine runs): under launch-size send load the slowest full refresh promoted
+in 14 seconds. That figure reflects lock contention only, because the
+synthetic ParishSoft has no network latency. Projected onto the real
+parish's 437-second idle full refresh, it is about 7 to 17 minutes (7 for
+the measured extra lock waits alone, 17 if the old x2.3 slowdown from
+issue #440 still applied), under the 20-minute bound. The results are in
+[#653's measurement comment](https://github.com/epiphany40223/parishkit/issues/653#issuecomment-6430049201).
+Raise it if a later measurement exceeds 20 minutes. A send that runs
+longer than that gets its refreshes back, and a held daytime full refresh
+then runs mid-send.
 
 **The catch-up keeps the allowance.** When the hold ends, for any reason
 (the send finished, fell below the minimum, was paused, or reached the

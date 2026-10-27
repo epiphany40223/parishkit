@@ -102,11 +102,10 @@ ACTIVE_MINIMUM = 10
 SEND_ALLOWANCE = timedelta(hours=2)
 # How long before the allowance runs out the scheduler stops holding, so the
 # held full refresh promotes before the alarm sounds. The spec keeps 30
-# minutes only if a full refresh under send load promotes within 20. The
-# measured inputs (October 2026, #440, #510): a full refresh takes a median
-# 437 s idle, and send load stretched a quick update from about 2.2 to about 5
-# minutes (x2.3), which puts a full refresh under load near 17 minutes.
-# That is an estimate; #653 measures a full refresh during a real send.
+# minutes only if a full refresh under send load promotes within 20. Measured
+# in #653 (2026-10-26, v1.24.0 main, synthetic 1,100 Families, 9 runs): a full
+# refresh under launch-size send load promoted within 14 s. Projected onto the
+# real 437 s idle refresh (#440, #510), that is about 7-17 minutes, so 30 stays.
 RESUME_LEAD = timedelta(minutes=30)
 # Scheduled refreshes requested within this long mean the schedule is in use.
 SCHEDULE_IN_USE_WINDOW = timedelta(days=1)
