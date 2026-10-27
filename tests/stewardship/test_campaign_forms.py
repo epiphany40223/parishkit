@@ -237,7 +237,7 @@ def test_confirmation_values_use_names_not_storage_repr():
     text = display_value(
         "financial", financial(), funds=[("1", "Offertory"), ("2", "Prior year")]
     )
-    assert "Upcoming: 2055-01-01 through 2055-12-31" in text
+    assert "Commitment period: 2055-01-01 through 2055-12-31" in text
     assert text.endswith("Comparison funds: Prior year") and "DUID" not in text
     # The retired overlap confirmation is not described (#2293).
     assert "overlap" not in text
@@ -315,8 +315,8 @@ def test_each_end_date_takes_its_start_as_its_minimum_in_the_page():
     [
         ({"end_date": "2054-10-01"}, "end_date", "The campaign end date must be"),
         ({"end_date": "2054-09-01"}, "end_date", "The campaign end date must be"),
-        ({"financial_end": "2055-12-30"}, "financial_end", "A financial period"),
-        ({"comparison_end": "2026-12-30"}, "comparison_end", "A financial period"),
+        ({"financial_end": "2055-12-30"}, "financial_end", "A period spans"),
+        ({"comparison_end": "2026-12-30"}, "comparison_end", "A period spans"),
     ],
 )
 def test_date_refusals_are_shown_at_the_end_field(changes, field, start):

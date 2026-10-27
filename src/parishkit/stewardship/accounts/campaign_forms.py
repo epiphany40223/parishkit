@@ -153,12 +153,12 @@ class CampaignForm(AdminForm):
         label=_("Included Ministries"), required=False, help_text=MULTI_SELECT_HELP
     )
     financial_start = forms.DateField(
-        label=_("Upcoming financial period start"),
+        label=_("Commitment period start"),
         required=False,
         widget=forms.DateInput(attrs={"type": "date"}),
     )
     financial_end = forms.DateField(
-        label=_("Upcoming financial period end"),
+        label=_("Commitment period end"),
         required=False,
         widget=forms.DateInput(attrs={"type": "date"}),
     )
@@ -173,7 +173,7 @@ class CampaignForm(AdminForm):
         widget=forms.DateInput(attrs={"type": "date"}),
     )
     fund_duids = SourceChoices(
-        label=_("Upcoming financial period funds"),
+        label=_("Pledge funds"),
         required=False,
         help_text=MULTI_SELECT_HELP,
     )
@@ -249,7 +249,7 @@ class CampaignForm(AdminForm):
         hints = {
             "end_date": _("Choose a campaign end date after its start date."),
             "financial_end": _(
-                "Choose an upcoming financial period end one year after its start."
+                "Choose a commitment period end one year after its start."
             ),
             "comparison_end": _(
                 "Choose a comparison financial period end one year after its start."
@@ -264,7 +264,7 @@ class CampaignForm(AdminForm):
             attrs["data-missing-hint"] = hints[end]
             if end != "end_date":
                 attrs["data-empty-hint"] = _(
-                    "Fill in both financial periods and their funds."
+                    "Fill in the commitment and comparison periods and their funds."
                 )
                 # Exactly the day before the start's first anniversary, as
                 # _date_errors requires (#1577): the page script makes that
@@ -276,7 +276,9 @@ class CampaignForm(AdminForm):
         attrs["data-missing-hint"] = _(
             "Choose a commitment period start after the campaign end date."
         )
-        attrs["data-empty-hint"] = _("Fill in both financial periods and their funds.")
+        attrs["data-empty-hint"] = _(
+            "Fill in the commitment and comparison periods and their funds."
+        )
 
     def _commitment_dates_changed(self, data):
         """Whether the campaign end or the commitment period start differs
@@ -331,7 +333,7 @@ class CampaignForm(AdminForm):
                         end,
                         forms.ValidationError(
                             _(
-                                "A financial period spans exactly one year: with this "
+                                "A period spans exactly one year: with this "
                                 "start, it ends on %(date)s."
                             )
                             % {"date": parish_date(expected)},

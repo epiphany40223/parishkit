@@ -84,7 +84,7 @@ def test_new_campaign_form_selects_every_ministry_when_enabled(page, component_o
     page.goto(component_origin + "/campaign-create")
     visible(page.get_by_role("heading", name="Create the campaign"))
     ministry = page.get_by_role("group", name="Ministry selections")
-    financial = page.get_by_role("group", name="Financial periods and funds")
+    financial = page.get_by_role("group", name="Commitment and comparison periods")
     assert not ministry.is_visible() and not financial.is_visible()
     page.get_by_label("Ministry stewardship").check()
     visible(ministry)

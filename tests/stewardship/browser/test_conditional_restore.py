@@ -112,11 +112,11 @@ def test_bulk_actions_say_what_to_select_and_follow_restored_ticks(
 def test_campaign_modules_follow_a_restored_tick(page, component_origin):
     """A restored Financial tick shows its fields, enabled and sent."""
     page.goto(component_origin + "/campaign-settings")
-    financial = page.get_by_role("group", name="Financial periods and funds")
+    financial = page.get_by_role("group", name="Commitment and comparison periods")
     assert not financial.is_visible()
     restore(page, "#id_financial_enabled", "box => { box.checked = true; }")
     visible(financial)
-    start = page.get_by_label("Upcoming financial period start")
+    start = page.get_by_label("Commitment period start")
     assert start.is_enabled()
     start.fill("2027-01-01")
     posted = page.locator("[data-campaign-form]").evaluate(

@@ -10,7 +10,7 @@ LABELS = {
     "end_date": _("Campaign end date"),
     "modules": _("Enabled modules"),
     "ministry_duids": _("Included Ministries"),
-    "financial": _("Financial periods and funds"),
+    "financial": _("Commitment and comparison periods"),
     "share_options": _("Share options"),
     "content_versions": _("Included content blocks"),
     "additional_information": _("Collect additional information"),
@@ -62,8 +62,8 @@ def display_value(key, value, *, ministries=(), funds=()):
     if key == "financial":
         return "\n".join(
             [
-                _("Upcoming: %(start)s through %(end)s") % value,
-                _("Upcoming funds: %(funds)s")
+                _("Commitment period: %(start)s through %(end)s") % value,
+                _("Pledge funds: %(funds)s")
                 % {"funds": _choices(value["fund_duids"], funds)},
                 _("Comparison: %(comparison_start)s through %(comparison_end)s")
                 % value,

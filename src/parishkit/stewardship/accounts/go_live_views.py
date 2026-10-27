@@ -67,7 +67,8 @@ PROBLEMS = {
         "Review Ministries missing from the current source."
     ),
     "financial_mapping_incomplete": _(
-        "Complete financial periods, fund mappings and sharing options."
+        "Complete the commitment and comparison periods, fund mappings and "
+        "sharing options."
     ),
     "integration_configuration_incomplete": _(
         "Complete the required integration settings."
@@ -78,7 +79,7 @@ PROBLEMS = {
     "tenant_unavailable": _("Check the configured ParishSoft organization."),
     "full_refresh_required": _("Complete a full ParishSoft refresh for this campaign."),
     "source_scope_changed": _(
-        "Refresh the source for this campaign and its selected financial periods."
+        "Refresh the source for this campaign's commitment and comparison periods."
     ),
     "full_refresh_stale": _(
         "The last full refresh is too old. Run another full refresh."

@@ -38,7 +38,7 @@ from parishkit.stewardship.archive.imports import (
             2027,
         ),
         ({"year_label": " 2027 ", "financial": None}, 2027),
-        # Without one, the upcoming financial period's start year.
+        # Without one, the commitment period's start year.
         ({"year_label": "", "financial": {"start": "2027-01-01"}}, 2027),
         ({"financial": {"start": "2026-07-01", "end": "2027-06-30"}}, 2026),
         # A label outside a one-year period names the year the campaign runs
