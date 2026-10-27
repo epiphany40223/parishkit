@@ -1578,10 +1578,16 @@ their own gate (the [send date window](#schedules), #1787, and the
 Three shared checks in
 `ui-v1.js` cover the common cases (#563): `data-not-before="<start id>"` on
 an end date (or a text amount) keeps it no earlier than its start, as the
-report and System logs filters and the campaign and financial period end
-dates on Campaign settings do (an end on its
-start's own day and a financial period that isn't exactly one year are
-refused by the server, at the end field); `data-max-bytes` on a file input
+report and System logs filters and the campaign and commitment period end
+dates on Campaign settings do, and a date that must come strictly after
+its start also carries `data-strictly-after`, which makes the start's next
+day its min (the commitment period start after the campaign end date, so
+a start on the campaign's last day is held as the server refuses it; an
+end on its start's own day and a period that isn't exactly one year are
+refused by the server, at the field). A bound the page already knows (the
+day before a fixed commitment period starts, for the campaign end date on
+Dates and mail schedules) is the date's own `max`, with the server's words
+shown in its reserved error line when the field is left; `data-max-bytes` on a file input
 refuses a file larger than the limit, or than the room left, at once (Hosted
 files);
 and `data-pattern` gives a textarea, which has no `pattern` of its own, a
@@ -4387,7 +4393,8 @@ learned once. **Shared code.**
   invalid, and a closed editor holding such a send opens, as a refused
   Review opens it, so a date still being typed opens nothing. Dates or a
   zone the page cannot read yet judge nothing, and while the server
-  refuses the proposed dates themselves (an unconfirmed financial overlap)
+  refuses the proposed dates themselves (an end date on or after the
+  commitment period start)
   it judges the schedules against the saved ones; the server stays the
   authority. **Shared code.**
   `schedule_forms.send_window_attrs` (`data-send-window`) and the page

@@ -3496,14 +3496,17 @@ On a draft, its Review changes button, like Review changes on
 described under
 [Bootstrap and first-Admin wizard](#bootstrap-and-first-admin-wizard),
 until at least one module is ticked. While Financial stewardship is ticked
-it also waits for both financial periods, their funds and, while shown, the
-overlap confirmation. The server's checks are unchanged (#563).
+it also waits for the commitment and comparison periods and their funds.
+The server's checks are unchanged (#563).
 
 The campaign editor includes:
 
 - campaign IANA timezone plus modules and whole-campaign-local-day start/end
   dates;
-- financial period and explicit current/comparison fund multi-select;
+- the [commitment period](../data/spec.md#commitment-period)
+  (**Commitment period start** and **Commitment period end**, starting
+  after the campaign ends) with its explicit **Pledge funds**
+  multi-select, and the comparison period with its funds;
 - campaign Ministry multi-select, initially all active Ministries;
 - Ministry leader roles (see [Ministry leader roles](#ministry-leader-roles));
 - editable/reorderable share options with stable IDs and placeholders, on
@@ -3637,8 +3640,8 @@ the saved schedules left as they are; it names the end date before and
 after and every report email re-planned for the new dates, and notes that Family
 codes and links already sent keep working until the new end date. A date
 that has passed, falls on or before the campaign's start date, or
-would need the financial-period overlap acknowledged again is
-refused, at the field. When the new date would leave an invitation or
+falls on or after the commitment period start is refused, at the
+field. When the new date would leave an invitation or
 Reminder outside the campaign, the review is refused at the field, naming
 the combined date-change review above, on Dates and mail schedules, which
 the live check below links, with the proposed date filled in and only the
@@ -3687,7 +3690,7 @@ Campaign settings
 ([#1119](https://github.com/epiphany40223/parishkit/issues/1119)) is one
 editor. Every setting it edits (name, year label, time zone, dates,
 modules, additional information, Ministry selections and leader roles,
-financial periods and funds, and [Families in this campaign](#families-in-this-campaign), which is always locked) is shown once, in the same place and order in
+commitment and comparison periods and funds, and [Families in this campaign](#families-in-this-campaign), which is always locked) is shown once, in the same place and order in
 every campaign state. There is no second, read-only copy of the settings.
 
 - **Open or locked in place.** A setting that can change now is open. Every
@@ -3870,6 +3873,17 @@ validation, the review and reminder planning are unchanged. When the browser
 restores a value into a closed editor (Back), `pageshow` opens that editor
 again; a value restored into a read-only editor is put back to its saved value.
 
+For a campaign with a [commitment period](../data/spec.md#commitment-period),
+the campaign end date, while it can change, has the day before the period
+starts as its latest day
+([#2293](https://github.com/epiphany40223/parishkit/issues/2293)): a later
+day is marked as the field is left, with the server's refusal ("The campaign
+must end before its commitment period starts on …") in the field's reserved
+error line, and Review changes is not sent. The server judges the rule only
+when the end date changes, so a campaign saved with an overlapping period
+before the rule keeps saving its other changes; its end date gets no latest
+day, since the saved date is already past it.
+
 The date-change review shows and takes send dates and times in the browser's
 time zone ([#558](https://github.com/epiphany40223/parishkit/issues/558)), as
 [New and Edit scheduled email](#new-and-edit-scheduled-email) do: each saved
@@ -4002,9 +4016,8 @@ has no Basic and Advanced toggle: Sends is its progressive disclosure.
   the browser's zone, then a line for each proposed date ("Campaign end
   date: October 26, 2026 → November 2, 2026."), any report emails whose
   sends move with the dates, and "Nothing is sent now." It lists no
-  Current or Proposed schedule. A change to a saved schedule, a digest, a
-  financial acknowledgement or sends that block the change keep the full
-  review. Apply and Cancel, the signed preview and its audit are the same
+  Current or Proposed schedule. A change to a saved schedule, a digest or
+  sends that block the change keep the full review. Apply and Cancel, the signed preview and its audit are the same
   either way (`schedule_views.pane_confirmation`).
 - **A repeating schedule is one scheduled email that becomes its
   reminders.** It is never stored as one schedule: Review posts one
@@ -5018,8 +5031,8 @@ no-campaign text instead.
 
 **First page.** It collects the campaign's basics in the ordinary campaign
 form: name, modules, start and end dates, Ministries (from the loaded catalog,
-initially all active ones) and, for Financial stewardship, the financial
-period and current and comparison funds, and [Families in this campaign](#families-in-this-campaign) (below). As step 1 it
+initially all active ones) and, for Financial stewardship, the commitment
+and comparison periods and their funds, and [Families in this campaign](#families-in-this-campaign) (below). As step 1 it
 is the Campaign settings form itself, so it also asks the
 [Ministry leader roles](#ministry-leader-roles), starting on the configured
 list, and every Campaign settings question is asked here once; leaving the
@@ -9275,6 +9288,11 @@ separate Roster changes to enter page and menu entry
 into it (the Administrator, R39 finding 2, 2026-10-19). Its address,
 `/admin/reports/ministries/follow-up/roster/`, and its download's are gone,
 with no redirect ([legacy URLs](../ui-conventions/spec.md#addresses-and-legacy-urls)).
+
+Staff date each join or leave they enter for the campaign's commitment
+period, as the review pipeline's
+[Ministry roster date](../review-pipeline/spec.md#ministry-roster-date)
+staff guidance says; the page's help says the same.
 
 For Administrators and Staff, To enter by hand lists every accepted join or
 leave with no resolution source (the ones a ParishSoft refresh has not

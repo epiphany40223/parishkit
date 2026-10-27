@@ -218,7 +218,8 @@ A `Campaign` includes:
 - the selected set of Ministry DUIDs;
 - the [Families rule](#campaign-families) (`campaign_families`), fixed at
   creation;
-- financial period, comparison period, and mapped fund DUIDs;
+- [commitment period](#commitment-period), comparison period, and mapped
+  fund DUIDs;
 - configurable share-option versions;
 - additional-information enabled flag;
 - [report email](../report-emails/spec.md) schedules (which replaced the
@@ -245,9 +246,50 @@ preserving prior versions for submissions, messages, reports, and audit.
 
 Database constraints prevent overlapping active/scheduled intervals where both
 campaigns could become active, and ensure at least one module is enabled. The
-financial period has an inclusive end equal to the day before its first
+commitment period has an inclusive end equal to the day before its first
 anniversary. The immediately preceding equivalent period is the default
 comparison period, but fund mappings are explicit.
+
+#### Commitment period
+
+The **commitment period** is the one period a campaign asks Families to
+commit to: pledges are commitments of treasure, and Ministry joins and
+leaves are commitments of time and talent, so both apply to it (the
+Administrator,
+[#2293](https://github.com/epiphany40223/parishkit/issues/2293),
+2026-10-27). For Stewardship 2027 it runs from January 1 to December 31,
+2027. Every page, help text, review and `pk-admin` output calls it that:
+**Commitment period start** and **Commitment period end**, with **Pledge
+funds** for the funds pledges are matched on. It was called the "upcoming
+financial period"; "stewardship year" was rejected because the period need
+not be a calendar year, and "financial period" because it reads as pledges
+only. The comparison period keeps its name.
+
+The stored configuration keeps its keys: the period is still
+`values["financial"]` (`start`, `end`, `fund_duids`), so renaming it
+rewrote no data and every emailed Family code and link keeps working. The
+period still exists only while Financial stewardship is enabled.
+
+- **Validation.** The commitment period starts after the campaign ends: a
+  start on or before the campaign end date is refused, at the field, on
+  Campaign settings, on Dates and mail schedules (including a live
+  campaign's end date) and through `pk-admin`. The pages' form error carries
+  the code `commitment_before_campaign_end`; `pk-admin` reports it as
+  `invalid` at the field, as it reports every field error but a missing
+  value. The rule is judged only when the campaign end date or the
+  commitment period start changes. This replaced the overlap confirmation,
+  which let a period that overlapped the campaign be saved once confirmed.
+  Configurations saved before keep their stored `overlap_confirmed` value
+  (so a campaign saved with a confirmed overlap still saves its other
+  changes), and new saves store `false`; `pk-admin` documents that still
+  carry the retired member are accepted and it is ignored.
+- **Pledges** are matched by `pledgeStartDate` inside the commitment
+  period, as before ([Financial stream](../review-pipeline/spec.md#financial-stream)).
+- **Ministry hand-entry checks** read ParishSoft's Ministry memberships as
+  of the later of the refresh's own date and the commitment period start
+  ([Ministry roster date](../review-pipeline/spec.md#ministry-roster-date)).
+- **The Family form's current Ministries** stay today's roster, as of the
+  refresh date: what the Family sees is what ParishSoft holds now.
 
 The campaign-creation service and a transactional database guard permit at most
 one current campaign across `draft`, `scheduled`, `active`, and `closed`.
@@ -1518,8 +1560,9 @@ Every final click creates an immutable `Submission` version containing:
   [Open form](../reports/spec.md#open-form), or null when the Family
   entered it (a soft reference with no foreign key, added by frozen migration
   0065); and
-- `upcoming_pledge`, ParishSoft's pledge for the campaign's upcoming
-  financial period in the validation snapshot, recorded only for a response
+- `upcoming_pledge`, ParishSoft's pledge for the campaign's
+  [commitment period](#commitment-period) in the validation snapshot,
+  recorded only for a response
   that answers the financial questions and only when that snapshot's giving
   read is proven complete, else null (frozen migration 0136, provisional
   number; the review pipeline's A for the pledge,
@@ -2571,7 +2614,9 @@ Snapshot promotion performs these effects transactionally:
   [rule 4](../review-pipeline/spec.md#refresh-checks)), since publication
   refuses such a Member ([review and publication](#review-and-publication));
 - nothing for an open Ministry request whose requested roster state is
-  now current: it keeps its stage (#1890; until then it was resolved);
+  now current (as of the
+  [commitment period](#commitment-period) start): it keeps its stage
+  (#1890; until then it was resolved);
 - re-evaluate final census changes and decided Ministry requests against
   the new data, recording a refresh check for each whose outcome changed
   ([refresh checks](../review-pipeline/spec.md#refresh-checks)).
