@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from .waits import has_attribute, has_text, hidden, visible
+from .waits import greyed, has_attribute, has_text, hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -283,7 +283,7 @@ def test_an_empty_logo_file_is_refused_at_once(page, component_origin):
     logo.set_input_files({"name": "logo.png", "mimeType": "image/png", "buffer": b""})
     line = page.locator("#id_logo_error")
     has_text(line, "The chosen file is empty (0 bytes). Choose another file.")
-    assert page.get_by_role("button", name="Upload and review logos").is_disabled()
+    greyed(page.get_by_role("button", name="Upload and review logos"))
     assert not failures
 
 

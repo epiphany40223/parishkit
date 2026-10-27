@@ -9,9 +9,11 @@ the message holds an "@", and shows both change buttons unavailable until
 the sign-in is recent.
 """
 
+import re
+
 import pytest
 
-from .waits import greyed, has_count, visible
+from .waits import available, greyed, has_attribute, has_count, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -32,10 +34,19 @@ def spot(locator):
 
 
 def waits_with(button, hint, text):
-    """Assert the button is unavailable and its linked hint says ``text``."""
-    assert button.is_disabled()
-    assert hint.text_content() == text
-    assert hint.get_attribute("id") in button.get_attribute("aria-describedby").split()
+    """Assert the button is unavailable and its linked hint says ``text``.
+
+    Every read waits (auto-waiting assertions): the page's change handlers run
+    a tick after ``set_input_files``, so an immediate read can see the old state
+    (#2289).
+    """
+    from playwright.sync_api import expect
+
+    expect(button).to_be_disabled()
+    expect(hint).to_have_text(text)
+    expect(button).to_have_attribute(
+        "aria-describedby", re.compile(rf"(^|\s){hint.get_attribute('id')}(\s|$)")
+    )
 
 
 def test_log_filters_wait_for_ordered_dates_and_whole_identifiers(
@@ -131,12 +142,12 @@ def test_upload_waits_for_a_file_that_fits(page, component_origin):
         {"name": "big.pdf", "mimeType": "application/pdf", "buffer": b"x" * 3000}
     )
     waits_with(upload, hint, "This file is larger than the room left in the library.")
-    assert field.get_attribute("aria-invalid") == "true"
+    has_attribute(field, "aria-invalid", "true")
     field.set_input_files(
         {"name": "small.pdf", "mimeType": "application/pdf", "buffer": b"x" * 100}
     )
-    assert upload.is_enabled()
-    assert field.get_attribute("aria-invalid") == "false"
+    available(upload)
+    has_attribute(field, "aria-invalid", "false")
     page.locator('input[name="slug"]').fill("Bad Name")
     waits_with(
         upload,
@@ -186,7 +197,7 @@ def test_upload_choices_survive_the_table_redrawing(page, component_origin):
         {"name": "guide.pdf", "mimeType": "application/pdf", "buffer": b"x" * 100}
     )
     slug.fill("kept-name")
-    assert upload.is_enabled()
+    available(upload)
 
     def kept():
         """The reader's choices are still in the form, and Upload is ready."""
@@ -214,7 +225,7 @@ def test_upload_choices_survive_the_table_redrawing(page, component_origin):
     kept()
     # With the file cleared, the redrawn button is held again with its hint.
     field.set_input_files([])
-    assert page.get_by_role("button", name="Upload", exact=True).is_disabled()
+    greyed(page.get_by_role("button", name="Upload", exact=True))
     assert failures == []
 
 

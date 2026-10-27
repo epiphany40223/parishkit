@@ -13,9 +13,11 @@ worked out again on pageshow, when a page restored from history gets back its
 values without change events.
 """
 
+import re
+
 import pytest
 
-from .waits import hidden, visible
+from .waits import available, has_attribute, hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -50,16 +52,25 @@ def spot(locator):
 
 
 def waits_with(button, hint, text):
-    """Assert the button is unavailable and its linked hint says ``text``."""
-    assert button.is_disabled()
+    """Assert the button is unavailable and its linked hint says ``text``.
+
+    Every read waits (auto-waiting assertions): the page's change handlers run
+    a tick after an input event, so an immediate read can see the old state
+    (#2289).
+    """
+    from playwright.sync_api import expect
+
+    expect(button).to_be_disabled()
     visible(hint)
-    assert hint.text_content() == text
-    assert hint.get_attribute("id") in button.get_attribute("aria-describedby").split()
+    expect(hint).to_have_text(text)
+    expect(button).to_have_attribute(
+        "aria-describedby", re.compile(rf"(^|\s){hint.get_attribute('id')}(\s|$)")
+    )
 
 
 def ready(button, hint):
-    """Assert the button is available and its hint is gone."""
-    assert button.is_enabled()
+    """Assert the button is available and its hint is gone, waiting."""
+    available(button)
     hidden(hint)
 
 
@@ -333,6 +344,8 @@ def test_setup_logo_is_refused_at_its_field_when_too_large(page, component_origi
     it is chosen, in the server's words, and Save waits for a file that fits
     (#1332 item 29). The error line keeps its height, so a message coming
     or going moves nothing; only the shared error border marks the field."""
+    from playwright.sync_api import expect
+
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.goto(component_origin + "/setup-branding")
@@ -347,13 +360,13 @@ def test_setup_logo_is_refused_at_its_field_when_too_large(page, component_origi
     visible(error)
     assert error.inner_text().startswith("Parish logo: the file is ")
     assert error.inner_text().endswith("the limit is 5 MB.")
-    assert field.get_attribute("aria-invalid") == "true"
-    assert save.is_disabled()
-    assert hint.text_content() == error.inner_text()
+    has_attribute(field, "aria-invalid", "true")
+    expect(save).to_be_disabled()
+    expect(hint).to_have_text(error.inner_text())
     assert line.evaluate("node => node.getBoundingClientRect().height") == height
     field.set_input_files(logo_file(1024))
     ready(save, hint)
     hidden(error)
-    assert field.get_attribute("aria-invalid") != "true"
+    expect(field).not_to_have_attribute("aria-invalid", "true")
     assert line.evaluate("node => node.getBoundingClientRect().height") == height
     assert not failures
