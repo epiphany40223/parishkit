@@ -27,7 +27,7 @@ def test_the_query_names_every_login_and_migration(tmp_path):
     """No foundation login or shipped migration is left out of the proof."""
     deployment = uuid4()
     query = upgrade_check.upgrade_noop_query(configuration_at(tmp_path), deployment)
-    assert query.startswith("SELECT (")
+    assert query.startswith("SELECT coalesce(")
     assert f"'parishkit-stewardship:{deployment}'" in query
     for _, login, _, _ in database_identities():
         assert f"r.rolname='{login}'" in query, login
@@ -105,6 +105,22 @@ def test_no_look_alike_operator_and_no_runtime_create(tmp_path):
         assert query.count(create) == expected, login
 
 
+def test_an_owning_inspection_login_answers_its_cause_first(tmp_path):
+    """The cause (#2291) is coalesce's first argument, so it wins over t/f.
+
+    The proof is one CASE answering the text t or f, which psql prints as
+    it printed the boolean. Its behavior is proven in
+    test_database_provisioning_container.
+    """
+    from parishkit.stewardship import inspect_login
+
+    query = upgrade_check.upgrade_noop_query(configuration_at(tmp_path), uuid4())
+    cause = inspect_login.ownership_cause()
+    assert query.startswith(f"SELECT coalesce({cause},\nCASE WHEN (")
+    assert query.endswith(") THEN 't' ELSE 'f' END);\n")
+    assert query.count(cause) == 1
+
+
 def test_the_command_prints_the_query(tmp_path, capsys):
     """The CLI renders the same query from a deployment document."""
     configuration = configuration_at(tmp_path)
@@ -113,7 +129,7 @@ def test_the_command_prints_the_query(tmp_path, capsys):
     deployment = str(uuid4())
     argv = ["upgrade-check", "--config", str(path), "--confirm-deployment"]
     assert main([*argv, deployment]) == 0
-    assert capsys.readouterr().out.startswith("SELECT (")
+    assert capsys.readouterr().out.startswith("SELECT coalesce(")
 
 
 def test_the_command_refuses_unclear_input(tmp_path, capsys):

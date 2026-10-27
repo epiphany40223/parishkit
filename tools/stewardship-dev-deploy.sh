@@ -363,7 +363,9 @@ if [ "$noop" = t ]; then
     echo "    already match this image)"
 else
     # Say why both commands run: "f" means something would change; anything
-    # else is the query's own error, shown so a broken check is noticed.
+    # else is the query's own error, shown so a broken check is noticed, or
+    # the sentence naming what the inspection login owns (#2291), which
+    # database-grants then refuses with the same sentence.
     echo "    running both: the upgrade check answered: $(printf '%s' "$noop" | head -3)"
     # The System logs search's indexes (#765) need pg_trgm, which only the
     # operator superuser may create; an installed one is left alone.

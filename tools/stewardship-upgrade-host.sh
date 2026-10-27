@@ -856,6 +856,16 @@ refuse_rollback() {
 }
 advisory=$(check)
 echo "    advisory answer: $(head -3 <<<"$advisory")"
+# An inspection login that owns objects answers a sentence naming them and
+# their clean-up (#2291) instead of f. database-grants would refuse it in
+# step 4, after everything stopped, so refuse now, whatever the override.
+case "$advisory" in
+    "The inspection login owns objects"*)
+        echo "The inspection login owns objects; clean them up before upgrading:" >&2
+        echo "see $runbook#clean-up-when-the-inspection-login-owns-objects." >&2
+        exit 1
+        ;;
+esac
 if [ "$advisory" != t ]; then
     if [ "$mode" = rollback ]; then
         refuse_rollback "$advisory"
@@ -870,7 +880,7 @@ if [ "$advisory" != t ]; then
         # parameter privilege (#845)) or an excess grant (CREATE among
         # them). The services' identity check would refuse that. It also
         # answers f for an operator outside pg_catalog that is not pg_trgm's
-        # (#2166).
+        # (#2166). An inspection login that owns objects was refused above.
         echo "Or the database has drifted from its provisioned grants or login isolation" >&2
         echo "(a member role, an owned object, foreign-data USAGE, a parameter privilege," >&2
         echo "an excess grant), which the services' identity check or database-grants" >&2

@@ -825,6 +825,22 @@ def test_an_upgrade_with_a_schema_change_refuses_without_the_override(tmp_path):
     assert not any(" stop " in call for call in calls)
 
 
+def test_an_owning_inspection_login_refuses_before_anything_stops(tmp_path):
+    """The ownership cause (#2291) stops step 1 even with the override.
+
+    database-grants would refuse it in step 4, after everything stopped.
+    """
+    cause = "The inspection login owns objects (large objects in database x: 1)."
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", noop=cause, schema_change="1", status=1
+    )
+    assert f"advisory answer: {cause}" in output
+    assert "#clean-up-when-the-inspection-login-owns-objects" in output
+    assert "Failed before anything stopped; nothing changed" in output
+    assert not any(" stop " in call for call in calls)
+    assert not any(" retarget-image " in call for call in calls)
+
+
 def test_an_upgrade_with_the_override_runs_migration_and_grants(tmp_path):
     """With the override, both commands run after the retarget, before web."""
     calls, output, _ = run_host(tmp_path, "upgrade", noop="f", schema_change="1")

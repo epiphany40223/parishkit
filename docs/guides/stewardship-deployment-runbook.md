@@ -479,7 +479,10 @@ sequence with the commands that exist.
      and save its output as `upgrade-check.sql`. It opens no database; it
      prints the read-only query step 4 runs. You can also run that query now,
      exactly as step 4 does, as an advisory preflight: `f` tells you step 4
-     will run migration and grants. For a release whose notes promise no
+     will run migration and grants. A sentence saying the inspection login
+     owns objects means
+     [clean them up](#clean-up-when-the-inspection-login-owns-objects)
+     first; the scripted upgrade refuses it here. For a release whose notes promise no
      schema or grant change, or one that narrows a grant, `f` is the cue to
      stop and investigate before anything stops. Only step 4's answer
      decides anything.
@@ -1467,11 +1470,72 @@ tools/stewardship-ops/pk-inspect -At -v ON_ERROR_STOP=1 -f - < query.sql
 ```
 
 Set `PK_INSPECT_PROJECT` when the Compose project is not `stewardship`
-(pk-local's is `parishkit-local`). Every table write, DDL and `SET ROLE` is
-refused, and so is any read of credential material
-(`permission denied for table ...`). A restore of a backup set from before
+(pk-local's is `parishkit-local`). Every table write, every DDL except
+`ALTER ROLE` on itself, and `SET ROLE` are refused, and so is any read of
+credential material (`permission denied for table ...`). A restore of a backup set from before
 this release leaves the login without grants until `database-grants` runs
 again.
+
+The login guards against mistakes; it is not a write boundary
+([operations spec](../specs/stewardship/operations/spec.md#database-inspection-login)).
+Run nothing as it beyond read-only checks. A session that lifts its
+read-only default can still create large objects, `NOTIFY` and take
+advisory locks, and any session can change the login's own password and
+role settings, because PostgreSQL lets every login do that.
+
+#### Clean-up when the inspection login owns objects
+
+If a session as the login created a large object, the login now owns an
+object, which every login is refused for. The next `database-grants` (and
+`database-roles`) refuses, and the upgrade check answers a sentence instead
+of `t` or `f` (the [scripted upgrade](#scripted-upgrade) then refuses in step
+1, before anything stops, even with `STEWARDSHIP_SCHEMA_CHANGE=1`). Both name
+what it owns, for example:
+
+```text
+The inspection login owns objects (large objects in database stewardship: 2). As the operator, in each named database, run: SELECT lo_unlink(oid) FROM pg_largeobject_metadata WHERE lomowner='pk_stewardship_inspect'::regrole; then repeat this step (deployment runbook, Clean-up when the inspection login owns objects).
+```
+
+To clean up, as the operator superuser:
+
+1. List what it owns (read-only), in each database the sentence names
+   (`DATABASE`; normally the deployment's configured database name):
+   `docker compose -f COMPOSE_FILE -p PROJECT exec -T -e PGOPTIONS='-c default_transaction_read_only=on' postgres psql -U pk_stewardship_operator -d DATABASE -c "SELECT oid FROM pg_largeobject_metadata WHERE lomowner = 'pk_stewardship_inspect'::regrole"`.
+   Nothing in the application uses large objects, so these are the stray
+   session's.
+2. Drop them, in a session that is not read-only:
+   `docker compose -f COMPOSE_FILE -p PROJECT exec -T postgres psql -U pk_stewardship_operator -d DATABASE -v ON_ERROR_STOP=1 -c "SELECT lo_unlink(oid) FROM pg_largeobject_metadata WHERE lomowner = 'pk_stewardship_inspect'::regrole"`.
+   This drops only the large objects the login owns.
+3. Repeat the step that refused (`database-grants`, `database-roles`, or
+   the upgrade check).
+
+Do not use `DROP OWNED BY` or `REASSIGN OWNED BY` for this: `DROP OWNED BY`
+also revokes the login's `CONNECT` and `USAGE`, which `database-grants` then
+refuses rather than repairs, and `REASSIGN OWNED BY` keeps the stray objects,
+only under another owner. If the sentence names any kind other than large
+objects, the login has authority it should never have (it cannot create
+anything else); stop and investigate instead of removing it.
+
+#### Recreating the inspection login
+
+When `database-roles` or `database-grants` refuses with `The existing
+inspection login differs from initial provisioning`, the login differs in
+something other than owned objects: for example a password or role setting a
+session gave it with `ALTER ROLE`, or a change made as the operator. Find
+out who changed what before going on. The login holds nothing the
+application needs, so then recreate it, as the operator superuser, in the
+deployment's database (the only one it can connect to):
+
+1. Close any open `pk-inspect` sessions first: `DROP ROLE` does not end
+   them. Then run, in one transaction (`-1`):
+   `docker compose -f COMPOSE_FILE -p PROJECT exec -T postgres psql -U pk_stewardship_operator -d DATABASE -1 -v ON_ERROR_STOP=1 -c "DROP OWNED BY pk_stewardship_inspect" -c "DROP ROLE pk_stewardship_inspect"`.
+   Here `DROP OWNED BY` is right: the role is dropped next, so the
+   privileges it revokes do not matter. If `DROP ROLE` fails, the
+   transaction rolls back and nothing changed; if it names objects in
+   another database, the login reached a database it should not have: stop
+   and investigate.
+2. Run `database-grants`, as [upgrade](#upgrade) step 4 does. It creates the
+   login and grants it exactly its reads.
 
 ### Refresh schedule modes (#1122)
 
