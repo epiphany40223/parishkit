@@ -486,10 +486,15 @@ web's definition while web runs
 ([seeder phases](../local-environment/spec.md#seeder-phases-and-identities));
 the seeder passes that address with `--ip`.
 
-**Rollout.** The change ships alone, in a release with no migration and no
-grant change, so the application-only
+**Rollout.** The change ships alone, in a release with no migration. Its
+one grant change is the [inspection login](#database-inspection-login)
+(#2148), which the previous release's upgrade check does not look at, so
+the application-only
 [rollback](../../../guides/stewardship-deployment-runbook.md#rollback) stays
-available. `retarget-image` renders the new topology: fixed `backend`
+available. Because of that grant change the upgrade check answers `f`, so
+the upgrade runs as a schema change (`STEWARDSHIP_SCHEMA_CHANGE=1`,
+pk-local's `deploy --schema-change`) and step 4 runs `database-grants`.
+`retarget-image` renders the new topology: fixed `backend`
 addresses, the `backend` network's new `ip_range`, the one-shot networks
 and PostgreSQL's changed command. Compose cannot apply that to a running
 project: it can neither recreate a network that a running container is on
@@ -521,8 +526,8 @@ networks than the file the earlier run retargeted renders, finishes the
 full stop before its step 1 needs PostgreSQL, so step 1's check and backup
 (and a rollback's check, which would otherwise point at a database
 restore) see a running database. The hba check runs on the recreated PostgreSQL, then step 4 (the
-upgrade check, `pg_trgm`, and any migration and `database-grants`, none of
-which this release changes) runs against it, and step 6 starts the other
+upgrade check, `pg_trgm`, the migration, which finds nothing to apply, and
+`database-grants`, which creates the inspection login) runs against it, and step 6 starts the other
 services and runs the source check. Caddy stays up throughout: it is only
 on `ingress` and `proxy`, which do not change, and it keeps serving the
 maintenance page. The stop adds a minute or two inside the maintenance
@@ -551,10 +556,16 @@ rendered file proves. An image whose rendering has no rules (one from
 before this change) runs neither. A difference fails the run with web
 still up, and the Restore review waits for a fix.
 The local laptop environment's `deploy` and `deploy --rollback` run the
-upgrade's host half, full stop included; its `reset` and
-`snapshot restore` remove the containers and networks (never a volume)
-before they put a snapshot's root back, since a snapshot taken before this
-change renders the old networks.
+upgrade's host half, full stop included. Its `reset`, and a
+`snapshot restore` of a snapshot taken on another image, remove the
+containers and networks (never a volume) before they put the snapshot's
+root back, since a snapshot taken before this change renders the old
+networks. A `snapshot restore` of a snapshot taken on the running image
+only stops the services and recreates them: the same image renders the
+same networks. Once pk-local runs the new topology, only a checkout with
+this change may deploy, roll back, reset or restore it (the local
+environment's [operator script](../local-environment/spec.md#operator-script)
+says why).
 
 **Rollback.** Under the
 fail-forward policy a wrong rule is
