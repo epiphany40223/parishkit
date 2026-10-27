@@ -1852,9 +1852,14 @@ fake service, no such file and no marker, so none of this can reach it.
 **Snapshots and fast reset.** Snapshots are uncompressed copies of the runtime
 root inside the VM, under `/opt/parishkit-snapshots/<name>` together with the
 deployment YAML and record, so a restore is self-contained. `reset --seeded`
-stops the services, restores the seeded
+stops the services and removes their containers and networks (never a
+volume; a snapshot from before #2111 renders other database networks,
+which Compose cannot attach existing containers to, as the operations
+specification's
+[Rollout](../operations/spec.md#checks-rollout-and-rollback) explains),
+restores the seeded
 snapshot with `rsync --delete` preserving numeric ownership, modes and hard
-links, and restarts them; it SHOULD take seconds plus service start-up. Because
+links, and starts them again; it SHOULD take seconds plus service start-up. Because
 the seed is anchored to the time it was generated, a restored seeded snapshot
 keeps its original dates and grows older each day. Re-seed (`reseed`, then
 `snapshot --seeded`) only when fresh dates are needed; otherwise reset to the
@@ -1923,7 +1928,8 @@ Otherwise:
 - When it was taken on another image, matching migrations are not enough
   (grants, logins and credential files change without a migration), and the
   running image's required backup would refuse an older schema's pending
-  migrations. So the switch restores the snapshot whole except Caddy's data,
+  migrations. So the switch removes the containers and networks as `reset`
+  does, restores the snapshot whole except Caddy's data,
   starts it on its own image (refusing beforehand if that image is gone from
   the VM), and runs the scripted upgrade's host half in local mode to the
   running image with `--schema-change`, as `deploy` does. That upgrade's

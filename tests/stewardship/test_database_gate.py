@@ -180,6 +180,7 @@ def test_ci_requires_every_operational_container_module():
         "test_database_provisioning_container",
         "test_runtime_provisioning_container",
         "test_runtime_ingress_container",
+        "test_database_layout",
     ):
         assert f"tests/stewardship/{module}.py" in step["run"]
 

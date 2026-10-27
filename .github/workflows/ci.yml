@@ -209,7 +209,7 @@ jobs:
       - name: Validate operational runtime and provisioning
         env:
           PARISHKIT_RUN_RUNTIME_TESTS: "1"
-        run: python -m pytest tests/stewardship/test_database_provisioning_container.py tests/stewardship/test_runtime_provisioning_container.py tests/stewardship/test_runtime_ingress_container.py tests/stewardship/test_broker_valkey_container.py --require-no-skips --durations=10 -q
+        run: python -m pytest tests/stewardship/test_database_provisioning_container.py tests/stewardship/test_runtime_provisioning_container.py tests/stewardship/test_runtime_ingress_container.py tests/stewardship/test_broker_valkey_container.py tests/stewardship/test_database_layout.py --require-no-skips --durations=10 -q
 
   stewardship-operational:
     needs: validate
