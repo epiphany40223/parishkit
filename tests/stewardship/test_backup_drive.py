@@ -751,14 +751,24 @@ def test_the_budget_stops_a_real_requests_upload_mid_body():
     import requests
 
     received = []
+    # Each handler releases once when it is done with its request. The
+    # aborted upload's handler is still reading when requests raises and
+    # only records its partial body once the closed socket wakes it, which
+    # on a busy runner can be after the next upload (#2285), so the test
+    # waits for each handler before it sends again or asserts.
+    handled = threading.Semaphore(0)
 
     class Handler(BaseHTTPRequestHandler):
         def do_PUT(self):
-            length = int(self.headers["Content-Length"])
-            data = self.rfile.read(length)
-            received.append(len(data))
-            self.send_response(200)
-            self.end_headers()
+            """Record the body length that arrived, then answer 200."""
+            try:
+                length = int(self.headers["Content-Length"])
+                data = self.rfile.read(length)
+                received.append(len(data))
+                self.send_response(200)
+                self.end_headers()
+            finally:
+                handled.release()
 
         def log_message(self, *args):
             pass
@@ -784,10 +794,13 @@ def test_the_budget_stops_a_real_requests_upload_mid_body():
                 url, data=body, headers={"Content-Length": str(len(data))}, timeout=5
             )
         assert len(reads) == 3
+        assert handled.acquire(timeout=5), "upload handler did not finish"
+        assert all(length < len(data) for length in received)
         body = backup_drive._BoundedBody(io.BytesIO(data), len(data), lambda: 60)
         response = requests.put(
             url, data=body, headers={"Content-Length": str(len(data))}, timeout=5
         )
+        assert handled.acquire(timeout=5), "upload handler did not finish"
         assert response.status_code == 200 and received[-1] == len(data)
     finally:
         server.shutdown()
