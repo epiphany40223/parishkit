@@ -25,6 +25,7 @@ from parishkit.stewardship.database_provisioning import (
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.deployment_documents import deployment_document
 from parishkit.stewardship.inspect_login import (
+    CLEANUP,
     CREDENTIAL_NAME,
     EXCLUDED_COLUMNS,
     EXCLUDED_TABLES,
@@ -520,7 +521,10 @@ def upgrade_noop(configuration, deployment, tmp_path):
             cursor.execute(result.stdout)
         except psycopg.Error:
             return False
-        return cursor.fetchone()[0]
+        # psql prints the text answer as the scripts compare it; anything
+        # but t and f is a cause sentence (#2291), returned as it is.
+        value = cursor.fetchone()[0]
+        return {"t": True, "f": False}.get(value, value)
 
 
 def test_upgrade_check_proves_migration_and_grants_are_no_ops(
@@ -1010,23 +1014,81 @@ def test_inspection_login_reads_but_never_writes(operator_container, tmp_path):
 
     # A large object the login creates once its read-only default is lifted
     # (PUBLIC may run lo_create) is an owned object: the isolation drift
-    # every login is refused for, so the next database-grants stops.
-    assert (
-        answer(
-            container,
-            "SET default_transaction_read_only = off",
-            "SELECT lo_create(0) > 0",
-        ).splitlines()[-1]
-        == "t"
+    # every login is refused for, so the next database-grants and upgrade
+    # check stop, and both name what it owns and the clean-up (#2291).
+    assert upgrade_noop(configuration, deployment, tmp_path) is True
+    for _ in range(2):
+        assert (
+            answer(
+                container,
+                "SET default_transaction_read_only = off",
+                "SELECT lo_create(0) > 0",
+            ).splitlines()[-1]
+            == "t"
+        )
+    cause = (
+        "The inspection login owns objects (large objects in database "
+        "stewardship_provision_tests: 2). As the operator, in each named "
+        f"database, run: {CLEANUP}; then repeat this step (deployment "
+        "runbook, Clean-up when the inspection login owns objects)."
     )
-    with pytest.raises(ConfigError, match="inspection login differs"):
+    with pytest.raises(ConfigError) as refusal:
         provision_grants(configuration, deployment)
+    assert str(refusal.value) == cause
+    with pytest.raises(ConfigError) as refusal:
+        provision_roles(configuration, deployment)
+    assert str(refusal.value) == cause
+    assert upgrade_noop(configuration, deployment, tmp_path) == cause
+    # The documented clean-up, run as the operator, restores both.
+    with connect(configuration) as database:
+        database.execute(CLEANUP)
+    assert upgrade_noop(configuration, deployment, tmp_path) is True
+    provision_grants(configuration, deployment)
+
+    # Any other kind it owns names no clean-up; the login cannot create one
+    # itself, so the operator makes it the owner here.
     with connect(configuration) as database:
         database.execute(
-            "SELECT lo_unlink(oid) FROM pg_largeobject_metadata "
-            "WHERE lomowner='pk_stewardship_inspect'::regrole"
+            "CREATE TABLE public.inspect_probe_owned (i integer); "
+            "ALTER TABLE public.inspect_probe_owned OWNER TO pk_stewardship_inspect"
         )
+    try:
+        cause = upgrade_noop(configuration, deployment, tmp_path)
+        assert cause.startswith(
+            "The inspection login owns objects (objects in pg_class in database "
+            "stewardship_provision_tests: 1). Only large objects have a "
+            "documented clean-up: investigate"
+        ), cause
+        assert "lo_unlink" not in cause
+    finally:
+        with connect(configuration) as database:
+            database.execute("DROP TABLE public.inspect_probe_owned")
+
+    # A session can change the login's own role (password, settings): the
+    # generic refusal points to recreating it, which the runbook's steps do.
+    answer(
+        container,
+        "SET default_transaction_read_only = off",
+        "ALTER ROLE pk_stewardship_inspect RESET default_transaction_read_only",
+    )
+    # The wrapper still starts every session read-only (PGOPTIONS
+    # overrides role settings), even with the role's default set off.
+    answer(
+        container,
+        "SET default_transaction_read_only = off",
+        "ALTER ROLE pk_stewardship_inspect SET default_transaction_read_only = off",
+    )
+    assert answer(container, "SHOW default_transaction_read_only") == "on"
+    refused(container, "read-only transaction", "DELETE FROM stewardship_campaign")
+    with pytest.raises(ConfigError, match="Recreating the inspection login"):
+        provision_grants(configuration, deployment)
+    assert upgrade_noop(configuration, deployment, tmp_path) is False
+    with connect(configuration) as database:
+        database.execute("DROP OWNED BY pk_stewardship_inspect")
+        database.execute("DROP ROLE pk_stewardship_inspect")
     provision_grants(configuration, deployment)
+    assert answer(container, "SHOW default_transaction_read_only") == "on"
+    assert upgrade_noop(configuration, deployment, tmp_path) is True
 
     # Other drift is refused rather than repaired.
     for change, undo, command in (

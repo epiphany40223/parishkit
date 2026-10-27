@@ -7,6 +7,8 @@ settings and its one SET FALSE membership, an existing login checked and
 never altered, and grants refused on excess before any GRANT.
 """
 
+from pathlib import Path
+
 import pytest
 
 from parishkit.config import ConfigError
@@ -71,20 +73,84 @@ def test_a_new_login_has_no_password_and_cannot_change_identity():
     ]
 
 
-@pytest.mark.parametrize("matches", [True, False])
-def test_an_existing_login_is_checked_and_never_altered(matches):
-    """A matching login is left alone; a differing one is refused."""
-    cursor = Cursor(rows=[(True,), (matches,)])
+@pytest.mark.parametrize(
+    ("matches", "cause", "refusal"),
+    [
+        (True, None, None),
+        (False, None, "The existing inspection login differs"),
+        # What ownership_cause answers names the objects (#2291).
+        (False, "The inspection login owns objects (x)", r"owns objects \(x\)"),
+    ],
+)
+def test_an_existing_login_is_checked_and_never_altered(matches, cause, refusal):
+    """A matching login is left alone; a differing one is refused.
+
+    The refusal is the ownership cause when there is one, and the generic
+    sentence otherwise.
+    """
+    cursor = Cursor(rows=[(True,), (matches,), (cause,)])
     if matches:
         ensure_inspect_login(cursor, MARKER, "stewardship")
     else:
-        with pytest.raises(ConfigError, match="inspection login differs"):
+        with pytest.raises(ConfigError, match=refusal):
             ensure_inspect_login(cursor, MARKER, "stewardship")
-    assert len(cursor.statements) == 2
+    assert len(cursor.statements) == (2 if matches else 3)
     assert MARKER in cursor.statements[1]
+    if not matches:
+        assert cursor.statements[2] == "SELECT " + inspect_login.ownership_cause()
     assert not any(
         s.startswith(("CREATE", "ALTER", "GRANT", "COMMENT")) for s in cursor.statements
     )
+
+
+def test_the_ownership_cause_names_kinds_counts_and_the_clean_up():
+    """The cause counts owned objects per database and kind, with the step.
+
+    It reads only pg_shdepend and pg_database (so it is read-only), looks
+    the login up with to_regrole (NULL, so no cause, when it is absent), and
+    quotes the documented clean-up, which drops only the login's own large
+    objects, inside its SQL literal.
+    """
+    cause = inspect_login.ownership_cause()
+    clean_up = inspect_login.CLEANUP
+    assert clean_up == (
+        "SELECT lo_unlink(oid) FROM pg_largeobject_metadata "
+        f"WHERE lomowner='{INSPECT_LOGIN}'::regrole"
+    )
+    assert clean_up.replace("'", "''") in cause
+    assert f"to_regrole('{INSPECT_LOGIN}')" in cause
+    assert "deptype='o'" in cause and "'large objects'" in cause
+    assert "count(*)" in cause and "datname" in cause
+    assert "Clean-up when the inspection login owns objects" in cause
+    for verb in ("INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "REVOKE"):
+        assert verb not in cause
+    # One scalar subquery: no statement ends outside the quoted clean-up
+    # and string_agg's quoted separator.
+    assert cause.startswith("(SELECT ") and cause.endswith(")")
+    rest = cause.replace(clean_up.replace("'", "''") + ";", "").replace("'; '", "")
+    assert ";" not in rest
+
+
+def test_the_runbook_quotes_the_sentence_and_names_both_repairs():
+    """The runbook's example is the sentence the code builds (no drift).
+
+    test_database_provisioning_container proves the same sentence against
+    PostgreSQL; here the runbook's copy and both headings the refusals
+    name are checked without one.
+    """
+    runbook = (
+        Path(__file__).resolve().parents[2]
+        / "docs/guides/stewardship-deployment-runbook.md"
+    ).read_text()
+    example = (
+        "The inspection login owns objects (large objects in database "
+        "stewardship: 2). As the operator, in each named database, run: "
+        f"{inspect_login.CLEANUP}; then repeat this step (deployment "
+        "runbook, Clean-up when the inspection login owns objects)."
+    )
+    assert example in runbook
+    assert "#### Clean-up when the inspection login owns objects\n" in runbook
+    assert "#### Recreating the inspection login\n" in runbook
 
 
 def test_grants_are_refused_on_excess_before_any_grant():

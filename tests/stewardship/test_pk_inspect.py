@@ -7,7 +7,8 @@ records its arguments and then runs the container side itself: the inner
 argument list psql would get. What is pinned: the container for Production
 and for pk-local's project, standard input forwarded with a terminal only
 when there is one, the caller's options first and the connection options
-last (so they win), and ``--`` refused before docker runs. The Docker
+last (so they win), every session read-only through PGOPTIONS with the
+caller's PGOPTIONS kept, and ``--`` refused before docker runs. The Docker
 provisioning test runs the real wrapper against a real PostgreSQL.
 """
 
@@ -20,17 +21,23 @@ ROOT = Path(__file__).resolve().parents[2]
 WRAPPER = ROOT / "tools" / "stewardship-ops" / "pk-inspect"
 
 # Records docker's arguments, then runs what `docker exec` would run in the
-# container: everything after the container name, with POSTGRES_DB set.
+# container: everything after the container name, with POSTGRES_DB and each
+# `-e NAME=VALUE` set, and PGOPTIONS taken only from `-e`.
 FAKE_DOCKER = """#!/bin/sh
 printf '%s\\n' "$@" > "$STATE/docker-args"
-shift 3
+shift 2
+unset PGOPTIONS
+while [ "$1" = -e ]; do export "$2"; shift 2; done
+shift
 export POSTGRES_DB=stewardship_db
 exec "$@"
 """
 FAKE_PSQL = """#!/bin/sh
 printf '%s\\n' "$@" > "$STATE/psql-args"
+printf '%s' "${PGOPTIONS-unset}" > "$STATE/psql-pgoptions"
 cat > "$STATE/psql-stdin"
 """
+READ_ONLY = "-c default_transaction_read_only=on"
 
 
 @pytest.fixture
@@ -95,8 +102,15 @@ def test_production_defaults_and_connection_options_last(host):
         host, "-At", "-U", "pk_stewardship_operator", "-c", "SELECT 1", stdin=b"x"
     )
     assert result.returncode == 0, result.stderr
-    assert docker[:3] == ["exec", "-i", "stewardship-postgres-1"]
-    assert docker[3:5] == ["sh", "-c"]
+    assert docker[:5] == [
+        "exec",
+        "-i",
+        "-e",
+        f"PGOPTIONS={READ_ONLY}",
+        "stewardship-postgres-1",
+    ]
+    assert docker[5:7] == ["sh", "-c"]
+    assert (host / "psql-pgoptions").read_text() == READ_ONLY
     # psql takes the last -U, -h and -d, so the caller's -U is overridden.
     assert psql == [
         "-X",
@@ -124,8 +138,28 @@ def test_pk_local_project_and_explicit_container(host, environment, container):
     """pk-local's project names its container; an explicit container wins."""
     result, docker, psql = run(host, environment=environment)
     assert result.returncode == 0, result.stderr
-    assert docker[:3] == ["exec", "-i", container]
+    assert docker[:2] == ["exec", "-i"] and docker[4] == container
     assert psql == ["-X", *CONNECTION]
+
+
+def test_the_callers_pgoptions_is_kept_before_the_read_only_option(host):
+    """A caller's PGOPTIONS reaches psql; read-only, last, still applies.
+
+    PostgreSQL applies PGOPTIONS in order, so the caller cannot lift the
+    read-only start this way (#2291).
+    """
+    caller = "-c statement_timeout=1min -c default_transaction_read_only=off"
+    result, docker, _ = run(host, environment={"PGOPTIONS": caller})
+    assert result.returncode == 0, result.stderr
+    assert docker[3] == f"PGOPTIONS={caller} {READ_ONLY}"
+    assert (host / "psql-pgoptions").read_text() == f"{caller} {READ_ONLY}"
+
+
+def test_an_empty_pgoptions_passes_only_the_read_only_option(host):
+    """An empty caller PGOPTIONS adds nothing before the read-only option."""
+    result, docker, _ = run(host, environment={"PGOPTIONS": ""})
+    assert result.returncode == 0, result.stderr
+    assert docker[3] == f"PGOPTIONS={READ_ONLY}"
 
 
 def test_double_dash_is_refused_before_docker_runs(host):

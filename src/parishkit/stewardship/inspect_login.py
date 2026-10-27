@@ -205,6 +205,56 @@ def expected_selects():
     )
 
 
+# The documented clean-up (#2291) for the one kind of object the login can
+# come to own: a large object, which PUBLIC may create with lo_create once a
+# session lifts the read-only default. The operator runs it in the database
+# the refusal names. DROP OWNED BY would also revoke the login's CONNECT and
+# USAGE, which database-grants refuses rather than repairs, so it is not
+# the clean-up.
+CLEANUP = (
+    "SELECT lo_unlink(oid) FROM pg_largeobject_metadata "
+    f"WHERE lomowner={_literal(INSPECT_LOGIN)}::regrole"
+)
+
+
+def ownership_cause():
+    """SQL text: why the login is refused for owning objects, or NULL.
+
+    Owning any object is isolation drift (``ISOLATION_DRIFT``), which
+    ``role_matches`` refuses. This names what is owned, per database and
+    kind ("large objects in database stewardship: 2"), and the documented
+    clean-up when only large objects are owned (otherwise, to investigate),
+    so ``database-grants`` and the upgrade check can say more than
+    "differs". It is NULL when the login owns nothing or is absent.
+    pg_shdepend is cluster-wide, so an object in another database counts
+    too, as the drift check counts it. Run as the operator.
+    """
+    large = "d.classid='pg_largeobject'::regclass"
+    kind = (
+        f"CASE WHEN {large} THEN 'large objects' "
+        "ELSE 'objects in '||d.classid::regclass::text END"
+    )
+    database = "coalesce('database '||b.datname,'the cluster')"
+    return (
+        "(SELECT 'The inspection login owns objects ('"
+        "||string_agg(o.what||': '||o.n,'; ' ORDER BY o.what)||'). '"
+        # Only large objects have a documented clean-up; anything else
+        # means authority the login should never have had.
+        "||CASE WHEN bool_and(o.large) THEN 'As the operator, in each named "
+        "database, run: " + CLEANUP.replace("'", "''") + "; then repeat this step' "
+        "ELSE 'Only large objects have a documented clean-up: investigate "
+        "before removing anything' END"
+        "||' (deployment runbook, Clean-up when the inspection login owns "
+        "objects).' "
+        f"FROM (SELECT {kind}||' in '||{database} AS what,count(*) AS n,"
+        f"bool_and({large}) AS large "
+        "FROM pg_shdepend d LEFT JOIN pg_database b ON b.oid=d.dbid "
+        "WHERE d.refclassid='pg_authid'::regclass "
+        f"AND d.refobjid=to_regrole({_literal(INSPECT_LOGIN)}) AND d.deptype='o' "
+        "GROUP BY 1) o)"
+    )
+
+
 def role_matches(marker):
     """SQL boolean: the login exists exactly as provisioning creates it.
 
@@ -333,7 +383,8 @@ def ensure_inspect_login(cursor, marker, database):
     Runs as the operator in ``database-roles`` and ``database-grants``. An
     existing role is never repaired: a differing one (attributes, password,
     settings, membership, drift, authority) is refused for the operator to
-    investigate, as every other login is. A new one gets no password, so it
+    investigate, as every other login is; when it owns objects, the refusal
+    is ``ownership_cause``'s sentence. A new one gets no password, so it
     can sign in only where the socket trusts it.
     """
     cursor.execute(
@@ -342,8 +393,16 @@ def ensure_inspect_login(cursor, marker, database):
     if cursor.fetchone()[0]:
         cursor.execute("SELECT " + role_matches(marker))
         if cursor.fetchone() != (True,):
+            # An owned object is the difference a stray inspection session
+            # most likely causes (#2291), so name it and its clean-up. Any
+            # other (a password or role setting the login changed on
+            # itself, or an operator's change) is fixed by recreating it.
+            cursor.execute("SELECT " + ownership_cause())
             raise ConfigError(
-                "The existing inspection login differs from initial provisioning."
+                cursor.fetchone()[0]
+                or "The existing inspection login differs from initial "
+                "provisioning (deployment runbook, Recreating the inspection "
+                "login)."
             )
         return
     login = sql.Identifier(INSPECT_LOGIN)

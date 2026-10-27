@@ -25,7 +25,9 @@ that answers `t` only when all of these hold at once:
   database (#2166);
 * the SELECT-only inspection login (#2148) exists exactly as provisioned and
   holds exactly the SELECT grants its catalog rule gives, so the first
-  upgrade that carries it runs `database-grants`.
+  upgrade that carries it runs `database-grants`. When it owns objects
+  (#2291), the query answers a sentence naming them and their clean-up
+  instead of `f`.
 
 Anything else, including a query error such as a missing table, means "run
 both commands". The query checks the same conditions the commands check,
@@ -327,4 +329,12 @@ def upgrade_noop_query(configuration, deployment_id):
         if not reader:
             checks.append(no_create(login))
     checks += [inspect_login.role_matches(marker), inspect_login.grants_exact()]
-    return "SELECT " + "\n AND ".join(f"({check})" for check in checks) + ";\n"
+    proof = "\n AND ".join(f"({check})" for check in checks)
+    # The answer is text, printed by psql exactly as the boolean was: t or
+    # f. An inspection login that owns objects answers its cause instead
+    # (#2291), which is not t either; coalesce evaluates left to right and
+    # stops at the first non-NULL argument, so the cause comes first.
+    return (
+        f"SELECT coalesce({inspect_login.ownership_cause()},\n"
+        f"CASE WHEN ({proof}) THEN 't' ELSE 'f' END);\n"
+    )
