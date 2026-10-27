@@ -91,14 +91,17 @@ def test_chosen_logo_is_previewed_without_moving_anything(
     assert page.locator(IMAGE).evaluate("i => i.complete && i.naturalWidth") == 64
     assert layout(page) == before
     field.set_input_files(real_png("green"))
+    # The swap runs after the change event, so wait for the new source.
+    expect(page.locator(IMAGE)).not_to_have_attribute("src", first)
     assert first in page.evaluate("() => window.__revoked")
-    assert shown(page).startswith("blob:") and shown(page) != first
+    assert shown(page).startswith("blob:")
     assert layout(page) == before
     # Leaving the page releases the current object URL too.
     current = shown(page)
     page.evaluate("() => window.dispatchEvent(new Event('pagehide'))")
     assert current in page.evaluate("() => window.__revoked")
     field.set_input_files([])
+    expect(page.locator(IMAGE)).to_be_hidden()
     assert shown(page) is None
     assert layout(page) == before
     assert not failures

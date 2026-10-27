@@ -22,7 +22,7 @@ from parishkit.stewardship.accounts.artwork_views import NOT_STATIC_IMAGE, UNAVA
 from .artwork_components import PAGE, REMOVAL
 from .review_helpers import answer_reviews
 from .test_in_place import MARK, MARKED
-from .waits import eventually, has_attribute, hidden, same_place, visible
+from .waits import available, eventually, has_attribute, hidden, same_place, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -226,6 +226,8 @@ def test_a_refused_upload_stays_on_the_field(page, component_origin):
     status line, which says why and takes focus; no dialog opens, no
     summary is placed above the heading, no error line is added and nothing
     reloads. Choosing another image clears the line and the mark."""
+    from playwright.sync_api import expect
+
     page.goto(component_origin + PAGE)
     failures = watch(page)
     member = slot(page, "Member pages icon")
@@ -242,10 +244,12 @@ def test_a_refused_upload_stays_on_the_field(page, component_origin):
     assert member.locator(".errorlist").count() == 0
     assert not page.locator("dialog[data-review-dialog]").is_visible()
     member.get_by_label("Image").set_input_files(png())
-    assert line.inner_text() == ""
-    assert field.get_attribute("aria-invalid") != "true"
-    described = field.get_attribute("aria-describedby") or ""
-    assert "artwork-outcome-member" not in described.split()
+    # The clearing runs after the change event, so these reads wait.
+    expect(line).to_have_text("")
+    expect(field).not_to_have_attribute("aria-invalid", "true")
+    expect(field).not_to_have_attribute(
+        "aria-describedby", re.compile(r"(^|\s)artwork-outcome-member(\s|$)")
+    )
     assert page.url == component_origin + PAGE
     assert page.evaluate(MARKED) == "kept"
     assert not failures
@@ -412,6 +416,8 @@ def test_upload_waits_for_an_image_and_an_unshown_slot_says_why(page, component_
     after the button, so choosing one moves nothing. The Financial page icon
     of a campaign without Financial stewardship is greyed in place, its
     Upload named by why (#563)."""
+    from playwright.sync_api import expect
+
     page.goto(component_origin + PAGE)
     closing = slot(page, "Closing page icon")
     button = closing.get_by_role("button", name="Upload and review")
@@ -421,8 +427,8 @@ def test_upload_waits_for_an_image_and_an_unshown_slot_says_why(page, component_
     assert button.get_attribute("aria-describedby") == "artwork-hint-closing"
     bottom = page.evaluate(SLOT_BOTTOM, "Closing page icon")
     closing.get_by_label("Image").set_input_files(png())
-    assert button.is_enabled()
-    assert hint.inner_text() == ""
+    available(button)
+    expect(hint).to_have_text("")
     assert page.evaluate(SLOT_BOTTOM, "Closing page icon") == pytest.approx(
         bottom, abs=1
     )

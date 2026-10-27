@@ -207,7 +207,7 @@ def test_a_refused_image_is_said_in_its_slot_and_saves_nothing(page, component_o
     save.click()
     line = page.locator("#artwork-outcome-welcome")
     has_text(line, f"Image: {NOT_STATIC_IMAGE['section']}")
-    assert welcome.get_attribute("aria-invalid") == "true"
+    has_attribute(welcome, "aria-invalid", "true")
     assert page.url == component_origin + STEP
     available(save)
     save.click()

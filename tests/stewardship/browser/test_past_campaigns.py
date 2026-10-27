@@ -97,6 +97,8 @@ def test_page_is_accessible_and_fits(page, component_origin, axe_source, path, w
 def test_review_waits_for_a_file_within_the_limit(page, component_origin, tmp_path):
     """Review is unavailable, with the reason after it, until a file no larger
     than the limit is chosen; the reason's line keeps its height."""
+    from playwright.sync_api import expect
+
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + PAGE)
     failures = watch(page)
@@ -116,7 +118,7 @@ def test_review_waits_for_a_file_within_the_limit(page, component_origin, tmp_pa
     eventually(
         page, "!document.querySelector('#archive-upload [type=submit]').disabled"
     )
-    assert hint.inner_text().strip() == ""
+    expect(hint).to_have_text("")
     assert hint.bounding_box()["height"] == height
     assert not failures
 
