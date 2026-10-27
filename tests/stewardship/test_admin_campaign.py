@@ -36,7 +36,6 @@ def test_the_parser_takes_the_pages_form_fields():
         "census",
         "ministry",
         "financial_enabled",
-        "overlap_confirmed",
         "additional_information",
     }
     assert set(multiples) <= set(names)
@@ -69,6 +68,35 @@ def test_the_parser_names_each_bad_field(member, field):
     with pytest.raises(InvalidChange) as raised:
         admin_campaign.parse_settings(json.dumps({"campaign": member}))
     assert [item["field"] for item in raised.value.fields] == [field]
+
+
+@pytest.mark.parametrize("retired", [True, False, None])
+def test_the_retired_overlap_confirmation_is_accepted_and_ignored(retired):
+    """``campaign show`` printed ``overlap_confirmed`` until #2293 retired
+    it, so a script that sends back what ``show`` printed keeps working:
+    the member is dropped with no error, as ``weekday`` is (#2102)."""
+    fields = {"name": "Stewardship 2055", "overlap_confirmed": retired}
+    parsed = admin_campaign.parse_settings(json.dumps({"campaign": fields}))
+    assert parsed == {"name": "Stewardship 2055"}
+    families = admin_campaign.parse_settings(
+        json.dumps({"campaign": fields}), families=True
+    )
+    assert families == {"name": "Stewardship 2055"}
+
+
+def test_the_retired_overlap_confirmation_still_takes_only_a_boolean():
+    """Any other value is refused at its name (``invalid``)."""
+    with pytest.raises(InvalidChange) as raised:
+        admin_campaign.parse_settings(
+            json.dumps({"campaign": {"overlap_confirmed": "yes"}})
+        )
+    assert raised.value.fields == [
+        {
+            "field": "campaign.overlap_confirmed",
+            "code": "invalid",
+            "message": "Give true, false or null.",
+        }
+    ]
 
 
 def test_the_catalog_entries():

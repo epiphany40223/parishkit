@@ -69,10 +69,6 @@ def display_value(key, value, *, ministries=(), funds=()):
                 % value,
                 _("Comparison funds: %(funds)s")
                 % {"funds": _choices(value["comparison_fund_duids"], funds)},
-                _("Campaign overlap confirmed: %(answer)s")
-                % {
-                    "answer": _("Yes") if value["overlap_confirmed"] else _("No"),
-                },
             ]
         )
     return str(value)

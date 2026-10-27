@@ -162,7 +162,6 @@ def test_disabling_financial_preview_warns_before_discarding_custom_sharing(
         "comparison_end",
         "fund_duids",
         "comparison_fund_duids",
-        "overlap_confirmed",
     ):
         data.pop(name, None)
     response = post(browser, url(row), data)

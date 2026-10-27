@@ -247,10 +247,6 @@ ADMIN_CAMPAIGN = {
         "The funds whose giving in the comparison period is shown for "
         "comparison, usually the same funds as above."
     ),
-    "overlap_confirmed": _(
-        "Needed only when the campaign dates and the upcoming financial period "
-        "overlap. Check it to confirm that is intended."
-    ),
     "additional_information": _(
         "Add a final question where Families can write anything else for the "
         "parish. Each new answer creates a follow-up item for Staff."

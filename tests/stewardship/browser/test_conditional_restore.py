@@ -4,9 +4,11 @@ A browser can bring a page back from its back/forward cache, or restore form
 values after load, without the change events the page scripts listen for.
 Each test sets a value the way a restore does (no event), sends the
 ``pageshow`` a restored page receives, and checks that the page agrees with
-the value: bulk actions and their reason line, campaign modules, the overlap
-confirmation and mail schedule rows.
+the value: bulk actions and their reason line, campaign modules, the
+commitment period's start and mail schedule rows.
 """
+
+from datetime import date, timedelta
 
 import pytest
 
@@ -130,16 +132,17 @@ def test_campaign_modules_follow_a_restored_tick(page, component_origin):
     assert "financial_start" not in posted
 
 
-def test_overlap_confirmation_follows_restored_dates(page, component_origin):
-    """A restored campaign end that overlaps the financial period asks again."""
-    page.goto(component_origin + "/schedule-editor-financial")
-    group = page.locator("[data-overlap-confirmation]")
-    assert group.is_hidden()
-    end = '[name="window-end_date"]'
-    restore(page, end, "field => { field.value = '2055-01-05'; }")
-    visible(group)
-    restore(page, end, "field => { field.value = '2054-12-31'; }")
-    assert group.is_hidden()
+def test_the_commitment_start_follows_a_restored_value(page, component_origin):
+    """A restored commitment period start before the campaign end is out of
+    range, with the day after the campaign end as its minimum (#2293)."""
+    page.goto(component_origin + "/campaign-settings")
+    page.locator("#id_financial_enabled").check()
+    selector = '[name="financial_start"]'
+    restore(page, selector, "field => { field.value = '2026-01-01'; }")
+    start = page.locator(selector)
+    end = date.fromisoformat(page.locator('[name="end_date"]').input_value())
+    assert start.get_attribute("min") == (end + timedelta(days=1)).isoformat()
+    assert start.evaluate("input => input.validity.rangeUnderflow")
 
 
 def test_schedule_rows_follow_a_restored_mail_type(page, component_origin):

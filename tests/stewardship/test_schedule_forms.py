@@ -38,7 +38,7 @@ def data_for(rows, *, total=None):
 
 
 def window_data(owner, **changes):
-    """Only the draft window and optional overlap acknowledgment are structural."""
+    """Only the draft window is structural."""
     return {
         name: owner["values"][name] for name in ("timezone", "start_date", "end_date")
     } | changes
@@ -102,16 +102,100 @@ def test_proposed_dates_are_a_proposal_only_while_one_differs(proposed, expected
     assert form.proposed is expected
 
 
-def test_schedule_window_financial_overlap_requires_explicit_acknowledgement():
-    """A draft date extension cannot silently move into its financial period."""
+def test_schedule_window_ends_before_its_commitment_period():
+    """A draft date extension cannot move into its commitment period (#2293),
+    and no acknowledgement admits it any more; the saved period is kept."""
     owner = campaign(modules=["financial"], financial=financial())
     data = window_data(owner, end_date="2055-01-20")
+    for posted in (data, data | {"overlap_confirmed": "on"}):
+        form = ScheduleWindow(posted, previous=owner["values"], editable=True)
+        assert not form.is_valid()
+        assert form.has_error("end_date", "commitment_before_campaign_end")
+    data = window_data(owner, end_date="2054-12-31")
     form = ScheduleWindow(data, previous=owner["values"], editable=True)
-    assert not form.is_valid()
-    form = ScheduleWindow(
-        data | {"overlap_confirmed": "on"}, previous=owner["values"], editable=True
+    assert form.is_valid(), form.errors
+    assert form.values()["financial"] == owner["values"]["financial"]
+
+
+def overlapping():
+    """A campaign saved before #2293 whose confirmed commitment period
+    starts inside it (2054-10-15, before its 2054-10-31 end)."""
+    return campaign(
+        modules=["financial"],
+        financial=financial(
+            start="2054-10-15", end="2055-10-14", overlap_confirmed=True
+        ),
     )
-    assert form.is_valid() and form.values()["financial"]["overlap_confirmed"]
+
+
+@pytest.mark.parametrize("editable", [True, False])
+def test_a_saved_overlap_keeps_saving_while_its_end_date_is_unchanged(editable):
+    """The rule is judged only when the end date changes (#2293): a
+    campaign saved with a confirmed overlap still saves its other changes,
+    editable or with its window locked, and keeps its stored answer; a
+    changed end date that still overlaps is refused."""
+    owner = overlapping()
+    data = window_data(owner) if editable else {}
+    form = ScheduleWindow(data, previous=owner["values"], editable=editable)
+    assert form.is_valid(), form.errors
+    assert form.values()["financial"] == owner["values"]["financial"]
+    moved = ScheduleWindow(
+        window_data(owner, end_date="2054-10-30"),
+        previous=owner["values"],
+        editable=True,
+    )
+    assert not moved.is_valid()
+    assert moved.has_error("end_date", "commitment_before_campaign_end")
+    earlier = ScheduleWindow(
+        window_data(owner, end_date="2054-10-14"),
+        previous=owner["values"],
+        editable=True,
+    )
+    assert earlier.is_valid(), earlier.errors
+
+
+def test_a_live_end_date_with_a_saved_overlap_is_judged_only_when_changed():
+    """A live campaign's open end date posted unchanged (Campaign settings'
+    end_review, a schedule change) is admitted despite a saved overlap."""
+    owner = overlapping()
+    live_at = datetime(2054, 10, 2, tzinfo=UTC)
+    same = ScheduleWindow(
+        {"end_date": owner["values"]["end_date"]},
+        previous=owner["values"],
+        editable=False,
+        live_at=live_at,
+    )
+    assert same.is_valid(), same.errors
+    later = ScheduleWindow(
+        {"end_date": "2054-11-05"},
+        previous=owner["values"],
+        editable=False,
+        live_at=live_at,
+    )
+    assert later.has_error("end_date", "commitment_before_campaign_end")
+
+
+def test_the_end_date_max_is_the_day_before_the_commitment_period():
+    """The browser holds an end in the commitment period (#2293): only with
+    a period and an open end date, and never on a saved overlap's end."""
+    owner = campaign(modules=["financial"], financial=financial())
+    attrs = (
+        ScheduleWindow(None, previous=owner["values"], editable=True)
+        .fields["end_date"]
+        .widget.attrs
+    )
+    assert attrs["max"] == "2054-12-31"
+    assert attrs["data-missing-hint"].startswith(
+        "The campaign must end before its commitment period starts on "
+    )
+    assert attrs["data-field-rule"] and attrs["data-empty-hint"]
+    for previous, editable in (
+        (campaign()["values"], True),
+        (owner["values"], False),
+        (overlapping()["values"], True),
+    ):
+        form = ScheduleWindow(None, previous=previous, editable=editable)
+        assert "max" not in form.fields["end_date"].widget.attrs
 
 
 def test_existing_legacy_template_is_retained_but_not_offered_to_new_schedule():

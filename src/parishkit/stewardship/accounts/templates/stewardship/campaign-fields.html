@@ -2,8 +2,9 @@
 Shared by Campaign settings, Create the campaign and the clone page. Under the form's
 data-require-complete gate (ui-v1.js, #563) its action waits for at least one
 module (data-require-one) and, while Financial stewardship is ticked, for both
-financial periods and their funds (each field's data-required-when) and a
-shown overlap confirmation; the server's own checks are unchanged.
+financial periods and their funds (each field's data-required-when), with
+the commitment period starting no earlier than the campaign end date
+(data-not-before, #2293); the server's own checks are unchanged.
 On Campaign settings every setting is drawn here once, in the same place in
 every campaign state (#1119): a setting that can't change now is disabled
 where it stands, with the reason in its "i" tip (campaign_views._lock). While

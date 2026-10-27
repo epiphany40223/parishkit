@@ -21,8 +21,7 @@ applied (#944):
 
 The change document (default, pending Administrator confirmation) is JSON::
 
-    {"window": {"start_date": "...", "end_date": "...", "timezone": "...",
-                "overlap_confirmed": true},
+    {"window": {"start_date": "...", "end_date": "...", "timezone": "..."},
      "schedules": [{"id": "<saved>", "time": "10:00:00"},
                    {"id": "<saved>", "delete": true},
                    {"kind": "reminder", "date": "...", "time": "...",
@@ -76,7 +75,12 @@ from .campaigns.recurrence import RULE_ERRORS, canonical_rule, expand
 TOKEN_LIMIT = 256_000
 CHANGES_LIMIT = 256_000
 ROW_LIMIT = 101
-WINDOW_FIELDS = ("timezone", "start_date", "end_date", "overlap_confirmed")
+# The window's members. The overlap acknowledgement was retired (#2293):
+# a commitment period must start after the campaign ends. As with
+# ``weekday`` (#2102), a document may still carry it (true, false or null),
+# so a script written for the old member keeps working; it is ignored.
+WINDOW_FIELDS = ("timezone", "start_date", "end_date")
+RETIRED_WINDOW = "overlap_confirmed"
 ROW_FIELDS = ("kind", "date", "time", "weekday", "template_version")
 # The members the page's form posts. ``weekday`` belonged to the retired
 # weekly digests and is no longer a form field (#2102): a document may still
@@ -101,7 +105,6 @@ FIELD_TYPES = {
     "timezone": (str,),
     "start_date": (str,),
     "end_date": (str,),
-    "overlap_confirmed": (bool,),
     "kind": (str,),
     "date": (str, type(None)),
     "time": (str,),
@@ -297,7 +300,9 @@ def parse_changes(text):
     schedule (its mail type never changes), an empty new entry, a repeat
     ``_repeat`` refuses, and more rows than the page takes, before or after
     the repeats are expanded, and a ``series`` entry ``_series`` refuses or
-    a series named twice. Returns ``{"window": dict, "schedules": list,
+    a series named twice. The retired window member ``overlap_confirmed``
+    (#2293) is dropped when it is true, false or null. Returns
+    ``{"window": dict, "schedules": list,
     "series": list, "edits": list}``: each repeat is replaced by its
     reminders, each series entry moves to ``edits`` (``_series``; planned
     against the applied records by ``series_entries``), and each
@@ -316,6 +321,11 @@ def parse_changes(text):
         raise ValueError("The change document has unknown members.")
     window = value.get("window", {})
     rows = value.get("schedules", [])
+    if isinstance(window, dict) and RETIRED_WINDOW in window:
+        window = dict(window)
+        retired = window.pop(RETIRED_WINDOW)
+        if retired is not None and not isinstance(retired, bool):
+            raise ValueError("The change document's window is not valid.")
     if (
         not isinstance(window, dict)
         or set(window) - set(WINDOW_FIELDS)
@@ -476,11 +486,7 @@ def _text(value):
 
 def _window_initial(campaign):
     """The window's current values, as the page's form starts with them."""
-    initial = {name: campaign[name] for name in ("timezone", "start_date", "end_date")}
-    financial = campaign["financial"]
-    if financial is not None:
-        initial["overlap_confirmed"] = bool(financial["overlap_confirmed"])
-    return initial
+    return {name: campaign[name] for name in WINDOW_FIELDS}
 
 
 def form_data(changes, previous, campaign, *, editable, base_digest, end_only=False):
@@ -550,20 +556,8 @@ def form_data(changes, previous, campaign, *, editable, base_digest, end_only=Fa
             # The page posts its one open window field, changed or not.
             data["window-end_date"] = window["end_date"]
         return data, identifiers
-    if set(window) - set(initial):
-        raise InvalidChange(
-            [
-                {
-                    "field": "window.overlap_confirmed",
-                    "code": "invalid",
-                    "message": "This campaign has no financial period.",
-                }
-            ]
-        )
-    for name in ("timezone", "start_date", "end_date"):
+    for name in WINDOW_FIELDS:
         data[f"window-{name}"] = window[name]
-    if window.get("overlap_confirmed"):
-        data["window-overlap_confirmed"] = "on"
     return data, identifiers
 
 

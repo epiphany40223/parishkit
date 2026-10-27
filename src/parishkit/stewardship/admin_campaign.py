@@ -156,6 +156,11 @@ def _fields():
 # in the data specification's stored shapes.
 FAMILIES = "campaign_families"
 FAMILIES_FIXED = "The campaign's Families can't be changed."
+# The retired overlap confirmation (#2293), which ``campaign show`` printed
+# until the commitment period had to start after the campaign: a document
+# may still carry it (true, false or null), so a script that sends back what
+# ``show`` printed keeps working; it is ignored, as ``weekday`` is (#2102).
+RETIRED = "overlap_confirmed"
 
 
 def parse_settings(text, *, families=False):
@@ -167,7 +172,8 @@ def parse_settings(text, *, families=False):
     ``campaign.<name>``. ``campaign_families`` (#1393) is taken only when
     ``families`` (a new campaign, ``campaign create-preview``), in one of its
     stored shapes; a change of an existing campaign's is refused, as the
-    rule is fixed when the campaign is created.
+    rule is fixed when the campaign is created. The retired ``RETIRED``
+    member is dropped; any value but true, false or null is ``invalid``.
     """
     if len(text) > CHANGES_LIMIT:
         raise ValueError("The change document is too long.")
@@ -182,6 +188,20 @@ def parse_settings(text, *, families=False):
         raise ValueError("The change document's campaign is not valid.")
     names, booleans, multiples = _fields()
     problems = []
+    if RETIRED in fields:
+        fields = dict(fields)
+        retired = fields.pop(RETIRED)
+        if retired is not None and not isinstance(retired, bool):
+            problems.append(
+                FieldProblem(
+                    {
+                        "field": f"campaign.{RETIRED}",
+                        "code": "invalid",
+                        "message": "Give true, false or null.",
+                    },
+                    logged=f"campaign-{RETIRED}",
+                )
+            )
     for name, item in fields.items():
         if name == FAMILIES:
             problems.extend(_families_problem(item, families))

@@ -689,7 +689,7 @@ The document is JSON with two optional members:
 
 | Member | What it holds |
 | --- | --- |
-| `window` | Any of `start_date`, `end_date` (`YYYY-MM-DD`), `timezone` and `overlap_confirmed` (true or false, only for a campaign with a financial period). Members you leave out keep their values. Changing the dates once they are locked is exit 1 (`stale_version`), as on the page, except that a live campaign (scheduled or open in Production, before it closes) may change `end_date` alone. Family codes and links keep working until the new end date. |
+| `window` | Any of `start_date`, `end_date` (`YYYY-MM-DD`) and `timezone`. Members you leave out keep their values. A campaign with a commitment period must end before it starts: a changed end date on or after its start is exit 1 (`invalid`) at `window.end_date`; an end date left as saved is not judged again, so a campaign saved with a confirmed overlap before [#2293](https://github.com/epiphany40223/parishkit/issues/2293) still takes schedule changes. The retired `overlap_confirmed` member may still be given (true, false or null) and is ignored; any other value is exit 1 (`invalid`). Changing the dates once they are locked is exit 1 (`stale_version`), as on the page, except that a live campaign (scheduled or open in Production, before it closes) may change `end_date` alone. Family codes and links keep working until the new end date. |
 | `schedules` | A list of entries, each one of the six below. Saved schedules you do not name stay as they are; leaving one out never removes it. |
 
 | Entry | Members |
@@ -1357,7 +1357,7 @@ pk-admin campaign show
 | `campaign_id`, `state` | The current campaign and its state (`draft`, `scheduled`, `active`, ...) |
 | `editable` | Whether every setting can change: a Testing-mode draft that has never been live, with no background work running |
 | `open` | The settings that can change now. On a live campaign, the end date (while it may still move), the Ministry leader roles and the Ministries, while no background work holds them |
-| `settings` | Each setting by the page's form field name: `name`, `year_label`, `timezone`, `start_date`, `end_date`, the module boxes `census`, `ministry` and `financial_enabled`, `ministry_duids`, `ministry_leader_roles`, the financial periods (`financial_start`, `financial_end`, `comparison_start`, `comparison_end`, `fund_duids`, `comparison_fund_duids`, `overlap_confirmed`) and `additional_information` |
+| `settings` | Each setting by the page's form field name: `name`, `year_label`, `timezone`, `start_date`, `end_date`, the module boxes `census`, `ministry` and `financial_enabled`, `ministry_duids`, `ministry_leader_roles`, the commitment period (`financial_start`, `financial_end`, `fund_duids`, the Pledge funds; it must start after `end_date`) and the comparison period (`comparison_start`, `comparison_end`, `comparison_fund_duids`), and `additional_information` |
 
 `campaign preview` and `campaign confirm` are the page's **Review
 changes** and **Apply changes**, as `parish preview` and `parish
@@ -1367,7 +1367,14 @@ settings to change; every other setting keeps its saved value. Check
 boxes are `true` or `false`, the Ministry, fund and leader role lists
 JSON arrays (Ministries by the DUID `ministries list` prints, funds by
 their ParishSoft DUID), dates `YYYY-MM-DD`, and `year_label` may be null. Nothing
-changes until `campaign confirm`.
+changes until `campaign confirm`. A commitment period start on or before
+`end_date` is exit 1 (`invalid`) at `campaign.financial_start`.
+`overlap_confirmed`, which `campaign show` printed until the commitment
+period had to start after the campaign
+([#2293](https://github.com/epiphany40223/parishkit/issues/2293)), may
+still be given (true, false or null) and is ignored, so a document built
+from older `show` output still works; any other value is exit 1
+(`invalid`).
 
 ```sh
 VERSION=$(pk-admin campaign show | jq -r .result.version)
@@ -1387,7 +1394,7 @@ change there, as the page sends it to Dates and mail schedules.
 | --- | --- |
 | `version`, `campaign_id` (`campaign preview`) | The version the change was reviewed against, and the current campaign |
 | `kind` | Which review it is: `settings`, `end_date` (a live campaign's end date) or `ministries` (a live campaign's Ministries) |
-| `changes` | Each stored setting that changes: `field`, `before` and `after`. These are the stored names, not the document's: the module boxes change `modules`, and the financial periods change `financial` |
+| `changes` | Each stored setting that changes: `field`, `before` and `after`. These are the stored names, not the document's: the module boxes change `modules`, and the commitment and comparison periods change `financial` |
 | `replanned` | For an end date, the ids of the saved schedules it re-plans |
 | `ministries` | For Ministries, those to add and to remove (each with its `duid`, `name` and counts of what it touches) and `open_forms`, the Families with a form open now; otherwise null |
 | `notes` | The page's notes, such as what a later end date means for Families |
@@ -1422,7 +1429,8 @@ parish's time zone, Census and Additional information ticked, the default
 Ministry leader roles, and everything else blank, so give at least
 `name`, `start_date` and `end_date`. `--expected-version` is the
 configuration version `parish show` prints. Nothing changes until
-`campaign create`.
+`campaign create`. The retired `overlap_confirmed` is accepted and
+ignored, as for `campaign preview`.
 
 ```sh
 VERSION=$(pk-admin parish show | jq -r .result.version)
@@ -4464,3 +4472,12 @@ Each change is recorded in System logs as on the page
   its hidden day-of-week field; `schedule preview` still accepts a null
   `weekday` and refuses any other value as before (`invalid`, with
   `error.fields` naming `schedules.<id>.weekday`), with a new message.
+- `pk-admin/1` (#2293): breaking. The financial period is now the
+  commitment period and must start after the campaign ends, so the overlap
+  confirmation is retired: `campaign show` `settings` no longer has
+  `overlap_confirmed`, and the `campaign preview` and `campaign confirm`
+  review no longer lists it. `campaign preview`, `campaign create-preview`
+  and `schedule preview` (`window.overlap_confirmed`) still accept it as
+  true, false or null and ignore it. A commitment period start on or
+  before the campaign end date, or a changed campaign end date on or after
+  the commitment period start, is `invalid` at the field.

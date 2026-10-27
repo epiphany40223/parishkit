@@ -108,9 +108,8 @@ def lock(field, reason):
     saved value whatever is posted, so a locked setting can never change
     through its form. A field whose long help already moved into a tip gets
     the reason first in that tip; any other gets a tip of its own, keeping
-    its short help visible. A field drawn by its own template (such as
-    Campaign settings' overlap confirmation, shown only while the dates
-    overlap) is only disabled. Campaign settings (#1119) and Share options
+    its short help visible. A field drawn by its own template is only
+    disabled. Campaign settings (#1119) and Share options
     on a locked campaign (#1569) lock their fields this way (ui-conventions:
     a setting that can't change stays in place, disabled, with the reason in
     its tip).
