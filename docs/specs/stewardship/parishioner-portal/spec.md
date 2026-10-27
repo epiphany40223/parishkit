@@ -108,6 +108,18 @@ follows whatever the newer campaign shows at `/`: the generic result while
 it is not yet ended, since the old link belongs to no campaign the portal is
 showing, and the ended page once the newer campaign has ended too.
 
+The close applies to Families only. Staff and Administrators can still
+enter or replace a Family's response after the end through
+[Open form](../reports/spec.md#open-form-after-the-campaign-closes)
+([#2294](https://github.com/epiphany40223/parishkit/issues/2294)). That is
+the only way past the close: it is bound to the Admin's hand-off and the
+Family session it creates, never to the Family's own code, link or session,
+which keep getting the after-close page above, and no emailed code or link
+is invalidated or changed. A Family's own session that was open at the end
+still ends at its next request, as before; the close revokes it. A session
+Open form started stays live through the close, so Staff entering a response
+at that moment keep their unsaved work.
+
 ## Form state and navigation
 
 There is no entry page: after successful authentication the form opens
