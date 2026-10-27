@@ -119,7 +119,7 @@ version containing the display name, main website URL, IANA timezone, valid US
 main phone number, optional HTTPS online giving URL and date format, and
 branding references. Public origin remains solely
 authoritative in deployment configuration and is not duplicated as an editable
-Parish value. Logo uploads produce normalized large, menu, icon, and favicon
+Parish value. Logo uploads produce normalized favicon, icon, menu, and large
 variants. Accepted inputs are PNG, JPEG, or WebP; files are decoded and re-
 encoded before use. A campaign's optional `artwork` value (absent when
 empty) holds its theme artwork: `images` maps the `banner`, `welcome`,

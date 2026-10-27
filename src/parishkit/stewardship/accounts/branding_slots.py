@@ -66,19 +66,35 @@ class Slot:
     tip: str
 
 
+# The four sizes, smallest first by their LOGO_SIZES bounds (#2288): favicon,
+# icon, menu logo, large logo. Every list of them follows this order: Parish
+# logos' current logos, its Advanced fields and review dialog, and the
+# branding commands.
 SLOTS = {
-    "large": Slot(
-        gettext_lazy("Large logo"),
-        gettext_lazy("a large logo"),
-        ("PNG", "JPEG", "WEBP"),
-        5 * MB,
-        gettext_lazy("PNG, JPEG or WebP, at least 256 pixels, up to 5 MB."),
+    "favicon": Slot(
+        gettext_lazy("Favicon"),
+        gettext_lazy("a favicon"),
+        ("PNG",),
+        256 * KB,
+        gettext_lazy("PNG, square, 32 to 64 pixels, up to 256 KB."),
         gettext_lazy(
-            "The full-size logo, kept up to 1,024 pixels. It is the source the "
-            "other sizes are made from when they have no image of their own. "
-            "Use at least 512 pixels on the longer side; a PNG with a "
-            "transparent background works best. Refused when over 5 MB, over "
-            "16 megapixels, animated, or under 256 pixels on the longer side."
+            "The small icon in the browser tab on both portals, kept within 32 "
+            "pixels. A mark designed for that size stays legible where a "
+            "shrunken logo often does not. Refused when it is not a PNG, over "
+            "256 KB, not square (within 10%), under 16 pixels or over 512 "
+            "pixels on a side."
+        ),
+    ),
+    "icon": Slot(
+        gettext_lazy("Icon"),
+        gettext_lazy("an icon"),
+        ("PNG",),
+        1 * MB,
+        gettext_lazy("PNG, square, 180 to 512 pixels, up to 1 MB."),
+        gettext_lazy(
+            "A square mark for places such as a phone's home screen, kept "
+            "within 128 pixels. Refused when it is not a PNG, over 1 MB, not "
+            "square (within 10%), or under 128 pixels on a side."
         ),
     ),
     "menu": Slot(
@@ -99,30 +115,18 @@ SLOTS = {
             "4:1, taller than it is wide, or under 64 pixels tall."
         ),
     ),
-    "icon": Slot(
-        gettext_lazy("Icon"),
-        gettext_lazy("an icon"),
-        ("PNG",),
-        1 * MB,
-        gettext_lazy("PNG, square, 180 to 512 pixels, up to 1 MB."),
+    "large": Slot(
+        gettext_lazy("Large logo"),
+        gettext_lazy("a large logo"),
+        ("PNG", "JPEG", "WEBP"),
+        5 * MB,
+        gettext_lazy("PNG, JPEG or WebP, at least 256 pixels, up to 5 MB."),
         gettext_lazy(
-            "A square mark for places such as a phone's home screen, kept "
-            "within 128 pixels. Refused when it is not a PNG, over 1 MB, not "
-            "square (within 10%), or under 128 pixels on a side."
-        ),
-    ),
-    "favicon": Slot(
-        gettext_lazy("Favicon"),
-        gettext_lazy("a favicon"),
-        ("PNG",),
-        256 * KB,
-        gettext_lazy("PNG, square, 32 to 64 pixels, up to 256 KB."),
-        gettext_lazy(
-            "The small icon in the browser tab on both portals, kept within 32 "
-            "pixels. A mark designed for that size stays legible where a "
-            "shrunken logo often does not. Refused when it is not a PNG, over "
-            "256 KB, not square (within 10%), under 16 pixels or over 512 "
-            "pixels on a side."
+            "The full-size logo, kept up to 1,024 pixels. It is the source the "
+            "other sizes are made from when they have no image of their own. "
+            "Use at least 512 pixels on the longer side; a PNG with a "
+            "transparent background works best. Refused when over 5 MB, over "
+            "16 megapixels, animated, or under 256 pixels on the longer side."
         ),
     ),
 }
@@ -262,12 +266,12 @@ def missing_message(slot):
 
 
 def _chosen(parish):
-    """The current Parish's logo asset id for each size."""
+    """The current Parish's logo asset id for each size, in ``SLOTS`` order."""
     return {
-        "large": parish.large_logo_id,
-        "menu": parish.menu_logo_id,
-        "icon": parish.icon_logo_id,
         "favicon": parish.favicon_id,
+        "icon": parish.icon_logo_id,
+        "menu": parish.menu_logo_id,
+        "large": parish.large_logo_id,
     }
 
 

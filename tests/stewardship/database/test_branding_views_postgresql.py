@@ -473,6 +473,9 @@ def test_each_size_upload_changes_only_the_sizes_chosen(auth_service, google, me
         assert "Favicon — 32 × 32 pixels — Changed" in shown
         for title in ("Large logo", "Menu logo", "Icon"):
             assert re.search(rf"{title} — [0-9,]+ × [0-9,]+ pixels — Unchanged", shown)
+        # The dialog lists the sizes smallest first, as the page does (#2288).
+        captions = re.findall(r"<figcaption>([^<—]+?) —", shown)
+        assert captions == ["Favicon", "Icon", "Menu logo", "Large logo"]
     staged = BrandingBundle.objects.exclude(pk=before["large"].bundle_id).get()
     after = {row.label: row for row in staged.assets.all()}
     for label in ("large", "menu", "icon"):

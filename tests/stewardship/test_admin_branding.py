@@ -242,8 +242,32 @@ def test_logo_frames_are_one_per_size_in_size_order():
     menu = SimpleNamespace(label="menu")
     frames = logo_frames([SimpleNamespace(label="other"), menu])
     assert [frame["title"] for frame in frames] == [s.title for s in SLOTS.values()]
-    assert [frame["asset"] for frame in frames] == [None, menu, None, None]
+    assert [frame["asset"] for frame in frames] == [None, None, menu, None]
     assert all(frame["asset"] is None for frame in logo_frames([]))
+
+
+def test_logo_sizes_run_smallest_to_largest_whatever_the_row_order():
+    """The four sizes run favicon, icon, menu logo, large logo, by their
+    LOGO_SIZES bounds (#2288), and the current logos' frames keep that
+    order whatever order the saved rows come in."""
+    from parishkit.stewardship.accounts.branding_views import logo_frames
+    from parishkit.stewardship.web.content import LOGO_SIZES
+
+    assert list(SLOTS) == ["favicon", "icon", "menu", "large"]
+    assert list(SLOTS) == sorted(
+        LOGO_SIZES, key=lambda name: LOGO_SIZES[name][0] * LOGO_SIZES[name][1]
+    )
+    rows = [SimpleNamespace(label=name) for name in ("large", "menu", "icon")]
+    rows.append(SimpleNamespace(label="favicon"))
+    for ordered in (rows, rows[::-1], sorted(rows, key=lambda row: row.label)):
+        frames = logo_frames(ordered)
+        assert [str(frame["title"]) for frame in frames] == [
+            "Favicon",
+            "Icon",
+            "Menu logo",
+            "Large logo",
+        ]
+        assert [frame["asset"].label for frame in frames] == list(SLOTS)
 
 
 def test_every_logo_field_names_its_own_preview_box():

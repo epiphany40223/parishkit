@@ -206,3 +206,12 @@ def test_a_refused_logo_file_keeps_no_preview(page, component_origin):
     page.locator("#id_logo_preview img").wait_for(state="hidden")
     assert page.locator("#id_logo").evaluate("node => node.files.length") == 0
     assert shown(page, "id_logo") is None
+
+
+@pytest.mark.parametrize("path", [BRANDING, SETTLED])
+def test_parish_logo_frames_run_smallest_to_largest(page, component_origin, path):
+    """The current logos' frames run favicon, icon, menu logo, large logo
+    (#2288), with or without saved logos."""
+    page.goto(component_origin + path)
+    captions = page.locator("#branding-current figcaption").all_inner_texts()
+    assert captions == ["Favicon", "Icon", "Menu logo", "Large logo"]

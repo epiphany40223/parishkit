@@ -29,7 +29,7 @@ from .test_in_place import MARK, MARKED
 from .waits import eventually, hidden, same_place, visible
 
 # The four logo sizes uploaded separately (#1062), by field name.
-SIZES = ("large", "menu", "icon", "favicon")
+SIZES = ("favicon", "icon", "menu", "large")
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )

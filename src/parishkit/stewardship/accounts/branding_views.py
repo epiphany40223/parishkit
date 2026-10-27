@@ -303,8 +303,9 @@ class LogoUploadForm(LogoForm):
             return values
         chosen = {name: values.get(name) for name in SLOTS if values.get(name)}
         if not chosen:
+            # On the first size field, at the top of the Advanced panel.
             self.add_error(
-                "large",
+                next(iter(SLOTS)),
                 forms.ValidationError(
                     _("Choose an image for at least one size to upload."),
                     code="choose_one",
@@ -313,8 +314,10 @@ class LogoUploadForm(LogoForm):
             return values
         total = sum(item.size for item in chosen.values())
         if total > MAX_TOTAL_BYTES:
+            # The refusal goes on the largest size chosen (SLOTS runs
+            # smallest first, #2288), the one to upload on its own.
             self.add_error(
-                next(iter(chosen)),
+                list(chosen)[-1],
                 forms.ValidationError(
                     str(self.max_total_message).replace("{size}", file_size(total)),
                     code="total_too_large",
@@ -473,6 +476,10 @@ def _review(service, actor, configuration, staged):
     # Each size is named, and says whether this upload changes it (#1062):
     # one uploaded separately changes only its own size.
     changed = changed_sizes(assets, configuration.active_configuration.parish)
+    # The staged rows come by label; the dialog lists them in size order,
+    # smallest first, as the current logos are (#2288).
+    order = list(SLOTS)
+    assets = sorted(assets, key=lambda asset: order.index(asset.label))
     for asset in assets:
         asset.title = SLOTS[asset.label].title
         asset.changed = asset.label in changed
@@ -522,7 +529,8 @@ def opening_mode(parish):
 
 
 def logo_frames(assets):
-    """One frame per logo size, in size order, for the current logos.
+    """One frame per logo size, smallest first (``SLOTS``, #2288), for the
+    current logos, whatever order the saved rows come in.
 
     Each frame holds the size's title and its saved asset, or ``None`` when
     that size has none, so the page draws all four frames whatever is saved

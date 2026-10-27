@@ -2490,9 +2490,11 @@ against settings changed since, are refused in the dialog, which says to
 reload the page first.
 
 Parish logos take either one image, resized into all four sizes, or each
-size uploaded separately (#1062): the large
-logo, the menu logo beside the parish name on both portals, the icon and
-the favicon in the browser tab on both portals. The two are the page's
+size uploaded separately (#1062). The four sizes, which the page always
+lists from smallest to largest (the current logos, the Advanced fields and
+the review dialog, and the branding commands; #2288), are the favicon in
+the browser tab on both portals, the icon, the menu logo beside the parish
+name on both portals and the large logo. The two are the page's
 [Basic and Advanced modes](../ui-conventions/spec.md#basic-and-advanced-modes)
 (#1062 slice 3): **Basic** is one image, resized for every size, and
 **Advanced** is each size uploaded separately. Each staged bundle records
