@@ -430,6 +430,7 @@ def test_open_form_enters_a_late_response_after_close(live_response_service, goo
         timeline = f"/admin/reports/families/{family.pk}/"
         _, body = as_web(get, admin, timeline)
         assert b"data-open-form" in body
+        assert b"It still works after the campaign closes" in body
         response, secret = open_form(admin, family.pk)
         assert response.status_code == 200 and secret
         redeemed = redeem(admin, secret)
@@ -450,6 +451,108 @@ def test_open_form_enters_a_late_response_after_close(live_response_service, goo
         assert late.entered_by_id == admin_id
         assert late.submitted_at >= harness.campaign.active_configuration.ends_at
         assert SubmissionReceiptOccurrence.objects.filter(submission=late).exists()
+
+        # Late shows on the Timeline line, and on the review worklist rows.
+        _, body = as_web(get, admin, timeline)
+        assert body.count(b"Late: after the campaign closed") == 1
+        _, body = as_web(get, admin, "/admin/reports/census/")
+        assert b"Late: after the campaign closed" in body
+
+
+@pytest.fixture
+def two_family_service(monkeypatch, request):
+    """``live_response_service`` with a second eligible Family, DUID 4.
+
+    DUID 4 is a copy of DUID 1's household with its own Member and address;
+    the fixture's own sign-in stays DUID 1's.
+    """
+    from . import response_builders
+
+    original = response_builders.response_source
+
+    def two_families():
+        """The response corpus plus DUID 4 and its Member 5."""
+        data = original()
+        data.families[4] = data.families[1] | {
+            "familyDUID": 4,
+            "familyID": 14,
+            "lastName": "Second",
+            "eMailAddress": "second@example.org",
+        }
+        data.members[5] = data.members[3] | {
+            "memberDUID": 5,
+            "familyDUID": 4,
+            "lastName": "Second",
+            "emailAddress": "second@example.org",
+        }
+        return data
+
+    monkeypatch.setattr(response_builders, "response_source", two_families)
+    return request.getfixturevalue("live_response_service")
+
+
+def test_open_form_enters_a_familys_first_response_after_close(
+    two_family_service, google
+):
+    """#2294: after close, Open form submits the first response of a Family
+    that never responded: its first-response pointer is set, the receipt is
+    queued, the response records the Admin, and it is marked Late."""
+    from parishkit.stewardship.responses.models import SubmissionReceiptOccurrence
+
+    harness = two_family_service
+    second = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=4)
+    assert second.portal_eligible and second.first_live_submission_id is None
+    with after_close(harness):
+        assert not Submission.objects.filter(family=second)
+        admin, _ = signed_in()
+        admin_id = PortalSession.objects.get(revoked_at__isnull=True).principal_id
+        response, secret = open_form(admin, second.pk)
+        assert response.status_code == 200 and secret
+        redeemed = redeem(admin, secret)
+        assert redeemed.status_code == 302 and redeemed["Location"] == "/family/"
+
+        staff = replace(harness, client=admin, request=redeemed.wsgi_request)
+        form, answers = form_and_answers(staff)
+        answers["family"]["email_opt_out"] = True
+        late = submit(staff, form, answers).submission
+        assert late is not None and late.family_id == second.pk
+        assert late.entered_by_id == admin_id and late.family_version == 1
+        assert late.submitted_at >= harness.campaign.active_configuration.ends_at
+        second.refresh_from_db()
+        assert second.first_live_submission_id == late.pk
+        assert second.effective_submission_id == late.pk
+        receipt = SubmissionReceiptOccurrence.objects.get(submission=late)
+        assert receipt.disposition == "queued" and receipt.outbox_id is not None
+
+        _, body = as_web(get, admin, f"/admin/reports/families/{second.pk}/")
+        assert body.count(b"Late: after the campaign closed") == 1
+        assert b"Entered by Staff for the Family" in body
+        _, body = as_web(get, admin, "/admin/reports/census/")
+        assert b"Late: after the campaign closed" in body
+
+
+def test_the_close_keeps_open_forms_session(live_response_service, google):
+    """#2294: the close revokes every Family's own session but not one Open
+    form started, so Staff mid-entry at the close can still submit."""
+    harness = live_response_service
+    family = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=1)
+    own = FamilySession.objects.get(revoked_at__isnull=True)
+    admin, _ = signed_in()
+    _, secret = open_form(admin, family.pk)
+    redeemed = redeem(admin, secret)
+    assert redeemed.status_code == 302
+    assisted = FamilySession.objects.get(assisted_by_id__isnull=False)
+    with after_close(harness):
+        own.refresh_from_db()
+        assisted.refresh_from_db()
+        assert own.revoked_at is not None
+        assert assisted.revoked_at is None
+        assert as_web(harness.client.get, "/family/").status_code == 302
+        staff = replace(harness, client=admin, request=redeemed.wsgi_request)
+        form, answers = form_and_answers(staff)
+        answers["family"]["email_opt_out"] = True
+        late = submit(staff, form, answers).submission
+        assert late is not None and late.entered_by_id == assisted.assisted_by_id
 
 
 def test_a_family_session_cannot_reach_the_late_admission(
@@ -536,23 +639,32 @@ STALE_0188 = {
         "WHERE b.id=s.baseline_id AND fs.assisted_by_id IS NOT NULL",
         "WHERE false",
     ),
+    "close-revocation": (
+        "stewardship_token_campaign_effects_v1",
+        "\n          AND (NEW.state<>'closed' OR assisted_by_id IS NULL);",
+        ";",
+    ),
+}
+# The SECURITY DEFINER functions 0188 replaces, each also tested as invoker.
+INVOKERS_0188 = {
+    "receipt-invoker": "stewardship_submission_receipt_command_v1",
+    "effects-invoker": "stewardship_token_campaign_effects_v1",
 }
 
 
-@pytest.mark.parametrize("stale", [*STALE_0188, "receipt-invoker"])
+@pytest.mark.parametrize("stale", [*STALE_0188, *INVOKERS_0188])
 def test_migration_0188_self_check_refuses_a_stale_install(stale):
     """0188's DO block passes on the installed schema and fails when any one
-    replaced body lacks #2294's change, or the receipt guard lost SECURITY
+    replaced body lacks #2294's change, or a replaced definer lost SECURITY
     DEFINER. Each stale install runs in a rolled-back transaction."""
     text = (MIGRATIONS / "0188_staff_open_after_close.sql").read_text(encoding="utf-8")
     check = re.search(r"^DO \$check\$.*?\$check\$;", text, re.M | re.S)[0]
     with connection.cursor() as cursor:
         cursor.execute(check)
         with transaction.atomic():
-            if stale == "receipt-invoker":
+            if stale in INVOKERS_0188:
                 cursor.execute(
-                    "ALTER FUNCTION public.stewardship_submission_receipt_command_v1()"
-                    " SECURITY INVOKER"
+                    f"ALTER FUNCTION public.{INVOKERS_0188[stale]}() SECURITY INVOKER"
                 )
             else:
                 function, new, old = STALE_0188[stale]

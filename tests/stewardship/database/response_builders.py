@@ -163,7 +163,8 @@ def response_service(auth_service, settings):
             purpose=CampaignWorkKind.REHEARSAL,
             admit=lambda *args: True,
         )
-        credential = RehearsalCredential.objects.get()
+        # The fixture's session is DUID 1's; a test may add other Families.
+        credential = RehearsalCredential.objects.get(family__family_duid=1)
         code = rings.general.decrypt(
             credential.code_ciphertext, context=code_context(credential.pk)
         ).decode()

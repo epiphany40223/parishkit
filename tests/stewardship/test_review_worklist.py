@@ -319,6 +319,40 @@ def test_a_stream_without_baseline_or_edit_drops_those_columns():
     assert "Family's answer" in head
 
 
+@pytest.mark.parametrize(
+    "ends_at, late",
+    [
+        # The campaign ended at the rows' submitted instant: Late (#2294).
+        (datetime(2054, 10, 5, 12, tzinfo=UTC), True),
+        (datetime(2054, 10, 5, 12, 0, 1, tzinfo=UTC), False),
+        # No current campaign in the chrome: nothing to compare with.
+        (None, False),
+    ],
+)
+def test_a_row_submitted_at_or_after_the_end_is_marked_late(ends_at, late):
+    """Each row whose response came at or after the current campaign's end
+    (only Open form can submit then) carries the Late chip beside its
+    Submitted time, read in full by a screen reader; the end comes from the
+    Admin chrome, so the table reads nothing more."""
+    from django.template.loader import render_to_string
+
+    table = paginate(rows(), {"size": "25"}, carry=[("stage", "all")])
+    html = render_to_string(
+        "stewardship/components/review-worklist.html",
+        {
+            "worklist": made(shown=table.rows),
+            "table": table,
+            "csrf_token": "x",
+            "admin_chrome": {"campaign_ends_at": ends_at},
+        },
+    )
+    chip = (
+        '<span class="status-badge"><span aria-hidden="true">Late</span>'
+        '<span class="visually-hidden">Late: after the campaign closed</span></span>'
+    )
+    assert html.count(chip) == (3 if late else 0)
+
+
 def test_add_needs_the_role_and_an_editor():
     """Add shows for Staff only once the stream gives its editor."""
     assert made(add_template="editor.html").add
