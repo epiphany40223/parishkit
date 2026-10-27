@@ -617,9 +617,11 @@ expiry the page asks nothing of the operator: the consumers' directory mounts
 show the removal of the installed keys, so the worker and mail services let go
 of them without being recreated
 ([runtime guide](../../../guides/stewardship-runtime.md#first-database-and-application-startup)).
-It names recreating them again only for the operator who finished a key step by
-hand for a credential with its own overridden file path, which keeps a
-single-file mount. A failed step stops the updates. A failed step explains what to do: a credential the provider
+Its notice says nothing is needed; its About panel
+([page help](../ui-conventions/spec.md#page-help)) names recreating them
+again only for the operator who finished a key step by hand for a
+credential with its own overridden file path, which keeps a single-file
+mount. A failed step stops the updates. A failed step explains what to do: a credential the provider
 rejected repeats the integration page's per-provider advice on what to check,
 one that did not finish in time asks the operator to check the credential
 installers, and each says to cancel and start a new setup (#456). No step
