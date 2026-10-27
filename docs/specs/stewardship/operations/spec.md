@@ -692,7 +692,10 @@ or pasted statement fails in PostgreSQL itself. Its definition is
   and opens `psql -X` as the login on the container's `POSTGRES_DB`. The
   connection options come after the caller's, so they are the ones psql
   uses; `--`, after which psql would take them from positional arguments,
-  is refused.
+  is refused. It also passes `PGOPTIONS` with
+  `-c default_transaction_read_only=on` last (after any `PGOPTIONS` the
+  caller sets, which is kept), so every session starts read-only even if
+  the login's own read-only default was reset (#2291).
 
 **What it does not stop.** It is a guard against mistakes, not a write
 boundary, and not a guard against host root (#2291): inside `psql`,

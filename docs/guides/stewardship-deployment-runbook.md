@@ -1481,7 +1481,10 @@ The login guards against mistakes; it is not a write boundary
 Run nothing as it beyond read-only checks. A session that lifts its
 read-only default can still create large objects, `NOTIFY` and take
 advisory locks, and any session can change the login's own password and
-role settings, because PostgreSQL lets every login do that.
+role settings, because PostgreSQL lets every login do that. `pk-inspect`
+still starts every session read-only (it passes
+`PGOPTIONS='-c default_transaction_read_only=on'`, after any `PGOPTIONS` you
+set), even if the login's own read-only default was reset.
 
 #### Clean-up when the inspection login owns objects
 

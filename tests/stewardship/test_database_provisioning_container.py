@@ -1071,6 +1071,15 @@ def test_inspection_login_reads_but_never_writes(operator_container, tmp_path):
         "SET default_transaction_read_only = off",
         "ALTER ROLE pk_stewardship_inspect RESET default_transaction_read_only",
     )
+    # The wrapper still starts every session read-only (PGOPTIONS
+    # overrides role settings), even with the role's default set off.
+    answer(
+        container,
+        "SET default_transaction_read_only = off",
+        "ALTER ROLE pk_stewardship_inspect SET default_transaction_read_only = off",
+    )
+    assert answer(container, "SHOW default_transaction_read_only") == "on"
+    refused(container, "read-only transaction", "DELETE FROM stewardship_campaign")
     with pytest.raises(ConfigError, match="Recreating the inspection login"):
         provision_grants(configuration, deployment)
     assert upgrade_noop(configuration, deployment, tmp_path) is False

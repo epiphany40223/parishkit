@@ -24,6 +24,10 @@
 #                         pk-local's is parishkit-local)
 #   PK_INSPECT_CONTAINER  the PostgreSQL container
 #                         (default PROJECT-postgres-1)
+#   PGOPTIONS             passed on to psql in the container, followed by
+#                         -c default_transaction_read_only=on; a malformed
+#                         one (ending in \ or -c) fails the connection
+#                         (exit 2) rather than lifting read-only
 #
 # The database is the container's own POSTGRES_DB. Exit status: psql's own
 # (0 done, 1 a fatal error such as a refused statement with ON_ERROR_STOP,
@@ -46,10 +50,18 @@ tty=-i
 if [ -t 0 ] && [ -t 1 ]; then
     tty=-it
 fi
+# Every session starts read-only, even when the login's own read-only
+# default was reset (a session may ALTER ROLE itself, #2291): connection
+# options in PGOPTIONS override role settings. The caller's PGOPTIONS is
+# kept, first, so the read-only option, last, is the one that applies.
+options="-c default_transaction_read_only=on"
+if [ -n "${PGOPTIONS:-}" ]; then
+    options="$PGOPTIONS $options"
+fi
 # The inner shell reads POSTGRES_DB inside the container and appends the
 # connection options after the caller's, so they are the ones psql uses.
 # -X skips any psqlrc.
 # shellcheck disable=SC2016 # $POSTGRES_DB and $@ expand in the container
-exec docker exec "$tty" "$container" sh -c \
+exec docker exec "$tty" -e "PGOPTIONS=$options" "$container" sh -c \
     'exec psql -X "$@" -h /var/run/postgresql -U pk_stewardship_inspect -d "$POSTGRES_DB"' \
     pk-inspect "$@"
