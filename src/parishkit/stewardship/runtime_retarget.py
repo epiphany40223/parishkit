@@ -87,6 +87,36 @@ def _plan(configuration, recorded, *, image):
     )
 
 
+def recorded_plan(configuration, *, image=None):
+    """The recorded record and the plan for its inputs with ``image``.
+
+    ``image`` defaults to the recorded one. Refused unless provisioning is
+    complete and the operator's current inputs match the recorded ones in
+    everything but the image, so what is planned is what provisioning (or
+    the last retarget) wrote. The plan is ``provisioning_plan``'s tuple.
+    """
+    root = explicit_path(configuration.paths.root)
+    private_directory(root)
+    completed = root / PROVISIONING_RECORD
+    if not completed.exists():
+        raise ConfigError("Provisioning is unfinished; resume it before upgrading.")
+    recorded = read_provisioning_record(completed)
+    # The plan re-derives every document from the operator's current inputs
+    # with the new image; only the image may differ from what was recorded.
+    plan = _plan(
+        configuration, recorded, image=recorded["image"] if image is None else image
+    )
+    proposed = json.loads(plan[5])
+    expected = dict(recorded, deployment=_rederived(recorded["deployment"]))
+    if {key: value for key, value in proposed.items() if key != "image"} != {
+        key: value for key, value in expected.items() if key != "image"
+    }:
+        raise ConfigError(
+            "Deployment inputs differ from provisioning; only the image may change."
+        )
+    return recorded, plan
+
+
 def retarget_image(configuration, *, image):
     """Re-render the generated documents of a completed deployment for an image.
 
@@ -100,25 +130,10 @@ def retarget_image(configuration, *, image):
     running the same command again and undone by asking for the recorded
     image, and a repeat is no change.
     """
+    recorded, plan = recorded_plan(configuration, image=image)
+    configuration, _, passwords, documents, acl, intent = plan
     root = explicit_path(configuration.paths.root)
-    private_directory(root)
     completed = root / PROVISIONING_RECORD
-    if not completed.exists():
-        raise ConfigError("Provisioning is unfinished; resume it before upgrading.")
-    recorded = read_provisioning_record(completed)
-    # The plan re-derives every document from the operator's current inputs
-    # with the new image; only the image may differ from what was recorded.
-    configuration, _, passwords, documents, acl, intent = _plan(
-        configuration, recorded, image=image
-    )
-    proposed = json.loads(intent)
-    expected = dict(recorded, deployment=_rederived(recorded["deployment"]))
-    if {key: value for key, value in proposed.items() if key != "image"} != {
-        key: value for key, value in expected.items() if key != "image"
-    }:
-        raise ConfigError(
-            "Deployment inputs differ from provisioning; only the image may change."
-        )
     layout = RuntimeLayout(configuration)
     changed = recorded["image"] != image
     # A document the running release renders but the provisioned release did

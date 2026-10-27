@@ -478,6 +478,40 @@ def test_complete_foundation_bootstrap_and_online_exclusion(
                     str(layout.service_directory / f"{name}-initial.yaml"),
                 )
                 assert probe.returncode == 0
+        # PostgreSQL's per-login source rules (#2111): the password-free
+        # check from every started service and one-shot, then real passwords
+        # from the wrong sources. The worker runs only in the initial modes.
+        from .runtime_source_checks import (
+            check_database_sources,
+            check_refused_sources,
+        )
+
+        background = provider_mode != "configured"
+        running = ["web", "config-installer"]
+        if background:
+            running += ["worker", "scheduler", "mail-dispatch"]
+        # The metrics installer starts only for the rotation below.
+        check_database_sources(
+            file,
+            project,
+            running,
+            compose_run,
+            stopped=("credential-installer-metrics",),
+        )
+
+        def password(name):
+            """A login's synthetic password, from this fixture's seed tree."""
+            path = layout.database_password(name)
+            return (root / path.relative_to(configuration.paths.root)).read_text()
+
+        check_refused_sources(
+            file,
+            project,
+            configuration,
+            password,
+            "worker" if background else "config-installer",
+            compose_run,
+        )
         if provider_mode in {"complete", "abort"}:
             from .runtime_setup_compose import complete_setup
 
