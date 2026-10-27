@@ -13,6 +13,7 @@ from .artwork_components import PAGE as ARTWORK
 from .artwork_components import STEP as ARTWORK_STEP
 from .branding_components import ADVANCED_PAGE, SETTLED
 from .branding_components import PAGE as BRANDING
+from .waits import eventually
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -215,3 +216,126 @@ def test_parish_logo_frames_run_smallest_to_largest(page, component_origin, path
     page.goto(component_origin + path)
     captions = page.locator("#branding-current figcaption").all_inner_texts()
     assert captions == ["Favicon", "Icon", "Menu logo", "Large logo"]
+
+
+# Each Advanced size's chosen-image box and image, or each current-logo
+# frame's box and image, in page order: the box's rectangle, the image's
+# drawn size (null while hidden), whether the empty text fits its box, and
+# the page's width.
+SIZED = """(selector) => [...document.querySelectorAll(selector)].map((node) => {
+  const box = node.querySelector('.file-preview-box');
+  const rect = box.getBoundingClientRect();
+  const image = box.querySelector('img');
+  const empty = box.querySelector('.file-preview-empty');
+  return {
+    size: node.dataset.logoSize,
+    box: [rect.left, rect.top, rect.right, rect.bottom],
+    image: image && !image.hidden
+      ? [image.getBoundingClientRect().width, image.getBoundingClientRect().height]
+      : null,
+    fits: !empty || empty.hidden || box.scrollHeight <= box.clientHeight,
+    page: document.documentElement.clientWidth,
+  };
+})"""
+
+# Each size's saved bound (web/content.py LOGO_SIZES); the large logo is
+# capped at its box instead.
+BOUNDS = {"favicon": (32, 32), "icon": (128, 128), "menu": (512, 128)}
+
+
+def wide_png():
+    """A 600 × 300 PNG: larger than every bound but the large logo's, and
+    wide, so each size fits it differently."""
+    import io
+
+    from PIL import Image
+
+    stream = io.BytesIO()
+    Image.new("RGB", (600, 300), "blue").save(stream, format="PNG")
+    return {"name": "wide.png", "mimeType": "image/png", "buffer": stream.getvalue()}
+
+
+def assert_sized_boxes(boxes):
+    """Each size's box has its own height (favicon < icon = menu < large),
+    holds its empty text, and stays inside the page's width."""
+    assert [box["size"] for box in boxes] == ["favicon", "icon", "menu", "large"]
+    heights = {box["size"]: box["box"][3] - box["box"][1] for box in boxes}
+    assert heights["favicon"] < heights["icon"] == heights["menu"]
+    assert heights["menu"] < heights["large"]
+    for box in boxes:
+        assert box["fits"], box
+        assert box["box"][0] >= 0 and box["box"][2] <= box["page"], box
+
+
+@pytest.mark.parametrize("width", [320, 400, 1024])
+def test_each_advanced_size_previews_at_its_saved_size(page, component_origin, width):
+    """The same image chosen for every Advanced size is drawn as each size
+    will save it: within that size's bound at one CSS pixel per image pixel,
+    so the four previews differ in size; the large logo is capped at its
+    box, and a column narrower than a bound shrinks the image to fit. Each
+    box keeps its own fixed height, so choosing the files moves nothing."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + ADVANCED_PAGE)
+    selector = "#branding-upload-form .file-preview[data-logo-size]"
+    before = page.evaluate(SIZED, selector)
+    assert_sized_boxes(before)
+    fields = places(page)
+    for size in ("favicon", "icon", "menu", "large"):
+        page.locator(f"#id_{size}").set_input_files(wide_png())
+        page.locator(f"#id_{size}_preview img").wait_for(state="visible")
+    eventually(
+        page,
+        """(selector) => [...document.querySelectorAll(selector + ' img')]
+          .every((image) => image.complete && image.naturalWidth > 0)""",
+        arg=selector,
+    )
+    after = page.evaluate(SIZED, selector)
+    assert places(page) == fields
+    assert [box["box"] for box in after] == [box["box"] for box in before]
+    # The 2:1 image's expected drawn width: within the bound (and twice the
+    # bound's height), the box's content width, and, for the large logo,
+    # twice the box's content height. Box padding is 1rem, border 2px.
+    drawn = {box["size"]: box["image"] for box in after}
+    for box in after:
+        inner = box["box"][2] - box["box"][0] - 16 - 2
+        if box["size"] == "large":
+            height = box["box"][3] - box["box"][1] - 16 - 2
+            expected = min(600, inner, 2 * height)
+        else:
+            bound = BOUNDS[box["size"]]
+            expected = min(600, bound[0], inner, 2 * bound[1])
+        assert abs(drawn[box["size"]][0] - expected) <= 1, (box, expected)
+        assert abs(drawn[box["size"]][1] - expected / 2) <= 1, (box, expected)
+    # Smallest to largest; on a phone the column may be narrower than both
+    # the menu logo and the large logo, which then share its width. Sizes
+    # are rounded to half a pixel first: engines lay out subpixel sizes
+    # with float noise (Firefox drew those two shared heights as 120.40001
+    # and 120.39999), far below the whole-pixel steps between sizes.
+    halves = {size: [round(2 * side) / 2 for side in drawn[size]] for size in drawn}
+    areas = [halves[size][0] * halves[size][1] for size in halves]
+    assert areas == sorted(areas) and len(set(areas[:3])) == 3, drawn
+    if width >= 1024:
+        assert len(set(areas)) == 4, drawn
+
+
+@pytest.mark.parametrize("width", [320, 400, 1024])
+@pytest.mark.parametrize("path", [BRANDING, SETTLED])
+def test_parish_logo_frames_are_sized_per_logo(page, component_origin, path, width):
+    """Each current logo's frame is that size's box (its own height, inside
+    the page), and a saved logo is drawn within its size's bound, never
+    enlarged."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + path)
+    eventually(
+        page,
+        """() => [...document.querySelectorAll('#branding-current img')]
+          .every((image) => image.complete)""",
+    )
+    frames = page.evaluate(SIZED, "#branding-current .logo-frame")
+    assert_sized_boxes(frames)
+    for frame in frames:
+        if frame["image"] is None:
+            continue
+        bound = BOUNDS.get(frame["size"], (1024, 1024))
+        assert frame["image"][0] <= bound[0] + 0.5, frame
+        assert frame["image"][1] <= bound[1] + 0.5, frame

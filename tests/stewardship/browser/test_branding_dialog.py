@@ -273,6 +273,10 @@ def test_each_size_upload_shows_its_fields_and_refusals_on_them(page, component_
     for field in sizes:
         expect(field).to_be_hidden()
     choice = mode(page, "Advanced")
+    # The current logos are sized per logo (#2281), so the toggle may start
+    # below the fold; bring it into view first, as a pointer would, so its
+    # check does not scroll and only a real shift would move it.
+    choice.scroll_into_view_if_needed()
     top = choice.bounding_box()["y"]
     choice.check()
     expect(one).to_be_hidden()
@@ -403,6 +407,8 @@ def test_basic_is_one_required_image_and_advanced_needs_one_size(
     expect(upload).to_be_disabled()
     expect(hint).to_have_text(BASIC_HINT)
     line = hint.bounding_box()["height"]
+    # In view first (the current logos may push it below the fold, #2281).
+    mode(page, "Advanced").scroll_into_view_if_needed()
     toggle = mode(page, "Advanced").bounding_box()["y"]
     mode(page, "Advanced").check()
     expect(page.locator("#id_logo")).to_be_hidden()

@@ -242,6 +242,7 @@ def test_logo_frames_are_one_per_size_in_size_order():
     menu = SimpleNamespace(label="menu")
     frames = logo_frames([SimpleNamespace(label="other"), menu])
     assert [frame["title"] for frame in frames] == [s.title for s in SLOTS.values()]
+    assert [frame["name"] for frame in frames] == list(SLOTS)
     assert [frame["asset"] for frame in frames] == [None, None, menu, None]
     assert all(frame["asset"] is None for frame in logo_frames([]))
 
@@ -279,3 +280,30 @@ def test_every_logo_field_names_its_own_preview_box():
     for name in ("logo", *SLOTS):
         widget = form.fields[name].widget
         assert widget.attrs["data-preview-target"] == f"id_{name}_preview"
+
+
+def test_logo_preview_bounds_match_the_saved_sizes():
+    """Each size's preview is drawn within the bound that size is saved at
+    (LOGO_SIZES), so the CSS bounds cannot drift from the saved sizes; the
+    large logo, too big for the page, is capped at its box instead."""
+    import re
+    from pathlib import Path
+
+    from parishkit.stewardship.accounts import branding_slots
+    from parishkit.stewardship.web.content import LOGO_SIZES
+
+    static = Path(branding_slots.__file__).parent / "static/stewardship"
+    css = (static / "ui-v1.css").read_text(encoding="utf-8")
+    bounds = dict(
+        (name, (int(width), height))
+        for name, width, height in re.findall(
+            r"\[data-logo-size=(\w+)\] \{ --logo-width: (\d+)px; "
+            r"--logo-height: ([^;]+); \}",
+            css,
+        )
+    )
+    assert set(bounds) == set(LOGO_SIZES) == set(SLOTS)
+    for name, (width, height) in LOGO_SIZES.items():
+        assert bounds[name][0] == width
+        if name != "large":
+            assert bounds[name][1] == f"{height}px"

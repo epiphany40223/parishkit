@@ -532,13 +532,14 @@ def logo_frames(assets):
     """One frame per logo size, smallest first (``SLOTS``, #2288), for the
     current logos, whatever order the saved rows come in.
 
-    Each frame holds the size's title and its saved asset, or ``None`` when
+    Each frame holds the size's name (which sizes its box, data-logo-size
+    in ui-v1.css), its title and its saved asset, or ``None`` when
     that size has none, so the page draws all four frames whatever is saved
     and the current logos keep one height (#2279, no layout shift).
     """
     by_size = {asset.label: asset for asset in assets}
     return [
-        {"title": slot.title, "asset": by_size.get(name)}
+        {"name": name, "title": slot.title, "asset": by_size.get(name)}
         for name, slot in SLOTS.items()
     ]
 

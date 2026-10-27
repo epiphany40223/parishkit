@@ -2483,7 +2483,17 @@ keeps its empty text until then, and holds no saved logo (the current
 logos show those). A file the browser types as other than an image, or
 one over that size's limit (refused at the field at once), leaves the box
 empty, and
-a field emptied by a switch of mode empties its box too. An upload from a
+a field emptied by a switch of mode empties its box too. Each Advanced
+size's box, and each current logo's frame, draws its image the way that
+size is saved: fitted within the size's bound (32 × 32 for the favicon,
+128 × 128 for the icon, 512 × 128 for the menu logo) at one CSS pixel per
+image pixel and never enlarged, so the same image chosen for every size
+shows how small the favicon and how wide the menu logo will be. The large
+logo (1,024 pixels) is capped at its box, and an image shrinks only where
+the column is narrower than its bound. Each size's box has its own fixed
+height, so choosing a file still moves nothing. Basic's one box is the
+shared box, and the review dialog draws each generated size at its own
+pixels, fitted to the dialog's width. An upload from a
 page whose settings changed elsewhere, and an
 Apply of logos that expired, belong to another sign-in or were staged
 against settings changed since, are refused in the dialog, which says to
