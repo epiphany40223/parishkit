@@ -69,6 +69,18 @@ def arrows_hidden(text):
 
 
 @register.filter
+def underscore_breaks(text):
+    """``text`` escaped, with a line-break opportunity after each underscore.
+
+    An identifier such as a System logs event name ("credential_cipher_
+    batch_migrated") has no spaces, so it would set its column's minimum
+    width; ``<wbr>`` lets it wrap between its words instead (#2280). The
+    text, its accessible name and a copy of it are unchanged.
+    """
+    return mark_safe(str(conditional_escape(text)).replace("_", "_<wbr>"))
+
+
+@register.filter
 def share_name(share):
     """A worded share method by its short label, the full one its tooltip.
 

@@ -7,6 +7,7 @@ from uuid import UUID
 from django.template.loader import render_to_string
 from django.urls import reverse
 
+from parishkit.stewardship.accounts.actor_names import Actor
 from parishkit.stewardship.audit.log_rows import (
     AUDIT_ONLY_MESSAGE,
     FIELD_MESSAGES,
@@ -33,6 +34,13 @@ from parishkit.stewardship.web.filter_errors import (
 
 # Where the in-place cross-link tests serve System logs (#519 PR 3).
 LIVE = "/logs-live"
+# Actors as System logs names users (#2266, #2280): a typical and a long
+# "Last, First" Name, and a user with no Name, shown by a long address.
+NAMED_ACTORS = (
+    Actor("Squyres, Jeffrey", "jeff@example.org"),
+    Actor("Fitzgerald-Ramirez, Mary Catherine", "mary@example.org"),
+    Actor("parish.office.administrator@example.org"),
+)
 # The Ministry filter's choices as the view reads them: (DUID, name) pairs.
 MINISTRIES = ((42, "Choir"), (5, "Ushers"))
 
@@ -250,6 +258,20 @@ def components(context, admin):
             ),
         ),
     }
+
+    # The first page's entries as users made them (#2280), so the Actor
+    # column holds Names and an address of realistic length.
+    named = [
+        row | {"actor": NAMED_ACTORS[index % len(NAMED_ACTORS)]}
+        for index, row in enumerate(rows)
+    ]
+    # A long unbroken value (an import file's 64-hex checksum) breaks within
+    # Recorded detail rather than widening the table.
+    named[0] = named[0] | {"detail_rows": [("File fingerprint", "0123abcd" * 8)]}
+    # One of the longest event names in use, which wraps at its underscores
+    # rather than setting Type's minimum width.
+    named[2] = named[2] | {"event": "credential_cipher_batch_migrated"}
+    result["/logs-names"] = ("text/html", page(everything, named, total=30))
 
     # The page as the in-place cross-links (#519 PR 3) need it: each answer
     # must be this same page, so it is served at the address its forms post

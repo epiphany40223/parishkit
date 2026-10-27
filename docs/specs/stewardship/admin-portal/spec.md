@@ -12010,9 +12010,9 @@ Only Admins access the combined log screen. It supports:
 - cross-links from each entry, as small icon buttons in the Related column
   ([#1065](https://github.com/epiphany40223/parishkit/issues/1065);
   [row links](../ui-conventions/spec.md#row-actions-and-confirmation)), in
-  five fixed slots so each kind lines up down the column: related entries
-  (a chain link, "Show entries related to this entry", the same correlation
-  identifier), the same actor (a person, "Show entries by the same actor"),
+  five fixed slots, three across and two down (#2280), so each kind lines
+  up down the column: related entries (a chain link, "Show entries
+  related to this entry", the same correlation identifier), the same actor (a person, "Show entries by the same actor"),
   the same subject (a target, "Show audit records about the same subject")
   and the same campaign (a calendar, "Show audit records for the same
   campaign"), both audit records only, and, for task entries and views of
@@ -12089,8 +12089,11 @@ the asynchronous export-job pipeline used by large report exports is deferred.
 Stored timestamps are UTC. The screen renders browser-local timestamps to the
 second, with the zone name (no UTC offset, #635), so entries can be compared
 with times recorded elsewhere; the zone name also tells the repeated hour
-apart when clocks fall back. The From and Through date filters are whole days in
-the browser's time zone, following the
+apart when clocks fall back. In the table each time shows its day above its
+clock time ([date format](../ui-conventions/spec.md#date-format)), so the
+Time column stays narrow enough for the table to fit at laptop width
+(#2280). The From and Through date filters are whole days in the browser's
+time zone, following the
 [timestamp rule](../ui-conventions/spec.md#date-format): the filter form
 carries the browser's zone, the server turns From into the start of that local
 day and Through into the start of the next local day (exclusive), so a
