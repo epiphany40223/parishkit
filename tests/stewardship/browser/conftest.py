@@ -298,6 +298,9 @@ def _history(events):
 
 # The passive status fragments the setup status pages poll (#1354); a test
 # answers them with a route.
+# The fixture pages whose real views ask for blob: images (their file
+# fields preview the chosen image): setup's Parish logos and Parish logos.
+BLOB_IMAGE_PAGES = ("/setup-branding", "/branding-settings", "/admin/parish/logos/")
 SETUP_MAIL_STATUS = "/admin/setup/mail-test/status?format=status"
 SETUP_SLACK_STATUS = "/admin/setup/slack-test/status?format=status"
 SETUP_FINISHING_STATUS = "/admin/setup/finishing?format=status"
@@ -2522,11 +2525,12 @@ def component_origin(component_responses):
                 "Content-Type",
                 kind if kind == "image/png" else kind + "; charset=utf-8",
             )
-            # Setup's Parish logos previews the chosen file as a blob: image,
-            # so its response asks for that policy as the real view does.
+            # Setup's Parish logos and Parish logos preview the chosen file
+            # as a blob: image, so their responses ask for that policy as
+            # the real views do (#2270, #2279).
             self.send_header(
                 "Content-Security-Policy",
-                CSP_BLOB_IMAGES if path.startswith("/setup-branding") else CSP,
+                CSP_BLOB_IMAGES if path.startswith(BLOB_IMAGE_PAGES) else CSP,
             )
             self.end_headers()
             self.wfile.write(body if isinstance(body, bytes) else body.encode())

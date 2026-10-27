@@ -327,8 +327,9 @@ server's own words (the page carries them in data attributes), without
 waiting for Save and continue. The box, the error line and the
 buttons below keep their places in every case, including at 320 px
 ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). Only this
-page's response adds `blob:` to the content security policy's `img-src`; the
-server still checks the size and type of every upload. The post-setup
+page's response and Parish logos' (below) add `blob:` to the content
+security policy's `img-src`; the server still checks the size and type of
+every upload. The post-setup
 Parish logos page (Admin menu) keeps its own review dialog, which already
 shows every generated size; the setup page lists no generated sizes, because its
 preview box already shows the saved logo.
@@ -2475,7 +2476,15 @@ answers with the dialog's review of the staged logos, and Apply posts the
 signed preview, with the staged bundle it was signed for, to Parish logos.
 Once the change is applied, the form and the current logos above it
 ([image previews](../ui-conventions/spec.md#image-previews), #2279) are
-redrawn. An upload from a page whose settings changed elsewhere, and an
+redrawn. Each of the form's file fields (Basic's one image and each
+Advanced size) has the setup step's chosen-image box directly above it,
+which shows the file at once as it is chosen, before Upload and review,
+keeps its empty text until then, and holds no saved logo (the current
+logos show those). A file the browser types as other than an image, or
+one over that size's limit (refused at the field at once), leaves the box
+empty, and
+a field emptied by a switch of mode empties its box too. An upload from a
+page whose settings changed elsewhere, and an
 Apply of logos that expired, belong to another sign-in or were staged
 against settings changed since, are refused in the dialog, which says to
 reload the page first.

@@ -244,3 +244,14 @@ def test_logo_frames_are_one_per_size_in_size_order():
     assert [frame["title"] for frame in frames] == [s.title for s in SLOTS.values()]
     assert [frame["asset"] for frame in frames] == [None, menu, None, None]
     assert all(frame["asset"] is None for frame in logo_frames([]))
+
+
+def test_every_logo_field_names_its_own_preview_box():
+    """Basic's one field and each Advanced size field name the chosen-image
+    box drawn above them, by the field's id plus "_preview" (#2279)."""
+    from parishkit.stewardship.accounts.branding_views import LogoUploadForm
+
+    form = LogoUploadForm()
+    for name in ("logo", *SLOTS):
+        widget = form.fields[name].widget
+        assert widget.attrs["data-preview-target"] == f"id_{name}_preview"

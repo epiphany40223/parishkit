@@ -155,6 +155,11 @@ def test_logo_becomes_public_only_after_yaml_activation(auth_service, google, me
     assert confirm_review(browser, review)["Location"] == result["Location"]
     page = browser.get(URL)
     assert b'rel="icon"' in page.content and b'<img src="/branding/' in page.content
+    # Each file field previews the chosen file from a blob: URL (#2279).
+    assert "img-src 'self' blob:" in page["Content-Security-Policy"]
+    for name in ("logo", "favicon", "icon", "menu", "large"):
+        assert f'data-preview-target="id_{name}_preview"'.encode() in page.content
+        assert f'id="id_{name}_preview"'.encode() in page.content
     # The header draws the 150 x 80 menu logo 4rem (64 pixels) tall, at its
     # own shape, and says so before the file arrives (#1062).
     menu = BrandingAsset.objects.get(label="menu")

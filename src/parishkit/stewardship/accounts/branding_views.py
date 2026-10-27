@@ -246,6 +246,13 @@ class LogoUploadForm(LogoForm):
             field.template_name = SIZE_FIELD_TEMPLATE
             self.fields[name] = field
         self.order_fields(self.field_order)
+        # Each file field shows the chosen file at once in the preview box
+        # drawn above it, whose id is the field's own plus "_preview"
+        # (branding-settings.html; ui-v1.js, wireFilePreview; #2279).
+        for name in ("logo", *SLOTS):
+            self.fields[name].widget.attrs["data-preview-target"] = (
+                f"{self[name].auto_id}_preview"
+            )
 
     @property
     def opened_mode(self):
@@ -556,6 +563,9 @@ def _page(request, service, configuration, form, *, status=200):
         },
         status=status,
     )
+    # Each file field's preview shows the chosen file from a blob: object
+    # URL (#2279, as on setup's Parish logos, #2270).
+    response.stewardship_blob_images = True
     if status != 200:
         response.stewardship_safe_error = True
         # The refusal log's code for this page's own refusal (#1444).
