@@ -31,7 +31,9 @@ checks"):
 
 The comparison is ``pipeline.refresh_outcome`` with each stream's canonical
 comparison: the census compare rules (``comparison.canonical_value``) and a
-Member's roster state for the Ministry carried forward. A check is written
+Member's roster state for the Ministry carried forward, as of the later of
+the refresh date and the campaign's commitment period start
+(``roster_date``, #2293). A check is written
 only when its outcome changes, or, for an item marked Entered by hand, once
 per full refresh until Not seen is reached, so a quiet refresh writes
 nothing. A Confirmed item is never checked again; an item whose Member or
@@ -42,9 +44,13 @@ move, which leaving the Family is the evidence of.
 import json
 import re
 from dataclasses import dataclass
+from datetime import date
 
 from django.db.models import F, Max, Q
 
+from parishkit.parishsoft import ministry_membership_is_current
+from parishkit.stewardship.campaigns.configuration import commitment_start
+from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 from parishkit.stewardship.pipeline import (
     CENSUS_CONFIRMABLE,
@@ -684,7 +690,87 @@ def _census_checks(snapshot, corpus, campaign_id, full, start):
         )
 
 
-def _ministry_checks(snapshot, corpus, campaign_id, full, start):
+def roster_held(corpus, as_of):
+    """The (Member, Ministry) keys the roster holds on ``as_of``.
+
+    ``as_of`` is the Ministry roster date (``roster_date``): each row is
+    judged by its start and end dates on that day, as
+    ``ministry_membership_is_current`` judges them, so a join dated that
+    day is held and a leave ending the day before is not. With no
+    ``as_of`` (no commitment period) it is each row's stored ``current``,
+    the roster as of the refresh's date. The SQL guard reads the same
+    (``stewardship_response_ministry_held_v1``, frozen migration 0189).
+    """
+    return {
+        (row["member_key"], row["ministry_key"])
+        for row in corpus["roster"].values()
+        if (
+            row["current"]
+            if as_of is None
+            else ministry_membership_is_current(row, today=as_of)
+        )
+    }
+
+
+# A refresh date as the load evidence writes it (``date.isoformat``); the
+# SQL read accepts exactly the same text.
+REFRESH_DAY = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+
+
+def refresh_date(cursor):
+    """The refresh date a snapshot's cursor records, or None.
+
+    The load's ``as_of_date``: the day the roster rows' stored ``current``
+    flags were judged on. Only a ``YYYY-MM-DD`` string naming a real date
+    counts, as ``stewardship_ministry_roster_date_v1`` reads it.
+    """
+    load = cursor.get("load") if type(cursor) is dict else None
+    day = load.get("as_of_date") if type(load) is dict else None
+    if type(day) is not str or not REFRESH_DAY.fullmatch(day):
+        return None
+    try:
+        return date.fromisoformat(day)
+    except ValueError:
+        return None
+
+
+def roster_date(commitment, refreshed):
+    """The Ministry roster date: the later of ``refreshed`` and ``commitment``.
+
+    Staff date a campaign's joins and leaves for its commitment period
+    (review pipeline spec, "Ministry roster date", #2293), so before the
+    period begins its checks read the roster as of its start; once it is
+    under way the refresh date is later, so an entry dated after the start
+    is still confirmed. No commitment period gives None (the stored flags,
+    the refresh date's roster); an unknown refresh date leaves the start.
+    """
+    if commitment is None:
+        return None
+    return commitment if refreshed is None else max(commitment, refreshed)
+
+
+def _roster_date(campaign_id, snapshot_id):
+    """The campaign's Ministry roster date in a snapshot, as the guard reads it.
+
+    The snapshot's cursor is read afresh: the guard reads the stored one.
+    """
+    from parishkit.stewardship.source.snapshot_models import SourceSnapshot
+
+    campaign = Campaign.objects.select_related("active_configuration").get(
+        pk=campaign_id
+    )
+    cursor = (
+        SourceSnapshot.objects.filter(pk=snapshot_id)
+        .values_list("cursor", flat=True)
+        .first()
+    )
+    return roster_date(
+        commitment_start(campaign.active_configuration.values),
+        refresh_date(cursor),
+    )
+
+
+def _ministry_checks(snapshot, corpus, campaign_id, full, start, evidence):
     """Yield the Ministry checks this promotion owes, unsaved.
 
     For every live request a person resolved or closed (one a refresh
@@ -698,13 +784,10 @@ def _ministry_checks(snapshot, corpus, campaign_id, full, start):
     Ministry, and is noted when ParishSoft now matches the Family's
     answer. A Member no
     longer an active, living Member of the Family, or a Ministry the data no
-    longer lists, gives no evidence and no check.
+    longer lists, gives no evidence and no check. The roster is read as of
+    the Ministry roster date of ``evidence`` (a snapshot id, ``snapshot``'s
+    own unless given: ``roster_date``, #2293).
     """
-    memberships = {
-        (row["member_key"], row["ministry_key"])
-        for row in corpus["roster"].values()
-        if row["current"]
-    }
     rows = list(
         MinistryRequest.objects.filter(
             submission__campaign_id=campaign_id,
@@ -716,6 +799,10 @@ def _ministry_checks(snapshot, corpus, campaign_id, full, start):
     )
     if not rows:
         return
+    memberships = roster_held(
+        corpus,
+        _roster_date(campaign_id, snapshot.pk if evidence is None else evidence),
+    )
     ticks = {}
     for request_id, entered, created_at in (
         MinistryRosterEntry.objects.filter(request_id__in=[row.pk for row in rows])
@@ -790,13 +877,14 @@ def _checks(snapshot, corpus, campaign_id, full, *, evidence=None):
     (``reports.pledge_refresh``), imported here, as promotion imports this
     module, so loading the source worker does not load the reports app.
     They read the pledges of ``evidence`` (a snapshot id), ``snapshot``'s
-    own unless given; census and Ministry judge from ``corpus``.
+    own unless given; census and Ministry judge from ``corpus``, the Ministry
+    checks as of the Ministry roster date of ``evidence`` too.
     """
     from parishkit.stewardship.reports.pledge_refresh import pledge_checks
 
     start = start_row()
     yield from _census_checks(snapshot, corpus, campaign_id, full, start)
-    yield from _ministry_checks(snapshot, corpus, campaign_id, full, start)
+    yield from _ministry_checks(snapshot, corpus, campaign_id, full, start, evidence)
     yield from pledge_checks(
         snapshot, corpus, campaign_id, full, start, evidence=evidence
     )

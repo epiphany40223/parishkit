@@ -584,6 +584,11 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # missing (so it may run whole again), and replaces in place functions
 # that 0095's, 0156's and 0161's reinstalled files bring back older, so
 # ``CLOSURE_REPLACED_ONLY`` restores 0185's bodies last.
+# 0189 (#2293) creates two plain reads (``CLOSURE_CREATED``: neither is
+# granted nor a definer, but the full migration creates them again) and
+# replaces 0159's refresh check guard in place, which the reruns above
+# bring back older, so ``CLOSURE_REPLACED_ONLY`` restores 0189's guard
+# instead of 0159's.
 # The columns 0185 (#2202) adds, by table.
 SERIES_IN_FORCE_COLUMNS = (
     ("stewardship_daily_fact_set", "pledge_edits"),
@@ -1131,6 +1136,15 @@ CLOSURE_CREATED = {
             "public.stewardship_fact_pledge_edits_record_v1()",
         ),
         ("stewardship_reports", "0052_series_in_force"),
+    ),
+    # 0189 (#2293): the Ministry roster date and the roster read as of a
+    # date; its file, whole, puts both back with its refresh check guard.
+    **dict.fromkeys(
+        (
+            "public.stewardship_ministry_roster_date_v1(uuid,uuid)",
+            "public.stewardship_response_ministry_held_v1(uuid,uuid,text,integer,date)",
+        ),
+        ("stewardship_responses", "0033_commitment_roster_date"),
     ),
 }
 
@@ -1770,6 +1784,16 @@ CLOSURE_REPLACED_ONLY = {
             ("stewardship_report_email_preparation_guard_v1", "review_watermark"),
             ("stewardship_report_email_snapshot_guard_v1", "review_watermark"),
             ("stewardship_campaign_comparison_v1", "selected.pledge_edits"),
+        )
+    },
+    # 0189 (#2293) replaces the refresh check guard last, on 0159's body
+    # (this key's value replaces the 0159 entry above), so a Ministry check
+    # reads the roster as of the Ministry roster date, after the reruns
+    # that bring back older bodies.
+    **{
+        "stewardship_refresh_check_guard_v1": (
+            ("stewardship_responses", "0033_commitment_roster_date"),
+            "roster := stewardship_response_ministry_held_v1(NEW.snapshot_id,family,",
         )
     },
 }

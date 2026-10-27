@@ -234,6 +234,19 @@ def _artwork(artwork):
             invalid()
 
 
+def commitment_start(values):
+    """The first day of a campaign's commitment period, or None without one.
+
+    The commitment period (data spec, "Commitment period", #2293) is the
+    one period pledges and Ministry requests apply to. It is still stored
+    as the ``financial`` period, so it exists only while Financial
+    stewardship is enabled. The database reads the same value
+    (``stewardship_ministry_roster_date_v1``, frozen migration 0189).
+    """
+    financial = values.get("financial")
+    return date.fromisoformat(financial["start"]) if financial else None
+
+
 def campaign_values(values):
     """Validate the full draft structure and return its canonical UTC interval.
 
