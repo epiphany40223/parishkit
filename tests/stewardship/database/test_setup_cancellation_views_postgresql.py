@@ -84,3 +84,27 @@ def test_anonymous_and_another_admin_session_cannot_use_cancellation_exception(
             assert response.status_code == 404
             assert str(attempt.pk).encode() not in response.content
         assert SetupAttempt.objects.get(pk=attempt.pk).state == "frozen"
+
+
+def test_sign_out_and_cancel_cancels_a_finishing_attempt_with_operator_advice(
+    setup_http,
+):
+    """The finishing attempt's cancelling Sign out (#2272) is Cancel setup, then out."""
+    other = login(setup_http)
+    request, attempt, _, _ = selected(setup_http)
+    browser = client_for(request)
+    with web_login():
+        page = browser.get("/admin/setup/finishing").content
+        assert f'data-signout-attempt="{attempt.pk}"'.encode() in page
+        # Another Administrator's logout cannot cancel it.
+        stranger = client_for(other)
+        stranger.get("/admin/login")  # draws a CSRF cookie
+        post(stranger, "/admin/logout", {"cancel_setup": str(attempt.pk)})
+        assert SetupAttempt.objects.get(pk=attempt.pk).state == "frozen"
+        response = post(browser, "/admin/logout", {"cancel_setup": str(attempt.pk)})
+        assert response["Location"] == "/admin/login?setup=cancelled-finishing"
+        row = SetupAttempt.objects.get(pk=attempt.pk)
+        assert row.state == "expired" and row.expiry_reason == "cancelled"
+        login_page = browser.get(response["Location"]).content
+        assert b"Setup was cancelled." in login_page
+        assert b"original keys are restored" in login_page

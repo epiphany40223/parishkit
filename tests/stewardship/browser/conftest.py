@@ -79,7 +79,7 @@ from parishkit.stewardship.reports.chart_assets import VENDORED
 from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.web.contracts import PageWindow
-from parishkit.stewardship.web.security import CSP
+from parishkit.stewardship.web.security import CSP, CSP_BLOB_IMAGES
 from parishkit.stewardship.web.tables import paginate, window_table
 from parishkit.stewardship.web.time_entry_fields import (
     FlexibleTimeListField,
@@ -194,11 +194,13 @@ from .setup_back_path_components import components as setup_back_path_components
 from .setup_backup_components import POSTS as SETUP_BACKUP_POSTS
 from .setup_backup_components import components as setup_backup_components
 from .setup_check_components import components as setup_check_components
+from .setup_check_components import posts as setup_check_posts
 from .setup_live_components import POSTS as SETUP_LIVE_POSTS
 from .setup_live_components import components as setup_live_components
 from .setup_order_components import POSTS as SETUP_ORDER_POSTS
 from .setup_order_components import REDIRECTS as SETUP_ORDER_REDIRECTS
 from .setup_order_components import components as setup_order_components
+from .setup_signout_components import components as setup_signout_components
 from .signed_in_components import POSTS as SIGNED_IN_POSTS
 from .signed_in_components import components as signed_in_components
 from .source_form_components import components as source_form_components
@@ -1519,10 +1521,15 @@ def component_responses():
             {"draft": setup_draft, "form": SetupLogoForm(), "assets": []},
         ),
         (
-            # The setup logo step once a logo is saved: its previews.
+            # The setup logo step once a logo is saved: its preview box.
             "/setup-branding-saved",
             "setup-branding",
-            {"draft": setup_draft, "form": SetupLogoForm(), "assets": [branding_asset]},
+            {
+                "draft": setup_draft,
+                "form": SetupLogoForm(),
+                "assets": [branding_asset],
+                "stored": branding_asset,
+            },
         ),
         (
             "/setup-credential",
@@ -2292,6 +2299,18 @@ def component_responses():
         setup_live_components(context, admin, NOW, SETUP_MAIL_STATUS, setup_draft)
     )
     responses.update(setup_back_path_components(context, admin, NOW))
+    responses.update(
+        setup_signout_components(
+            context,
+            admin,
+            setup_draft,
+            finishing_context(
+                checkpoint="validating",
+                prepared=False,
+                credentials=[],
+            ),
+        )
+    )
     responses.update(setup_check_components(context, admin, NOW))
     responses.update(in_place_commands_components(context, admin))
     responses.update(campaign_test_components(context, admin))
@@ -2327,6 +2346,7 @@ def component_responses():
         IN_PLACE_POSTS
         | DELIVERY_POSTS
         | in_place_commands_posts(context, admin)
+        | setup_check_posts()
         | campaign_test_posts(context, admin)
         | backup_test_posts(context, admin)
         | AUTOMATION_POSTS
@@ -2504,7 +2524,12 @@ def component_origin(component_responses):
                 "Content-Type",
                 kind if kind == "image/png" else kind + "; charset=utf-8",
             )
-            self.send_header("Content-Security-Policy", CSP)
+            # Setup's Parish logos previews the chosen file as a blob: image,
+            # so its response asks for that policy as the real view does.
+            self.send_header(
+                "Content-Security-Policy",
+                CSP_BLOB_IMAGES if path.startswith("/setup-branding") else CSP,
+            )
             self.end_headers()
             self.wfile.write(body if isinstance(body, bytes) else body.encode())
 

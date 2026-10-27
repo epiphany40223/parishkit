@@ -312,6 +312,26 @@ Integrations. A page whose prerequisites are unmet explains what is missing
 and links the step that fixes it, keeping the HTTP status of the underlying
 refusal; closed JSON errors remain for polling and command endpoints.
 
+The setup Parish logos page previews the logo before the Administrator
+advances (#2270). Under the file field a preview box of fixed height holds
+the logo the field would save. Choosing a file draws it at once from the
+browser's own copy of the file (an object URL, revoked when the file is
+replaced or the page is left), with no upload. With no file chosen, the box
+shows the saved logo from the server, so a revisit shows what is saved, and
+its empty text before either exists. A file the page refuses (over 5 MB, or
+one the browser types as something other than an image) or that the browser
+cannot draw keeps no preview: the box returns to the saved logo or the empty
+text, and the refusal shows at once in the field's reserved error line, in the
+server's own words (the page carries them in data attributes), without
+waiting for Save and continue. The box, the error line and the
+buttons below keep their places in every case, including at 320 px
+([no layout shift](../ui-conventions/spec.md#no-layout-shift)). Only this
+page's response adds `blob:` to the content security policy's `img-src`; the
+server still checks the size and type of every upload. The post-setup
+Parish logos page (Admin menu) keeps its own review dialog, which already
+shows every generated size; the setup page lists no generated sizes, because its
+preview box already shows the saved logo.
+
 A refusal an Admin can correct, in the wizard or the campaign, content and
 schedule editors, says what was wrong and how to fix it, with a link to the
 page that fixes it when there is one (for example, a template that a mail
@@ -518,6 +538,36 @@ Cancel, idle expiry or absolute expiry marks the staging set expired,
 discards a parish data check still waiting for its answer, and removes staged
 settings, source rows, files, and credentials idempotently.
 Wizard staging is not resumable under a new login in the first release.
+
+**Sign out while setup is owned.** While the signed-in Administrator owns a
+setup attempt (collecting, loading or finishing), Sign out, wherever it is
+drawn (the menu, and the setup overview and Finishing setup pages), first
+asks in the shared
+[confirmation dialog](../ui-conventions/spec.md#row-actions-and-confirmation):
+"Signing out cancels this setup. You'll need to start a new setup with a new
+sign-in.", with **Stay signed in** (the safe choice, which has focus) and
+**Sign out and cancel setup**. Opening the dialog changes nothing on the
+page, so nothing moves. Choosing Sign out and cancel setup posts the logout
+route with the owned attempt's id as `cancel_setup`; the server then runs
+the same cancellation as Cancel setup (synchronously, reason `cancelled`,
+the same cleanup, whether the attempt is collecting, loading or finishing)
+and signs out. The server enforces the rule itself: only the attempt's own
+Administrator, from the attempt's own session, can cancel it this way, and a
+refused cancellation (another attempt, an attempt already ended, an
+unavailable service) still signs out and leaves today's session-expiry
+behavior. A plain logout (no `cancel_setup`, for example the session-ended
+dialog or a script) keeps that behavior: the scheduler then expires the
+attempt with reason `session` within about 30 seconds. Session expiry, idle
+or absolute, is unchanged. After a cancelling sign-out the sign-in page
+carries the fixed flag `setup=cancelled` (or `setup=cancelled-finishing` when
+the attempt was finishing) and shows one information notice, "Setup was
+cancelled."; for a finishing attempt it also repeats Cancel's operator
+advice about restoring the original keys if the worker and mail containers
+were already recreated with the new ones
+([#2272](https://github.com/epiphany40223/parishkit/issues/2272)).
+Only pages drawn with the setup menu ask: the restore review and the
+failure pages keep a plain Sign out, and so does a setup attempt that has
+already ended.
 Finalization freezes the staged setup, runs each target-specific credential
 installer, applies one complete authoritative YAML version through the
 configuration installer, and then runs the final parish data load, the only
@@ -536,7 +586,8 @@ failure resumes idempotently from installer checkpoints only within the original
 Admin session's idle and absolute lifetime. Viewing finalization progress does
 not renew them; the Admin renews idle time only through the inactivity dialog.
 Expiry cancels unfinished setup, and a new
-attempt requires cleanup and a new login. After confirmation, and whenever the
+attempt requires cleanup and a new login. A cancelling Sign out during
+finishing cancels it explicitly (see Sign out while setup is owned, above). After confirmation, and whenever the
 frozen attempt's owner opens the setup overview, the Admin sees a "Finishing
 setup" page on the original login's cancellation route. It lists each step in
 plain language (each credential's installation, the services picking up the
@@ -877,8 +928,30 @@ fingerprint and organization it checked; otherwise the page says the parish
 data needs checking again because the ParishSoft connection changed, and the
 step is not done.
 
+**Starting.** The Administrator does not press anything to start the check
+([#2271](https://github.com/epiphany40223/parishkit/issues/2271);
+Administrator decision of 2026-10-26): the key and organization were
+validated on ParishSoft connection, so the page starts the check by itself
+when it opens, whenever no check exists for the current connection (the
+staged key's fingerprint and organization), that is, before any check and in
+the "needs checking again" case above. The Administrator portal requires
+JavaScript, so the page submits its own **Check parish data** form once on
+arrival, through the same in-place path as a press on the button
+([in-place controls](../ui-conventions/spec.md#in-place-controls)): the
+working spinner takes the status slot's place and nothing moves
+([no layout shift](../ui-conventions/spec.md#no-layout-shift)). A check
+already done for the current connection, ready or failed, is not run again
+when the page is revisited; **Check again** starts a new one. The
+automatic start is a quiet refresh: it does not move focus, scroll or the
+address fragment. A start the server refuses shows the setup error page, as
+a refused press does, and is not retried by the page. The start is
+idempotent on the server: a start while a check is waiting or running returns
+that check and queues no second one, so a repeated page load, a second tab or
+a double submission cannot start two.
+
 **The page.** Its action row has Back (to ParishSoft connection) and the
-step's primary action: **Check parish data** before any check, **Continue**
+step's primary action: **Check parish data** (the button the page presses
+on arrival), **Continue**
 (to the next step not done yet: Off-site backups (optional) until it is
 saved, then Finish setup) once a check of the current connection succeeded, with **Check
 again** as a secondary button, and **Check again** after a failed check.
@@ -1055,12 +1128,14 @@ save never opens it while an earlier required step still needs work: that
 step opens instead. The wizard gains no test step for it (see **Checking the
 folder** below).
 
-**What it asks.** The step's introduction says, in plain language, that the
+**What it asks.** The step's About panel says, in plain language, that the
 server makes an encrypted backup every night, that a copy kept somewhere
 else protects the parish if the server is lost, and that copies can be
 turned on now or later from Off-site backups (Google Drive). A short
-paragraph about the backup private key follows, shown whether or not copies
-are turned on, since it is true of every backup: backups are encrypted to
+paragraph about the backup private key, How backups are protected, follows
+in the same panel ([page help](../ui-conventions/spec.md#page-help))
+whether or not copies are turned on, since it is true of every backup:
+backups are encrypted to
 the backup encryption key the server operator installed; only its private
 key, which the parish keeps away from this server, can open them, and
 without it no backup can be restored; this system never holds the private
@@ -1068,7 +1143,8 @@ key and cannot show or send it; after setup an Administrator can replace
 the key from Backup encryption key. Then:
 
 1. **Copy each backup to Google Drive**, a checkbox, unticked on a first
-   visit.
+   visit. One help line stays under its words; the rest of its help opens
+   from the "i" beside them.
 2. Shown only while it is ticked
    ([conditional fields](../ui-conventions/spec.md#conditional-fields)):
    - **Google Drive folder link**, the same field, help, browser pattern,
@@ -1080,8 +1156,8 @@ the key from Backup encryption key. Then:
      (for example, a Content manager of the folder's shared drive).
    - **The backup private key is kept safe**, a required checkbox: "I know
      where the parish keeps the backup private key, away from this server.
-     Without it no backup can be restored." Its help points to the
-     paragraph above.
+     Without it no backup can be restored." Its help points to How backups
+     are protected in About this page.
 
 Above the form, whether or not the box is ticked, the step shows the
 one-time Google steps of the
@@ -1520,7 +1596,10 @@ Notes on the groups:
 The menu always ends with **Sign out**, set apart from the groups, on every
 signed-in Admin page (including during initial setup). It is a POST form with
 the Admin CSRF token to the logout route, styled like a menu entry, because
-logout is CSRF-protected. Pages carry no product footer.
+logout is CSRF-protected. While the Administrator owns a
+setup attempt it first asks, as the
+[Bootstrap and first-Admin wizard](#bootstrap-and-first-admin-wizard)
+section says; Sign out stays in the menu. Pages carry no product footer.
 
 Every Admin page's header, sign-in and setup included, ends with the
 **Appearance** switch at its top right, which chooses the portal's light or

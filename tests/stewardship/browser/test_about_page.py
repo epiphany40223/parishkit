@@ -2,6 +2,7 @@
 
 import pytest
 
+from .setup_check_components import keep_start_manual
 from .waits import eventually, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -107,6 +108,9 @@ def test_converted_page_keeps_cautions_visible_and_help_closed(
     """The page's help starts closed; its caution or data line stays visible."""
     from playwright.sync_api import expect
 
+    # Check parish data starts its check on arrival (#2271), which replaces
+    # the line this test looks for; serve it waiting for a press instead.
+    keep_start_manual(page)
     page.goto(component_origin + path)
     panel = page.locator("details[data-about-page]")
     expect(panel).not_to_have_attribute("open", "")
@@ -135,6 +139,9 @@ def test_every_about_control_sits_beside_its_heading(page, component_origin):
     heading row: the panel directly follows the page's h1, and its summary is
     drawn on the same line as the heading, to the right of it (#227)."""
     page.set_viewport_size({"width": 1366, "height": 768})
+    # A page that starts its check on arrival (#2271) would submit its form
+    # while loading; every page here is served waiting for a press.
+    keep_start_manual(page)
     page.goto(component_origin + "/about-page-index")
     paths = page.inner_text("body").split()
     assert len(paths) >= 20, paths

@@ -37,7 +37,9 @@
   instead (home_in_review), so it is not drawn twice.
 
   Sign out is a POST form (logout is CSRF-protected) styled as the last menu
-  entry.
+  entry. While the viewer owns a setup attempt it first asks in
+  setup-signout-dialog.html (#2272); that dialog is drawn once, here, and the
+  setup pages' own Sign out forms name it too.
 {% endcomment %}<nav class="admin-sidebar" aria-label="{% translate 'Administration' %}">
   <details class="admin-menu" open data-admin-menu>
     <summary>{% translate "Menu" %}</summary>
@@ -59,8 +61,9 @@
       </li>
       {% endfor %}
       {% endif %}
-      <li class="admin-signout"><form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}{% button type="submit" %}{% translate "Sign out" %}{% endbutton %}</form></li>
+      <li class="admin-signout"><form method="post" action="{% url 'admin:logout' %}"{% if admin_chrome.setup_attempt %} data-signout-confirm="setup-signout-dialog" data-signout-attempt="{{ admin_chrome.setup_attempt }}"{% endif %}>{% csrf_token %}{% button type="submit" %}{% translate "Sign out" %}{% endbutton %}</form></li>
     </ul>
   </details>
 </nav>
 <script src="{% static 'stewardship/admin-menu-state-v1.js' %}"></script>
+{% if admin_chrome.setup_attempt %}{% include 'stewardship/setup-signout-dialog.html' %}{% endif %}

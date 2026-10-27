@@ -395,12 +395,12 @@ def test_finishing_setup_is_named_for_its_page():
     from parishkit.stewardship.accounts.setup_cancellation_views import (
         setup_cancellation,
     )
-    from parishkit.stewardship.accounts.setup_views import FORMS
+    from parishkit.stewardship.accounts.setup_forms import STEP_FORMS
 
     assert reverse("admin:setup_finishing") == "/admin/setup/finishing"
     assert resolve("/admin/setup/finishing").func is setup_cancellation
     assert resolve("/admin/setup/cancel").url_name == "setup_step"
-    assert "cancel" not in FORMS
+    assert "cancel" not in STEP_FORMS
     with pytest.raises(NoReverseMatch):
         reverse("admin:setup_cancel")
 

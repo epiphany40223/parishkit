@@ -39,7 +39,7 @@
 <p>{% translate "Complete setup using this login. Another login cannot resume your temporary settings." %}</p>
 <form method="post">{% csrf_token %}<input type="hidden" name="action" value="start">{% button type="submit" %}{% translate "Start setup" %}{% endbutton %}</form>
 {% endif %}
-<form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}
-{% if draft and not expired %}<p>{% translate "Signing out ends this setup attempt and clears its temporary settings." %}</p>{% endif %}
+<form method="post" action="{% url 'admin:logout' %}"{% if admin_chrome.setup_attempt %} data-signout-confirm="setup-signout-dialog" data-signout-attempt="{{ admin_chrome.setup_attempt }}"{% endif %}>{% csrf_token %}
+{% if draft and not expired %}<p>{% translate "Signing out cancels this setup attempt and clears its temporary settings." %}</p>{% endif %}
 {% comment %}Sign out sits beside Start setup or Cancel setup, so it is secondary (UX conventions, Button emphasis, #1713).{% endcomment %}{% button type="submit" variant="secondary" %}{% translate "Sign out" %}{% endbutton %}</form>
 {% endblock %}

@@ -8,6 +8,8 @@ from django.test import RequestFactory, override_settings
 
 from parishkit.stewardship.deployment import DeploymentProfile
 from parishkit.stewardship.web.security import (
+    CSP,
+    CSP_BLOB_IMAGES,
     SecurityBoundaryMiddleware,
     browser_settings,
     resolve_client,
@@ -222,3 +224,18 @@ def test_only_public_byte_routes_keep_their_own_caching(path, changes, kept):
         RequestFactory().get(path)
     )
     assert response["Cache-Control"] == (PUBLIC_CACHE if kept else "no-store")
+
+
+def test_only_a_page_asking_for_blob_images_gets_them():
+    """Setup's logo preview draws the chosen file from a blob: URL (#2270);
+    that response alone widens img-src, and nothing else in the policy."""
+    assert "blob:" not in CSP
+    assert CSP_BLOB_IMAGES.replace(" blob:", "") == CSP
+    for asked, policy in ((True, CSP_BLOB_IMAGES), (False, CSP)):
+        response = HttpResponse("ok")
+        response.stewardship_blob_images = asked
+        middleware = SecurityBoundaryMiddleware(lambda request, r=response: r)
+        request = RequestFactory().get("/", HTTP_HOST="testserver")
+        with override_settings(ALLOWED_HOSTS=["testserver"]):
+            answered = middleware(request)
+        assert answered["Content-Security-Policy"] == policy

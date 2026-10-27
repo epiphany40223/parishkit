@@ -2170,7 +2170,7 @@
       const address = new URL(withFragment(response.url, id), document.baseURI);
       (owner?.getAttribute("data-in-place-forget") || "").split(/\s+/).filter(Boolean)
         .forEach((name) => address.searchParams.delete(name));
-      setAddress(address.href);
+      setAddress(options.quiet ? keepHash(address.href) : address.href);
     } else if (!anywhere && init.method !== "POST") {
       setAddress(options.quiet ? keepHash(url) : url);
     } else if (!anywhere && !refused && address) {
@@ -2388,7 +2388,12 @@
       reconcileBoxes();
     };
     refreshTable(region, control, action.href, init, load,
-      {owner, form: save ? form : null, cleared: clearing})
+      {owner, form: save ? form : null, cleared: clearing,
+        // A form marked data-in-place-quiet is submitted by script, not by
+        // the reader (Check parish data's automatic start, #2271): it keeps
+        // the reader's focus, scroll and address fragment like any quiet
+        // refresh.
+        quiet: Boolean(owner?.hasAttribute("data-in-place-quiet"))})
       .finally(settle);
   }, true);
   // Back or Forward within a page that keeps its views in history
@@ -3773,6 +3778,37 @@
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") reread("a[data-reread-on-show][data-in-place]");
   });
+
+  // Check parish data starts its quick check by itself (#2271). The key and
+  // organization were validated on ParishSoft connection, so a form marked
+  // data-auto-start (drawn only before any check, or when the last one used
+  // an earlier connection) is submitted once when the page opens, through
+  // the same in-place path as a press on its button, but as a quiet refresh
+  // (data-in-place-quiet, set for this one submission): the spinner takes the status slot's place,
+  // nothing moves, and focus, scroll and the address stay as they are. It runs once per page load, so a
+  // start the server refuses shows the setup error page and is not retried, and
+  // a re-read of the panel (which never carries the mark again once a check
+  // exists) cannot start another. The server also returns a check that is
+  // already waiting rather than queueing a second.
+  const autoStart = () => {
+    const form = document.querySelector("form[data-auto-start][data-in-place]");
+    const button = form?.querySelector("button[name=action][value=check]");
+    if (!button) return;
+    // Quiet for this submission only (the submit event reads the mark
+    // synchronously); a press on the button after a refused start is the
+    // reader's own, and moves focus to the answer as any press does.
+    form.setAttribute("data-in-place-quiet", "");
+    try {
+      form.requestSubmit(button);
+    } finally {
+      form.removeAttribute("data-in-place-quiet");
+    }
+  };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", autoStart, {once: true});
+  } else {
+    autoStart();
+  }
 
   // Pages that update themselves (UX conventions, #1586). A page whose state
   // changes without the reader's own action (Background work, Families on
@@ -5307,6 +5343,64 @@
   const fileSize = (bytes) => (bytes >= 1048576
     ? `${Math.ceil(bytes * 10 / 1048576) / 10} MB`
     : `${Math.ceil(bytes / 1024).toLocaleString("en-US")} KB`);
+  // A file field marked data-preview-target shows the chosen image at once
+  // in that box (setup's Parish logos, #2270), drawn from the browser's own
+  // copy through a blob: object URL, so nothing is uploaded to be seen. The
+  // box (file-preview in ui-v1.css) has a fixed size, so nothing moves. With
+  // no usable file chosen (none, not an image, over data-max-bytes, or one
+  // the browser cannot draw) the box shows the saved image named by its
+  // data-stored-src, or its empty text. Each object URL is revoked as it is
+  // replaced and when the page is left. The server still checks every file.
+  const wireFilePreview = (root) => {
+    within(root, "input[type=file][data-preview-target]").forEach((input) => {
+      const box = document.getElementById(input.dataset.previewTarget);
+      const image = box && box.querySelector("img");
+      const empty = box && box.querySelector(".file-preview-empty");
+      if (!image || input.dataset.previewWired) return;
+      input.dataset.previewWired = "1";
+      let url = "";
+      const forget = () => {
+        if (url) URL.revokeObjectURL(url);
+        url = "";
+      };
+      const show = (src, alt) => {
+        if (src) {
+          image.alt = alt;
+          image.src = src;
+        } else {
+          image.removeAttribute("src");
+          image.alt = "";
+        }
+        image.hidden = !src;
+        if (empty) empty.hidden = Boolean(src);
+      };
+      const saved = () => {
+        forget();
+        show(box.dataset.storedSrc || "", box.dataset.storedAlt || "");
+      };
+      const update = () => {
+        const file = !input.disabled && input.files && input.files[0];
+        forget();
+        if (!file || !file.type.startsWith("image/") || file.size === 0
+          || file.size > Number(input.dataset.maxBytes || Infinity)) {
+          saved();
+          return;
+        }
+        url = URL.createObjectURL(file);
+        show(url, box.dataset.chosenAlt || "");
+      };
+      // A file the browser cannot draw is not kept as the preview.
+      image.addEventListener("error", () => {
+        if (url && image.src === url) saved();
+      });
+      input.addEventListener("change", update);
+      window.addEventListener("pagehide", forget);
+      // A page restored from the back/forward cache may keep a chosen file
+      // in the field whose object URL was revoked on leaving.
+      window.addEventListener("pageshow", update);
+      update();
+    });
+  };
   // Each field's check (edited: whether it is the field just changed); a
   // change to any file field re-checks its form's others, so a total that
   // fits again releases the field that was refused for it.
@@ -5331,6 +5425,13 @@
           // A 0-byte file, which the server's file field refuses too, in
           // its words (data-empty-file-message, #1577).
           message = input.dataset.emptyFileMessage;
+          rule = "own";
+        } else if (file && file.type && !file.type.startsWith("image/")
+          && input.dataset.notImageMessage) {
+          // A file the browser types as something other than an image
+          // (data-not-image-message, the server's words; Parish logos,
+          // #2270). An untyped file is left to the server's check.
+          message = input.dataset.notImageMessage;
           rule = "own";
         } else if (file && file.size > Number(input.dataset.maxBytes)) {
           // A field marked before #1062 (Past campaigns' archive, #1018)
@@ -5395,6 +5496,7 @@
   };
   const wireConditional = (root) => {
     wireMaxBytes(root);
+    wireFilePreview(root);
     showWhenUpdates = showWhenUpdates.filter(({node}) => node.isConnected);
     choiceUpdates = choiceUpdates.filter(({node}) => node.isConnected);
     lockedUpdates = lockedUpdates.filter(({node}) => node.isConnected);
@@ -5726,6 +5828,59 @@
   // from, #2037) takes the same Tab wrap, Escape and Cancel handling; its
   // script still decides what Confirm and closing do.
   window.ParishConfirm = Object.freeze({wire: wireDialog});
+  // Sign out while the viewer owns a setup attempt (#2272). The menu's (and
+  // the setup pages') Sign out form is marked data-signout-confirm="<dialog
+  // id>" and data-signout-attempt="<attempt id>". Submitting it opens the
+  // shared confirmation dialog instead; Sign out and cancel setup adds the
+  // attempt id as cancel_setup and submits the form natively (the server
+  // cancels the setup, then signs out). Stay signed in, Escape or closing
+  // changes nothing and puts focus back on the Sign out button. Opening the
+  // dialog moves nothing on the page. This listener is in the capture phase
+  // so it prevents the submit before the shared busy-button handler marks the
+  // button busy (which would leave it looking disabled after Stay).
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !form.hasAttribute("data-signout-confirm")) return;
+    const dialog = document.getElementById(form.dataset.signoutConfirm);
+    if (!(dialog instanceof HTMLDialogElement)) return;
+    event.preventDefault();
+    wireDialog(dialog);
+    const opener = event.submitter || form.querySelector("button");
+    dialog.parishSignOut = {form, opener, sent: false};
+    if (!dialog.parishSignOutWired) {
+      dialog.parishSignOutWired = true;
+      dialog.querySelector("[data-confirm-accept]")?.addEventListener("click", () => {
+        const state = dialog.parishSignOut;
+        // One request only: a second click while the page leaves does nothing.
+        if (state.sent) return;
+        state.sent = true;
+        let field = state.form.querySelector("input[name='cancel_setup']");
+        if (!field) {
+          field = document.createElement("input");
+          field.type = "hidden";
+          field.name = "cancel_setup";
+          state.form.append(field);
+        }
+        field.value = state.form.dataset.signoutAttempt || "";
+        state.form.submit();
+      });
+      dialog.addEventListener("close", () => dialog.parishSignOut.opener?.focus());
+    }
+    dialog.showModal();
+    // The safe choice takes focus first.
+    dialog.querySelector("[data-confirm-cancel]")?.focus();
+  }, true);
+  // A page restored from the back/forward cache after the cancelling Sign
+  // out left must not keep the field, the open dialog or the "sent" latch.
+  window.addEventListener("pageshow", (event) => {
+    if (!event.persisted) return;
+    document.querySelectorAll("form[data-signout-confirm]").forEach((form) => {
+      form.querySelector("input[name='cancel_setup']")?.remove();
+      const dialog = document.getElementById(form.dataset.signoutConfirm);
+      if (dialog?.parishSignOut) dialog.parishSignOut.sent = false;
+      if (dialog?.open) dialog.close();
+    });
+  });
   // A bulk button may carry its own dialog text and post its own name and
   // value (confirm-dialog.html; the Ministry follow-up queue's bulk
   // outcomes, #1131). One limited to one kind of row is available only

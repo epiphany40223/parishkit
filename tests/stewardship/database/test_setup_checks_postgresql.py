@@ -338,6 +338,8 @@ def test_the_page_shows_the_check_and_check_again(setup_http):
         html = page.content.decode()
         assert "<h1>Check parish data</h1>" in html
         assert 'name="action" value="check"' in html
+        # No check exists yet, so the page starts one by itself (#2271).
+        assert " data-auto-start" in html
         assert "Check that ParishSoft answers for St. Example Parish (1)" in html
         assert "Campaigns offer" not in html and "Load parish data" not in html
         response = post(
@@ -353,6 +355,7 @@ def test_the_page_shows_the_check_and_check_again(setup_http):
         assert response["Location"] == "/admin/setup/source#setup-source-panel"
         waiting = browser.get("/admin/setup/source").content.decode()
         assert "data-source-check-waiting" in waiting
+        assert "data-auto-start" not in waiting
         assert 'data-reread-every="3000"' in waiting
         assert 'aria-describedby="setup-check-reason"' in waiting
     assert answer_check(private)
