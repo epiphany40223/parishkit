@@ -119,8 +119,8 @@ def seed_runtime(root, *, production=False, provider_mode="configured"):
         provider_mode=provider_mode,
     )
     if provider_mode == "initial":
-        # Production provisioning retains every complete mount variant so the
-        # host can later recreate consumers after first credential installation.
+        # Production provisioning still renders every mount variant; since
+        # #2228 they are all the configured topology, so the documents agree.
         for mode in ("configured", "configured-slack"):
             _, variants = render_runtime(
                 configuration,
@@ -437,7 +437,7 @@ def test_complete_foundation_bootstrap_and_online_exclusion(
                 )
                 details = []
                 for name in ("worker", "scheduler", "mail-dispatch"):
-                    config_name = name if name == "scheduler" else name + "-initial"
+                    config_name = name
                     diagnostic = compose_run(
                         file,
                         project,
@@ -461,7 +461,12 @@ def test_complete_foundation_bootstrap_and_online_exclusion(
                 pytest.fail(
                     started.stderr + logs.stdout + logs.stderr + "\n".join(details)
                 )
-            for name in ("worker", "mail-dispatch"):
+            # The consumers start before setup with their credential
+            # directories mounted but empty (#2228).
+            for name, providers in (
+                ("worker", "{'parishsoft','slack'}"),
+                ("mail-dispatch", "{'google_workspace'}"),
+            ):
                 probe = compose_run(
                     file,
                     project,
@@ -473,9 +478,11 @@ def test_complete_foundation_bootstrap_and_online_exclusion(
                     "from pathlib import Path; import sys; "
                     "from parishkit.stewardship.deployment import load_deployment; "
                     "c=load_deployment(Path(sys.argv[1])); "
-                    "assert not ({'parishsoft','google_workspace','slack'} "
-                    "& c.secrets.keys())",
-                    str(layout.service_directory / f"{name}-initial.yaml"),
+                    f"assert {providers} <= c.secrets.keys(); "
+                    f"assert not any(c.secrets[n].exists() for n in {providers}); "
+                    "assert Path('/tmp/stewardship-consumer/background.json')"
+                    '.read_text().count(\'"deferred":["\') == 1',
+                    str(layout.service_directory / f"{name}.yaml"),
                 )
                 assert probe.returncode == 0
         # PostgreSQL's per-login source rules (#2111): the password-free

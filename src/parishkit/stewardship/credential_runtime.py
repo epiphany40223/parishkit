@@ -7,14 +7,16 @@ service rather than a one-off container that only reopens the current files.
 Provider and key-retirement owners supply their validators in later phases.
 """
 
+import logging
 import sys
+from datetime import timedelta
 from threading import Event as StopEvent
 from uuid import UUID
 
 from parishkit.config import ConfigError
 
 from .deployment import ServiceRole, load_deployment
-from .observability import Event, configure_logging, emit_failure
+from .observability import Event, FailureKind, configure_logging, emit, emit_failure
 from .runtime_paths import RuntimeLayout
 from .startup_interlock import StartupLease
 
@@ -83,18 +85,76 @@ def acknowledge_background(configuration, request_id, *, lease):
             runtime.broker.app.close()
 
 
-def acknowledge_rotations(configuration, receipts):
+# A request still unacknowledged this long after its installation is overdue
+# (#2228): the consumer logs it, at most once an hour per request, and
+# Finishing setup asks for the server operator (setup_finishing.OVERDUE_AFTER
+# is the same instant).
+PICKUP_OVERDUE_AFTER = timedelta(minutes=10)
+PICKUP_ALERT_EVERY = timedelta(hours=1)
+# When this process last logged each overdue request; in memory only, so a
+# restarted consumer logs an overdue request again at once.
+_overdue_alerted = {}
+
+
+def admission_check(target, value):
+    """Parse ``value`` as this consumer's re-admission will, or raise.
+
+    Only ParishSoft has an admission-time parse (runtime_background's
+    SourceCredential check); a consumer must not acknowledge bytes that its
+    next start would refuse (#2228).
+    """
+    if target == "parishsoft":
+        from .source.credentials import SourceCredential
+
+        SourceCredential(value)
+
+
+def _alert_overdue(row):
+    """Log a request this consumer still cannot pick up, once overdue.
+
+    ``row.updated_at`` is the installation instant: an ``awaiting_ack``
+    request is not written again until it leaves that state. The line names
+    no request, path or credential, only the safe category.
+    """
+    from .accounts.sessions import database_now
+
+    # The database clock, as Finishing setup's own overdue point uses.
+    now = database_now()
+    if now - row.updated_at < PICKUP_OVERDUE_AFTER:
+        return
+    last = _overdue_alerted.get(row.pk)
+    if last is not None and now - last < PICKUP_ALERT_EVERY:
+        return
+    _overdue_alerted[row.pk] = now
+    emit(
+        Event.INSTALLER_REQUEST_FAILED,
+        level=logging.ERROR,
+        failure_kind=FailureKind.CREDENTIAL_PICKUP_OVERDUE,
+    )
+
+
+def acknowledge_rotations(configuration, receipts, deferred=frozenset()):
     """Acknowledge replacements this running consumer now reads from its mount.
 
     Rotatable integration credentials are mounted as their target's read-only
     directory and every task rereads the file, so once the mounted bytes match
     an installed request this process is already using them. Recording the
-    acknowledgement here replaces the old recreate-and-run-a-command step. The
-    SQL owner still binds the consumer's own database login and fingerprint.
+    acknowledgement here replaces the old recreate-and-run-a-command step,
+    for setup's first keys as for later replacements (#2228). The SQL owner
+    still binds the consumer's own database login and fingerprint.
     ``receipts`` is this process's published inventory, updated in place so
-    the operator command reports the same loaded credentials.
+    the operator command reports the same loaded credentials; ``deferred``
+    is what the process was admitted without (BackgroundRuntime.deferred).
+
+    Each request is handled on its own: bytes that are missing, unreadable,
+    not yet the installed ones or that would fail re-admission are never
+    acknowledged, and once the request is overdue that is logged; a refused
+    acknowledgement (an expired request, say) is logged too, and the pass
+    goes on to the next request. A deferred or optional credential whose
+    file is gone again (setup rolled back) leaves the published receipts.
     """
     from .accounts.credential_installation import acknowledge_loaded_credential
+    from .accounts.cryptography import CryptographicError
     from .accounts.key_files import read_private
     from .accounts.metrics_credentials import credential_receipt
     from .accounts.secret_models import (
@@ -102,7 +162,7 @@ def acknowledge_rotations(configuration, receipts):
         SecretReplacementRequest,
     )
     from .consumer_runtime import publish_single_process_receipts
-    from .service_boundaries import rotating_directories
+    from .service_boundaries import OPTIONAL_SECRETS, rotating_directories
 
     consumer = configuration.service_role.value
     targets = rotating_directories(configuration).keys()
@@ -117,17 +177,41 @@ def acknowledge_rotations(configuration, receipts):
     )
     acknowledged = []
     for row in rows:
-        value = read_private(configuration.secrets[row.target])
-        fingerprint = credential_receipt(value, row.target)
+        try:
+            value = read_private(configuration.secrets[row.target])
+            fingerprint = credential_receipt(value, row.target)
+            if fingerprint == row.resulting_fingerprint:
+                admission_check(row.target, value)
+        except CryptographicError:
+            fingerprint = None
         if fingerprint != row.resulting_fingerprint:
-            # The installer has not renamed this candidate into place yet.
+            # Usually the installer has not renamed this candidate into place
+            # yet; past the overdue point it is logged.
+            _alert_overdue(row)
             continue
-        acknowledge_loaded_credential(
-            request_id=row.pk, consumer=consumer, loaded_value=value
-        )
+        try:
+            acknowledge_loaded_credential(
+                request_id=row.pk, consumer=consumer, loaded_value=value
+            )
+        except Exception as error:
+            emit_failure(error, event=Event.INSTALLER_REQUEST_FAILED)
+            continue
         receipts[row.target] = fingerprint
-        publish_single_process_receipts(configuration, receipts)
+        publish_single_process_receipts(configuration, receipts, deferred)
         acknowledged.append(row.pk)
+    # After a rollback the installer removed the candidate; this process no
+    # longer holds it (operations "Setup credential pickup", item 4). Only a
+    # credential that may be absent is dropped; a required one stays and is
+    # the admission's to refuse on the next start.
+    gone = [
+        name
+        for name in receipts.keys() & (deferred | OPTIONAL_SECRETS)
+        if not configuration.secrets[name].exists()
+    ]
+    if gone:
+        for name in gone:
+            del receipts[name]
+        publish_single_process_receipts(configuration, receipts, deferred)
     return acknowledged
 
 

@@ -16,7 +16,7 @@ from parishkit.config import ConfigError
 from .accounts.key_files import _unique_object, read_private, write_private
 from .deployment import ServiceRole
 from .runtime_paths import private_directory
-from .service_boundaries import OPTIONAL_SECRETS
+from .service_boundaries import OPTIONAL_SECRETS, SETUP_DEFERRED_SECRETS
 
 DIRECTORY = Path("/tmp/stewardship-consumer")
 PIDFILE = DIRECTORY / "supervisor.pid"
@@ -48,14 +48,17 @@ def process_identity(pid):
         raise ConfigError("Consumer process is unavailable.") from None
 
 
-def _receipts(values, names):
+def _receipts(values, names, deferred=frozenset()):
     """The worker report contains only the exact target inventory and safe labels.
 
-    An optional credential (Slack) that is not installed yet is simply absent.
+    An optional credential (Slack) that is not installed yet is simply absent,
+    and so is a setup credential the process recorded it started without
+    (``deferred``, #2228); every other one must be present.
     """
     if (
         type(values) is not dict
-        or not set(names) - OPTIONAL_SECRETS <= set(values) <= set(names)
+        or not deferred <= SETUP_DEFERRED_SECRETS & set(names)
+        or not set(names) - OPTIONAL_SECRETS - deferred <= set(values) <= set(names)
         or any(
             type(value) is not str or re.fullmatch(r"[0-9a-f]{64}", value) is None
             for value in values.values()
@@ -181,8 +184,14 @@ def loaded_service_receipts(configuration):
         ) from None
 
 
-def publish_single_process_receipts(configuration, receipts):
-    """Record actual loaded bytes only for an admitted single-process background app."""
+def publish_single_process_receipts(configuration, receipts, deferred=frozenset()):
+    """Record actual loaded bytes only for an admitted single-process background app.
+
+    ``deferred`` names the setup credentials the process was admitted
+    without (runtime_background.BackgroundRuntime.deferred). It is recorded
+    beside the receipts, so the operator's acknowledgement command accepts
+    their absence only for the process that was admitted that way.
+    """
     if configuration.service_role not in {
         ServiceRole.WORKER,
         ServiceRole.SCHEDULER,
@@ -199,7 +208,8 @@ def publish_single_process_receipts(configuration, receipts):
                 "pid": os.getpid(),
                 "started": started,
                 "service": configuration.service_role.value,
-                "receipts": _receipts(receipts, configuration.secrets),
+                "receipts": _receipts(receipts, configuration.secrets, deferred),
+                "deferred": sorted(deferred),
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -219,7 +229,10 @@ def _single_process_receipts(configuration):
         )
         if (
             type(value) is not dict
-            or set(value) != {"version", "pid", "started", "service", "receipts"}
+            or set(value)
+            != {"version", "pid", "started", "service", "receipts", "deferred"}
+            or type(value["deferred"]) is not list
+            or value["deferred"] != sorted(set(value["deferred"]))
             or type(value["version"]) is not int
             or value["version"] != 1
             or type(value["started"]) is not int
@@ -227,6 +240,8 @@ def _single_process_receipts(configuration):
             or process_identity(value["pid"])[1] != value["started"]
         ):
             raise ValueError
-        return _receipts(value["receipts"], configuration.secrets)
+        return _receipts(
+            value["receipts"], configuration.secrets, frozenset(value["deferred"])
+        )
     except (ValueError, TypeError, UnicodeError, RecursionError):
         raise ConfigError("Background consumer evidence is unavailable.") from None

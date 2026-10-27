@@ -124,3 +124,56 @@ def test_idle_callback_runs_on_timer_and_its_failure_keeps_consuming(monkeypatch
     assert idle.call_count == 2
     failures.assert_called_once()
     assert closes.call_count >= 2
+
+
+@pytest.mark.parametrize("answer", [None, False, True])
+def test_an_idle_pass_that_returns_true_asks_for_a_warm_drain(monkeypatch, answer):
+    """#2228: setup's re-admission drains the consumer and its sibling the way
+    a SIGTERM does, and the consumer still returns 0; any other answer keeps
+    consuming."""
+    from celery.worker import state, worker
+
+    from parishkit.stewardship.jobs import processes
+
+    from .test_broker import broker
+
+    stop, runtime = Event(), broker(ServiceRole.WORKER)
+    runtime = BrokerRuntime(runtime.app, runtime.service, stop)
+    companion, seen = Mock(), {}
+
+    def controller(*, app, ready_callback, **options):
+        """Run one idle pass while the consumer is live."""
+        scheduled = {}
+        consumer = SimpleNamespace(
+            timer=SimpleNamespace(
+                call_repeatedly=lambda seconds, function: scheduled.setdefault(
+                    seconds, function
+                )
+            )
+        )
+
+        def start():
+            """The pass runs between messages, on the timer."""
+            ready_callback(consumer)
+            scheduled[processes.IDLE_SECONDS]()
+            seen.update(stopped=stop.is_set(), should_stop=state.should_stop)
+
+        return SimpleNamespace(start=start, exitcode=0)
+
+    monkeypatch.setattr(worker, "WorkController", controller)
+    monkeypatch.setattr(processes.connections, "close_all", Mock())
+    companion.check = Mock()
+    assert (
+        serve_consumer(
+            runtime,
+            lease=Mock(),
+            stop=stop,
+            heartbeat=Mock(),
+            idle=lambda: answer,
+            companion=companion,
+        )
+        == 0
+    )
+    drained = answer is True
+    assert seen == {"stopped": drained, "should_stop": 0 if drained else None}
+    assert companion.terminate.called is drained

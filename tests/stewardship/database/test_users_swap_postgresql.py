@@ -584,6 +584,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # missing (so it may run whole again), and replaces in place functions
 # that 0095's, 0156's and 0161's reinstalled files bring back older, so
 # ``CLOSURE_REPLACED_ONLY`` restores 0185's bodies last.
+# 0187 (#2228) creates nothing: it widens 0106's event check in place,
+# which 0106's rerun (``CLOSURE_REPLACED_LAST``) brings back older, so
+# ``CLOSURE_CONSTRAINTS`` runs 0187's file again after it.
 # The columns 0185 (#2202) adds, by table.
 SERIES_IN_FORCE_COLUMNS = (
     ("stewardship_daily_fact_set", "pledge_edits"),
@@ -1428,6 +1431,19 @@ CLOSURE_REPLACED_LAST = {
     "public.stewardship_pledge_review_states_v1(uuid,uuid)": (
         ("stewardship_reports", "0049_pledge_share_methods"),
         "coalesce(v.reviewed_shares,b.answer->'shares')",
+    ),
+}
+
+
+# Run after ``CLOSURE_REPLACED_LAST``: closure migrations whose frozen
+# files replace a check constraint in place, by (table, constraint), with
+# the text that marks the later definition. 0187 (#2228) widens the
+# operational event check that 0106's rerun above puts back older; its
+# file only re-creates that check, so it runs again whole.
+CLOSURE_CONSTRAINTS = {
+    ("stewardship_operational_log", "operational_event_safe"): (
+        ("stewardship_audit", "0008_consumer_readmission_log"),
+        "'consumer_readmission'",
     ),
 }
 
@@ -2330,6 +2346,7 @@ def swap_pending():
     assert {key for key, _ in CLOSURE_REPLACED.values()} <= set(closure)
     assert {key for key, _ in CLOSURE_REPLACED_AGAIN.values()} <= set(closure)
     assert {key for key, _ in CLOSURE_REPLACED_LAST.values()} <= set(closure)
+    assert {key for key, _ in CLOSURE_CONSTRAINTS.values()} <= set(closure)
     assert set(CLOSURE_RERUN) | set(CLOSURE_RERUN.values()) <= set(closure)
     assert set(CLOSURE_OLD_BODIES) <= set(closure)
     assert {key for key, _ in CLOSURE_REPLACED_ONLY.values()} <= set(closure)
@@ -2415,6 +2432,17 @@ def swap_pending():
                 cursor.execute(
                     "SELECT prosrc LIKE %s FROM pg_proc WHERE oid=to_regprocedure(%s)",
                     [f"%{phrase}%", function],
+                )
+                if not cursor.fetchone()[0]:
+                    module = sys.modules[loader.disk_migrations[key].__module__]
+                    cursor.execute(Path(module.FROZEN_SQL).read_text(encoding="utf-8"))
+            # After the function reruns, one of which (0106's) re-creates an
+            # older check: the later file that widens it runs again.
+            for (table, name), (key, phrase) in CLOSURE_CONSTRAINTS.items():
+                cursor.execute(
+                    "SELECT strpos(pg_get_constraintdef(oid), %s)>0 "
+                    "FROM pg_constraint WHERE conrelid=%s::regclass AND conname=%s",
+                    [phrase, f"public.{table}", name],
                 )
                 if not cursor.fetchone()[0]:
                     module = sys.modules[loader.disk_migrations[key].__module__]

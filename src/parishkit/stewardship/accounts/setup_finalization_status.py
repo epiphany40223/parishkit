@@ -69,6 +69,9 @@ def finalization_status(request, service):
                 "request__cleanup_reason",
                 "request__required_consumers",
                 "request__resulting_fingerprint",
+                # The installation instant while awaiting acknowledgement:
+                # the pickup is overdue 10 minutes later (#2228).
+                "request__updated_at",
             )
         )
         # Count each credential's consumers that loaded exactly the installed

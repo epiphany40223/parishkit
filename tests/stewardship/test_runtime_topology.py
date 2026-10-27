@@ -207,7 +207,11 @@ def test_rendered_foundation_enforces_individual_mounts_and_profiles(
 
 @pytest.mark.parametrize("mode", ["initial", "configured", "configured-slack"])
 def test_provider_modes_keep_service_identity_and_owned_mounts(tmp_path, mode):
-    """Initial startup needs no provider file; configured mounts every owned one."""
+    """Every mode mounts every owned provider directory, before any file exists.
+
+    Setup's consumers pick up its keys from these directories (#2228), so
+    the initial topology renders the same mounts and documents as configured.
+    """
     configuration = configuration_at(tmp_path)
     compose, documents = render_runtime(
         configuration, image="parishkit-stewardship:development", provider_mode=mode
@@ -225,19 +229,24 @@ def test_provider_modes_keep_service_identity_and_owned_mounts(tmp_path, mode):
         assert document["postgres"]["user"] == "pk_stewardship_" + name.replace(
             "-", "_"
         )
-        # A configured worker always mounts Slack's folder, so Slack can be
-        # added after setup without switching compose files.
-        expected = set() if mode == "initial" else providers
+        # Each service mounts only its own providers' folders, read-only.
         assert (
             set(document["secrets"]) & {"parishsoft", "slack", "google_workspace"}
-            == expected
+            == providers
         )
         for provider in providers:
             path = layout.credential(provider)
-            assert (path.parent in mounted) is (provider in expected)
             assert path not in mounted
-            if provider in expected:
-                assert mounted[path.parent]["read_only"] is True
+            assert mounted[path.parent]["read_only"] is True
+
+
+def test_initial_topology_is_the_configured_one(tmp_path):
+    """compose-initial.json is kept for tooling but identical to compose.json."""
+    configuration = configuration_at(tmp_path)
+    image = "parishkit-stewardship:development"
+    assert render_runtime(
+        configuration, image=image, provider_mode="initial"
+    ) == render_runtime(configuration, image=image, provider_mode="configured")
 
 
 @pytest.mark.parametrize("mode", [True, None, "all", "../../worker"])

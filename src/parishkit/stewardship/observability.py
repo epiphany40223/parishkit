@@ -76,6 +76,10 @@ class Event(StrEnum):
     SOURCE_PROVIDER_FAILED = "source_provider_failed"
     MAIL_PROVIDER_FAILED = "mail_provider_failed"
     INSTALLER_REQUEST_FAILED = "installer_request_failed"
+    # A worker or mail-dispatch admitted without a setup credential drains and
+    # exits once setup completes, so Compose restarts it with every handler
+    # (#2228); INFO, process log only, with its ``reason``.
+    CONSUMER_READMISSION = "consumer_readmission"
     HANDOFF_KEY_MISMATCH = "credential_handoff_key_mismatch"
     AUTHENTICATION_LIMITS_WEAKENED = "authentication_limits_weakened"
     AUTH_HEALTH_FAILED = "authentication_health_observation_failed"
@@ -166,6 +170,10 @@ class FailureKind(StrEnum):
     # A new integration key has been installed for a while but not selected,
     # so its consumers hold their work (#307 M1); it needs an Administrator.
     CREDENTIAL_SWITCH_UNFINISHED = "credential_switch_unfinished"
+    # A consumer still cannot pick up a credential installed for it 10
+    # minutes ago (#2228, operations "Setup credential pickup"): its mounted
+    # file is missing, unreadable, different or would fail re-admission.
+    CREDENTIAL_PICKUP_OVERDUE = "credential_pickup_overdue"
     # A refused Admin automation session use (ADM-11): an unknown secret, a
     # host mismatch or a command session's key presented to the web. The
     # detail is the automation notice and audit event, never the secret.
@@ -240,6 +248,10 @@ SHAPING_STEPS = frozenset(
         "answered_pledge",
     }
 )
+# Why a consumer drained and exited to be admitted again
+# (Event.CONSUMER_READMISSION, #2228): setup completed after it started
+# without a setup credential.
+READMISSION_REASONS = frozenset({"setup_completed"})
 DRIVE_FAILURES = frozenset(
     {
         "authorization",
@@ -429,6 +441,7 @@ def emit(
     confirmation: str | None = None,
     refusal: dict | None = None,
     actor_id: UUID | None = None,
+    reason: str | None = None,
 ) -> None:
     """Emit only typed identifiers and an allowlisted event; accept no free text.
 
@@ -551,6 +564,10 @@ def emit(
         raise ValueError("A refusal context must be its own cleaned values.")
     if actor_id is not None and not isinstance(actor_id, UUID):
         raise ValueError("A refused user is named by their internal UUID.")
+    if reason is not None and (
+        event is not Event.CONSUMER_READMISSION or reason not in READMISSION_REASONS
+    ):
+        raise ValueError("A readmission reason must be a reviewed name.")
     logging.getLogger("parishkit.stewardship").log(
         level,
         event,
@@ -578,6 +595,7 @@ def emit(
                 "confirmation": confirmation,
                 "refusal": refusal,
                 "actor_id": actor_id,
+                "reason": reason,
             }
         ),
     )
@@ -946,6 +964,11 @@ class SafeJsonFormatter(JsonLogFormatter):
                         safe.extra["watched_command"] = context["watched_command"]
                     if isinstance(context.get("subject_id"), UUID):
                         safe.extra["subject_id"] = str(context["subject_id"])
+            if (
+                record.msg is Event.CONSUMER_READMISSION
+                and context.get("reason") in READMISSION_REASONS
+            ):
+                safe.extra["reason"] = context["reason"]
             if record.msg is Event.TASK_STARTED and context.get("confirmation") in {
                 "prompt",
                 "yes",

@@ -29,13 +29,20 @@ def status(**changes):
     } | changes
 
 
-def credential(target, state, *, acknowledged=0, consumers=2, reason=""):
-    """One credential install row as finalization_status reads it."""
+def credential(
+    target, state, *, acknowledged=0, consumers=2, reason="", installed=None
+):
+    """One credential install row as finalization_status reads it.
+
+    ``installed`` is how long ago it reached ``awaiting_ack`` (its
+    ``updated_at``); a minute by default.
+    """
     return {
         "target": target,
         "request_id": uuid4(),
         "request__state": state,
         "request__cleanup_reason": reason,
+        "request__updated_at": NOW - (installed or timedelta(minutes=1)),
         "consumers": consumers,
         "acknowledged": acknowledged,
     }
@@ -123,25 +130,52 @@ def test_cleanup_reason_explains_a_credential_being_removed(reason, text):
     assert text in str(rows["parishsoft"]["text"])
 
 
-def test_awaiting_operator_acknowledgement_counts_services():
-    """An unacknowledged install waits on the operator, not on the Admin."""
+@pytest.mark.parametrize(
+    "installed", [timedelta(seconds=1), timedelta(minutes=9, seconds=59)]
+)
+def test_services_pick_up_an_installed_credential_with_no_operator(installed):
+    """#2228: while the services pick up a credential its box is In progress
+    with only the live count; it names no server operator."""
     result = finishing(
         status(
             credentials=[
-                credential("parishsoft", "awaiting_ack", acknowledged=1),
+                credential(
+                    "parishsoft", "awaiting_ack", acknowledged=1, installed=installed
+                ),
                 credential("google_workspace", "awaiting_ack", acknowledged=2),
             ]
         )
     )
     rows = by_key(result)
-    assert rows["parishsoft"]["state"] == "operator"
+    assert rows["parishsoft"]["state"] == "active"
+    assert rows["parishsoft"]["status"] == "In progress"
     assert rows["parishsoft"]["count"] == {"done": 1, "total": 2}
-    # Its status says it waits for the operator; its only detail is the
-    # count, and the operator's steps are in the runtime guide (#2145).
     assert rows["parishsoft"]["text"] == ""
     assert rows["google_workspace"]["state"] == "done"
     assert rows["configuration"]["state"] == "waiting"
+    assert result["overall"] == "working"
+
+
+@pytest.mark.parametrize("installed", [timedelta(minutes=10), timedelta(hours=3)])
+def test_an_overdue_pickup_asks_for_the_server_operator(installed):
+    """Ten minutes after its installation without every acknowledgement the
+    box waits for the server operator and says what to ask; the count stays
+    live, and the acknowledgements still finish the step."""
+    item = credential("parishsoft", "awaiting_ack", acknowledged=0, installed=installed)
+    result = finishing(status(credentials=[item]))
+    rows = by_key(result)
+    assert rows["parishsoft"]["state"] == "operator"
+    assert rows["parishsoft"]["status"] == "Waiting for the server operator"
+    assert str(rows["parishsoft"]["text"]) == (
+        "Taking longer than expected. Ask the server operator to check the "
+        "worker and mail-dispatch services."
+    )
+    assert rows["parishsoft"]["count"] == {"done": 0, "total": 2}
     assert result["overall"] == "operator"
+    item["acknowledged"] = 2
+    assert by_key(finishing(status(credentials=[item])))["parishsoft"]["state"] == (
+        "done"
+    )
 
 
 def test_acknowledged_credentials_start_configuration_then_source():
@@ -298,12 +332,17 @@ def test_each_box_reserves_every_running_form():
         "operator",
         "done",
     }
-    assert len(credential_forms) == 6
+    assert len(credential_forms) == 7
     operator = next(
         form for form in rows["parishsoft"]["reserve"] if form["state"] == "operator"
     )
     assert operator["count"] == {"done": 8, "total": 8}
     assert operator["status"] == "Waiting for the server operator"
+    # The pickup's In progress form carries the count too (#2228).
+    assert any(
+        form["state"] == "active" and form.get("count")
+        for form in rows["parishsoft"]["reserve"]
+    )
     assert forms(rows["configuration"]) == {
         ("waiting", "Starts after the credentials are acknowledged."),
         ("active", "Preparing the configuration."),
@@ -321,10 +360,11 @@ def test_each_box_reserves_every_running_form():
         ("waiting", "Waiting to start."),
     }
     # Every running form but the shared queued sentence is one short line
-    # (#2145), so no box is reserved much taller than what it shows.
+    # (#2145), so no box is reserved much taller than what it shows. The
+    # overdue pickup's words are the admin-portal spec's own (#2228).
     for row in rows.values():
         for form in row["reserve"]:
-            if form["text"] != stages.QUEUED:
+            if form["text"] not in {stages.QUEUED, operator["text"]}:
                 assert len(str(form["text"])) <= 50, form["text"]
     source = {form["state"]: form for form in rows["source"]["reserve"]}
     assert set(source) == {"waiting", "active", "done"}
@@ -345,4 +385,4 @@ def test_a_box_never_reserves_a_failure():
     assert rows["parishsoft"]["state"] == "failed"
     for row in rows.values():
         assert "failed" not in {form["state"] for form in row["reserve"]}
-    assert len(rows["parishsoft"]["reserve"]) == 6
+    assert len(rows["parishsoft"]["reserve"]) == 7

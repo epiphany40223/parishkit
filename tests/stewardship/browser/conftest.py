@@ -1307,6 +1307,7 @@ def component_responses():
                         "request_id": uuid4(),
                         "request__state": "awaiting_ack",
                         "request__cleanup_reason": "",
+                        "request__updated_at": datetime.now(UTC) - timedelta(minutes=1),
                         "consumers": 2,
                         "acknowledged": 2,
                     }
@@ -1337,6 +1338,7 @@ def component_responses():
                         "request_id": uuid4(),
                         "request__state": "failed",
                         "request__cleanup_reason": "",
+                        "request__updated_at": datetime.now(UTC) - timedelta(minutes=1),
                         "consumers": 2,
                         "acknowledged": 0,
                     }

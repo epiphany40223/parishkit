@@ -58,9 +58,12 @@ def test_original_browser_can_cancel_selected_yaml_with_actual_web_grants(
         assert response.status_code == 302, response.content
         assert response["Location"] == "/admin/setup/finishing"
         assert SetupAttempt.objects.get(pk=attempt.pk).state == "expired"
-        assert (
-            b"Cancellation is recorded" in browser.get("/admin/setup/finishing").content
-        )
+        page = browser.get("/admin/setup/finishing").content
+        assert b"Cancellation is recorded" in page
+        # Automatic pickup (#2228): the keys are let go without recreating
+        # containers, so the page says nothing is needed, not "restore keys".
+        assert b"nothing you need to do" in page
+        assert b"already recreated" not in page
         assert not SetupConfigurationAbort.objects.exists()
     assert setup_http.store.active() == candidate
 

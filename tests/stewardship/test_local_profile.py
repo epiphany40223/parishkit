@@ -74,14 +74,18 @@ GOLDEN_ROOT = Path("/opt/parishkit")
 # one-shot offline networks and PostgreSQL's hba_file (the Compose digests
 # and fixture only; the service documents are unchanged, and pg_hba.conf is
 # pinned in full by its own fixture).
+# Intentional change for new installs only (#2228): "initial" renders
+# exactly the "configured" topology, so its digests are configured's; the
+# configured and configured-slack renderings, which Production runs, are
+# unchanged by it.
 # The "configured" Compose document and the Caddyfile are also committed in
 # full under fixtures/ so a difference can be read, not just detected.
 GOLDEN_DIGESTS = {
     ("initial", "compose"): (
-        "404cce1dbc7ad30c79b0d6ffd1e41471a780c666064aa50fd438f1bc3e3f046d"
+        "765d13ff897b360c6ccfdce0339dab021e4c414fde37062edcf03a6a518a36dc"
     ),
     ("initial", "documents"): (
-        "7e34be432d98fe26781a67030ffb76d1f0ed85f850bb072bad74b4a8c9dfdeba"
+        "9d65bab1d7b28eebd476ee671871d675f86ff81cff6259cd82ded7b936a1d360"
     ),
     ("configured", "compose"): (
         "765d13ff897b360c6ccfdce0339dab021e4c414fde37062edcf03a6a518a36dc"

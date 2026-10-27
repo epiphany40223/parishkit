@@ -310,6 +310,7 @@ sections:
     "Database inspection login": [OPS-03, OPS-08]
     "Startup and upgrades": [OPS-04]
     "Online service startup": [OPS-04]
+    "Setup credential pickup": [OPS-04, OPS-02, ADM-02]
     "Installer idle polling": [OPS-04, OPS-08]
     "Pre-production development policy": [OPS-04, DAT-01]
     "Post-launch schema policy": [OPS-04, DAT-01]

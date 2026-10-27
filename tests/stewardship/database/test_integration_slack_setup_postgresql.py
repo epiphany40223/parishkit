@@ -70,7 +70,7 @@ def slack(request, monkeypatch, tmp_path, auth_service, google):
     path.parent.mkdir(parents=True, mode=0o700)
     monkeypatch.setattr(
         "parishkit.stewardship.consumer_runtime.publish_single_process_receipts",
-        lambda configuration, receipts: None,
+        lambda configuration, receipts, deferred=frozenset(): None,
     )
     browser, _ = signed_in()
     return {

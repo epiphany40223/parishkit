@@ -105,6 +105,9 @@ def service_configuration_file(configuration, name):
     names = (
         {role.value for role in ServiceRole}
         | {
+            # No longer rendered since #2228 (the initial topology is the
+            # configured one), but still admitted so a document an earlier
+            # release wrote keeps loading.
             "worker-initial",
             "mail-dispatch-initial",
             "worker-slack",

@@ -113,8 +113,14 @@ write plus only its own handoff private key and queue. Consumers mount the
 resulting individual credential file read-only, with one exception: `worker` and
 `mail-dispatch` mount the ParishSoft, Google Workspace and Slack target
 subdirectories read-only, so a running consumer sees a replacement the
-installer renames into place. That subdirectory holds only the target's working
-credential and its sealed replacement journal, which the consumer cannot
+installer renames into place. They mount them in every rendered topology,
+`compose-initial.json` included, from before setup's first key exists, so
+setup needs no recreation either
+([setup credential pickup](#setup-credential-pickup)). Each service still
+mounts only the targets it consumes: `worker` the ParishSoft and Slack
+directories, `mail-dispatch` the Google Workspace one. That subdirectory
+holds only the target's working credential and its sealed replacement
+journal, which the consumer cannot
 decrypt. See
 [replacing an integration key](../../../guides/stewardship-credential-installers.md#replacing-an-integration-key-from-the-web).
 Neither installer class receives
@@ -768,6 +774,89 @@ once the database answers.
 The wait closes the reboot race; for the burst of starts after a deploy or a
 restore it is a partial mitigation, since a database that becomes too busy
 after admission is not covered.
+
+### Setup credential pickup
+
+Setup finishes with no server step
+([#2228](https://github.com/epiphany40223/parishkit/issues/2228)). The
+consumers of setup's provider credentials pick them up and acknowledge them
+themselves, by the same mechanism that already acknowledges a key replaced
+from the web after setup:
+
+1. **Mounts from the start.** `provision-runtime` renders `worker` and
+   `mail-dispatch` identically in `compose-initial.json`, `compose.json` and
+   `compose-slack.json`: the same per-service configuration document and the
+   same read-only target directory mounts
+   ([runtime storage](#runtime-storage)). The `initial` provider mode stops
+   removing the ParishSoft, Google Workspace and Slack credentials from these
+   services. Before setup the directories hold no working credential, so a
+   consumer admits with a missing ParishSoft or Google Workspace file in its
+   mounted directory, the credential absent from its loaded receipts, only on
+   the bootstrap evidence background admission already checks: an active
+   configuration in Testing, no restore review, no current campaign and a
+   bootstrap validation schema. ParishSoft and Google Workspace are not added
+   to the always-optional credentials (Slack): outside that evidence, in
+   admission and in the receipt inventory alike, a configured deployment still
+   refuses a consumer whose credential is missing. A process admitted through
+   this exception records that it was.
+2. **Acknowledgement in place.** Each consumer's idle pass, between tasks and
+   every 30 seconds, finds the `awaiting_ack` requests that name it as a
+   required consumer. When the bytes it reads from its own mount match the
+   request's installed fingerprint, it first parses them as its re-admission
+   will (for ParishSoft, the same source-credential check admission runs) and
+   refuses to acknowledge bytes that would fail it; then it records the
+   acknowledgement through its own SQL login, under the same SQL guard as the
+   operator command, and republishes its loaded receipts. A setup request and
+   a later key replacement are acknowledged the same way. The web process,
+   the installers and the scheduler never acknowledge for a consumer, and no
+   acknowledgement is recorded for bytes the consumer has not read itself. A
+   read or parse failure is handled per request: the pass logs it as below
+   and keeps serving.
+3. **Re-admission after the configured marker.** A process admitted through
+   the bootstrap exception skipped the tasks that need its missing credential
+   (the worker's ParishSoft refresh and publication tasks; mail-dispatch
+   registers only setup mail). Only such a process, once its idle pass sees
+   the configured marker (as the end of the bootstrap evidence above, which
+   the marker's own transaction ends by activating the parish's
+   configuration; the mail-dispatch login cannot read the marker itself),
+   has the service's runtime supervisor stop taking
+   new messages, drain every consumer process in the container, log one INFO
+   `consumer_readmission` line (reason `setup_completed`) and exit with status
+   0. A missing Slack file never triggers this. Compose's
+   `restart: unless-stopped`, which every online service has in Production
+   and LOCAL, starts the same container again: its mounts are unchanged and
+   now hold the installed files, so the fresh process admits with every
+   credential and registers its full handler set. This happens once per
+   deployment; a consumer admitted with its credentials never exits for this
+   reason. The exit waits for the setup finalization task to commit, since
+   the pass runs only between messages. The development profile renders no
+   restart policy, so there the process does not exit; restart it by hand
+   after setup.
+4. **Cancellation and expiry.** When the installers roll an unfinished setup
+   back, the directory mounts show the removal, so no consumer needs
+   recreating before another attempt, and the pass drops that target from
+   the receipts it publishes. The SQL guard already refuses an
+   acknowledgement after the request's expiry.
+
+No application container gains the Docker socket, a host path or any power
+over another service: a consumer restarts only itself, by exiting, and the
+restart is Compose's own policy. Each credential stays mounted read-only only
+into the services that consume it, and the handoff private keys stay outside
+the mounted directories.
+
+**Failure stays visible.** A consumer that cannot read or parse its mounted
+file, or reads bytes that do not match a request that names it 10 minutes
+after the installation, logs `installer_request_failed` at ERROR with
+`failure_kind` `credential_pickup_overdue`, at most hourly per request in each
+process, and Finishing setup says the step is taking longer than expected
+([admin portal](../admin-portal/spec.md#bootstrap-and-first-admin-wizard)). A
+consumer that fails re-admission logs its ordinary `startup_rejected` line and
+Compose keeps restarting it, as for any other startup refusal. The request's
+own expiry still restores the previous state, and the
+[runtime guide's fallback](../../../guides/stewardship-runtime.md#first-database-and-application-startup)
+(recreate the consumers and run `acknowledge-credential` inside them) still
+works and is the only path for a credential with an individually overridden
+path, which keeps a single-file mount.
 
 ### Installer idle polling
 

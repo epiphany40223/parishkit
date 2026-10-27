@@ -877,12 +877,21 @@ case "$*" in
         printf "constant-%s" "$name" ;;
     *" local-seed") echo "invalid command; choose ..." >&2; exit 2 ;;
     *"SELECT EXISTS"*)
-        # Acknowledging both credentials is what completes setup.
+        # Acknowledging both credentials by hand completes setup, and so do
+        # the consumers themselves (#2228): FAKE_COMPLETES_AFTER answers f
+        # that many times, then t.
+        seen=$(( $(cat "$FAKE_ROOT/.fake-exists" 2>/dev/null || echo 0) + 1 ))
+        echo "$seen" >"$FAKE_ROOT/.fake-exists"
         if [ "$(cat "$FAKE_ROOT/.fake-acked" 2>/dev/null | wc -l)" -ge 2 ]; then
+            echo t
+        elif [ "$seen" -gt "${FAKE_COMPLETES_AFTER:-999999}" ]; then
             echo t
         else
             echo "${FAKE_COMPLETED:-f}"
         fi ;;
+    *"interval '10 minutes'"*) echo "${FAKE_OVERDUE:-0}" ;;
+    *" cat /tmp/stewardship-consumer/background.json")
+        echo '{"deferred": [], "receipts": {}}' ;;
     *" local-seed --step wizard "*|*" local-seed --step credentials "*)
         frozen='{"result": "frozen", "requests": {"parishsoft": "'$PS_ID'",'
         frozen+=' "google_workspace": "'$GW_ID'"}}'
@@ -1942,7 +1951,8 @@ def test_spike_refuses_without_postgres_or_the_certificate(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Finishing setup (runbook first installation, step 5; #1355).
+# Finishing setup (runbook first installation, step 5; #1355), now a wait
+# with the runbook's fallback for an overdue credential (#2228).
 
 # The LOCAL seeder's fixed backend address, which the rendered compose.json
 # carries for the one-off web container's `--ip` (#2111).
@@ -1971,9 +1981,37 @@ def frozen_wizard(root, etc, snapshots):
     )
 
 
-def test_finish_setup_acknowledges_the_frozen_attempts_credentials(tmp_path):
-    """Look up, wait, recreate from compose.json, acknowledge, complete, restart."""
-    calls, output, _ = run_vm(tmp_path, "finish-setup", prepare=frozen_wizard)
+def test_finish_setup_waits_while_the_consumers_pick_up_the_credentials(tmp_path):
+    """#2228: look up, wait for the installers, then for setup to complete and
+    for worker and mail-dispatch to restart with every credential; nothing
+    is recreated or acknowledged by hand."""
+    calls, output, _ = run_vm(
+        tmp_path,
+        "finish-setup",
+        prepare=frozen_wizard,
+        env={"FAKE_COMPLETES_AFTER": "2"},
+    )
+    order = [
+        first(calls, "local-seed --step credentials "),
+        first(calls, "count(*) FROM stewardship_secret_request"),
+        first(calls, "exec -T worker cat /tmp/stewardship-consumer/background.json"),
+        first(
+            calls, "exec -T mail-dispatch cat /tmp/stewardship-consumer/background.json"
+        ),
+    ]
+    assert order == sorted(order), calls
+    assert not any("acknowledge-credential" in call for call in calls)
+    assert not any("--force-recreate" in call for call in calls)
+    assert "fallback" not in output
+    assert "Setup complete in" in output
+
+
+def test_finish_setup_runs_the_fallback_only_for_an_overdue_credential(tmp_path):
+    """Overdue (10 minutes after installation): say so, recreate from
+    compose.json, acknowledge inside the consumers, complete, re-admit."""
+    calls, output, _ = run_vm(
+        tmp_path, "finish-setup", prepare=frozen_wizard, env={"FAKE_OVERDUE": "1"}
+    )
     configured = "-f {0}/compose.json -f {0}/compose.faketime.json -p parishkit-local"
     configured = configured.format(tmp_path / "root" / "config" / "services")
     order = [
@@ -1984,9 +2022,11 @@ def test_finish_setup_acknowledges_the_frozen_attempts_credentials(tmp_path):
             calls, f"{configured} exec -T worker pk-stewardship acknowledge-credential"
         ),
         first(calls, " exec -T mail-dispatch pk-stewardship acknowledge-credential"),
-        first(calls, " up --detach --force-recreate web"),
+        first(calls, "exec -T worker cat /tmp/stewardship-consumer/background.json"),
     ]
     assert order == sorted(order), calls
+    assert first(calls, "interval '10 minutes'") < order[2]
+    assert "still unacknowledged 10 minutes after its installation" in output
     assert f"--request-id {PS_ID}" in calls[order[3]]
     assert f"--request-id {GW_ID}" in calls[order[4]]
     # Read-only lookup: the one-off web container takes the clock directory.
@@ -2029,14 +2069,27 @@ def test_finish_setup_is_idempotent_and_refuses_before_finishing_setup(tmp_path)
 
 
 def test_wizard_finishes_setup_through_the_same_step(tmp_path):
-    """`wizard` and `finish-setup` share one runbook step 5 implementation."""
-    calls, output, _ = run_vm(tmp_path, "wizard", prepare=frozen_wizard)
+    """`wizard` and `finish-setup` share one Finishing setup implementation."""
+    calls, output, _ = run_vm(
+        tmp_path, "wizard", prepare=frozen_wizard, env={"FAKE_OVERDUE": "1"}
+    )
     assert any("local-seed --step wizard " in call for call in calls)
     acknowledged = [c for c in calls if "acknowledge-credential" in c]
     assert [c.split("--request-id ")[1] for c in acknowledged] == [PS_ID, GW_ID]
     # Setup creates no campaign (#142): wizard creates it afterwards.
     assert first(calls, "local-seed --step campaign ") > first(
         calls, " exec -T mail-dispatch pk-stewardship acknowledge-credential"
+    )
+    # Without an overdue credential nothing is acknowledged by hand (#2228).
+    calls, _, _ = run_vm(
+        tmp_path / "auto",
+        "wizard",
+        prepare=frozen_wizard,
+        env={"FAKE_COMPLETES_AFTER": "2"},
+    )
+    assert not any("acknowledge-credential" in call for call in calls)
+    assert first(calls, "local-seed --step campaign ") > first(
+        calls, "exec -T mail-dispatch cat /tmp/stewardship-consumer/background.json"
     )
     assert "Setup and the campaign complete in" in output
     text = VM_SCRIPT.read_text()

@@ -157,18 +157,14 @@ def _service_config(configuration, role, *, target=None, provider_mode="configur
         names = {target} if target else ALLOWED_SECRETS.get(role, set())
     secrets = {key: layout.credential(key) for key in names}
     document_name = name
-    if role in {ServiceRole.WORKER, ServiceRole.MAIL_DISPATCH}:
-        # A configured worker always mounts Slack's read-only credential
-        # directory, even before Slack is set up, so an Administrator can add
-        # or replace Slack later with no compose switch. "configured-slack" is
-        # kept for existing runbooks and renders the same mounts.
-        if provider_mode == "initial":
-            secrets.pop("slack", None)
-            secrets.pop("parishsoft", None)
-            secrets.pop("google_workspace", None)
-            document_name += "-initial"
-        elif provider_mode == "configured-slack" and role is ServiceRole.WORKER:
-            document_name += "-slack"
+    # The worker and mail-dispatch always mount their ParishSoft, Google
+    # Workspace and Slack read-only credential directories, even before the
+    # first key exists, so they pick up setup's keys and later replacements
+    # with no compose switch (#2228, operations "Setup credential pickup").
+    # "initial" therefore renders exactly what "configured" does; both it and
+    # "configured-slack" are kept for existing runbooks and tooling.
+    if provider_mode == "configured-slack" and role is ServiceRole.WORKER:
+        document_name += "-slack"
     if target:
         secrets["handoff_private"] = layout.handoff(target)
     if role is ServiceRole.MIGRATION:

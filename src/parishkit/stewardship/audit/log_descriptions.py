@@ -792,6 +792,10 @@ DESCRIPTIONS = {
         "on its own once the provider accepts mail again."
     ),
     "installer_request_failed": _("A settings or key installation step failed."),
+    "consumer_readmission": _(
+        "A service that started before setup installed its key stopped once "
+        "setup was complete, so it restarts with all of its work."
+    ),
     "credential_handoff_key_mismatch": _(
         "A new key was prepared for a different installation key and was not used."
     ),

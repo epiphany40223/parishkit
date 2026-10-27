@@ -8,6 +8,7 @@ The test answers the page's polls with one state after another and
 measures every box after each swap.
 """
 
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
@@ -54,16 +55,17 @@ def next_poll(page, polls, count):
 @pytest.mark.parametrize("width", [320, 760, 1280])
 def test_finishing_setup_boxes_keep_their_place(page, component_origin, width):
     """Every Finishing setup box keeps its place and size as its words change,
-    from waiting through installing, the server operator's acknowledgement,
-    preparing the configuration, the final load waiting for a worker and
-    the worker picking it up (#1903, #1916); the running final load shows
-    no task reference (#1969)."""
+    from waiting through installing, the services' acknowledgement and its
+    overdue form that asks for the server operator (#2228), preparing the
+    configuration, the final load waiting for a worker and the worker
+    picking it up (#1903, #1916); the running final load shows no task
+    reference (#1969)."""
     page.set_viewport_size({"width": width, "height": 900})
     page.clock.install(time=NOW)
 
-    def acknowledged(target, done):
-        """A credential the operator has acknowledged in ``done`` services."""
-        return credential(target, "awaiting_ack") | {"acknowledged": done}
+    def acknowledged(target, done, **installed):
+        """A credential ``done`` services have acknowledged."""
+        return credential(target, "awaiting_ack", **installed) | {"acknowledged": done}
 
     load = {
         "id": uuid4(),
@@ -82,8 +84,17 @@ def test_finishing_setup_boxes_keep_their_place(page, component_origin, width):
         ("parishsoft", "active", [credential("parishsoft", "testing")], None),
         (
             "parishsoft",
-            "operator",
+            "active",
             [acknowledged("parishsoft", 1), credential("google_workspace", "staged")],
+            None,
+        ),
+        (
+            "parishsoft",
+            "operator",
+            [
+                acknowledged("parishsoft", 1, installed=timedelta(minutes=11)),
+                credential("google_workspace", "staged"),
+            ],
             None,
         ),
         ("configuration", "active", both, None),

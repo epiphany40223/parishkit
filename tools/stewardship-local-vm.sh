@@ -50,8 +50,9 @@
 #   wizard                              complete the setup wizard unattended through
 #                                       its own service layer, then Create the
 #                                       campaign and its first load (LOCAL convenience)
-#   finish-setup                        after the browser wizard: acknowledge its frozen
-#                                       attempt's credentials (runbook step 5)
+#   finish-setup                        after the browser wizard: wait for its frozen
+#                                       attempt to complete, running the runbook's
+#                                       fallback only if a credential is overdue
 #   sign-in EMAIL                       print a local test sign-in link (OPS-10.08)
 #   fake-parishsoft WORDS...            change or show the fake ParishSoft's data, or
 #                                       run the Admin's full refresh of it (#1780)
@@ -1780,8 +1781,8 @@ dcc=()
 select_configured() {
     # Fill `dcc` with the configured topology (compose.json, plus the
     # fake-clock override in fake mode) whatever the setup marker says: the
-    # runbook's post-wizard step recreates the consumers from it before
-    # setup is complete.
+    # runbook's fallback recreates the consumers from it before setup is
+    # complete.
     local mode
     mode=$(clock_mode)
     dcc=(docker compose -f "$services/compose.json")
@@ -1804,13 +1805,48 @@ setup_is_complete() {
     [ "$(setup_completed)" = t ]
 }
 
+installed_or_complete() {
+    # The installers reported awaiting_ack, or the consumers already picked
+    # the credentials up and setup completed before the first look.
+    awaiting_ack || setup_is_complete
+}
+
+pickup_overdue() {
+    # Succeeds when an initial credential request still lacks one of its
+    # consumers' acknowledgements 10 minutes after it reached awaiting_ack
+    # (its updated_at), on the database's clock: the overdue point
+    # Finishing setup shows (#2228, operations "Setup credential pickup").
+    local count
+    count=$(docker compose -p "$project" exec -T postgres psql -U pk_stewardship_operator -d stewardship -Atc \
+        "SELECT count(*) FROM stewardship_secret_request r WHERE r.state='awaiting_ack' AND r.target IN ('parishsoft','google_workspace') AND r.updated_at <= statement_timestamp() - interval '10 minutes' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(r.required_consumers) c WHERE NOT EXISTS (SELECT 1 FROM stewardship_credential_consumer_ack a WHERE a.request_id = r.id AND a.consumer = c AND a.fingerprint = r.resulting_fingerprint))" </dev/null 2>/dev/null)
+    [ -n "$count" ] && [ "$count" != 0 ]
+}
+
+complete_or_overdue() {
+    setup_is_complete || pickup_overdue
+}
+
+readmitted() {
+    # Succeeds once worker and mail-dispatch are healthy and each runs a
+    # process admitted with every setup credential: its receipts record no
+    # deferred key (#2228). A consumer that started before setup's keys
+    # exited once after completion, and Compose restarted it.
+    local service value
+    for service in worker mail-dispatch; do
+        all_healthy "$service" || return 1
+        value=$(docker compose -p "$project" exec -T "$service" \
+            cat /tmp/stewardship-consumer/background.json </dev/null 2>/dev/null) || return 1
+        [ "$(jq -c .deferred <<<"$value" 2>/dev/null)" = "[]" ] || return 1
+    done
+}
+
 cmd_wizard() {
     # Complete the setup wizard without a browser, through the wizard pages'
-    # own service layer (seed_web.run_wizard), then the runbook's first-
-    # installation step 5: once the installers report awaiting_ack, recreate
-    # worker and mail-dispatch from compose.json and acknowledge each request
-    # inside them, which lets the installer finish setup (finish_setup,
-    # shared with `finish-setup`). Setup collects no campaign (#142), so the
+    # own service layer (seed_web.run_wizard), then wait while worker and
+    # mail-dispatch acknowledge the credentials themselves and the installer
+    # finishes setup, running the runbook's fallback only if a credential is
+    # overdue (finish_setup, shared with `finish-setup`). Setup collects no
+    # campaign (#142), so the
     # seeder's campaign step then runs Create the campaign and loads its
     # Families. The developer-facing path is still the real wizard, finished
     # by `finish-setup`; this is for unattended installs and tests.
@@ -1831,45 +1867,59 @@ cmd_wizard() {
 }
 
 finish_setup() {
-    # finish_setup PARISHSOFT WORKSPACE: the runbook's first-installation
-    # step 5 in LOCAL, the one implementation `wizard` and `finish-setup`
-    # share. Once the installers report awaiting_ack, recreate worker and
-    # mail-dispatch from compose.json (plus the fake-clock override) and
-    # acknowledge each request inside them, which lets the installer finish
-    # setup; then restart everything under the configured topology. A
+    # finish_setup PARISHSOFT WORKSPACE: Finishing setup in LOCAL, the one
+    # implementation `wizard` and `finish-setup` share. As in Production,
+    # worker and mail-dispatch acknowledge setup's credentials from their
+    # own mounts and restart once after completion (#2228), so this waits
+    # for that. Only when a credential is still unacknowledged 10 minutes
+    # after its installation does it say so and run the runbook's fallback:
+    # recreate worker and mail-dispatch from compose.json (plus the
+    # fake-clock override) and acknowledge each request inside them. A
     # repeat acknowledgement is a no-op, so a rerun after an interruption
     # is safe. The ids are the frozen attempt's sealed credentials' ids.
     local parishsoft=$1 workspace=$2 uuid='^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$'
     [[ $parishsoft =~ $uuid && $workspace =~ $uuid ]] ||
         refuse "The frozen setup attempt lacks its ParishSoft or Google Workspace credential; refusing."
     step "Waiting for the credential installers to report awaiting_ack"
-    wait_until 600 "the credential installers to report awaiting_ack" awaiting_ack
-    step "Recreating worker and mail-dispatch from compose.json (runbook step 5)"
-    select_configured
-    "${dcc[@]}" up --detach --force-recreate worker mail-dispatch 2>&1 | quiet
-    wait_until 300 "worker to turn healthy" all_healthy worker
-    wait_until 300 "mail-dispatch to turn healthy" all_healthy mail-dispatch
-    step "Acknowledging the credentials inside the recreated consumers"
-    "${dcc[@]}" exec -T worker pk-stewardship acknowledge-credential \
-        --config "$services/worker.yaml" --request-id "$parishsoft" </dev/null
-    "${dcc[@]}" exec -T mail-dispatch pk-stewardship acknowledge-credential \
-        --config "$services/mail-dispatch.yaml" --request-id "$workspace" </dev/null
-    step "Waiting for setup to complete"
-    wait_until 900 "the configuration installer to complete setup" setup_is_complete
-    step "Restarting every service under the configured topology"
-    start_services --force-recreate
+    wait_until 600 "the credential installers to report awaiting_ack" installed_or_complete
+    step "Waiting for worker and mail-dispatch to acknowledge the credentials"
+    # Overdue is 10 minutes after installation; the final load follows the
+    # acknowledgements, so allow for both.
+    wait_until 1500 "setup to complete or a credential to be overdue" complete_or_overdue
+    if ! setup_is_complete; then
+        echo "    A credential is still unacknowledged 10 minutes after its installation;"
+        echo "    running the runbook's fallback."
+        step "Recreating worker and mail-dispatch from compose.json (runbook fallback)"
+        select_configured
+        "${dcc[@]}" up --detach --force-recreate worker mail-dispatch 2>&1 | quiet
+        wait_until 300 "worker to turn healthy" all_healthy worker
+        wait_until 300 "mail-dispatch to turn healthy" all_healthy mail-dispatch
+        step "Acknowledging the credentials inside the recreated consumers"
+        "${dcc[@]}" exec -T worker pk-stewardship acknowledge-credential \
+            --config "$services/worker.yaml" --request-id "$parishsoft" </dev/null
+        "${dcc[@]}" exec -T mail-dispatch pk-stewardship acknowledge-credential \
+            --config "$services/mail-dispatch.yaml" --request-id "$workspace" </dev/null
+        step "Waiting for setup to complete"
+        wait_until 900 "the configuration installer to complete setup" setup_is_complete
+    fi
+    step "Waiting for worker and mail-dispatch to restart with every credential"
+    wait_until 600 "worker and mail-dispatch to be admitted with every credential" readmitted
 }
 
 cmd_finish_setup() {
-    # After the browser wizard stops at Finishing setup ("Waiting for the
-    # server operator"): look up the frozen attempt's request ids (the
-    # seeder's read-only credentials step) and finish setup exactly as
-    # `wizard` does. Already-complete setup is reported and left alone.
+    # After the browser wizard reaches Finishing setup: look up the frozen
+    # attempt's request ids (the seeder's read-only credentials step) and
+    # wait for setup exactly as `wizard` does, running the fallback only if
+    # a credential is overdue. Already-complete setup is reported and left
+    # alone.
     require_marker
     load_env
     select_compose
     if setup_is_complete; then
         echo "Setup is already complete; nothing to finish."
+        # A rerun after an interruption still waits for the consumers'
+        # one restart after completion (#2228); it changes nothing.
+        wait_until 600 "worker and mail-dispatch to be admitted with every credential" readmitted
         return 0
     fi
     seed_now=$(date -u +%FT%TZ)
@@ -1879,6 +1929,7 @@ cmd_finish_setup() {
         frozen) ;;
         "setup was already complete")
             echo "Setup is already complete; nothing to finish."
+            wait_until 600 "worker and mail-dispatch to be admitted with every credential" readmitted
             return 0 ;;
         *) refuse "The setup wizard has not reached Finishing setup; complete its pages in the browser first, then run finish-setup again." ;;
     esac
