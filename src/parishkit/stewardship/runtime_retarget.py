@@ -8,7 +8,9 @@ refuses a changed deployment input, a missing once-generated password, an
 unfinished provisioning, or an image the profile does not admit. It does not
 create new passwords, SQL logins or storage a later release introduces: a
 deployment provisioned before such a release is reinstalled under the
-pre-production policy. It runs offline, holding the startup interlock
+pre-production policy. The one exception is the generated documents' own
+owner-only ``pg-hba`` directory beside them (#2111), which it creates when
+absent. It runs offline, holding the startup interlock
 exclusively, so no online service can observe a half-written document; it
 starts nothing and connects to nothing. Schema migrations, grants and service
 restarts remain the operator's separate, documented upgrade steps.
@@ -136,9 +138,17 @@ def retarget_image(configuration, *, image):
             "services_started": False,
         }
     with StartupLease(layout.interlock, offline=True):
+        # A deployment provisioned before the source rules (#2111) lacks
+        # their directory; it is the one storage this command creates. An
+        # existing one must be a real owner-only directory (lstat: no link).
+        created = not os.path.lexists(layout.hba_directory)
+        private_directory(layout.hba_directory, create=True)
+        if created:
+            _sync_directory(layout.service_directory)
         for path in sorted(stale):
             write_private(path, documents[path], maximum=MAX_DOCUMENT)
         _sync_directory(layout.service_directory)
+        _sync_directory(layout.hba_directory)
         # The record changes last: until it does, rerunning this command with
         # the same image rewrites the topologies instead of reporting no change.
         if changed:
