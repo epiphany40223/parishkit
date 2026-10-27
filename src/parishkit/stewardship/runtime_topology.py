@@ -27,8 +27,7 @@ from .deployment import (
 from .deployment_documents import deployment_document, service_configuration_file
 from .observability import DEBUG_LOGGING_VARIABLE
 from .offline_boundaries import offline_targets
-from .runtime_grants import login_name
-from .runtime_hba import HBA_FILE, HBA_MOUNT, LOCAL_SEEDER, render_hba
+from .runtime_hba import HBA_FILE, HBA_MOUNT, LOCAL_SEEDER, held_logins, render_hba
 from .runtime_network import OFFLINE_PROFILES
 from .runtime_paths import APPLICATION_GID, APPLICATION_UID, RuntimeLayout
 from .service_boundaries import ALLOWED_SECRETS, rotating_directories
@@ -369,9 +368,7 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
         documents[selected.configuration_file] = deployment_document(selected)
         # The SQL logins this service's own rendered configuration names: the
         # source rules are derived from these, never from a separate list.
-        logins[name] = (selected.postgres.user,) + (
-            (login_name("download"),) if role is ServiceRole.WEB else ()
-        )
+        logins[name] = held_logins(selected)
         service = _application(image, budget)
         if role is ServiceRole.MAIL_DISPATCH:
             # Empty unless the operator's shell exports it when running

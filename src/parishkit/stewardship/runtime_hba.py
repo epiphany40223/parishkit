@@ -59,6 +59,24 @@ def _database(name):
     return '"' + name + '"'
 
 
+def held_logins(configuration):
+    """The SQL logins one service's own configuration holds.
+
+    Its own ``postgres.user``, plus the download login for web, which holds
+    both passwords by design. The renderer derives each service's rules from
+    this, and ``database-sources`` its expected row, so the two agree.
+    """
+    from .deployment import ServiceRole
+    from .runtime_grants import login_name
+
+    extra = (
+        (login_name("download"),)
+        if configuration.service_role is ServiceRole.WEB
+        else ()
+    )
+    return (configuration.postgres.user, *extra)
+
+
 def _source(network, name, service):
     """The one address range ``name``'s containers can connect from.
 

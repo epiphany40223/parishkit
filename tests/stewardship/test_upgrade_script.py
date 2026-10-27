@@ -329,6 +329,36 @@ case "$*" in
     *" upgrade-check "*)
         [ -z "$FAKE_RENDER_FAIL" ] || exit 2
         echo "SELECT true;" ;;
+    *" hba-check --config "*)
+        [ -z "$FAKE_HBA_RENDER_FAIL" ] || exit 2
+        echo "SELECT 'hba_reload_pending';" ;;
+    *"SELECT pg_reload_conf()"*) printf '%s\n' "2026-10-25 04:00:00.000001+00" t ;;
+    *" -v since=infinity"*)
+        # The check before the reload, of the file alone: FAKE_HBA_FILE, or
+        # the pending answer every good file gives against infinity.
+        cat >/dev/null
+        echo "${FAKE_HBA_FILE:-hba_reload_pending}" ;;
+    *" -v since="*)
+        # FAKE_HBA: the hba check's answers after the reload, one per call,
+        # the last repeated. The query arrives on stdin, as psql reads it.
+        cat >/dev/null
+        read -r -a answers <<<"${FAKE_HBA:-t}"
+        echo x >>"$FAKE_STATE/hba"
+        n=$(wc -l <"$FAKE_STATE/hba")
+        [ "$n" -le "${#answers[@]}" ] || n=${#answers[@]}
+        echo "${answers[$((n - 1))]}" ;;
+    *" database-sources --config "*)
+        # Read stdin as a real `compose exec` does, so a caller that forgets
+        # </dev/null inside a read loop loses the rest of its list.
+        cat >/dev/null
+        # FAKE_SOURCES_FAIL: the one service whose check finds a difference.
+        if [ -n "$FAKE_SOURCES_FAIL" ] && [[ " $* " == *" $FAKE_SOURCES_FAIL "* ]]; then
+            echo "MISMATCH: pk_stewardship_operator is allowed from" \
+                "172.29.240.13 ($FAKE_SOURCES_FAIL): the rendered rules refuse" \
+                "it (security failure)" >&2
+            exit 1
+        fi
+        echo "database sources match the rendered rules" ;;
     *"PGOPTIONS"*)
         cat >/dev/null
         echo x >>"$FAKE_STATE/checks"
@@ -376,7 +406,20 @@ case "$*" in
                         latency="$latency"', "mail_redirect": "'"${arg#*=}"'"' ;;
             esac
         done
-        echo '{"services": {"web": {"image": "'"$last"'"}}}' >"$FAKE_COMPOSE"
+        if [ -n "$FAKE_HBA_RULES" ]; then
+            # The source rules (#2111): PostgreSQL's command names the
+            # mounted file, and the application services name their documents.
+            jq -n --arg i "$last" --arg c "$(dirname "$FAKE_COMPOSE")" '{services: {
+                web: {image: $i, command: ["runtime", "--config", "\($c)/web.yaml"]},
+                worker: {command: ["runtime", "--config", "\($c)/worker.yaml"]},
+                migration: {profiles: ["migration"],
+                    command: ["migrate", "--config", "\($c)/migration.yaml"]},
+                caddy: {command: ["exec caddy run"]},
+                postgres: {command: ["postgres", "-c",
+                    "hba_file=/etc/postgresql/hba/pg_hba.conf"]}}}' >"$FAKE_COMPOSE"
+        else
+            echo '{"services": {"web": {"image": "'"$last"'"}}}' >"$FAKE_COMPOSE"
+        fi
         if [ -n "$FAKE_OVERRIDE" ]; then
             derived="parishkit-stewardship-local-faketime-stewardship:${last##*:}"
             echo '{"services": {"web": {"image": "'"$derived"'"},' \
@@ -2192,3 +2235,197 @@ def test_a_first_run_never_asks_the_backup_to_resume(tmp_path):
     calls, _, _ = run_host(tmp_path, "upgrade", noop="f", schema_change="1", env=USERS)
     assert any(call.endswith(" run --rm -T backup-worker") for call in calls)
     assert not any("--users-upgrade-resume" in call for call in calls)
+
+
+def test_the_source_rules_are_reloaded_and_checked_before_step_4(tmp_path):
+    """After the retarget: render, reload, wait for the load, then migrate (#2111)."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        hba_rules=1,
+        hba="hba_reload_pending hba_reload_pending t",
+    )
+    retarget = first(calls, " retarget-image ")
+    render = first(calls, " hba-check --config /run/operator.yaml")
+    reload = first(calls, "SELECT pg_reload_conf()")
+    polls = [i for i, call in enumerate(calls) if " -v since=" in call]
+    decisive = [
+        i
+        for i, call in enumerate(calls)
+        if "PGOPTIONS" in call and "0041" not in call and "since=" not in call
+    ][1]
+    # One check before the reload (the file must already parse), then polls.
+    assert retarget < render < polls[0] < reload < polls[1] < decisive
+    assert len(polls) == 4
+    # The file alone first; then the load must follow PostgreSQL's own
+    # clock_timestamp() from just before the signal.
+    assert "-v since=infinity" in calls[polls[0]]
+    assert "SELECT clock_timestamp()" in calls[reload]
+    for poll in polls[1:]:
+        assert "-v since=2026-10-25 04:00:00.000001+00" in calls[poll]
+    # The reload is sent as the operator over the socket; the check read-only.
+    assert "exec -T postgres psql -U pk_stewardship_operator" in calls[reload]
+    assert "default_transaction_read_only=on" in calls[polls[0]]
+    assert "--network none" in calls[render]
+    assert "the rendered source rules are in force (the reload took " in output
+    # Step 6: every running application service by exec, each one-shot by
+    # run, after the services start; caddy and PostgreSQL never.
+    start_rest = first(calls, "up --detach --wait worker scheduler mail-dispatch")
+    web = first(calls, "exec -T web pk-stewardship database-sources --config ")
+    worker = first(calls, "exec -T worker pk-stewardship database-sources --config ")
+    migration = first(calls, "-T migration database-sources --config ")
+    assert start_rest < min(web, worker, migration)
+    assert " run --name " in calls[migration]
+    sources = [call for call in calls if "database-sources" in call]
+    assert len(sources) == 3
+    assert output.count("database sources match the rendered rules") == 3
+    assert f"Upgraded to {TARGET} in" in output
+
+
+def test_no_rendered_rules_means_nothing_to_reload_or_probe(tmp_path):
+    """A release before #2111 (a rollback to it, say) renders no hba_file."""
+    calls, output, _ = run_host(tmp_path, "upgrade")
+    assert "PostgreSQL source rules: none rendered for" in output
+    for fragment in ("hba-check", "pg_reload_conf", "database-sources"):
+        assert not any(fragment in call for call in calls), fragment
+
+
+def test_a_reload_that_never_takes_effect_stops_before_step_4(tmp_path):
+    """The bounded wait logs what timed out, its limit and the time waited."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", status=1, hba_rules=1, hba="hba_reload_pending"
+    )
+    assert "TIMEOUT: the wait for the hba reload stopped after " in output
+    assert "(limit 30s)" in output
+    log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    assert "TIMEOUT: the wait for the hba reload stopped after " in log
+    assert len([call for call in calls if " -v since=" in call]) == 1 + 30
+    assert "caddy serves the maintenance page" in output
+    assert not any(" up --detach --wait web" in call for call in calls)
+    assert not any("Report email conversion" in line for line in output.splitlines())
+
+
+@pytest.mark.parametrize(
+    ("answer", "why"),
+    [
+        ("hba_file_not_mounted", "PostgreSQL does not use the mounted rules"),
+        ("hba_file_differs", "the mounted pg_hba.conf differs from the rendered one"),
+        ("hba_file_invalid", "pg_hba.conf has errors"),
+        ("ERROR:", "the hba check did not answer: ERROR:"),
+    ],
+)
+def test_a_failed_hba_condition_stops_with_the_page_up(tmp_path, answer, why):
+    """Each condition is named; the maintenance page stays up; step 4 never runs.
+
+    Found before the reload, nothing is reloaded; found after it (the
+    pending answer first), the run stops all the same.
+    """
+    for reloaded in (False, True):
+        answers = {"hba": answer} if reloaded else {"hba_file": answer}
+        calls, output, _ = run_host(
+            tmp_path / str(reloaded), "upgrade", status=1, hba_rules=1, **answers
+        )
+        assert f"The hba check failed: {why}" in output
+        assert "caddy serves the maintenance page" in output
+        assert any("pg_reload_conf" in call for call in calls) is reloaded
+        assert not any(" up --detach --wait web" in call for call in calls)
+
+
+def test_an_unrenderable_hba_check_stops_before_reloading(tmp_path):
+    """The target image must render the check; nothing is reloaded without it."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", status=1, hba_rules=1, hba_render_fail=1
+    )
+    assert "Could not render the hba check in" in output
+    assert not any("pg_reload_conf" in call for call in calls)
+
+
+def test_a_source_difference_fails_the_run_with_the_site_up(tmp_path):
+    """The login, source and service are named; web keeps serving (decision 7)."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", status=1, hba_rules=1, sources_fail="worker"
+    )
+    assert (
+        "MISMATCH: pk_stewardship_operator is allowed from 172.29.240.13 (worker)"
+    ) in output
+    assert "worker: database sources differ from the rendered rules" in output
+    assert f"Upgraded to {TARGET}, but NOT healthy:" in output
+    assert f"Failed after web started healthy: {TARGET} is serving" in output
+    assert "caddy serves the maintenance page" not in output
+    # The other services were still checked, and web was started.
+    assert any("exec -T web pk-stewardship database-sources" in c for c in calls)
+    assert any("-T migration database-sources" in c for c in calls)
+    assert "web was down for" in output
+
+
+def test_a_reload_that_hangs_is_logged_and_stops_before_step_4(tmp_path):
+    """The reload runs under a time limit like every other step."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", status=1, hba_rules=1, timeout="pg_reload_conf"
+    )
+    log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    assert "TIMEOUT: the PostgreSQL configuration reload killed after " in log
+    assert "(limit 30s)" in log
+    assert "Could not reload PostgreSQL's configuration" in output
+    assert "caddy serves the maintenance page" in output
+    assert not any(" up --detach --wait web" in call for call in calls)
+
+
+@pytest.mark.parametrize(
+    ("fragment", "service", "limit"),
+    [
+        ("exec -T worker pk-stewardship database-sources", "worker", 60),
+        ("-T migration database-sources", "migration", 120),
+    ],
+)
+def test_a_source_check_that_hangs_is_logged_and_named(
+    tmp_path, fragment, service, limit
+):
+    """A killed check is logged and named as unfinished, never as a difference."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", status=1, hba_rules=1, timeout=fragment
+    )
+    log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    assert f"TIMEOUT: the source check from {service} killed after " in log
+    assert f"(limit {limit}s). Web keeps serving." in log
+    assert f"{service}: the source check did not finish within {limit}s" in output
+    assert f"{service}: database sources differ" not in output
+    assert "Failed after web started healthy" in output
+    # The rest of the list was still checked.
+    assert len([call for call in calls if "database-sources --config" in call]) == 3
+
+
+def test_a_rollback_to_a_release_with_rules_reloads_and_checks_them(tmp_path):
+    """A rollback whose target renders hba_file goes through the same checks."""
+    calls, output, _ = run_host(tmp_path, "rollback", hba_rules=1)
+    retarget = first(calls, " retarget-image ")
+    assert retarget < first(calls, "SELECT pg_reload_conf()")
+    assert "the rendered source rules are in force" in output
+    assert len([call for call in calls if "database-sources --config" in call]) == 3
+    assert f"Rolled back to {TARGET} in" in output
+
+
+def test_fake_clock_local_mode_checks_the_rules_under_both_compose_files(tmp_path):
+    """The reload, the check and every probe run under the faketime override."""
+    calls, output, root = run_host(
+        tmp_path, "upgrade", profile="local", clock="fake", hba_rules=1
+    )
+    override = str(root / "config" / "services" / "compose.faketime.json")
+    for fragment in ("SELECT pg_reload_conf()", " -v since=", "database-sources"):
+        matched = [call for call in calls if fragment in call]
+        assert matched and all(override in call for call in matched), fragment
+    assert "the rendered source rules are in force" in output
+
+
+def test_a_service_that_is_not_running_is_not_probed(tmp_path):
+    """Only running online services are probed by exec; one-shots always run."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        hba_rules=1,
+        services_after="postgres valkey web scheduler mail-dispatch caddy",
+    )
+    assert not any("exec -T worker pk-stewardship database-sources" in c for c in calls)
+    assert any("exec -T web pk-stewardship database-sources" in c for c in calls)
+    assert any("-T migration database-sources" in c for c in calls)
+    assert f"Upgraded to {TARGET} in" in output
