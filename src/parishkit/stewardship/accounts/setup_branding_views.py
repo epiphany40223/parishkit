@@ -62,7 +62,7 @@ class SetupLogoForm(LogoForm):
                 # A file whose type is not image/* is refused at once too,
                 # in the server's words (ui-v1.js, wireMaxBytes; #2270).
                 "data-not-image-message": NOT_AN_IMAGE,
-                # The chosen file is shown at once in the preview box below
+                # The chosen file is shown at once in the preview box above
                 # the field (ui-v1.js, wireFilePreview; #2270).
                 "data-preview-target": "logo-choice-preview",
             }

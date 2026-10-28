@@ -198,7 +198,9 @@ def test_the_upload_outlives_the_previews_command_session(admin):
     )
     assert code == 0, confirmed
     install(admin, confirmed)
-    assert shown(admin, secret)["large"]["id"] == result["logos"][0]["id"]
+    # The printed sizes run smallest first (#2288); the large logo is last.
+    assert result["logos"][-1]["slot"] == "large"
+    assert shown(admin, secret)["large"]["id"] == result["logos"][-1]["id"]
 
 
 def test_one_size_replaces_only_that_size(admin):

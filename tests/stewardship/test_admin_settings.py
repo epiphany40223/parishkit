@@ -228,9 +228,9 @@ def test_branding_show_is_its_golden_projection():
                 "sha256": "c" * 64,
             }
             for slot, key, size in (
-                ("large", "l", 512),
-                ("icon", "i", 64),
                 ("favicon", "f", 32),
+                ("icon", "i", 64),
+                ("large", "l", 512),
             )
         ],
     }

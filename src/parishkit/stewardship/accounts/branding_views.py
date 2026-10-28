@@ -246,6 +246,13 @@ class LogoUploadForm(LogoForm):
             field.template_name = SIZE_FIELD_TEMPLATE
             self.fields[name] = field
         self.order_fields(self.field_order)
+        # Each file field shows the chosen file at once in the preview box
+        # drawn above it, whose id is the field's own plus "_preview"
+        # (branding-settings.html; ui-v1.js, wireFilePreview; #2279).
+        for name in ("logo", *SLOTS):
+            self.fields[name].widget.attrs["data-preview-target"] = (
+                f"{self[name].auto_id}_preview"
+            )
 
     @property
     def opened_mode(self):
@@ -296,8 +303,9 @@ class LogoUploadForm(LogoForm):
             return values
         chosen = {name: values.get(name) for name in SLOTS if values.get(name)}
         if not chosen:
+            # On the first size field, at the top of the Advanced panel.
             self.add_error(
-                "large",
+                next(iter(SLOTS)),
                 forms.ValidationError(
                     _("Choose an image for at least one size to upload."),
                     code="choose_one",
@@ -306,8 +314,10 @@ class LogoUploadForm(LogoForm):
             return values
         total = sum(item.size for item in chosen.values())
         if total > MAX_TOTAL_BYTES:
+            # The refusal goes on the largest size chosen (SLOTS runs
+            # smallest first, #2288), the one to upload on its own.
             self.add_error(
-                next(iter(chosen)),
+                list(chosen)[-1],
                 forms.ValidationError(
                     str(self.max_total_message).replace("{size}", file_size(total)),
                     code="total_too_large",
@@ -466,6 +476,10 @@ def _review(service, actor, configuration, staged):
     # Each size is named, and says whether this upload changes it (#1062):
     # one uploaded separately changes only its own size.
     changed = changed_sizes(assets, configuration.active_configuration.parish)
+    # The staged rows come by label; the dialog lists them in size order,
+    # smallest first, as the current logos are (#2288).
+    order = list(SLOTS)
+    assets = sorted(assets, key=lambda asset: order.index(asset.label))
     for asset in assets:
         asset.title = SLOTS[asset.label].title
         asset.changed = asset.label in changed
@@ -514,6 +528,22 @@ def opening_mode(parish):
     return ADVANCED if mode == ADVANCED else BASIC
 
 
+def logo_frames(assets):
+    """One frame per logo size, smallest first (``SLOTS``, #2288), for the
+    current logos, whatever order the saved rows come in.
+
+    Each frame holds the size's name (which sizes its box, data-logo-size
+    in ui-v1.css), its title and its saved asset, or ``None`` when
+    that size has none, so the page draws all four frames whatever is saved
+    and the current logos keep one height (#2279, no layout shift).
+    """
+    by_size = {asset.label: asset for asset in assets}
+    return [
+        {"name": name, "title": slot.title, "asset": by_size.get(name)}
+        for name, slot in SLOTS.items()
+    ]
+
+
 def _page(request, service, configuration, form, *, status=200):
     """Render the upload form and the current logos.
 
@@ -522,10 +552,6 @@ def _page(request, service, configuration, form, *, status=200):
     above the heading.
     """
     current = configuration.active_configuration.parish
-    assets = sorted(
-        current_assets(current).values(),
-        key=lambda asset: asset.label,
-    )
     # The toggle opens in (and Advanced → Basic asks unless) the mode that
     # saved the current logos.
     form.stored_mode = opening_mode(current)
@@ -536,7 +562,7 @@ def _page(request, service, configuration, form, *, status=200):
         "stewardship/branding-settings.html",
         {
             "form": form,
-            "assets": assets,
+            "logos": logo_frames(current_assets(current).values()),
             # The upload's Review and the dialog's Apply post here.
             "page_url": page_url,
             # Once a change is applied, the dialog redraws the form and the
@@ -546,6 +572,9 @@ def _page(request, service, configuration, form, *, status=200):
         },
         status=status,
     )
+    # Each file field's preview shows the chosen file from a blob: object
+    # URL (#2279, as on setup's Parish logos, #2270).
+    response.stewardship_blob_images = True
     if status != 200:
         response.stewardship_safe_error = True
         # The refusal log's code for this page's own refusal (#1444).

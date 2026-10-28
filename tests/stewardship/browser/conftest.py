@@ -23,7 +23,7 @@ from parishkit.stewardship.accounts import (
     setup_notification_views as notification_views,
 )
 from parishkit.stewardship.accounts.backup_key import KeyStatus
-from parishkit.stewardship.accounts.branding_views import LogoUploadForm
+from parishkit.stewardship.accounts.branding_views import LogoUploadForm, logo_frames
 from parishkit.stewardship.accounts.campaign_create_views import any_zone
 from parishkit.stewardship.accounts.campaign_family_test_views import FamilyTestForm
 from parishkit.stewardship.accounts.campaign_forms import (
@@ -298,6 +298,9 @@ def _history(events):
 
 # The passive status fragments the setup status pages poll (#1354); a test
 # answers them with a route.
+# The fixture pages whose real views ask for blob: images (their file
+# fields preview the chosen image): setup's Parish logos and Parish logos.
+BLOB_IMAGE_PAGES = ("/setup-branding", "/branding-settings", "/admin/parish/logos/")
 SETUP_MAIL_STATUS = "/admin/setup/mail-test/status?format=status"
 SETUP_SLACK_STATUS = "/admin/setup/slack-test/status?format=status"
 SETUP_FINISHING_STATUS = "/admin/setup/finishing?format=status"
@@ -728,7 +731,7 @@ def component_responses():
             "branding-settings",
             {
                 "form": LogoUploadForm(initial={"base_digest": "a" * 64}),
-                "assets": [branding_asset],
+                "logos": logo_frames([SimpleNamespace(**branding_asset)]),
                 "page_url": "/branding-settings",
                 "refresh_url": "/branding-settings",
             },
@@ -2524,11 +2527,12 @@ def component_origin(component_responses):
                 "Content-Type",
                 kind if kind == "image/png" else kind + "; charset=utf-8",
             )
-            # Setup's Parish logos previews the chosen file as a blob: image,
-            # so its response asks for that policy as the real view does.
+            # Setup's Parish logos and Parish logos preview the chosen file
+            # as a blob: image, so their responses ask for that policy as
+            # the real views do (#2270, #2279).
             self.send_header(
                 "Content-Security-Policy",
-                CSP_BLOB_IMAGES if path.startswith("/setup-branding") else CSP,
+                CSP_BLOB_IMAGES if path.startswith(BLOB_IMAGE_PAGES) else CSP,
             )
             self.end_headers()
             self.wfile.write(body if isinstance(body, bytes) else body.encode())

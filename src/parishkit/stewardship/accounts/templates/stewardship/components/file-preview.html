@@ -1,0 +1,14 @@
+{% comment %}
+The chosen-image preview of one file field (UX conventions, "Image
+previews", #2279; setup's Parish logos, #2270, and Parish logos' file
+fields): a box of fixed height (file-preview-box in ui-v1.css), so nothing
+below it moves, drawn above the field it belongs to. The field names this
+box by its id in data-preview-target, and ui-v1.js (wireFilePreview) draws
+the file just chosen in it at once, from the browser's own copy. With no
+usable file chosen it shows the saved image (stored_src, alt stored_alt),
+or its empty text (empty_text) when there is none. The box is a polite live
+region. Parameters: preview_id, chosen_alt, empty_text, and optional title
+(a heading line above the box), stored_src, stored_alt and logo_size (one
+Parish logos size, which draws the image at that size's saved bounds, in
+a box of that size's height; data-logo-size in ui-v1.css).
+{% endcomment %}<div class="file-preview" id="{{ preview_id }}" role="status"{% if logo_size %} data-logo-size="{{ logo_size }}"{% endif %}{% if stored_src %} data-stored-src="{{ stored_src }}"{% endif %} data-chosen-alt="{{ chosen_alt }}"{% if stored_alt %} data-stored-alt="{{ stored_alt }}"{% endif %}>{% if title %}<p class="file-preview-title">{{ title }}</p>{% endif %}<div class="file-preview-box"><img alt="{% if stored_src %}{{ stored_alt }}{% endif %}"{% if stored_src %} src="{{ stored_src }}"{% else %} hidden{% endif %}><p class="file-preview-empty"{% if stored_src %} hidden{% endif %}>{{ empty_text }}</p></div></div>
