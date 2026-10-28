@@ -123,7 +123,7 @@ def test_rendered_foundation_enforces_individual_mounts_and_profiles(
                 configuration.paths["backups"]: True,
             }
             assert service["command"] == [
-                "database-sources",
+                "upload",
                 "--config",
                 str(layout.service_directory / "backup-uploader.yaml"),
             ]

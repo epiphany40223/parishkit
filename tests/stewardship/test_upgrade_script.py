@@ -24,6 +24,8 @@ import pytest
 
 from parishkit.parishsoft import DEFAULT_API_BASE_URL
 
+from .host_stubs import install_gnu_tools
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools" / "stewardship-upgrade.sh"
 HOST = ROOT / "tools" / "stewardship-upgrade-host.sh"
@@ -282,7 +284,9 @@ last=${*: -1}
 json() {
     recorded=true
     [ -z "$FAKE_BACKUP_UNRECORDED" ] || recorded=false
-    echo '{"backup_recorded": '"$recorded"', "offsite": {"state": "'"$1"'"}}'
+    digest=$(printf 'f%.0s' {1..64})
+    echo '{"backup_recorded": '"$recorded"', "manifest_digest": "'"$digest"'",' \
+        '"offsite": {"state": "'"$1"'"}}'
 }
 # The database network layout (#2111), when FAKE_LAYOUT_RUNNING names the
 # layout Docker runs (old or new): FAKE_NETWORKS_<layout> is what `network
@@ -308,6 +312,13 @@ case "$*" in
         else
             echo "${FAKE_HELP:-$listed}"
         fi ;;
+    # The off-site uploader's step-1 copy (#235): FAKE_UPLOAD is its last
+    # line (default: the digest's copy recorded); the arguments are logged.
+    *" -T backup-uploader upload --config "*)
+        copied='{"required_copy": "uploaded", "sets": 1, "state": "uploaded"}'
+        echo '{"level":"DEBUG"}'
+        echo "${FAKE_UPLOAD:-$copied}"
+        [ -z "${FAKE_UPLOAD_FAIL-}" ] || exit 2 ;;
     # The uploader's password preflight: FAKE_UPLOADER_LOGINS is the count,
     # FAKE_UPLOADER_QUERY_FAIL fails it, FAKE_UPLOADER_ANSWER is the check's.
     *"count(*) FROM pg_authid"*)
@@ -601,7 +612,14 @@ def lay_out(tmp_path, local, current, target, clock, bulk, kept, prepare):
         json.dumps({"services": {"web": {"image": current}}})
     )
     origin = "https://localhost:8443" if local else "https://stewardship.example.test"
-    web = {"deployment": {"postgres": {"name": "stewardship"}, "public_origin": origin}}
+    web = {
+        "deployment": {
+            "postgres": {"name": "stewardship"},
+            "public_origin": origin,
+            "paths": {"backups": str(root / "backups")},
+        }
+    }
+    (root / "backups").mkdir(mode=0o700)
     (services / "web.yaml").write_text(json.dumps(web))
     yaml = tmp_path / "deployment.yaml"
     build = tmp_path / "build"
@@ -704,6 +722,20 @@ def run_host(
     # replaced; FAKE_ORIGIN_FAIL makes the origin unreachable.
     executable_stub(bin_dir, "install", 'mkdir -p "${@: -1}"')
     executable_stub(bin_dir, "sleep", "exit 0")
+    # The off-site copy lock and crontabs (#235): util-linux flock is not on
+    # every test host, so the stand-in records each call and exits with
+    # FAKE_FLOCK_FAIL when set (75 is `flock -E 75 -w`'s expired wait);
+    # crontab answers FAKE_CRONTAB, and the system crontab and cron.d are
+    # the test's own (below). The lock needs GNU stat and ln.
+    executable_stub(
+        bin_dir,
+        "flock",
+        'echo "$*" >>"$FAKE_STATE/flock"; '
+        '[ -z "$FAKE_FLOCK_FAIL" ] || exit "$FAKE_FLOCK_FAIL"',
+    )
+    install_gnu_tools(bin_dir)
+    executable_stub(bin_dir, "crontab", 'echo "${FAKE_CRONTAB:-}"')
+    executable_stub(bin_dir, "chown", 'echo "$*" >>"$FAKE_STATE/chown"')
     # The host's routes for the uploader's subnet-overlap preflight (#235).
     executable_stub(bin_dir, "ip", 'echo "ip $*" >>"$FAKE_LOG"; echo "$FAKE_ROUTES"')
     # The stand-in answers as the application does through caddy (the local
@@ -716,10 +748,15 @@ def run_host(
     )
     # coreutils timeout is Linux-only here; the stand-in skips its options
     # and runs the command, unless the command contains FAKE_TIMEOUT: then
-    # it answers as an expired limit does, without running it.
+    # it answers as an expired limit does, without running it. A one-off
+    # `docker compose run` that inherited the copy lock's descriptors 8 or
+    # 9 is recorded in held-fds (#235).
     executable_stub(
         bin_dir,
         "timeout",
+        'if [[ "$*" == *" run --name "* ]] && '
+        "{ [ -e /dev/fd/8 ] || [ -e /dev/fd/9 ]; }; "
+        'then echo "$*" >>"$FAKE_STATE/held-fds"; fi; '
         'if [ -n "$FAKE_TIMEOUT" ] && [[ "$*" == *"$FAKE_TIMEOUT"* ]]; then '
         'echo "timeout $*" >>"$FAKE_LOG"; exit 124; fi; '
         'while [[ $1 == -* ]]; do shift; done; shift; exec "$@"',
@@ -756,6 +793,8 @@ def run_host(
             "FAKE_OVERRIDE": override,
             "FAKE_CADDYFILE": str(services / "Caddyfile"),
             "STEWARDSHIP_LOG_DIR": str(logs),
+            "PK_RESTORE_CRONTAB": str(tmp_path / "crontab"),
+            "PK_RESTORE_CRON_DIR": str(tmp_path / "cron.d"),
             **{"FAKE_" + name.upper(): str(value) for name, value in fake.items()},
             **(env or {}),
         },
@@ -3023,3 +3062,338 @@ def test_the_uploaders_existing_network_needs_no_overlap_check(tmp_path):
     )
     assert "the uploader's network 172.29.242.80/28 already exists" in output
     assert not any(call.startswith("ip ") for call in calls)
+
+
+# ---------------------------------------------------------------------------
+# The off-site uploader's copy (#235, E2): step 1 keyed on the running
+# image's `upload` command and the running topology's service, the host's
+# copy lock for the offline work, and the expand rollback's cron preflight.
+
+COPY_HELP = (
+    "usage: pk-stewardship {config-check,retarget-image,smoke,upload,"
+    "uploader-password-check}"
+)
+STEP_1_DIGEST = "f" * 64
+
+
+def split_topology(root):
+    """The running Compose file has the backup-uploader service (expand)."""
+    compose = root / "config" / "services" / "compose.json"
+    document = json.loads(compose.read_text())
+    document["services"]["backup-uploader"] = {
+        "profiles": ["backup-uploader"],
+        "command": ["upload", "--config", "x"],
+    }
+    compose.write_text(json.dumps(document))
+
+
+def copied_by_uploader(tmp_path, *, status=0, profile=None, **fake):
+    """Upgrade from a running image with `upload` on a split topology."""
+    return run_host(
+        tmp_path,
+        "upgrade",
+        status=status,
+        profile=profile,
+        prepare=split_topology,
+        help_running=COPY_HELP,
+        running_image=LOCAL_CURRENT if profile == "local" else CURRENT,
+        routes="",
+        **fake,
+    )
+
+
+def test_step_1_runs_the_uploader_for_the_step_1_set(tmp_path):
+    """It waits for a running copy and names the backup line's digest.
+
+    The backup's own copy reporting busy (the uploader held the lock) does
+    not abandon: the uploader's answer about the row decides.
+    """
+    calls, output, _ = copied_by_uploader(tmp_path, offsite="busy")
+    upload = calls[first(calls, " backup-uploader upload ")]
+    assert upload.endswith("--wait-lock 1800 --require-digest " + STEP_1_DIGEST), upload
+    assert (
+        "--config " + str(tmp_path / "root/config/services/backup-uploader.yaml")
+        in upload
+    )
+    assert first(calls, "backup-worker") < first(calls, " backup-uploader upload ")
+    assert first(calls, " backup-uploader upload ") < first(calls, " stop web")
+    assert f"Upgraded to {TARGET} in" in output
+    log = (tmp_path / "logs" / "stewardship-backup.log").read_text()
+    assert '"required_copy": "uploaded"' in log
+
+
+def test_the_reused_backup_of_a_users_resume_is_the_one_copied(tmp_path):
+    """A repeated users upgrade copies the earlier run's backup (#952).
+
+    The repeat's backup line reports the reused backup instead of a new
+    one; the uploader is asked for that set's digest.
+    """
+    run_host(
+        tmp_path,
+        "upgrade",
+        noop="f",
+        status=1,
+        schema_change="1",
+        env=USERS,
+        base_fail=True,
+        help=COPY_HELP,
+        routes="",
+    )
+    split_topology(tmp_path / "root")
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        noop="f",
+        schema_change="1",
+        env=USERS,
+        again=True,
+        help=COPY_HELP,
+        routes="",
+    )
+    assert "REUSED BACKUP" in output
+    upload = calls[first(calls, " backup-uploader upload ")]
+    assert upload.endswith("--require-digest " + "e" * 64)
+    assert f"Upgraded to {TARGET} in" in output
+
+
+@pytest.mark.parametrize(
+    "answer, message",
+    [
+        ('{"required_copy": "not_uploaded", "sets": 0, "state": "failed"}', None),
+        ('{"state": "busy"}', "An off-site copy is still running"),
+        ("ERROR: off-site upload refused or incomplete", None),
+    ],
+)
+def test_a_step_1_copy_without_the_row_abandons_before_web_stops(
+    tmp_path, answer, message
+):
+    """Anything but an uploaded row for the digest abandons the upgrade."""
+    calls, output, _ = copied_by_uploader(tmp_path, status=1, upload=answer)
+    assert "did not complete with its off-host copy; abandoning the upgrade" in output
+    if message:
+        assert message in output
+    assert "restarting the background services" in output
+    assert not any(" stop web" in call for call in calls)
+    assert not any(" retarget-image " in call for call in calls)
+
+
+def test_a_failed_uploader_run_abandons_and_shows_its_output(tmp_path):
+    """A refusal (exit 2) is a failure, its output shown less any values."""
+    calls, output, _ = copied_by_uploader(tmp_path, status=1, upload_fail=1)
+    assert "FAILED: the off-site uploader exited with status 2" in output
+    assert not any(" stop web" in call for call in calls)
+
+
+def test_an_uploader_killed_at_its_limit_is_logged_and_abandons(tmp_path):
+    """The one-off's limit is the lock wait, the copy budget and a margin."""
+    calls, output, _ = copied_by_uploader(
+        tmp_path, status=1, timeout=" backup-uploader upload "
+    )
+    killed = next(call for call in calls if call.startswith("timeout "))
+    assert killed.startswith(f"timeout --kill-after=30 {1800 + 4 * 3600 + 600} ")
+    assert "TIMEOUT: the off-site uploader killed after" in output
+    assert not any(" stop web" in call for call in calls)
+
+
+def test_local_accepts_an_uploader_that_is_not_configured(tmp_path):
+    """LOCAL has no off-host target, as for the backup's own line."""
+    _, output, _ = copied_by_uploader(
+        tmp_path,
+        profile="local",
+        upload='{"required_copy": "not_configured", "state": "not_configured"}',
+    )
+    assert "Upgraded to" in output
+    _, output, _ = copied_by_uploader(
+        tmp_path / "production",
+        status=1,
+        upload='{"required_copy": "not_configured", "state": "not_configured"}',
+    )
+    assert "abandoning the upgrade" in output
+
+
+@pytest.mark.parametrize("case", ["no_upload_command", "no_service"])
+def test_without_both_keys_step_1_keeps_the_backup_lines_rule(tmp_path, case):
+    """An image between the expand parts, or a pre-split topology: no uploader."""
+    fake = {"help_running": UPLOADER_HELP if case == "no_upload_command" else COPY_HELP}
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        prepare=split_topology if case == "no_upload_command" else None,
+        running_image=CURRENT,
+        routes="",
+        **fake,
+    )
+    assert not any(" backup-uploader upload " in call for call in calls)
+    assert f"Upgraded to {TARGET} in" in output
+    _, output, _ = run_host(
+        tmp_path / "busy",
+        "upgrade",
+        status=1,
+        prepare=split_topology if case == "no_upload_command" else None,
+        running_image=CURRENT,
+        routes="",
+        offsite="busy",
+        **fake,
+    )
+    assert "abandoning the upgrade" in output
+
+
+def flock_calls(tmp_path):
+    """The flock stand-in's recorded calls, one per line."""
+    path = tmp_path / "state" / "flock"
+    return path.read_text().splitlines() if path.exists() else []
+
+
+def assert_lock_waits(calls, limit):
+    """Both locks, file then directory, within one shared limit.
+
+    The directory lock waits for what is left of the limit, so a second
+    boundary between the two calls can take one second off its wait.
+    """
+    assert len(calls) == 2, calls
+    assert calls[0] == f"-E 75 -w {limit} 8"
+    assert calls[1] in (f"-E 75 -w {limit} 9", f"-E 75 -w {limit - 1} 9")
+
+
+def test_the_host_holds_both_copy_locks_for_the_offline_work(tmp_path):
+    """File lock, then directory lock, each bounded, after step 1's copy."""
+    calls, output, root = run_host(tmp_path, "upgrade")
+    assert_lock_waits(flock_calls(tmp_path), 1800)
+    assert "1. Holding the off-site copy lock for the offline work" in output
+    assert output.index("Holding the off-site copy lock") < output.index(
+        "2. Stopping web"
+    )
+    # The legacy file the backup profile opens was created, owner-only.
+    lock = root / "backups" / ".offsite-copy.lock"
+    assert lock.is_file() and (lock.stat().st_mode & 0o777) == 0o600
+    assert (tmp_path / "state" / "chown").read_text().startswith("-h ")
+
+
+def test_an_existing_lock_file_is_kept(tmp_path):
+    """An existing regular file is opened as it is, never replaced."""
+
+    def prepare(root):
+        (root / "backups" / ".offsite-copy.lock").write_text("kept")
+
+    _, _, root = run_host(tmp_path, "upgrade", prepare=prepare)
+    assert (root / "backups" / ".offsite-copy.lock").read_text() == "kept"
+    assert not (tmp_path / "state" / "chown").exists()
+
+
+@pytest.mark.parametrize("plant", ["link", "directory", "fifo"])
+def test_a_planted_lock_file_refuses_before_web_stops(tmp_path, plant):
+    """A link or anything but a regular file is never opened (a FIFO never hangs)."""
+
+    def prepare(root):
+        lock = root / "backups" / ".offsite-copy.lock"
+        if plant == "link":
+            lock.symlink_to(root / "elsewhere")
+        elif plant == "fifo":
+            os.mkfifo(lock)
+        else:
+            lock.mkdir()
+
+    calls, output, _ = run_host(tmp_path, "upgrade", status=1, prepare=prepare)
+    assert "is not a regular file" in output
+    assert "abandoning the upgrade" in output
+    assert not any(" stop web" in call for call in calls)
+    assert not (tmp_path / "root" / "elsewhere").exists()
+
+
+def test_an_expired_copy_lock_wait_is_logged_and_abandons(tmp_path):
+    """A copy started since step 1 and still running: no web stop."""
+    calls, output, _ = run_host(tmp_path, "upgrade", status=1, flock_fail=75)
+    assert "TIMEOUT: waiting for the off-site copy lock on" in output
+    assert "(limit 1800s)" in output
+    assert "holds the copy lock; abandoning the upgrade" in output
+    assert "restarting the background services" in output
+    assert not any(" stop web" in call for call in calls)
+    log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    assert "TIMEOUT: waiting for the off-site copy lock" in log
+
+
+def test_a_failed_copy_lock_call_is_not_logged_as_a_timeout(tmp_path):
+    """Only flock's 75 is an expired wait; another failure says it failed."""
+    calls, output, _ = run_host(tmp_path, "upgrade", status=1, flock_fail=1)
+    assert "FAILED: flock on the off-site copy lock on" in output
+    assert "exited with status 1" in output
+    assert "TIMEOUT" not in output
+    assert "abandoning the upgrade" in output
+    assert not any(" stop web" in call for call in calls)
+
+
+def test_one_off_containers_do_not_inherit_the_copy_lock(tmp_path):
+    """A client left by a killed run cannot keep the lock (#235, B-L4)."""
+    calls, _, _ = run_host(tmp_path, "upgrade")
+    assert flock_calls(tmp_path) and any(" run --name " in call for call in calls)
+    assert not (tmp_path / "state" / "held-fds").exists()
+
+
+def test_flock_is_checked_before_step_1():
+    """A host without util-linux flock refuses before the backup (#235, B-L3)."""
+    script = HOST.read_text()
+    preflight = script.index("flock is not installed (util-linux); refusing.")
+    line = script[script.rindex("\n", 0, preflight) + 1 : preflight]
+    assert line.startswith("command -v flock >/dev/null || ")
+    assert preflight > script.index("# END off-site copy lock (#235).")
+    assert preflight < script.index('step "1. ')
+
+
+def test_a_rollback_holds_the_copy_lock_too(tmp_path):
+    """Every offline phase holds it, whichever direction."""
+    run_host(tmp_path, "rollback")
+    assert_lock_waits(flock_calls(tmp_path), 1800)
+
+
+UPLOADER_LINE = (
+    "*/5 * * * * root docker compose -f /opt/parishkit/config/services/"
+    "compose.json -p stewardship run --rm -T backup-uploader"
+)
+
+
+@pytest.mark.parametrize("where", ["crontab", "system", "cron.d"])
+def test_an_image_without_upload_refuses_while_the_uploader_line_is_installed(
+    tmp_path, where
+):
+    """The expand rollback's preflight, through the shared crontab block."""
+    fake = {}
+    if where == "crontab":
+        fake["crontab"] = UPLOADER_LINE
+    else:
+
+        def install(root):
+            if where == "system":
+                (tmp_path / "crontab").write_text(UPLOADER_LINE + "\n")
+            else:
+                (tmp_path / "cron.d").mkdir()
+                (tmp_path / "cron.d" / "stewardship").write_text(UPLOADER_LINE + "\n")
+
+        fake["prepare"] = install
+    calls, output, _ = run_host(tmp_path, "rollback", status=1, **fake)
+    assert "has no off-site uploader, but this host's cron still runs it" in output
+    assert "    | */5 * * * * root docker compose" in output
+    assert "#rolling-back-the-expand-release" in output
+    assert "Nothing was stopped or changed" in output
+    assert not any(" stop " in call for call in calls)
+
+
+def test_a_commented_uploader_line_or_an_image_with_upload_passes(tmp_path):
+    """Only an uncommented line refuses, and only for an image without upload."""
+    _, output, _ = run_host(tmp_path, "rollback", crontab="# " + UPLOADER_LINE)
+    assert "Rolled back to" in output
+    _, output, _ = run_host(
+        tmp_path / "with-upload",
+        "upgrade",
+        crontab=UPLOADER_LINE,
+        help=COPY_HELP,
+        uploader_logins=0,
+        routes="",
+    )
+    assert f"Upgraded to {TARGET} in" in output
+
+
+def test_another_backup_line_is_not_the_uploaders(tmp_path):
+    """The backup's own cron line names backup-worker, not the uploader."""
+    line = UPLOADER_LINE.replace("backup-uploader", "backup-worker")
+    _, output, _ = run_host(tmp_path, "rollback", crontab=line)
+    assert "Rolled back to" in output

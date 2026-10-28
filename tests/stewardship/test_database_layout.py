@@ -46,6 +46,13 @@ BEGIN = "# BEGIN database network layout (#2111)."
 END = "# END database network layout (#2111).\n"
 HBA_BEGIN = "# BEGIN PostgreSQL source rules check (#2111)."
 HBA_END = "# END PostgreSQL source rules check (#2111).\n"
+# The off-site uploader's two shared blocks (#235): the crontab collection
+# (pk-restore's job check and the expand rollback's preflight) and the host's
+# copy lock (the upgrade's, the restore's and the drill's offline work).
+CRON_BEGIN = "# BEGIN host crontab collection (#235)."
+CRON_END = "# END host crontab collection (#235).\n"
+LOCK_BEGIN = "# BEGIN off-site copy lock (#235)."
+LOCK_END = "# END off-site copy lock (#235).\n"
 
 
 def layout_block(path, begin=BEGIN, end=END):
@@ -57,6 +64,178 @@ def layout_block(path, begin=BEGIN, end=END):
 def hba_block(path):
     """The shared source rules check block's text in one script."""
     return layout_block(path, HBA_BEGIN, HBA_END)
+
+
+def test_both_scripts_carry_the_same_crontab_and_copy_lock_blocks():
+    """The upgrade and pk-restore read the crontabs and take the lock alike.
+
+    pk-restore's job check keeps its own filter over the shared collection,
+    and the upgrade its uploader-line filter; both take the copy lock
+    through the one function.
+    """
+    for begin, end in ((CRON_BEGIN, CRON_END), (LOCK_BEGIN, LOCK_END)):
+        assert layout_block(HOST, begin, end) == layout_block(RESTORE, begin, end)
+    restore = RESTORE.read_text()
+    check_jobs = restore[restore.index("check_jobs() {") :]
+    check_jobs = check_jobs[: check_jobs.index("\n}\n")]
+    assert "cron_lines" in check_jobs and "crontab -l" not in check_jobs
+    assert "uploader_cron_lines" in HOST.read_text().split(CRON_END, 1)[1]
+    for path in (HOST, RESTORE):
+        assert "copy_lock_take " in path.read_text().split(LOCK_END, 1)[1]
+
+
+def test_the_crontab_block_finds_only_uncommented_uploader_lines(tmp_path):
+    """Run the shared block itself over every crontab it reads."""
+    if shutil.which("bash") is None:
+        pytest.skip("bash is not installed")
+    script = tmp_path / "cron.sh"
+    script.write_text(
+        layout_block(HOST, CRON_BEGIN, CRON_END)
+        + 'echo "all:"; cron_lines; echo "uploader:"; uploader_cron_lines\n'
+    )
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "crontab").write_text(
+        "#!/usr/bin/env bash\n"
+        'echo "*/5 * * * * run --rm -T backup-uploader"\n'
+        'echo "# */5 * * * * run --rm -T backup-uploader commented"\n'
+    )
+    (bin_dir / "crontab").chmod(0o755)
+    (tmp_path / "crontab").write_text(
+        "0 3 * * * root run --rm -T backup-worker\n"
+        "  # 0 4 * * * root backup-uploader indented comment\n"
+    )
+    (tmp_path / "cron.d").mkdir()
+    (tmp_path / "cron.d" / "other").write_text(
+        "0 5 * * * root my-backup-uploader-copy\n"
+        "0 6 * * * root run backup-uploader upload --config x\n"
+    )
+    result = subprocess.run(
+        ["bash", str(script)],
+        env={
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "SUDO_USER": "operator",
+            "PK_RESTORE_CRONTAB": str(tmp_path / "crontab"),
+            "PK_RESTORE_CRON_DIR": str(tmp_path / "cron.d"),
+        },
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    everything, uploader = result.stdout.split("uploader:\n")
+    # root's and SUDO_USER's crontabs, then /etc/crontab and cron.d.
+    assert everything.splitlines()[1:] == [
+        "*/5 * * * * run --rm -T backup-uploader",
+        "*/5 * * * * run --rm -T backup-uploader",
+        "0 3 * * * root run --rm -T backup-worker",
+        "0 5 * * * root my-backup-uploader-copy",
+        "0 6 * * * root run backup-uploader upload --config x",
+    ]
+    assert uploader.splitlines() == [
+        "*/5 * * * * run --rm -T backup-uploader",
+        "*/5 * * * * run --rm -T backup-uploader",
+        "0 6 * * * root run backup-uploader upload --config x",
+    ]
+
+
+@pytest.mark.skipif(shutil.which("flock") is None, reason="util-linux flock only")
+def test_the_copy_lock_block_waits_for_a_held_lock_and_logs_its_expiry(tmp_path):
+    """On a host with flock: the block takes both locks, or times out logged.
+
+    A Python copier holding the directory lock (as the uploader holds it)
+    makes the block's bounded wait expire; released, the block takes both
+    and creates the legacy file owner-only.
+    """
+    import fcntl
+
+    backups = tmp_path / "backups"
+    backups.mkdir(mode=0o700)
+    script = tmp_path / "lock.sh"
+    script.write_text(
+        layout_block(HOST, LOCK_BEGIN, LOCK_END)
+        + 'if copy_lock_take "$1" 2; then echo held; else echo refused; fi\n'
+    )
+    descriptor = os.open(backups, os.O_RDONLY)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        result = subprocess.run(
+            ["bash", str(script), str(backups)], capture_output=True, text=True
+        )
+    finally:
+        os.close(descriptor)
+    assert result.stdout.strip() == "refused"
+    assert "TIMEOUT: waiting for the off-site copy lock" in result.stderr
+    assert "(limit 2s)" in result.stderr
+    result = subprocess.run(
+        ["bash", str(script), str(backups)], capture_output=True, text=True
+    )
+    assert result.stdout.strip() == "held"
+    lock = backups / ".offsite-copy.lock"
+    assert lock.is_file() and (lock.stat().st_mode & 0o777) == 0o600
+
+
+@pytest.mark.parametrize("plant", ["link", "fifo", "none"])
+def test_a_lock_file_swapped_before_the_open_refuses_without_hanging(tmp_path, plant):
+    """A link or FIFO swapped in after the checks is never locked (#235, L1).
+
+    The backup worker can write the backups directory, so the name may
+    change between the block's checks and its open. A ``umask`` stand-in
+    (run just before the open) swaps the lock file at that moment: the
+    read-write open never blocks on a FIFO, and the opened descriptor is
+    not the regular file at the name, so the block refuses before flock.
+    The run is bounded, so a hang fails the test instead of stalling it.
+    """
+    from .host_stubs import install_gnu_tools
+
+    if shutil.which("bash") is None:
+        pytest.skip("bash is not installed")
+    backups = tmp_path / "backups"
+    backups.mkdir(mode=0o700)
+    lock = backups / ".offsite-copy.lock"
+    lock.write_text("")
+    target = tmp_path / "elsewhere"
+    target.write_text("kept")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    flock = bin_dir / "flock"
+    flock.write_text('#!/usr/bin/env bash\necho "$*" >>"$FLOCK_LOG"\n')
+    flock.chmod(0o755)
+    install_gnu_tools(bin_dir)
+    script = tmp_path / "lock.sh"
+    script.write_text(
+        layout_block(HOST, LOCK_BEGIN, LOCK_END)
+        + "umask() {\n"
+        + '    if [ "$#" -gt 0 ] && [ -n "$PLANT" ] && [ ! -e "$TARGET.done" ]; then\n'
+        + '        : >"$TARGET.done"; rm -f "$LOCK"\n'
+        + '        if [ "$PLANT" = link ]; then ln -s "$TARGET" "$LOCK"; '
+        + 'else mkfifo "$LOCK"; fi\n'
+        + "    fi\n"
+        + '    builtin umask "$@"\n'
+        + "}\n"
+        + 'if copy_lock_take "$1" 2; then echo held; else echo refused; fi\n'
+    )
+    log = tmp_path / "flock.log"
+    result = subprocess.run(
+        ["bash", str(script), str(backups)],
+        env={
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "PLANT": "" if plant == "none" else plant,
+            "LOCK": str(lock),
+            "TARGET": str(target),
+            "FLOCK_LOG": str(log),
+        },
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if plant == "none":
+        assert result.stdout.strip() == "held", result.stderr
+        assert log.read_text().splitlines() == ["-E 75 -w 2 8", "-E 75 -w 2 9"]
+        return
+    assert result.stdout.strip() == "refused"
+    assert "is not a regular file" in result.stderr
+    assert not log.exists()
+    assert target.read_text() == "kept"
 
 
 def test_both_scripts_carry_the_same_layout_block():

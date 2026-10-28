@@ -289,10 +289,13 @@ day exists. The host and the Drive folder may therefore keep different sets
 for a day whose newest set failed to copy: the host keeps that set and
 Drive keeps the day's newest verified copy, so each day in the window still
 has a set in each place. Only one run copies and prunes at a time: a run
-that finds another still copying (a lock file, `.offsite-copy.lock`, in
-`backups/`) leaves the copy to it, and its JSON line's `offsite` field says
-`busy`; the run holding the lock looks for new sets once more after its
-uploads, so a set left to it this way is copied in the same run. The
+that finds another still copying (the copy lock: a lock file,
+`.offsite-copy.lock`, in `backups/`, and, from the release that adds the
+[off-site uploader](#the-off-site-uploaders-login), a lock on the
+`backups/` directory itself, always taken in that order) leaves the copy to
+it, and its JSON line's `offsite` field says `busy`; the run holding the
+lock looks for new sets once more after its uploads, so a set left to it
+this way is copied in the same run. The
 `smoke --target backup_drive --send` check takes the same lock and reports
 `busy` while a copy is running. Each subfolder is tagged
 with the deployment's identity, so two deployments pointed at the same folder
@@ -415,23 +418,57 @@ file already passes to the profile. The
 
 The dedicated off-site uploader
 ([#235](https://github.com/epiphany40223/parishkit/issues/235)) is being
-added in steps. This release adds its login,
+added in steps. The expand release adds its login,
 `pk_stewardship_backup_uploader`, its one-shot `backup-uploader` profile
-(its own offline network plus `application-egress`, never `backend`) and
-its source rule. It copies nothing yet: the backup profile's own copy above
-is still the off-site copy. The profile's command is the source check, and
-`smoke --target backup_drive` runs there probe-only (`--send` is refused
-until the copy arrives):
+(its own offline network plus `application-egress`, never `backend`), its
+source rule and its copy, `upload`, which is the profile's command. The
+backup profile's own copy above still runs too, until the later contract
+release removes it: both take the same copy lock, so whichever copies a
+set first records it and the other finds nothing pending. The uploader
+copies exactly as the backup's copy does (the same three files, budgets,
+retries, outcome rows, alert and Drive retention), with stricter rules for
+which sets it copies:
+
+- only a set whose manifest digest has a backup run row in the database,
+  and whose name is that row's start time (to the second, in UTC), with
+  the row completed within 24 hours of it. A set with no row at all is
+  ignored (a hand copy, a half-restored set); a set whose rows do not
+  match its name is refused as `verification`, like a damaged set, on
+  every run while it is the newest;
+- only a set newer than the newest set already copied to the folder. An
+  older set is silently left alone, even one whose own copy failed: the
+  newest set is the one a restore needs, and the older one stays on the
+  host;
+- only regular files: a set file that is a link, or a `manifest.json`
+  larger than 64 KiB, is refused as `verification`.
 
 ```text
 docker compose ... run --rm backup-uploader
+docker compose ... run --rm backup-uploader upload --config UPLOADER_CONFIG \
+  --wait-lock SECONDS
+docker compose ... run --rm backup-uploader database-sources --config UPLOADER_CONFIG
 docker compose ... run --rm --entrypoint pk-stewardship backup-uploader \
   smoke --config UPLOADER_CONFIG --target backup_drive \
-  --delegated-email ADDRESS --folder-link LINK
+  --delegated-email ADDRESS --folder-link LINK [--send]
 ```
 
 `UPLOADER_CONFIG` is the `backup-uploader` service configuration
-(`config/services/backup-uploader.yaml`). The login's password file is an
+(`config/services/backup-uploader.yaml`). Run plainly (as cron does), the
+uploader prints nothing when it has nothing to do: when another copy holds
+the copy lock, nothing is pending, the database cannot be reached or is
+mid-upgrade, or offline work holds the startup interlock. A database that
+refuses its login (a missed `database-grants`, or a source rule not in
+force) logs one WARNING `startup_rejected` line. When it copies or records
+anything it prints one JSON line, as the backup's `offsite` field does
+(`state`, `sets`, and `failure_kind` for a failure). `--wait-lock SECONDS`
+(at most four hours) waits for a copy already running instead, prints a
+line whatever happens, and reports `busy` when the wait expires, which
+also records a `task_timed_out` entry (`lock_timeout`) with the limit and
+the time waited. The scripted upgrade also passes `--require-digest`, which
+adds `required_copy`: whether the database records a verified copy of that
+set in the current folder, whichever run made it. `smoke --send` from this
+profile copies the newest local set only when its run row matches its
+name, under the same copy lock, as the uploader's own login. The login's password file is an
 ordinary runtime password, `credentials/database/backup-uploader` unless
 `postgres.password_files` moves it. Two scripts support only some of those
 moves, and both refuse before they stop anything: the upgrade script's
@@ -491,9 +528,10 @@ while any of them runs.
 7. Run `database-grants`, which creates the login from that file (it
    needs the recent backup of step 1):
    `docker compose ... run --rm database-provision database-grants --config PROVISION_CONFIG --confirm-deployment UUID`.
-8. Prove the login: `docker compose ... run --rm backup-uploader` (its
-   source rule) must report that the sources match, and the password must
-   match the stored verifier:
+8. Prove the login:
+   `docker compose ... run --rm backup-uploader database-sources --config UPLOADER_CONFIG`
+   (its source rule) must report that the sources match, and the password
+   must match the stored verifier:
 
    ```text
    docker compose ... exec -T postgres psql --username pk_stewardship_operator \
@@ -519,11 +557,85 @@ recent backup row.
 ### Stopping a running uploader
 
 A restore or drill must not start while an uploader run is in progress.
-When one is running and must be stopped: comment out the uploader's cron
-line, if installed; find the container with
+The [scripted restores](#scripted-same-host-restore) take the copy lock in
+their step 1 and wait at most 60 seconds for it (an expiry is logged with
+the limit and the time waited, and the run refuses before anything stops);
+by hand, confirm that no `backup-uploader` container is running. When one
+is running and must be stopped: comment out the uploader's cron line, if
+installed; find the container with
 `docker ps --filter label=com.docker.compose.service=backup-uploader`; and
 wait for it to exit, or stop that exact container by name with
-`docker stop NAME` (never by pattern). Then run the restore.
+`docker stop NAME` (never by pattern). A stopped upload records no
+outcome and leaves at most an incomplete Drive folder, which the next copy
+of that set trashes and writes again. Then run the restore.
+
+### The uploader's cron line
+
+Install it once the expand release is deployed and proved (below), every
+five minutes, beside request mode:
+
+```text
+*/5 * * * * docker compose ... run --rm -T backup-uploader
+```
+
+It runs `upload` and is silent when there is nothing to do, so one line
+covers the scheduled backups, **Take a backup now**, manual runs and the
+catch-up after an outage. Send its output off the host as the backup's is.
+If the line is missing, the existing check that a backup's copy recorded
+something within six hours raises the `backup_offsite_failed` incident once
+the contract release has removed the backup's own copy. A restore or drill
+disables it with the other backup jobs (the scripted restores refuse while
+it is uncommented), and the upgrade's own step 1 runs the uploader itself.
+
+### Upgrading to the expand release
+
+The expand release adds the uploader's login, so its upgrade is a schema
+and grant change with the one-time full stop the
+[database connection sources](stewardship-deployment-runbook.md#database-connection-sources-2111)
+describe: run the [scripted upgrade](stewardship-deployment-runbook.md#scripted-upgrade)
+with `STEWARDSHIP_SCHEMA_CHANGE=1`. Its retarget creates the uploader's
+password file, and step 4's `database-grants` creates the login. From then
+on every upgrade's step 1 runs the uploader after the backup (when the
+running release has it): it waits up to 30 minutes for a copy already
+running and must report a verified copy of the step-1 set (LOCAL also
+accepts `not_configured`), or the upgrade is abandoned before web stops.
+After step 1 the host holds the copy lock until the run ends, so a cron
+uploader exits at the lock at once. Then, with the backup profile's copy
+still in place:
+
+1. Prove the login: `database-sources` from the uploader profile (above).
+2. Run the probe-only smoke check from the uploader profile, then one
+   plain `upload`, which reports nothing pending or copies the newest set.
+3. Install the uploader's cron line (above).
+
+### Rolling back the expand release
+
+Comment out the uploader's cron line first: the previous release renders
+no `backup-uploader` service, so the line would fail every five minutes,
+and the backup profile's own copy is the copier again. The scripted
+rollback (and any upgrade to an image without `upload`) refuses before it
+stops anything while an uncommented uploader line is in root's or the
+`sudo` user's crontab, `/etc/crontab` or `/etc/cron.d`. The rollback
+changes the database networks back, so it runs the same full stop in the
+other direction; run it from the expand release's checkout, as the
+deployment runbook says for every network change. An application-only
+rollback of the expand release also needs evidence that the previous
+release's image accepts the expanded database; without it, rolling back is
+a restore. The left-over login has no source rule in the previous
+rendering, so PostgreSQL refuses it, and its password file is unused.
+
+### A copy named in the future
+
+If the host's clock ran ahead while a copy was made, the database records a
+copy named for a time that has not come yet. The uploader leaves such a
+copy out when it decides which sets are newer than the newest copy (newer
+sets still copy), logs a WARNING `task_failed` line with `failure_kind`
+`backup_offsite_future_copy` on each run that has sets to copy, and names
+the set in its JSON line's `future_copies`. While that folder is on Drive,
+Drive pruning pauses (`backup_retention_paused_future_set`). Fix the
+clock; once a correctly named set has been copied, move the future-named
+set folder to the Drive trash by hand and remove the same set from
+`backups/` on the host. Pruning then resumes.
 
 ## Checking
 
@@ -587,7 +699,8 @@ following step 9, uploads that host's restored state into the source
 deployment's live Drive folder and then prunes the source deployment's own
 sets as though they were its own. On a drill host, never run
 `backup-worker` (request mode included), never install the backup,
-request-mode or off-host copy cron jobs, never
+request-mode, off-site uploader or off-host copy cron jobs (the uploader's
+line alone would upload into the live folder and prune it), never
 run `smoke --target backup_drive`, and skip step 9. Only the same-host run
 on the validation deployment itself backs up after the restore.
 
@@ -599,8 +712,8 @@ Three more guards on every drill host:
   `restart: unless-stopped`, so a clone boots the whole stack on its own
   and its first cron backup uploads into the live folder and prunes it.
 - **Check the crontabs before step 4**: `sudo crontab -l -u root` and
-  `crontab -l` as the operator user must show no backup, request-mode or
-  off-host copy job.
+  `crontab -l` as the operator user must show no backup, request-mode,
+  off-site uploader (`backup-uploader`) or off-host copy job.
 - **Block outbound traffic** as a backstop, so nothing on the host can
   reach Google. A host firewall such as `ufw` does not stop containers,
   because Docker's own rules bypass it. For a manual drill, once step 3 has
@@ -709,12 +822,15 @@ rendered Compose file the deployment runs (`compose.json` or
 layout; where the deployment YAML overrides a path, use that path instead.
 
 1. **Stop.** Disable the host's backup and off-host copy cron jobs,
-   including the five-minute request-mode entry, until step 9: a backup that starts mid-restore would archive a mix of old and
+   including the five-minute request-mode entry and the off-site
+   uploader's five-minute line (it names `backup-uploader`), until step 9: a backup that starts mid-restore would archive a mix of old and
    restored files, record itself as the newest set and be copied off the
    host. Then stop every online service and `caddy`: `stop caddy web worker
    scheduler mail-dispatch config-installer` and every credential installer.
    Then wait for any backup already running to finish, as a reinstall
-   does: `docker ps --filter name=backup-worker` must list no container. A
+   does: `docker ps --filter name=backup-worker` must list no container,
+   and no `backup-uploader` container may be running
+   ([Stopping a running uploader](#stopping-a-running-uploader)). A
    backup keeps running after its dump while it copies to Google Drive, and
    one still archiving files when step 4 moves the trees records a mixed set
    as the newest. A copy can run for about four hours (no new set starts
@@ -967,8 +1083,8 @@ layout; where the deployment YAML overrides a path, use that path instead.
    credential installers.
 9. **Take a fresh backup.** Never on a disposable drill host: skip this
    step there (see the warning under [Restore drill](#restore-drill)). On the
-   deployment's own host, run the backup at once, then re-enable the backup
-   and off-host copy cron jobs. The backup records a new run, which later
+   deployment's own host, run the backup at once, then re-enable the backup,
+   uploader and off-host copy cron jobs. The backup records a new run, which later
    upgrade admissions require, and captures the restored state.
 10. **Delete the decrypted copies.** Once the review in step 8 is complete,
     securely delete `database.pgdump`, `files.tar` and the staging directory
@@ -1005,7 +1121,8 @@ stops, it refuses unless:
 - the UUID is the database's provisioning marker;
 - no crontab (root's, the `sudo` user's, `/etc/crontab`, `/etc/cron.d`) and
   no systemd timer names a backup, `rsync` or `rclone` job (the
-  operating system's own `dpkg-db-backup` timer is ignored). Scripts in
+  operating system's own `dpkg-db-backup` timer is ignored); the off-site
+  uploader's line names `backup-uploader`, so it counts. Scripts in
   `/etc/cron.daily` and its siblings, anacron, `at` jobs, other users'
   crontabs and jobs on other machines are not checked: disable those
   yourself;

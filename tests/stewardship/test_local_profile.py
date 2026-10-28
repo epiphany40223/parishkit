@@ -86,19 +86,19 @@ GOLDEN_ROOT = Path("/opt/parishkit")
 # full under fixtures/ so a difference can be read, not just detected.
 GOLDEN_DIGESTS = {
     ("initial", "compose"): (
-        "2a5aa544e86db8ca3b198870fc77de1e55b9fd753413c9644dc0cd2ce050f09a"
+        "6b9b27b00d5e310ea06c497d7635e9e20ca3b63a3bcc89a7e7b958402a85c6dd"
     ),
     ("initial", "documents"): (
         "12cb572114939fbb76dda907148aa56dd0a3cad419d1e39accd9b9429d029b9d"
     ),
     ("configured", "compose"): (
-        "2a5aa544e86db8ca3b198870fc77de1e55b9fd753413c9644dc0cd2ce050f09a"
+        "6b9b27b00d5e310ea06c497d7635e9e20ca3b63a3bcc89a7e7b958402a85c6dd"
     ),
     ("configured", "documents"): (
         "12cb572114939fbb76dda907148aa56dd0a3cad419d1e39accd9b9429d029b9d"
     ),
     ("configured-slack", "compose"): (
-        "d7f931f71230fb8f64e9caf5a3d45f730fdf3e8110ebbeb9a58df721eedb44be"
+        "27cb1026622eb48b0778169c6f4b2e550675ec0fb298e0851facfbd214834864"
     ),
     ("configured-slack", "documents"): (
         "983d1e04f66b30d5a97ff3fb103ebe64ecc0361a4f3245cf38cab6f2ae5d6d30"

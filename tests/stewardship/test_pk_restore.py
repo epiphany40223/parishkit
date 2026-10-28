@@ -36,6 +36,8 @@ from pathlib import Path
 
 import pytest
 
+from .host_stubs import install_gnu_tools
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools" / "stewardship-ops" / "pk-restore"
 UUID = "00000000-0000-4000-8000-000000000000"
@@ -283,6 +285,17 @@ def host(tmp_path):
         'echo "/dev/x 99999999 1 $free 1% /"\n',
     )
     stub(bin_dir, "sleep", "#!/usr/bin/env bash\nexit 0\n")
+    # The off-site copy lock (#235): util-linux flock is not on every test
+    # host, so the stand-in records each call (its options and descriptor)
+    # and exits with FAKE_FLOCK_FAIL when set (75 is `flock -E 75 -w`'s
+    # expired wait). The lock needs GNU stat and ln.
+    stub(
+        bin_dir,
+        "flock",
+        '#!/usr/bin/env bash\necho "$*" >>"$FAKE_STATE/flock"\n'
+        '[ -z "${FAKE_FLOCK_FAIL:-}" ] || exit "$FAKE_FLOCK_FAIL"\n',
+    )
+    install_gnu_tools(bin_dir)
     # This host's name and addresses, and what the public origin resolves to.
     stub(
         bin_dir,
@@ -299,10 +312,15 @@ def host(tmp_path):
     )
     # pg_restore --file=SQL DUMP, as the container's would convert it.
     stub(bin_dir, "pg_restore", '#!/usr/bin/env bash\ncp "$2" "${1#--file=}"\n')
+    # A one-off `docker compose run` that inherited the copy lock's
+    # descriptors 8 or 9 is recorded in held-fds (#235).
     stub(
         bin_dir,
         "timeout",
         "#!/usr/bin/env bash\n"
+        'if [[ "$*" == *" run --name "* ]] && '
+        "{ [ -e /dev/fd/8 ] || [ -e /dev/fd/9 ]; }; "
+        'then echo "$*" >>"$FAKE_STATE/held-fds"; fi\n'
         'if [ -n "${FAKE_TIMEOUT:-}" ] && [[ "$*" == *"$FAKE_TIMEOUT"* ]]; then '
         "exit 124; fi\n"
         'while [[ $1 == -* ]]; do shift; done; shift; exec "$@"\n',
@@ -345,6 +363,7 @@ def host(tmp_path):
     (root / "cache" / "static").mkdir(parents=True)
     (root / "cache" / "static" / "old.js").write_text("old\n")
     (root / "logs").mkdir()
+    (root / "backups").mkdir(mode=0o700)
     record = root / ".stewardship-provisioned.json"
     record.write_text('{"image": "current"}\n')
     decrypted = tmp_path / "decrypted"
@@ -2076,3 +2095,129 @@ def test_a_new_host_creates_the_login_through_the_restore_grants(new_host, drill
     assert index(calls, " retarget-image ") < grants < index(calls, " restore-begin ")
     assert index(calls, "database-roles") < grants
     assert any(" backup-uploader database-sources " in c for c in calls)
+
+
+# ---------------------------------------------------------------------------
+# The off-site uploader's copy lock and cron line (#235, E2).
+
+
+def flock_calls(host):
+    """The flock stand-in's recorded calls, one per line."""
+    path = host["tmp"] / "state" / "flock"
+    return path.read_text().splitlines() if path.exists() else []
+
+
+def assert_lock_waits(calls, limit):
+    """Both locks, file then directory, within one shared limit.
+
+    The directory lock waits for what is left of the limit, so a second
+    boundary between the two calls can take one second off its wait.
+    """
+    assert len(calls) == 2, calls
+    assert calls[0] == f"-E 75 -w {limit} 8"
+    assert calls[1] in (f"-E 75 -w {limit} 9", f"-E 75 -w {limit - 1} 9")
+
+
+def test_the_run_holds_the_copy_lock_before_anything_stops(host):
+    """Both locks, file then directory, at most 60 seconds, before step 1's stop."""
+    result, calls = restore(host)
+    assert result.returncode == 0, output(result)
+    assert_lock_waits(flock_calls(host), 60)
+    # Taken in step 1 before its stop: an expired wait stops nothing (below).
+    text = output(result)
+    assert text.index("1. Stopping every online service") < text.index(
+        "holding the off-site copy lock on"
+    )
+    lock = host["root"] / "backups" / ".offsite-copy.lock"
+    assert lock.is_file() and (lock.stat().st_mode & 0o777) == 0o600
+
+
+def test_a_copy_still_running_refuses_before_anything_stops(host):
+    """An expired wait is logged with its limit and refuses the run."""
+    result, calls = restore(host, FAKE_FLOCK_FAIL="75")
+    assert result.returncode == 1
+    text = output(result)
+    assert "TIMEOUT: waiting for the off-site copy lock on" in text
+    assert "(limit 60s)" in text
+    assert "an off-site copy is still running and holds the copy lock" in text
+    assert "Stopping a running uploader" in text
+    assert not stopped(calls)
+
+
+@pytest.mark.parametrize("plant", ["link", "fifo"])
+def test_a_planted_lock_file_refuses_before_anything_stops(host, plant):
+    """A link or a FIFO where the legacy lock file belongs is never locked.
+
+    A FIFO is refused at once, never waited on.
+    """
+    lock = host["root"] / "backups" / ".offsite-copy.lock"
+    if plant == "link":
+        lock.symlink_to(host["tmp"] / "x")
+    else:
+        os.mkfifo(lock)
+    result, calls = restore(host)
+    assert result.returncode == 1
+    assert "is not a regular file" in output(result)
+    assert not stopped(calls)
+    assert not (host["tmp"] / "x").exists()
+
+
+def test_a_failed_copy_lock_call_is_not_logged_as_a_timeout(host):
+    """Only flock's 75 is an expired wait; another failure says it failed."""
+    result, calls = restore(host, FAKE_FLOCK_FAIL="1")
+    assert result.returncode == 1
+    text = output(result)
+    assert "FAILED: flock on the off-site copy lock on" in text
+    assert "exited with status 1" in text
+    assert "TIMEOUT" not in text
+    assert not stopped(calls)
+
+
+def test_one_off_containers_do_not_inherit_the_copy_lock(host):
+    """A client left by a killed run cannot keep the lock (#235, B-L4)."""
+    result, calls = restore(host)
+    assert result.returncode == 0, output(result)
+    assert flock_calls(host) and any(" run --name " in call for call in calls)
+    assert not (host["tmp"] / "state" / "held-fds").exists()
+
+
+@pytest.mark.parametrize("where", ["crontab", "system", "cron.d"])
+def test_the_uploaders_cron_line_refuses_before_anything_stops(host, where):
+    """Its line names backup-uploader, which the job filter matches (#235)."""
+    line = (
+        "*/5 * * * * root docker compose -f /opt/parishkit/config/services/"
+        "compose.json -p stewardship run --rm -T backup-uploader"
+    )
+    fake = {}
+    if where == "crontab":
+        fake["FAKE_CRONTAB"] = line
+    elif where == "system":
+        (host["tmp"] / "crontab").write_text(line + "\n")
+    else:
+        (host["tmp"] / "cron.d" / "stewardship").write_text(line + "\n")
+    result, calls = restore(host, **fake)
+    assert result.returncode == 1
+    assert "disable the backup and off-host copy cron jobs" in output(result)
+    assert "run --rm -T backup-uploader" in output(result)
+    assert not stopped(calls)
+    assert flock_calls(host) == []
+
+
+def test_a_commented_uploader_line_does_not_refuse(host):
+    """The shared collection drops comments, as before."""
+    (host["tmp"] / "crontab").write_text(
+        "# */5 * * * * root run --rm -T backup-uploader\n"
+    )
+    result, _ = restore(host)
+    assert result.returncode == 0, output(result)
+
+
+def test_a_replacement_takes_the_copy_lock_once_step_3_made_the_directory(new_host):
+    """A new host has no backups directory until step 3 creates it."""
+    result, _ = new(new_host)
+    assert result.returncode == 0, output(result)
+    assert_lock_waits(flock_calls(new_host), 60)
+    text = output(result)
+    assert text.index("3. Preparing this host") < text.index(
+        "holding the off-site copy lock"
+    )

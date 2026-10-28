@@ -184,7 +184,7 @@
     "ALL"
    ],
    "command": [
-    "database-sources",
+    "upload",
     "--config",
     "/opt/parishkit/config/services/backup-uploader.yaml"
    ],

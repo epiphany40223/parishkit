@@ -730,7 +730,10 @@ unless `STEWARDSHIP_SCHEMA_CHANGE=1`, an advisory upgrade check that
 answers anything but `t`, which is step 1's cue to read the release notes.
 It then stops the background services and takes the required backup; a
 backup without a recorded off-host copy abandons the upgrade and restarts
-those services. There is no separate drain step: as in step 1, stopping
+those services. When the running release has the off-site uploader, the
+uploader copies the step-1 set and its answer decides instead, and the host
+then holds the off-site copy lock for the rest of the run (backup runbook,
+[Upgrading to the expand release](stewardship-backup-runbook.md#upgrading-to-the-expand-release)). There is no separate drain step: as in step 1, stopping
 the background services is the drain (each finishes within its stop grace
 period) while `web` keeps serving. Only then does it stop `web`, and from
 there it follows
@@ -1628,6 +1631,11 @@ the mail provider's own logs; v1 cannot prevent a second copy of mail sent
 after the backup, as its
 [restore limitations](stewardship-backup-runbook.md#restore-limitations-in-v1)
 explain.
+
+Rolling back the release that adds the off-site uploader starts by
+commenting out the uploader's cron line; the scripted rollback refuses while
+it is installed (backup runbook,
+[Rolling back the expand release](stewardship-backup-runbook.md#rolling-back-the-expand-release)).
 
 ### Scripted rollback
 

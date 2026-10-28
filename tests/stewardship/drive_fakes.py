@@ -101,7 +101,15 @@ class FakeDrive:
         self, path, name, parent, *, content_type="application/octet-stream", **_
     ):
         self._maybe_fail("upload")
-        data = path.read_bytes()
+        # A path (the probe's file), verified bytes (a set's manifest) or an
+        # open set file (``open_set``).
+        if isinstance(path, bytes):
+            data = path
+        elif hasattr(path, "read"):
+            path.seek(0)
+            data = path.read()
+        else:
+            data = path.read_bytes()
         digest = hashlib.md5(data, usedforsecurity=False).hexdigest()
         if self.corrupt:
             digest = "0" * 32

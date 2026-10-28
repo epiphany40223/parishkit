@@ -1265,7 +1265,10 @@ def runtime_grants(role, *, target=None):
         # timeout entries only (the writer trigger's timeout clause admits
         # this login, 0193). The folder link and mailbox come from
         # stewardship_backup_destination_v1(), never the configuration.
+        # Like every runtime login it reads the applied migrations, for the
+        # current-schema check its ``upload`` makes before it copies.
         return {
+            "django_migrations": {"SELECT"},
             "stewardship_backup_upload": {"SELECT", "INSERT"},
             "stewardship_operational_log": {"INSERT"},
         }, {
