@@ -488,11 +488,17 @@ def test_a_catch_up_killed_during_the_newest_set_still_alerts(offsite, monkeypat
     newest = new_set(offsite, "20260928T020000Z")
     run = record_run(newest)
     upload = offsite.drive.upload
+    sent = []
 
     def killed(path, name, parent, **kwargs):
-        """The process stops (e.g. the container is killed) mid-upload."""
-        if path.parent == newest:
+        """The process stops (e.g. the container is killed) mid-upload.
+
+        The files arrive as open descriptors (#235), so the newest set's
+        first file is told by count: the older set's three come first.
+        """
+        if len(sent) == len(SEALED_FILES):
             raise SystemExit(137)
+        sent.append(name)
         return upload(path, name, parent, **kwargs)
 
     monkeypatch.setattr(offsite.drive, "upload", killed)
@@ -1361,8 +1367,9 @@ def test_smoke_send_reads_the_deployment_tag(workspace, monkeypatch):
     )
     monkeypatch.setattr(runtime_database, "require_current_schema", lambda **_: None)
     expected = deployment_tag(SystemConfiguration.objects.get().pk)
-    assert smoke._deployment_tag("configuration") == expected
-    assert admitted == ["configuration", "login"]
+    configuration = SimpleNamespace(service_role=ServiceRole.BACKUP_WORKER)
+    assert smoke._deployment_tag(configuration) == expected
+    assert admitted == [configuration, "login"]
 
 
 def page_post(browser, values):

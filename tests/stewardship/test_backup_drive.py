@@ -3,6 +3,7 @@
 import hashlib
 import json
 import logging
+import os
 from datetime import UTC, datetime
 
 import pytest
@@ -156,14 +157,14 @@ def test_a_set_that_no_longer_matches_its_manifest_is_not_copied(
     else:
         # An I/O error on a failing disk is per-set damage too (#357 review
         # L2), not an unexpected failure that stops the whole copy.
-        opened = type(directory).open
+        opened = os.open
 
         def failing_open(path, *args, **kwargs):
-            if path.name == backup.FILES:
+            if path == backup.FILES:
                 raise OSError(5, "Input/output error")
             return opened(path, *args, **kwargs)
 
-        monkeypatch.setattr(type(directory), "open", failing_open)
+        monkeypatch.setattr(os, "open", failing_open)
     caplog.set_level(logging.INFO, logger="parishkit.stewardship")
     with pytest.raises(DriveFailure) as caught:
         upload_set(drive, FOLDER, directory, SEALED_FILES)
@@ -180,6 +181,64 @@ def test_a_set_that_no_longer_matches_its_manifest_is_not_copied(
     with pytest.raises(DriveFailure):
         with_retries(attempt, sleep=lambda seconds: None)
     assert len(attempts) == 1
+
+
+@pytest.mark.parametrize(
+    "plant", ["symlink", "fifo", "directory", "manifest_link", "set_link", "huge"]
+)
+def test_a_set_with_a_planted_file_is_refused_before_any_upload(
+    tmp_path, caplog, plant
+):
+    """Only regular files, opened without following a link, are copied (#235).
+
+    A symlink planted in a set (to the uploader's own key, say, with a
+    matching checksum in the manifest) is never followed, a FIFO never
+    stalls the open, and a manifest past the cap is not parsed.
+    """
+    drive = FakeDrive(FOLDER)
+    directory = make_set(tmp_path)
+    secret = tmp_path / "key.json"
+    secret.write_bytes(b"the uploader's key")
+    if plant == "symlink":
+        (directory / backup.DUMP).unlink()
+        (directory / backup.DUMP).symlink_to(secret)
+    elif plant == "fifo":
+        (directory / backup.FILES).unlink()
+        os.mkfifo(directory / backup.FILES)
+    elif plant == "directory":
+        (directory / backup.FILES).unlink()
+        (directory / backup.FILES).mkdir()
+    elif plant == "manifest_link":
+        moved = tmp_path / "manifest.json"
+        (directory / backup.MANIFEST).rename(moved)
+        (directory / backup.MANIFEST).symlink_to(moved)
+    elif plant == "set_link":
+        real = tmp_path / "real-set"
+        directory.rename(real)
+        directory.symlink_to(real)
+    else:
+        manifest = json.loads((directory / backup.MANIFEST).read_bytes())
+        manifest["padding"] = "x" * backup_drive.MANIFEST_CAP
+        (directory / backup.MANIFEST).write_text(json.dumps(manifest))
+    caplog.set_level(logging.INFO, logger="parishkit.stewardship")
+    with pytest.raises(DriveFailure) as caught:
+        upload_set(drive, FOLDER, directory, SEALED_FILES)
+    assert caught.value.kind == "verification"
+    assert not caught.value.retryable
+    assert drive.calls.count("upload") == 0 and not drive.sets()
+    assert logged_kinds(caplog) == [("ERROR", "backup_set_mismatch")]
+
+
+def test_a_manifest_at_the_cap_is_still_read(tmp_path):
+    """The cap refuses only what is past it; a real manifest is far below."""
+    directory = make_set(tmp_path)
+    data = (directory / backup.MANIFEST).read_bytes()
+    padded = data.rstrip(b"\n") + b" " * (backup_drive.MANIFEST_CAP - len(data))
+    assert len(padded) <= backup_drive.MANIFEST_CAP
+    (directory / backup.MANIFEST).write_bytes(padded)
+    drive = FakeDrive(FOLDER)
+    upload_set(drive, FOLDER, directory, SEALED_FILES)
+    assert drive.sets() == [directory.name]
 
 
 NOW = datetime(2026, 9, 29, 12, tzinfo=UTC)

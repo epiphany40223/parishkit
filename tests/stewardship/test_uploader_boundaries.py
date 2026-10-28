@@ -170,9 +170,14 @@ def test_the_uploader_is_not_an_online_role(tmp_path):
 
 
 def test_the_uploaders_grants_registry_is_exactly_the_design():
-    """Its outcome rows, three run columns, the runtime row's id, timeout logs."""
+    """Its outcome rows, three run columns, the runtime row's id, timeout logs.
+
+    And the applied migrations, which every runtime login reads for the
+    current-schema check (``upload`` makes it before it copies, #235).
+    """
     tables, columns = runtime_grants(ServiceRole.BACKUP_UPLOADER)
     assert tables == {
+        "django_migrations": {"SELECT"},
         "stewardship_backup_upload": {"SELECT", "INSERT"},
         "stewardship_operational_log": {"INSERT"},
     }

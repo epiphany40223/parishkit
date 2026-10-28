@@ -445,12 +445,11 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
 
             # The off-site uploader (#235): one-shot on its own network, plus
             # the route out to Google Drive, and never on ``backend`` (it
-            # needs no Valkey and no other service). Its command in this
-            # release is the source check, the only thing it can run yet;
-            # the copy (``upload``) replaces it when it ships.
+            # needs no Valkey and no other service). Its command is the
+            # copy, which cron runs every five minutes.
             service["profiles"] = [name]
             service["command"] = [
-                "database-sources",
+                "upload",
                 "--config",
                 str(selected.configuration_file),
             ]
