@@ -611,6 +611,9 @@ FROZEN = {
     "0192_late_report_totals.sql": (
         "e4cdc8672d12fe45e8aec4ec60018c37d04c0ae220174d14f7d40643b8e35372"
     ),
+    "0193_backup_uploader_preparation.sql": (
+        "87ea2cc43e207120ce25b853ea3ebc82a4a1a0bf5741f3cfbe1315b4398b68c3"
+    ),
 }
 
 
