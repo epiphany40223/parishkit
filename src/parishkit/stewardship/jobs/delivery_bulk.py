@@ -2,22 +2,28 @@
 
 After a mail outage an Administrator may face dozens of failed emails, or
 of emails marked Not sure it arrived, and used to resolve them one page at
-a time. Two bulk actions cover those cases:
+a time. Sent mail's table selects them by row (#2296) for two bulk
+actions:
 
-- ``retry_failed``: retry every failed email whose own page offers **Retry
-  failed delivery**;
-- ``confirm_unsent``: record as not sent every Not sure it arrived email
-  whose own page offers that resolution, on the Administrator's word that
-  the mail service's own records show it was not sent.
+- ``retry_failed`` (**Send again**): retry each failed email whose own
+  page offers **Retry failed delivery**;
+- ``confirm_unsent`` (**Record as not sent**): record as not sent each Not
+  sure it arrived email whose own page offers that resolution, on the
+  Administrator's word that the mail service's own records show it was
+  not sent.
 
-Both select by the rules each message's page uses
-(``delivery_reads.offered_actions``), limited to the current campaign and
-optionally one email type, and preview the exact messages with one count.
-The preview is a signed binding of every selected message's id and
+A row is selectable only by the rules each message's page uses
+(``delivery_reads.offered_actions``), limited to the current campaign
+(``selectable``), and the selection is either the ticked rows of one page
+or every selectable email the page's filters match (``matching_ids``).
+The preview checks that every selected message still qualifies for the
+action and binds them all: a signed binding of every message's id and
 version, bound to the Administrator and valid for ``PREVIEW_SECONDS``.
-It carries only a digest of the note, never the note itself, so the
-evidence is not readable from the token; Confirm and Continue post the
-note again beside it and it must match.
+The note is typed in the review dialog after the preview, so a first
+application takes it as given (the binding's ``note_digest`` is None);
+Continue's preview carries only a digest of it, never the note itself, so
+the evidence is not readable from the token, and Continue posts the note
+again beside it and it must match.
 
 Applying it runs the ordinary per-message ``resolve_delivery`` once per
 message, each in its own command scope and transaction, with the
@@ -31,11 +37,11 @@ its own guard now refuses, is skipped and counted, never forced. At most
 ``BATCH`` messages are resolved per request, which keeps one web request
 well inside its time limit; the rest of the same preview is applied by
 applying it again (**Continue** on the page). Continue's preview is the
-same binding re-signed with the messages skipped so far, so they are
-counted again without being retried and never fill a later batch, and
-with the original preview's issue time, so it expires when the original
-would. Every application records
-one ``delivery_bulk_resolved`` audit event with the counts.
+same binding re-signed with the messages skipped so far and the note's
+digest, so they are counted again without being retried and never fill a
+later batch, and with the original preview's issue time, so it expires
+when the original would. Every application records one
+``delivery_bulk_resolved`` audit event with the counts.
 """
 
 import hashlib
@@ -75,6 +81,10 @@ KIND_PURPOSES = {
 }
 SALT = "parishkit.stewardship.delivery-bulk"
 PREVIEW_SECONDS = 15 * 60
+# The most rows one page selection may post: Sent mail's largest page
+# (``web.tables.WINDOW_SIZES``). Select all N matching has no such limit;
+# its emails are read again from the filters.
+SELECTION_LIMIT = 100
 # Messages resolved per request. A retry re-renders and seals one email,
 # typically well under a second, so a batch stays far inside the web
 # request limit (runtime_budget.server_timeout_seconds).
@@ -89,7 +99,6 @@ BINDING = {
     "actor",
     "command",
     "kind",
-    "purpose",
     "note_digest",
     "items",
     "skipped",
@@ -99,6 +108,15 @@ BINDING = {
 
 class NothingToResolve(StaleRecordError):
     """No message qualifies for the bulk action any more."""
+
+
+class SelectionChanged(StaleRecordError):
+    """A selected message no longer qualifies for the bulk action.
+
+    It changed since the list was drawn (or the selection was built by
+    hand), so the whole selection is refused rather than shrunk: the
+    review only ever covers exactly what the Administrator chose.
+    """
 
 
 @dataclass(frozen=True)
@@ -114,7 +132,6 @@ class BulkResult:
     """
 
     kind: str
-    purpose: str
     total: int
     resolved: int
     newly: int
@@ -198,79 +215,121 @@ def candidates(kind):
     return found
 
 
-def overview():
-    """What each bulk action could cover now, for Sent mail's panel.
+def selectable():
+    """Every message a bulk action covers now, by id, in ``candidates`` order.
 
-    Returns ``{kind: {"total": n, "purposes": [(purpose, count), ...]}}``
-    with only the kinds and email types that have a message, in
-    ``PURPOSES`` order.
+    Returns ``{id: {"id", "version", "purpose", "kind"}}``: one entry per
+    current-campaign message whose own page offers ``retry_failed`` or
+    ``confirm_unsent`` now. A message has at most one kind, since the two
+    select from different states. Sent mail gives exactly these rows a
+    selection box (#2296).
     """
-    shown = {}
+    found = {}
     for kind in KINDS:
-        counts = {}
         for item in candidates(kind):
-            counts[item["purpose"]] = counts.get(item["purpose"], 0) + 1
-        if counts:
-            shown[kind] = dict(
-                total=sum(counts.values()),
-                purposes=[
-                    (purpose, counts[purpose])
-                    for purpose in PURPOSES
-                    if purpose in counts
-                ],
-            )
-    return shown
+            found[item["id"]] = item | {"kind": kind}
+    return found
 
 
-def preview(actor_id, *, kind, purpose, note, checked):
-    """Select the messages, and bind them to a signed preview.
+def matching_ids(values, *, snapshot, actor, among):
+    """The ids in ``among`` that Sent mail's applied filters list (#2296).
 
-    ``purpose`` is one email type or ``"all"``; ``note`` the required
-    evidence or reason, recorded on every message; ``checked`` whether the
-    Administrator confirmed checking the mail service's records, required
-    for ``confirm_unsent`` and refused for a retry. Raises ``ValueError``
-    for an invalid choice or note and ``NothingToResolve`` when nothing
-    qualifies any more. Returns ``kind``, ``purpose``, ``count``, ``note``
-    and ``token``.
+    ``values`` are ``read_listing``'s validated filters (its ``values``),
+    ``snapshot`` and ``actor`` what it read them with; ``among`` the
+    ``selectable`` messages. Select all N matching covers these: the
+    emails with a selection box on every page of the filtered list, read
+    by primary key, so the query never reads the whole log.
     """
-    if kind not in KINDS or (
-        purpose != "all" and purpose not in KIND_PURPOSES.get(kind, ())
-    ):
+    from .delivery_metadata import filtered
+    from .delivery_reads import day_bounds
+    from .send_history import SendKey
+
+    if not among:
+        return []
+    since, until = day_bounds(values)
+    listed = set(
+        filtered(
+            state=values["state"],
+            query=values["recipient"],
+            send=SendKey.parse(values["send"]) if values.get("send") else None,
+            snapshot=snapshot,
+            purpose=values["purpose"],
+            mode=values["mode"],
+            since=since,
+            until=until,
+            actor=actor,
+        )
+        .filter(pk__in=list(among))
+        .values_list("pk", flat=True)
+    )
+    return [message_id for message_id in among if message_id in listed]
+
+
+def preview(actor_id, *, kind, ids, available):
+    """Bind the selected messages to a signed preview.
+
+    ``ids`` are the selected message ids (a page's ticked rows, or every
+    one ``matching_ids`` found); ``available`` is ``selectable()``, read
+    in the same transaction. Every selected message must qualify for
+    ``kind`` now, or ``SelectionChanged`` refuses the whole selection.
+    Raises ``ValueError`` for an invalid action or an empty or repeated
+    selection, and ``NothingToResolve`` when nothing qualifies any more.
+    Returns ``kind``, ``count``, ``purposes`` (``(purpose, count)`` pairs
+    in ``PURPOSES`` order) and ``token``. The binding has no note yet:
+    the review dialog asks for it, and Apply posts it
+    (``load_preview``).
+    """
+    if kind not in KINDS:
         raise ValueError("Invalid bulk resolution choice.")
-    note = evidence_note(note)
-    if type(checked) is not bool or checked != (kind == "confirm_unsent"):
-        raise ValueError("Confirm checking the mail service's records first.")
-    items = [
-        [str(item["id"]), item["version"]]
-        for item in candidates(kind)
-        if purpose in ("all", item["purpose"])
-    ]
-    if not items:
+    if len(set(ids)) != len(ids):
+        raise ValueError("Each email may be selected only once.")
+    if not ids:
         raise NothingToResolve("No email qualifies for this action any more.")
+    if any(available.get(message_id, {}).get("kind") != kind for message_id in ids):
+        raise SelectionChanged("A selected email no longer qualifies.")
+    chosen = set(ids)
+    # The candidates' order (oldest first), whatever order the rows posted.
+    items = [item for message_id, item in available.items() if message_id in chosen]
+    counts = {}
+    for item in items:
+        counts[item["purpose"]] = counts.get(item["purpose"], 0) + 1
     token = sign(
         {
             "actor": str(actor_id),
             "command": str(uuid4()),
             "kind": kind,
-            "purpose": purpose,
-            "note_digest": note_digest(note),
-            "items": items,
+            "note_digest": None,
+            "items": [[str(item["id"]), item["version"]] for item in items],
             "skipped": [],
             "issued": int(time.time()),
         }
     )
-    return dict(kind=kind, purpose=purpose, count=len(items), note=note, token=token)
+    return dict(
+        kind=kind,
+        count=len(items),
+        purposes=[
+            (purpose, counts[purpose]) for purpose in PURPOSES if purpose in counts
+        ],
+        token=token,
+    )
 
 
-def load_preview(token, actor_id, note):
+def load_preview(token, actor_id, note, *, checked=False):
     """The binding of a signed preview made for ``actor_id``, or refuse.
 
-    ``note`` is the note posted beside the preview; it must be the one
-    previewed, and is returned in the binding as ``note``. An expired or
-    altered preview, or a different note, raises ``signing.BadSignature``
-    (its ``SignatureExpired`` subclass when expired); another
-    Administrator's raises ``PermissionError``; a malformed one, or an
-    invalid note, ``ValueError``.
+    ``note`` is the note posted beside the preview, returned in the binding
+    as ``note``. A first application (a binding without a note digest)
+    takes the note typed in the review dialog, and, to record emails as not
+    sent, needs ``checked``: the Administrator confirmed checking the mail
+    service's records (refused for a retry). Continue's binding carries the
+    note's digest, and the note posted must be that one. Once any of a
+    preview's messages is resolved, only Continue's binding goes on: the
+    first one, which binds no note, would otherwise apply the rest with a
+    different note. An expired or altered preview, a different note or a
+    first binding already applied raises ``signing.BadSignature`` (its
+    ``SignatureExpired`` subclass when expired); another
+    Administrator's raises ``PermissionError``; a malformed one, an invalid
+    note or a missing check, ``ValueError``.
     """
     if type(token) is not str or not token:
         raise ValueError("Invalid bulk resolution preview.")
@@ -284,17 +343,54 @@ def load_preview(token, actor_id, note):
         or not binding["items"]
         or type(binding["skipped"]) is not list
         or type(binding["issued"]) is not int
+        or not (binding["note_digest"] is None or type(binding["note_digest"]) is str)
     ):
         raise ValueError("Invalid bulk resolution preview.")
     # Continue re-signs the preview, so its own signature is fresh; the
     # original issue time it carries is what expires.
     if time.time() - binding["issued"] > PREVIEW_SECONDS:
         raise signing.SignatureExpired("Bulk resolution preview expired.")
-    if not hmac.compare_digest(binding["note_digest"], note_digest(note)):
+    if binding["note_digest"] is None:
+        if type(checked) is not bool or checked != (
+            binding["kind"] == "confirm_unsent"
+        ):
+            raise ValueError("Confirm checking the mail service's records first.")
+    elif not hmac.compare_digest(binding["note_digest"], note_digest(note)):
         raise signing.BadSignature("Bulk resolution note differs.")
     if binding["actor"] != str(actor_id):
         raise PermissionError("This preview belongs to another Administrator.")
+    if binding["note_digest"] is None and _started(binding):
+        raise signing.BadSignature("Bulk resolution preview already applied.")
     return binding | {"note": note}
+
+
+def _started(binding):
+    """Whether any message of the preview ``binding`` is already resolved.
+
+    Each resolution's id is ``uuid5(command, message id)``, as
+    ``apply_preview`` derives it. Raises ``ValueError`` for a malformed id.
+    """
+    command = UUID(binding["command"])
+    commands = [
+        uuid5(command, str(UUID(message_id)))
+        for message_id, _version in binding["items"]
+    ]
+    return DeliveryResolution.objects.filter(pk__in=commands).exists()
+
+
+def left(binding):
+    """How many of a preview's messages are neither resolved nor skipped yet.
+
+    Continue's review counts these: the messages its Apply would still
+    attempt, at most ``BATCH`` of them per request.
+    """
+    command, skipped = UUID(binding["command"]), set(binding["skipped"])
+    commands = [
+        uuid5(command, message_id)
+        for index, (message_id, _version) in enumerate(binding["items"])
+        if index not in skipped
+    ]
+    return len(commands) - DeliveryResolution.objects.filter(pk__in=commands).count()
 
 
 def apply_preview(
@@ -382,12 +478,16 @@ def apply_preview(
                 )
     return BulkResult(
         kind=kind,
-        purpose=binding["purpose"],
         total=len(binding["items"]),
         resolved=resolved,
         newly=newly,
         skipped=len(skipped),
         remaining=remaining,
-        # Continue's preview: the same binding, with the skipped carried.
-        token=sign(binding | {"skipped": skipped}) if remaining else None,
+        # Continue's preview: the same binding, with the skipped carried
+        # and the note applied so far bound by its digest.
+        token=sign(
+            binding | {"skipped": skipped, "note_digest": note_digest(binding["note"])}
+        )
+        if remaining
+        else None,
     )

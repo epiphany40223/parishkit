@@ -64,6 +64,9 @@ REPORT_WAITING_LIST = "/deliveries-report-waiting"
 
 # A Sent mail page that posts to, and draws, its own address (#1571).
 OWN_ACTION = "/deliveries-own"
+# Sent mail with its bulk actions (#2296), whose selection and review
+# dialog post to this address, which a test routes.
+BULK_ACTION = "/deliveries-bulk"
 # The pages' viewer, an Administrator, who may open a user's Timeline
 # (#1885), and the users whose addresses the fixtures link to it.
 ADMIN = SimpleNamespace(
@@ -369,51 +372,69 @@ def components(now):
             ),
         ),
     )
-    # Sent mail's bulk actions (#382 M4): the panel, and the answers its
-    # in-place Preview and Confirm get (a test routes each POST to one).
-    failed = message | dict(state="permanent_failure")
-    bulk = dict(
-        table=sent_table(
+    # Sent mail's bulk actions (#2296): a selection table whose boxes are
+    # the rows a bulk action covers, of their kind, and the answers its
+    # review dialog gets (a test routes each POST to one). The view's
+    # fields every bulk step posts again (bulk_view) are the table's own.
+    failed = message | dict(id=UUID(int=22961), state="permanent_failure")
+    uncertain = message | dict(id=UUID(int=22962), bulk_kind="confirm_unsent")
+    delivered = message | dict(id=UUID(int=22963), state="delivered")
+    bulk_table = replace(
+        sent_table(
             PageWindow(1, 25),
-            [failed],
+            [failed | dict(bulk_kind="retry_failed"), uncertain, delivered],
             False,
-            total=(1, False),
+            total=(3, False),
             sorting=DELIVERY_SORTING,
             sort=DELIVERY_SORTING.default,
         ),
+        action=BULK_ACTION,
+    )
+    bulk = dict(
+        table=bulk_table,
         states=["all", "permanent_failure"],
         selected_state="all",
         **LIST_FILTERS,
-        bulk_overview={
-            "retry_failed": {
-                "total": 3,
-                "purposes": [("initial", 2), ("receipt", 1)],
-            },
-            "confirm_unsent": {"total": 1, "purposes": [("reminder", 1)]},
-        },
+        bulk_view=bulk_table.page_fields(1),
+        # Select all N matching: more failed emails than the page shows.
+        matching=dict(count=1250, kind="retry_failed"),
+        bulk_shown=True,
     )
-    review = bulk | dict(
-        bulk_review=dict(
+    view = bulk_table.page_fields(1)
+    review = dict(
+        review=dict(
             kind="retry_failed",
-            purpose="all",
             count=3,
-            note="Gmail was down from 2 to 3 PM.",
+            purposes=[("initial", 2), ("receipt", 1)],
             token="signed-preview",
-            form="bulk-retry_failed",
-        )
+        ),
+        view=view,
+    )
+    unsent_review = dict(
+        review=dict(
+            kind="confirm_unsent",
+            count=1,
+            purposes=[("initial", 1)],
+            token="signed-unsent",
+        ),
+        view=view,
+    )
+    continuing = dict(
+        review=dict(
+            kind="retry_failed",
+            count=148,
+            token="signed-continue",
+            note="Gmail was down from 2 to 3 PM.",
+            continuing=True,
+        ),
+        view=view,
     )
     result = bulk | dict(
-        table=sent_table(
-            PageWindow(1, 25),
-            [failed | dict(state="pending")],
-            False,
-            total=(1, False),
-            sorting=DELIVERY_SORTING,
-            sort=DELIVERY_SORTING.default,
+        table=replace(
+            bulk_table, rows=[failed | dict(state="pending"), uncertain, delivered]
         ),
         bulk_result=BulkResult(
             kind="retry_failed",
-            purpose="all",
             total=250,
             resolved=100,
             newly=100,
@@ -423,27 +444,23 @@ def components(now):
         ),
         bulk_note="Gmail was down from 2 to 3 PM.",
     )
-    yield "/deliveries-bulk", "deliveries", bulk
-    yield "/deliveries-bulk-review", "deliveries", review
-    yield "/deliveries-bulk-result", "deliveries", result
-    # The same three pages served at an address that is also where they
-    # post and the address they draw (OWN_ACTION), as the real Sent mail
-    # page is: Preview's and Confirm's answers then set the address, so a
-    # test sees what history keeps of them (#1571).
-    for suffix, context in (("", bulk), ("-review", review), ("-result", result)):
-        yield OWN_ACTION + suffix, "deliveries", at_own_address(context)
+    yield BULK_ACTION, "deliveries", bulk
+    # The same page served at an address that is also where it posts and
+    # the address it draws (OWN_ACTION), as the real Sent mail page is, for
+    # the history test (#1571).
+    yield OWN_ACTION, "deliveries", at_own_address(bulk)
+    yield BULK_ACTION + "-review", "delivery-bulk-review", review
+    yield BULK_ACTION + "-review-unsent", "delivery-bulk-review", unsent_review
+    yield BULK_ACTION + "-continue", "delivery-bulk-review", continuing
+    yield BULK_ACTION + "-result", "deliveries", result
     yield (
-        "/deliveries-bulk-refused",
-        "deliveries",
-        bulk
-        | dict(
-            bulk_errors=[
-                dict(
-                    message="These emails changed, or the preview expired, "
-                    "before you confirmed. Choose Preview again to see what "
-                    "qualifies now."
-                )
-            ]
+        BULK_ACTION + "-refused",
+        "delivery-bulk-review",
+        dict(
+            refused="changed",
+            text="Some of the selected emails changed, or this review expired, "
+            "so nothing was changed. Close this, then select the emails again "
+            "to see what qualifies now.",
         ),
     )
     delivery = dict(

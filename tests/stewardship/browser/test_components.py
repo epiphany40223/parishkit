@@ -120,6 +120,8 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/go-live-steps",
         "/background",
         "/deliveries",
+        "/deliveries-bulk",
+        "/deliveries-bulk-result",
         "/delivery",
         "/delivery-note-only",
         "/delivery-refusals",

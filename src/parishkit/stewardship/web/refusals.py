@@ -556,6 +556,14 @@ STEP_REASONS = {
     "blocking": "send_work_blocks",
     "paused": "stale_page",
     "cancelled": "stale_page",
+    # Sent mail's bulk actions (#2296): nothing selected qualifies any more,
+    # or Select all N matching's emails mix both kinds, since the list was
+    # drawn ("changed" is above).
+    "empty": "stale_page",
+    "mixed": "stale_page",
+    # A hand-built selection the page never posts (a malformed id, more
+    # than a page of ids).
+    "selection": "unexpected_fields",
 }
 
 
