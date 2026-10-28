@@ -3863,10 +3863,12 @@ so two sessions sending one key at once are serialized: the second sees the
 first's committed record, returns it with `created` false and records no
 second command event
 ([#1222](https://github.com/epiphany40223/parishkit/issues/1222)). It
-settles an operational or security notice as the page does, with the
-answers the [resolution questions](../admin-portal/spec.md#resolution-questions)
-allow for a notice
-([#2295](https://github.com/epiphany40223/parishkit/issues/2295)). Two page
+settles an operational or security notice, or a Ministry leader email, as
+the page does, with the answers the
+[resolution questions](../admin-portal/spec.md#resolution-questions) allow
+for one
+([#2295](https://github.com/epiphany40223/parishkit/issues/2295),
+[#2300](https://github.com/epiphany40223/parishkit/issues/2300)). Two page
 actions need a ticked acknowledgement, which PR 9c asks for at PR 5b's
 [prompt](#command-line-confirmation) (the page's words, then `yes`, or
 `--yes`) before any transaction opens. They are separate verbs, not more
