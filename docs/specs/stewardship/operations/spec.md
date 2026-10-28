@@ -2010,11 +2010,16 @@ an Administrator can restore it. The rest is listed under
     reads `rolpassword` for `pk_stewardship_backup_uploader` from
     `pg_authid`. No row: nothing to check (the expand upgrade creates the
     login). A row: the uploader's password file must exist, and the new
-    image (in the script's isolated container, with no network, the file
-    mounted read-only and the verifier on standard input) must answer
-    that it matches, by the same parse and comparison as above; it prints
-    only `match` or `mismatch`, never the file or the verifier. A missing
-    file or any other answer refuses with the lost-file recovery's name.
+    image's `uploader-password-check` command must answer that it
+    matches. That command is new in E1. It reads the uploader's password
+    file and the stored verifier on standard input, applies the same
+    parse and comparison as above, and prints only `match` or `mismatch`,
+    never the file or the verifier. The script runs it in its isolated
+    container (no network), with the operator's deployment YAML and the
+    runtime root mounted read-only, as it runs the upgrade check, so the
+    command finds the file wherever `postgres.password_files` puts it.
+    A missing file or any other answer refuses with the lost-file
+    recovery's name.
     The query's own failure refuses too: a failed `pg_authid` query (the
     service is down, the session is refused, the output is not a single
     row or an empty result) is never read as "no row", so the script does
@@ -2029,8 +2034,10 @@ an Administrator can restore it. The rest is listed under
     upgrade script (see **Scripted upgrades**, *The command probe*): one
     `--help` capture and `has_command()` per image, run against both the
     new image and the running one, so E2 reuses it rather than adding its
-    own. The uploader is present when the image lists the uploader's
-    `smoke` command, the first command E1 ships; a probe that fails
+    own. The uploader is present when the image lists
+    `uploader-password-check`, the comparison command above, which no
+    release before E1 has. `smoke` cannot be the marker: it has been a
+    command since v1.0.0, so every image lists it. A probe that fails
     refuses before anything stops.
   - *Same-host restore: keep the host's file.* In step 4, when the set's
     credentials tree has no uploader password file and the tree it just
@@ -2077,7 +2084,9 @@ an Administrator can restore it. The rest is listed under
     5 run the target image, it would be. E1's tests pin this: a
     replacement and a drill restore of a pre-uploader set with the E1
     image end with the login present, its file matching the verifier, and
-    `smoke` passing.
+    `database-sources` from the `backup-uploader` profile matching the
+    rendered rules. That pair, not `smoke`, proves the login after a
+    restore: plain `smoke` never touches the database.
   - *Lost-file recovery* (backup runbook, new subsection in E1). Comment
     out the uploader's cron line. As the operator, through the socket, run
     `DROP OWNED BY pk_stewardship_backup_uploader;` and
@@ -2086,9 +2095,11 @@ an Administrator can restore it. The rest is listed under
     grants in this database and its `CONNECT` on it; its outcome rows stay.
     Move any stale file aside. Then run `retarget-image` with the running
     image, which creates the absent file (**Deploying** step 1), and
-    `database-grants`, which creates the login from it. Then `smoke`, and
-    put the cron line back. Nothing else changes, and no other login's
-    password is touched.
+    `database-grants`, which creates the login from it. Then prove the
+    login: `database-sources` from the `backup-uploader` profile (its
+    source rule) and `uploader-password-check` against the stored
+    verifier (its password). Then put the cron line back. Nothing else
+    changes, and no other login's password is touched.
 - **Handoff.** A set is finished when its `manifest.json` exists; the backup
   writes it last, after `fsync`. The uploader considers only finished sets
   whose manifest digest has a `stewardship_backup_run` row, and it still
@@ -2257,8 +2268,12 @@ an Administrator can restore it. The rest is listed under
   One schedule therefore covers scheduled backups, **Take a backup now**,
   manual runs and catch-up after an outage, and the existing
   `OFFSITE_GRACE` check (six hours without an outcome for the newest set)
-  alerts if the cron line is missing. `smoke` (with and without `--send`)
-  moves to the uploader profile.
+  alerts if the cron line is missing. `smoke --target backup_drive` moves
+  to the uploader profile in two parts. In E1 it is probe-only there
+  (write and trash one small file): the uploader profile refuses
+  `--send`. A `--send` copy needs the copy lock, which in the uploader is
+  E2's directory lock, and it reads the set tag through the backup login's
+  admission. `smoke --send` from the uploader profile arrives with E2.
 - **Scripted upgrades.** Step 1 runs `backup-worker` as today. Whenever the
   *running image* (the previous one, which step 1 runs) has the uploader's
   `upload` command, and the topology the host runs has a
@@ -2290,7 +2305,8 @@ an Administrator can restore it. The rest is listed under
     command-list probe today (only `pk-restore` has one: it captures the
     image's `--help` and greps it in `has_command()`). E1 adds the same two
     lines to the upgrade script (so the password preflight can tell whether
-    the new image has the uploader, **Uploader password**), as one helper
+    the new image has the uploader, by `uploader-password-check`,
+    **Uploader password**), as one helper
     run against both images: the *new* image, for that preflight, and the
     *running* image (the rendered Compose file's `web` image, which the
     script already reads as `previous`). Step 1 runs the running image's
@@ -2461,11 +2477,15 @@ an Administrator can restore it. The rest is listed under
   `restore-begin`: it creates a missing login from the file (replacement
   and drill) or checks an existing one against its verifier (same host).
   `pk-restore` detects "the image has the uploader identity" with its
-  existing `has_command()` on the image's `--help` list, testing for the
-  uploader's `smoke` command, and E1 adds `database-grants` to the
-  `needed` command list for exactly those images (an older image has the
-  command anyway, but the list is where a missing one is refused before
-  anything changes). An image without that command skips the grants step.
+  existing `has_command()` on the image's `--help` list, testing for
+  `uploader-password-check` (the upgrade script's marker), and E1 adds
+  `database-grants` to the `needed` command list for exactly those images
+  (an older image has the command anyway, but the list is where a missing
+  one is refused before anything changes). An image without that command
+  skips the grants step. For the same images, step 8's source check also
+  runs `database-sources` from the `backup-uploader` profile, beside web
+  and admin-recovery: with step 7's verifier check, that is the restore's
+  proof of the login.
   `pk-restore`'s step 7 already does the full stop for a set rendered on
   the old networks.
 
@@ -2479,18 +2499,22 @@ an Administrator can restore it. The rest is listed under
   1. The preparation release ships migration 0193 and retarget's
      absent-password exception. Neither does anything on its own.
   2. The expand release ships the login, its source and network, the
-     uploader profile (with its `upload` and `smoke` commands, `--wait-lock`
-     and `--require-digest`), the directory lock with the transition's
-     double lock, and upgrade step 1's uploader run, with no migration of
-     its own, while the backup profile keeps copying as today. It is two
-     PRs (E1: login and network; E2: the copy). Both are meant for one
+     uploader profile (with its `upload` command, `--wait-lock` and
+     `--require-digest`, and `smoke`), `uploader-password-check`, the
+     directory lock with the transition's double lock, and upgrade step
+     1's uploader run, with no migration of its own, while the backup
+     profile keeps copying as today. It is two PRs (E1: login and network,
+     `uploader-password-check` and a probe-only `smoke` in the uploader
+     profile; E2: the copy, `upload` and `smoke --send` there). Both are
+     meant for one
      train, but correctness does not depend on that: step 1 is keyed on the
      running image's `upload` command (**Scripted upgrades**), so a release
      tagged between them is safe to deploy and to roll back to. Its upgrade
      is a schema change with the one-time full stop, in a normal nightly
      window. The operator then proves the new identity on Production by
-     hand (`smoke`, then one `upload`, which reports nothing pending or
-     copies the newest set), with the old path still in place, and then
+     hand (`database-sources` from the uploader profile, the probe-only
+     `smoke`, then one `upload`, which reports nothing pending or copies
+     the newest set), with the old path still in place, and then
      installs the uploader's cron line (an Administrator decision; default:
      during expand). Both copiers then run, serialized by the copy lock;
      whichever copies a set first records it and the other finds nothing
@@ -2599,9 +2623,15 @@ an Administrator can restore it. The rest is listed under
   against the stored verifier, and accepting the right one; the verifier
   parser refusing every malformed form (wrong prefix, an out-of-range or
   non-decimal count, loose base64, short keys, `md5`, null) and a file
-  that matches `StoredKey` but not `ServerKey`; the upgrade script's
+  that matches `StoredKey` but not `ServerKey`; `uploader-password-check`
+  printing only `match` or `mismatch` (never the file or the verifier);
+  the upgrade script's
   read-only verifier preflight refusing a missing or mismatched file
-  before step 1, and passing with no login; `pk-restore`
+  before step 1, refusing a failed `pg_authid` query, and passing with no
+  login; the marker (an image that lists `smoke` but not
+  `uploader-password-check` counts as having no uploader); the uploader
+  profile's `smoke` probing without `--send` and refusing `--send` (E1);
+  `pk-restore`
   keeping the host's file for a set without one (also on `--from 4`, from
   the failed run's tree), running `database-grants` in step 7, a
   replacement and a drill restore of a pre-uploader set with the new
