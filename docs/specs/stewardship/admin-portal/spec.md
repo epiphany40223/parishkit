@@ -9684,8 +9684,10 @@ matched ParishSoft when it answered, so its one value is both the Baseline
 and the Family's answer.
 
 **Members.** One tab per Member, in this order: each existing Member of the
-response, by Member DUID, then each Member whose only rows are kept requests
-from an earlier response (ParishSoft no longer lists the Member in this
+response, by Member DUID, then each active, living Member of the Family in
+the current ParishSoft data whom the response does not name, by Member DUID
+(ParishSoft added the Member to the Family after it answered, #2319), then
+each Member whose only rows are kept requests from an earlier response (ParishSoft no longer lists the Member in this
 Family), then each Member the Family added, by name. A Member's tab is
 labelled with the Member's name, "Last, first"
 ([Family and Member names](../ui-conventions/spec.md#family-and-member-names)),
@@ -9701,8 +9703,12 @@ submission yet** when the Family has no response, saying the Member's
 answers appear once the Family submits, or **No census answers yet** when
 the Family answered before census joined the campaign, saying they appear
 once the Family answers again. Once a response gives Member tabs, the tabs
-follow that response: a Member who appears in ParishSoft after it has no tab
-until the Family answers again.
+follow that response, plus a tab for each current Member it does not name,
+labelled with the ParishSoft name and marked **Joined in ParishSoft after
+the Family answered**, saying the Family did not answer for the Member and
+that the answers appear once the Family answers again. Such a tab, like a
+No submission yet one, shows no census part and reads no Ministry requests
+(the Family has none for the Member).
 
 **Marks.** Each panel opens with its subject's name as a heading, so a
 panel fetched after the Family answered again (which can renumber the
@@ -9714,7 +9720,8 @@ the name alone; its **New Member** badge says it is not in ParishSoft yet.
 Tab labels stay names only. A Member tab then shows the Member's
 mark, as a badge, when it has one: **New Member** (the Family added the
 Member; not in ParishSoft yet), **No longer in this household**,
-**Deceased**, **No submission yet** or **No census answers yet** (above), or
+**Deceased**, **No submission yet**, **No census answers yet** or **Joined
+in ParishSoft after the Family answered** (above), or
 **Not in ParishSoft** (ParishSoft no longer lists the
 Member in this Family; the shared
 [no longer in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
@@ -9770,8 +9777,9 @@ cancelled is kept only for history and is not shown. A Member the Family
 added is matched by its local identity, as its requests are. A Member with
 no tab of its own (ParishSoft no longer lists the Member in the Family and no
 census request keeps it) has no hub row. A No submission yet tab (the
-Family has no response) shows only its mark, with no Ministry part and no
-read; a No census answers yet tab (a response from before census joined)
+Family has no response) and a Joined in ParishSoft after the Family answered
+tab (the response does not name the Member) show only their mark, with no
+Ministry part and no read; a No census answers yet tab (a response from before census joined)
 still shows its Ministry joins and leaves after the mark. Ministry
 requests leaves out, by default, a request whose Member ParishSoft no longer
 lists as current in the Family (#1217) and lists it only with Status set to Members no longer in

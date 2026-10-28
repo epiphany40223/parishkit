@@ -14,7 +14,7 @@ phone. The tab component's own behaviour is tested in test_tabs.py.
 import pytest
 
 from .test_charts import assert_clean, watch
-from .timeline_components import ADMIN, TAB
+from .timeline_components import ADMIN, HUB_JOINED, TAB
 from .waits import focused, has_attribute, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -131,6 +131,30 @@ def test_census_panels_are_accessible_and_fit_a_phone(
     details = panel.locator("details.hub-unchanged")
     if details.count():
         details.locator("summary").click()
+    page.evaluate(axe_source)
+    assert page.evaluate(AXE) == []
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert_clean(page, errors)
+
+
+def test_a_member_parishsoft_added_later_shows_a_joined_tab(
+    page, component_origin, axe_source
+):
+    """#2319: a Member ParishSoft added after the Family answered has a tab
+    named from ParishSoft, its mark and note, and no census part; the panel
+    is accessible and fits a phone."""
+    errors = watch(page)
+    page.goto(component_origin + HUB_JOINED)
+    joined = tab(page, "Cole, Ida")
+    has_attribute(joined, "aria-selected", "true")
+    panel = page.get_by_role("tabpanel", name="Cole, Ida")
+    visible(panel.get_by_role("heading", name="Cole, Ida (DUID 9)", exact=True))
+    badge = "Joined in ParishSoft after the Family answered"
+    visible(panel.locator(".status-badge", has_text=badge))
+    visible(panel.get_by_text("the Family did not answer for them", exact=False))
+    assert panel.get_by_role("table").count() == 0
+    assert panel.get_by_role("link", name="Open Census changes").count() == 0
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
     page.set_viewport_size({"width": 390, "height": 844})

@@ -3,7 +3,8 @@
 Slice 2 of the Family information hub (admin-portal spec, "Family and Member
 tabs"). For one Family it reads the latest live census response and the
 census change rows in force for it, and shapes one ``Subject`` per tab: the
-Family, each existing Member, each Member ParishSoft no longer lists in the
+Family, each existing Member, each current ParishSoft Member the response
+does not name (#2319), each Member ParishSoft no longer lists in the
 Family whose requests survive, and each Member the Family added. Each field
 reads as unchanged or as a change with its review-pipeline stage, derived by
 ``pipeline.census_placement`` exactly as the review worklist derives it, so
@@ -62,6 +63,16 @@ MARKS = {
             "They appear here once it does."
         ),
     ),
+    # A current ParishSoft Member the Family's response does not name
+    # (#2319): ParishSoft moved them into the Family after it answered.
+    "joined": (
+        _("Joined in ParishSoft after the Family answered"),
+        _(
+            "ParishSoft added this Member to the Family after the Family's "
+            "response, so the Family did not answer for them. They appear "
+            "with answers once the Family answers again."
+        ),
+    ),
     # The same, when the Family answered before census joined the campaign:
     # it did submit, so the tab must not say it has not.
     "unanswered": (
@@ -82,39 +93,6 @@ MARKS = {
     ),
 }
 
-# The Family's latest live response, preferring the latest that carries
-# census answers (``effective.census_submission``: the household's
-# home_address key is present exactly when census was answered), with only
-# the census parts of its answers. The Member names come from the
-# ParishSoft records the Family answered from (each live response's
-# reviewed snapshot, the newest naming each Member), so a Member the
-# Family no longer shows is still named. Takes %(family)s and %(campaign)s.
-SUBMISSION = """
-SELECT s.id,
-    jsonb_build_object('family', s.answers->'family',
-        'members', s.answers->'members',
-        'proposed_members', s.answers->'proposed_members')::text,
-    (SELECT coalesce(jsonb_object_agg(n.source_key,
-            jsonb_build_array(n.first_name, n.last_name)), '{}')::text
-     FROM (
-        SELECT DISTINCT ON (mm.source_key) mm.source_key,
-            sm.canonical::jsonb->>'firstName' AS first_name,
-            sm.canonical::jsonb->>'lastName' AS last_name
-        FROM stewardship_submission r
-        JOIN stewardship_snapshot_member mm ON mm.snapshot_id=r.reviewed_source_id
-        JOIN stewardship_source_member sm ON sm.id=mm.payload_id
-            AND sm.family_key=f.family_duid::text
-        WHERE r.family_id=s.family_id AND r.campaign_id=s.campaign_id
-            AND r.mode='live'
-        ORDER BY mm.source_key, r.family_version DESC
-     ) n)
-FROM stewardship_submission s
-JOIN stewardship_family_campaign f ON f.id=s.family_id
-WHERE s.family_id=%(family)s AND s.campaign_id=%(campaign)s AND s.mode='live'
-ORDER BY (s.answers->'family'->'home_address') IS NOT NULL DESC,
-    s.family_version DESC
-LIMIT 1
-"""
 # The change rows in force (``effective.proposal_index``): the census
 # response's own rows, for a Member's request fields the newest row of any
 # live response, the census response's first, and the changes a response
@@ -157,13 +135,11 @@ WHERE s.family_id=%(family)s AND s.campaign_id=%(campaign)s AND s.mode='live'
 ORDER BY p.entity_kind, p.entity_key, p.field,
     s.id=%(submission)s DESC, s.family_version DESC
 """
-# A Family's active, living Members in the current ParishSoft data, by
-# Member DUID, as the Family form lists them (``source_inputs``), for the
-# Member tabs of a Family with no census answers yet (R39 finding 8).
-# Takes %(family)s.
-ROSTER = """
-SELECT m.source_key, p.canonical::jsonb->>'firstName',
-    p.canonical::jsonb->>'lastName'
+# A Family's active, living Members in the current ParishSoft data, as the
+# Family form lists them (``source_inputs``): the Member tabs of a Family
+# with no census answers yet (R39 finding 8), and of a current Member the
+# response does not name (#2319). Takes %(family)s.
+CURRENT_MEMBERS = """
 FROM stewardship_source_current c
 JOIN stewardship_family_campaign f ON f.id=%(family)s
 JOIN stewardship_snapshot_member m ON m.snapshot_id=c.snapshot_id
@@ -171,7 +147,53 @@ JOIN stewardship_source_member p ON p.id=m.payload_id
     AND p.family_key=f.family_duid::text
 WHERE c.singleton AND p.canonical::jsonb->>'active'='true'
     AND p.canonical::jsonb->>'deceased' IS DISTINCT FROM 'true'
-ORDER BY m.source_key::bigint
+"""
+# ``CURRENT_MEMBERS`` as ``(DUID, first, last)`` rows by Member DUID, for a
+# Family with no live response.
+ROSTER = f"""
+SELECT m.source_key, p.canonical::jsonb->>'firstName',
+    p.canonical::jsonb->>'lastName'
+{CURRENT_MEMBERS}ORDER BY m.source_key::bigint
+"""
+# The Family's latest live response, preferring the latest that carries
+# census answers (``effective.census_submission``: the household's
+# home_address key is present exactly when census was answered), with only
+# the census parts of its answers. The Member names come from the
+# ParishSoft records the Family answered from (each live response's
+# reviewed snapshot, the newest naming each Member), so a Member the
+# Family no longer shows is still named. The last column is
+# ``CURRENT_MEMBERS`` as a JSON array of ``[DUID, first, last]`` by DUID,
+# read in the same statement so the page's statement count holds (#2319).
+# Takes %(family)s and %(campaign)s.
+SUBMISSION = f"""
+SELECT s.id,
+    jsonb_build_object('family', s.answers->'family',
+        'members', s.answers->'members',
+        'proposed_members', s.answers->'proposed_members')::text,
+    (SELECT coalesce(jsonb_object_agg(n.source_key,
+            jsonb_build_array(n.first_name, n.last_name)), '{{}}')::text
+     FROM (
+        SELECT DISTINCT ON (mm.source_key) mm.source_key,
+            sm.canonical::jsonb->>'firstName' AS first_name,
+            sm.canonical::jsonb->>'lastName' AS last_name
+        FROM stewardship_submission r
+        JOIN stewardship_snapshot_member mm ON mm.snapshot_id=r.reviewed_source_id
+        JOIN stewardship_source_member sm ON sm.id=mm.payload_id
+            AND sm.family_key=f.family_duid::text
+        WHERE r.family_id=s.family_id AND r.campaign_id=s.campaign_id
+            AND r.mode='live'
+        ORDER BY mm.source_key, r.family_version DESC
+     ) n),
+    (SELECT coalesce(jsonb_agg(jsonb_build_array(m.source_key,
+            p.canonical::jsonb->>'firstName', p.canonical::jsonb->>'lastName')
+        ORDER BY m.source_key::bigint), '[]')::text
+     {CURRENT_MEMBERS})
+FROM stewardship_submission s
+JOIN stewardship_family_campaign f ON f.id=s.family_id
+WHERE s.family_id=%(family)s AND s.campaign_id=%(campaign)s AND s.mode='live'
+ORDER BY (s.answers->'family'->'home_address') IS NOT NULL DESC,
+    s.family_version DESC
+LIMIT 1
 """
 COLUMNS = (
     "id",
@@ -308,8 +330,10 @@ class Subject:
 
     @property
     def awaiting(self):
-        """Whether the tab is a ParishSoft Member with no census answers yet."""
-        return self.mark in {"unsubmitted", "unanswered"}
+        """Whether the tab is a ParishSoft Member with no census answers yet
+        (no response, one from before census, or one from before ParishSoft
+        added the Member to the Family)."""
+        return self.mark in {"unsubmitted", "unanswered", "joined"}
 
 
 @dataclass(frozen=True)
@@ -336,15 +360,15 @@ class HubCensus:
 
 
 def read_hub_census(campaign_id, family_id, *, census):
-    """Read one Family's census tabs, in one to three statements.
+    """Read one Family's census tabs, in one or two statements.
 
     The caller holds the page's read guard and has checked the reader. The
-    first statement reads the latest live response; with ``census`` and a
-    response, a second reads its changes in force. When the response gives
-    no Member tab (no live response yet, or none with census answers), one
-    more statement reads the Family's current ParishSoft Members for
-    ``unsubmitted``'s tabs: two statements with no response, three with a
-    response that has no census answers.
+    first statement reads the latest live response with the Family's
+    current ParishSoft Members; with ``census`` and a response, a second
+    reads its changes in force. With no live response, the second reads
+    the current Members (``ROSTER``) for ``unsubmitted``'s tabs. A response
+    that gives no Member tab (none with census answers) takes its current
+    Members from the first statement.
     """
     parameters = {"family": family_id, "campaign": campaign_id}
     with connection.cursor() as cursor:
@@ -353,7 +377,7 @@ def read_hub_census(campaign_id, family_id, *, census):
         if found is None:
             cursor.execute(ROSTER, parameters)
             return unsubmitted(list(cursor), census=census, responded=False)
-        submission, answers, names = found
+        submission, answers, names, roster = found
         rows = []
         if census:
             cursor.execute(
@@ -365,14 +389,11 @@ def read_hub_census(campaign_id, family_id, *, census):
         # JSON values arrive as text (cast in PROPOSALS) and are decoded once.
         for name in JSON_COLUMNS:
             row[name] = None if row[name] is None else json.loads(row[name])
-    result = shape(json.loads(answers), json.loads(names), rows, census=census)
+    roster = [tuple(row) for row in json.loads(roster)]
+    result = shape(json.loads(answers), json.loads(names), rows, roster, census=census)
     if result.members:
         return result
-    with connection.cursor() as cursor:
-        cursor.execute(ROSTER, parameters)
-        return unsubmitted(
-            list(cursor), family=result.family, census=census, responded=True
-        )
+    return unsubmitted(roster, family=result.family, census=census, responded=True)
 
 
 def unsubmitted(roster, *, family=None, census=True, responded=False):
@@ -472,14 +493,19 @@ def field_rows(names, values, changes):
     return tuple(rows)
 
 
-def shape(answers, names, rows, *, census=True):
+def shape(answers, names, rows, roster=(), *, census=True):
     """The tabs' subjects from a response's census answers and its changes.
 
     ``answers`` holds the response's ``family``, ``members`` and
     ``proposed_members``; ``names`` maps a Member DUID to its ParishSoft
     ``[first, last]``; ``rows`` are the decoded ``PROPOSALS`` rows. A row
-    kept only for history (superseded or cancelled) is no change. Member
-    tabs are keyed by their place (``member-1``, ...) so no Member
+    kept only for history (superseded or cancelled) is no change.
+    ``roster`` holds the Family's current ParishSoft Members as ``ROSTER``'s
+    ``(DUID, first, last)`` rows: each one the response does not name
+    joined the Family after it answered (#2319) and gets a fieldless
+    Joined tab, named from ParishSoft, after the response's own Members and
+    before those only earlier requests keep.
+    Member tabs are keyed by their place (``member-1``, ...) so no Member
     identifier enters the address.
     """
     changes = {}
@@ -509,9 +535,26 @@ def shape(answers, names, rows, *, census=True):
             ),
         )
     subjects = []
-    # Existing Members by DUID, then those only earlier requests keep.
+    # The response's Members by DUID, then current ones it does not name,
+    # then those only earlier requests keep.
     kept = {key for kind, key in changes if kind == "member"} - set(members)
-    for key in [*sorted(members, key=int), *sorted(kept, key=int)]:
+    # A current Member the response does not name, when the response gives
+    # Member tabs at all; one that gives none falls back to ``unsubmitted``
+    # (No census answers yet), as before #2319.
+    joined = {}
+    if members or kept or proposed:
+        joined = {
+            key: [first, last]
+            for key, first, last in roster
+            if key not in members and key not in kept
+        }
+    order = [*sorted(members, key=int), *sorted(joined, key=int)]
+    for key in [*order, *sorted(kept, key=int)]:
+        if key in joined:
+            subjects.append(
+                (member_label(None, joined[key]), "joined", (), None, ("member", key))
+            )
+            continue
         answer = members.get(key)
         mine = changes.get(("member", key), {})
         if answer is None:

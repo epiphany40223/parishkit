@@ -387,9 +387,11 @@ def hub_reads(campaign, family, census, chosen, *, principal, parish_name):
         "hub_other": None,
     }
     subject = census.subject(chosen) if chosen.startswith("member-") else None
-    # A Member of a Family with no response has no requests to read; a
-    # pre-census response's Members (No census answers yet) keep theirs.
-    if subject is not None and subject.mark != "unsubmitted" and "ministry" in modules:
+    # A Member of a Family with no response, or one ParishSoft added after
+    # the response (#2319), has no requests to read; a pre-census
+    # response's Members (No census answers yet) keep theirs.
+    unread = {"unsubmitted", "joined"}
+    if subject is not None and subject.mark not in unread and "ministry" in modules:
         reads["hub_ministry"], reads["hub_ministry_actions"] = ministry_tab(
             campaign.pk,
             read_member_ministry(campaign.pk, family.pk, subject.entity),
