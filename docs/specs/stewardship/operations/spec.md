@@ -1893,9 +1893,10 @@ an Administrator can restore it. The rest is listed under
 - **No route out.** The contract release's claim rests on Docker's
   `internal` networks, which this design does not take on faith. Three
   routes are checked: direct TCP, DNS through Docker's embedded resolver
-  (`127.0.0.11`, which `dockerd` answers from the host's own network, so no
-  container firewall rule sees it), and the network's gateway address, which
-  belongs to the host, so any host service listening there could relay.
+  (`127.0.0.11`, which `dockerd` answers and may forward from the host's
+  own network, so no container firewall rule sees it), and the network's
+  gateway address, which belongs to the host, so any host service
+  listening there could relay.
   The contract release adds `egress-probe` to the backup profile. It reads
   no file and connects to nothing but what is listed below, each with a
   five-second limit:
@@ -1907,8 +1908,15 @@ an Administrator can restore it. The rest is listed under
     wildcard address or at that gateway (the script passes `ss -Htlnu`'s
     list).
 
-  Each must be refused or go unanswered. The probe prints the Docker Engine
-  version with its answers. It runs in three places:
+  Each TCP attempt and DNS query must be refused or go unanswered. UDP is
+  weaker evidence: it has no handshake, so a host service can receive a
+  datagram (a syslog listener, say) and never answer, and "unanswered"
+  then proves nothing. So a UDP port the host listens on at a wildcard
+  address or the gateway passes only when the host's `INPUT` drop below is
+  in place, which the script checks on the host (`iptables -C`); the probe's
+  UDP sends are then a check that the rule works, not the proof. The probe
+  prints the Docker Engine version with its answers. It runs in three
+  places:
   1. the operational Compose job on real Docker (the CI evidence);
   2. the contract upgrade's preflight on Production, in a container of the
      new image joined only to the existing `backup-worker` network, before
@@ -1917,15 +1925,39 @@ an Administrator can restore it. The rest is listed under
      this behavior is caught.
 
   A probe that reaches anything refuses the upgrade before anything stops,
-  and names what answered. The remedies depend on the route. A gateway
-  listener (on a typical host, at least `sshd` listens on every address)
-  is closed by a persisted host `INPUT` drop for the `offline` block. That
-  rule does not touch PostgreSQL's traffic, which stays on the bridge
-  between containers. DNS forwarding happens inside `dockerd`, outside any
-  host rule, so the remedy for that is a Docker Engine that does not forward
-  for internal networks. The backup runbook gets the `INPUT` rule, with how
-  to keep it across reboots, beside the drill's `DOCKER-USER` rule. The
-  contract's evidence records the CI Engine version and Production's.
+  and names what answered. The remedies depend on the route:
+  - *Gateway listeners: the `INPUT` drop is effectively required on
+    Production.* The gateway address belongs to the host, so any host
+    service listening on every address answers there. On Production that
+    always includes Caddy's published ports: Docker publishes `80` and
+    `443` by listening on the host's wildcard address (its default
+    `docker-proxy`), so the probe reaches them through the gateway and
+    refuses. (Caddy only proxies to `web`, but that is still a path out
+    to a service with egress.) `sshd` usually listens there too. So on
+    Production this is not a contingency: the contract release's upgrade
+    cannot pass without a persisted host `INPUT` drop for the `offline`
+    block (traffic from it to any host address), and the runbook installs
+    it before the contract upgrade (decision 17). That rule does not touch
+    PostgreSQL's traffic, which stays on the bridge between containers,
+    and does not touch Caddy's public traffic, which does not come from
+    the `offline` block. The backup runbook gets the rule, with how to keep
+    it across reboots, beside the drill's `DOCKER-USER` rule.
+  - *DNS through the embedded resolver.* `dockerd` answers `127.0.0.11`
+    itself. When the host's own resolver is on a loopback address (as
+    `systemd-resolved`'s `127.0.0.53` is on Ubuntu), it forwards a query
+    it cannot answer from the host's network namespace, outside any host
+    rule. For internal networks that forwarding was a vulnerability,
+    CVE-2024-29018 (GHSA-mq39-4gv4-mvpx), fixed in Moby 26.0.0 (and
+    backported to 25.0.5 and 23.0.11): a container attached *only* to
+    internal networks no longer has its queries forwarded. The backup
+    worker after contract is on its internal network alone, so the floor
+    is an Engine with that fix, and the probe is what shows the installed
+    one behaves so. (Checked against that advisory, 2026-10-28; the
+    advisory's own workaround, a per-service `dns:` address, which makes
+    the container's lookups go from its own namespace and so fail, is the
+    fallback for an Engine that cannot be upgraded at once.)
+
+  The contract's evidence records the CI Engine version and Production's.
 - **Mounts.** The uploader has its own closed inventory, admitted from
   kernel mount evidence at startup as `backup_boundaries` does for the
   backup profile: a read-only root filesystem; its service configuration
@@ -1954,13 +1986,38 @@ an Administrator can restore it. The rest is listed under
   - *Verified, not trusted.* When `database-grants` creates this login it
     sets the password from the file. When it admits an existing login, it
     reads the stored SCRAM verifier from `pg_authid` (the operator is the
-    superuser) and recomputes it from the file: PBKDF2 with the verifier's
-    salt and iteration count, then the client and stored keys, compared in
-    constant time. A mismatch, or a missing file, refuses before any grant.
-    The message names the login and points to the lost-file recovery below.
+    superuser) and checks the file against it. The verifier is parsed
+    strictly, as exactly
+    `SCRAM-SHA-256$<iterations>:<salt>$<StoredKey>:<ServerKey>`
+    (a decimal iteration count from 1 to 10,000,000, so a forged count
+    cannot stall the check; strict base64 for the other three parts;
+    32-byte keys); anything else, an `md5` verifier or a null password
+    included, is a mismatch. From the file it computes the salted password
+    (PBKDF2-HMAC-SHA-256 with that salt and count), then `StoredKey`
+    (SHA-256 of the HMAC of `Client Key`) and `ServerKey` (the HMAC of
+    `Server Key`), and compares *both* with the stored ones in constant
+    time. A mismatch, or a missing file, refuses before any grant. The
+    message names the login and points to the lost-file recovery below.
     It does not connect *as* the login to check, as `database-roles` does
     for an existing login: the source rules refuse the uploader from the
-    `database-provision` network. The upgrade check does not read verifiers.
+    `database-provision` network.
+  - *Checked before an upgrade stops anything.* `database-grants` runs in
+    upgrade step 4, after the full stop, so its refusal alone would leave a
+    stopped deployment. So the upgrade script gains a read-only preflight,
+    with its other checks and before step 1 stops anything. As the
+    operator, in a read-only session through `docker compose exec postgres
+    psql` (as the digest-retirement check already asks the database), it
+    reads `rolpassword` for `pk_stewardship_backup_uploader` from
+    `pg_authid`. No row: nothing to check (the expand upgrade creates the
+    login). A row: the uploader's password file must exist, and the new
+    image (in the script's isolated container, with no network, the file
+    mounted read-only and the verifier on standard input) must answer
+    that it matches, by the same parse and comparison as above; it prints
+    only `match` or `mismatch`, never the file or the verifier. A missing
+    file or any other answer refuses with the lost-file recovery's name.
+    An image without the uploader (a rollback past the expand release) has
+    no use for the login, so the check is skipped there, as the left-over
+    login is under **Rollback**.
   - *Same-host restore: keep the host's file.* In step 4, when the set's
     credentials tree has no uploader password file and the tree it just
     moved aside has one, `pk-restore` copies that one file into the
@@ -1974,9 +2031,39 @@ an Administrator can restore it. The rest is listed under
     is reversible and needs nothing new. A set with its own file needs
     nothing: the password never changes, except after the recovery below.
     In that case the next `database-grants` refuses the mismatch, and the
-    recovery applies. A replacement or drill host has no login and no
-    moved-aside tree. Retarget creates the absent file there, and
-    `database-grants` creates the login from it.
+    recovery applies. A resumed run (`--from 4`) moves aside the tree the
+    failed run put in place, which may lack the file if that run stopped
+    between the move and the copy. So when the tree just moved aside has
+    no uploader file, `pk-restore` takes it from the newest other
+    `credentials.pre-restore-*` tree that has one, and logs which. That is
+    the failed run's moved-aside tree, the host's own before the restore.
+    A wrong pick (an older restore's tree, after a lost-file recovery
+    since) cannot do harm: the verifier check refuses it in
+    `database-grants`, and the lost-file recovery applies. No tree with a
+    file means the host never had one; the login, if the cluster has it,
+    is then the lost-file case.
+  - *Replacement and drill restores.* A new host has no login and no
+    moved-aside tree. `pk-restore --replacement` (and `--drill`) runs
+    `database-roles` in step 5, before step 7's retarget, and
+    `provision_roles` reads every identity's password file before it
+    changes anything (the `database-provision` container also mounts each
+    file by itself, read-only, and Docker refuses a missing source). But
+    step 5 runs from the *set's own* rendered Compose file (`pk-restore`'s
+    `dc`), so its `database-roles` is the set's image. For a set from
+    before the uploader that image has no uploader identity: it neither
+    reads the file nor creates the login, and step 5 succeeds. The file
+    and the login therefore come after step 7, not before step 5: step
+    7's retarget with the new image creates the absent file
+    (`RETARGET_CREATES`), and `pk-restore` then runs `database-grants`
+    (below), which creates the login from it. A set from after the
+    uploader carries its file in its credentials tree, and its own image's
+    `database-roles` creates the login in step 5. Creating the file before
+    step 5 instead (a create-only retarget mode) was considered and is not
+    needed while step 5 runs the set's image; if a later change made step
+    5 run the target image, it would be. E1's tests pin this: a
+    replacement and a drill restore of a pre-uploader set with the E1
+    image end with the login present, its file matching the verifier, and
+    `smoke` passing.
   - *Lost-file recovery* (backup runbook, new subsection in E1). Comment
     out the uploader's cron line. As the operator, through the socket, run
     `DROP OWNED BY pk_stewardship_backup_uploader;` and
@@ -1998,30 +2085,80 @@ an Administrator can restore it. The rest is listed under
   such an image can do to the copies already on Drive:
   - *Names bound to the database's clock.* The set's directory name must be
     its run row's `started_at` (to the second, UTC). The row's
-    `completed_at`, which the database fills in with its own
-    `STATEMENT_TIMESTAMP()`, may be at most `REQUIRED_WITHIN` (24 hours)
-    after `started_at`, and the table's check already keeps it from being
-    earlier. From the contract release on, the backup login's INSERT on
+    `completed_at` may be at most `REQUIRED_WITHIN` (24 hours) after
+    `started_at`, and the table's check already keeps it from being
+    earlier. `completed_at` is the column's default,
+    `STATEMENT_TIMESTAMP()` (Django's `Now()` renders as that on
+    PostgreSQL, and `schema/backup.sql` shows it): the start of the
+    inserting *statement*. It is deliberately not `now()` or
+    `CURRENT_TIMESTAMP`, the start of the *transaction*, which an image
+    could push back as far as it likes by opening a transaction early and
+    inserting later. A statement can still be held open (a sleeping
+    `SELECT` feeding the `INSERT`), so the bound is not exact; what that
+    buys is limited by the next rule, since a set must also be newer than
+    the newest copy.
+    From the contract release on, the backup login's INSERT on
     `stewardship_backup_run` is a column grant that leaves out
     `completed_at`, so it cannot choose that time. A set named for a past
-    day, or a future one, is therefore refused.
-  - *Never older than the newest copy.* The uploader refuses a set whose
-    name is not newer than the newest set with an `uploaded` row for this
-    folder. A staged set therefore cannot become an earlier day's or
-    month's retention anchor. It also cannot reuse a copied set's name,
-    which would make `upload_set` trash the good copy and write the
-    impostor in its place. The cost: an older set whose copy failed while a
-    newer one then copied is not retried. The newest set is the one a
-    restore needs, the old set stays on the host, and its `failed` row
-    stays in the history.
+    day, or a future one, is therefore refused. Today's insert,
+    `BackupRun.objects.create(**facts)`, would break under that grant:
+    Django 5.2 names every concrete field in the `INSERT`, writing
+    `DEFAULT` for a `db_default` one, and PostgreSQL requires INSERT
+    privilege on every column the statement names, `DEFAULT` or not. So
+    the contract PR changes the backup's `record` to a fixed SQL `INSERT`
+    that names the other seven columns and not `completed_at`, with no
+    `RETURNING`, and adds a PostgreSQL test that, connected as the real
+    backup login with the contract's grants, records a run (its
+    `completed_at` set by the default) and that the old `create()` is
+    refused with `42501`. The insert ships in the same release as the
+    revoke; the step-1 backup of the contract upgrade runs the previous
+    image while its table grant is still in force.
+    Several rows can share one `manifest_digest` (the column is not
+    unique). A set is admitted when *at least one* row with its digest
+    binds its name this way; rows that do not are ignored. A row that
+    binds is written only by an insert whose `completed_at` the database
+    chose, so extra rows can neither admit a set nor hold a real one back.
+  - *Never older than the newest copy.* A set whose name is not newer than
+    the newest set with an `uploaded` row for this folder is not pending:
+    `pending_sets()` leaves it out, as it leaves out a set already copied.
+    It is not a refusal and records nothing. A `verification` row for it
+    would repeat every five minutes, become the newest outcome
+    (`_newest_state()`, which the off-site alert and the pages read) and
+    take the interlock on every cron run, though the newest set is
+    copied. So such a set is silent: no row, no interlock, and an idle
+    cron run still exits `0` with no output. A staged set therefore cannot
+    become an earlier day's or month's retention anchor. It also cannot
+    reuse a copied set's name, which would make `upload_set` trash the
+    good copy and write the impostor in its place. The cost: an older set
+    whose copy failed while a newer one then copied is not retried. The
+    newest set is the one a restore needs, the old set stays on the host,
+    and its `failed` row stays in the history. `verification` refusals
+    remain only for the name-binding rule above and the regular-file
+    rule below, which mean the set itself is wrong.
+  - *A clock that jumped.* "The newest copy" counts only `uploaded` rows
+    whose set name is not more than `CLOCK_SKEW` after the database's
+    current time (the margin `backup.retention_paused` uses). A host
+    clock that jumped forward and back can leave a copy on record named in
+    the future; without this, every later set would be "not newer" and
+    silently skipped until that time came. Ignoring such a copy is safe,
+    because no *new* row can carry a future name: `started_at` may not be
+    later than `completed_at`, which is the database's own time. An
+    uploader pass that ignores one logs a WARNING,
+    `backup_offsite_future_copy`, naming the set (only on a pass that has
+    sets pending, so an idle cron run stays silent). While that folder is
+    on Drive, the existing clock guard (`backup.retention_paused`) skips
+    Drive pruning and logs its own warning, so nothing is thinned on a
+    wrong clock; the backup runbook says to trash that folder (and the
+    local set) by hand once a correct set has copied, which lets pruning
+    resume.
   - *Regular files only.* Each set file is opened `O_RDONLY|O_NOFOLLOW` and
     must be a regular file by `fstat` on that descriptor. The same
     descriptor is hashed and uploaded, so a symlink planted in a set (to the
     uploader's own key, say, with a matching SHA-256 in the manifest) is
     never followed. The manifest is read through the same descriptor up to
     a fixed cap (64 KiB, far above a real one) before it is parsed. A set
-    that breaks any of these rules is refused as `verification`, like a
-    mismatched one.
+    that breaks this rule or the name binding is refused as
+    `verification`, like a mismatched one.
 
   None of this stops a compromised image from staging a *new* set, named
   for now and recorded in a run row. That set is uploaded as the newest
@@ -2069,6 +2206,16 @@ an Administrator can restore it. The rest is listed under
     is still running" before anything stops, and logs a durable timeout
     line with what it waited for, the limit and the elapsed time, as every
     other host-side limit does.
+  - *Stopping a running uploader.* When a restore must start and the copy
+    lock stays held, the backup runbook's procedure is: comment out the
+    uploader's cron line (the restore disables it anyway); find the
+    container with `docker ps --filter
+    label=com.docker.compose.service=backup-uploader`; wait for it to exit,
+    or stop that exact container by name with `docker stop` (never by
+    pattern). A stopped upload records no outcome row and leaves at most
+    an incomplete Drive folder, which the next copy of that set trashes
+    and writes again (`upload_set`), and which Drive pruning trashes if
+    the set is never copied. Then run the restore, which takes the lock.
 - **Scheduling.** The uploader runs from the host's cron every five
   minutes, beside request mode, and follows request mode's idle pattern
   (see [Take a backup now](../admin-portal/spec.md#take-a-backup-now)):
@@ -2093,9 +2240,9 @@ an Administrator can restore it. The rest is listed under
   alerts if the cron line is missing. `smoke` (with and without `--send`)
   moves to the uploader profile.
 - **Scripted upgrades.** Step 1 runs `backup-worker` as today. Whenever the
-  *running image* has the uploader's `upload` command (the script's
-  existing `has_command` test on that image's command list), and the
-  topology the host runs has a `backup-uploader` service, it then runs the
+  *running image* (the previous one, which step 1 runs) has the uploader's
+  `upload` command, and the topology the host runs has a
+  `backup-uploader` service, it then runs the
   uploader with `--wait-lock 1800 --require-digest D`, where `D` is the
   step-1 set's manifest digest (or the reused backup's, on a resumed users
   upgrade), whatever the backup's own line said: on an expand topology the
@@ -2119,6 +2266,16 @@ an Administrator can restore it. The rest is listed under
     Keying on the command, not only on the topology, means a release cut
     between the expand PRs, or a rollback to one, never has step 1 run a
     command the image lacks.
+  - *The command probe is new.* `tools/stewardship-upgrade-host.sh` has no
+    command-list probe today (only `pk-restore` has one: it captures the
+    image's `--help` and greps it in `has_command()`). E2 adds the same two
+    lines to the
+    upgrade script, run against the *running* image (the rendered Compose
+    file's `web` image, which the script already reads as `previous`), not
+    the new one: step 1 runs the running image's uploader, so that is the
+    image whose commands matter. A probe that fails (the image is gone, or
+    `--help` does not answer within its limit) refuses before anything
+    stops.
   - *Full stop.* The host holds the copy lock from the end of step 1, so a
     cron uploader that starts during a later full stop exits at the lock
     within seconds. If the full stop's one-off check sees it running, the
@@ -2154,7 +2311,8 @@ an Administrator can restore it. The rest is listed under
   becomes a column INSERT on every column except `completed_at` (`id`,
   `started_at`, the two sizes, `manifest_digest`, `recipient_fingerprint`,
   `application_version`), so the database alone sets the completion time
-  (**Handoff**).
+  (**Handoff**, which also says why the backup's insert must stop naming
+  `completed_at` in the same PR).
 - **Destination function.** Today `destination()` and `set_tag()` read the
   whole canonical configuration document and the runtime row through
   `pg_read_all_data`. The re-check for
@@ -2191,8 +2349,9 @@ an Administrator can restore it. The rest is listed under
     contract release: the backup login's `REVOKE INSERT` on
     `stewardship_backup_upload` and on `stewardship_backup_run` (the table
     grant). `database-grants` then grants the run table's column INSERT
-    from the registry. Until the migration applies, the backup login's
-    admission tolerates exactly those two old grants through
+    from the registry; the backup's own insert no longer names
+    `completed_at` (**Handoff**). Until the migration applies, the backup
+    login's admission tolerates exactly those two old grants through
     `CLOSURE_REVOKES`. Today that tolerance holds column grants only, and
     the backup login's admission (`_admit_reader`) does not consult it. The
     contract PR extends both, for table privileges and for that login.
@@ -2226,7 +2385,14 @@ an Administrator can restore it. The rest is listed under
      entry is not absent and still refuses). The file is generated as
      provisioning does, written create-only (`O_CREAT|O_EXCL|O_NOFOLLOW`)
      and owner-only under the offline interlock, never replaces anything,
-     and is named in the result. Every other identity's missing file still
+     and is named in the result. The absence check comes first in
+     `retarget_image`, before the loop that reads every password file
+     (which would refuse the missing one) and before the early return for
+     "nothing stale, same image" (`runtime_retarget.py`, the `if not stale
+     and not changed` return): a file to create counts as a change, so a
+     retarget to the image already recorded, which is what the lost-file
+     recovery runs, still takes the interlock and creates it instead of
+     reporting no change. Every other identity's missing file still
      refuses, as does every other refusal. A later login that needs the
      same path is added to the list by its own reviewed change.
   2. The upgrade check requires the login and exactly its grants, so the
@@ -2244,7 +2410,9 @@ an Administrator can restore it. The rest is listed under
      ("Database roles must be provisioned before grants"). An existing
      login's password is checked against its stored verifier (**Uploader
      password**). `database-roles` creates the login too, on a fresh
-     install, a replacement host or a drill host. An existing login that
+     install, or on a replacement or drill host restoring a set that has
+     the uploader (a pre-uploader set gets it from step 7's
+     `database-grants`, **Uploader password**). An existing login that
      differs is refused, never repaired, as for every login.
   4. The same release adds a network PostgreSQL must join, so the upgrade's
      existing comparison after step 3 finds PostgreSQL's networks changed
@@ -2264,9 +2432,14 @@ an Administrator can restore it. The rest is listed under
   A same-host restore of a set from before the login leaves the login (a
   cluster role, not in the dump) but without grants, as for the inspection
   login, until `database-grants` runs. The expand release makes `pk-restore`
-  keep the host's password file for such a set (**Uploader password**) and
-  run `database-grants` for it. `pk-restore`'s step 7 already does the full
-  stop for a set rendered on the old networks.
+  keep the host's password file for such a set (**Uploader password**).
+  In every mode, when the image has the uploader identity, step 7 then
+  runs `database-grants` from the retargeted rendering, after the
+  retarget, the full stop and the hba reload and before
+  `restore-begin`: it creates a missing login from the file (replacement
+  and drill) or checks an existing one against its verifier (same host).
+  `pk-restore`'s step 7 already does the full stop for a set rendered on
+  the old networks.
 - **Delivery: preparation, then expand, then contract.**
   1. The preparation release ships migration 0193 and retarget's
      absent-password exception. Neither does anything on its own.
@@ -2300,20 +2473,30 @@ an Administrator can restore it. The rest is listed under
      the live folder and prune it. `pk-restore`'s job scan already refuses
      that line, since it names `backup-uploader` and the scan matches
      `backup`; E2 adds a test for it. The same release's rollback section
-     says to remove the uploader cron line first (**Rollback**).
+     says to remove the uploader cron line first (**Rollback**), and the
+     scripted expand rollback refuses, before anything stops, while an
+     uncommented uploader line is installed. That check needs the
+     crontab collection on the upgrade side, so E2, not the contract,
+     moves `pk-restore`'s collection (root's and `SUDO_USER`'s crontabs,
+     `/etc/crontab`, `/etc/cron.d`, with its `PK_RESTORE_CRONTAB` and
+     `PK_RESTORE_CRON_DIR` test overrides) into a shared block kept
+     identical in `pk-restore` and `tools/stewardship-upgrade-host.sh`,
+     compared by a test as the database network layout block already is
+     (`tests/stewardship/test_database_layout.py`). `pk-restore`'s
+     `check_jobs` keeps its own `backup|rsync|rclone` filter over the
+     shared collection; the upgrade script filters it for a line that
+     runs the `backup-uploader` service's `upload`.
   3. The contract release removes the copy and egress from the backup
      profile, the legacy file lock and the backup line's `offsite` field,
      adds retention's lock check and the egress probe, and carries the
      contract migration (the backup login's REVOKEs). It changes no network
      PostgreSQL is on, so it needs no full stop. On Production its upgrade
      refuses, in its preflight before anything stops, while the host has no
-     uncommented uploader cron line. The preflight reuses `pk-restore`'s
-     crontab scan (root's and `SUDO_USER`'s crontabs, `/etc/crontab`,
-     `/etc/cron.d`). That collection moves into a shared block kept
-     identical in both scripts, compared by a test as the database network
-     layout block already is, and it looks for a line that runs the
-     `backup-uploader` service's `upload`. It also updates, by link rather
-     than copy, every other place that describes the copy:
+     uncommented uploader cron line. That preflight is the only crontab
+     change the contract makes: it uses E2's shared crontab block and
+     uploader-line filter, inverted (refuse when there is *no* such line).
+     It also updates, by link rather than copy, every other place that
+     describes the copy:
      - the backup runbook's
        [off-site section](../../../guides/stewardship-backup-runbook.md#off-site-copies-to-google-drive)
        (the backup line's `offsite` field, the cron line, the egress probe
@@ -2355,13 +2538,14 @@ an Administrator can restore it. The rest is listed under
   same full stop in the other direction (PostgreSQL leaves the uploader's
   network), from the expand release's checkout as the runbook says for
   every network change. The rollback refuses, before anything stops, while
-  an uncommented uploader line is in the crontabs (the same shared scan). An
-  application-only rollback is allowed only once the *previous release's
-  own image* has been shown to run `upgrade-check` and `database-grants`
-  cleanly against an expanded database (a pk-local or CI step pinned to the
-  previous release's tag, part of the expand evidence; the expand release's
-  own tests run only its own code). The inspection login suggests it will
-  (the previous check ignored that login), but it must be shown; without
+  an uncommented uploader line is in the crontabs (E2's shared crontab
+  block). An application-only rollback is allowed only once the
+  *previous release's own image* has been shown to run `upgrade-check`
+  and `database-grants` cleanly against an expanded database (a pk-local
+  or CI step pinned to the previous release's tag, part of the expand
+  evidence; the expand release's own tests run only its own code). The
+  inspection login suggests it will (the previous check ignored that
+  login), but it must be shown; without
   that evidence, rolling it back is a restore. The left-over login has no
   rule in the previous rendering, so the final `reject` refuses it, and its
   password file is unused. A failure of the uploader alone is not
@@ -2377,26 +2561,45 @@ an Administrator can restore it. The rest is listed under
   table's INSERT then a column grant without `completed_at`) and the
   uploader holding no `pg_read_all_data` and only `id` of the runtime row;
   `database-grants` refusing a missing or mismatched uploader password file
-  against the stored verifier, and accepting the right one; `pk-restore`
-  keeping the host's file for a set without one, and the lost-file recovery
-  run end to end on PostgreSQL;
+  against the stored verifier, and accepting the right one; the verifier
+  parser refusing every malformed form (wrong prefix, an out-of-range or
+  non-decimal count, loose base64, short keys, `md5`, null) and a file
+  that matches `StoredKey` but not `ServerKey`; the upgrade script's
+  read-only verifier preflight refusing a missing or mismatched file
+  before step 1, and passing with no login; `pk-restore`
+  keeping the host's file for a set without one (also on `--from 4`, from
+  the failed run's tree), running `database-grants` in step 7, a
+  replacement and a drill restore of a pre-uploader set with the new
+  image ending with the login and a matching file, and the lost-file
+  recovery run end to end on PostgreSQL (its retarget to the recorded
+  image creating the file, not returning early);
+  the backup's fixed `INSERT` as the real backup login under the
+  contract's grants (the row recorded, `completed_at` from the default)
+  and `BackupRun.objects.create` refused with `42501`;
   the handoff's refusals (a name that is not the row's `started_at`, a
-  `completed_at` more than 24 hours later, a name not newer than the newest
-  copy, a reused copied name, a symlinked or non-regular set file, an
-  oversized manifest);
+  `completed_at` more than 24 hours later, a symlinked or non-regular set
+  file, an oversized manifest), a set admitted by one binding row among
+  several with its digest; and the silent skips (a name not newer than
+  the newest copy, a reused copied name: not pending, no row, no
+  interlock, an idle exit), with a future-named copy on record ignored
+  with its WARNING so newer sets still copy;
   the frozen file's digest, chain and `DO` block (against both the 0176 and
   the new definitions, including the writer's `prosecdef` being false), the
   log-writer allowlist and the upgrade-parity test;
   retarget creating a password file only for `backup-uploader` and only
   when absent (a dangling link refuses), never for another identity;
-  the upgrade script's capability key (an image with the profile but no
-  `upload` keeps today's step 1), its subnet-overlap preflight, the
-  contract's cron-line preflight and the expand rollback's, both refusing
-  before anything stops; the host's bounded, logged copy-lock wait, taking
-  both locks in the expand release;
+  the upgrade script's command probe of the running image and its
+  capability key (an image with the profile but no `upload` keeps today's
+  step 1), its subnet-overlap preflight, the shared crontab block's two
+  copies compared (E2), the contract's cron-line preflight and the expand
+  rollback's, both refusing before anything stops; the host's bounded,
+  logged copy-lock wait, taking both locks in the expand release;
   the egress probe on real Docker (external TCP, the embedded resolver and
   a direct DNS query, and a listener on the gateway each refused, plus a
-  positive control that sees a deliberately reachable listener);
+  positive control that sees a deliberately reachable listener, a
+  published port reached through the gateway without the `INPUT` drop,
+  and a UDP listener refused without the drop even though it never
+  answers);
   the destination function answering the uploader and the installer and
   refusing every other login and PUBLIC; the source check's uploader row,
   and on real Docker (the operational Compose job) the negative cases: the
