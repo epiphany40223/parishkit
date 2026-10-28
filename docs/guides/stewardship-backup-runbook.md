@@ -672,7 +672,8 @@ Administrator's approval where it changes the host:
    of those (24.x and pre-releases refuse): those carry the fix for
    CVE-2024-29018, which stops `dockerd`'s embedded DNS server forwarding
    queries for containers on internal networks only.
-4. The host's `INPUT` drop for the one-shot networks is installed (below).
+4. [The host's `INPUT` drop](#the-hosts-input-drop) for the one-shot
+   networks is installed, first in `INPUT` and kept by its unit.
 5. The egress probe reaches nothing (below).
 
 LOCAL (pk-local) runs the same checks and only reports them. After the
@@ -700,28 +701,78 @@ Any answer refuses the upgrade before anything stops, naming what answered.
 Production always has listeners there (Docker publishes Caddy's 80 and 443
 on the host's wildcard address, and `sshd` usually listens there too), and
 a UDP service can take a datagram without answering it, so the upgrade also
-requires a persisted host `INPUT` drop for the whole `runtime_network.offline`
-block (default `172.29.242.0/24`), whatever the probe says. With the
-Administrator's approval, before the contract upgrade:
+requires [the host's `INPUT` drop](#the-hosts-input-drop) for the whole
+`runtime_network.offline` block, whatever the probe says.
 
-```text
-sudo iptables -I INPUT 1 -s OFFLINE_BLOCK -j DROP
-sudo iptables -C INPUT -s OFFLINE_BLOCK -j DROP && echo installed
-sudo netfilter-persistent save   # with the iptables-persistent package
-```
-
-`OFFLINE_BLOCK` is the deployment's `runtime_network.offline` (in
-`config/services/web.yaml`, `deployment.runtime_network.offline`). The rule
-drops only traffic from the one-shot networks to the host's own addresses:
-PostgreSQL's traffic stays on the bridge between containers, and Caddy's
-public traffic does not come from that block. Keep it across reboots with
-the host's own mechanism (`netfilter-persistent` above, or the firewall
-tool the host already uses), beside the drill's `DOCKER-USER` rule below.
 A DNS answer through the embedded resolver is the Engine's own forwarding,
 which no host rule sees: upgrade Docker Engine to a fixed version (above).
 If it cannot be upgraded at once, the advisory's workaround is a per-service
 `dns:` address for the backup worker, but that needs a code change here:
 file an issue rather than editing the rendered Compose file.
+
+#### The host's INPUT drop
+
+The upgrade accepts one form only, and refuses on Production without it:
+
+- the `iptables` rule `-A INPUT -s OFFLINE_BLOCK -j DROP` in the filter
+  table's `INPUT` chain, where `OFFLINE_BLOCK` is the deployment's
+  `runtime_network.offline` (in `config/services/web.yaml`,
+  `deployment.runtime_network.offline`; default `172.29.242.0/24`);
+- ahead of every rule that could admit that block: in `sudo iptables -S
+  INPUT`, every `-A INPUT` line before it must be a `DROP` or `REJECT`, or
+  match only loopback (`-i lo`) or a source that does not overlap the block.
+  A jump to another chain, such as ufw's `-j ufw-before-input`, counts as
+  admitting, so the drop must come before ufw's rules;
+- kept by the `stewardship-offline-input-drop.service` unit below, enabled,
+  for that block.
+
+A `ufw deny` rule, a native `nft` rule or firewalld can block the same
+traffic, but the upgrade cannot read them reliably, so it does not accept
+them: install this unit beside them. Do not install `iptables-persistent`
+for this: on Ubuntu it conflicts with `ufw` and removes it. Do not run
+`netfilter-persistent save` or save `iptables-save` output to
+`/etc/iptables/rules.v4` either: that saves Docker's own chains and its
+NAT rules for container addresses too, and restores them at boot before
+Docker starts. The unit adds this one rule at every boot, after ufw has
+loaded its rules and before Docker starts, and nothing else.
+
+The rule drops only traffic from the one-shot networks to the host's own
+addresses: PostgreSQL's traffic stays on the bridge between containers, and
+Caddy's public traffic does not come from that block.
+
+With the Administrator's approval, before the contract upgrade, on the
+host, with `OFFLINE_BLOCK` replaced by the block in both service lines:
+
+```text
+sudo tee /etc/systemd/system/stewardship-offline-input-drop.service >/dev/null <<'EOF'
+[Unit]
+Description=Stewardship: drop traffic from the one-shot Docker networks to this host
+After=ufw.service
+Before=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=-/usr/sbin/iptables -w 5 -D INPUT -s OFFLINE_BLOCK -j DROP
+ExecStart=/usr/sbin/iptables -w 5 -I INPUT 1 -s OFFLINE_BLOCK -j DROP
+
+[Install]
+WantedBy=multi-user.target
+EOF
+sudo systemctl daemon-reload
+sudo systemctl enable --now stewardship-offline-input-drop.service
+sudo iptables -S INPUT
+```
+
+The last command must list `-A INPUT -s OFFLINE_BLOCK -j DROP` as the first
+`-A INPUT` line. Starting the unit again removes its earlier copy and puts
+the rule first, so after enabling or reloading ufw, or anything else that
+inserts `INPUT` rules, run `sudo systemctl restart
+stewardship-offline-input-drop.service` and check again; until then the
+upgrade refuses, naming the rule ahead of the drop. If
+`runtime_network.offline` ever changes, remove the old rule (`sudo iptables
+-D INPUT -s OLD_BLOCK -j DROP`), edit both lines of the unit, then run
+`sudo systemctl daemon-reload` and restart the unit.
 
 ### A copy named in the future
 

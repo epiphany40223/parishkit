@@ -1135,10 +1135,12 @@ fi
 #   inverted), or copies would stop with this release;
 # - Docker Engine has the embedded-DNS fix for internal networks
 #   (CVE-2024-29018: 26.0.0, 25.0.5 or 23.0.11 and later; any 24.x refused);
-# - the persisted host INPUT drop for runtime_network.offline is in place
-#   (iptables -C): the gateway of every one-shot network is the host, and
-#   Caddy's published 80/443 listen on its wildcard address, as may sshd and
-#   any UDP service, whose silence alone proves nothing;
+# - the host INPUT drop for runtime_network.offline is in place AHEAD of
+#   every rule that could admit that block (iptables -S INPUT), and its
+#   systemd unit (the backup runbook's one persistence procedure) is
+#   enabled for that block: the gateway of every one-shot network is the
+#   host, and Caddy's published 80/443 listen on its wildcard address, as
+#   may sshd and any UDP service, whose silence alone proves nothing;
 # - the new image's egress-probe, in a container joined only to the
 #   existing backup-worker network, reaches nothing: external TCP, DNS
 #   through the embedded resolver and straight to a public one, and every
@@ -1160,6 +1162,59 @@ engine_fixed() {
         23) [ "$minor" -gt 0 ] || [ "$patch" -ge 11 ] ;;
         *) return 1 ;;
     esac
+}
+input_drop_unit=stewardship-offline-input-drop.service
+input_drop_first() {
+    # input_drop_first BLOCK: whether `iptables -S INPUT` on stdin has the
+    # one-shot networks' drop, exactly `-A INPUT -s BLOCK -j DROP`, ahead of
+    # every rule that could admit traffic from BLOCK. A drop in the filter
+    # table's INPUT chain is final for that packet whatever other tables or
+    # nftables chains do, so only the rules before it matter. An earlier
+    # rule cannot admit BLOCK when it drops or rejects, has no target (it
+    # only counts), matches loopback only (-i lo) or a source that does not
+    # overlap BLOCK. Anything else before it (an ACCEPT, a jump to ufw's or
+    # another chain, a RETURN, a negated match) is printed and fails, since
+    # proving what such a rule admits would mean following chains: insert
+    # the drop first instead (the runbook's unit does). Quoted strings (rule
+    # comments) are blanked first, so a comment cannot look like a match.
+    awk -v block="$1" '
+        function ip(a,   p) { split(a, p, "."); return ((p[1] * 256 + p[2]) * 256 + p[3]) * 256 + p[4] }
+        function overlaps(cidr,   c, len, size) {
+            split(cidr, c, "/")
+            len = (c[2] == "" ? 32 : c[2] + 0)
+            if (len > blen) len = blen
+            size = 2 ^ (32 - len)
+            return int(ip(c[1]) / size) == int(start / size)
+        }
+        BEGIN { split(block, b, "/"); blen = b[2] + 0; start = ip(b[1]) }
+        $1 != "-A" || $2 != "INPUT" { next }
+        $0 == "-A INPUT -s " block " -j DROP" { found = 1; exit }
+        {
+            rule = $0
+            gsub(/"[^"]*"/, "\"\"")
+            target = ""
+            harmless = 0
+            for (i = 3; i <= NF; i++) {
+                negated = ($(i - 1) == "!")
+                if ($i == "-j" || $i == "-g") target = $(i + 1)
+                if ($i == "-i" && $(i + 1) == "lo" && !negated) harmless = 1
+                if ($i == "-s" && !negated && !overlaps($(i + 1))) harmless = 1
+            }
+            if (target == "" || target == "DROP" || target == "REJECT") harmless = 1
+            if (!harmless) { print rule; admits = 1 }
+        }
+        END { exit !(found && !admits) }
+    '
+}
+input_drop_persisted() {
+    # Whether the runbook's unit is enabled and its ExecStart inserts the
+    # drop for BLOCK ($1, already checked to be digits, dots and a prefix
+    # length) first, so the rule comes back ahead of ufw's at every boot.
+    local unit
+    layout_limited 30 "asking systemd whether $input_drop_unit is enabled" \
+        systemctl is-enabled --quiet "$input_drop_unit" || return 1
+    unit=$(layout_limited 30 "reading $input_drop_unit" systemctl cat "$input_drop_unit") || return 1
+    grep -qE "^ExecStart=[^#]* -I INPUT 1 -s ${1//./\\.} -j DROP\$" <<<"$unit"
 }
 gateway_listeners() {
     # gateway_listeners GATEWAY: the host's listening TCP and UDP ports at a
@@ -1197,10 +1252,19 @@ if has_command "$new_commands" egress-probe; then
     offline=$(jq -r '.deployment.runtime_network.offline // "172.29.242.0/24"' "$services/web.yaml")
     [[ $offline =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}/(24|25)$ ]] ||
         { echo "Could not read runtime_network.offline ($offline); refusing." >&2; exit 1; }
-    if command -v iptables >/dev/null && iptables -w 5 -C INPUT -s "$offline" -j DROP 2>/dev/null; then
-        echo "    the host drops traffic from the one-shot networks ($offline) to itself"
+    drop_help="install it with the runbook's unit, with the Administrator's approval (docs/guides/stewardship-backup-runbook.md#the-hosts-input-drop)"
+    if ! input_chain=$(layout_limited 30 "listing the host's INPUT chain" iptables -w 5 -S INPUT); then
+        contract_problems+=("Could not list the host's INPUT chain (iptables -S INPUT) to find the one-shot networks' drop ($offline).")
+    elif ! admitting=$(input_drop_first "$offline" <<<"$input_chain"); then
+        if [ -n "$admitting" ]; then
+            contract_problems+=("The host's INPUT drop for the one-shot networks ($offline) is missing or comes after a rule that could admit them: $(paste -sd';' - <<<"$admitting"). Put it first: sudo systemctl restart $input_drop_unit, or $drop_help.")
+        else
+            contract_problems+=("The host has no INPUT drop for the one-shot networks ($offline): $drop_help.")
+        fi
+    elif ! input_drop_persisted "$offline"; then
+        contract_problems+=("The host's INPUT drop for the one-shot networks ($offline) is not persisted: $input_drop_unit is not enabled or does not insert that block first; $drop_help.")
     else
-        contract_problems+=("The host has no INPUT drop for the one-shot networks ($offline), or iptables cannot say: install and persist it with the Administrator's approval (docs/guides/stewardship-backup-runbook.md#no-route-out-for-the-backup-profile).")
+        echo "    the host drops traffic from the one-shot networks ($offline) to itself, ahead of any rule that could admit them, and $input_drop_unit keeps it"
     fi
     probe_network="${project}_offline-backup-worker"
     internal=$(docker network inspect --format '{{.Internal}}' "$probe_network" 2>/dev/null) || internal=""

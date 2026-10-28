@@ -635,6 +635,32 @@ SS_LISTENERS = "\n".join(
 )
 
 
+# The host's INPUT chain by default: the one-shot networks' drop first,
+# ahead of ufw's jumps, as the backup runbook's unit leaves it.
+INPUT_CHAIN = "\n".join(
+    [
+        "-P INPUT DROP",
+        "-A INPUT -s 172.29.242.0/24 -j DROP",
+        "-A INPUT -j ufw-before-logging-input",
+        "-A INPUT -j ufw-before-input",
+    ]
+)
+
+
+def runbook_unit(block="172.29.242.0/24"):
+    """The backup runbook's INPUT-drop unit, for BLOCK, as `systemctl cat` shows it.
+
+    The unit the Administrator installs is the runbook's text itself, so the
+    check and the runbook cannot drift apart.
+    """
+    text = (ROOT / "docs" / "guides" / "stewardship-backup-runbook.md").read_text(
+        encoding="utf-8"
+    )
+    start = text.index("[Unit]\nDescription=Stewardship: drop traffic")
+    unit = text[start : text.index("\nEOF\n", start)]
+    return unit.replace("OFFLINE_BLOCK", block)
+
+
 def lay_out(tmp_path, local, current, target, clock, bulk, kept, prepare):
     """Lay the runtime root out as a set-up deployment, before the first run."""
     root = tmp_path / "root"
@@ -769,13 +795,23 @@ def run_host(
     install_gnu_tools(bin_dir)
     executable_stub(bin_dir, "crontab", 'echo "${FAKE_CRONTAB:-}"')
     executable_stub(bin_dir, "chown", 'echo "$*" >>"$FAKE_STATE/chown"')
-    # The contract's route-out preflight (#235): the INPUT drop (missing with
-    # FAKE_NO_INPUT_DROP), the host's resolution of the Google API name
-    # (FAKE_NO_GOOGLE) and its listening sockets (FAKE_SS, or FAKE_SS_FAIL).
+    # The contract's route-out preflight (#235): the INPUT chain (FAKE_INPUT,
+    # default INPUT_CHAIN; FAKE_IPTABLES_FAIL fails it), the drop's unit
+    # (FAKE_UNIT, default the runbook's; FAKE_UNIT_DISABLED), the host's
+    # resolution of the Google API name (FAKE_NO_GOOGLE) and its listening
+    # sockets (FAKE_SS, or FAKE_SS_FAIL).
     executable_stub(
         bin_dir,
         "iptables",
-        'echo "iptables $*" >>"$FAKE_LOG"; [ -z "$FAKE_NO_INPUT_DROP" ] || exit 1',
+        'echo "iptables $*" >>"$FAKE_LOG"; [ -z "$FAKE_IPTABLES_FAIL" ] || exit 1; '
+        'printf "%s\\n" "${FAKE_INPUT-$INPUT_DEFAULT}"',
+    )
+    executable_stub(
+        bin_dir,
+        "systemctl",
+        'echo "systemctl $*" >>"$FAKE_LOG"; case "$1" in '
+        'is-enabled) [ -z "$FAKE_UNIT_DISABLED" ] ;; '
+        'cat) printf "%s\\n" "${FAKE_UNIT-$UNIT_DEFAULT}" ;; *) exit 1 ;; esac',
     )
     executable_stub(
         bin_dir,
@@ -848,6 +884,8 @@ def run_host(
             "PK_RESTORE_CRONTAB": str(tmp_path / "crontab"),
             "PK_RESTORE_CRON_DIR": str(tmp_path / "cron.d"),
             "SS_DEFAULT": SS_LISTENERS,
+            "INPUT_DEFAULT": INPUT_CHAIN,
+            "UNIT_DEFAULT": runbook_unit(),
             **{"FAKE_" + name.upper(): str(value) for name, value in fake.items()},
             **(env or {}),
         },
@@ -3489,7 +3527,11 @@ def test_the_contract_preflight_probes_the_backup_network_first(tmp_path):
     ):
         assert probe[probe.index(option) + 1] == value
     assert {"--read-only", "--cap-drop", "--rm"} <= set(probe)
-    assert "iptables -w 5 -C INPUT -s 172.29.242.0/24 -j DROP" in calls
+    assert "iptables -w 5 -S INPUT" in calls
+    assert (
+        "systemctl is-enabled --quiet stewardship-offline-input-drop.service" in calls
+    )
+    assert "ahead of any rule that could admit them" in output
     assert "the backup worker's network reaches nothing outside" in output
     log = (tmp_path / "logs" / "stewardship-backup.log").read_text()
     assert "egress probe: " in log and '"closed": true' in log
@@ -3522,7 +3564,31 @@ def test_an_image_without_egress_probe_runs_no_route_out_check(tmp_path):
         ({"engine": "26.0.0-rc2"}, "Docker Engine '26.0.0-rc2' lacks"),
         ({"engine": "not a version"}, "lacks the embedded-DNS fix"),
         ({"engine_fail": "1"}, "Docker Engine 'unknown' lacks"),
-        ({"no_input_drop": "1"}, "no INPUT drop for the one-shot networks"),
+        (
+            {"input": "-P INPUT ACCEPT\n-A INPUT -i lo -j ACCEPT"},
+            "The host has no INPUT drop for the one-shot networks (172.29.242.0/24)",
+        ),
+        (
+            {
+                "input": INPUT_CHAIN.replace(
+                    "-A INPUT -s 172.29.242.0/24 -j DROP\n", ""
+                )
+                + "\n-A INPUT -s 172.29.242.0/24 -j DROP"
+            },
+            "comes after a rule that could admit them: "
+            "-A INPUT -j ufw-before-logging-input;-A INPUT -j ufw-before-input",
+        ),
+        (
+            {"input": "-A INPUT -s 172.29.0.0/16 -j ACCEPT\n" + INPUT_CHAIN},
+            "admit them: -A INPUT -s 172.29.0.0/16 -j ACCEPT. Put it first",
+        ),
+        ({"iptables_fail": "1"}, "Could not list the host's INPUT chain"),
+        ({"unit_disabled": "1"}, "is not persisted"),
+        ({"unit": runbook_unit("172.29.243.0/24")}, "is not persisted"),
+        (
+            {"unit": runbook_unit().replace("ExecStart=", "#ExecStart=")},
+            "is not persisted",
+        ),
         ({"probe_internal": "false"}, "Could not read the backup worker's internal"),
         ({"probe_gateway": ""}, "Could not read the backup worker's internal"),
         ({"no_google": "1"}, "could not resolve www.googleapis.com"),
@@ -3571,7 +3637,7 @@ def test_local_mode_only_reports_the_contract_checks(tmp_path):
         tmp_path,
         profile="local",
         crontab="",
-        no_input_drop="1",
+        input="",
         probe='{"closed": false, "reached": ["172.29.242.65:22 (gateway)"]}',
         probe_rc="3",
     )
@@ -3580,3 +3646,35 @@ def test_local_mode_only_reports_the_contract_checks(tmp_path):
     assert "The egress probe reached 172.29.242.65:22 (gateway)" in output
     assert "LOCAL: the checks above only report here; continuing" in output
     assert "Upgraded to " in output
+
+
+@pytest.mark.parametrize(
+    "chain",
+    [
+        # Rules that cannot admit the block may come first.
+        "-A INPUT -i lo -j ACCEPT\n-A INPUT -s 10.0.0.0/8 -j ACCEPT\n"
+        "-A INPUT -s 172.29.243.0/24 -j ACCEPT\n-A INPUT -p udp -j REJECT\n"
+        '-A INPUT -m comment --comment "count"\n' + INPUT_CHAIN,
+    ],
+)
+def test_rules_that_cannot_admit_the_block_may_precede_the_drop(tmp_path, chain):
+    """Loopback, disjoint sources, drops and counters ahead of the drop: accepted."""
+    _, output, _ = contract(tmp_path, input=chain)
+    assert "ahead of any rule that could admit them" in output
+
+
+@pytest.mark.parametrize(
+    "earlier",
+    [
+        "-A INPUT -s 172.29.242.72/29 -j ACCEPT",
+        "-A INPUT ! -s 10.0.0.0/8 -j ACCEPT",
+        "-A INPUT ! -i lo -j ACCEPT",
+        '-A INPUT -m comment --comment "-i lo" -j ACCEPT',
+        "-A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT",
+        "-A INPUT -j RETURN",
+    ],
+)
+def test_a_rule_that_could_admit_the_block_ahead_of_the_drop_refuses(tmp_path, earlier):
+    """An overlapping, negated or unknown match ahead of the drop refuses."""
+    _, output, _ = contract(tmp_path, status=1, input=earlier + "\n" + INPUT_CHAIN)
+    assert f"comes after a rule that could admit them: {earlier}." in output
