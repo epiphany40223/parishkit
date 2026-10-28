@@ -223,11 +223,17 @@ def sha256(path):
 
 
 def write_tar(path, members):
-    """Write a files.tar with the given {name: bytes or None for a directory}."""
+    """Write a files.tar with the given {name: bytes or None for a directory}.
+
+    A ``Path`` value is a symbolic link to that path.
+    """
     with tarfile.open(path, "w", format=tarfile.PAX_FORMAT) as archive:
         for name, data in members.items():
             entry = tarfile.TarInfo(name)
-            if data is None:
+            if isinstance(data, Path):
+                entry.type, entry.linkname = tarfile.SYMTYPE, str(data)
+                archive.addfile(entry)
+            elif data is None:
                 entry.type, entry.mode = tarfile.DIRTYPE, 0o700
                 archive.addfile(entry)
             else:
@@ -1815,11 +1821,13 @@ HELP_UPLOADER = HELP.replace(
 UPLOADER_FILE = Path("credentials") / "database" / "backup-uploader"
 
 
-def uploader_set(host, password=None):
+def uploader_set(host, password=None, extra=None):
     """Re-seal the fixture's set with a credentials/database directory.
 
-    With ``password``, the set carries its own uploader password file. The
-    manifest's plaintext digest follows the new files.tar.
+    With ``password``, the set carries its own uploader password file;
+    ``extra`` adds or replaces members (``False`` drops one). The manifest's
+    plaintext digest
+    follows the new files.tar.
     """
     set_web = json.dumps(
         {
@@ -1835,7 +1843,8 @@ def uploader_set(host, password=None):
     }
     if password is not None:
         members[str(UPLOADER_FILE)] = password
-    write_tar(host["files"], members)
+    members.update(extra or {})
+    write_tar(host["files"], {k: v for k, v in members.items() if v is not False})
     manifest = json.loads(host["manifest"].read_text())
     manifest["files"]["plaintext_sha256"] = sha256(host["files"])
     host["manifest"].write_text(json.dumps(manifest))
@@ -1927,6 +1936,56 @@ def test_a_linked_uploader_file_is_never_followed(host, tmp_path):
     assert result.returncode == 0, output(result)
     assert not (host["root"] / UPLOADER_FILE).exists()
     assert "no moved-aside tree has one" in result.stdout
+
+
+def test_a_planted_temporary_name_is_refused_not_written_through(host, tmp_path):
+    """A set's backup-uploader.copying link (or file) is never written into.
+
+    Root's cp would otherwise write the host's password through the link,
+    and chown and chmod would re-own and re-mode the link's target.
+    """
+    victim = tmp_path / "victim"
+    victim.write_bytes(b"untouched\n")
+    victim.chmod(0o644)
+    for planted in (victim, b"a planted file\n"):
+        uploader_set(host, extra={f"{UPLOADER_FILE}.copying": planted})
+        host_password(host)
+        result, _ = restore(host, FAKE_HELP=HELP_UPLOADER)
+        assert result.returncode == 1, output(result)
+        assert "backup-uploader.copying already exists" in output(result)
+        assert victim.read_bytes() == b"untouched\n"
+        assert victim.stat().st_mode & 0o777 == 0o644
+        assert not (host["root"] / UPLOADER_FILE).exists()
+
+
+def test_a_linked_restored_database_directory_is_refused(host, tmp_path):
+    """The set's credentials/database is a link: nothing is copied through it."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    members = {"credentials/database": elsewhere, "credentials/database/web": False}
+    uploader_set(host, extra=members)
+    host_password(host)
+    result, _ = restore(host, FAKE_HELP=HELP_UPLOADER)
+    assert result.returncode == 1, output(result)
+    assert "(or it is a symbolic link)" in output(result)
+    assert list(elsewhere.iterdir()) == []
+
+
+def test_a_linked_moved_aside_database_directory_is_refused(host, tmp_path):
+    """The moved-aside tree's database/ is a link: its target is never read.
+
+    An older restored tree could hold one; any root-readable file there
+    would otherwise become the uploader's password.
+    """
+    uploader_set(host)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "backup-uploader").write_bytes(b"any root-readable file\n")
+    (host["root"] / "credentials" / "database").symlink_to(elsewhere)
+    result, _ = restore(host, FAKE_HELP=HELP_UPLOADER)
+    assert result.returncode == 1, output(result)
+    assert "or its database directory is a symbolic link" in output(result)
+    assert not (host["root"] / UPLOADER_FILE).exists()
 
 
 def test_an_image_without_the_uploader_runs_no_grants_or_uploader_check(host):

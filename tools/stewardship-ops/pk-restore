@@ -1485,6 +1485,12 @@ keep_uploader_password() {
     # moved aside, else from the newest other moved-aside tree with one.
     # Only a regular file (never a link) is copied, owner-only and the
     # owner's, under a temporary name first. Nothing else changes.
+    # Root does the copy, and both trees came from a set's tar, which a
+    # compromised backup image could have written: so no link is followed
+    # anywhere on the way (#2093, "Same-host restore: keep the host's
+    # file"). A linked tree or database/ directory, on either side, and an
+    # existing or linked temporary name refuse; only the final component's
+    # link was refused before, and cp, chown and chmod follow links.
     local name=database/backup-uploader target from="" tree
     target=$credentials_dir/$name
     if [ -e "$target" ] || [ -L "$target" ]; then
@@ -1493,6 +1499,9 @@ keep_uploader_password() {
     # This run's moved-aside tree first, then the others newest first (the
     # stamps sort by time); an unmatched glob is checked and skipped.
     while read -r tree; do
+        if [ -L "$tree" ] || [ -L "$tree/database" ]; then
+            refuse "$tree or its database directory is a symbolic link; restore by hand (runbook, Restore for real)"
+        fi
         if [ -f "$tree/$name" ] && [ ! -L "$tree/$name" ]; then
             from=$tree/$name
             break
@@ -1503,11 +1512,16 @@ keep_uploader_password() {
         echo "    the set has no off-site uploader password file, and no moved-aside tree has one"
         return 0
     fi
-    if [ ! -d "$credentials_dir/database" ] || [ -L "$credentials_dir/database" ]; then
-        refuse "the restored credentials have no database directory for the uploader's password file"
+    if [ ! -d "$credentials_dir/database" ] || [ -L "$credentials_dir/database" ] ||
+        [ -L "$credentials_dir" ]; then
+        refuse "the restored credentials have no database directory for the uploader's password file (or it is a symbolic link)"
+    fi
+    if [ -e "$target.copying" ] || [ -L "$target.copying" ]; then
+        refuse "$target.copying already exists in the restored credentials; restore by hand (runbook, Restore for real)"
     fi
     if ! { (umask 077 && cp -- "$from" "$target.copying") &&
-        chown "$owner" "$target.copying" &&
+        [ -f "$target.copying" ] && [ ! -L "$target.copying" ] &&
+        chown -h "$owner" "$target.copying" &&
         chmod 0600 "$target.copying" &&
         mv -- "$target.copying" "$target"; }; then
         rm -f -- "$target.copying"
