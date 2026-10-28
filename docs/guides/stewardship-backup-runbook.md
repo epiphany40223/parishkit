@@ -683,7 +683,7 @@ field; the uploader's cron line copies the set.
 ### No route out for the backup profile
 
 Since the contract release the backup worker is on its own internal Docker
-network alone. Three routes could still leave it, and the upgrade's
+network alone. Four routes could still leave it, and the upgrade's
 `egress-probe` (run from the new image in a container joined only to that
 network, five seconds per attempt) checks each, printing its answers and
 the Engine version into the upgrade log and `stewardship-backup.log`:
@@ -698,7 +698,15 @@ the Engine version into the upgrade log and `stewardship-backup.log`:
   and by UDP, and TCP 80 and 443 always. Those are Caddy's published
   ports: with Docker's userland proxy turned off they have no listener for
   `ss` to show, and Docker forwards them by NAT, which the `INPUT` drop
-  below does not see, so only the probe covers them.
+  below does not see, so only the probe covers them;
+- IPv6: every route above is IPv4 and so is the `INPUT` drop, so the
+  container must have no IPv6 address but loopback. The rendered networks
+  enable no IPv6, and current Engines (Production's included) turn IPv6
+  off on a container interface of an IPv4-only network. An address there,
+  even a link-local one, could reach the host's `[::]` listeners past the
+  IPv4 drop, so the probe names it and the upgrade refuses: upgrade the
+  Engine, or file an issue for an `ip6tables` drop, rather than enabling
+  IPv6 on these networks.
 
 Any answer refuses the upgrade before anything stops, naming what answered.
 Production always has listeners there (Docker publishes Caddy's 80 and 443

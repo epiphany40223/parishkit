@@ -31,8 +31,12 @@ def args(**changed):
 
 
 @pytest.fixture
-def stubbed(monkeypatch):
-    """Every attempt answered from a table instead of the network."""
+def stubbed(monkeypatch, tmp_path):
+    """Every attempt answered from a table instead of the network.
+
+    The IPv6 list is a missing file (no IPv6), whatever the test host has.
+    """
+    monkeypatch.setattr(egress_probe, "IF_INET6", str(tmp_path / "if_inet6"))
     calls = []
     answers = {}
 
@@ -255,3 +259,32 @@ def test_the_dns_query_asks_for_one_a_record():
     ident, packet = egress_probe.dns_query("www.google.com")
     assert struct.unpack(">HHHHHH", packet[:12]) == (ident, 0x0100, 1, 0, 0, 0)
     assert packet[12:] == b"\x03www\x06google\x03com\x00\x00\x01\x00\x01"
+
+
+LOOPBACK_V6 = "00000000000000000000000000000001 01 80 10 80       lo"
+LINK_LOCAL_V6 = "fe800000000000000000000000000001 02 40 20 80     eth0"
+
+
+@pytest.mark.parametrize(
+    ("listing", "answer"),
+    [
+        (None, "none"),
+        ("", "none"),
+        (LOOPBACK_V6, "none"),
+        (LOOPBACK_V6 + "\n" + LINK_LOCAL_V6, "assigned (fe80::1 on eth0)"),
+    ],
+)
+def test_ipv6_answer_reads_the_kernels_list(tmp_path, listing, answer):
+    """Only loopback (or no IPv6 at all) is none; any other address is named."""
+    path = tmp_path / "if_inet6"
+    if listing is not None:
+        path.write_text(listing + "\n", encoding="ascii")
+    assert egress_probe.ipv6_answer(str(path)) == answer
+
+
+def test_an_ipv6_address_fails_the_probe(stubbed, capsys, tmp_path):
+    """A link-local address could reach the host past the IPv4 drop: exit 3."""
+    (tmp_path / "if_inet6").write_text(LINK_LOCAL_V6 + "\n", encoding="ascii")
+    assert egress_probe.execute(args()) == 3
+    result = json.loads(capsys.readouterr().out)
+    assert result["reached"] == ["IPv6 addresses"]

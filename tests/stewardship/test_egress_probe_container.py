@@ -164,6 +164,8 @@ def test_an_internal_network_reaches_nothing_outside(network):
     assert result["engine_version"] == engine()
     assert answer(result, "127.0.0.11:53") != "reached"
     assert answer(result, "8.8.8.8:53") != "reached"
+    # The rendered networks have no IPv6, so the container has none either.
+    assert answer(result, "IPv6") == "none"
 
 
 def test_the_probe_sees_a_deliberately_reachable_listener(network):

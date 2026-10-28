@@ -5,8 +5,9 @@ since the contract release the backup worker, which reads every tree and all
 database data, is on its own internal Docker network alone, and the claim
 that it can send nothing out rests on Docker's ``internal`` networks. This
 command checks that claim on the real Docker Engine instead of taking it on
-faith. It reads no file and connects to nothing but the routes below, each
-attempt bounded by ``ATTEMPT_SECONDS``:
+faith. It reads one file, the kernel's list of the container's IPv6
+addresses (``IF_INET6``), and connects to nothing but the routes below,
+each attempt bounded by ``ATTEMPT_SECONDS``:
 
 - TCP 443 to two fixed public addresses (``PUBLIC_ADDRESSES``) and to a
   Google API address the host resolved and passed in (``--google-address``);
@@ -18,7 +19,13 @@ attempt bounded by ``ATTEMPT_SECONDS``:
   host itself), on every port the host listens on at a wildcard address or
   at that gateway (``--listen``, which the upgrade script builds from
   ``ss -Htlnu``, always with TCP 80 and 443, Caddy's published ports,
-  which ``ss`` does not list when Docker's userland proxy is off).
+  which ``ss`` does not list when Docker's userland proxy is off);
+- IPv6: every attempt above is IPv4, and the host's ``INPUT`` drop is an
+  IPv4 rule, so the container must have no IPv6 address but loopback. The
+  rendered networks enable no IPv6, and current Engines disable IPv6 on a
+  container interface of an IPv4-only network; an address there (even a
+  link-local one, which can reach the host's ``[::]`` listeners past the
+  IPv4 drop) counts as a route out.
 
 Every TCP attempt and DNS query must be refused or go unanswered. A DNS
 reply counts as reaching the outside only when it carries an answer record:
@@ -54,12 +61,14 @@ PUBLIC_RESOLVER = "8.8.8.8"
 EMBEDDED_RESOLVER = "127.0.0.11"
 # A public name every working resolver answers with an address.
 PUBLIC_NAME = "www.google.com"
+# The kernel's list of this container's IPv6 addresses, one per line.
+IF_INET6 = "/proc/net/if_inet6"
 # Bounds on what the host may pass, so a probe run stays short.
 MAX_LISTENERS = 256
 LISTEN = re.compile(r"(tcp|udp):([1-9][0-9]{0,4})")
 VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+~-]{0,40}")
 # Answers that mean the route is closed; anything else is "reached".
-CLOSED = frozenset({"refused", "unanswered", "no_route"})
+CLOSED = frozenset({"refused", "unanswered", "no_route", "none"})
 
 
 def _address(value, what):
@@ -155,6 +164,26 @@ def dns_attempt(resolver, name=PUBLIC_NAME, *, timeout=ATTEMPT_SECONDS):
     return "reached" if flags & 0x000F == 0 and answers > 0 else "refused"
 
 
+def ipv6_answer(path=None):
+    """``none`` when no interface but loopback has an IPv6 address.
+
+    Otherwise ``assigned`` with each address and its interface, read from
+    the kernel's ``if_inet6`` list (32 hex digits, then the interface name
+    last). A kernel without IPv6 has no such file: nothing is assigned.
+    """
+    try:
+        with open(path or IF_INET6, encoding="ascii") as listing:
+            lines = listing.read().splitlines()
+    except FileNotFoundError:
+        return "none"
+    assigned = [
+        f"{ipaddress.IPv6Address(int(fields[0], 16))} on {fields[-1]}"
+        for fields in (line.split() for line in lines)
+        if len(fields) >= 2 and fields[-1] != "lo"
+    ]
+    return f"assigned ({', '.join(assigned)})" if assigned else "none"
+
+
 def probe(*, gateway, google_address, listeners, engine_version):
     """Run every check at once and return the JSON-able summary.
 
@@ -192,6 +221,9 @@ def probe(*, gateway, google_address, listeners, engine_version):
             {"route": route, "target": target, "answer": future.result()}
             for (route, target, _, _), future in zip(checks, futures, strict=True)
         ]
+    answers.append(
+        {"route": "ipv6", "target": "IPv6 addresses", "answer": ipv6_answer()}
+    )
     reached = [item["target"] for item in answers if item["answer"] not in CLOSED]
     return {
         "engine_version": engine_version,
