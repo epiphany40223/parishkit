@@ -28,11 +28,10 @@ class Migration(migrations.Migration):
     dependencies = [
         # This app's previous migration (0170, #2008).
         ("stewardship_responses", "0032_parish_added_shown"),
-        # The migration that installs the previous frozen file (0186, the
-        # setup Off-site backups step, #2200), so this file applies after
-        # every earlier one. Frozen 0187 and 0188 are on other branches;
-        # whoever lands this after them points this at 0188's migration.
-        ("stewardship_accounts", "0039_setup_backup_step"),
+        # The migration that installs the previous frozen file (0188, the
+        # staff open-after-close change), so this file applies after every
+        # earlier one.
+        ("stewardship_campaigns", "0020_staff_open_after_close"),
     ]
 
     operations = [
