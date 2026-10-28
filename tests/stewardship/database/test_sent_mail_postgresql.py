@@ -479,7 +479,8 @@ def test_sent_mail_dates_are_days_in_the_browser_zone(response_service, google):
 def test_reports_and_notices_name_their_administrator(response_service, google):
     """Operational notices are listed (#1562), each named by its
     Administrator's Users-page Name, else address, and open their own page,
-    which offers no resolution: no campaign owns them."""
+    which offers only a note while the notice is still being sent: it is
+    settled from evidence only once Not sure it arrived (#2295)."""
     harness = activate_response_service(response_service)
     admin_name = named_users(harness.service.store)
     recipients = notices(harness)
@@ -532,9 +533,13 @@ def test_reports_and_notices_name_their_administrator(response_service, google):
     assert own.status_code == 200
     page = own.content.decode()
     assert "Administrator email" in page
-    # A notice belongs to no campaign: nothing to answer or send (#1563).
+    # A queued notice asks nothing; only the closed note form (#2295).
     assert 'id="outcome-heading"' in page
-    assert 'name="action"' not in page
+    assert re.findall(r'name="action" value="(\w+)"', page) == ["note"]
+    panel = page[
+        page.index('id="delivery-resolve"') : page.index('id="delivery-state"')
+    ]
+    assert "disabled" not in panel
     # By address, in any case: that Administrator's notice only.
     status, html = sent_mail(browser, recipient="Morgan@Example.org")
     assert status == 200

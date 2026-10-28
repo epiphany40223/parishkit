@@ -24,6 +24,7 @@ from .delivery_metadata import (
     DELIVERY_SORTING,
     FIELDS,
     MODES,
+    NOTICE_PURPOSES,
     PURPOSES,
     family_duid,
     listed_messages,
@@ -853,6 +854,17 @@ QUESTIONS = {
     # other cancelled email asks nothing.
     "cancelled": (("reached", "count_delivered"), ("not_reached", "count_unsent")),
 }
+# A notice's question (#2295): it is never sent again, so a notice that is
+# Not sure it arrived asks "What did you find?" without the send-again
+# question, and every other state asks nothing (a Failed notice is final),
+# so its page never shows an answer it can never give.
+NOTICE_QUESTIONS = {
+    "delivery_unknown": (
+        ("sent", "accept"),
+        ("not_sent", "confirm_unsent"),
+        ("unsure", "note"),
+    ),
+}
 # The actions that send the email again, whose refusal the page explains by
 # the admission condition that failed (retry_refusal).
 SENDING_ACTIONS = frozenset({"resend", "retry_failed", "retry_unsent"})
@@ -860,7 +872,9 @@ SENDING_ACTIONS = frozenset({"resend", "retry_failed", "retry_unsent"})
 # admin-portal spec, Resolution questions). The last five explain a refused
 # send only.
 UNAVAILABLE_REASONS = {
-    "no_campaign": _("Notices belong to no campaign, so they can't be resolved here."),
+    "no_campaign": _(
+        "Ministry leader emails belong to no campaign, so they can't be resolved here."
+    ),
     "archived": _("The campaign is archived, so its email can't be changed."),
     "held": _(
         "Other campaign work (a restore review, or a cleanup, purge or go-live "
@@ -870,6 +884,16 @@ UNAVAILABLE_REASONS = {
     "task_running": _(
         "This email's background task has not finished, so it can be "
         "answered once it has."
+    ),
+    # A notice's own two (#2295), in place of held and task_running: it
+    # belongs to no campaign, and its page shows only this line.
+    "notice_held": _(
+        "This notice can be settled once the system's setup is active and "
+        "no restore is waiting for review."
+    ),
+    "notice_task_running": _(
+        "This notice's background task has not finished, so it can be "
+        "settled once it has."
     ),
     "campaign_ended": _("The campaign has ended, so it is not sent again."),
     "family_responded": _("The Family has already responded, so it is not sent again."),
@@ -902,7 +926,9 @@ def email_outcome(state, refused):
     return "still_sending"
 
 
-def question_choices(state, task_state, actions, *, blocked, refusal, countable=False):
+def question_choices(
+    state, task_state, actions, *, blocked, refusal, countable=False, notice=False
+):
     """The answers an email's outcome panel offers, with why any is unavailable.
 
     Returns ``[{"choice", "action", "unavailable"}]`` in the page's order
@@ -915,20 +941,23 @@ def question_choices(state, task_state, actions, *, blocked, refusal, countable=
     still-sending email asks nothing until its background task has failed,
     as before. A cancelled email asks only when ``countable`` (a report
     email whose coverage decision is still to be made, #1872); its answers
-    send nothing, so they never wait for a task.
+    send nothing, so they never wait for a task. A ``notice`` (an
+    operational or security notice, #2295) asks ``NOTICE_QUESTIONS``, and
+    an answer of one is unavailable only as ``notice_held`` (its ``blocked``)
+    or ``notice_task_running``, never for a campaign's reason.
     """
     if state in {"pending", "retry_wait"} and task_state != "failed":
         return []
     if state == "cancelled" and not countable:
         return []
     rows = []
-    for choice, action in QUESTIONS.get(state, ()):
+    for choice, action in (NOTICE_QUESTIONS if notice else QUESTIONS).get(state, ()):
         if action in actions:
             reason = None
         elif blocked:
             reason = blocked
         elif task_state != "failed":
-            reason = "task_running"
+            reason = "notice_task_running" if notice else "task_running"
         else:
             # Every other answer is offered whenever the campaign accepts
             # changes and the task failed, so only a send can be refused here.
@@ -1104,8 +1133,8 @@ def read_detail(message_id, parameters, actor=None):
 
     The outcome panel (#1563): ``outcome`` (``email_outcome``) and
     ``choices``, its question's answers with why any is unavailable
-    (``question_choices``): nothing can be changed for a notice
-    (``no_campaign``), on an archived campaign, or while other campaign
+    (``question_choices``): nothing can be changed for a Ministry leader
+    email (``no_campaign``), on an archived campaign, or while other campaign
     work holds it (``held``, the export admission refusing, #1331); a
     refused send is named by ``retry_refusal``. ``paused`` says campaign
     email is paused and ``last_attempt_at`` is when the provider was last
@@ -1119,8 +1148,15 @@ def read_detail(message_id, parameters, actor=None):
 
     Every email Sent mail lists opens here, operational and security
     notices and Ministry leader emails too (#1562). Those belong to no
-    campaign, and every resolution and its admission is a campaign's, so
-    they offer nothing and their admission is not read.
+    campaign. A Ministry leader email offers nothing, and no admission is
+    read for it. A notice takes a note, and while it is Not sure it arrived
+    it is settled from evidence (#2295, ``NOTICE_QUESTIONS``); it is never
+    sent again, so no resend admission is read for it either. Its answers
+    are admitted, as the resolution guard admits them (frozen file 0190),
+    while the deployment has an active configuration and no restore under
+    review (``notice_admitted``). ``notice`` says the email is one, so its
+    panel names a notice's own reasons (``notice_held``,
+    ``notice_task_running``) and draws no unavailable answer.
     """
     from parishkit.stewardship.campaigns.models import Campaign
 
@@ -1144,9 +1180,13 @@ def read_detail(message_id, parameters, actor=None):
         .first()
     )
     resolvable = message["purpose"] in PURPOSES and message["campaign_id"]
+    notice = message["purpose"] in NOTICE_PURPOSES
     campaign_state, can_resolve, can_retry = "archived", False, False
     paused = False
-    if resolvable:
+    if notice:
+        # No campaign: not archived, and never sent again (can_retry False).
+        campaign_state, can_resolve = None, notice_admitted()
+    elif resolvable:
         campaign_state, paused = (
             Campaign.objects.filter(pk=message["campaign_id"])
             .values_list("state", "delivery_paused")
@@ -1184,7 +1224,9 @@ def read_detail(message_id, parameters, actor=None):
         in {"delivery_unknown", "permanent_failure", "pending", "retry_wait"}
     )
     blocked = (
-        "no_campaign"
+        ("notice_held" if not can_resolve else None)
+        if notice
+        else "no_campaign"
         if not resolvable
         else "archived"
         if campaign_state == "archived"
@@ -1216,7 +1258,9 @@ def read_detail(message_id, parameters, actor=None):
             blocked=blocked,
             refusal=refusal,
             countable=countable,
+            notice=notice,
         ),
+        notice=notice,
         # The report sends waiting on this email (#1872), read for the
         # admitted Administrator; none for any other email, or without one.
         report_waiting=[]
@@ -1230,6 +1274,22 @@ def read_detail(message_id, parameters, actor=None):
         .values_list("created_at", flat=True)
         .first(),
     )
+
+
+def notice_admitted():
+    """Whether a notice's resolutions are admitted now (#2295).
+
+    The resolution guard (frozen file 0190) admits a notice's answers while
+    the deployment has an active configuration and no restore is under
+    review: the part of a campaign's export admission that does not name a
+    campaign. The page itself is withheld during a restore review, so this
+    mostly guards a deployment that is not set up yet.
+    """
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+
+    return SystemConfiguration.objects.filter(
+        active_configuration_id__isnull=False, restore_review_required=False
+    ).exists()
 
 
 def _long_retry():

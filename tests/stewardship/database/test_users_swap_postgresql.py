@@ -584,6 +584,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # missing (so it may run whole again), and replaces in place functions
 # that 0095's, 0156's and 0161's reinstalled files bring back older, so
 # ``CLOSURE_REPLACED_ONLY`` restores 0185's bodies last.
+# 0190 (#2295) creates nothing: it replaces 0173's delivery resolution guard
+# in place, so ``CLOSURE_REPLACED_ONLY`` puts its body back last.
 # The columns 0185 (#2202) adds, by table.
 SERIES_IN_FORCE_COLUMNS = (
     ("stewardship_daily_fact_set", "pledge_edits"),
@@ -1772,6 +1774,14 @@ CLOSURE_REPLACED_ONLY = {
             ("stewardship_campaign_comparison_v1", "selected.pledge_edits"),
         )
     },
+    # 0190 (#2295) creates nothing: it replaces 0173's delivery resolution
+    # guard in place, which 0173's whole rerun (CLOSURE_CREATED) brings back
+    # without the notices, so only its replacement (with its SECURITY
+    # DEFINER alter) runs again.
+    "stewardship_delivery_resolution_guard_v1": (
+        ("stewardship_jobs", "0039_settle_notices"),
+        "An operational or security notice to the Administrators (#2295)",
+    ),
 }
 
 

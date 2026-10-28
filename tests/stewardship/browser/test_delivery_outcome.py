@@ -124,3 +124,46 @@ def test_a_hidden_answer_cannot_be_reached_by_keyboard(page, component_origin):
     page.get_by_role("radio", name="I can't tell yet", exact=True).focus()
     page.keyboard.press("Tab")
     assert page.evaluate("document.activeElement.id") == "note-unsure"
+
+
+# A notice's answers (#2295): It was not sent records it at once.
+NOTICE_ANSWERS = [
+    ("It was sent", "sent", "Mark as delivered"),
+    ("It was not sent", "not_sent", "Record as not sent"),
+    ("I can't tell yet", "unsure", "Save note"),
+]
+
+
+def test_a_notice_asks_without_sending_again(page, component_origin):
+    """An operational notice that may not have arrived explains itself and
+    offers its three answers, none unavailable and no send-again question;
+    each answer reveals only its own form, and choosing moves nothing."""
+    page.goto(component_origin + "/delivery-notice")
+    visible(page.locator("#notice-about"))
+    found = page.get_by_role("group", name="What did you find?")
+    assert found.get_by_role("radio").count() == 3
+    # No answer is unavailable (each button waits only for its note).
+    assert page.locator(".outcome-panel input[type=radio][disabled]").count() == 0
+    assert page.get_by_role("group", name="Send it again?").count() == 0
+    fixed = [
+        page.locator("#outcome-heading"),
+        page.locator("#delivery-state > p").first,
+    ]
+    before = [value for node in fixed for value in node.evaluate(PLACE)]
+    buttons = []
+    for radio, choice, label in NOTICE_ANSWERS:
+        choose(page, (radio,))
+        form = page.locator(f"#answer-{choice}")
+        visible(form)
+        for _, other, _ in NOTICE_ANSWERS:
+            if other != choice:
+                hidden(page.locator(f"#answer-{other}"))
+        button = form.get_by_role("button", name=label, exact=True)
+        assert button.is_disabled()
+        form.locator("textarea").fill("Checked the Sent folder")
+        assert button.is_enabled()
+        buttons.append(button.evaluate(PLACE)[:2])
+        after = [value for node in fixed for value in node.evaluate(PLACE)]
+        assert after == pytest.approx(before, abs=1), choice
+    for place in buttons[1:]:
+        assert place == pytest.approx(buttons[0], abs=1)

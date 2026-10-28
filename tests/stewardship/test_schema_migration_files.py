@@ -593,6 +593,9 @@ FROZEN = {
     "0186_setup_backup_step.sql": (
         "bf4cff3481b51e13bb947aff2369d5257c39d4fe9d9319c387366079533677c9"
     ),
+    "0190_settle_notices.sql": (
+        "eb081595d2be4556aca0bfebeb3c039941e95728f51472e1d69f05f69fb71210"
+    ),
 }
 
 

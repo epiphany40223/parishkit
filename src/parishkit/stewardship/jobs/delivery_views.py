@@ -692,14 +692,23 @@ def outcome_context(data):
     the question says once each. ``note_command`` is the closed "Add a note"
     form's command id while the note is offered but no answer offers it,
     else None. ``report_waiting`` says a later send of this report email's
-    report waits on it (#1872).
+    report waits on it (#1872). ``notice`` says the email is an operational
+    or security notice (#2295); ``notice_wait`` is then the words of why
+    its answers can't be given yet, which its panel shows in place of the
+    question, or None. A waiting notice draws no answer, so its note, when
+    offered, waits in the closed "Add a note" form instead.
     """
     choices = {
         row["choice"]: row
         | {"id": uuid4(), "reason": UNAVAILABLE_REASONS.get(row["unavailable"])}
         for row in data["choices"]
     }
-    asks_note = any(row["action"] == "note" for row in data["choices"])
+    notice = data.get("notice", False)
+    waiting = [row["reason"] for row in choices.values() if row["unavailable"]]
+    notice_wait = waiting[0] if notice and waiting else None
+    asks_note = not notice_wait and any(
+        row["action"] == "note" for row in data["choices"]
+    )
     return dict(
         outcome=data["outcome"],
         choices=choices,
@@ -708,6 +717,8 @@ def outcome_context(data):
         last_attempt_at=data["last_attempt_at"],
         note_command=uuid4() if "note" in data["actions"] and not asks_note else None,
         report_waiting=bool(data.get("report_waiting")),
+        notice=notice,
+        notice_wait=notice_wait,
         # Whether any answer can be given now, for the waiting notice.
         answerable=any(row["unavailable"] is None for row in data["choices"]),
     )
