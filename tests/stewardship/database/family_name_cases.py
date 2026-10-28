@@ -71,7 +71,7 @@ NAME_CASES = (
         "a head with another surname",
         {"lastName": "Squyres"},
         {BASE + 7: member("Tracy", "Squyres"), BASE + 8: member("Jeff", "Smith")},
-        "Squyres, Tracy and Jeff Smith",
+        "Squyres / Smith, Tracy / Jeff",
     ),
     (
         "a blank first name",
@@ -94,7 +94,8 @@ NAME_CASES = (
         "the surname falls back to mailingName",
         {"lastName": " ", "mailingName": " The Lees "},
         {BASE + 14: member("Ann", "Lee")},
-        "The Lees, Ann Lee",
+        # No head shares the Family's name, so only the heads' surnames lead.
+        "Lee, Ann",
     ),
     (
         "the surname falls back to the first name",
@@ -103,6 +104,72 @@ NAME_CASES = (
         "Pat",
     ),
     ("no name at all", {}, {}, DEFAULT),
+    # Heads of different surnames (#2320): the surnames lead, the Family's
+    # first, then each surname's first names in the same order.
+    (
+        "two surnames, the Family surname's head second",
+        {"lastName": "Kelly"},
+        {
+            BASE + 15: member("Linda", "Thieneman"),
+            BASE + 16: member("Maureen", "Kelly"),
+        },
+        "Kelly / Thieneman, Maureen / Linda",
+    ),
+    (
+        "three heads in two surname groups",
+        {"lastName": "Kelly"},
+        {
+            BASE + 17: member("Maureen", "Kelly"),
+            BASE + 18: member("Linda", "Thieneman"),
+            BASE + 19: member("Bob", "Kelly"),
+        },
+        "Kelly / Thieneman, Maureen and Bob / Linda",
+    ),
+    (
+        "a head without a surname follows the groups",
+        {"lastName": "Kelly"},
+        {
+            BASE + 20: member("Pat", " "),
+            BASE + 21: member("Linda", "Thieneman"),
+            BASE + 22: member("Maureen", "Kelly"),
+        },
+        "Kelly / Thieneman, Maureen / Linda / Pat",
+    ),
+    (
+        "a head without a surname beside one surname",
+        {"lastName": "Kelly"},
+        {BASE + 23: member("Pat", ""), BASE + 24: member("Maureen", "Kelly")},
+        "Kelly, Pat and Maureen",
+    ),
+    (
+        "every head shares the surname",
+        {"lastName": "Squyres"},
+        {BASE + 25: member("Tracy", "Squyres"), BASE + 26: member("Jeff", "squyres")},
+        "Squyres, Tracy and Jeff",
+    ),
+    (
+        "no head shares the Family surname",
+        {"lastName": "Kelly"},
+        {BASE + 27: member("Ann", "Lee"), BASE + 28: member("Bo", "Fox")},
+        "Lee / Fox, Ann / Bo",
+    ),
+    (
+        "surnames group ignoring letter case",
+        {"lastName": "Kelly"},
+        {
+            BASE + 29: member("Ann", "LEE"),
+            BASE + 30: member("Bob", "kelly"),
+            BASE + 31: member("Cy", "Lee"),
+            BASE + 32: member("Di", "KELLY"),
+        },
+        "Kelly / LEE, Bob and Di / Ann and Cy",
+    ),
+    (
+        "a surname without first names leaves no empty part",
+        {"lastName": "Kelly"},
+        {BASE + 33: member("Maureen", "Kelly"), BASE + 34: member("", "Thieneman")},
+        "Kelly / Thieneman, Maureen",
+    ),
 )
 
 

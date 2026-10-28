@@ -604,6 +604,12 @@ SERIES_IN_FORCE_COLUMNS = (
     ("stewardship_report_email_preparation", "review_watermark"),
 )
 CLOSURE_CREATED = {
+    # 0194 (#2320) creates the name series helper; its file's other
+    # statements replace in place, so running it whole again is safe.
+    "public.stewardship_name_series_v1(text[])": (
+        "stewardship_reports",
+        "0053_mixed_surname_names",
+    ),
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
         "0013_retire_talents",
@@ -1823,6 +1829,18 @@ CLOSURE_REPLACED_ONLY = {
     "stewardship_delivery_resolution_guard_v1": (
         ("stewardship_jobs", "0040_settle_leader_emails"),
         "A Ministry leader email (#2300)",
+    ),
+    # 0194 (#2320) replaces both directory selections last, on 0094's
+    # bodies, so they build the shown Family name with the shared function;
+    # 0094's rerun (CLOSURE_REPLACED) puts the inline name back, so only
+    # 0194's replacements run again. The name functions it also replaces
+    # come from 0045, which no closure reruns.
+    **dict.fromkeys(
+        ("stewardship_directory_report_v1", "stewardship_directory_report_v2"),
+        (
+            ("stewardship_reports", "0053_mixed_surname_names"),
+            "stewardship_family_heads_name_v1(family_name,n.parts)",
+        ),
     ),
 }
 
