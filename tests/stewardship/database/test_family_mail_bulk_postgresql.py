@@ -13,7 +13,6 @@ from uuid import uuid4
 import pytest
 from django.db import connection, connections, transaction
 
-from parishkit.stewardship.campaigns.credential_models import RehearsalCredential
 from parishkit.stewardship.campaigns.schedule_models import (
     ScheduleDefinition,
     ScheduleFulfillment,
@@ -59,15 +58,6 @@ EXTRA = 5
 ON = BulkSettings(True, 20)
 
 
-class OneCredential:
-    """The fixture logs in as Family 1; the other Families only need to exist."""
-
-    class objects:
-        @staticmethod
-        def get():
-            return RehearsalCredential.objects.get(family__family_duid=1)
-
-
 @pytest.fixture
 def families(request, monkeypatch):
     """The dispatch fixture with EXTRA more mailable Families, in Testing mode."""
@@ -95,7 +85,6 @@ def families(request, monkeypatch):
         return data
 
     monkeypatch.setattr(response_builders, "response_source", source)
-    monkeypatch.setattr(response_builders, "RehearsalCredential", OneCredential)
     # One pass per call: no idle wait for work that will never come here.
     monkeypatch.setattr(family_mail_bulk, "IDLE_SECONDS", 0)
     harness, path = request.getfixturevalue("dispatch_worker")
