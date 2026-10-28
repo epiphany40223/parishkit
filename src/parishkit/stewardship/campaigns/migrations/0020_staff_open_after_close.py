@@ -18,10 +18,9 @@ migration.
 It follows the users swap (#952), so its granted definer is granted only
 once it is applied (runtime_grants.CLOSURE_FUNCTIONS).
 
-Numbering: frozen 0188 follows 0187, which the coordinator assigned to
-another change; until that lands this depends on accounts 0039 (frozen
-0186), and the coordinator moves the dependency to 0187's migration when the
-two board the same train.
+Numbering: frozen 0188 follows 0187 (the operational log's
+``consumer_readmission`` event, #2228), so this depends on the audit
+migration that installs 0187.
 """
 
 from pathlib import Path
@@ -40,10 +39,10 @@ class Migration(migrations.Migration):
     dependencies = [
         # The campaigns app's previous migration (frozen 0175, #1393).
         ("stewardship_campaigns", "0019_campaign_families"),
-        # The migration that installs the previous frozen file on main
-        # (0186, the setup Off-site backups step, #2200), so the files apply
-        # in prefix order.
-        ("stewardship_accounts", "0039_setup_backup_step"),
+        # The migration that installs the previous frozen file (0187, the
+        # consumer readmission log event, #2228), so the files apply in
+        # prefix order.
+        ("stewardship_audit", "0008_consumer_readmission_log"),
     ]
 
     operations = [
