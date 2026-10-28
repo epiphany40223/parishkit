@@ -1889,7 +1889,11 @@ an Administrator can restore it. The rest is listed under
   worker keeps its own network and its rule unchanged; in the contract
   release it leaves only `application-egress`. Restricting the uploader's
   egress to Google's API hosts needs an egress proxy or host firewall rules
-  and stays later hardening, tracked on its own.
+  and stays later hardening, tracked on its own. The service's Compose
+  `command` is `database-sources --config <its document>` in E1, since
+  E1 has no copy to run and the upgrade's source loop runs each one-shot
+  profile's `<command> --config <document>` form; E2 changes it to
+  `upload`.
 - **No route out.** The contract release's claim rests on Docker's
   `internal` networks, which this design does not take on faith. Three
   routes are checked: direct TCP, DNS through Docker's embedded resolver
@@ -2465,17 +2469,22 @@ an Administrator can restore it. The rest is listed under
      subnets (other than the project's own offline networks, which the
      renderer already keeps apart) and with the host's routes. Any overlap
      refuses, naming the network or route and the setting to change
-     (`runtime_network.offline`).
+     (`runtime_network.offline`). The preflight runs before the retarget,
+     so it computes the `/28` itself: slice index 5 of the rendered
+     `runtime_network.offline` (`DEFAULT_OFFLINE` when the record does not
+     set it), and a test ties that index to the uploader's position in
+     `OFFLINE_PROFILES`.
 
   A same-host restore of a set from before the login leaves the login (a
   cluster role, not in the dump) but without grants, as for the inspection
   login, until `database-grants` runs. The expand release makes `pk-restore`
   keep the host's password file for such a set (**Uploader password**).
   In every mode, when the image has the uploader identity, step 7 then
-  runs `database-grants` from the retargeted rendering, after the
-  retarget, the full stop and the hba reload and before
-  `restore-begin`: it creates a missing login from the file (replacement
-  and drill) or checks an existing one against its verifier (same host).
+  runs `database-grants --after-restore SET` (`SET` the set's name) from
+  the retargeted rendering, after the retarget, the full stop and the hba
+  reload and before `restore-begin`: it creates a missing login from the
+  file (replacement and drill) or checks an existing one against its
+  verifier (same host).
   `pk-restore` detects "the image has the uploader identity" with its
   existing `has_command()` on the image's `--help` list, testing for
   `uploader-password-check` (the upgrade script's marker), and E1 adds
@@ -2485,16 +2494,55 @@ an Administrator can restore it. The rest is listed under
   skips the grants step. For the same images, step 8's source check also
   runs `database-sources` from the `backup-uploader` profile, beside web
   and admin-recovery: with step 7's verifier check, that is the restore's
-  proof of the login.
+  proof of the login. On a drill host that one-off joins
+  `application-egress` and mounts the Workspace key like any uploader
+  run, which is acceptable there: the runbook's `DOCKER-USER` rule blocks
+  every container's egress before a drill, and the one-off runs only
+  `database-sources`, which connects to nothing but PostgreSQL.
   `pk-restore`'s step 7 already does the full stop for a set rendered on
   the old networks.
+
+  *Restore admission.* On a configured database `database-grants`
+  admits the operator only behind a backup row completed within
+  `REQUIRED_WITHIN` (24 hours, `backup.require_recent_backup`). A
+  restored database never holds its own set's row (the dump was taken
+  before the row was written), so its newest row is the backup before
+  the set, and that rule would refuse most restores at step 7 with the
+  services down. With `--after-restore SET`, and only then, the rule is
+  replaced by the evidence `pk-restore` already trusts that the set is
+  loaded and nothing has run on it since: the public schema's comment
+  is exactly `pk-restore:SET:<64 lowercase hex>` for that `SET` (written
+  last in step 6's transaction), and no `stewardship_backup_run` row
+  started at or after the set's start. `SET` must be a set name
+  (`YYYYMMDDTHHMMSSZ`, a real UTC time). Anything else refuses before
+  any grant: another set's marker, no marker, a later backup row (the
+  marker alone survives into later backups and restores), or a missing
+  run table on a configured database. The flag is not a way around the
+  rule: it never relaxes anything when the restore marker is absent, so
+  an ordinary upgrade's `database-grants`, which never passes it, keeps
+  the recent-backup rule. Everything else in `database-grants` is
+  unchanged (the operator, provisioning marker and writer-guard checks,
+  every login's check, the grants and their excess-grant refusals). An
+  admission by this path is logged as a WARNING process-log line with the
+  failure category `upgrade_backup_waived_after_restore` (a closed word
+  on an existing event, so no durable event and no migration; the process
+  log admits no free text, so the line cannot name the set), and the
+  command's JSON result carries `"after_restore": "SET"`, which
+  `pk-restore` writes, with its own line naming the set, to its durable
+  restore log. `pk-restore` passes the flag only from step 7, after `set_loaded`
+  answered yes; the backup runbook's manual restore never needs it,
+  since no `database-grants` step follows there.
 
   The checking has a runbook consequence. A same-host restore of a set from
   before a lost-file recovery brings back a credentials tree whose uploader
   file (or absence) no longer matches the cluster's login, so step 7's
   `database-grants` refuses with the services down. The restore stops at
-  step 7; the operator runs the lost-file recovery, then resumes with
-  `pk-restore --from 7`. The backup runbook's restore section says so.
+  step 7; the operator runs the lost-file recovery's first half (the two
+  `DROP`s and moving the stale file aside), then resumes with
+  `pk-restore --from 7`, whose retarget creates the file and whose
+  `database-grants --after-restore SET` creates the login. A by-hand
+  `database-grants` would refuse there, since the restored database has
+  no recent backup row. The backup runbook's restore section says so.
 - **Delivery: preparation, then expand, then contract.**
   1. The preparation release ships migration 0193 and retarget's
      absent-password exception. Neither does anything on its own.
@@ -2633,7 +2681,11 @@ an Administrator can restore it. The rest is listed under
   profile's `smoke` probing without `--send` and refusing `--send` (E1);
   `pk-restore`
   keeping the host's file for a set without one (also on `--from 4`, from
-  the failed run's tree), running `database-grants` in step 7, a
+  the failed run's tree), running `database-grants --after-restore SET`
+  in step 7 (on PostgreSQL: it admits a loaded set whose newest backup
+  row is older than 24 hours, and refuses another set's marker, no
+  marker, a run row started at or after the set, and a malformed `SET`;
+  without the flag the same database is still refused), a
   replacement and a drill restore of a pre-uploader set with the new
   image ending with the login and a matching file, and the lost-file
   recovery run end to end on PostgreSQL (its retarget to the recorded
