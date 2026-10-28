@@ -126,7 +126,8 @@ def test_a_hidden_answer_cannot_be_reached_by_keyboard(page, component_origin):
     assert page.evaluate("document.activeElement.id") == "note-unsure"
 
 
-# A notice's answers (#2295): It was not sent records it at once.
+# A notice's answers (#2295), and a Ministry leader email's (#2300): It was
+# not sent records it at once.
 NOTICE_ANSWERS = [
     ("It was sent", "sent", "Mark as delivered"),
     ("It was not sent", "not_sent", "Record as not sent"),
@@ -134,11 +135,13 @@ NOTICE_ANSWERS = [
 ]
 
 
-def test_a_notice_asks_without_sending_again(page, component_origin):
-    """An operational notice that may not have arrived explains itself and
-    offers its three answers, none unavailable and no send-again question;
-    each answer reveals only its own form, and choosing moves nothing."""
-    page.goto(component_origin + "/delivery-notice")
+@pytest.mark.parametrize("path", ["/delivery-notice", "/delivery-leader"])
+def test_a_notice_asks_without_sending_again(page, component_origin, path):
+    """An operational notice or Ministry leader email that may not have
+    arrived explains itself and offers its three answers, none unavailable
+    and no send-again question; each answer reveals only its own form, and
+    choosing moves nothing."""
+    page.goto(component_origin + path)
     visible(page.locator("#notice-about"))
     found = page.get_by_role("group", name="What did you find?")
     assert found.get_by_role("radio").count() == 3

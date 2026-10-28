@@ -233,16 +233,16 @@ def test_held_decisions_on_the_mail_message_page_are_unavailable():
     assert "<form" not in html.split('id="delivery-state"')[0]
 
 
-def test_no_question_for_a_notice_without_a_campaign():
-    """A notice belongs to no campaign: each answer names that reason, and
-    nothing can be sent (#1562, #1563)."""
-    html = page(
-        "permanent_failure",
-        question_choices(
-            "permanent_failure", "failed", [], blocked="no_campaign", refusal=None
-        ),
+def test_no_question_for_a_failed_email_of_no_campaign():
+    """A Failed notice or Ministry leader email is never sent again from
+    its page (#2295, #2300): it asks nothing, so no answer is drawn
+    unavailable, and nothing can be sent (#1562, #1563)."""
+    choices = question_choices(
+        "permanent_failure", "failed", ["note"], blocked=None, refusal=None, notice=True
     )
-    assert html.count('id="reason-retry-no_campaign"') == 1
+    assert choices == []
+    html = page("permanent_failure", choices)
+    assert "disabled" not in html.split('id="delivery-state"')[0]
     assert "<form" not in html.split('id="delivery-state"')[0]
 
 

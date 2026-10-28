@@ -59,10 +59,13 @@ def test_each_state_has_one_outcome_panel(state, refused, outcome):
 
 
 def blocked_reason(resolvable, campaign_state, can_resolve):
-    """What read_detail passes as ``blocked``."""
-    if not resolvable:
-        return "no_campaign"
-    if campaign_state == "archived":
+    """What read_detail passes as ``blocked`` for an email of a campaign.
+
+    One read_detail cannot resolve (which the outbox_routing check makes
+    impossible: only notices and Ministry leader emails have no campaign)
+    keeps its default campaign state, archived (#2300 removed no_campaign).
+    """
+    if not resolvable or campaign_state == "archived":
         return "archived"
     return None if can_resolve else "held"
 
@@ -223,6 +226,48 @@ def test_a_waiting_notice_shows_one_line_and_no_answer(path, note):
     assert 'type="radio"' not in outcome
     assert "What did you find?" not in outcome and "<form" not in outcome
     assert ('<details id="delivery-note-disclosure"' in html) is note
+
+
+def test_no_reason_names_a_campaign_less_email():
+    """Every listed email is resolvable or settled from evidence (#2300),
+    so no reason says an email belongs to no campaign."""
+    assert "no_campaign" not in UNAVAILABLE_REASONS
+    assert not any("no campaign" in str(text) for text in UNAVAILABLE_REASONS.values())
+
+
+def test_a_leader_email_says_what_it_is_and_asks_only_what_applies():
+    """A Ministry leader email that may not have arrived (#2300) explains
+    itself, asks "What did you find?" without the send-again question, and
+    shows no unavailable answer; It was not sent records it at once."""
+    outcome = panel(fixture_page("/delivery-leader"))
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", outcome))
+    assert '<p id="notice-about">This is a Ministry leader email' in outcome
+    assert "Applying that review again sends a new one" in text
+    assert "a halted mail sender can't be cleared on System health" in text
+    assert "for this Ministry leader email to leader@example.org" in text
+    assert re.findall(r'name="found" value="(\w+)"', outcome) == [
+        "sent",
+        "not_sent",
+        "unsure",
+    ]
+    assert re.findall(r'name="action" value="(\w+)"', outcome) == [
+        "accept",
+        "confirm_unsent",
+        "note",
+    ]
+    assert "disabled" not in outcome and 'name="again"' not in outcome
+    assert "Send it again" not in outcome and "belong to no campaign" not in outcome
+    assert "This is an operational notice" not in outcome
+
+
+def test_a_failed_leader_email_says_how_a_new_one_is_sent():
+    """A Failed Ministry leader email asks nothing and says that applying
+    the review again sends a new one, not that it is retried (#2300)."""
+    outcome = panel(fixture_page("/delivery-leader-failed"))
+    assert "It is not sent again from here; to send a new one, apply" in outcome
+    assert "A notice is never sent again." not in outcome
+    assert "not tried again on its own" not in outcome
+    assert 'type="radio"' not in outcome and "disabled" not in outcome
 
 
 def test_a_failed_notice_says_it_is_never_sent_again():

@@ -592,8 +592,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # replaces 0159's refresh check guard in place, which the reruns above
 # bring back older, so ``CLOSURE_REPLACED_ONLY`` restores 0189's guard
 # instead of 0159's.
-# 0190 (#2295) creates nothing: it replaces 0173's delivery resolution guard
-# in place, so ``CLOSURE_REPLACED_ONLY`` puts its body back last.
+# 0190 (#2295) and 0191 (#2300) create nothing: each replaces 0173's
+# delivery resolution guard in place, so ``CLOSURE_REPLACED_ONLY`` puts
+# 0191's body back last.
 # The columns 0185 (#2202) adds, by table.
 SERIES_IN_FORCE_COLUMNS = (
     ("stewardship_daily_fact_set", "pledge_edits"),
@@ -1814,13 +1815,14 @@ CLOSURE_REPLACED_ONLY = {
             "roster := stewardship_response_ministry_held_v1(NEW.snapshot_id,family,",
         )
     },
-    # 0190 (#2295) creates nothing: it replaces 0173's delivery resolution
-    # guard in place, which 0173's whole rerun (CLOSURE_CREATED) brings back
-    # without the notices, so only its replacement (with its SECURITY
-    # DEFINER alter) runs again.
+    # 0190 (#2295) and 0191 (#2300) create nothing: each replaces the
+    # delivery resolution guard in place, which 0173's whole rerun
+    # (CLOSURE_CREATED) brings back without the notices or the Ministry
+    # leader emails, so only the latest replacement, 0191's (with its
+    # SECURITY DEFINER alter), runs again: its body carries 0190's too.
     "stewardship_delivery_resolution_guard_v1": (
-        ("stewardship_jobs", "0039_settle_notices"),
-        "An operational or security notice to the Administrators (#2295)",
+        ("stewardship_jobs", "0040_settle_leader_emails"),
+        "A Ministry leader email (#2300)",
     ),
 }
 

@@ -58,11 +58,12 @@ whole.{% endcomment %}
 {% elif delivery.state == "delivery_unknown" %}
 <h2 id="outcome-heading" tabindex="-1" data-in-place-focus>{% translate "Not sure it arrived" %}</h2>
 <p>{% translate "The mail service did not confirm whether this email was sent. It is not retried automatically, because sending it again could give the recipient a second copy." %}</p>
-{# An operational or security notice (#2295) belongs to no campaign and is never sent again: the panel says what it is and why settling it matters, and its question has no send-again step (NOTICE_QUESTIONS). #}
+{# An operational or security notice (#2295), or a Ministry leader email (#2300), belongs to no campaign and is never sent again from here: the panel says what it is and why settling it matters, and its question has no send-again step (NOTICE_QUESTIONS). #}
 {% if delivery.purpose == "operational" %}<p id="notice-about">{% translate "This is an operational notice: an automatic email telling the Administrators about a problem with the system. It is never sent again, and no Family is affected. Until you settle it, a halted mail sender can't be cleared on System health." %}</p>
-{% elif delivery.purpose == "security_event" %}<p id="notice-about">{% translate "This is a security notice: an automatic email telling the Administrators about a sign-in policy change or a replaced backup key. It is never sent again, and no Family is affected. Until you settle it, a halted mail sender can't be cleared on System health." %}</p>{% endif %}
+{% elif delivery.purpose == "security_event" %}<p id="notice-about">{% translate "This is a security notice: an automatic email telling the Administrators about a sign-in policy change or a replaced backup key. It is never sent again, and no Family is affected. Until you settle it, a halted mail sender can't be cleared on System health." %}</p>
+{% elif delivery.purpose == "leader_email" %}<p id="notice-about">{% translate "This is a Ministry leader email: a sign-in email from Email Ministry leaders on the Users page. Applying that review again sends a new one; this one is never resent, and no Family is affected. Until you settle it, a halted mail sender can't be cleared on System health." %}</p>{% endif %}
 <p><strong>{% translate "What to check first:" %}</strong> {% blocktranslate trimmed with purpose=delivery.purpose|delivery_label %}look in the sending mailbox's Sent folder, or the Google Workspace email log search, for this {{ purpose }}{% endblocktranslate %}{% if recipients.routed %} {% translate "to" %} {{ recipients.routed|join:", " }}{% endif %}{% if last_attempt_at %}, {% translate "sent around" %} <time datetime="{{ last_attempt_at|instant }}" data-local-instant>{{ last_attempt_at|instant }}</time>{% endif %}.</p>
-{# A notice whose answers can't be given yet (#2295) shows only why, in place of the question: its answers would all become available at once, so a disabled group would only repeat the reason. #}
+{# A notice or Ministry leader email whose answers can't be given yet (#2295, #2300) shows only why, in place of the question: its answers would all become available at once, so a disabled group would only repeat the reason. #}
 {% if notice_wait %}<p class="help" id="notice-wait">{{ notice_wait }}</p>
 {% else %}<fieldset class="choice-question">
 <legend>{% translate "What did you find?" %}</legend>
@@ -77,7 +78,7 @@ whole.{% endcomment %}
 {% if not choices.sent.unavailable or not choices.unsure.unavailable %}<div class="choice-slot">
 <p class="help" data-choice-panel="found=">{% translate "Choose what you found to see what to enter." %}</p>
 {% if not choices.sent.unavailable %}{% translate "Where did you see that it was sent?" as prompt %}{% translate "Marked as delivered." as message %}{% translate "Mark as delivered" as label %}{% include "stewardship/delivery-answer.html" with row=choices.sent panel="found=sent" prompt=prompt message=message label=label  extra="" %}{% endif %}
-{% if not choices.not_sent.unavailable and not choices.resend %}{# A notice is never sent again, so It was not sent records it at once. #}{% translate "Where did you see that it was not sent?" as prompt %}{% translate "Recorded as not sent." as message %}{% translate "Record as not sent" as label %}{% translate "It is recorded as failed and not sent again." as extra %}{% include "stewardship/delivery-answer.html" with row=choices.not_sent panel="found=not_sent" prompt=prompt message=message label=label extra=extra %}
+{% if not choices.not_sent.unavailable and not choices.resend %}{# A notice or Ministry leader email is never sent again from here, so It was not sent records it at once. #}{% translate "Where did you see that it was not sent?" as prompt %}{% translate "Recorded as not sent." as message %}{% translate "Record as not sent" as label %}{% translate "It is recorded as failed and not sent again." as extra %}{% include "stewardship/delivery-answer.html" with row=choices.not_sent panel="found=not_sent" prompt=prompt message=message label=label extra=extra %}
 {% elif not choices.not_sent.unavailable %}<div data-choice-panel="found=not_sent" data-choice-hidden inert>
 <fieldset class="choice-question">
 <legend>{% translate "Send it again?" %}</legend>
@@ -97,7 +98,7 @@ whole.{% endcomment %}
 </div>{% endif %}{% endif %}
 {% elif delivery.state == "permanent_failure" %}
 <h2 id="outcome-heading" tabindex="-1" data-in-place-focus>{% translate "Failed" %}</h2>
-<p>{% translate "The mail service refused this email, or it could not be sent after every automatic try; the attempt history below says which." %} {% if notice %}{% translate "A notice is never sent again." %}{% else %}{% translate "It is not tried again on its own." %}{% endif %}</p>
+<p>{% translate "The mail service refused this email, or it could not be sent after every automatic try; the attempt history below says which." %} {% if delivery.purpose == "leader_email" %}{% translate "It is not sent again from here; to send a new one, apply the Email Ministry leaders review again on the Users page." %}{% elif notice %}{% translate "A notice is never sent again." %}{% else %}{% translate "It is not tried again on its own." %}{% endif %}</p>
 {% if refused %}<p>{% translate "Refused addresses (check each with the Family, then clear it on its page so email reaches it again):" %} {% for refusal in refused %}<a href="{% url 'admin:delivery_refusal' refusal.id %}">{{ refusal.address }}</a>{% if refusal.kind == 'reported_bounce' %} ({% translate "bounce reported" %}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
 {% if choices %}<fieldset class="choice-question">
 <legend>{% translate "Send it again?" %}</legend>

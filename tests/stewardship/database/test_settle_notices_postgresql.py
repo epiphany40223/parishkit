@@ -76,7 +76,18 @@ def uncertain_notice(store, *, fail=True):
     unless ``fail`` is False (the task is still claimed).
     """
     recipients = notices(SimpleNamespace(service=SimpleNamespace(store=store)))
-    message = recipients[min(recipients)].outbox
+    return seed_uncertain(recipients[min(recipients)].outbox, fail=fail)
+
+
+def seed_uncertain(message, *, fail=True):
+    """Seed ``message``'s first attempt as Not sure it arrived; ``message``.
+
+    Its delivery task is claimed and the attempt and its history event are
+    written as mail dispatch's mark_unknown writes them, with the SQL guards
+    paused (``unguarded``). Its task then fails, as the mail consumer's
+    ``permanent_failure`` leaves it, unless ``fail`` is False (the task is
+    still claimed). Shared with the Ministry leader email tests (#2300).
+    """
     act(_status(TaskRun.objects.get(pk=message.task_id)), "claim")
     run = TaskRun.objects.get(pk=message.task_id)
     with unguarded(), connection.cursor() as cursor:
@@ -368,9 +379,12 @@ class Rollback(Exception):
 
 
 def test_the_check_refuses_the_old_guard_and_a_non_definer():
-    """0190's DO block passes on the installed guard, fails on 0173's body
-    or a guard that is no SECURITY DEFINER, and passes again once 0190's
-    statement and alter are run over the old body."""
+    """0190's DO block fails on 0173's body or a guard that is no SECURITY
+    DEFINER, and passes once 0190's statement and alter are run over the old
+    body. The installed guard is a later file's (0191, #2300), which widens
+    0190's purpose lists, so 0190's own body is put back, rolled back, to
+    check it; test_settle_leader_emails checks the installed one and the
+    schema baseline."""
     text = FROZEN.read_text(encoding="utf-8")
     check = re.search(r"^DO \$check\$.*?\$check\$;", text, re.M | re.S)[0]
     alter = f"ALTER FUNCTION public.{GUARD}() SECURITY DEFINER;"
@@ -378,12 +392,12 @@ def test_the_check_refuses_the_old_guard_and_a_non_definer():
     new = guard_statement("0190_settle_notices.sql")
     assert old != new and alter in text
     with connection.cursor() as cursor:
-        with transaction.atomic():
-            cursor.execute(check)
         with pytest.raises(DatabaseError, match="Migration 0190"), transaction.atomic():
             cursor.execute(old)
             cursor.execute(check)
         with pytest.raises(DatabaseError, match="Migration 0190"), transaction.atomic():
+            cursor.execute(new)
+            cursor.execute(alter)
             cursor.execute(f"ALTER FUNCTION public.{GUARD}() SECURITY INVOKER")
             cursor.execute(check)
         with pytest.raises(Rollback), transaction.atomic():
@@ -392,11 +406,6 @@ def test_the_check_refuses_the_old_guard_and_a_non_definer():
             cursor.execute(alter)
             cursor.execute(check)
             raise Rollback
-    # The schema baseline carries the same body.
-    baseline = (MIGRATIONS.parent / "delivery_resolution.sql").read_text(
-        encoding="utf-8"
-    )
-    assert new.replace("CREATE OR REPLACE FUNCTION", "CREATE FUNCTION", 1) in baseline
 
 
 def test_a_notice_that_failed_asks_nothing(response_service, google, admin):

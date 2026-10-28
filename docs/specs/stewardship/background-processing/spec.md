@@ -2471,8 +2471,16 @@ under its own compiled owner:
   activity; the scheduler offers it again after resume. A provider refusal for now, a sending
   limit and a stopped mail sender hold or retry it as they do
   Administrator notices, and a lost provider answer leaves it
-  "Not sure it arrived": it is never resent automatically, and an
-  Administrator resends by applying the review again.
+  "Not sure it arrived": it is never resent automatically or from its
+  Mail message page. An Administrator settles it from evidence there, or
+  with `pk-admin delivery resolve`, as an
+  [Administrator notice](#critical-errors-and-notification) is settled:
+  marked delivered (`accept`) or recorded as not sent (`confirm_unsent`),
+  each with its evidence note and audited
+  ([#2300](https://github.com/epiphany40223/parishkit/issues/2300)). Until
+  then it holds a recorded mail halt from being cleared. Applying the
+  review again sends a new email, as a new message; it never settles this
+  one.
 
 A leader email belongs to no campaign (its outbox campaign is empty and its
 scope is the parish), so it gets no pause hold record and is not in the
