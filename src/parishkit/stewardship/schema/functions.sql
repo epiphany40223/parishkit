@@ -3946,8 +3946,9 @@ CREATE FUNCTION public.stewardship_operational_log_writer_v1() RETURNS trigger
 BEGIN
     -- Each runtime login that writes directly may record only the entries
     -- its own code writes (#293 for mail dispatch and backup, #389 L2 for
-    -- web, worker and scheduler): a closed (schema, event, level) list, no
-    -- actor to impersonate, and the database's own time. The one exception
+    -- web, worker and scheduler, #235 for the off-site uploader): a closed
+    -- (schema, event, level) list, no actor to impersonate, and the
+    -- database's own time. The one exception
     -- is web's refused Admin input (#1403), which must name the signed-in
     -- user it refused, so no anonymous refusal is kept; every other entry
     -- names none. That actor is a bare id web supplies and is taken on
@@ -3960,10 +3961,12 @@ BEGIN
         RETURN NEW;
     END IF;
     IF (NEW.actor_id IS NOT NULL)<>(NEW.event='admin_input_refused') OR NOT (
-        -- Work stopped by a time limit, from any runtime login.
+        -- Work stopped by a time limit, from any runtime login. The
+        -- off-site uploader's login (#235) is created by the release that
+        -- adds the uploader; until then no session has its name.
         (current_user IN ('pk_stewardship_web','pk_stewardship_worker',
                 'pk_stewardship_scheduler','pk_stewardship_mail_dispatch',
-                'pk_stewardship_backup_worker')
+                'pk_stewardship_backup_worker','pk_stewardship_backup_uploader')
          AND NEW.schema='timeout'
          AND NEW.event IN ('task_timed_out','helper_timed_out',
                 'work_budget_reached','task_lease_lost')

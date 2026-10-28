@@ -600,6 +600,11 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # report email preparation guards, which 0185's (and 0156's and 0161's)
 # reruns bring back older, so its ``CLOSURE_REPLACED_ONLY`` entries restore
 # 0192's bodies instead, the preparation guard's in 0185's entry's place.
+# 0193 (#235) creates nothing: it replaces 0176's backup destination
+# definer and the operational log writer in place, which 0176's whole rerun
+# (``CLOSURE_CREATED``) and 0106's (``CLOSURE_REPLACED_LAST``) bring back
+# without the uploader's login, so ``CLOSURE_REPLACED_ONLY`` puts 0193's
+# bodies back last.
 # The columns 0185 (#2202) adds, by table.
 SERIES_IN_FORCE_COLUMNS = (
     ("stewardship_daily_fact_set", "pledge_edits"),
@@ -1839,6 +1844,21 @@ CLOSURE_REPLACED_ONLY = {
     "stewardship_exact_request_guard_v1": (
         ("stewardship_reports", "0053_late_report_totals"),
         "r.campaign_sequence<=NEW.submission_watermark",
+    ),
+    # 0193 (#235) creates nothing: it replaces 0176's backup destination
+    # definer and the operational log writer in place, which 0176's whole
+    # rerun (CLOSURE_CREATED) and 0106's (CLOSURE_REPLACED_LAST) bring back
+    # without the uploader's login, so only its replacements run again (the
+    # definer's with its SECURITY DEFINER alter).
+    **dict.fromkeys(
+        (
+            "stewardship_backup_destination_v1",
+            "stewardship_operational_log_writer_v1",
+        ),
+        (
+            ("stewardship_jobs", "0041_backup_uploader_preparation"),
+            "pk_stewardship_backup_uploader",
+        ),
     ),
 }
 
