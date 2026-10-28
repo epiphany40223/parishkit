@@ -2021,7 +2021,10 @@ an Administrator can restore it. The rest is listed under
     never the file or the verifier. The script runs it in its isolated
     container (no network), with the operator's deployment YAML and the
     runtime root mounted read-only, as it runs the upgrade check, so the
-    command finds the file wherever `postgres.password_files` puts it.
+    command finds the file wherever `postgres.password_files` puts it
+    inside the runtime root. A file outside the root is not mounted, so
+    the check fails and the upgrade refuses before anything stops (the
+    backup runbook says so).
     A missing file or any other answer refuses with the lost-file
     recovery's name.
     The query's own failure refuses too: a failed `pg_authid` query (the
@@ -2047,7 +2050,18 @@ an Administrator can restore it. The rest is listed under
     credentials tree has no uploader password file and the tree it just
     moved aside has one, `pk-restore` copies that one file into the
     restored tree (same owner, `0600`, `O_NOFOLLOW`, a regular file), logs
-    that it did, and changes nothing else. That file is the one the
+    that it did, and changes nothing else. Root does the copy and both
+    trees came out of a set's tar, which a compromised backup image could
+    have written, so no link is followed anywhere on the way: a linked
+    tree or `database/` directory, in the source or the restored tree,
+    refuses, as does an existing or linked temporary name
+    (`backup-uploader.copying`), and the ownership change does not follow
+    links (`chown -h`). Only the default path
+    (`credentials/database/backup-uploader`) is kept: for an image with
+    the uploader, a rendering or deployment YAML whose
+    `postgres.password_files` moves the file refuses before step 1, and
+    such a deployment is restored by hand. Otherwise step 7's
+    `database-grants` would refuse with the services down. That file is the one the
     cluster's login was created from, so it matches. Dropping the login
     instead would also work (`database-grants` then recreates it from a new
     file), but it would make `pk-restore` the first script that drops a
@@ -2091,8 +2105,16 @@ an Administrator can restore it. The rest is listed under
     `database-sources` from the `backup-uploader` profile matching the
     rendered rules. That pair, not `smoke`, proves the login after a
     restore: plain `smoke` never touches the database.
-  - *Lost-file recovery* (backup runbook, new subsection in E1). Comment
-    out the uploader's cron line. As the operator, through the socket, run
+  - *Lost-file recovery* (backup runbook, new subsection in E1).
+    `retarget-image` and `database-grants` are offline commands, and this
+    `database-grants` keeps the recent-backup rule (**Restore admission**
+    applies only with `--after-restore`). So first confirm that a backup
+    completed within `REQUIRED_WITHIN` (24 hours), or take one. Comment
+    out the uploader's and the backup's cron lines, then stop every online
+    service but caddy, postgres and valkey, as upgrade steps 1 and 2 do
+    (the background services, then web; caddy keeps the maintenance
+    page), since every running service holds the startup lock shared. As
+    the operator, through the socket, run
     `DROP OWNED BY pk_stewardship_backup_uploader;` and
     `DROP ROLE pk_stewardship_backup_uploader;`. The login owns nothing (its
     grant admission refuses ownership), so `DROP OWNED` only revokes its
@@ -2102,8 +2124,9 @@ an Administrator can restore it. The rest is listed under
     `database-grants`, which creates the login from it. Then prove the
     login: `database-sources` from the `backup-uploader` profile (its
     source rule) and `uploader-password-check` against the stored
-    verifier (its password). Then put the cron line back. Nothing else
-    changes, and no other login's password is touched.
+    verifier (its password). Then start the services again and put the
+    cron lines back. Nothing else changes, and no other login's password
+    is touched.
 - **Handoff.** A set is finished when its `manifest.json` exists; the backup
   writes it last, after `fsync`. The uploader considers only finished sets
   whose manifest digest has a `stewardship_backup_run` row, and it still
@@ -2468,8 +2491,13 @@ an Administrator can restore it. The rest is listed under
      compares the uploader's new `/28` with every existing Docker network's
      subnets (other than the project's own offline networks, which the
      renderer already keeps apart) and with the host's routes. Any overlap
-     refuses, naming the network or route and the setting to change
-     (`runtime_network.offline`). The preflight runs before the retarget,
+     refuses, naming the conflicting network or route, and its remedy is to
+     move or remove that network or route. It does not suggest changing
+     `runtime_network.offline`: on an existing deployment `retarget-image`
+     refuses any change to the deployment inputs (only the image may
+     change), and moving the block would move every one-shot network,
+     PostgreSQL's addresses and the hba rules. The preflight runs before
+     the retarget,
      so it computes the `/28` itself: slice index 5 of the rendered
      `runtime_network.offline` (`DEFAULT_OFFLINE` when the record does not
      set it), and a test ties that index to the uploader's position in
@@ -2509,15 +2537,26 @@ an Administrator can restore it. The rest is listed under
   before the row was written), so its newest row is the backup before
   the set, and that rule would refuse most restores at step 7 with the
   services down. With `--after-restore SET`, and only then, the rule is
-  replaced by the evidence `pk-restore` already trusts that the set is
-  loaded and nothing has run on it since: the public schema's comment
-  is exactly `pk-restore:SET:<64 lowercase hex>` for that `SET` (written
-  last in step 6's transaction), and no `stewardship_backup_run` row
-  started at or after the set's start. `SET` must be a set name
-  (`YYYYMMDDTHHMMSSZ`, a real UTC time). Anything else refuses before
-  any grant: another set's marker, no marker, a later backup row (the
-  marker alone survives into later backups and restores), or a missing
-  run table on a configured database. The flag is not a way around the
+  replaced by evidence that the set is loaded and the site has not been
+  reopened since: the public schema's comment is exactly
+  `pk-restore:SET:<64 lowercase hex>` for that `SET` (written last in
+  step 6's transaction, the evidence `pk-restore`'s own `set_loaded`
+  trusts), no `stewardship_backup_run` row started at or after the set's
+  start, and no released restore review of that set. The last uses the
+  review's existing records, not a new marker: `restore-begin` writes a
+  `restore_begin` runtime transition with the set's time as `backup_at`,
+  and releasing the review writes `restore_release` with the same
+  `backup_at`. A `restore_release` row for `SET` means the site was
+  reopened and has taken live writes; without that check, a backup
+  schedule that keeps failing would leave the waiver open for as long as
+  no backup succeeds. An open review (`restore_begin` only) still
+  passes, so `pk-restore --from 7` keeps working. `SET` must be a set
+  name (`YYYYMMDDTHHMMSSZ` in ASCII digits, a real UTC time). Anything
+  else refuses before any grant: another set's marker, no marker, a
+  later backup row (the marker alone survives into later backups and
+  restores), a released review of the set, or a missing run or
+  transition table, whether or not the database is configured (every set
+  has both). The flag is not a way around the
   rule: it never relaxes anything when the restore marker is absent, so
   an ordinary upgrade's `database-grants`, which never passes it, keeps
   the recent-backup rule. Everything else in `database-grants` is
@@ -2683,8 +2722,9 @@ an Administrator can restore it. The rest is listed under
   keeping the host's file for a set without one (also on `--from 4`, from
   the failed run's tree), running `database-grants --after-restore SET`
   in step 7 (on PostgreSQL: it admits a loaded set whose newest backup
-  row is older than 24 hours, and refuses another set's marker, no
-  marker, a run row started at or after the set, and a malformed `SET`;
+  row is older than 24 hours, also while its review is open, and refuses
+  another set's marker, no marker, a run row started at or after the set,
+  a released review of the set, and a malformed `SET`;
   without the flag the same database is still refused), a
   replacement and a drill restore of a pre-uploader set with the new
   image ending with the login and a matching file, and the lost-file
