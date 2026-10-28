@@ -276,6 +276,32 @@ def test_a_set_swapped_after_its_binding_is_refused_not_copied(uploader, monkeyp
     )
 
 
+@pytest.mark.parametrize("damage", ["huge", "link", "hard_link", "missing_target"])
+def test_a_set_with_a_broken_manifest_is_skipped_silently(uploader, damage):
+    """No digest, no row, no interlock, every pass (#235, L3).
+
+    Like a directory whose digest has no run row: a staged directory must
+    not raise a failure row and a warning every five minutes.
+    """
+    directory = bound_set(uploader, timedelta(minutes=10))
+    manifest = directory / backup_offsite.MANIFEST
+    if damage == "huge":
+        manifest.write_bytes(b" " * (backup_offsite.MANIFEST_CAP + 1))
+    elif damage == "link":
+        moved = uploader.backups.parent / "manifest.json"
+        manifest.rename(moved)
+        manifest.symlink_to(moved)
+    elif damage == "hard_link":
+        (uploader.backups.parent / "second-name").hardlink_to(manifest)
+    else:
+        manifest.unlink()
+        manifest.symlink_to(uploader.backups.parent / "nowhere")
+    for _ in range(2):
+        assert upload(uploader) is None
+    assert uploader.uses == [] and not BackupUpload.objects.exists()
+    assert uploader.drive.calls.count("upload") == 0
+
+
 def failure_kinds(caplog):
     """The failure_kind of every formatted process-log line so far."""
     return [

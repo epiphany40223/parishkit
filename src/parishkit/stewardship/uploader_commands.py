@@ -143,11 +143,18 @@ def uploader_pending(backups, folder_id, *, future=None):
       copied set's name. Copies named more than ``CLOCK_SKEW`` after the
       database's time (a clock that jumped) are left out of that comparison
       and their names added to ``future``;
-    - a set whose digest already has an ``uploaded`` row here is copied;
-    - a set whose manifest digest has no backup run row at all is not
-      considered (a stray directory: a hand copy, a half-restored set);
-    - a set whose rows all fail ``binds``, or whose manifest is not a
-      regular file within the cap, is pending with the refusal
+    - a set whose digest already has an ``uploaded`` row here is already
+      copied and skipped;
+    - a set with no digest (its manifest is a link, not a regular file with
+      one link, past the cap or unreadable) or whose digest has no backup
+      run row at all is not considered, silently: a stray directory (a hand
+      copy, a half-restored set) or one a compromised backup image staged.
+      Neither can be a run's set, and refusing it with a row and a warning
+      on every five-minute pass would let anything that writes the backups
+      directory raise an alert at will. A real set damaged this way still
+      shows: its backup run then has no copy row, which the off-site alert
+      reports once its grace has passed (``backup_health``);
+    - a set whose rows all fail ``binds`` is pending with the refusal
       ``verification``, which the copy records and logs. Any one binding
       row among several with the digest admits the set.
     """
@@ -172,10 +179,7 @@ def uploader_pending(backups, folder_id, *, future=None):
         if newest is not None and directory.name <= newest:
             continue
         digest = _digest(directory)
-        if digest is None:
-            pending.append((directory, None, "verification"))
-            continue
-        if digest in copied:
+        if digest is None or digest in copied:
             continue
         runs = BackupRun.objects.filter(manifest_digest=digest).values_list(
             "started_at", "completed_at"

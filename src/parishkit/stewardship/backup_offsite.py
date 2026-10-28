@@ -144,8 +144,9 @@ def _digest(directory):
     set's directory and the file are opened without following a link, the
     file must be a regular one with a single link, and nothing past
     ``MANIFEST_CAP`` is read.
-    None means the manifest broke one of those rules (or could not be read);
-    the copy then refuses the set as ``verification`` when it tries it.
+    None means the manifest broke one of those rules (or could not be read):
+    the backup profile's copy then refuses the set as ``verification`` when
+    it tries it, and the uploader skips it silently (``uploader_pending``).
     Nothing is logged here, so choosing what to copy stays silent.
     """
     try:
