@@ -243,20 +243,20 @@ OAuth redirect registration. TLS remains optional locally.
 
 ## Database connection sources
 
-**Status: planned, post-launch (#2111).** Until it ships, PostgreSQL runs
-with the stock image's `pg_hba.conf`, which accepts any login with its
-password from any address, so a container that can read another login's
-password can connect as that login. The backup worker reads every login's
-password, the cluster superuser's included, because it archives the
-credentials tree (see the
+**Status: shipped in stewardship-v1.25.0 (#2111).** Before 1.25.0,
+PostgreSQL ran with the stock image's `pg_hba.conf`, which accepts any login
+with its password from any address, so a container that could read another
+login's password could connect as that login. The backup worker reads
+every login's password, the cluster superuser's included, because it
+archives the credentials tree (see the
 [backup guide](../../../guides/stewardship-backup.md#the-whole-trees-read-only-by-one-identity)).
-This design makes PostgreSQL accept each login only from the container
+Since 1.25.0, PostgreSQL accepts each login only from the container
 network identity of the service that uses it, so a stolen password is
 useless from anywhere else. The per-login passwords, `scram-sha-256`, the
 grants and every login's [grant admission](#installer-idle-polling) stay as
 they are; the source rules are a second, independent check in front of them.
 The [dedicated off-site uploader](https://github.com/epiphany40223/parishkit/issues/235)
-waits for this design and gets its own source when it lands.
+builds on these rules and gets its own source when it lands.
 
 ### Logins and their sources
 
@@ -628,7 +628,7 @@ this with the previous release's image before the release ships.
 
 ## Database inspection login
 
-**Status: post-launch (#2148).** Read-only inspection of Production (counts,
+**Status: shipped in stewardship-v1.25.0 (#2148).** Read-only inspection of Production (counts,
 mail-queue checks, pre- and post-deploy checks) uses
 `pk_stewardship_inspect` through the `tools/stewardship-ops/pk-inspect` host
 wrapper, never the operator superuser, whose `READ ONLY` transaction one
