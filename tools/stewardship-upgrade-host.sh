@@ -941,7 +941,12 @@ fi
 # which no release before the uploader has; `smoke` cannot be the marker, as
 # every image lists it). The running image's list is what a later release's
 # step 1 keys its uploader run on. An image that does not answer (gone, or
-# no list within the limit) refuses before anything stops.
+# no list within the limit) refuses before anything stops. That holds for
+# the running image too, although in this release its list only drives a
+# message: the design (operations specification, "Scripted upgrades", *The
+# command probe*) requires the refusal, since a later release's step 1
+# runs that image's uploader. A pruned or unpullable running image
+# therefore refuses the upgrade; pull it again, or restore it, and repeat.
 command_list() {
     # Prints $1's command list; fails when it does not answer with one.
     local out rc=0 started
