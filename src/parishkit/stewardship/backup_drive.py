@@ -18,6 +18,7 @@ URLs with tokens and credential material never do.
 """
 
 import hashlib
+import io
 import json
 import logging
 import os
@@ -446,8 +447,9 @@ class DriveClient:
     ):
         """Upload one file with a resumable session; return id, size and MD5.
 
-        ``path`` is a path, or a set file already open for reading (a set's
-        files are uploaded from the descriptors ``open_set`` checked).
+        ``path`` is a path, a set file already open for reading (a set's
+        files are uploaded from the descriptors ``open_set`` checked), or
+        bytes already read and verified (a set's manifest, #2318).
 
         Drive answers the final upload request with the file fields chosen
         when the session was started, so ``fields`` goes on that first
@@ -471,7 +473,11 @@ class DriveClient:
         if not location or not location.startswith(UPLOAD):
             raise DriveFailure("unavailable")
         with ExitStack() as stack:
-            if hasattr(path, "read"):
+            if isinstance(path, bytes):
+                # The manifest bytes that were verified: uploaded as read,
+                # so a rewrite on disk since then cannot reach Drive.
+                stream, size = io.BytesIO(path), len(path)
+            elif hasattr(path, "read"):
                 # An open set file (``open_set``): the descriptor that was
                 # hashed is the one uploaded, read again from its start.
                 stream = path
@@ -590,6 +596,10 @@ def _local_files(handles, expected_digest=None):
     chose the set by (and bound to its backup run row, #235): a set swapped
     on disk after that choice agrees with itself but not with it, and is
     refused the same way, before anything is uploaded.
+
+    Returns ``(local, manifest)``: ``local`` maps each name to its size and
+    MD5, and ``manifest`` is the manifest's bytes, read once, which are the
+    bytes the caller uploads.
     """
     try:
         return _checked_files(handles, expected_digest)
@@ -600,8 +610,11 @@ def _local_files(handles, expected_digest=None):
 def _checked_files(handles, expected_digest):
     """Hash each open file and compare the sealed ones with the manifest.
 
-    The manifest's own bytes, read from the descriptor that is uploaded,
-    must also hash to ``expected_digest`` when one is given.
+    The manifest is read exactly once: its SHA-256 (against
+    ``expected_digest``), its size and MD5 (against Drive) and the uploaded
+    bytes all come from that one read. The backup worker owns the file and
+    could rewrite it in place between two reads, and the copy would then
+    upload a manifest other than the one the run row binds (#2318).
     """
     data = read_manifest(handles[MANIFEST])
     if expected_digest is not None and hashlib.sha256(data).hexdigest() != (
@@ -616,8 +629,13 @@ def _checked_files(handles, expected_digest):
         }
     except (ValueError, KeyError, TypeError):
         expected = None
-    local, sealed = {}, {}
+    local = {
+        MANIFEST: (str(len(data)), hashlib.md5(data, usedforsecurity=False).hexdigest())
+    }
+    sealed = {}
     for name, stream in handles.items():
+        if name == MANIFEST:
+            continue
         md5 = hashlib.md5(usedforsecurity=False)
         sha256 = hashlib.sha256()
         stream.seek(0)
@@ -625,11 +643,10 @@ def _checked_files(handles, expected_digest):
             md5.update(chunk)
             sha256.update(chunk)
         local[name] = (str(os.fstat(stream.fileno()).st_size), md5.hexdigest())
-        if name != MANIFEST:
-            sealed[name] = sha256.hexdigest()
+        sealed[name] = sha256.hexdigest()
     if expected != sealed:
         _set_mismatch()
-    return local
+    return local, data
 
 
 def _set_mismatch():
@@ -647,14 +664,15 @@ def upload_set(client, folder_id, directory, names, *, expected_digest=None):
 
     The local files must be regular files (``open_set``) that still match
     the set's manifest (``_local_files``); the descriptors checked are the
-    ones uploaded. With ``expected_digest`` the manifest must also be the
-    one the caller chose the set by. An existing subfolder that already
+    ones uploaded; the manifest is uploaded from the very bytes checked.
+    With ``expected_digest`` the manifest must also be the one the caller
+    chose the set by. An existing subfolder that already
     holds every file with the local size and MD5 is reused unchanged; an
     incomplete or mismatched one is trashed and written again, so a
     partial earlier attempt never counts as a copy. Returns the subfolder ID.
     """
     with open_set(directory, names) as handles:
-        local = _local_files(handles, expected_digest)
+        local, manifest = _local_files(handles, expected_digest)
         for existing in client.children(folder_id, tagged=True, folders=True):
             if existing.get("name") != directory.name:
                 continue
@@ -667,7 +685,8 @@ def upload_set(client, folder_id, directory, names, *, expected_digest=None):
             client.trash(existing["id"])
         subfolder = client.create_folder(directory.name, folder_id)
         for name in names:
-            result = client.upload(handles[name], name, subfolder)
+            source = manifest if name == MANIFEST else handles[name]
+            result = client.upload(source, name, subfolder)
             if (result.get("size"), result.get("md5Checksum")) != local[name]:
                 raise DriveFailure("verification")
         return subfolder

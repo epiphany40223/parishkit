@@ -101,8 +101,11 @@ class FakeDrive:
         self, path, name, parent, *, content_type="application/octet-stream", **_
     ):
         self._maybe_fail("upload")
-        # A path (the probe's file) or an open set file (``open_set``).
-        if hasattr(path, "read"):
+        # A path (the probe's file), verified bytes (a set's manifest) or an
+        # open set file (``open_set``).
+        if isinstance(path, bytes):
+            data = path
+        elif hasattr(path, "read"):
             path.seek(0)
             data = path.read()
         else:

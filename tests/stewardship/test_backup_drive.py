@@ -280,6 +280,55 @@ def test_a_set_swapped_since_its_digest_was_chosen_is_not_copied(tmp_path, caplo
     assert drive.sets() == [directory.name]
 
 
+def test_a_manifest_rewritten_after_its_check_is_not_what_is_uploaded(
+    tmp_path, monkeypatch
+):
+    """The manifest is read once; the bytes checked are the bytes uploaded (#2318).
+
+    The backup worker owns the manifest and can rewrite it in place after
+    the copy has read and checked it. Such a rewrite must not reach Drive:
+    the uploaded manifest is the one the bound digest matched, by its MD5.
+    """
+    drive = FakeDrive(FOLDER)
+    directory = make_set(tmp_path)
+    manifest = directory / backup.MANIFEST
+    verified = manifest.read_bytes()
+    bound = hashlib.sha256(verified).hexdigest()
+    read = backup_drive.read_manifest
+
+    def read_then_rewrite(handle):
+        """Read as the copy does, then rewrite the same file in place."""
+        data = read(handle)
+        with open(manifest, "r+b") as rewritten:
+            rewritten.write(b"X" * len(data))
+        return data
+
+    monkeypatch.setattr(backup_drive, "read_manifest", read_then_rewrite)
+    upload_set(drive, FOLDER, directory, SEALED_FILES, expected_digest=bound)
+    assert manifest.read_bytes() != verified
+    stored = [
+        item
+        for item in drive.items.values()
+        if item.get("name") == backup.MANIFEST and not item["trashed"]
+    ]
+    assert [(item["size"], item["md5"]) for item in stored] == [
+        (str(len(verified)), hashlib.md5(verified, usedforsecurity=False).hexdigest())
+    ]
+
+
+def test_client_upload_sends_verified_bytes_as_given():
+    """Bytes (a checked manifest) are uploaded as they are, with their length."""
+    location = f"{backup_drive.UPLOAD}?uploadType=resumable&upload_id=x"
+    session = FakeSession(
+        FakeResponse(200, headers={"Location": location}),
+        FakeResponse(200, {"id": "f", "size": "8", "md5Checksum": "m"}),
+    )
+    DriveClient(session).upload(b"manifest", "manifest.json", FOLDER)
+    put = session.requests[1][2]
+    assert put["headers"]["Content-Length"] == "8"
+    assert put["data"].read() == b"manifest"
+
+
 def test_a_manifest_at_the_cap_is_still_read(tmp_path):
     """The cap refuses only what is past it; a real manifest is far below."""
     directory = make_set(tmp_path)
