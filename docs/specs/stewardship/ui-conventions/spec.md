@@ -2129,7 +2129,7 @@ the [Go live page](../admin-portal/spec.md#go-live-page) describes
 (Administrator decision, 2026-10-17, on
 [#1585](https://github.com/epiphany40223/parishkit/issues/1585); built in
 its slices 2 to 5). Other operational actions that are not editors
-(pausing and resuming mail, fixing many emails at once, test email sends, a
+(pausing and resuming mail, Sent mail's bulk actions, test email sends, a
 manual ParishSoft refresh, Family portal maintenance) keep the flows their
 own sections describe; whether any of them moves to the dialog is decided
 on [#750](https://github.com/epiphany40223/parishkit/issues/750).
