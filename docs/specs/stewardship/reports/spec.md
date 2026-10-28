@@ -377,7 +377,9 @@ invalid, absent, and suppressed head email without showing credential/link data.
 **Access:** Admin and Staff.
 
 The x-axis is every campaign-local date from campaign start through the lesser
-of campaign end and today, using the Campaign's immutable timezone snapshot.
+of the campaign's [report end](#responses-entered-after-the-campaign-closes)
+and today, using the Campaign's immutable timezone snapshot. The report end
+is the end date unless Staff entered a response after the campaign closed.
 The graph is stacked panels on that one shared date axis, top to bottom, each
 named by its own title (so there is no legend):
 
@@ -673,6 +675,61 @@ no Edits, the inputs they were built from. After the upgrade, a campaign
 with any pledge review has a higher watermark, so the scheduler's first
 reconciliation builds one new generation per population scope with the
 Edits in force, and the dashboard shows Updating until it is ready.
+
+#### Responses entered after the campaign closes
+
+Staff and Administrators can enter or replace a Family's response after the
+campaign closes ([Open form after the campaign
+closes](#open-form-after-the-campaign-closes),
+[#2294](https://github.com/epiphany40223/parishkit/issues/2294)). Every
+report total counts such a late response, and a pledge it changes, on the
+campaign-local date Staff entered it, never moved back to the end date, so
+figures already emailed never change
+([#2298](https://github.com/epiphany40223/parishkit/issues/2298)):
+
+- **Report end.** A campaign's report end is the later of its end date and
+  the campaign-local date of its newest live response, counted under the
+  submission watermark in question. It is the end date until a response is
+  entered after the close, and then that response's day. A fact
+  generation's dates run from the start date through its `through_date`,
+  which the database no longer caps at the end date (frozen migration
+  0192), and the current inputs take the lesser of the report end and today
+  as their `through_date`. So a closed campaign's daily series runs through
+  the day of its newest late response, not on to today, and the close
+  itself builds nothing new. Because the report end is counted under a
+  generation's or a send's own watermark, a later late response never
+  changes what an earlier generation or send covers.
+- **Charts.** When the series runs past the end date, the Response
+  dashboard's chart, the participation PNG and PDF and a report email's
+  chart draw a dashed "Campaign closed" line between the end date and the
+  next day, labelled on the top panel over a paper-coloured halo (so the
+  label keeps 4.5:1 over a bar), so the late days are visible but
+  distinct. The chart's description adds "The campaign closed at the end
+  of {end date}; the dates after it hold responses Staff entered after the
+  campaign closed." The daily table and the exports list the late days
+  like any other.
+- **Report emails.** A send's report day is held at the report end counted
+  under its own submission watermark, rather than at the end date
+  ([as of](../report-emails/spec.md#as-of)), so a send after a late
+  response reports that response's day, and its Campaign totals,
+  Participation charts and Day by day table include it. A saved copy
+  recomputes the same report day from the send's recorded watermark, so a
+  send already made keeps its figures.
+- **Home.** Home's Campaign Families responded tile reads each Family's
+  first response, late ones included, so it agrees with the reports after
+  the close as it does before.
+- **Campaign archive.** The archive export's cutoff is capped at the report
+  end rather than the end date, so the file covers the same dates as the
+  reports; how the file marks its late submissions is in
+  [what the export reads](../campaign-history/spec.md#what-the-export-reads).
+- **Comparison with past campaigns.** The comparison day stays at the end
+  date, so every year is still compared like for like
+  ([alignment by campaign day](../campaign-history/spec.md#alignment-by-campaign-day)).
+  When responses were entered after the close, the page adds a late entries
+  line under its heading: how many Families first responded after the
+  campaign closed and, with giving enabled, how much the effective annual
+  pledge total has changed since the end date. Its downloads and a report
+  email's comparison section are unchanged.
 
 ## Campaign statistics
 
@@ -1535,14 +1592,10 @@ own code, link or session.
   stewardship's date carries its Staff chip. The Timeline and directory
   About panels say that Open form works after close and that such a
   response is marked Late.
-- **Not yet in report totals.** The daily report facts stop at the
-  campaign's end date, so a response submitted after the end, and a pledge
-  it changes, are not yet in the Response dashboard's charts and daily
-  figures, the report emails, the comparison report or the archive
-  workbook; the Home tiles, which read each Family's first response, do
-  count it. Including late responses is tracked in
-  [#2298](https://github.com/epiphany40223/parishkit/issues/2298). The
-  response itself, its review items and its Timeline line are complete.
+- **In report totals.** A late response, and a pledge it changes, count in
+  every report total on the day Staff entered it, as
+  [responses entered after the campaign closes](#responses-entered-after-the-campaign-closes)
+  says.
 - **A campaign with no response before its end.** The campaign records the
   time of its first live response once, and only for a response inside the
   campaign's dates. So if no Family at all responded before the end, the

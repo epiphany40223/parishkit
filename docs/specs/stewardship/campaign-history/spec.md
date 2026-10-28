@@ -309,7 +309,23 @@ inside one read-only, repeatable-read transaction up to a **cutoff**:
 
 - The end of the last complete local day, the comparison report's
   [comparison day](#alignment-by-campaign-day), never today's unfinished
-  day, and never past the end date.
+  day, and never past the campaign's
+  [report end](../reports/spec.md#responses-entered-after-the-campaign-closes):
+  the end date, or the day of the newest response Staff entered after the
+  campaign closed
+  ([#2298](https://github.com/epiphany40223/parishkit/issues/2298)).
+  Format 1.0 has no per-row marker, so the file marks such late
+  submissions with a `count.late_submissions` row and a `note.*` row
+  naming the end date: the `submissions` rows dated after it were entered
+  after the campaign closed, the responses the Admin pages mark
+  [Late](../reports/spec.md#open-form-after-the-campaign-closes) (on their
+  review worklist rows and Timeline detail). Past campaigns then describes
+  the file as "A final archive of {campaign}, through day {day} ({date}),
+  the day of the newest response entered after the campaign closed on
+  {end date}." While the newest late response is from today, a final file
+  waits for the next day, as below, with "Available tomorrow: a response
+  was entered today, after the campaign closed, and today's responses are
+  not in a complete day yet."
 - For a `closed` or `archived` campaign the file is final: `is_final`
   `TRUE`, named `stewardship-<year>.xlsx`. Once the end date has passed,
   the cutoff is the end of the end date. A campaign closed before its end
@@ -841,7 +857,10 @@ campaigns started on dates from September 11 to October 5.
   report day of a [report email](../report-emails/spec.md#as-of) as of the
   end of the previous day is. Before day 1 has ended the page shows the imported years'
   final results only. After the current campaign's end date the comparison
-  day stays at the day of its end date.
+  day stays at the day of its end date, even when Staff enter responses
+  after the close; the page states those
+  [late entries](../reports/spec.md#responses-entered-after-the-campaign-closes)
+  in their own line instead.
 - A final imported year (`is_final` `TRUE`) whose `daily` sheet ends before
   day N contributes its last day's values from then on, marked "(final)".
   A partial imported year has no values after its last day: its `daily`
