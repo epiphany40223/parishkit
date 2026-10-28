@@ -230,7 +230,7 @@ The LOCAL rendering differs from Production only as follows:
 - **Extra services.** `mailpit` ([mail catcher](#mail-catcher)) and
   `fake-parishsoft` ([fake ParishSoft](#fake-parishsoft-service)), both on the
   `backend` network.
-- **Database sources (planned, #2111).** The seeder's web-identity steps
+- **Database sources (#2111).** The seeder's web-identity steps
   get one LOCAL-only fixed `backend` address that the PostgreSQL source rules
   allow for the web and download logins; every other rule is Production's
   ([database connection sources](../operations/spec.md#database-connection-sources)).
@@ -1873,7 +1873,7 @@ seeded snapshot.
 `deploy --rollback`, `reset` and `snapshot restore` uploads the VM half
 from the checkout it runs from, and `deploy`, `deploy --rollback` and a
 `snapshot restore` of a snapshot taken on another image also upload and
-run the upgrade's host half from it. Once pk-local runs the
+run the upgrade's host half from it. Because pk-local runs the
 [database connection sources](../operations/spec.md#database-connection-sources)
 topology, each of them MUST run from a checkout that has that change, until
 every branch in use does. A checkout from before it fails and can leave

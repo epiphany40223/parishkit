@@ -363,7 +363,7 @@ For a pull request that changes `up` itself (provisioning, the wizard, the
 seeder), `reset --reinstall` and the seeding recipe remain the way to test
 it, since `deploy` never reinstalls.
 
-Once pk-local runs the PostgreSQL source rules (#2111), run every `deploy`,
+Because pk-local runs the PostgreSQL source rules (#2111), run every `deploy`,
 `deploy --rollback`, `reset` and `snapshot restore` from a checkout that
 has them, including the one that returns pk-local to a snapshot afterwards.
 A checkout without them, older `main` and other branches alike, fails partway
