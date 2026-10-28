@@ -148,3 +148,107 @@ def test_the_check_admits_the_registry_column_grant(backup_login):
             ).format(sql.Identifier(BACKUP))
         )
         cursor.execute(CONTRACT_CHECK)
+
+
+OPERATOR = "pk_stewardship_operator"
+MIGRATION = "pk_stewardship_migration"
+
+
+def grantors():
+    """Who granted the backup login's INSERTs on the two tables, per table."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT c.relname, g.rolname FROM pg_class c,"
+            " aclexplode(c.relacl) a JOIN pg_roles g ON g.oid = a.grantor"
+            " JOIN pg_roles r ON r.oid = a.grantee"
+            " WHERE c.oid IN ('public.stewardship_backup_run'::regclass,"
+            " 'public.stewardship_backup_upload'::regclass)"
+            " AND r.rolname = %s AND a.privilege_type = 'INSERT'"
+            " ORDER BY 1",
+            [BACKUP],
+        )
+        return cursor.fetchall()
+
+
+@pytest.fixture
+def production_roles(backup_login):
+    """Production's grant path: the tables owned by the migration login,
+    the earlier INSERTs granted by the operator, a superuser that is not the
+    owner (it is the cluster's bootstrap POSTGRES_USER), as database-grants
+    connects. The fixture's own grants are dropped first, so only the
+    operator's remain; ownership goes back to the test's owner afterwards.
+    """
+    tables = sql.SQL(", ").join(
+        sql.Identifier("public", name)
+        for name in ("stewardship_backup_run", "stewardship_backup_upload")
+    )
+    backup = sql.Identifier(BACKUP)
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT current_user")
+        (owner,) = cursor.fetchone()
+        cursor.execute(
+            "SELECT rolname FROM pg_roles WHERE rolname IN (%s, %s)",
+            [OPERATOR, MIGRATION],
+        )
+        assert cursor.fetchall() == [], "a test left Production's roles behind"
+        cursor.execute(sql.SQL("REVOKE ALL ON {} FROM {}").format(tables, backup))
+        cursor.execute(
+            sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(MIGRATION))
+        )
+        cursor.execute(
+            sql.SQL("CREATE ROLE {} NOLOGIN SUPERUSER").format(sql.Identifier(OPERATOR))
+        )
+        for name in ("stewardship_backup_run", "stewardship_backup_upload"):
+            cursor.execute(
+                sql.SQL("ALTER TABLE {} OWNER TO {}").format(
+                    sql.Identifier("public", name), sql.Identifier(MIGRATION)
+                )
+            )
+    try:
+        yield
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("RESET SESSION AUTHORIZATION")
+            for name in ("stewardship_backup_run", "stewardship_backup_upload"):
+                cursor.execute(
+                    sql.SQL("ALTER TABLE {} OWNER TO {}").format(
+                        sql.Identifier("public", name), sql.Identifier(owner)
+                    )
+                )
+            for role in (OPERATOR, MIGRATION):
+                cursor.execute(sql.SQL("DROP OWNED BY {}").format(sql.Identifier(role)))
+                cursor.execute(sql.SQL("DROP ROLE {}").format(sql.Identifier(role)))
+
+
+def test_the_file_revokes_inserts_the_operator_granted(production_roles):
+    """Production's grantor: the operator's grants, revoked by the migration login.
+
+    database-grants connects as the operator, which is a superuser but not
+    the tables' owner, so PostgreSQL records its grants as the owner's (the
+    migration login's). 0195 runs as that owner, so its REVOKE removes them
+    rather than leaving another grantor's copy behind, and its check passes.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            sql.SQL("SET SESSION AUTHORIZATION {}").format(sql.Identifier(OPERATOR))
+        )
+        cursor.execute(
+            sql.SQL(
+                "GRANT SELECT, INSERT ON public.stewardship_backup_run TO {0}; "
+                "GRANT SELECT, INSERT ON public.stewardship_backup_upload TO {0}"
+            ).format(sql.Identifier(BACKUP))
+        )
+        cursor.execute("RESET SESSION AUTHORIZATION")
+    assert grantors() == [
+        ("stewardship_backup_run", MIGRATION),
+        ("stewardship_backup_upload", MIGRATION),
+    ]
+    assert privileges()[:3] == (True, True, True)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            sql.SQL("SET SESSION AUTHORIZATION {}").format(sql.Identifier(MIGRATION))
+        )
+        cursor.execute(CONTRACT_SQL)
+        cursor.execute("RESET SESSION AUTHORIZATION")
+    assert grantors() == []
+    assert privileges() == (False, False, False, False)
