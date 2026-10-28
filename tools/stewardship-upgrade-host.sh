@@ -280,8 +280,10 @@ oneoff() {
     oneoff_name=$oneoff_prefix-$3
     shift 3
     started=$(date -u +%s)
+    # The copy lock's descriptors stay with this shell: a client left
+    # behind by a killed shell would otherwise hold the lock until it exits.
     timeout --kill-after=30 "$limit" "${dc[@]}" run --name "$oneoff_name" --rm -T "$@" \
-        </dev/null >"$work/oneoff.out" 2>&1 &
+        </dev/null >"$work/oneoff.out" 2>&1 8<&- 9<&- &
     oneoff_pid=$!
     wait "$oneoff_pid" || rc=$?
     oneoff_pid=""
@@ -569,6 +571,171 @@ hba_reload() {
     esac
 }
 # END PostgreSQL source rules check (#2111).
+# BEGIN host crontab collection (#235). This block is kept identical in
+# tools/stewardship-upgrade-host.sh and tools/stewardship-ops/pk-restore
+# (tests/stewardship/test_database_layout.py compares the two copies).
+cron_tagged() {
+    # Every uncommented line of the crontabs this host's jobs live in, each
+    # after `u ` (root's and SUDO_USER's crontabs: no user field) or `s `
+    # (/etc/crontab and the /etc/cron.d files cron reads: a user field);
+    # PK_RESTORE_CRONTAB and PK_RESTORE_CRON_DIR for tests. cron skips a
+    # cron.d file whose name has anything but letters, digits, `_` and `-`
+    # (a dot, as in `stewardship.bak` or `.placeholder`), so this does too.
+    # Scripts in /etc/cron.{hourly,...}, anacron, `at` jobs and other
+    # users' crontabs are not read. awk ends every file's last line.
+    local file
+    {
+        {
+            crontab -l -u root 2>/dev/null || true
+            [ -z "${SUDO_USER:-}" ] || crontab -l -u "$SUDO_USER" 2>/dev/null || true
+        } | awk '{ print "u " $0 }'
+        awk '{ print "s " $0 }' "${PK_RESTORE_CRONTAB:-/etc/crontab}" 2>/dev/null || true
+        for file in "${PK_RESTORE_CRON_DIR:-/etc/cron.d}"/*; do
+            case ${file##*/} in *[!A-Za-z0-9_-]*) continue ;; esac
+            [ ! -f "$file" ] || awk '{ print "s " $0 }' "$file" 2>/dev/null || true
+        done
+    } | grep -v '^. [[:space:]]*#' || true
+}
+cron_lines() {
+    # cron_tagged's lines as the crontabs hold them.
+    cron_tagged | cut -c3-
+}
+uploader_cron_lines() {
+    # The cron lines (of cron_tagged) that run the off-site uploader, as the
+    # backup runbook's "The uploader's cron line" gives it: the schedule
+    # (five fields or an @keyword), the user field in /etc/crontab and
+    # cron.d, then `docker compose` (docker by name or by path), compose's
+    # own options, `run`, run's options, the service `backup-uploader`, and
+    # nothing after it but its `upload` command and its arguments, up to a
+    # redirection or the shell's `;`, `&` or `|`. A `#` starting a word
+    # ends the command (the shell's comment), so a name in a trailing
+    # comment is not a match; nor is any other command, wrapper or service
+    # that merely contains the name, nor `--entrypoint` (another command in
+    # the uploader's image). Lines are printed as the crontabs hold them.
+    cron_tagged | awk '
+        function docker(word) { return word == "docker" || word ~ /\/docker$/ }
+        {
+            line = substr($0, 3)
+            command = line
+            sub(/^[ \t]+/, "", command)
+            sub(/[ \t]#.*/, "", command)
+            n = split(command, word, /[ \t]+/)
+            at = (word[1] ~ /^@/) ? 2 : 6
+            if (substr($0, 1, 1) == "s") at++
+            if (!docker(word[at]) || word[at + 1] != "compose") next
+            for (i = at + 2; i <= n && word[i] ~ /^-/; i++)
+                if (word[i] ~ /^(-f|-p|--file|--project-name|--project-directory|--env-file|--profile|--ansi|--progress|--parallel)$/) i++
+            if (word[i] != "run") next
+            for (i++; i <= n && word[i] ~ /^-/; i++) {
+                if (word[i] ~ /^--entrypoint/) next
+                if (word[i] ~ /^(-e|--env|--env-from-file|--name|-u|--user|-w|--workdir|-l|--label|-v|--volume|-p|--publish|--cap-add|--cap-drop|--pull)$/) i++
+            }
+            if (word[i] != "backup-uploader") next
+            i++
+            if (i <= n && word[i] != "upload" && word[i] !~ /^([0-9]*[<>]|&>|[;&|])/) next
+            print line
+        }' || true
+}
+# END host crontab collection (#235).
+# BEGIN off-site copy lock (#235). This block is kept identical in
+# tools/stewardship-upgrade-host.sh and tools/stewardship-ops/pk-restore
+# (tests/stewardship/test_database_layout.py compares the two copies).
+copy_lock_same() {
+    # copy_lock_same FD PATH: whether open descriptor FD is PATH itself, by
+    # device and inode, PATH's final component not followed (GNU stat).
+    local open named
+    open=$(stat -L -c %d:%i "/dev/fd/$1" 2>/dev/null) &&
+        named=$(stat -c %d:%i -- "$2" 2>/dev/null) &&
+        [ -n "$open" ] && [ "$open" = "$named" ]
+}
+copy_lock_take() {
+    # copy_lock_take DIR SECONDS: hold this host's off-site copy lock on the
+    # backups directory DIR for the rest of the run (operations
+    # specification, "Offline work"), so an upload still running finishes
+    # first and a cron uploader exits at the lock. Taken as every copier
+    # takes it, in the expand release's order: the legacy file lock (an
+    # old-release copy holds only that one), then the directory lock, each
+    # with `flock -w` on a descriptor (8 and 9) this shell keeps open until
+    # it exits.
+    #
+    # The backup worker can write DIR, so anything at the lock file's name
+    # may change between a check and an open. A missing legacy file is
+    # made beside it (mktemp: O_EXCL, mode 0600), owned like DIR, and
+    # linked into place: link(2) neither follows nor replaces whatever is
+    # at the name by then, and that is checked like any existing file. A
+    # link or anything but a regular file there refuses before the open.
+    # The file is opened read-write (`<>`, nothing is written), which never
+    # blocks on a FIFO as a read-only open would, and the open descriptors
+    # must then be the regular file and the directory at those names, by
+    # device and inode, so a link or a FIFO swapped in after the checks
+    # refuses instead of being locked or hanging the run.
+    #
+    # A wait longer than SECONDS in all is logged with what, the limit and
+    # the elapsed time (flock's exit 75); any other flock failure is logged
+    # as a failure with its status. Either returns non-zero, as does every
+    # other refusal.
+    local dir=$1 limit=$2 file uid gid started left fd tmp mask rc
+    file=$dir/.offsite-copy.lock
+    command -v flock >/dev/null || { echo "flock is not installed; cannot take the off-site copy lock." >&2; return 1; }
+    { [ -d "$dir" ] && [ ! -L "$dir" ]; } ||
+        { echo "The backups directory $dir is not a directory." >&2; return 1; }
+    if [ ! -e "$file" ] && [ ! -L "$file" ]; then
+        read -r _ _ uid gid _ < <(ls -ldn "$dir") ||
+            { echo "Could not read the owner of $dir." >&2; return 1; }
+        if ! tmp=$(mktemp "$file.XXXXXX" 2>/dev/null) || ! chown -h "$uid:$gid" "$tmp"; then
+            [ -z "${tmp:-}" ] || rm -f -- "$tmp"
+            echo "Could not create the copy lock file $file." >&2
+            return 1
+        fi
+        # A failed link is fine when something else now has the name (the
+        # backup profile made the file meanwhile): it is checked below. -T
+        # never links into a directory that took the name meanwhile.
+        ln -T -- "$tmp" "$file" 2>/dev/null || [ -e "$file" ] || [ -L "$file" ] ||
+            { rm -f -- "$tmp"; echo "Could not create the copy lock file $file." >&2; return 1; }
+        rm -f -- "$tmp"
+    fi
+    { [ -f "$file" ] && [ ! -L "$file" ]; } ||
+        { echo "The copy lock file $file is not a regular file." >&2; return 1; }
+    # Owner-only, should a name removed meanwhile make the open create it.
+    mask=$(umask)
+    umask 077
+    if ! exec 8<>"$file" 9<"$dir"; then
+        umask "$mask"
+        echo "Could not open the copy lock on $dir." >&2
+        return 1
+    fi
+    umask "$mask"
+    if ! { [ -f /dev/fd/8 ] && copy_lock_same 8 "$file"; }; then
+        exec 8<&- 9<&-
+        echo "The copy lock file $file is not a regular file." >&2
+        return 1
+    fi
+    if ! { [ -d /dev/fd/9 ] && copy_lock_same 9 "$dir"; }; then
+        exec 8<&- 9<&-
+        echo "The backups directory $dir is not a directory." >&2
+        return 1
+    fi
+    started=$(date -u +%s)
+    for fd in 8 9; do
+        left=$((limit - ($(date -u +%s) - started)))
+        [ "$left" -ge 1 ] || left=1
+        rc=0
+        flock -E 75 -w "$left" "$fd" || rc=$?
+        if [ "$rc" -eq 75 ]; then
+            echo "TIMEOUT: waiting for the off-site copy lock on $dir gave up after $(($(date -u +%s) - started))s (limit ${limit}s)" >&2
+            return 1
+        elif [ "$rc" -ne 0 ]; then
+            echo "FAILED: flock on the off-site copy lock on $dir exited with status $rc after $(($(date -u +%s) - started))s" >&2
+            return 1
+        fi
+    done
+}
+# END off-site copy lock (#235).
+
+# The offline phase holds the off-site copy lock (after step 1, below) with
+# util-linux flock; refuse now, before step 1's backup and copy, as
+# pk-restore does, rather than find it missing hours later.
+command -v flock >/dev/null || { echo "flock is not installed (util-linux); refusing." >&2; exit 1; }
 
 # The project keeps whichever Compose file it already runs under; an upgrade
 # or a rollback changes images and the documents rendered for them (once,
@@ -935,6 +1102,202 @@ if [ "$mode" = upgrade ]; then
     fi
 fi
 
+# The command-list probe (#235): one bounded `--help` capture per image, read
+# by has_command() as pk-restore reads its own. The new image's list says
+# whether it has the off-site uploader (it lists uploader-password-check,
+# which no release before the uploader has; `smoke` cannot be the marker, as
+# every image lists it). The running image's list is what a later release's
+# step 1 keys its uploader run on. An image that does not answer (gone, or
+# no list within the limit) refuses before anything stops. That holds for
+# the running image too, although in this release its list only drives a
+# message: the design (operations specification, "Scripted upgrades", *The
+# command probe*) requires the refusal, since a later release's step 1
+# runs that image's uploader. A pruned or unpullable running image
+# therefore refuses the upgrade; pull it again, or restore it, and repeat.
+command_list() {
+    # Prints $1's command list; fails when it does not answer with one.
+    local out rc=0 started
+    started=$(date -u +%s)
+    out=$(timeout --kill-after=10 60 "${isolated[@]}" "$1" --help 2>/dev/null) || rc=$?
+    if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+        echo "TIMEOUT: listing the commands of $1 killed after $(( $(date -u +%s) - started ))s (limit 60s)" >&3
+    fi
+    [ "$rc" -eq 0 ] || return 1
+    # Every release lists retarget-image; anything else is not a command list.
+    grep -qE '[{,]retarget-image[,}]' <<<"$out" || return 1
+    printf '%s\n' "$out"
+}
+has_command() { grep -qE "[{,]$2[,}]" <<<"$1"; }
+new_commands=$(command_list "$image") ||
+    { echo "Could not list the commands of $image; refusing." >&2; exit 1; }
+running_commands=""
+if [ -n "$previous" ] && [ "$previous" != "$image" ]; then
+    running_commands=$(command_list "$previous") ||
+        { echo "Could not list the commands of the running image $previous; refusing." >&2; exit 1; }
+else
+    running_commands=$new_commands
+fi
+if has_command "$running_commands" uploader-password-check; then
+    echo "    the running image has the off-site uploader"
+fi
+# The off-site uploader's cron line (#235) runs the backup-uploader service
+# every five minutes. An image without the `upload` command (a rollback past
+# the expand release, or an image between its two parts) renders no such
+# service or cannot run it, so the line would fail every five minutes and
+# the backup profile's own copy is the copier again: it must be commented
+# out first. Refused here, before anything stops (backup runbook, "Rolling
+# back the expand release").
+if ! has_command "$new_commands" upload; then
+    uploader_cron=$(uploader_cron_lines)
+    if [ -n "$uploader_cron" ]; then
+        echo "$image has no off-site uploader, but this host's cron still runs it:" >&2
+        while read -r line; do echo "    | $line"; done <<<"$uploader_cron" >&2
+        echo "Nothing was stopped or changed. Comment out the uploader's cron line first" >&2
+        echo "(docs/guides/stewardship-backup-runbook.md#rolling-back-the-expand-release)," >&2
+        echo "then repeat." >&2
+        exit 1
+    fi
+fi
+
+uploader_login=pk_stewardship_backup_uploader
+uploader_recovery="docs/guides/stewardship-backup-runbook.md#uploader-lost-file-recovery"
+if has_command "$new_commands" uploader-password-check; then
+    # The off-site uploader's password (#235, operations specification,
+    # "Uploader password"): step 4's database-grants refuses a login whose
+    # file is missing or does not match the cluster's stored verifier, but
+    # only after the full stop. So, read-only and before anything stops: no
+    # login yet is nothing to check (step 4 creates it); a login needs its
+    # file and the new image's `match`. The query's own failure refuses too
+    # and is never read as "no login" (the exit status, and exactly 0 or 1).
+    step "1. Checking the off-site uploader's password file"
+    read_only=(-e PGOPTIONS='-c default_transaction_read_only=on')
+    count=$("${dc[@]}" exec -T "${read_only[@]}" postgres \
+        psql -U pk_stewardship_operator -d "$database" -At -v ON_ERROR_STOP=1 -c \
+        "SELECT count(*) FROM pg_authid WHERE rolname='$uploader_login'" </dev/null 2>/dev/null) ||
+        { echo "Could not ask the database whether the off-site uploader's login exists; refusing." >&2; exit 1; }
+    case "$count" in
+        0) echo "    no uploader login yet: step 4's database-grants creates it" ;;
+        1)
+            # The verifier goes from psql to the check through a file in
+            # this run's owner-only work directory, never through the log.
+            "${dc[@]}" exec -T "${read_only[@]}" postgres \
+                psql -U pk_stewardship_operator -d "$database" -At -v ON_ERROR_STOP=1 -c \
+                "SELECT coalesce(rolpassword,'') FROM pg_authid WHERE rolname='$uploader_login'" \
+                </dev/null >"$work/uploader.verifier" 2>/dev/null ||
+                { echo "Could not read the off-site uploader's stored password; refusing." >&2; exit 1; }
+            # Named like a one-off, so a kill (or a signal's trap, through
+            # stop_oneoff) removes the container itself: killing only the
+            # docker run client leaves it running. A kill is logged with
+            # what, the limit and the elapsed time, and still refuses below
+            # (answer: none).
+            oneoff_name=$oneoff_prefix-uploader-password-check
+            started=$(date -u +%s)
+            check_rc=0
+            answer=$(timeout --kill-after=10 120 docker run -i --rm --init --network none \
+                --name "$oneoff_name" \
+                --user 10001:10001 --read-only --cap-drop ALL \
+                --security-opt no-new-privileges:true \
+                --tmpfs /tmp:rw,nosuid,nodev,noexec,mode=1777 \
+                --mount "type=bind,source=$root,target=$root,readonly" \
+                --mount "type=bind,source=$yaml,target=/run/operator.yaml,readonly" \
+                "$image" uploader-password-check --config /run/operator.yaml \
+                <"$work/uploader.verifier" 2>/dev/null) || check_rc=$?
+            rm -f "$work/uploader.verifier"
+            if [ "$check_rc" -eq 124 ] || [ "$check_rc" -eq 137 ]; then
+                echo "TIMEOUT: the off-site uploader's password check killed after $(( $(date -u +%s) - started ))s (limit 120s)" >&3
+                stop_oneoff "time limit" >&3
+                answer=""
+            fi
+            oneoff_name=""
+            if [ "$answer" != match ]; then
+                echo "The off-site uploader's password file is missing or does not match the" >&2
+                echo "database's login ${uploader_login} (answer: ${answer:-none}). Nothing was" >&2
+                echo "stopped or changed. Follow the uploader lost-file recovery in" >&2
+                echo "$uploader_recovery, then repeat." >&2
+                exit 1
+            fi
+            echo "    the uploader's password file matches its login" ;;
+        *) echo "Unexpected answer about the off-site uploader's login ($(head -1 <<<"$count")); refusing." >&2
+           exit 1 ;;
+    esac
+
+    # Docker refuses a network whose subnet overlaps another, but only at
+    # the full stop's `up`, after PostgreSQL has stopped. So the uploader's
+    # one-shot network, new with this release, is compared now with every
+    # other Docker network and with the host's routes. Its /28 is slice 5
+    # of runtime_network.offline (tests tie the index to OFFLINE_PROFILES).
+    # Once Docker runs the project's own network with that subnet there is
+    # nothing to create, so later upgrades skip the comparison.
+    offline=$(jq -r '.deployment.runtime_network.offline // "172.29.242.0/24"' "$services/web.yaml")
+    [[ $offline =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})/(24|25)$ ]] ||
+        { echo "Could not read runtime_network.offline ($offline); refusing." >&2; exit 1; }
+    ip_number() {
+        # A dotted IPv4 address as one number.
+        local a b c d
+        IFS=. read -r a b c d <<<"$1"
+        echo $(( (a << 24) | (b << 16) | (c << 8) | d ))
+    }
+    ip_text() {
+        echo "$(( ($1 >> 24) & 255 )).$(( ($1 >> 16) & 255 )).$(( ($1 >> 8) & 255 )).$(( $1 & 255 ))"
+    }
+    overlaps() {
+        # Whether the IPv4 CIDR $1 overlaps the uploader's /28.
+        local address=${1%/*} bits=28 mask
+        [[ $1 == */* ]] && bits=${1#*/}
+        [[ $address =~ ^[0-9]+(\.[0-9]+){3}$ ]] && [[ $bits =~ ^[0-9]+$ ]] || return 1
+        [ "$bits" -le 28 ] || bits=28
+        mask=$(( (0xFFFFFFFF << (32 - bits)) & 0xFFFFFFFF ))
+        [ $(( $(ip_number "$address") & mask )) -eq $(( uploader_base & mask )) ]
+    }
+    uploader_base=$(( $(ip_number "${offline%/*}") + 5 * 16 ))
+    uploader_subnet="$(ip_text "$uploader_base")/28"
+    own="${project}_offline-backup-uploader"
+    ours=$(docker network inspect --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' "$own" 2>/dev/null || true)
+    if [ "${ours% }" = "$uploader_subnet" ]; then
+        echo "    the uploader's network $uploader_subnet already exists"
+    else
+        command -v ip >/dev/null ||
+            { echo "Cannot read the host's routes (no ip command) to check $uploader_subnet; refusing." >&2; exit 1; }
+        clashes=()
+        ids=$(docker network ls --quiet --no-trunc) ||
+            { echo "Could not list Docker's networks to check $uploader_subnet; refusing." >&2; exit 1; }
+        if [ -n "$ids" ]; then
+            # shellcheck disable=SC2086 # one network id per word
+            subnets=$(docker network inspect --format '{{.Name}}{{range .IPAM.Config}} {{.Subnet}}{{end}}' $ids) ||
+                { echo "Could not read Docker's network subnets to check $uploader_subnet; refusing." >&2; exit 1; }
+            while read -r name ranges; do
+                # The project's own offline networks are kept apart by the
+                # renderer; the uploader's own is handled above.
+                case "$name" in "${project}_offline-"*) continue ;; esac
+                for range in $ranges; do
+                    if overlaps "$range"; then clashes+=("Docker network $name ($range)"); fi
+                done
+            done <<<"$subnets"
+        fi
+        routes=$(ip -4 route show) ||
+            { echo "Could not read the host's routes to check $uploader_subnet; refusing." >&2; exit 1; }
+        while read -r first second _; do
+            case "$first" in
+                "" | default) continue ;;
+                blackhole | unreachable | prohibit | throw | unicast | local | broadcast | multicast | anycast) destination=$second ;;
+                *) destination=$first ;;
+            esac
+            [ "$destination" != default ] || continue
+            if overlaps "$destination"; then clashes+=("host route $destination"); fi
+        done <<<"$routes"
+        if [ "${#clashes[@]}" -gt 0 ]; then
+            echo "The off-site uploader's network $uploader_subnet (slice 5 of runtime_network.offline" >&2
+            echo "$offline) overlaps: ${clashes[*]}. Docker would refuse it at the full stop," >&2
+            echo "after PostgreSQL stopped. Nothing was stopped or changed. Move or remove the" >&2
+            echo "conflicting network or route named above, then repeat. Do not change" >&2
+            echo "runtime_network.offline: on an existing deployment retarget-image refuses any" >&2
+            echo "change to it (only the image may change)." >&2
+            exit 1
+        fi
+        echo "    the uploader's network $uploader_subnet overlaps no Docker network or host route"
+    fi
+fi
+
 step "1. Stopping the background services (web keeps serving)"
 background=$("${dc[@]}" ps --services --status running | grep -vxE 'web|caddy|postgres|valkey' || true)
 restart_background() {
@@ -983,6 +1346,40 @@ if [ "$recorded" != true ] && [ "${#backup_args[@]}" -gt 0 ] &&
     echo "    $(jq -r '.reused_backup.completed_at' <<<"$backup") (manifest $(jq -r '.reused_backup.manifest_digest' <<<"$backup")) stays this upgrade's restore point"
     recorded=true
 fi
+# The off-site uploader (#235, operations specification, "Scripted
+# upgrades"): when the running image has its `upload` command and the
+# running Compose file has its service, it copies the step-1 set, whatever
+# the backup's own line said (on an expand topology the backup's copy can
+# report busy because the uploader holds the lock). It waits at most 1800 s
+# for a copy already running (an expiry is its own lock_timeout entry) and
+# reports whether an uploaded row exists for that set's digest and the
+# current folder, whichever run wrote it. Keyed on the command as well as
+# the service, so an image between the two expand parts keeps the rule on
+# the backup line above.
+if [ "$recorded" = true ] && has_command "$running_commands" upload &&
+    jq -e '.services["backup-uploader"]' "$compose" >/dev/null 2>&1; then
+    digest=$(jq -r '.manifest_digest // .reused_backup.manifest_digest // empty' <<<"$backup" 2>/dev/null || true)
+    offsite_ok=0
+    if [[ $digest =~ ^[0-9a-f]{64}$ ]]; then
+        step "1. Off-site copy by the uploader (waiting up to 1800s for a running copy)"
+        # The lock wait, the four-hour copy budget and a margin.
+        uploaded=$(oneoff $((1800 + 4 * 3600 + 600)) "the off-site uploader" uploader \
+            backup-uploader upload --config "$services/backup-uploader.yaml" \
+            --wait-lock 1800 --require-digest "$digest") || uploaded=""
+        echo "    ${uploaded:-the uploader printed no result}"
+        echo "$(date -u +%FT%TZ) uploader: ${uploaded:-no result}" >>"$logdir/stewardship-backup.log"
+        required=$(jq -r '.required_copy // empty' <<<"$uploaded" 2>/dev/null || true)
+        case "$profile:$required" in
+            production:uploaded | local:uploaded | local:not_configured) offsite_ok=1 ;;
+        esac
+        if [ "$offsite_ok" -ne 1 ] && [ "$(jq -r '.state // empty' <<<"$uploaded" 2>/dev/null || true)" = busy ]; then
+            echo "An off-site copy is still running (or offline work holds the interlock); try" >&2
+            echo "again later. A whole catch-up can take up to four hours." >&2
+        fi
+    else
+        echo "The backup line names no manifest digest for the uploader to copy." >&2
+    fi
+fi
 if [ "$recorded" != true ] || [ "$offsite_ok" -ne 1 ]; then
     # The EXIT trap restarts the background services (phase background).
     echo "The backup did not complete with its off-host copy; abandoning the $mode." >&2
@@ -990,6 +1387,21 @@ if [ "$recorded" != true ] || [ "$offsite_ok" -ne 1 ]; then
         echo "If an earlier run of the users release stopped in its step 4, repeat it with the" >&2
         echo "STEWARDSHIP_USERS_* variables (runbook, Users upgrade)." >&2
     fi
+    exit 1
+fi
+
+# The off-site copy lock (#235, "Offline work"), held from here to the end
+# of the run on the backups directory, so a cron uploader exits at the lock
+# rather than reaching the interlock, and no copy writes outcome rows while
+# the database is offline. It waits, bounded and logged, for a copy that
+# started since the step-1 copy; an expiry abandons the run like a busy
+# backup (the EXIT trap restarts the background services).
+step "1. Holding the off-site copy lock for the offline work"
+copy_backups=$(jq -er '.deployment.paths.backups' "$services/web.yaml" 2>/dev/null) ||
+    { echo "Could not read the backups directory from $services/web.yaml; abandoning the $mode." >&2; exit 1; }
+if ! copy_lock_take "$copy_backups" 1800; then
+    echo "An off-site copy is still running and holds the copy lock; abandoning the $mode." >&2
+    echo "Try again later (a whole catch-up can take up to four hours)." >&2
     exit 1
 fi
 

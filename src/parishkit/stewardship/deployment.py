@@ -136,6 +136,9 @@ class ServiceRole(StrEnum):
     MIGRATION = "migration"
     ADMIN_RECOVERY = "admin-recovery"
     DATABASE_PROVISION = "database-provision"
+    # The off-site uploader (#235): a one-shot profile that copies finished
+    # backup sets to Google Drive, so the backup profile needs no route out.
+    BACKUP_UPLOADER = "backup-uploader"
 
 
 VALKEY_IDENTITIES = frozenset(

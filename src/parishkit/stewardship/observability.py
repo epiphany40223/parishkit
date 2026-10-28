@@ -155,8 +155,16 @@ class FailureKind(StrEnum):
     # reviewed startup_rejected event as categories instead.
     BACKUP_DUMP = "backup_dump_failed"
     BACKUP_REQUIRED = "upgrade_backup_required"
+    # pk-restore step 7's database-grants --after-restore (#235): the
+    # restored set's load evidence stood in for the recent-backup rule.
+    # WARNING, process log only (the set's name is in the result).
+    BACKUP_WAIVED_AFTER_RESTORE = "upgrade_backup_waived_after_restore"
     # A set was taken but not copied to the off-site Drive folder.
     BACKUP_OFFSITE = "backup_offsite_failed"
+    # The off-site uploader (#235) found a copy on record named more than
+    # CLOCK_SKEW after the database's time (a clock that jumped) and left it
+    # out of "newer than the newest copy"; its output names the set.
+    BACKUP_OFFSITE_FUTURE_COPY = "backup_offsite_future_copy"
     # A backup sealed to a different public key than the previous run did.
     BACKUP_RECIPIENT_CHANGED = "backup_recipient_changed"
     # A local set's sealed file no longer matches the SHA-256 its manifest

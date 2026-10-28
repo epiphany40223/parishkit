@@ -526,6 +526,110 @@ def check_backup_restore(
         assert operator_sql(file, project, configuration, ROW_COUNTS) == before
         assert operator_sql(file, project, configuration, invariants) == proof
         assert operator_sql(file, project, configuration, CONTENT) == content
+        check_restore_grants(
+            file, project, configuration, deployment, image, backup_set.name, digest
+        )
         wait_for_web(file, project, configuration)
     finally:
         shutil.rmtree(opened, ignore_errors=True)
+
+
+UPLOADER = "pk_stewardship_backup_uploader"
+
+
+def check_restore_grants(
+    file, project, configuration, deployment, image, set_name, digest
+):
+    """pk-restore's step 7 for the off-site uploader (#235), on the restored set.
+
+    The restored database is configured and holds no backup row of its own
+    (its set's row is written after the dump), so plain database-grants
+    refuses for want of a recent backup. As pk-restore's load does, the
+    schema comment then marks the set loaded, and database-grants
+    --after-restore SET admits it. The login is dropped first, as a set from
+    before the uploader leaves it (a dump holds no roles), so the grants
+    create it from the password file; then its stored verifier matches the
+    file (uploader-password-check) and its source rule holds from the
+    backup-uploader profile.
+    """
+    from .test_operational_compose import compose_run
+
+    layout = RuntimeLayout(configuration)
+    grants = (
+        "run",
+        "--rm",
+        "database-provision",
+        "database-grants",
+        "--config",
+        str(layout.service_directory / "database-provision.yaml"),
+        "--confirm-deployment",
+        deployment,
+    )
+    refused = compose_run(file, project, *grants, check=False, timeout=180)
+    assert refused.returncode == 2, refused.stdout + refused.stderr
+    assert "RecentBackupRequired" in refused.stderr
+    operator_sql(
+        file,
+        project,
+        configuration,
+        f"COMMENT ON SCHEMA public IS 'pk-restore:{set_name}:{digest}'",
+    )
+    operator_sql(
+        file,
+        project,
+        configuration,
+        f"DROP OWNED BY {UPLOADER}; DROP ROLE {UPLOADER}",
+    )
+    other = compose_run(
+        file,
+        project,
+        *grants,
+        "--after-restore",
+        "20000101T000000Z",
+        check=False,
+        timeout=180,
+    )
+    assert other.returncode == 2, other.stdout + other.stderr
+    admitted = compose_run(
+        file, project, *grants, "--after-restore", set_name, timeout=180
+    )
+    assert json.loads(admitted.stdout.strip().splitlines()[-1]) == {
+        "database_grants_provisioned": True,
+        "after_restore": set_name,
+    }
+    verifier = operator_sql(
+        file,
+        project,
+        configuration,
+        f"SELECT rolpassword FROM pg_authid WHERE rolname='{UPLOADER}'",
+    )
+    assert verifier.startswith("SCRAM-SHA-256$")
+    checked = compose_run(
+        file,
+        project,
+        "run",
+        "--rm",
+        "-T",
+        "--entrypoint",
+        "sh",
+        "backup-uploader",
+        "-c",
+        f"printf '%s\\n' '{verifier}' | pk-stewardship uploader-password-check "
+        f"--config {layout.service_directory / 'backup-uploader.yaml'}",
+        timeout=120,
+    )
+    assert checked.stdout.strip() == "match"
+    # The service's own command is the copy (E2), so name the source check
+    # as pk-restore's step 8 does.
+    sources = compose_run(
+        file,
+        project,
+        "run",
+        "--rm",
+        "backup-uploader",
+        "database-sources",
+        "--config",
+        str(layout.service_directory / "backup-uploader.yaml"),
+        timeout=120,
+    )
+    assert "database sources match the rendered rules" in sources.stdout

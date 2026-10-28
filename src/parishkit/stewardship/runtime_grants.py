@@ -501,6 +501,10 @@ PLEDGE_REFRESH_ITEMS_FUNCTION = "stewardship_pledge_refresh_items_v2(uuid, uuid,
 # #269): the Google Workspace installer compares a queued "Test access"
 # check with them before it runs it, without reading the applied settings.
 BACKUP_DESTINATION_FUNCTION = "stewardship_backup_destination_v1()"
+# What the off-site uploader reads of a backup run row (#235): the digest
+# that names a finished set's manifest and the two times its name is
+# bound to. Nothing else of the row (sizes, recipient, version).
+UPLOADER_RUN_COLUMNS = ("manifest_digest", "started_at", "completed_at")
 # Each Family's pledge Edit in force, as the response it is in force on and
 # the Edit's annual pledge (0184, #2202): the campaign statistics capture
 # counts the values in force. Web runs every production capture today (the
@@ -1012,7 +1016,9 @@ def runtime_functions(role, *, target=None):
     ``upgrade-reports`` asks whether digest work still holds the report
     email conversion back (#1786). The backup login
     reads the table through pg_read_all_data instead: its admission refuses
-    any definer grant.
+    any definer grant. The off-site uploader (#235) reads the applied backup
+    folder and delegated mailbox through the same destination definer as
+    the google_workspace installer (0193 admits its session login).
     """
     role = _identity_role(role, target)
     if role is ServiceRole.CREDENTIAL_INSTALLER:
@@ -1097,6 +1103,10 @@ def runtime_functions(role, *, target=None):
                 MEMBER_NAMES_FUNCTION,
                 DEBUG_OFF_FUNCTION,
                 DEBUG_OFF_CLEAR_FUNCTION,
+            },
+            ServiceRole.BACKUP_UPLOADER: {
+                BACKUP_DESTINATION_FUNCTION,
+                DEBUG_OFF_FUNCTION,
             },
         }.get(role, ())
     )
@@ -1248,6 +1258,25 @@ def runtime_grants(role, *, target=None):
             "stewardship_operational_log": {"INSERT"},
             "stewardship_backup_request": {"SELECT"},
         }, {"stewardship_backup_request": {"UPDATE": set(BACKUP_REQUEST_COLUMNS)}}
+    if role is ServiceRole.BACKUP_UPLOADER:
+        # The off-site uploader (#235): it appends its copy outcomes, reads
+        # only what binds a set to its run row (the digest and the two
+        # times) and the runtime row's id (the Drive set tag), and logs
+        # timeout entries only (the writer trigger's timeout clause admits
+        # this login, 0193). The folder link and mailbox come from
+        # stewardship_backup_destination_v1(), never the configuration.
+        # Like every runtime login it reads the applied migrations, for the
+        # current-schema check its ``upload`` makes before it copies.
+        return {
+            "django_migrations": {"SELECT"},
+            "stewardship_backup_upload": {"SELECT", "INSERT"},
+            "stewardship_operational_log": {"INSERT"},
+        }, {
+            "stewardship_backup_run": {
+                "SELECT": set(UPLOADER_RUN_COLUMNS),
+            },
+            "stewardship_system_configuration": {"SELECT": {"id"}},
+        }
     if role not in {ServiceRole.WEB, "download"}:
         raise ConfigError(
             "This service's runtime database authority is not implemented."
@@ -1527,6 +1556,7 @@ def login_name(role, *, target=None):
             ServiceRole.BOOTSTRAP,
             ServiceRole.ADMIN_RECOVERY,
             ServiceRole.BACKUP_WORKER,
+            ServiceRole.BACKUP_UPLOADER,
             "download",
         }
         or target is not None

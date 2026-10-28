@@ -153,6 +153,12 @@ def _service_config(configuration, role, *, target=None, provider_mode="configur
         # The v1 backup seals to the operator's public key and transfers
         # nothing itself, so the off-host target credential stays uninstalled.
         names = {"backup_data"}
+    elif role is ServiceRole.BACKUP_UPLOADER:
+        from .uploader_boundaries import UPLOADER_SECRETS
+
+        # Deliberately not in ALLOWED_SECRETS: that table is the online
+        # mount policy, and the uploader has its own (uploader_boundaries).
+        names = set(UPLOADER_SECRETS)
     else:
         names = {target} if target else ALLOWED_SECRETS.get(role, set())
     secrets = {key: layout.credential(key) for key in names}
@@ -350,6 +356,7 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
             ServiceRole.ADMIN_RECOVERY,
             ServiceRole.DATABASE_PROVISION,
             ServiceRole.BACKUP_WORKER,
+            ServiceRole.BACKUP_UPLOADER,
         )
     ]
     for role, target in roles:
@@ -432,6 +439,25 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
             ]
             service["networks"] = {_offline_network(name): {}}
             # The off-site copy uploads the sealed set to Google Drive.
+            _join_egress(service)
+        elif role is ServiceRole.BACKUP_UPLOADER:
+            from .uploader_boundaries import uploader_targets
+
+            # The off-site uploader (#235): one-shot on its own network, plus
+            # the route out to Google Drive, and never on ``backend`` (it
+            # needs no Valkey and no other service). Its command is the
+            # copy, which cron runs every five minutes.
+            service["profiles"] = [name]
+            service["command"] = [
+                "upload",
+                "--config",
+                str(selected.configuration_file),
+            ]
+            service["volumes"] = [
+                bind(path, read_only=ro)
+                for path, ro in uploader_targets(selected).items()
+            ]
+            service["networks"] = {_offline_network(name): {}}
             _join_egress(service)
         else:
             service["command"] = [

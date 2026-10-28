@@ -22,6 +22,12 @@ an upload in flight included, stops at ``COPY_SECONDS``, or at most
 ``backup_drive.UPLOAD_SECONDS`` later when a socket operation stalls just
 then; a slow or failed copy only records an outcome, which the pages show
 and the scheduler alerts on.
+
+The dedicated off-site uploader (#235, ``uploader_commands``) runs the same
+copy from its own profile, with its own set selection (``pending``) and key
+mount. Until the contract release both copy, serialized by the host's copy
+lock (``_copy_lock``): whichever copies a set first records it, and the
+other finds nothing pending.
 """
 
 import fcntl
@@ -38,12 +44,14 @@ from parishkit.config import ConfigError
 
 from .backup import MANIFEST, SET_NAME
 from .backup_drive import (
+    MANIFEST_CAP,
     DriveClient,
     DriveFailure,
     deployment_tag,
     folder_id_from_url,
     log_timeout,
     prune,
+    single_regular,
     upload_set,
     with_retries,
     workspace_session,
@@ -59,9 +67,15 @@ COPY_SECONDS = 4 * 3600
 SEALED_FILES = ("database.pgdump.sealed", "files.tar.sealed", MANIFEST)
 # Failures that belong to one set; the copy records them and moves on.
 PER_SET_FAILURES = frozenset({"verification", "unavailable"})
-# One copy at a time per host: a file in the backups directory, locked for
-# the whole copy and prune. Retention ignores it (it is not a directory).
+# One copy at a time per host, locked for the whole copy and prune. The
+# legacy lock is this file in the backups directory (retention ignores it:
+# it is not a directory); from the expand release on (#235) the lock is also
+# an exclusive flock on the backups directory itself, which the uploader can
+# take through its read-only mount. Every copier takes the file lock first
+# (when the file exists), then the directory lock (``_copy_lock``).
 COPY_LOCK = ".offsite-copy.lock"
+# How often a copier waiting for the copy lock (``--wait-lock``) tries again.
+LOCK_POLL_SECONDS = 1
 
 
 def destination():
@@ -124,8 +138,34 @@ def _complete_sets(backups):
 
 
 def _digest(directory):
-    """The manifest digest the backup run recorded for this set."""
-    return hashlib.sha256((directory / MANIFEST).read_bytes()).hexdigest()
+    """The manifest digest the backup run recorded for this set, or None.
+
+    The manifest is read as ``backup_drive.open_set`` reads it (#235): the
+    set's directory and the file are opened without following a link, the
+    file must be a regular one with a single link, and nothing past
+    ``MANIFEST_CAP`` is read.
+    None means the manifest broke one of those rules (or could not be read):
+    the backup profile's copy then refuses the set as ``verification`` when
+    it tries it, and the uploader skips it silently (``uploader_pending``).
+    Nothing is logged here, so choosing what to copy stays silent.
+    """
+    try:
+        folder = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            descriptor = os.open(
+                MANIFEST, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=folder
+            )
+        finally:
+            os.close(folder)
+        with os.fdopen(descriptor, "rb") as handle:
+            if not single_regular(os.fstat(descriptor)):
+                return None
+            data = handle.read(MANIFEST_CAP + 1)
+    except OSError:
+        return None
+    if len(data) > MANIFEST_CAP:
+        return None
+    return hashlib.sha256(data).hexdigest()
 
 
 def _record(state, **fields):
@@ -198,25 +238,83 @@ def copy_offsite(
         return _failed(folder_id, None, None, "unexpected")
 
 
+class CopyLockTimeout(Exception):
+    """A copier's bounded wait for the copy lock (``--wait-lock``) expired."""
+
+    def __init__(self, limit_seconds, elapsed_seconds):
+        super().__init__("lock_timeout")
+        self.limit_seconds = limit_seconds
+        self.elapsed_seconds = elapsed_seconds
+
+
+def _legacy_lock(backups, *, create):
+    """Open the legacy copy-lock file; None when the uploader finds none.
+
+    The backup profile creates it as it always has. The uploader's mount is
+    read-only, so it opens the file read-only, and only when it exists: an
+    old-release copy takes only this lock, and without the file there is no
+    such copy to wait for (the host creates the file before its own offline
+    work, #235 "Offline work"). No link is followed either way.
+    """
+    if create:
+        return os.open(
+            backups / COPY_LOCK, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600
+        )
+    try:
+        return os.open(backups / COPY_LOCK, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return None
+
+
 @contextmanager
-def _copy_lock(backups):
+def _copy_lock(
+    backups,
+    *,
+    create=True,
+    wait_seconds=None,
+    clock=time.monotonic,
+    sleep=time.sleep,
+):
     """Hold this host's copy lock; yield False if another run holds it.
 
     Two overlapping runs (a manual backup started while cron's copy is still
     uploading) could otherwise replace each other's set folder mid-upload, or
     prune an older partial folder the other run is still writing (#305 L4).
-    The lock is released when the file closes, even if the process dies.
+    The lock is two flocks taken in a fixed order (#235, "Expand
+    transition"): the legacy file's, which an old-release copy still holds
+    alone, then the backups directory's, opened
+    ``O_RDONLY|O_DIRECTORY|O_NOFOLLOW``, which the uploader can take through
+    its read-only mount. Both are released when their descriptors close,
+    even if the process dies. ``create`` is False for the uploader (it never
+    writes on the host). With ``wait_seconds`` the lock is waited for, at
+    most that long, and an expired wait raises ``CopyLockTimeout`` for the
+    caller to log; without it a held lock yields False at once.
     """
-    descriptor = os.open(
-        backups / COPY_LOCK, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600
-    )
-    with os.fdopen(descriptor, "wb") as handle:
-        try:
-            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            yield False
-            return
+    descriptors = []
+    try:
+        legacy = _legacy_lock(backups, create=create)
+        if legacy is not None:
+            descriptors.append(legacy)
+        descriptors.append(
+            os.open(backups, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        )
+        started = clock()
+        for descriptor in descriptors:
+            while True:
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    if wait_seconds is None:
+                        yield False
+                        return
+                    if (elapsed := clock() - started) >= wait_seconds:
+                        raise CopyLockTimeout(wait_seconds, elapsed) from None
+                    sleep(LOCK_POLL_SECONDS)
         yield True
+    finally:
+        for descriptor in descriptors:
+            os.close(descriptor)
 
 
 def _copy_pending(configuration, folder_id, subject, **options):
@@ -235,6 +333,26 @@ def _copy_pending(configuration, folder_id, subject, **options):
         return _copy_sets(backups, configuration, folder_id, subject, **options)
 
 
+def backup_pending(backups, folder_id):
+    """The backup profile's selection: the newest sets with no copy here.
+
+    Returns ``(directory, digest, refusal)`` triples, as ``_copy_sets``
+    takes them; the backup profile refuses nothing before it tries a set.
+    """
+    from .jobs.backup_models import BackupUpload
+
+    copied = set(
+        BackupUpload.objects.filter(state="uploaded", folder_id=folder_id).values_list(
+            "manifest_digest", flat=True
+        )
+    )
+    return [
+        (directory, digest, None)
+        for directory in _complete_sets(backups)[-CATCH_UP_SETS:]
+        if (digest := _digest(directory)) not in copied
+    ]
+
+
 def _copy_sets(
     backups,
     configuration,
@@ -245,6 +363,8 @@ def _copy_sets(
     sleep,
     clock,
     deadline,
+    pending_sets=None,
+    key=None,
 ):
     """Upload the newest sets not yet in this folder, oldest first, then prune.
 
@@ -262,31 +382,26 @@ def _copy_sets(
     found the copy lock held and left its set to this run. One re-scan is
     enough, because a set completed after it takes the lock itself; the
     re-scan's uploads share the same deadline.
+
+    ``pending_sets()`` returns ``(directory, digest, refusal)`` triples, by
+    default ``backup_pending``'s; the uploader passes its own, whose refusal
+    (``verification``) is recorded for a set that must not be copied. ``key``
+    is the Workspace key's path, by default inside the credentials tree the
+    backup profile mounts.
     """
     from .accounts.cryptography import CryptographicError
     from .accounts.key_files import read_private
     from .jobs.backup_models import BackupUpload
 
-    def pending_sets():
-        """The newest local sets with no recorded copy in this folder."""
-        copied = set(
-            BackupUpload.objects.filter(
-                state="uploaded", folder_id=folder_id
-            ).values_list("manifest_digest", flat=True)
-        )
-        return [
-            directory
-            for directory in _complete_sets(backups)[-CATCH_UP_SETS:]
-            if _digest(directory) not in copied
-        ]
-
+    if pending_sets is None:
+        pending_sets = partial(backup_pending, backups, folder_id)
+    if key is None:
+        key = RuntimeLayout(configuration).credential("google_workspace")
     pending = pending_sets()
     if not pending:
         return {"state": "uploaded", "sets": 0}
     try:
-        credential = read_private(
-            RuntimeLayout(configuration).credential("google_workspace")
-        )
+        credential = read_private(key)
         session = session_factory(credential, subject=subject)
         del credential
         client = DriveClient(
@@ -302,8 +417,8 @@ def _copy_sets(
     for batch in range(2):
         if batch:
             # A set that failed in the first batch waits for the next run.
-            pending = [item for item in pending_sets() if item not in attempted]
-        for directory in pending:
+            pending = [item for item in pending_sets() if item[0] not in attempted]
+        for directory, digest, refusal in pending:
             attempted.add(directory)
             # Each upload can take hours and the connection would sit idle
             # meanwhile; closing it first frees the slot and lets each
@@ -311,7 +426,12 @@ def _copy_sets(
             # dropped connection and recording nothing.
             if not connection.in_atomic_block:
                 connection.close()
-            digest = _digest(directory)
+            if refusal is not None:
+                # The set itself is wrong (#235, "Handoff"): recorded and
+                # logged like a mismatched set, and the copy moves on.
+                _failed(folder_id, directory.name, digest, refusal)
+                failure = refusal
+                continue
             if (now := clock()) >= deadline:
                 # Out of time: the next run picks up the remaining sets. The
                 # row says "unavailable" (its categories are fixed by the
@@ -325,8 +445,15 @@ def _copy_sets(
                 return _failed(folder_id, directory.name, digest, "unavailable")
             try:
                 with_retries(
-                    lambda directory=directory: upload_set(
-                        client, folder_id, directory, SEALED_FILES
+                    # The digest this set was chosen (and, for the
+                    # uploader, bound) by: a set swapped on disk since is
+                    # refused, not uploaded under the row's digest (#235).
+                    lambda directory=directory, digest=digest: upload_set(
+                        client,
+                        folder_id,
+                        directory,
+                        SEALED_FILES,
+                        expected_digest=digest,
                     ),
                     sleep=sleep,
                     deadline=deadline,

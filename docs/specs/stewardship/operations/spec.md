@@ -277,6 +277,7 @@ it has no password and connects only through the socket.
 | `pk_stewardship_migration` | the `migration` profile (also LOCAL's seeder check step) | the `migration` network |
 | `pk_stewardship_admin_recovery` | the `admin-recovery` profile | the `admin-recovery` network |
 | `pk_stewardship_backup_worker` | the `backup-worker` profile | the `backup-worker` network |
+| `pk_stewardship_backup_uploader` | the `backup-uploader` profile (the off-site uploader, #235) | the `backup-uploader` network |
 | `pk_stewardship_operator` (superuser) | the `database-provision` profile (`database-roles`, `database-grants`) | the `database-provision` network; locally, the socket inside the PostgreSQL container |
 
 **Superuser scope, narrowed from #2111.** The issue lists migration,

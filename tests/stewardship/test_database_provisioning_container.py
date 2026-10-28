@@ -286,6 +286,26 @@ def test_migration_owner_and_narrow_runtime_grants(empty_operator_database, tmp_
         if role is ServiceRole.MIGRATION:
             continue
         with connect(configuration, login) as database, database.cursor() as cursor:
+            if role is ServiceRole.BACKUP_UPLOADER:
+                # The off-site uploader (#235) reads only what binds a set to
+                # its run row, plus django_migrations for its current-schema
+                # check (E2), and nothing else of the schema.
+                cursor.execute(
+                    "SELECT count(manifest_digest) FROM stewardship_backup_run"
+                )
+                assert cursor.fetchone() == (0,)
+                cursor.execute("SELECT COUNT(*) FROM django_migrations")
+                assert cursor.fetchone()[0] > 0
+                cursor.execute(
+                    "SELECT has_function_privilege(current_user,"
+                    "'public.stewardship_bootstrap_empty_database()','EXECUTE'),"
+                    "has_function_privilege(current_user,"
+                    "'public.stewardship_backup_destination_v1()','EXECUTE')"
+                )
+                assert cursor.fetchone() == (False, True)
+                with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                    cursor.execute("SELECT COUNT(*) FROM stewardship_campaign")
+                continue
             if role == "download":
                 cursor.execute("SELECT COUNT(*) FROM stewardship_campaign")
                 assert cursor.fetchone() == (0,)
@@ -1177,3 +1197,216 @@ def test_credential_looking_columns_are_classified(operator_container, tmp_path)
     # Today's schema has no partitions or inheritance children.
     with connect(configuration) as database:
         assert database.execute("SELECT count(*) FROM pg_inherits").fetchone() == (0,)
+
+
+UPLOADER = "pk_stewardship_backup_uploader"
+
+
+def migrated(configuration, deployment, tmp_path):
+    """Roles, then this release's migrations, as the upgrade's step 4 runs them."""
+    provision_roles(configuration, deployment)
+    layout = RuntimeLayout(configuration)
+    migration = replace(
+        configuration,
+        service_role=ServiceRole.MIGRATION,
+        postgres=replace(
+            configuration.postgres,
+            user="pk_stewardship_migration",
+            password_file=layout.database_password("migration"),
+        ),
+    )
+    config_file = tmp_path / "migration.json"
+    config_file.write_text(json.dumps(deployment_document(migration)))
+    script = tmp_path / "migrate_fixture.py"
+    script.write_text(
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from parishkit.stewardship.deployment import load_deployment\n"
+        "from parishkit.stewardship import operator_commands as commands\n"
+        "configuration = load_deployment(Path(sys.argv[1]), environ={})\n"
+        "commands.configure_operator_database(configuration)\n"
+        "from django.core.management import call_command\n"
+        "call_command('migrate', interactive=False, verbosity=0)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, str(script), str(config_file)],
+        text=True,
+        capture_output=True,
+        timeout=90,
+    )
+    assert result.returncode == 0, result.stderr
+    with connect(configuration) as database:
+        database.execute(
+            "UPDATE stewardship_download_policy SET capacity=%s,"
+            "version=version+1 WHERE id=1 AND capacity<>%s",
+            [configuration.runtime_budget.download_capacity] * 2,
+        )
+
+
+def stored_matches(configuration, password):
+    """Whether the cluster's stored verifier for the uploader is ``password``'s."""
+    from parishkit.stewardship.uploader_password import password_matches
+
+    with connect(configuration) as database:
+        row = database.execute(
+            "SELECT rolpassword FROM pg_authid WHERE rolname=%s", [UPLOADER]
+        ).fetchone()
+    return row is not None and password_matches(password.encode(), row[0])
+
+
+def raw_upgrade_answer(configuration, deployment, tmp_path):
+    """The upgrade check's own answer, with no error swallowed."""
+    from parishkit.stewardship.upgrade_check import upgrade_noop_query
+
+    with connect(configuration) as database, database.cursor() as cursor:
+        cursor.execute("SET TRANSACTION READ ONLY")
+        cursor.execute(upgrade_noop_query(configuration, deployment))
+        return cursor.fetchone()[0]
+
+
+def test_the_uploader_login_is_created_checked_and_recreated(
+    empty_operator_database, tmp_path
+):
+    """The off-site uploader's login on real PostgreSQL (#235).
+
+    database-roles creates it from its file; a missing login answers the
+    upgrade check's f, not an error, and database-grants creates it before
+    its per-identity loop; an existing login whose file no longer matches
+    the stored SCRAM verifier refuses before any grant.
+    """
+    configuration = empty_operator_database
+    deployment = uuid4()
+    migrated(configuration, deployment, tmp_path)
+    layout = RuntimeLayout(configuration)
+    assert stored_matches(configuration, PASSWORD)
+    provision_grants(configuration, deployment)
+    assert raw_upgrade_answer(configuration, deployment, tmp_path) == "t"
+    # Roles again: the existing uploader is checked by its verifier, not by
+    # connecting as it, and the same file passes.
+    provision_roles(configuration, deployment)
+    # A lost or replaced file: refused before any grant.
+    path = layout.database_password("backup-uploader")
+    path.unlink()
+    write_private(path, b"another-password-entirely")
+    with connect(configuration) as database:
+        database.execute("REVOKE SELECT ON stewardship_backup_upload FROM " + UPLOADER)
+    with pytest.raises(ConfigError, match="lost-file recovery"):
+        provision_grants(configuration, deployment)
+    with pytest.raises(ConfigError, match="lost-file recovery"):
+        provision_roles(configuration, deployment)
+    with connect(configuration) as database:
+        held = database.execute(
+            "SELECT has_table_privilege(%s,'stewardship_backup_upload','SELECT')",
+            [UPLOADER],
+        ).fetchone()
+    assert held == (False,)  # nothing was granted by the refused run
+    # The recovery: drop the login, then grants create it from the file.
+    with connect(configuration) as database:
+        database.execute(f"DROP OWNED BY {UPLOADER}")
+        database.execute(f"DROP ROLE {UPLOADER}")
+    assert raw_upgrade_answer(configuration, deployment, tmp_path) == "f"
+    provision_grants(configuration, deployment)
+    assert stored_matches(configuration, "another-password-entirely")
+    assert not stored_matches(configuration, PASSWORD)
+    assert raw_upgrade_answer(configuration, deployment, tmp_path) == "t"
+    with connect(configuration) as database:
+        row = database.execute(
+            "SELECT rolsuper,rolbypassrls,rolinherit,rolcanlogin,rolconnlimit,"
+            "shobj_description(oid,'pg_authid') FROM pg_roles WHERE rolname=%s",
+            [UPLOADER],
+        ).fetchone()
+    assert row == (
+        False,
+        False,
+        False,
+        True,
+        configuration.runtime_budget.operator_connections,
+        f"parishkit-stewardship:{deployment}",
+    )
+
+
+def test_grants_after_a_restore_need_the_restored_sets_marker(
+    empty_operator_database, tmp_path
+):
+    """--after-restore replaces the 24-hour rule only for the loaded set (#235).
+
+    A configured database whose newest backup row is days old, as a
+    restored set's is (it never holds its own row): plain grants refuse;
+    with the set's marker and no later row they pass, also while the set's
+    restore review is open (``pk-restore --from 7``); another set's marker,
+    a released review of the set, or a later row refuses.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from parishkit.stewardship.backup import RecentBackupRequired
+
+    configuration = empty_operator_database
+    deployment = uuid4()
+    migrated(configuration, deployment, tmp_path)
+    now = datetime.now(UTC).replace(microsecond=0)
+    earlier = now - timedelta(days=3)
+    set_start = now - timedelta(days=2)
+    set_name = set_start.strftime("%Y%m%dT%H%M%SZ")
+    with connect(configuration) as database:
+        # Fixture rows only; the guards that bind them are not under test.
+        database.execute("SET session_replication_role = replica")
+        database.execute(
+            "INSERT INTO stewardship_system_configuration (id, correlation_id, "
+            "version, mode, testing_recipient, restore_review_required) "
+            "VALUES (%s,%s,1,'testing','testing@example.org',false)",
+            [uuid4(), uuid4()],
+        )
+        database.execute(
+            "INSERT INTO stewardship_backup_run (id, started_at, completed_at, "
+            "database_bytes, files_bytes, manifest_digest, recipient_fingerprint, "
+            "application_version) VALUES (%s,%s,%s,1,1,%s,%s,'1.0.0')",
+            [uuid4(), earlier, earlier, "a" * 64, "b" * 16],
+        )
+    with pytest.raises(RecentBackupRequired):
+        provision_grants(configuration, deployment)
+    with pytest.raises(ConfigError, match="--after-restore"):
+        provision_grants(configuration, deployment, after_restore=set_name)
+    marker = f"pk-restore:{set_name}:" + "c" * 64
+    with connect(configuration) as database:
+        database.execute(f"COMMENT ON SCHEMA public IS '{marker}'")
+    result = provision_grants(configuration, deployment, after_restore=set_name)
+    assert result == {"database_grants_provisioned": True, "after_restore": set_name}
+    other = (set_start - timedelta(hours=1)).strftime("%Y%m%dT%H%M%SZ")
+    with pytest.raises(ConfigError, match="--after-restore"):
+        provision_grants(configuration, deployment, after_restore=other)
+    with pytest.raises(RecentBackupRequired):
+        provision_grants(configuration, deployment)
+
+    def transition(action, version, backup_at):
+        """Record a restore review transition, as restore-begin or release does."""
+        with connect(configuration) as database:
+            database.execute("SET session_replication_role = replica")
+            database.execute(
+                "INSERT INTO stewardship_runtime_transition (id, correlation_id, "
+                "request_id, expected_version, action, before_mode, after_mode, "
+                "restore_id, backup_at, reason) "
+                "VALUES (%s,%s,%s,%s,%s,'testing','testing',%s,%s,'restore')",
+                [uuid4(), uuid4(), uuid4(), version, action, review, backup_at],
+            )
+
+    # An open review of the set (restore-begin ran, then a --from 7 resume)
+    # still passes; another set's released review does not matter.
+    review = uuid4()
+    transition("restore_begin", 1, set_start)
+    transition("restore_release", 2, set_start - timedelta(days=1))
+    result = provision_grants(configuration, deployment, after_restore=set_name)
+    assert result == {"database_grants_provisioned": True, "after_restore": set_name}
+    # Once the set's own review is released the site has run: refused.
+    transition("restore_release", 3, set_start)
+    with pytest.raises(ConfigError, match="restore review of that set was released"):
+        provision_grants(configuration, deployment, after_restore=set_name)
+    with connect(configuration) as database:
+        database.execute("SET session_replication_role = replica")
+        database.execute(
+            "INSERT INTO stewardship_backup_run (id, started_at, completed_at, "
+            "database_bytes, files_bytes, manifest_digest, recipient_fingerprint, "
+            "application_version) VALUES (%s,%s,%s,1,1,%s,%s,'1.0.0')",
+            [uuid4(), set_start, set_start, "d" * 64, "b" * 16],
+        )
+    with pytest.raises(ConfigError, match="a backup ran on this database"):
+        provision_grants(configuration, deployment, after_restore=set_name)

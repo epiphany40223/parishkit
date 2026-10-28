@@ -154,3 +154,28 @@ def test_the_command_refuses_unclear_input(tmp_path, capsys):
         captured = capsys.readouterr()
         assert captured.out == ""
         assert "run migration and grants" in captured.err
+
+
+def test_a_missing_login_answers_f_rather_than_an_error(tmp_path):
+    """Every login's privilege checks wait behind its pg_roles lookup (#235).
+
+    has_table_privilege and its kind raise for an unknown role name, and
+    PostgreSQL may evaluate AND terms in any order, so a login a release
+    adds (the off-site uploader) is looked up first inside a CASE, which
+    evaluates lazily: the answer is f, and the upgrade runs as a schema
+    change.
+    """
+    query = upgrade_check.upgrade_noop_query(configuration_at(tmp_path), uuid4())
+    for _, login, _, _ in database_identities():
+        guard = (
+            "CASE WHEN EXISTS(SELECT 1 FROM pg_roles WHERE "
+            f"rolname={upgrade_check.literal(login)}) THEN ("
+        )
+        assert query.count(guard) == 1, login
+        start = query.index(guard)
+        # Every privilege function naming the login comes after its guard.
+        first = query.find(f"privilege({upgrade_check.literal(login)},")
+        assert first == -1 or first > start, login
+        branch = query[start : query.index(" ELSE false END", start)]
+        assert f"r.rolname={upgrade_check.literal(login)}" in branch
+    assert "pk_stewardship_backup_uploader" in query

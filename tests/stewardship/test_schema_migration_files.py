@@ -608,6 +608,9 @@ FROZEN = {
     "0191_settle_leader_emails.sql": (
         "8634faa0233135f19c7d33885f3bfcdd1678521ae4689668c9553f8462a58f7e"
     ),
+    "0193_backup_uploader_preparation.sql": (
+        "87ea2cc43e207120ce25b853ea3ebc82a4a1a0bf5741f3cfbe1315b4398b68c3"
+    ),
 }
 
 

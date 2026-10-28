@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import re
+from contextlib import contextmanager
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -487,11 +488,17 @@ def test_a_catch_up_killed_during_the_newest_set_still_alerts(offsite, monkeypat
     newest = new_set(offsite, "20260928T020000Z")
     run = record_run(newest)
     upload = offsite.drive.upload
+    sent = []
 
     def killed(path, name, parent, **kwargs):
-        """The process stops (e.g. the container is killed) mid-upload."""
-        if path.parent == newest:
+        """The process stops (e.g. the container is killed) mid-upload.
+
+        The files arrive as open descriptors (#235), so the newest set's
+        first file is told by count: the older set's three come first.
+        """
+        if len(sent) == len(SEALED_FILES):
             raise SystemExit(137)
+        sent.append(name)
         return upload(path, name, parent, **kwargs)
 
     monkeypatch.setattr(offsite.drive, "upload", killed)
@@ -992,9 +999,11 @@ def read_destination():
 
 
 def test_only_the_workspace_installer_reads_the_backup_destination(destination):
-    """The definer answers the installer alone, with just the two settings (#269).
+    """The definer answers the installer, with just the two settings (#269).
 
-    Every other runtime login lacks EXECUTE, and a login granted EXECUTE by
+    The off-site uploader (#235) is the one other login the registry grants
+    it (0193's caller check admits it; see the uploader tests below). Every
+    other runtime login lacks EXECUTE, and a login granted EXECUTE by
     mistake is still refused by the definer's own caller check.
     """
     from parishkit.stewardship.runtime_grants import (
@@ -1009,7 +1018,10 @@ def test_only_the_workspace_installer_reads_the_backup_destination(destination):
         if role is not ServiceRole.MIGRATION
         and BACKUP_DESTINATION_FUNCTION in runtime_functions(role, target=target)
     }
-    assert granted == {"pk_stewardship_credential_google_workspace"}
+    assert granted == {
+        "pk_stewardship_credential_google_workspace",
+        "pk_stewardship_backup_uploader",
+    }
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT has_function_privilege('public', "
@@ -1143,6 +1155,194 @@ def test_the_recheck_migration_refuses_a_partial_install(broken):
             cursor.execute(check)
 
 
+# The dedicated off-site uploader's login (#235). Frozen file 0193 names it
+# in the destination definer's caller check and the log writer's timeout
+# clause; the expand release's database-grants creates it and grants it
+# from the registry (test_uploader_grants_postgresql.py). These tests make
+# it themselves with only the grants each needs.
+UPLOADER = "pk_stewardship_backup_uploader"
+MIGRATION_FILES = Path(backup_probes.__file__).with_name("schema") / "migrations"
+PREPARATION_SQL = (MIGRATION_FILES / "0193_backup_uploader_preparation.sql").read_text(
+    encoding="utf-8"
+)
+PREPARATION_CHECK = PREPARATION_SQL[PREPARATION_SQL.index("DO $check$") :]
+
+
+@contextmanager
+def uploader_login(*grants):
+    """Act as the future uploader login, made here with only ``grants``.
+
+    Each grant is a statement with ``{role}`` for the quoted login name, so
+    a test grants exactly what it needs, as the later release's registry
+    will. The login and everything granted to it are dropped afterwards.
+    """
+    role = f'"{UPLOADER}"'
+    with connection.cursor() as cursor:
+        cursor.execute(f"CREATE ROLE {role} LOGIN NOINHERIT")
+        for grant in grants:
+            cursor.execute(grant.format(role=role))
+        cursor.execute(f"SET SESSION AUTHORIZATION {role}")
+    try:
+        yield
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("RESET SESSION AUTHORIZATION")
+            cursor.execute(f"DROP OWNED BY {role}")
+            cursor.execute(f"DROP ROLE {role}")
+
+
+def test_the_uploader_login_is_an_identity_of_this_release():
+    """The registry names it; the test database itself has no such role."""
+    from parishkit.stewardship.runtime_identities import database_identities
+
+    assert UPLOADER in {sql_name for _, sql_name, _, _ in database_identities()}
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM pg_roles WHERE rolname=%s", [UPLOADER])
+        assert cursor.fetchone() is None
+
+
+def test_the_destination_also_answers_the_uploader_once_granted(destination):
+    """0193's caller check admits the uploader; EXECUTE still gates it (#235).
+
+    The installer keeps reading the destination exactly as before. The
+    uploader's login without EXECUTE is refused by the privilege check, and
+    with it (as the later release's registry grants it) reads the same two
+    settings.
+    """
+    with target_login("google_workspace"):
+        assert read_destination() == (LINK, "mail@example.org")
+        assert backup_probes.applied_mailbox() == "mail@example.org"
+    with uploader_login():
+        assert read_destination() == "42501"
+    grant = (
+        "GRANT EXECUTE ON FUNCTION public.stewardship_backup_destination_v1() TO {role}"
+    )
+    with uploader_login(grant):
+        assert read_destination() == (LINK, "mail@example.org")
+
+
+def test_a_login_that_only_takes_the_uploaders_role_is_refused(destination):
+    """The caller check reads the session login, not a role it switched to.
+
+    A stray login granted EXECUTE and membership in the uploader's role,
+    with SET ROLE to it, is still refused: inside the definer only
+    ``session_user`` names the caller.
+    """
+    stray = "test_destination_" + uuid4().hex
+    grant = (
+        "GRANT EXECUTE ON FUNCTION public.stewardship_backup_destination_v1() TO {role}"
+    )
+    with uploader_login(grant):
+        with connection.cursor() as cursor:
+            cursor.execute("RESET SESSION AUTHORIZATION")
+            cursor.execute(f'CREATE ROLE "{stray}" LOGIN INHERIT')
+            cursor.execute(f'GRANT "{UPLOADER}" TO "{stray}"')
+            cursor.execute(f'SET SESSION AUTHORIZATION "{stray}"')
+            cursor.execute(f'SET ROLE "{UPLOADER}"')
+        try:
+            assert read_destination() == "42501"
+        finally:
+            with connection.cursor() as cursor:
+                cursor.execute("RESET ROLE")
+                cursor.execute("RESET SESSION AUTHORIZATION")
+                cursor.execute(f'DROP OWNED BY "{stray}"')
+                cursor.execute(f'DROP ROLE "{stray}"')
+                cursor.execute(f'SET SESSION AUTHORIZATION "{UPLOADER}"')
+
+
+def _statement(text, start, end):
+    """The text from ``start`` to the end of the first ``end`` after it."""
+    first = text.index(start)
+    return text[first : text.index(end, first) + len(end)]
+
+
+# 0176's destination definer, put back in place of 0193's: its body has no
+# uploader, so it is what an install that stopped before 0193 would hold.
+STALE_DESTINATION = (
+    "CREATE OR REPLACE"
+    + _statement(
+        RECHECK_SQL, "CREATE FUNCTION public.stewardship_backup_destination_v1(", "$$;"
+    )[len("CREATE") :]
+    + " ALTER FUNCTION public.stewardship_backup_destination_v1() SECURITY DEFINER;"
+)
+# 0106's log writer, the body before 0193's, without the uploader.
+WRITER = "CREATE OR REPLACE FUNCTION public.stewardship_operational_log_writer_v1("
+STALE_WRITER = _statement(
+    (MIGRATION_FILES / "0106_admin_input_refusal_log.sql").read_text(encoding="utf-8"),
+    WRITER,
+    "\nEND;\n$$;",
+)
+# 0193's writer with the uploader named a second time, outside the timeout
+# clause (in web's arm).
+WRITER_TWICE = _statement(PREPARATION_SQL, WRITER, "\nEND;\n$$;").replace(
+    "OR (current_user='pk_stewardship_web' AND (",
+    f"OR (current_user IN ('pk_stewardship_web','{UPLOADER}') AND (",
+)
+
+
+def test_the_stale_bodies_lack_the_uploader():
+    """The bodies the check below must refuse really are the older ones."""
+    assert UPLOADER not in STALE_DESTINATION
+    assert UPLOADER not in STALE_WRITER
+    assert "'pk_stewardship_backup_worker')" in STALE_WRITER
+    assert WRITER_TWICE.count(UPLOADER) == 2
+
+
+@pytest.mark.parametrize(
+    "broken",
+    [
+        STALE_DESTINATION,
+        STALE_WRITER,
+        "GRANT EXECUTE ON FUNCTION public.stewardship_backup_destination_v1() "
+        "TO PUBLIC",
+        "ALTER FUNCTION public.stewardship_backup_destination_v1() SECURITY INVOKER",
+        "ALTER FUNCTION public.stewardship_backup_destination_v1() VOLATILE",
+        "ALTER FUNCTION public.stewardship_backup_destination_v1() "
+        "SET search_path = public",
+        "ALTER FUNCTION public.stewardship_operational_log_writer_v1() "
+        "SECURITY DEFINER",
+        "ALTER TABLE public.stewardship_operational_log "
+        "DISABLE TRIGGER stewardship_operational_log_writer_v1",
+        WRITER_TWICE,
+        "DROP FUNCTION public.stewardship_backup_destination_v1()",
+    ],
+    ids=[
+        "0176-destination",
+        "0106-writer",
+        "public-execute",
+        "invoker",
+        "volatile",
+        "search-path",
+        "writer-definer",
+        "trigger-disabled",
+        "uploader-twice",
+        "dropped",
+    ],
+)
+def test_the_preparation_migration_refuses_a_stale_or_partial_install(broken):
+    """0193's closing DO block passes as installed and refuses anything else."""
+    with connection.cursor() as cursor:
+        cursor.execute(PREPARATION_CHECK)
+        with pytest.raises(DatabaseError, match="0193"), transaction.atomic():
+            cursor.execute(broken)
+            cursor.execute(PREPARATION_CHECK)
+
+
+def test_the_preparation_file_runs_again_harmlessly():
+    """The whole file runs again (as the users swap test does) and checks itself.
+
+    Rolled back, so the installed bodies stay for the tests that follow.
+    """
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(PREPARATION_SQL)
+        cursor.execute(
+            "SELECT has_function_privilege('public', "
+            "'public.stewardship_backup_destination_v1()', 'EXECUTE')"
+        )
+        assert cursor.fetchone() == (False,)
+        transaction.set_rollback(True)
+
+
 def test_smoke_send_reads_the_deployment_tag(workspace, monkeypatch):
     """``smoke --send`` tags its set folder as a real copy would (#305 L3).
 
@@ -1167,8 +1367,9 @@ def test_smoke_send_reads_the_deployment_tag(workspace, monkeypatch):
     )
     monkeypatch.setattr(runtime_database, "require_current_schema", lambda **_: None)
     expected = deployment_tag(SystemConfiguration.objects.get().pk)
-    assert smoke._deployment_tag("configuration") == expected
-    assert admitted == ["configuration", "login"]
+    configuration = SimpleNamespace(service_role=ServiceRole.BACKUP_WORKER)
+    assert smoke._deployment_tag(configuration) == expected
+    assert admitted == [configuration, "login"]
 
 
 def page_post(browser, values):
@@ -1406,9 +1607,9 @@ def test_the_lock_holder_copies_a_set_taken_while_it_uploaded(offsite, monkeypat
     upload = backup_offsite.upload_set
     later = offsite.directory.parent / "20260927T140000Z"
 
-    def upload_then_back_up(client, folder_id, directory, names):
+    def upload_then_back_up(client, folder_id, directory, names, **options):
         """Upload, and meanwhile let another backup finish its set."""
-        result = upload(client, folder_id, directory, names)
+        result = upload(client, folder_id, directory, names, **options)
         if not later.exists():
             later.mkdir(mode=0o700)
             write_sealed_set(later, b"later")
