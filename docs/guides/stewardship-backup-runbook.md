@@ -659,26 +659,54 @@ as for every release with a migration.
 
 Its upgrade (and every later one) checks before it stops anything that the
 backup profile has [no route out](#no-route-out-for-the-backup-profile),
-and on Production refuses unless all of these hold, each with the
-Administrator's approval where it changes the host:
+and on Production refuses unless steps 1 to 4 below hold. Do them in this
+order; every step marked **Approval** changes Production or its host and
+needs the Administrator's approval first, so ask for them together, as
+this list:
 
-1. The running release is the expand release or later (it has the
-   uploader's `upload`): deploy that one first, prove the uploader and
-   install its cron line.
-2. The [uploader's cron line](#the-uploaders-cron-line) is installed and
+1. **Approval:** deploy the expand release, the one that adds the
+   uploader's `upload` ([Upgrading to the expand release](#upgrading-to-the-expand-release)),
+   and prove the uploader there (its steps 1 and 2). The contract upgrade
+   refuses while the running release has no `upload`.
+2. **Approval:** install the [uploader's cron line](#the-uploaders-cron-line),
    uncommented in root's or the `sudo` user's crontab, `/etc/crontab` or
    `/etc/cron.d`, so copies do not stop with this release.
-3. Docker Engine is 26.0.0 or later, or 25.0.5 / 23.0.11 or a later patch
-   of those (24.x and any pre-release, `-rc1` or `~rc1` alike, refuse):
-   those carry the fix for CVE-2024-29018, which stops `dockerd`'s embedded
-   DNS server forwarding queries for containers on internal networks only.
-4. [The host's `INPUT` drop](#the-hosts-input-drop) for the one-shot
-   networks is installed, first in `INPUT` and kept by its unit.
-5. The egress probe reaches nothing (below).
+3. Check the Engine: `docker version --format '{{.Server.Version}}'` must
+   be 26.0.0 or later, or 25.0.5 / 23.0.11 or a later patch of those (24.x
+   and any pre-release, `-rc1` or `~rc1` alike, refuse): those carry the fix
+   for CVE-2024-29018, which stops `dockerd`'s embedded DNS server
+   forwarding queries for containers on internal networks only. If it is
+   older, **Approval:** [upgrade Docker Engine](#upgrading-docker-engine)
+   in a maintenance window.
+4. **Approval:** install [the host's `INPUT` drop](#the-hosts-input-drop)
+   for the one-shot networks, first in `INPUT` and kept by its unit.
+5. **Approval:** run the contract upgrade itself, as above. Before anything
+   stops it checks steps 1 to 4 again and runs the egress probe, which
+   must reach nothing (below).
 
 LOCAL (pk-local) runs the same checks and only reports them. After the
 upgrade, the next cron backup's JSON line no longer carries an `offsite`
 field; the uploader's cron line copies the set.
+
+#### Rolling back the contract release
+
+An application-only rollback to the expand release is refused: migration
+0195 revokes the backup login's INSERT grants the expand release's backup
+still uses (its run row names `completed_at`, and it records its own copy
+outcome), so the expand release's grant admission refuses, and the scripted
+rollback's advisory check refuses before anything stops. Rolling back is
+the deployment runbook's [database-restore rollback](stewardship-deployment-runbook.md#rollback),
+with the Administrator's approval:
+
+1. With every online service stopped, restore the database from the set the
+   contract upgrade's step 1 took (made by the expand release, before 0195,
+   and copied off-site by its uploader).
+2. Before anything starts, run `retarget-image` back to the expand
+   release's digest, so its image starts against the restored schema.
+
+The uploader's cron line, the `INPUT` drop and the upgraded Engine all stay:
+the expand release works with each. Sets made after the contract upgrade
+have no run rows in the restored database, so the uploader skips them.
 
 ### No route out for the backup profile
 
@@ -720,6 +748,34 @@ which no host rule sees: upgrade Docker Engine to a fixed version (above).
 If it cannot be upgraded at once, the advisory's workaround is a per-service
 `dns:` address for the backup worker, but that needs a code change here:
 file an issue rather than editing the rendered Compose file.
+
+#### Upgrading Docker Engine
+
+Upgrade only with the Administrator's approval and inside a maintenance
+window: restarting `dockerd` stops every container unless `live-restore`
+is on (`docker info --format '{{.LiveRestoreEnabled}}'`), so the public
+site is down until the services come back. Every long-running service has
+`restart: unless-stopped`, so Docker starts them again itself. On the host:
+
+1. Record the version: `docker version --format '{{.Server.Version}}'`.
+2. Make sure no backup or upload is running: `docker ps` shows no
+   `backup-worker` or `backup-uploader` container (wait for it to exit, as
+   in [Stopping a running uploader](#stopping-a-running-uploader)), and no
+   cron backup is due in the next half hour.
+3. Upgrade from the package source the host already uses. For Docker's own
+   repository: `sudo apt-get update`, then `sudo apt-get install
+   --only-upgrade docker-ce docker-ce-cli containerd.io
+   docker-buildx-plugin docker-compose-plugin`. For Ubuntu's own package,
+   `sudo apt-get install --only-upgrade docker.io` instead. Never install
+   a pre-release.
+4. Check the new version against the floor (above) with the same
+   `docker version` command, and that every service is back:
+   `sudo docker compose -p PROJECT ps` lists each one running, and System
+   health shows no new problem.
+5. Check that the `INPUT` drop is still first: `sudo iptables -S INPUT`
+   (below). `dockerd` rewrites only its own chains, but a package upgrade
+   that also reloads ufw can put ufw's rules ahead of it; restart the
+   drop's unit if so.
 
 #### The host's INPUT drop
 

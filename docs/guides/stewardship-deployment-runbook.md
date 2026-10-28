@@ -1647,6 +1647,10 @@ Rolling back the release that adds the off-site uploader starts by
 commenting out the uploader's cron line; the scripted rollback refuses while
 it is installed (backup runbook,
 [Rolling back the expand release](stewardship-backup-runbook.md#rolling-back-the-expand-release)).
+Rolling back the contract release that follows it is always this
+section's database restore plus a retarget to the expand release (backup
+runbook,
+[Rolling back the contract release](stewardship-backup-runbook.md#rolling-back-the-contract-release)).
 
 ### Scripted rollback
 

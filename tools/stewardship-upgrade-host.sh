@@ -1257,7 +1257,7 @@ if has_command "$new_commands" egress-probe; then
     if engine_fixed "$engine"; then
         echo "    Docker Engine ${engine} has the embedded-DNS fix for internal networks"
     else
-        contract_problems+=("Docker Engine '${engine:-unknown}' lacks the embedded-DNS fix for internal networks (CVE-2024-29018): upgrade it to 26.0.0 or later (or 25.0.5 / 23.0.11), with the Administrator's approval (docs/guides/stewardship-backup-runbook.md#no-route-out-for-the-backup-profile).")
+        contract_problems+=("Docker Engine '${engine:-unknown}' lacks the embedded-DNS fix for internal networks (CVE-2024-29018): upgrade it to 26.0.0 or later (or 25.0.5 / 23.0.11), with the Administrator's approval (docs/guides/stewardship-backup-runbook.md#upgrading-docker-engine).")
     fi
     offline=$(jq -r '.deployment.runtime_network.offline // "172.29.242.0/24"' "$services/web.yaml")
     [[ $offline =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}/(24|25)$ ]] ||
