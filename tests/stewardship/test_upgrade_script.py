@@ -3244,10 +3244,21 @@ def flock_calls(tmp_path):
     return path.read_text().splitlines() if path.exists() else []
 
 
+def assert_lock_waits(calls, limit):
+    """Both locks, file then directory, within one shared limit.
+
+    The directory lock waits for what is left of the limit, so a second
+    boundary between the two calls can take one second off its wait.
+    """
+    assert len(calls) == 2, calls
+    assert calls[0] == f"-E 75 -w {limit} 8"
+    assert calls[1] in (f"-E 75 -w {limit} 9", f"-E 75 -w {limit - 1} 9")
+
+
 def test_the_host_holds_both_copy_locks_for_the_offline_work(tmp_path):
     """File lock, then directory lock, each bounded, after step 1's copy."""
     calls, output, root = run_host(tmp_path, "upgrade")
-    assert flock_calls(tmp_path) == ["-E 75 -w 1800 8", "-E 75 -w 1800 9"]
+    assert_lock_waits(flock_calls(tmp_path), 1800)
     assert "1. Holding the off-site copy lock for the offline work" in output
     assert output.index("Holding the off-site copy lock") < output.index(
         "2. Stopping web"
@@ -3331,7 +3342,7 @@ def test_flock_is_checked_before_step_1():
 def test_a_rollback_holds_the_copy_lock_too(tmp_path):
     """Every offline phase holds it, whichever direction."""
     run_host(tmp_path, "rollback")
-    assert flock_calls(tmp_path) == ["-E 75 -w 1800 8", "-E 75 -w 1800 9"]
+    assert_lock_waits(flock_calls(tmp_path), 1800)
 
 
 UPLOADER_LINE = (

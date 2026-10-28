@@ -2107,11 +2107,22 @@ def flock_calls(host):
     return path.read_text().splitlines() if path.exists() else []
 
 
+def assert_lock_waits(calls, limit):
+    """Both locks, file then directory, within one shared limit.
+
+    The directory lock waits for what is left of the limit, so a second
+    boundary between the two calls can take one second off its wait.
+    """
+    assert len(calls) == 2, calls
+    assert calls[0] == f"-E 75 -w {limit} 8"
+    assert calls[1] in (f"-E 75 -w {limit} 9", f"-E 75 -w {limit - 1} 9")
+
+
 def test_the_run_holds_the_copy_lock_before_anything_stops(host):
     """Both locks, file then directory, at most 60 seconds, before step 1's stop."""
     result, calls = restore(host)
     assert result.returncode == 0, output(result)
-    assert flock_calls(host) == ["-E 75 -w 60 8", "-E 75 -w 60 9"]
+    assert_lock_waits(flock_calls(host), 60)
     # Taken in step 1 before its stop: an expired wait stops nothing (below).
     text = output(result)
     assert text.index("1. Stopping every online service") < text.index(
@@ -2205,7 +2216,7 @@ def test_a_replacement_takes_the_copy_lock_once_step_3_made_the_directory(new_ho
     """A new host has no backups directory until step 3 creates it."""
     result, _ = new(new_host)
     assert result.returncode == 0, output(result)
-    assert flock_calls(new_host) == ["-E 75 -w 60 8", "-E 75 -w 60 9"]
+    assert_lock_waits(flock_calls(new_host), 60)
     text = output(result)
     assert text.index("3. Preparing this host") < text.index(
         "holding the off-site copy lock"
