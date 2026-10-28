@@ -208,11 +208,12 @@ def test_no_other_line_is_taken_for_the_uploaders(tmp_path, where, line):
 
 @pytest.mark.skipif(shutil.which("flock") is None, reason="util-linux flock only")
 def test_the_copy_lock_block_waits_for_a_held_lock_and_logs_its_expiry(tmp_path):
-    """On a host with flock: the block takes both locks, or times out logged.
+    """On a host with flock: the block takes the directory lock, or times out logged.
 
     A Python copier holding the directory lock (as the uploader holds it)
-    makes the block's bounded wait expire; released, the block takes both
-    and creates the legacy file owner-only.
+    makes the block's bounded wait expire; released, the block takes it.
+    Since the contract release (#235) it writes nothing in the directory:
+    the expand release's legacy lock file is neither created nor locked.
     """
     import fcntl
 
@@ -234,35 +235,43 @@ def test_the_copy_lock_block_waits_for_a_held_lock_and_logs_its_expiry(tmp_path)
     assert result.stdout.strip() == "refused"
     assert "TIMEOUT: waiting for the off-site copy lock" in result.stderr
     assert "(limit 2s)" in result.stderr
-    result = subprocess.run(
-        ["bash", str(script), str(backups)], capture_output=True, text=True
-    )
-    assert result.stdout.strip() == "held"
-    lock = backups / ".offsite-copy.lock"
-    assert lock.is_file() and (lock.stat().st_mode & 0o777) == 0o600
+    # A leftover legacy file held by an old copier no longer matters.
+    legacy = backups / ".offsite-copy.lock"
+    legacy.write_text("")
+    descriptor = os.open(legacy, os.O_RDONLY)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        result = subprocess.run(
+            ["bash", str(script), str(backups)], capture_output=True, text=True
+        )
+    finally:
+        os.close(descriptor)
+    assert result.stdout.strip() == "held", result.stderr
+    assert sorted(path.name for path in backups.iterdir()) == [legacy.name]
 
 
-@pytest.mark.parametrize("plant", ["link", "fifo", "none"])
-def test_a_lock_file_swapped_before_the_open_refuses_without_hanging(tmp_path, plant):
-    """A link or FIFO swapped in after the checks is never locked (#235, L1).
+@pytest.mark.parametrize("plant", ["link", "file", "swapped", "none"])
+def test_a_backups_directory_that_is_not_one_refuses(tmp_path, plant):
+    """Only the real directory at the name is ever locked (#235, L1).
 
-    The backup worker can write the backups directory, so the name may
-    change between the block's checks and its open. A ``umask`` stand-in
-    (run just before the open) swaps the lock file at that moment: the
-    read-write open never blocks on a FIFO, and the opened descriptor is
-    not the regular file at the name, so the block refuses before flock.
+    A link or a file at the name refuses before the open; a directory
+    swapped between the check and the open (a ``stat`` stand-in that
+    reports another inode for the name) refuses after it, before flock.
     The run is bounded, so a hang fails the test instead of stalling it.
     """
     from .host_stubs import install_gnu_tools
 
     if shutil.which("bash") is None:
         pytest.skip("bash is not installed")
+    real = tmp_path / "real"
+    real.mkdir(mode=0o700)
     backups = tmp_path / "backups"
-    backups.mkdir(mode=0o700)
-    lock = backups / ".offsite-copy.lock"
-    lock.write_text("")
-    target = tmp_path / "elsewhere"
-    target.write_text("kept")
+    if plant == "link":
+        backups.symlink_to(real)
+    elif plant == "file":
+        backups.write_text("")
+    else:
+        backups.mkdir(mode=0o700)
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     install_gnu_tools(bin_dir)
@@ -275,13 +284,9 @@ def test_a_lock_file_swapped_before_the_open_refuses_without_hanging(tmp_path, p
     script.write_text(
         layout_block(HOST, LOCK_BEGIN, LOCK_END)
         + 'flock() { echo "$*" >>"$FLOCK_LOG"; }\n'
-        + "umask() {\n"
-        + '    if [ "$#" -gt 0 ] && [ -n "$PLANT" ] && [ ! -e "$TARGET.done" ]; then\n'
-        + '        : >"$TARGET.done"; rm -f "$LOCK"\n'
-        + '        if [ "$PLANT" = link ]; then ln -s "$TARGET" "$LOCK"; '
-        + 'else mkfifo "$LOCK"; fi\n'
-        + "    fi\n"
-        + '    builtin umask "$@"\n'
+        + "stat() {\n"
+        + '    if [ -n "$SWAP" ] && [ "$1" = -c ]; then echo 0:0; return 0; fi\n'
+        + '    command stat "$@"\n'
         + "}\n"
         + 'if copy_lock_take "$1" 2; then echo held; else echo refused; fi\n'
     )
@@ -290,9 +295,7 @@ def test_a_lock_file_swapped_before_the_open_refuses_without_hanging(tmp_path, p
         ["bash", str(script), str(backups)],
         env={
             "PATH": f"{bin_dir}:{os.environ['PATH']}",
-            "PLANT": "" if plant == "none" else plant,
-            "LOCK": str(lock),
-            "TARGET": str(target),
+            "SWAP": "1" if plant == "swapped" else "",
             "FLOCK_LOG": str(log),
         },
         capture_output=True,
@@ -301,12 +304,13 @@ def test_a_lock_file_swapped_before_the_open_refuses_without_hanging(tmp_path, p
     )
     if plant == "none":
         assert result.stdout.strip() == "held", result.stderr
-        assert log.read_text().splitlines() == ["-E 75 -w 2 8", "-E 75 -w 2 9"]
+        assert log.read_text().splitlines() == ["-E 75 -w 2 9"]
+        assert list(backups.iterdir()) == []
         return
     assert result.stdout.strip() == "refused"
-    assert "is not a regular file" in result.stderr
+    assert "is not a directory" in result.stderr
     assert not log.exists()
-    assert target.read_text() == "kept"
+    assert list(real.iterdir()) == []
 
 
 def test_both_scripts_carry_the_same_layout_block():

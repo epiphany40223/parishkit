@@ -87,8 +87,8 @@
 # refused: restore it by hand.
 #
 # Then: 1 takes this host's off-site copy lock on the backups directory
-# (#235: the legacy file lock, then the directory lock, waiting at most 60
-# seconds for a running copy, else refusing; held until the run ends) and
+# (#235: the directory lock, waiting at most 60 seconds for a running copy,
+# else refusing; held until the run ends) and
 # stops every online service (after waiting, bounded, for a running
 # backup-worker); 4 moves each current tree aside as NAME.pre-restore-STAMP
 # (never deleting it) and puts the set's in place, keeping the host's
@@ -1130,83 +1130,44 @@ copy_lock_take() {
     # copy_lock_take DIR SECONDS: hold this host's off-site copy lock on the
     # backups directory DIR for the rest of the run (operations
     # specification, "Offline work"), so an upload still running finishes
-    # first and a cron uploader exits at the lock. Taken as every copier
-    # takes it, in the expand release's order: the legacy file lock (an
-    # old-release copy holds only that one), then the directory lock, each
-    # with `flock -w` on a descriptor (8 and 9) this shell keeps open until
-    # it exits.
+    # first and a cron uploader exits at the lock. Since the contract
+    # release every copier takes the directory lock alone (the expand
+    # release's legacy .offsite-copy.lock file is no longer locked, and a
+    # leftover one is ignored), so this takes it with `flock -w` on a
+    # descriptor (9) this shell keeps open until it exits.
     #
-    # The backup worker can write DIR, so anything at the lock file's name
-    # may change between a check and an open. A missing legacy file is
-    # made beside it (mktemp: O_EXCL, mode 0600), owned like DIR, and
-    # linked into place: link(2) neither follows nor replaces whatever is
-    # at the name by then, and that is checked like any existing file. A
-    # link or anything but a regular file there refuses before the open.
-    # The file is opened read-write (`<>`, nothing is written), which never
-    # blocks on a FIFO as a read-only open would, and the open descriptors
-    # must then be the regular file and the directory at those names, by
-    # device and inode, so a link or a FIFO swapped in after the checks
-    # refuses instead of being locked or hanging the run.
+    # The name may still change between the check and the open, so the
+    # open descriptor must be the directory at that name, by device and
+    # inode: a link or anything else swapped in meanwhile refuses instead
+    # of being locked.
     #
-    # A wait longer than SECONDS in all is logged with what, the limit and
-    # the elapsed time (flock's exit 75); any other flock failure is logged
-    # as a failure with its status. Either returns non-zero, as does every
-    # other refusal.
-    local dir=$1 limit=$2 file uid gid started left fd tmp mask rc
-    file=$dir/.offsite-copy.lock
+    # A wait longer than SECONDS is logged with what, the limit and the
+    # elapsed time (flock's exit 75); any other flock failure is logged as a
+    # failure with its status. Either returns non-zero, as does every other
+    # refusal.
+    local dir=$1 limit=$2 started rc
     command -v flock >/dev/null || { echo "flock is not installed; cannot take the off-site copy lock." >&2; return 1; }
     { [ -d "$dir" ] && [ ! -L "$dir" ]; } ||
         { echo "The backups directory $dir is not a directory." >&2; return 1; }
-    if [ ! -e "$file" ] && [ ! -L "$file" ]; then
-        read -r _ _ uid gid _ < <(ls -ldn "$dir") ||
-            { echo "Could not read the owner of $dir." >&2; return 1; }
-        if ! tmp=$(mktemp "$file.XXXXXX" 2>/dev/null) || ! chown -h "$uid:$gid" "$tmp"; then
-            [ -z "${tmp:-}" ] || rm -f -- "$tmp"
-            echo "Could not create the copy lock file $file." >&2
-            return 1
-        fi
-        # A failed link is fine when something else now has the name (the
-        # backup profile made the file meanwhile): it is checked below. -T
-        # never links into a directory that took the name meanwhile.
-        ln -T -- "$tmp" "$file" 2>/dev/null || [ -e "$file" ] || [ -L "$file" ] ||
-            { rm -f -- "$tmp"; echo "Could not create the copy lock file $file." >&2; return 1; }
-        rm -f -- "$tmp"
-    fi
-    { [ -f "$file" ] && [ ! -L "$file" ]; } ||
-        { echo "The copy lock file $file is not a regular file." >&2; return 1; }
-    # Owner-only, should a name removed meanwhile make the open create it.
-    mask=$(umask)
-    umask 077
-    if ! exec 8<>"$file" 9<"$dir"; then
-        umask "$mask"
+    if ! exec 9<"$dir"; then
         echo "Could not open the copy lock on $dir." >&2
         return 1
     fi
-    umask "$mask"
-    if ! { [ -f /dev/fd/8 ] && copy_lock_same 8 "$file"; }; then
-        exec 8<&- 9<&-
-        echo "The copy lock file $file is not a regular file." >&2
-        return 1
-    fi
     if ! { [ -d /dev/fd/9 ] && copy_lock_same 9 "$dir"; }; then
-        exec 8<&- 9<&-
+        exec 9<&-
         echo "The backups directory $dir is not a directory." >&2
         return 1
     fi
     started=$(date -u +%s)
-    for fd in 8 9; do
-        left=$((limit - ($(date -u +%s) - started)))
-        [ "$left" -ge 1 ] || left=1
-        rc=0
-        flock -E 75 -w "$left" "$fd" || rc=$?
-        if [ "$rc" -eq 75 ]; then
-            echo "TIMEOUT: waiting for the off-site copy lock on $dir gave up after $(($(date -u +%s) - started))s (limit ${limit}s)" >&2
-            return 1
-        elif [ "$rc" -ne 0 ]; then
-            echo "FAILED: flock on the off-site copy lock on $dir exited with status $rc after $(($(date -u +%s) - started))s" >&2
-            return 1
-        fi
-    done
+    rc=0
+    flock -E 75 -w "$limit" 9 || rc=$?
+    if [ "$rc" -eq 75 ]; then
+        echo "TIMEOUT: waiting for the off-site copy lock on $dir gave up after $(($(date -u +%s) - started))s (limit ${limit}s)" >&2
+        return 1
+    elif [ "$rc" -ne 0 ]; then
+        echo "FAILED: flock on the off-site copy lock on $dir exited with status $rc after $(($(date -u +%s) - started))s" >&2
+        return 1
+    fi
 }
 # END off-site copy lock (#235).
 collect_static() {

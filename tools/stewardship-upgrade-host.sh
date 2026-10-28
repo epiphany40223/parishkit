@@ -23,6 +23,9 @@
 #     already; nothing is pulled and no registry digest is checked;
 #   - the backup is still required, but LOCAL has no off-host target, so
 #     an off-site state of not_configured is accepted alongside uploaded;
+#   - the off-site uploader's contract checks (#235: the backup profile's
+#     route out, the Engine version, the INPUT drop, the uploader's cron
+#     line, a running release with `upload`) only report, never refuse;
 #   - the services keep the deployment's clock mode (the faketime override
 #     is added when the marker says fake, and the derived fake-clock image
 #     of the new application image is built after the retarget);
@@ -652,83 +655,44 @@ copy_lock_take() {
     # copy_lock_take DIR SECONDS: hold this host's off-site copy lock on the
     # backups directory DIR for the rest of the run (operations
     # specification, "Offline work"), so an upload still running finishes
-    # first and a cron uploader exits at the lock. Taken as every copier
-    # takes it, in the expand release's order: the legacy file lock (an
-    # old-release copy holds only that one), then the directory lock, each
-    # with `flock -w` on a descriptor (8 and 9) this shell keeps open until
-    # it exits.
+    # first and a cron uploader exits at the lock. Since the contract
+    # release every copier takes the directory lock alone (the expand
+    # release's legacy .offsite-copy.lock file is no longer locked, and a
+    # leftover one is ignored), so this takes it with `flock -w` on a
+    # descriptor (9) this shell keeps open until it exits.
     #
-    # The backup worker can write DIR, so anything at the lock file's name
-    # may change between a check and an open. A missing legacy file is
-    # made beside it (mktemp: O_EXCL, mode 0600), owned like DIR, and
-    # linked into place: link(2) neither follows nor replaces whatever is
-    # at the name by then, and that is checked like any existing file. A
-    # link or anything but a regular file there refuses before the open.
-    # The file is opened read-write (`<>`, nothing is written), which never
-    # blocks on a FIFO as a read-only open would, and the open descriptors
-    # must then be the regular file and the directory at those names, by
-    # device and inode, so a link or a FIFO swapped in after the checks
-    # refuses instead of being locked or hanging the run.
+    # The name may still change between the check and the open, so the
+    # open descriptor must be the directory at that name, by device and
+    # inode: a link or anything else swapped in meanwhile refuses instead
+    # of being locked.
     #
-    # A wait longer than SECONDS in all is logged with what, the limit and
-    # the elapsed time (flock's exit 75); any other flock failure is logged
-    # as a failure with its status. Either returns non-zero, as does every
-    # other refusal.
-    local dir=$1 limit=$2 file uid gid started left fd tmp mask rc
-    file=$dir/.offsite-copy.lock
+    # A wait longer than SECONDS is logged with what, the limit and the
+    # elapsed time (flock's exit 75); any other flock failure is logged as a
+    # failure with its status. Either returns non-zero, as does every other
+    # refusal.
+    local dir=$1 limit=$2 started rc
     command -v flock >/dev/null || { echo "flock is not installed; cannot take the off-site copy lock." >&2; return 1; }
     { [ -d "$dir" ] && [ ! -L "$dir" ]; } ||
         { echo "The backups directory $dir is not a directory." >&2; return 1; }
-    if [ ! -e "$file" ] && [ ! -L "$file" ]; then
-        read -r _ _ uid gid _ < <(ls -ldn "$dir") ||
-            { echo "Could not read the owner of $dir." >&2; return 1; }
-        if ! tmp=$(mktemp "$file.XXXXXX" 2>/dev/null) || ! chown -h "$uid:$gid" "$tmp"; then
-            [ -z "${tmp:-}" ] || rm -f -- "$tmp"
-            echo "Could not create the copy lock file $file." >&2
-            return 1
-        fi
-        # A failed link is fine when something else now has the name (the
-        # backup profile made the file meanwhile): it is checked below. -T
-        # never links into a directory that took the name meanwhile.
-        ln -T -- "$tmp" "$file" 2>/dev/null || [ -e "$file" ] || [ -L "$file" ] ||
-            { rm -f -- "$tmp"; echo "Could not create the copy lock file $file." >&2; return 1; }
-        rm -f -- "$tmp"
-    fi
-    { [ -f "$file" ] && [ ! -L "$file" ]; } ||
-        { echo "The copy lock file $file is not a regular file." >&2; return 1; }
-    # Owner-only, should a name removed meanwhile make the open create it.
-    mask=$(umask)
-    umask 077
-    if ! exec 8<>"$file" 9<"$dir"; then
-        umask "$mask"
+    if ! exec 9<"$dir"; then
         echo "Could not open the copy lock on $dir." >&2
         return 1
     fi
-    umask "$mask"
-    if ! { [ -f /dev/fd/8 ] && copy_lock_same 8 "$file"; }; then
-        exec 8<&- 9<&-
-        echo "The copy lock file $file is not a regular file." >&2
-        return 1
-    fi
     if ! { [ -d /dev/fd/9 ] && copy_lock_same 9 "$dir"; }; then
-        exec 8<&- 9<&-
+        exec 9<&-
         echo "The backups directory $dir is not a directory." >&2
         return 1
     fi
     started=$(date -u +%s)
-    for fd in 8 9; do
-        left=$((limit - ($(date -u +%s) - started)))
-        [ "$left" -ge 1 ] || left=1
-        rc=0
-        flock -E 75 -w "$left" "$fd" || rc=$?
-        if [ "$rc" -eq 75 ]; then
-            echo "TIMEOUT: waiting for the off-site copy lock on $dir gave up after $(($(date -u +%s) - started))s (limit ${limit}s)" >&2
-            return 1
-        elif [ "$rc" -ne 0 ]; then
-            echo "FAILED: flock on the off-site copy lock on $dir exited with status $rc after $(($(date -u +%s) - started))s" >&2
-            return 1
-        fi
-    done
+    rc=0
+    flock -E 75 -w "$limit" 9 || rc=$?
+    if [ "$rc" -eq 75 ]; then
+        echo "TIMEOUT: waiting for the off-site copy lock on $dir gave up after $(($(date -u +%s) - started))s (limit ${limit}s)" >&2
+        return 1
+    elif [ "$rc" -ne 0 ]; then
+        echo "FAILED: flock on the off-site copy lock on $dir exited with status $rc after $(($(date -u +%s) - started))s" >&2
+        return 1
+    fi
 }
 # END off-site copy lock (#235).
 
@@ -1156,6 +1120,133 @@ if ! has_command "$new_commands" upload; then
         echo "(docs/guides/stewardship-backup-runbook.md#rolling-back-the-expand-release)," >&2
         echo "then repeat." >&2
         exit 1
+    fi
+fi
+
+# The backup profile's route out (#235, operations specification, "No route
+# out"). From the contract release on (the new image lists egress-probe) the
+# backup worker, which reads every tree and all database data, is on its own
+# internal network alone and the off-site uploader alone copies. Before
+# anything stops, every such upgrade or rollback checks on Production:
+# - the running image has the uploader's `upload` (the expand release), so
+#   no copier still running holds only the expand release's legacy file
+#   lock, which this release no longer takes;
+# - this host's cron runs the uploader (E2's shared crontab block,
+#   inverted), or copies would stop with this release;
+# - Docker Engine has the embedded-DNS fix for internal networks
+#   (CVE-2024-29018: 26.0.0, 25.0.5 or 23.0.11 and later; any 24.x refused);
+# - the persisted host INPUT drop for runtime_network.offline is in place
+#   (iptables -C): the gateway of every one-shot network is the host, and
+#   Caddy's published 80/443 listen on its wildcard address, as may sshd and
+#   any UDP service, whose silence alone proves nothing;
+# - the new image's egress-probe, in a container joined only to the
+#   existing backup-worker network, reaches nothing: external TCP, DNS
+#   through the embedded resolver and straight to a public one, and every
+#   port the host listens on at a wildcard address or that gateway.
+# Every failure to ask refuses too. LOCAL (pk-local) has no off-site target
+# and no host firewall rule, so there the same checks only report.
+engine_fixed() {
+    # Whether Docker Engine version $1 has the CVE-2024-29018 fix: 26.0.0
+    # or later, 25.0.5 or a later 25, 23.0.11 or a later 23. A pre-release
+    # (-rc, -beta, -alpha, -dev) of any version is refused; a distribution
+    # suffix after the three numbers is not.
+    local major minor patch
+    [[ $1 =~ ^([0-9]{1,4})\.([0-9]{1,4})\.([0-9]{1,4})([+~-][0-9A-Za-z.+~-]*)?$ ]] || return 1
+    case "${BASH_REMATCH[4]}" in -rc* | -beta* | -alpha* | -dev*) return 1 ;; esac
+    major=$((10#${BASH_REMATCH[1]})) minor=$((10#${BASH_REMATCH[2]})) patch=$((10#${BASH_REMATCH[3]}))
+    if [ "$major" -ge 26 ]; then return 0; fi
+    case "$major" in
+        25) [ "$minor" -gt 0 ] || [ "$patch" -ge 5 ] ;;
+        23) [ "$minor" -gt 0 ] || [ "$patch" -ge 11 ] ;;
+        *) return 1 ;;
+    esac
+}
+gateway_listeners() {
+    # gateway_listeners GATEWAY: the host's listening TCP and UDP ports at a
+    # wildcard address or at GATEWAY, from `ss -Htlnu` on stdin, as one
+    # comma-separated tcp:PORT,udp:PORT list (empty when there are none).
+    awk -v gw="$1" '
+        {
+            listening = $5
+            n = split(listening, part, ":")
+            port = part[n]
+            address = substr(listening, 1, length(listening) - length(port) - 1)
+            sub(/%.*/, "", address)
+            if (port !~ /^[0-9]+$/) next
+            if (address == "0.0.0.0" || address == "*" || address == "[::]" || address == gw)
+                seen[$1 ":" port] = 1
+        }
+        END { for (item in seen) print item }
+    ' | sort -u | paste -sd, -
+}
+if has_command "$new_commands" egress-probe; then
+    step "1. Checking that the backup profile has no route out"
+    contract_problems=()
+    if ! has_command "$running_commands" upload; then
+        contract_problems+=("The running image ${previous:-unknown} has no off-site uploader: deploy the expand release (the one that adds 'upload') first, prove the uploader and install its cron line (docs/guides/stewardship-backup-runbook.md#the-uploaders-cron-line), then this one.")
+    fi
+    if [ -z "$(uploader_cron_lines)" ]; then
+        contract_problems+=("This host's cron runs no off-site uploader line, so off-site copies would stop with this release: install it first (docs/guides/stewardship-backup-runbook.md#the-uploaders-cron-line).")
+    fi
+    engine=$(timeout --kill-after=5 30 docker version --format '{{.Server.Version}}' 2>/dev/null) || engine=""
+    if engine_fixed "$engine"; then
+        echo "    Docker Engine ${engine} has the embedded-DNS fix for internal networks"
+    else
+        contract_problems+=("Docker Engine '${engine:-unknown}' lacks the embedded-DNS fix for internal networks (CVE-2024-29018): upgrade it to 26.0.0 or later (or 25.0.5 / 23.0.11), with the Administrator's approval (docs/guides/stewardship-backup-runbook.md#no-route-out-for-the-backup-profile).")
+    fi
+    offline=$(jq -r '.deployment.runtime_network.offline // "172.29.242.0/24"' "$services/web.yaml")
+    [[ $offline =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}/(24|25)$ ]] ||
+        { echo "Could not read runtime_network.offline ($offline); refusing." >&2; exit 1; }
+    if command -v iptables >/dev/null && iptables -w 5 -C INPUT -s "$offline" -j DROP 2>/dev/null; then
+        echo "    the host drops traffic from the one-shot networks ($offline) to itself"
+    else
+        contract_problems+=("The host has no INPUT drop for the one-shot networks ($offline), or iptables cannot say: install and persist it with the Administrator's approval (docs/guides/stewardship-backup-runbook.md#no-route-out-for-the-backup-profile).")
+    fi
+    probe_network="${project}_offline-backup-worker"
+    internal=$(docker network inspect --format '{{.Internal}}' "$probe_network" 2>/dev/null) || internal=""
+    gateway=$(docker network inspect --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}' "$probe_network" 2>/dev/null) || gateway=""
+    google=$(timeout --kill-after=5 30 getent ahostsv4 www.googleapis.com 2>/dev/null | awk 'NR == 1 { print $1 }') || google=""
+    listeners=$(ss -Htlnu 2>/dev/null | gateway_listeners "$gateway") || listeners="unreadable"
+    if [ "$internal" != true ] || ! [[ $gateway =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+        contract_problems+=("Could not read the backup worker's internal network $probe_network (internal: ${internal:-unknown}, gateway: ${gateway:-unknown}); run one backup on the current release, then repeat.")
+    elif ! [[ $google =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+        contract_problems+=("The host could not resolve www.googleapis.com for the egress probe.")
+    elif [ "$listeners" = unreadable ]; then
+        contract_problems+=("Could not list the host's listening ports (ss -Htlnu) for the egress probe.")
+    else
+        oneoff_name=$oneoff_prefix-egress-probe
+        started=$(date -u +%s)
+        probe_rc=0
+        # shellcheck disable=SC2054 # the tmpfs options are one comma-separated word
+        probed=$(timeout --kill-after=10 120 docker run --rm --init --name "$oneoff_name" \
+            --network "$probe_network" --user 10001:10001 --read-only --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --tmpfs /tmp:rw,nosuid,nodev,noexec,mode=1777 \
+            "$image" egress-probe --gateway "$gateway" --google-address "$google" \
+            --listen "$listeners" --engine-version "${engine:-0.0.0}" </dev/null 2>/dev/null) || probe_rc=$?
+        if [ "$probe_rc" -eq 124 ] || [ "$probe_rc" -eq 137 ]; then
+            echo "TIMEOUT: the egress probe killed after $(( $(date -u +%s) - started ))s (limit 120s)" >&3
+            stop_oneoff "time limit" >&3
+        fi
+        oneoff_name=""
+        echo "    egress probe: ${probed:-no result}"
+        echo "$(date -u +%FT%TZ) egress probe: ${probed:-no result}" >>"$logdir/stewardship-backup.log"
+        closed=$(jq -r '.closed' <<<"$probed" 2>/dev/null || true)
+        if [ "$probe_rc" -eq 3 ] || [ "$closed" = false ]; then
+            contract_problems+=("The egress probe reached $(jq -r '.reached | join(", ")' <<<"$probed" 2>/dev/null || echo 'something') from the backup worker's network: close that route (docs/guides/stewardship-backup-runbook.md#no-route-out-for-the-backup-profile).")
+        elif [ "$probe_rc" -ne 0 ] || [ "$closed" != true ]; then
+            contract_problems+=("The egress probe did not answer (exit $probe_rc).")
+        else
+            echo "    the backup worker's network reaches nothing outside"
+        fi
+    fi
+    if [ "${#contract_problems[@]}" -gt 0 ]; then
+        for problem in "${contract_problems[@]}"; do echo "$problem" >&2; done
+        if [ "$profile" = production ]; then
+            echo "Nothing was stopped or changed; refusing." >&2
+            exit 1
+        fi
+        echo "    LOCAL: the checks above only report here; continuing" >&2
     fi
 fi
 

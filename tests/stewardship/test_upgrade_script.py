@@ -312,6 +312,23 @@ case "$*" in
         else
             echo "${FAKE_HELP:-$listed}"
         fi ;;
+    # The contract's route-out preflight (#235): FAKE_ENGINE is the Engine
+    # version (FAKE_ENGINE_FAIL: no answer); FAKE_PROBE_INTERNAL and
+    # FAKE_PROBE_GATEWAY what the backup worker's network answers; the
+    # probe records its arguments and prints FAKE_PROBE (default closed),
+    # exiting FAKE_PROBE_RC.
+    "version --format {{.Server.Version}}")
+        [ -z "${FAKE_ENGINE_FAIL-}" ] || exit 1
+        echo "${FAKE_ENGINE:-27.3.1}" ;;
+    "network inspect --format {{.Internal}} "*"_offline-backup-worker")
+        echo "${FAKE_PROBE_INTERNAL:-true}" ;;
+    "network inspect --format {{range .IPAM.Config}}{{.Gateway}}{{end}} "*"-worker")
+        echo "${FAKE_PROBE_GATEWAY-172.29.242.65}" ;;
+    *" egress-probe --gateway "*)
+        echo "$*" >"$FAKE_STATE/probe"
+        closed='{"closed": true, "engine_version": "27.3.1", "reached": []}'
+        echo "${FAKE_PROBE:-$closed}"
+        exit "${FAKE_PROBE_RC:-0}" ;;
     # The off-site uploader's step-1 copy (#235): FAKE_UPLOAD is its last
     # line (default: the digest's copy recorded); the arguments are logged.
     *" -T backup-uploader upload --config "*)
@@ -602,6 +619,22 @@ exit 0
 """
 
 
+# What `ss -Htlnu` answers by default: listeners at the wildcard addresses
+# (IPv4, IPv6 and "*"), at the backup worker's gateway, and on loopback
+# only, which the probe skips.
+SS_LISTENERS = "\n".join(
+    [
+        "tcp   LISTEN 0      4096         0.0.0.0:22         0.0.0.0:*",
+        "tcp   LISTEN 0      4096               *:443              *:*",
+        "tcp   LISTEN 0      4096       127.0.0.1:5000       0.0.0.0:*",
+        "udp   UNCONN 0      0      127.0.0.53%lo:53         0.0.0.0:*",
+        "udp   UNCONN 0      0            0.0.0.0:68         0.0.0.0:*",
+        "tcp   LISTEN 0      4096            [::]:22            [::]:*",
+        "tcp   LISTEN 0      4096   172.29.242.65:9999       0.0.0.0:*",
+    ]
+)
+
+
 def lay_out(tmp_path, local, current, target, clock, bulk, kept, prepare):
     """Lay the runtime root out as a set-up deployment, before the first run."""
     root = tmp_path / "root"
@@ -736,6 +769,25 @@ def run_host(
     install_gnu_tools(bin_dir)
     executable_stub(bin_dir, "crontab", 'echo "${FAKE_CRONTAB:-}"')
     executable_stub(bin_dir, "chown", 'echo "$*" >>"$FAKE_STATE/chown"')
+    # The contract's route-out preflight (#235): the INPUT drop (missing with
+    # FAKE_NO_INPUT_DROP), the host's resolution of the Google API name
+    # (FAKE_NO_GOOGLE) and its listening sockets (FAKE_SS, or FAKE_SS_FAIL).
+    executable_stub(
+        bin_dir,
+        "iptables",
+        'echo "iptables $*" >>"$FAKE_LOG"; [ -z "$FAKE_NO_INPUT_DROP" ] || exit 1',
+    )
+    executable_stub(
+        bin_dir,
+        "getent",
+        '[ -z "$FAKE_NO_GOOGLE" ] || exit 2; '
+        'echo "142.250.1.95    STREAM www.googleapis.com"',
+    )
+    executable_stub(
+        bin_dir,
+        "ss",
+        '[ -z "$FAKE_SS_FAIL" ] || exit 1; printf "%s\\n" "${FAKE_SS:-$SS_DEFAULT}"',
+    )
     # The host's routes for the uploader's subnet-overlap preflight (#235).
     executable_stub(bin_dir, "ip", 'echo "ip $*" >>"$FAKE_LOG"; echo "$FAKE_ROUTES"')
     # The stand-in answers as the application does through caddy (the local
@@ -795,6 +847,7 @@ def run_host(
             "STEWARDSHIP_LOG_DIR": str(logs),
             "PK_RESTORE_CRONTAB": str(tmp_path / "crontab"),
             "PK_RESTORE_CRON_DIR": str(tmp_path / "cron.d"),
+            "SS_DEFAULT": SS_LISTENERS,
             **{"FAKE_" + name.upper(): str(value) for name, value in fake.items()},
             **(env or {}),
         },
@@ -3245,59 +3298,52 @@ def flock_calls(tmp_path):
 
 
 def assert_lock_waits(calls, limit):
-    """Both locks, file then directory, within one shared limit.
-
-    The directory lock waits for what is left of the limit, so a second
-    boundary between the two calls can take one second off its wait.
-    """
-    assert len(calls) == 2, calls
-    assert calls[0] == f"-E 75 -w {limit} 8"
-    assert calls[1] in (f"-E 75 -w {limit} 9", f"-E 75 -w {limit - 1} 9")
+    """The directory lock alone (since the contract release, #235), bounded."""
+    assert calls == [f"-E 75 -w {limit} 9"], calls
 
 
-def test_the_host_holds_both_copy_locks_for_the_offline_work(tmp_path):
-    """File lock, then directory lock, each bounded, after step 1's copy."""
+def test_the_host_holds_the_copy_lock_for_the_offline_work(tmp_path):
+    """The directory lock, bounded, after step 1's copy; nothing written there."""
     calls, output, root = run_host(tmp_path, "upgrade")
     assert_lock_waits(flock_calls(tmp_path), 1800)
     assert "1. Holding the off-site copy lock for the offline work" in output
     assert output.index("Holding the off-site copy lock") < output.index(
         "2. Stopping web"
     )
-    # The legacy file the backup profile opens was created, owner-only.
-    lock = root / "backups" / ".offsite-copy.lock"
-    assert lock.is_file() and (lock.stat().st_mode & 0o777) == 0o600
-    assert (tmp_path / "state" / "chown").read_text().startswith("-h ")
+    # The expand release's legacy lock file is neither created nor locked.
+    assert list((root / "backups").iterdir()) == []
+    assert not (tmp_path / "state" / "chown").exists()
 
 
-def test_an_existing_lock_file_is_kept(tmp_path):
-    """An existing regular file is opened as it is, never replaced."""
+def test_a_leftover_legacy_lock_file_is_left_alone(tmp_path):
+    """A leftover .offsite-copy.lock is never opened, replaced or removed."""
 
     def prepare(root):
         (root / "backups" / ".offsite-copy.lock").write_text("kept")
 
     _, _, root = run_host(tmp_path, "upgrade", prepare=prepare)
     assert (root / "backups" / ".offsite-copy.lock").read_text() == "kept"
-    assert not (tmp_path / "state" / "chown").exists()
+    assert_lock_waits(flock_calls(tmp_path), 1800)
 
 
-@pytest.mark.parametrize("plant", ["link", "directory", "fifo"])
-def test_a_planted_lock_file_refuses_before_web_stops(tmp_path, plant):
-    """A link or anything but a regular file is never opened (a FIFO never hangs)."""
+@pytest.mark.parametrize("plant", ["link", "file"])
+def test_a_planted_backups_directory_refuses_before_web_stops(tmp_path, plant):
+    """A link or a file at the backups name is never opened or locked."""
 
     def prepare(root):
-        lock = root / "backups" / ".offsite-copy.lock"
+        backups = root / "backups"
+        backups.rmdir()
         if plant == "link":
-            lock.symlink_to(root / "elsewhere")
-        elif plant == "fifo":
-            os.mkfifo(lock)
+            (root / "elsewhere").mkdir()
+            backups.symlink_to(root / "elsewhere")
         else:
-            lock.mkdir()
+            backups.write_text("")
 
     calls, output, _ = run_host(tmp_path, "upgrade", status=1, prepare=prepare)
-    assert "is not a regular file" in output
+    assert "is not a directory" in output
     assert "abandoning the upgrade" in output
     assert not any(" stop web" in call for call in calls)
-    assert not (tmp_path / "root" / "elsewhere").exists()
+    assert flock_calls(tmp_path) == []
 
 
 def test_an_expired_copy_lock_wait_is_logged_and_abandons(tmp_path):
@@ -3410,3 +3456,127 @@ def test_another_backup_line_is_not_the_uploaders(tmp_path):
     line = UPLOADER_LINE.replace("backup-uploader", "backup-worker")
     _, output, _ = run_host(tmp_path, "rollback", crontab=line)
     assert "Rolled back to" in output
+
+
+# The contract release's route-out preflight (#235, operations specification,
+# "No route out"): keyed on the new image listing egress-probe, before
+# anything stops; Production refuses, LOCAL only reports.
+
+CONTRACT_HELP = (
+    "usage: pk-stewardship {config-check,retarget-image,smoke,upload,egress-probe}"
+)
+
+
+def contract(tmp_path, *, status=0, profile=None, **fake):
+    """Run an upgrade to a contract image whose host meets every condition."""
+    values = {"help": CONTRACT_HELP, "crontab": UPLOADER_LINE, **fake}
+    return run_host(tmp_path, "upgrade", status=status, profile=profile, **values)
+
+
+def test_the_contract_preflight_probes_the_backup_network_first(tmp_path):
+    """Every condition met: the probe runs from the backup network, then the run."""
+    calls, output, _ = contract(tmp_path)
+    assert f"Upgraded to {TARGET} in" in output
+    assert before_the_stop(calls, " egress-probe --gateway ")
+    probe = (tmp_path / "state" / "probe").read_text().split()
+    assert probe[probe.index("--network") + 1] == "stewardship_offline-backup-worker"
+    for option, value in (
+        ("--gateway", "172.29.242.65"),
+        ("--google-address", "142.250.1.95"),
+        ("--listen", "tcp:22,tcp:443,tcp:9999,udp:68"),
+        ("--engine-version", "27.3.1"),
+        ("--user", "10001:10001"),
+    ):
+        assert probe[probe.index(option) + 1] == value
+    assert {"--read-only", "--cap-drop", "--rm"} <= set(probe)
+    assert "iptables -w 5 -C INPUT -s 172.29.242.0/24 -j DROP" in calls
+    assert "the backup worker's network reaches nothing outside" in output
+    log = (tmp_path / "logs" / "stewardship-backup.log").read_text()
+    assert "egress probe: " in log and '"closed": true' in log
+
+
+def test_an_image_without_egress_probe_runs_no_route_out_check(tmp_path):
+    """The expand release and earlier: no probe, no firewall or Engine question."""
+    calls, _, _ = run_host(tmp_path, "upgrade", help=COPY_HELP, routes="")
+    assert not any(
+        "egress-probe" in call
+        or call.startswith("iptables")
+        or "Server.Version" in call
+        for call in calls
+    )
+
+
+@pytest.mark.parametrize(
+    ("fake", "message"),
+    [
+        (
+            {"help_running": UPLOADER_HELP, "running_image": CURRENT},
+            "has no off-site uploader: deploy the expand release",
+        ),
+        ({"crontab": "# " + UPLOADER_LINE}, "runs no off-site uploader line"),
+        ({"crontab": ""}, "runs no off-site uploader line"),
+        ({"engine": "24.0.7"}, "Docker Engine '24.0.7' lacks the embedded-DNS fix"),
+        ({"engine": "25.0.4"}, "Docker Engine '25.0.4' lacks"),
+        ({"engine": "23.0.10"}, "Docker Engine '23.0.10' lacks"),
+        ({"engine": "20.10.24+dfsg1"}, "Docker Engine '20.10.24+dfsg1' lacks"),
+        ({"engine": "26.0.0-rc2"}, "Docker Engine '26.0.0-rc2' lacks"),
+        ({"engine": "not a version"}, "lacks the embedded-DNS fix"),
+        ({"engine_fail": "1"}, "Docker Engine 'unknown' lacks"),
+        ({"no_input_drop": "1"}, "no INPUT drop for the one-shot networks"),
+        ({"probe_internal": "false"}, "Could not read the backup worker's internal"),
+        ({"probe_gateway": ""}, "Could not read the backup worker's internal"),
+        ({"no_google": "1"}, "could not resolve www.googleapis.com"),
+        ({"ss_fail": "1"}, "Could not list the host's listening ports"),
+        (
+            {
+                "probe": '{"closed": false, "reached": ["172.29.242.65:443 (gw)"]}',
+                "probe_rc": "3",
+            },
+            "The egress probe reached 172.29.242.65:443 (gw) from",
+        ),
+        ({"probe": "", "probe_rc": "2"}, "The egress probe did not answer (exit 2)"),
+        ({"probe": '{"closed": false}', "probe_rc": "0"}, "The egress probe reached"),
+        ({"probe": "garbage", "probe_rc": "0"}, "The egress probe did not answer"),
+    ],
+)
+def test_production_refuses_the_contract_before_anything_stops(tmp_path, fake, message):
+    """Each missing condition, and each failure to ask, refuses on Production."""
+    calls, output, _ = contract(tmp_path, status=1, **fake)
+    assert message in output
+    assert "Nothing was stopped or changed; refusing." in output
+    assert not any(" stop " in call for call in calls)
+
+
+def test_an_expired_probe_is_killed_logged_and_refuses(tmp_path):
+    """A probe past its limit: what, the limit and the elapsed time are logged."""
+    calls, output, _ = contract(tmp_path, status=1, timeout=" egress-probe ")
+    assert "TIMEOUT: the egress probe killed after" in output
+    assert "(limit 120s)" in output
+    assert "The egress probe did not answer (exit 124)" in output
+    log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    assert "TIMEOUT: the egress probe killed after" in log
+    assert not any(" stop " in call for call in calls)
+
+
+@pytest.mark.parametrize("engine", ["26.0.0", "25.0.5", "23.0.11", "28.1.1+dfsg1"])
+def test_every_fixed_engine_passes(tmp_path, engine):
+    """The CVE-2024-29018 floor: 26.0.0, or 25.0.5 / 23.0.11 and later."""
+    _, output, _ = contract(tmp_path, engine=engine)
+    assert f"Docker Engine {engine} has the embedded-DNS fix" in output
+
+
+def test_local_mode_only_reports_the_contract_checks(tmp_path):
+    """pk-local has no off-site target or host firewall rule: report, continue."""
+    _, output, _ = contract(
+        tmp_path,
+        profile="local",
+        crontab="",
+        no_input_drop="1",
+        probe='{"closed": false, "reached": ["172.29.242.65:22 (gateway)"]}',
+        probe_rc="3",
+    )
+    assert "runs no off-site uploader line" in output
+    assert "no INPUT drop for the one-shot networks" in output
+    assert "The egress probe reached 172.29.242.65:22 (gateway)" in output
+    assert "LOCAL: the checks above only report here; continuing" in output
+    assert "Upgraded to " in output
