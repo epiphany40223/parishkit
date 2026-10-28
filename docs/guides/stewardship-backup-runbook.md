@@ -669,8 +669,9 @@ this list:
    and prove the uploader there (its steps 1 and 2). The contract upgrade
    refuses while the running release has no `upload`.
 2. **Approval:** install the [uploader's cron line](#the-uploaders-cron-line),
-   uncommented in root's or the `sudo` user's crontab, `/etc/crontab` or
-   `/etc/cron.d`, so copies do not stop with this release.
+   uncommented, in the form and one of the places that section gives, so
+   copies do not stop with this release. The upgrade prints the lines it
+   recognized into its log.
 3. Check the Engine: `docker version --format '{{.Server.Version}}'` must
    be 26.0.0 or later, or 25.0.5 / 23.0.11 or a later patch of those (24.x
    and any pre-release, `-rc1` or `~rc1` alike, refuse): those carry the fix

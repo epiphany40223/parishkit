@@ -1131,8 +1131,12 @@ fi
 # - the running image has the uploader's `upload` (the expand release), so
 #   no copier still running holds only the expand release's legacy file
 #   lock, which this release no longer takes;
-# - this host's cron runs the uploader (E2's shared crontab block,
-#   inverted), or copies would stop with this release;
+# - this host's cron runs the uploader: the shared crontab block's
+#   uploader_cron_lines prints at least one line that runs the
+#   `backup-uploader` service through `docker compose ... run` (its strict
+#   match: no wrapper, comment, other command or file cron skips counts),
+#   or copies would stop with this release. The lines are logged as
+#   evidence;
 # - Docker Engine has the embedded-DNS fix for internal networks
 #   (CVE-2024-29018: 26.0.0, 25.0.5 or 23.0.11 and later; any 24.x refused);
 # - the host INPUT drop for runtime_network.offline is in place AHEAD of
@@ -1246,8 +1250,12 @@ if has_command "$new_commands" egress-probe; then
     if ! has_command "$running_commands" upload; then
         contract_problems+=("The running image ${previous:-unknown} has no off-site uploader: deploy the expand release (the one that adds 'upload') first, prove the uploader and install its cron line (docs/guides/stewardship-backup-runbook.md#the-uploaders-cron-line), then this one.")
     fi
-    if [ -z "$(uploader_cron_lines)" ]; then
-        contract_problems+=("This host's cron runs no off-site uploader line, so off-site copies would stop with this release: install it first (docs/guides/stewardship-backup-runbook.md#the-uploaders-cron-line).")
+    uploader_cron=$(uploader_cron_lines)
+    if [ -z "$uploader_cron" ]; then
+        contract_problems+=("This host's cron runs no off-site uploader line, so off-site copies would stop with this release: install it first, in the form the runbook gives (docs/guides/stewardship-backup-runbook.md#the-uploaders-cron-line).")
+    else
+        echo "    this host's cron runs the off-site uploader:"
+        while read -r line; do echo "    | $line"; done <<<"$uploader_cron"
     fi
     # Every question below is bounded and an expired limit logged (what,
     # the limit, the elapsed time) by layout_limited; a failure to answer

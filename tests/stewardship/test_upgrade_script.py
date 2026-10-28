@@ -3749,3 +3749,57 @@ def test_caddys_published_ports_are_probed_without_a_listener(tmp_path):
     )
     probe = (tmp_path / "state" / "probe").read_text().split()
     assert probe[probe.index("--listen") + 1] == "tcp:22,tcp:443,tcp:80"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        # Mentions of the name that do not run the uploader (review B M1).
+        "*/5 * * * * /usr/local/sbin/pk-backup-uploader",
+        "*/5 * * * * /usr/local/bin/backup.sh # backup-uploader off",
+        "*/5 * * * * docker compose -p other run --rm -T backup-worker",
+        "*/5 * * * * cd /opt && " + UPLOADER_COMMANDS["compose"],
+        "*/5 * * * * docker compose run --entrypoint sh backup-uploader",
+    ],
+)
+def test_the_contract_refuses_a_line_that_only_names_the_uploader(tmp_path, line):
+    """The shared strict match: a wrapper, comment or other command is no uploader."""
+    _, output, _ = contract(tmp_path, status=1, crontab=line)
+    assert "runs no off-site uploader line" in output
+    assert "Nothing was stopped or changed; refusing." in output
+
+
+def test_the_contract_ignores_a_cron_d_file_cron_skips(tmp_path):
+    """A dotted cron.d name is never read by cron, so it is no uploader line."""
+
+    def install(root):
+        (tmp_path / "cron.d").mkdir()
+        (tmp_path / "cron.d" / "stewardship.bak").write_text(
+            "*/5 * * * * root " + UPLOADER_COMMANDS["compose"] + "\n"
+        )
+
+    _, output, _ = contract(tmp_path, status=1, crontab="", prepare=install)
+    assert "runs no off-site uploader line" in output
+
+
+@pytest.mark.parametrize("form", sorted(UPLOADER_COMMANDS))
+@pytest.mark.parametrize("where", ["crontab", "system", "cron.d"])
+def test_the_contract_accepts_the_uploader_line_and_logs_it(tmp_path, where, form):
+    """Each form in each place cron reads passes, and the line is the evidence."""
+    user = "" if where == "crontab" else "root "
+    line = f"*/5 * * * * {user}{UPLOADER_COMMANDS[form]}"
+    fake = {"crontab": line if where == "crontab" else ""}
+    if where != "crontab":
+
+        def install(root):
+            if where == "system":
+                (tmp_path / "crontab").write_text(line + "\n")
+            else:
+                (tmp_path / "cron.d").mkdir()
+                (tmp_path / "cron.d" / "stewardship").write_text(line + "\n")
+
+        fake["prepare"] = install
+    _, output, _ = contract(tmp_path, **fake)
+    assert "this host's cron runs the off-site uploader:" in output
+    assert f"    | {line}" in output
+    assert f"Upgraded to {TARGET} in" in output
