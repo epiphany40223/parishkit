@@ -10,6 +10,7 @@ import pytest
 from parishkit.stewardship.reports.inputs import (
     FactInputs,
     expected_dates,
+    report_end,
     validate_day,
 )
 
@@ -59,15 +60,42 @@ def test_fact_inputs_require_the_review_watermark_by_keyword():
 
 
 def test_dates_are_inclusive_bounded_and_include_leap_days():
-    """Dates remain dates instead of fixed-duration UTC timestamp arithmetic."""
-    assert expected_dates(date(2024, 2, 28), date(2024, 3, 1), date(2024, 3, 10)) == (
+    """Dates remain dates instead of fixed-duration UTC timestamp arithmetic.
+
+    The through-date ends the range, past the end date too (#2298): its
+    callers cap it at the report end.
+    """
+    assert expected_dates(date(2024, 2, 28), date(2024, 3, 1), date(2024, 3, 1)) == (
         date(2024, 2, 28),
         date(2024, 2, 29),
         date(2024, 3, 1),
     )
+    assert expected_dates(date(2024, 2, 28), date(2024, 3, 1), date(2024, 3, 3)) == (
+        date(2024, 2, 28),
+        date(2024, 2, 29),
+        date(2024, 3, 1),
+        date(2024, 3, 2),
+        date(2024, 3, 3),
+    )
     assert expected_dates(date(2024, 2, 28), date(2024, 3, 1), date(2024, 2, 27)) == ()
     with pytest.raises(ValueError):
         expected_dates(date(2024, 3, 2), date(2024, 3, 1), date(2024, 3, 3))
+
+
+def test_report_end_is_the_later_of_the_end_date_and_the_newest_response():
+    """The report end moves past the end date only to a late response's day.
+
+    The response's instant is read in the campaign's zone: 03:30 UTC on
+    November 3 is still November 2 in New York (#2298).
+    """
+    end = date(2026, 11, 1)
+    zone = "America/New_York"
+    assert report_end(end) == end
+    assert report_end(end, datetime(2026, 10, 20, 15, tzinfo=UTC), zone) == end
+    assert report_end(end, datetime(2026, 11, 2, 0, 30, tzinfo=UTC), zone) == end
+    assert report_end(end, datetime(2026, 11, 3, 3, 30, tzinfo=UTC), zone) == date(
+        2026, 11, 2
+    )
 
 
 def day():

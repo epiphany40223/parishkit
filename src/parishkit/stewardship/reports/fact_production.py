@@ -31,7 +31,7 @@ from .export_services import admit_campaign
 from .fact_fields import rebuild_execution_key
 from .fact_tasks import TASK_TYPE
 from .facts import review_watermark
-from .inputs import FactInputs
+from .inputs import FactInputs, report_end
 from .models import CampaignFactRebuildDemand
 
 
@@ -68,16 +68,18 @@ def _current_inputs(campaign_id, projection, current_source):
     """Both populations' current fact inputs: source, watermarks, local day.
 
     The pledge review watermark (#2202) is read here too, so a pledge review
-    makes the inputs differ and this pass records new demand.
+    makes the inputs differ and this pass records new demand. The local
+    day is capped at the report end, which a response Staff entered after
+    the close moves to that response's day (#2298); the same aggregate
+    reads the newest response, so no query is added.
     """
-    watermark = (
-        Submission.objects.filter(campaign_id=campaign_id, mode="live").aggregate(
-            value=Max("campaign_sequence")
-        )["value"]
-        or 0
+    live = Submission.objects.filter(campaign_id=campaign_id, mode="live").aggregate(
+        value=Max("campaign_sequence"), newest=Max("submitted_at")
     )
+    watermark = live["value"] or 0
     through = min(
-        projection.end_date, _now().astimezone(ZoneInfo(projection.timezone)).date()
+        report_end(projection.end_date, live["newest"], projection.timezone),
+        _now().astimezone(ZoneInfo(projection.timezone)).date(),
     )
     reviews = review_watermark(campaign_id)
     return tuple(

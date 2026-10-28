@@ -366,3 +366,59 @@ def test_daily_chart_fits_and_is_accessible(page, component_origin, axe_source, 
     assert page.evaluate(COLLISIONS) == []
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
+
+
+# The Campaign closed lines (the rule marks that are not hidden hover
+# guides) and the first panel's plot box, as viewport x coordinates. Both
+# are the shapes' geometry (getBBox, x1) mapped through getScreenCTM, not
+# getBoundingClientRect: Firefox pads a stroked shape's client rect with a
+# conservative stroke allowance (half the stroke width times the miter
+# limit, 5 px for the plot's 1 px border), which moved the box's left edge
+# and widened it by 10 px while the line stood in the same place.
+CLOSED = """() => {
+  const screenX = (shape, x) =>
+    new DOMPoint(x, 0).matrixTransform(shape.getScreenCTM()).x;
+  const background = document.querySelector(
+    "#participation-chart svg g.mark-group.role-scope > g > path.background"
+  );
+  const box = background.getBBox();
+  const left = screenX(background, box.x);
+  const lines = [...document.querySelectorAll(
+    "#participation-chart svg g.mark-rule.role-mark line"
+  )].filter((line) => getComputedStyle(line).opacity !== "0"
+    && line.getAttribute("stroke-opacity") !== "0")
+    .map((line) => screenX(line, Number(line.getAttribute("x1") || 0)));
+  return {lines, left, width: screenX(background, box.x + box.width) - left};
+}"""
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_the_campaign_closed_line_stands_after_the_end_date(
+    page, component_origin, axe_source, width
+):
+    """After responses entered after the close (#2298), every panel draws
+    the dashed line at the boundary between the end date's band (the 60th
+    of 75) and the next, the top panel names it once over a halo, and the
+    chart still
+    fits, overlaps no text, logs no error and passes axe."""
+    errors = watch(page)
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + "/participation-closed")
+    chart = page.locator(f"{DAILY} figure.chart")
+    expect(page.locator(f"{DAILY} [data-chart-state=rendered]")).to_have_count(1)
+    eventually(page, FITTED)
+    # Named once, over its paper halo: a stroked copy drawn under it.
+    label = chart.locator("svg text", has_text="Campaign closed")
+    assert [text.get_attribute("stroke") is not None for text in label.all()] == [
+        True,
+        False,
+    ]
+    found = page.evaluate(CLOSED)
+    assert len(found["lines"]) == len(TITLES)
+    boundary = found["left"] + found["width"] * 60 / 75
+    assert all(abs(line - boundary) < 1.5 for line in found["lines"])
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert page.evaluate(COLLISIONS) == []
+    page.evaluate(axe_source)
+    assert page.evaluate(AXE) == []
+    assert_clean(page, errors)

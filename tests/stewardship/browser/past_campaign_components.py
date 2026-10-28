@@ -16,7 +16,8 @@ Every page offers a partial campaign archive download (#1018 part (a))
 except ``-archive-closed``, which offers a campaign closed before its end
 date its final archive at once, ``-archive-unavailable``, which says why it
 cannot be made yet, and ``-archive-tomorrow``, a campaign closed today with a
-response today.
+response today, and ``-archive-late``, a final archive that runs past the
+end date to the newest response Staff entered after the close (#2298).
 ``POSTS`` lists the POST answers, filled in by ``components``.
 """
 
@@ -69,6 +70,9 @@ CLOSED = replace(OFFER, final=True)
 UNAVAILABLE = replace(OFFER, reason=NO_RESPONSE, fact_set_id=None)
 # Closed today with a response today: final only tomorrow (review, 2026-10-13).
 TOMORROW = replace(CLOSED, reason=CLOSED_TODAY, fact_set_id=None)
+# Responses entered after the close (#2298): through the newest one's day,
+# past the end date.
+LATE = replace(CLOSED, cutoff_date=date(2026, 12, 3), day=61)
 
 
 def archive(year, *, final=True, pk=None, state="active", **fields):
@@ -217,4 +221,5 @@ def components(context, admin):
         f"{PAGE}-archive-closed": page(context_for([final], archive=CLOSED)),
         f"{PAGE}-archive-unavailable": page(context_for([final], archive=UNAVAILABLE)),
         f"{PAGE}-archive-tomorrow": page(context_for([final], archive=TOMORROW)),
+        f"{PAGE}-archive-late": page(context_for([final], archive=LATE)),
     }

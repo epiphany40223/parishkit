@@ -122,6 +122,10 @@ class ParticipationDocument:
     # (``participation_summary.ParticipationSummary``, #1557); None for a
     # latest-data handoff, an earlier request and the daily email's chart.
     summary: object = None
+    # The campaign's end date, from the generation's own configuration: the
+    # charts mark the close when the series runs past it, with responses
+    # Staff entered after the campaign closed (#2298). None marks nothing.
+    end_date: date | None = None
 
     def __post_init__(self):
         """Reject mixed, reordered or incomplete series rather than repairing them."""
@@ -131,6 +135,8 @@ class ParticipationDocument:
             self.summary, ParticipationSummary
         ):
             raise ValueError("A report summary must be a captured Summary.")
+        if self.end_date is not None and type(self.end_date) is not date:
+            raise ValueError("A report end date must be a calendar date.")
         if any(
             not isinstance(value, UUID)
             for value in (self.campaign_id, self.fact_set_id)
@@ -184,6 +190,24 @@ class ParticipationDocument:
                 raise ValueError(
                     "Report days cannot exceed their pinned source cutoff."
                 )
+
+    @property
+    def closed_after(self):
+        """How many days run through the end date when later ones follow, or None.
+
+        The days after them hold responses Staff entered after the campaign
+        closed (#2298), so every chart draws its "Campaign closed" line
+        between day ``closed_after`` and the next. None when the series
+        stops at or before the end date (or names none), as it always did
+        before the close.
+        """
+        if (
+            self.end_date is None
+            or not self.days
+            or self.days[-1].local_date <= self.end_date
+        ):
+            return None
+        return (self.end_date - self.days[0].local_date).days + 1
 
     @property
     def scope_label(self):

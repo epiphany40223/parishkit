@@ -409,7 +409,12 @@ convention requires.
   its empty statement ("No campaign day has ended yet."). A report day after
   the campaign's last day is held at the last day, as today's Compared with
   past campaigns section holds it; a report as of when it is made holds its
-  report day there too.
+  report day there too. The last day here is the campaign's
+  [report end](../reports/spec.md#responses-entered-after-the-campaign-closes),
+  counted under the send's own submission watermark: the end date, or the
+  day of the newest response Staff entered after the campaign closed
+  ([#2298](https://github.com/epiphany40223/parishkit/issues/2298)). The
+  Compared with past campaigns section keeps its day at the end date.
 - **When the email is made** (`send_time`). Every figure is counted at one
   capture instant, recorded when the occurrence first records its inputs,
   and never moved by a retry: the fact blocks pin the exact
