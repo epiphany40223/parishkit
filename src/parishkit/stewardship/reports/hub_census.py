@@ -46,6 +46,13 @@ STAGE_LOOK = {Stage.ENTERED_INCORRECTLY: "error"}
 # The marks of a Member who is not a current one, and what each tab says.
 MARKS = {
     "new": (_("New Member"), _("Added by the Family; not in ParishSoft yet.")),
+    # A Member the Family added whom staff marked Entered by hand with the
+    # ParishSoft Member ID the refreshed roster now lists (#2321): one tab,
+    # the addition's, never a second Joined one for the same person.
+    "entered": (
+        _("New Member"),
+        _("Added by the Family; staff entered them in ParishSoft by hand."),
+    ),
     "moved": (
         _("No longer in this household"),
         _("The form did not ask about this Member's other details."),
@@ -71,6 +78,16 @@ MARKS = {
             "ParishSoft added this Member to the Family after the Family's "
             "response, so the Family did not answer for them. They appear "
             "with answers once the Family answers again."
+        ),
+    ),
+    # A Member only earlier requests keep whom ParishSoft lists in the
+    # Family again (#2321): the roster is in hand, so not Not in ParishSoft.
+    "rejoined": (
+        _("Joined in ParishSoft after the Family answered"),
+        _(
+            "ParishSoft lists this Member in the Family again after the "
+            "Family's response, so only the Family's earlier requests are "
+            "shown."
         ),
     ),
     # The same, when the Family answered before census joined the campaign:
@@ -163,8 +180,13 @@ SELECT m.source_key, p.canonical::jsonb->>'firstName',
 # reviewed snapshot, the newest naming each Member), so a Member the
 # Family no longer shows is still named. The last column is
 # ``CURRENT_MEMBERS`` as a JSON array of ``[DUID, first, last]`` by DUID,
-# read in the same statement so the page's statement count holds (#2319).
-# Takes %(family)s and %(campaign)s.
+# read in the same statement so the page's statement count holds (#2319),
+# then, as a JSON object, the ParishSoft Member ID (DUID) by local id that
+# each of the response's added Members' latest resolution named when staff
+# marked it Entered by hand (``census_changes``' latest mark, #1749), so the
+# roster Member it names is not shown a second time (#2321). The New Member
+# change read is the one ``PROPOSALS`` keeps: the response's own, else the
+# newest. Takes %(family)s and %(campaign)s.
 SUBMISSION = f"""
 SELECT s.id,
     jsonb_build_object('family', s.answers->'family',
@@ -187,7 +209,25 @@ SELECT s.id,
     (SELECT coalesce(jsonb_agg(jsonb_build_array(m.source_key,
             p.canonical::jsonb->>'firstName', p.canonical::jsonb->>'lastName')
         ORDER BY m.source_key::bigint), '[]')::text
-     {CURRENT_MEMBERS})
+     {CURRENT_MEMBERS}),
+    (SELECT coalesce(jsonb_object_agg(e.entity_key, e.member_duid), '{{}}')::text
+     FROM (
+        SELECT DISTINCT ON (p.entity_key) p.entity_key, h.action, h.member_duid
+        FROM stewardship_proposed_change p
+        JOIN stewardship_submission r ON r.id=p.submission_id
+        CROSS JOIN LATERAL (
+            SELECT x.action, x.member_duid
+            FROM stewardship_proposal_resolution x WHERE x.proposal_id=p.id
+            ORDER BY x.expected_version DESC LIMIT 1
+        ) h
+        WHERE r.family_id=s.family_id AND r.campaign_id=s.campaign_id
+            AND r.mode='live' AND p.entity_kind='proposed_member'
+            AND p.field='new_member'
+            AND p.execution NOT IN ('cancelled','superseded')
+            AND jsonb_exists(s.answers->'proposed_members', p.entity_key)
+        ORDER BY p.entity_key, r.id=s.id DESC, r.family_version DESC
+     ) e
+     WHERE e.action='entered' AND e.member_duid IS NOT NULL)
 FROM stewardship_submission s
 JOIN stewardship_family_campaign f ON f.id=s.family_id
 WHERE s.family_id=%(family)s AND s.campaign_id=%(campaign)s AND s.mode='live'
@@ -263,7 +303,9 @@ class Subject:
     ``key`` is the tab's key, ``label`` its name, ``mark`` a ``MARKS`` key
     ("" for a current Member or the Family) and ``rows`` its fields in form
     order. A Member the Family added has ``addition``, the stage of the
-    addition itself, and its rows are the Family's answers. ``entity`` is a
+    addition itself, and its rows are the Family's answers; ``member_id`` is
+    the ParishSoft Member ID staff entered it as, once the roster lists it
+    (#2321), else "". ``entity`` is a
     Member's ``(entity_kind, entity_key)`` as its change rows and Ministry
     requests name it (``("member", DUID)`` or ``("proposed_member",
     local id)``); it never enters the address. ``duid`` (a ParishSoft
@@ -279,13 +321,17 @@ class Subject:
     addition: FieldRow | None = None
     entity: tuple = ()
     actions: object = None
+    member_id: str = ""
 
     @property
     def duid(self):
         """A ParishSoft Member's DUID for the heading; None for the Family
         (the heading shows the page's Family DUID) and for a Member the
-        Family added, who has none yet."""
+        Family added, unless ParishSoft now lists it as the Member ID staff
+        entered it as (#2321)."""
         kind, key = self.entity or ("", "")
+        if self.member_id:
+            return int(self.member_id)
         return int(key) if kind == "member" else None
 
     @property
@@ -366,7 +412,9 @@ def read_hub_census(campaign_id, family_id, *, census):
     first statement reads the latest live response with the Family's
     current ParishSoft Members; with ``census`` and a response, a second
     reads its changes in force. With no live response, the second reads
-    the current Members (``ROSTER``) for ``unsubmitted``'s tabs. A response
+    the current Members (``ROSTER``) for ``unsubmitted``'s tabs. The first
+    also carries the Member IDs staff gave the Family's added Members
+    (``SUBMISSION``'s last column, #2321). A response
     that gives no Member tab (none with census answers) takes its current
     Members from the first statement.
     """
@@ -377,7 +425,7 @@ def read_hub_census(campaign_id, family_id, *, census):
         if found is None:
             cursor.execute(ROSTER, parameters)
             return unsubmitted(list(cursor), census=census, responded=False)
-        submission, answers, names, roster = found
+        submission, answers, names, roster, entered = found
         rows = []
         if census:
             cursor.execute(
@@ -390,7 +438,14 @@ def read_hub_census(campaign_id, family_id, *, census):
         for name in JSON_COLUMNS:
             row[name] = None if row[name] is None else json.loads(row[name])
     roster = [tuple(row) for row in json.loads(roster)]
-    result = shape(json.loads(answers), json.loads(names), rows, roster, census=census)
+    result = shape(
+        json.loads(answers),
+        json.loads(names),
+        rows,
+        roster,
+        json.loads(entered),
+        census=census,
+    )
     if result.members:
         return result
     return unsubmitted(roster, family=result.family, census=census, responded=True)
@@ -493,7 +548,7 @@ def field_rows(names, values, changes):
     return tuple(rows)
 
 
-def shape(answers, names, rows, roster=(), *, census=True):
+def shape(answers, names, rows, roster=(), entered=None, *, census=True):
     """The tabs' subjects from a response's census answers and its changes.
 
     ``answers`` holds the response's ``family``, ``members`` and
@@ -504,7 +559,12 @@ def shape(answers, names, rows, roster=(), *, census=True):
     ``(DUID, first, last)`` rows: each one the response does not name
     joined the Family after it answered (#2319) and gets a fieldless
     Joined tab, named from ParishSoft, after the response's own Members and
-    before those only earlier requests keep.
+    before those only earlier requests keep. A Member only earlier requests
+    keep who is in the roster again is marked ``rejoined``, not ``missing``,
+    and sits among the joined ones (#2321). ``entered`` maps an added
+    Member's local id to the ParishSoft Member ID staff marked it Entered by
+    hand with: the roster Member it names is that addition, so it gets no
+    Joined tab, and the New Member tab is marked ``entered`` with that ID.
     Member tabs are keyed by their place (``member-1``, ...) so no Member
     identifier enters the address.
     """
@@ -538,27 +598,41 @@ def shape(answers, names, rows, roster=(), *, census=True):
     # The response's Members by DUID, then current ones it does not name,
     # then those only earlier requests keep.
     kept = {key for kind, key in changes if kind == "member"} - set(members)
+    current = {key: [first, last] for key, first, last in roster}
+    # Added Members whose Entered-by-hand Member ID the roster now lists.
+    entered = {
+        local: str(duid)
+        for local, duid in (entered or {}).items()
+        if local in proposed and str(duid) in current
+    }
+    claimed = set(entered.values())
     # A current Member the response does not name, when the response gives
     # Member tabs at all; one that gives none falls back to ``unsubmitted``
     # (No census answers yet), as before #2319.
     joined = {}
     if members or kept or proposed:
         joined = {
-            key: [first, last]
-            for key, first, last in roster
-            if key not in members and key not in kept
+            key: name
+            for key, name in current.items()
+            if key not in members and key not in kept and key not in claimed
         }
-    order = [*sorted(members, key=int), *sorted(joined, key=int)]
-    for key in [*order, *sorted(kept, key=int)]:
+    rejoined = kept & set(current)
+    order = [*sorted(members, key=int), *sorted(joined.keys() | rejoined, key=int)]
+    for key in [*order, *sorted(kept - rejoined, key=int)]:
         if key in joined:
             subjects.append(
-                (member_label(None, joined[key]), "joined", (), None, ("member", key))
+                {
+                    "label": member_label(None, joined[key]),
+                    "mark": "joined",
+                    "entity": ("member", key),
+                }
             )
             continue
         answer = members.get(key)
         mine = changes.get(("member", key), {})
         if answer is None:
-            mark, fields = "missing", list(TERMINAL)
+            mark = "rejoined" if key in rejoined else "missing"
+            fields = list(TERMINAL)
         elif answer.get("moved_household") is True:
             mark, fields = "moved", ["moved_household"]
         elif answer.get("deceased_status") is True:
@@ -566,13 +640,12 @@ def shape(answers, names, rows, roster=(), *, census=True):
         else:
             mark, fields = "", [field.name for field in MEMBER_FIELDS]
         subjects.append(
-            (
-                member_label(answer, names.get(key)),
-                mark,
-                field_rows(fields, answer or {}, mine) if census else (),
-                None,
-                ("member", key),
-            )
+            {
+                "label": member_label(answer, current.get(key) or names.get(key)),
+                "mark": mark,
+                "rows": field_rows(fields, answer or {}, mine) if census else (),
+                "entity": ("member", key),
+            }
         )
     added = []
     for key, answer in proposed.items():
@@ -588,20 +661,21 @@ def shape(answers, names, rows, roster=(), *, census=True):
             for field in MEMBER_FIELDS
         )
         added.append(
-            (
-                member_label(answer, None),
-                "new",
-                values,
-                addition,
-                ("proposed_member", key),
-            )
+            {
+                "label": member_label(answer, None),
+                "mark": "entered" if key in entered else "new",
+                "rows": values,
+                "addition": addition,
+                "entity": ("proposed_member", key),
+                "member_id": entered.get(key, ""),
+            }
         )
-    subjects += sorted(added, key=lambda item: item[0].casefold())
+    subjects += sorted(added, key=lambda item: item["label"].casefold())
     return HubCensus(
         family,
         tuple(
-            Subject(f"member-{place}", label, fields, mark, addition, entity)
-            for place, (label, mark, fields, addition, entity) in enumerate(subjects, 1)
+            Subject(f"member-{place}", **subject)
+            for place, subject in enumerate(subjects, 1)
         ),
         census,
     )

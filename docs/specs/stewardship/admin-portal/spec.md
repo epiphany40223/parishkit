@@ -9686,9 +9686,14 @@ and the Family's answer.
 **Members.** One tab per Member, in this order: each existing Member of the
 response, by Member DUID, then each active, living Member of the Family in
 the current ParishSoft data whom the response does not name, by Member DUID
-(ParishSoft added the Member to the Family after it answered, #2319), then
-each Member whose only rows are kept requests from an earlier response (ParishSoft no longer lists the Member in this
-Family), then each Member the Family added, by name. A Member's tab is
+(ParishSoft added the Member to the Family after it answered, #2319), among
+them any Member whose only rows are kept requests from an earlier response
+whom ParishSoft lists in the Family again (#2321), then each other Member
+whose only rows are kept requests from an earlier response (ParishSoft no
+longer lists the Member in this Family), then each Member the Family added,
+by name. A current Member who is a Member the Family added, because staff
+marked that addition Entered by hand with the Member's ParishSoft Member ID
+(#1749), is not a second tab: the New Member tab stands for them (#2321). A Member's tab is
 labelled with the Member's name, "Last, first"
 ([Family and Member names](../ui-conventions/spec.md#family-and-member-names)),
 from the Family's answer, else the ParishSoft record the Family answered
@@ -9708,7 +9713,10 @@ labelled with the ParishSoft name and marked **Joined in ParishSoft after
 the Family answered**, saying the Family did not answer for the Member and
 that the answers appear once the Family answers again. Such a tab, like a
 No submission yet one, shows no census part and reads no Ministry requests
-(the Family has none for the Member).
+(the Family has none for the Member). A Member only kept requests keep whom
+ParishSoft lists again takes the same mark, but says that only the Family's
+earlier requests are shown, and shows those requests and its Ministry
+requests as a Not in ParishSoft tab would (#2321).
 
 **Marks.** Each panel opens with its subject's name as a heading, so a
 panel fetched after the Family answered again (which can renumber the
@@ -9717,6 +9725,10 @@ written as in the header strip: "Family (DUID 100034)" on the Family tab and
 "Anderson, Michael (DUID 500010)" on a Member tab (Administrator,
 2026-10-19). A Member the Family added has no DUID yet, so its heading is
 the name alone; its **New Member** badge says it is not in ParishSoft yet.
+Once staff marked the addition Entered by hand with a ParishSoft Member ID
+and the current ParishSoft data lists that Member in the Family, its heading
+adds that DUID and the badge's note says staff entered the Member in
+ParishSoft by hand (#2321).
 Tab labels stay names only. A Member tab then shows the Member's
 mark, as a badge, when it has one: **New Member** (the Family added the
 Member; not in ParishSoft yet), **No longer in this household**,
@@ -9751,7 +9763,9 @@ the changes are reviewed too; each change offers its row actions there
 **Reads.** When census is part of the campaign the page reads two
 statements more, whichever tab is chosen, since the Member tabs' labels need
 them: the latest live response (with the Member names of the ParishSoft
-records the Family answered from) and its changes in force. With Ministry
+records the Family answered from, the Family's current ParishSoft Members, #2319,
+and the ParishSoft Member IDs staff entered its added Members as, #2321)
+and its changes in force. With Ministry
 stewardship but no census only the first is read. When they give no
 Member tab (no response yet, or none with census answers), one statement
 more reads the Family's active, living Members in the current ParishSoft

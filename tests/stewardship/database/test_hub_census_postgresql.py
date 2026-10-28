@@ -316,3 +316,37 @@ def test_a_member_parishsoft_adds_after_the_response_gets_a_joined_tab(
         (item.key, item.mark, item.duid, bool(item.rows)) for item in census.members
     ] == [("member-1", "", 3, True), ("member-2", "joined", 4, False)]
     assert census.members[1].label == "Example, Second"
+
+
+def test_an_added_member_entered_by_hand_keeps_one_tab(response_service):
+    """#2321: the Family adds a Member, and a refresh then lists Member 7 in
+    the Family. Until Staff mark the addition Entered by hand naming Member
+    7, the hub shows a Joined tab for 7 and the New Member tab; once marked,
+    only the New Member tab, carrying DUID 7, in the same two statements."""
+    from .test_census_refresh_sources_postgresql import answered
+    from .test_published_refresh_postgresql import ADDED, mark, new_member, with_added
+
+    harness, staff, rows = answered(response_service, new_member)
+    with_added(harness)
+    family_id = Submission.objects.get().family_id
+
+    def tabs():
+        """The hub's Member tabs as (mark, DUID, entity kind), and its count
+        of statements."""
+        census, statements = hub(harness, family_id)
+        found = [(item.mark, item.duid, item.entity[0]) for item in census.members]
+        return found, statements
+
+    assert tabs() == (
+        [
+            ("", 3, "member"),
+            ("joined", ADDED, "member"),
+            ("new", None, "proposed_member"),
+        ],
+        2,
+    )
+    mark(harness, staff, rows["new_member"], str(ADDED))
+    assert tabs() == (
+        [("", 3, "member"), ("entered", ADDED, "proposed_member")],
+        2,
+    )

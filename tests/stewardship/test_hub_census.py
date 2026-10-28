@@ -378,10 +378,11 @@ def test_a_member_parishsoft_added_after_the_response_gets_a_joined_tab():
 
 
 def test_a_joined_member_sits_between_the_responses_and_the_kept_ones():
-    """#2319: beside moved, deceased, missing and added Members, a joined one
-    follows the response's Members and precedes those only earlier requests
-    keep; a roster Member the response names, or a kept one, gets no second
-    tab."""
+    """#2319: beside moved, deceased and added Members, a joined one follows
+    the response's Members; a roster Member the response names gets no
+    second tab. A Member only earlier requests keep who is in the roster
+    again (Gus, #2321) is not Not in ParishSoft: marked rejoined, among the
+    joined ones, it keeps its request fields."""
     roster = [("3", "Ann", "Adams"), ("7", "Gus", "Adams"), ("12", "Bo", "Adams")]
     roster.insert(1, ("9", "Ida", "Cole"))
     members = shape(ANSWERS, NAMES, ROWS, roster).members
@@ -390,12 +391,70 @@ def test_a_joined_member_sits_between_the_responses_and_the_kept_ones():
         ("member-2", "Adams, Dee", "moved"),
         ("member-3", "Adams, Eve", "deceased"),
         ("member-4", "Adams, Bo", ""),
-        ("member-5", "Cole, Ida", "joined"),
-        ("member-6", "Adams, Gus", "missing"),
+        ("member-5", "Adams, Gus", "rejoined"),
+        ("member-6", "Cole, Ida", "joined"),
         ("member-7", "Adams, Cy", "new"),
         ("member-8", "Adams, Zed", "new"),
     ]
-    assert members[4].entity == ("member", "9")
+    assert members[5].entity == ("member", "9")
+    gus = members[4]
+    assert gus.entity == ("member", "7") and gus.duid == 7 and not gus.awaiting
+    assert [row.label for row in gus.changed] == ["No longer in this household"]
+    assert "earlier requests are shown" in str(gus.mark_note)
+    page = render("member-5", shape(ANSWERS, NAMES, ROWS, roster))
+    panel = page.split('id="family-tabs-panel-member-5"')[1]
+    assert "Not in ParishSoft" not in panel
+    assert (
+        '<span class="status-badge">Joined in ParishSoft after the Family '
+        "answered</span>" in panel
+    )
+    # Without the roster Member, Gus stays Not in ParishSoft.
+    assert shape(ANSWERS, NAMES, ROWS, roster[:1]).members[4].mark == "missing"
+
+
+ZED = "6f1c1b6e-0000-4000-8000-000000000001"
+
+
+def test_an_added_member_entered_by_hand_is_not_a_second_joined_tab():
+    """#2321: staff marked Zed's addition Entered by hand with Member ID 20,
+    which the refreshed roster now lists. Zed keeps one tab, the New Member
+    one, with the DUID in its heading and a note that staff entered them;
+    Member 20 gets no Joined tab. An ID the roster does not list yet leaves
+    the New Member tab as it was."""
+    answers = {
+        "family": ANSWERS["family"],
+        "members": {"3": member("Ann", "Adams")},
+        "proposed_members": {ZED: member("Zed", "Adams")},
+    }
+    rows = [change("proposed_member", ZED, "new_member", member("Zed", "Adams"))]
+    roster = [("3", "Ann", "Adams"), ("20", "Zed", "Adams")]
+    census = shape(answers, NAMES, rows, roster, {ZED: 20})
+    assert [
+        (item.key, item.label, item.mark, item.duid) for item in census.members
+    ] == [
+        ("member-1", "Adams, Ann", "", 3),
+        ("member-2", "Adams, Zed", "entered", 20),
+    ]
+    zed = census.members[1]
+    assert zed.entity == ("proposed_member", ZED) and zed.addition is not None
+    assert str(zed.mark_label) == "New Member"
+    page = render("member-2", census)
+    panel = page.split('id="family-tabs-panel-member-2"')[1]
+    assert '<h2 id="hub-member-2-heading">Adams, Zed (DUID 20)</h2>' in panel
+    assert '<span class="status-badge">New Member</span>' in panel
+    assert "staff entered them in ParishSoft by hand" in panel
+    assert "The Family's answers for this Member" in panel
+    assert "Joined in ParishSoft" not in page
+    # The ID is not in the roster yet: the plain New Member tab, and the
+    # roster's other Members still join.
+    early = shape(answers, NAMES, rows, roster[:1], {ZED: 20}).members
+    assert [(item.mark, item.duid) for item in early] == [("", 3), ("new", None)]
+    other = shape(answers, NAMES, rows, roster, {ZED: 21}).members
+    assert [(item.mark, item.duid) for item in other] == [
+        ("", 3),
+        ("joined", 20),
+        ("new", None),
+    ]
 
 
 def test_with_no_response_the_roster_tabs_are_unchanged(monkeypatch):
@@ -441,7 +500,7 @@ def test_with_no_response_the_roster_tabs_are_unchanged(monkeypatch):
     # A response from before census: no census answers, so no Joined tab;
     # its roster comes in the response's own statement.
     early = {"family": {}, "members": {"3": {}}, "proposed_members": {}}
-    found = ("s", json.dumps(early), "{}", json.dumps([["3", "Anne", "Adams"]]))
+    found = ("s", json.dumps(early), "{}", json.dumps([["3", "Anne", "Adams"]]), "{}")
     statements.clear()
     monkeypatch.setattr(hub_census.connection, "cursor", lambda: Cursor(found))
     census = hub_census.read_hub_census("c", "f", census=True)
