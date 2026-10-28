@@ -218,6 +218,7 @@ WEB_INSERT_TABLES = frozenset(
         "stewardship_secret_checkpoint",
         "stewardship_credential_consumer_ack",
         # No stewardship_family_session: only stewardship_family_login_v1
+        # (and Open form's stewardship_family_assisted_login_v1, #2294)
         # creates a Family session, after proving the presented credential
         # (#306 M3). Web keeps UPDATE for activity, presence and revocation.
         "stewardship_audit_event",
@@ -520,6 +521,13 @@ FACT_EDITS_FUNCTION = "stewardship_fact_pledge_edits_v1(uuid)"
 # check of the applied folder; the definer reads the folder, the mailbox
 # user and the Administrator itself.
 SETUP_BACKUP_CHECK_FUNCTION = "stewardship_setup_backup_check_v1()"
+# Open form's sign-in (0188, #2294): web redeems a Staff hand-off with the
+# Family's code and the Admin's live portal session; the definer creates
+# the Family session, marked with that Admin, and also admits a closed
+# campaign. The Family's own sign-in stays FAMILY_LOGIN_FUNCTION.
+FAMILY_ASSISTED_LOGIN_FUNCTION = (
+    "stewardship_family_assisted_login_v1(character varying, uuid, uuid, jsonb, uuid)"
+)
 # Publication plans and outcomes (#528, DAT-09.01, migration 0087): the
 # worker writes a preflight's plan and each write attempt's outcome; web
 # reads them all and writes only an Administrator's confirmation.
@@ -657,6 +665,11 @@ CLOSURE_FUNCTIONS = {
     ),
     # The setup folder check (0186, #2200).
     SETUP_BACKUP_CHECK_FUNCTION: ("stewardship_accounts", "0039_setup_backup_step"),
+    # Open form's sign-in (0188, #2294).
+    FAMILY_ASSISTED_LOGIN_FUNCTION: (
+        "stewardship_campaigns",
+        "0020_staff_open_after_close",
+    ),
 }
 
 
@@ -1013,6 +1026,7 @@ def runtime_functions(role, *, target=None):
         {
             ServiceRole.WEB: {
                 FAMILY_LOGIN_FUNCTION,
+                FAMILY_ASSISTED_LOGIN_FUNCTION,
                 DAILY_SENDS_FUNCTION,
                 DAILY_RESUME_FUNCTION,
                 AUTOMATION_REQUEST_FUNCTION,

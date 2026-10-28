@@ -620,6 +620,17 @@ def test_staff_entered_responses_are_marked_without_a_name():
     )
 
 
+def test_a_late_response_is_marked_late():
+    """#2294: a response at or after the campaign's end (only Open form can
+    submit then) says so in its line's detail, after Entered by Staff."""
+    late = Submitted(FIRST.id, FIRST.at, by_staff=True, late=True)
+    lines = events([], [late, SECOND])
+    assert [str(line.detail) for line in lines] == [
+        "Entered by Staff for the Family; Late: after the campaign closed",
+        "",
+    ]
+
+
 def test_a_staff_sign_in_reads_staff_opened_the_form():
     """An Open form sign-in is not a link the Family followed (#795)."""
     # Decided per sign-in, so two at the same instant are never confused.

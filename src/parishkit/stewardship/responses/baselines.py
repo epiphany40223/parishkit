@@ -56,7 +56,10 @@ def admitted_family(request, service):
         raise FamilyAdmissionDenied("Family access is unavailable.")
     if authenticated_family(request, service=service) is None:
         raise FamilyAdmissionDenied("Family access is unavailable.")
-    current = _scope(service)
+    # The session's own admission: Open form's also after close (#2294).
+    current = _scope(
+        service, assisted=request.family_session.assisted_by_id is not None
+    )
     if current is None:
         raise FamilyAdmissionDenied("Family access is unavailable.")
     configuration, campaign, _, _ = current

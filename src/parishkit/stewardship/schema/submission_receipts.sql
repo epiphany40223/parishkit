@@ -106,7 +106,13 @@ BEGIN
            JOIN public.stewardship_family_campaign f ON f.campaign_id=k.campaign_id
            WHERE k.campaign_id=c.id AND f.id=s.family_id AND f.source_generation=cur.generation
              AND cur.snapshot_id=s.validation_source_id AND NOT k.population_dirty
-             AND ((s.mode='live' AND c.state IN ('scheduled','active'))
+             AND ((s.mode='live' AND (c.state IN ('scheduled','active')
+                   -- A response Open form entered after close (#2294) gets
+                   -- the ordinary receipt, as every Open form response does.
+                   OR (c.state='closed' AND EXISTS(
+                       SELECT 1 FROM public.stewardship_family_form_baseline b
+                       JOIN public.stewardship_family_session fs ON fs.id=b.family_session_id
+                       WHERE b.id=s.baseline_id AND fs.assisted_by_id IS NOT NULL))))
                OR (s.mode='test' AND c.state='draft' AND k.rehearsal_epoch_id=s.rehearsal_epoch_id
                  AND EXISTS(SELECT 1 FROM public.stewardship_rehearsal_epoch e
                      WHERE e.id=s.rehearsal_epoch_id AND e.state='active'))))

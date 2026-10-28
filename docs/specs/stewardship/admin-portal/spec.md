@@ -7676,6 +7676,11 @@ close-out wizard that brings them back is
 [#527](https://github.com/epiphany40223/parishkit/issues/527). These sections
 keep the intended design.
 
+Entering a late response needs no reopen: Staff and Administrators can use
+[Open form](../reports/spec.md#open-form-after-the-campaign-closes) for a
+Family of the closed current campaign, while Families stay closed out
+(#2294).
+
 Extending a closed campaign into the future can reopen it only through a
 readiness workflow equivalent to Production transition, excluding the
 `draft`-to-`scheduled` state change. Previously completed Testing cleanup need

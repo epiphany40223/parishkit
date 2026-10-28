@@ -126,7 +126,11 @@ follows the resubmission rule: [the rule before the reviewed
 form](#resubmission-before-the-reviewed-form) until #1705's last slice
 deploys, and [the reviewed rule](#family-resubmission) after it. Staff entering a
 Family's answers through Open form create Submitted items like the Family's
-own.
+own, also after the campaign closes
+([Open form after the campaign closes](../reports/spec.md#open-form-after-the-campaign-closes),
+[#2294](https://github.com/epiphany40223/parishkit/issues/2294)). An item from a response submitted at or after the campaign's end
+is marked **Late** beside its Submitted time in every review worklist; it is
+otherwise reviewed exactly like any other item.
 
 ### Reviewed stage
 

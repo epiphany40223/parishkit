@@ -596,6 +596,9 @@ FROZEN = {
     "0187_consumer_readmission_log.sql": (
         "3eb4fb8e3ce25a8f0f3dd074ebb3eb53838da9307ae862517edc7cbf00c87a4b"
     ),
+    "0188_staff_open_after_close.sql": (
+        "35fb46ac1c70763fdbbd47828ed8f160f0ae4054d8622f494e063e05fe92f0fc"
+    ),
 }
 
 

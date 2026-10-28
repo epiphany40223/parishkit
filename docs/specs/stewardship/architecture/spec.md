@@ -491,7 +491,10 @@ unchanged and keep Django's own storage.
 ## Family credential security
 
 [Open form](../reports/spec.md#open-form)'s hand-off at
-`/family/assisted` signs in through the ordinary code sign-in below; it
+`/family/assisted` signs in with the Family's code below, through its own
+SQL sign-in that also proves the Admin's live session and admits a closed
+campaign ([Open form after the campaign
+closes](../reports/spec.md#open-form-after-the-campaign-closes)); it
 creates, replaces and cancels no code or link.
 
 Each participating Family receives one Production eight-character code per

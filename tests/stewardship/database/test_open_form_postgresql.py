@@ -131,6 +131,14 @@ def test_open_form_marks_the_response_as_entered_by_staff(
     assert redeemed.status_code == 302 and redeemed["Location"] == "/family/"
     session = FamilySession.objects.exclude(pk__in=before).get()
     assert session.family_id == family.pk and session.revoked_at is None
+    # SQL records the Admin on Open form's session (#2294); the Family's own
+    # sign-in, made by the fixture, records none.
+    assert session.assisted_by_id == admin_id
+    assert set(
+        FamilySession.objects.filter(pk__in=before).values_list(
+            "assisted_by_id", flat=True
+        )
+    ) == {None}
     assisted = AuditEvent.objects.get(event_type="family_assisted_login")
     assert assisted.subject_id == session.pk and assisted.actor_id == admin_id
     assert list(FamilyEngagement.objects.filter(family=family).values()) == engagement
@@ -372,6 +380,299 @@ def test_migration_self_check_refuses_an_older_context_body(older):
             cursor.execute(body)
             with (
                 pytest.raises(DatabaseError, match="Entered by Staff sorts"),
+                transaction.atomic(),
+            ):
+                cursor.execute(check)
+            transaction.set_rollback(True)
+        cursor.execute(check)
+
+
+def after_close(harness):
+    """Close the harness's campaign through its real boundary; a later clock.
+
+    The Family's own response comes first, as in Production, where the
+    campaign's first response is long recorded before it closes. Returns
+    the campaign clock three days after the end, for ``with``.
+    """
+    from datetime import timedelta
+
+    from .campaign_builders import campaign_clock, close_campaign
+
+    respond(harness)
+    close_campaign(harness.campaign, uuid4())
+    assert harness.campaign.state == "closed"
+    return campaign_clock(
+        harness.campaign.active_configuration.ends_at + timedelta(days=3)
+    )
+
+
+def test_open_form_enters_a_late_response_after_close(live_response_service, google):
+    """#2294: after close, the Family's own code, link and session are still
+    refused with the ended page, while Staff's Open form signs in, submits a
+    response marked as entered by Staff and Late, and gets its receipt."""
+    from parishkit.stewardship.responses.models import SubmissionReceiptOccurrence
+
+    harness = live_response_service
+    family = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=1)
+    with after_close(harness):
+        # The Family's own code is refused with the after-close page, and its
+        # session from before the close ends at its next request.
+        before = set(FamilySession.objects.values_list("pk", flat=True))
+        own = as_web(Client().post, "/", {"code": harness.code})
+        assert own.status_code == 403
+        assert b"Sorry, the campaign is over" in own.content
+        assert as_web(harness.client.get, "/family/").status_code == 302
+        assert set(FamilySession.objects.values_list("pk", flat=True)) == before
+
+        # Staff's Open form still works, marked with the Admin in SQL.
+        admin, _ = signed_in()
+        admin_id = PortalSession.objects.get(revoked_at__isnull=True).principal_id
+        timeline = f"/admin/reports/families/{family.pk}/"
+        _, body = as_web(get, admin, timeline)
+        assert b"data-open-form" in body
+        assert b"It still works after the campaign closes" in body
+        response, secret = open_form(admin, family.pk)
+        assert response.status_code == 200 and secret
+        redeemed = redeem(admin, secret)
+        assert redeemed.status_code == 302 and redeemed["Location"] == "/family/"
+        session = FamilySession.objects.exclude(pk__in=before).get()
+        assert session.assisted_by_id == admin_id
+        assert as_web(admin.get, "/family/").status_code == 200
+
+        # A changed answer, so the late response has review items of its
+        # own: the Family's earlier ones keep their own submitted time.
+        staff = replace(harness, client=admin, request=redeemed.wsgi_request)
+        form, answers = form_and_answers(staff)
+        answers["family"]["email_opt_out"] = True
+        assert submit(staff, form, answers).submission is not None
+        late = Submission.objects.filter(family=family, mode="live").latest(
+            "family_version"
+        )
+        assert late.entered_by_id == admin_id
+        assert late.submitted_at >= harness.campaign.active_configuration.ends_at
+        assert SubmissionReceiptOccurrence.objects.filter(submission=late).exists()
+
+        # Late shows on the Timeline line, and on the review worklist rows.
+        _, body = as_web(get, admin, timeline)
+        assert body.count(b"Late: after the campaign closed") == 1
+        _, body = as_web(get, admin, "/admin/reports/census/")
+        assert b"Late: after the campaign closed" in body
+
+
+@pytest.fixture
+def two_family_service(monkeypatch, request):
+    """``live_response_service`` with a second eligible Family, DUID 4.
+
+    DUID 4 is a copy of DUID 1's household with its own Member and address;
+    the fixture's own sign-in stays DUID 1's.
+    """
+    from . import response_builders
+
+    original = response_builders.response_source
+
+    def two_families():
+        """The response corpus plus DUID 4 and its Member 5."""
+        data = original()
+        data.families[4] = data.families[1] | {
+            "familyDUID": 4,
+            "familyID": 14,
+            "lastName": "Second",
+            "eMailAddress": "second@example.org",
+        }
+        data.members[5] = data.members[3] | {
+            "memberDUID": 5,
+            "familyDUID": 4,
+            "lastName": "Second",
+            "emailAddress": "second@example.org",
+        }
+        return data
+
+    monkeypatch.setattr(response_builders, "response_source", two_families)
+    return request.getfixturevalue("live_response_service")
+
+
+def test_open_form_enters_a_familys_first_response_after_close(
+    two_family_service, google
+):
+    """#2294: after close, Open form submits the first response of a Family
+    that never responded: its first-response pointer is set, the receipt is
+    queued, the response records the Admin, and it is marked Late."""
+    from parishkit.stewardship.responses.models import SubmissionReceiptOccurrence
+
+    harness = two_family_service
+    second = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=4)
+    assert second.portal_eligible and second.first_live_submission_id is None
+    with after_close(harness):
+        assert not Submission.objects.filter(family=second)
+        admin, _ = signed_in()
+        admin_id = PortalSession.objects.get(revoked_at__isnull=True).principal_id
+        response, secret = open_form(admin, second.pk)
+        assert response.status_code == 200 and secret
+        redeemed = redeem(admin, secret)
+        assert redeemed.status_code == 302 and redeemed["Location"] == "/family/"
+
+        staff = replace(harness, client=admin, request=redeemed.wsgi_request)
+        form, answers = form_and_answers(staff)
+        answers["family"]["email_opt_out"] = True
+        late = submit(staff, form, answers).submission
+        assert late is not None and late.family_id == second.pk
+        assert late.entered_by_id == admin_id and late.family_version == 1
+        assert late.submitted_at >= harness.campaign.active_configuration.ends_at
+        second.refresh_from_db()
+        assert second.first_live_submission_id == late.pk
+        assert second.effective_submission_id == late.pk
+        receipt = SubmissionReceiptOccurrence.objects.get(submission=late)
+        assert receipt.disposition == "queued" and receipt.outbox_id is not None
+
+        _, body = as_web(get, admin, f"/admin/reports/families/{second.pk}/")
+        assert body.count(b"Late: after the campaign closed") == 1
+        assert b"Entered by Staff for the Family" in body
+        _, body = as_web(get, admin, "/admin/reports/census/")
+        assert b"Late: after the campaign closed" in body
+
+
+def test_the_close_keeps_open_forms_session(live_response_service, google):
+    """#2294: the close revokes every Family's own session but not one Open
+    form started, so Staff mid-entry at the close can still submit."""
+    harness = live_response_service
+    family = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=1)
+    own = FamilySession.objects.get(revoked_at__isnull=True)
+    admin, _ = signed_in()
+    _, secret = open_form(admin, family.pk)
+    redeemed = redeem(admin, secret)
+    assert redeemed.status_code == 302
+    assisted = FamilySession.objects.get(assisted_by_id__isnull=False)
+    with after_close(harness):
+        own.refresh_from_db()
+        assisted.refresh_from_db()
+        assert own.revoked_at is not None
+        assert assisted.revoked_at is None
+        assert as_web(harness.client.get, "/family/").status_code == 302
+        staff = replace(harness, client=admin, request=redeemed.wsgi_request)
+        form, answers = form_and_answers(staff)
+        answers["family"]["email_opt_out"] = True
+        late = submit(staff, form, answers).submission
+        assert late is not None and late.entered_by_id == assisted.assisted_by_id
+
+
+def test_a_family_session_cannot_reach_the_late_admission(
+    live_response_service, google
+):
+    """#2294: the after-close admission is bound to Open form's hand-off.
+
+    A Family's own session has no ``assisted_by_id``, and the web login can
+    neither set one nor sign in through the assisted function without a
+    live Admin session; the Family's own sign-in function still refuses
+    after close.
+    """
+    from parishkit.stewardship.accounts.family_authentication import _mint_session
+
+    from .test_family_login_sql_postgresql import fresh_key
+
+    harness = live_response_service
+    family = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=1)
+    own = FamilySession.objects.get(revoked_at__isnull=True)
+    assert own.assisted_by_id is None
+    digests = harness.service.mac.lookups(harness.campaign.pk, harness.code)
+    admin, _ = signed_in()
+    portal = PortalSession.objects.get(revoked_at__isnull=True)
+
+    def mint(**options):
+        """One SQL sign-in as the web login, in its own transaction."""
+        with transaction.atomic():
+            return _mint_session(fresh_key(), family.pk, **options)
+
+    def rebind():
+        """Try to mark the Family's own session as Staff's, as the web login."""
+        with transaction.atomic():
+            FamilySession.objects.filter(pk=own.pk).update(
+                assisted_by_id=portal.principal_id, version=own.version + 1
+            )
+
+    # The web login, which may update Family sessions, cannot do that.
+    with pytest.raises(DatabaseError, match="immutable"):
+        as_web(rebind)
+    with after_close(harness):
+        # The Family's own sign-in refuses after close, whatever it presents.
+        assert as_web(mint, digests=digests) is None
+        # The assisted one needs a live Admin portal session.
+        assert as_web(mint, digests=digests, assisted_session=uuid4()) is None
+        assert as_web(mint, digests=digests, assisted_session=own.pk) is None
+        with unguarded():
+            PortalSession.objects.filter(pk=portal.pk).update(
+                revoked_at=portal.last_activity_at, version=portal.version + 1
+            )
+        assert as_web(mint, digests=digests, assisted_session=portal.pk) is None
+        # It never takes a link.
+        with pytest.raises(ValueError):
+            mint(token="x" * 43, assisted_session=portal.pk)
+        assert not FamilySession.objects.filter(assisted_by_id__isnull=False)
+
+
+def frozen_body(name, function):
+    """``function``'s whole CREATE OR REPLACE definition in frozen file ``name``."""
+    text = (MIGRATIONS / name).read_text(encoding="utf-8")
+    start = text.index(f"CREATE OR REPLACE FUNCTION public.{function}(")
+    return text[start : text.index("$$;", start) + 3]
+
+
+# Each body 0188 replaces, with its #2294 admission undone the way an older
+# or partial install would lack it; and the receipt guard without its rights.
+STALE_0188 = {
+    "session-guard": (
+        "stewardship_family_session_mutable_v1",
+        'OR NEW."assisted_by_id" IS DISTINCT FROM OLD."assisted_by_id" ',
+        "",
+    ),
+    "form-guard": (
+        "stewardship_family_baseline_guard_v1",
+        "(session_row.assisted_by_id IS NULL OR campaign_row.state<>'closed')",
+        "true",
+    ),
+    "submit-guard": (
+        "stewardship_submission_guard_v1",
+        "(campaign_row.state='closed' AND session_row.assisted_by_id IS NOT NULL)",
+        "false",
+    ),
+    "receipt-guard": (
+        "stewardship_submission_receipt_command_v1",
+        "WHERE b.id=s.baseline_id AND fs.assisted_by_id IS NOT NULL",
+        "WHERE false",
+    ),
+    "close-revocation": (
+        "stewardship_token_campaign_effects_v1",
+        "\n          AND (NEW.state<>'closed' OR assisted_by_id IS NULL);",
+        ";",
+    ),
+}
+# The SECURITY DEFINER functions 0188 replaces, each also tested as invoker.
+INVOKERS_0188 = {
+    "receipt-invoker": "stewardship_submission_receipt_command_v1",
+    "effects-invoker": "stewardship_token_campaign_effects_v1",
+}
+
+
+@pytest.mark.parametrize("stale", [*STALE_0188, *INVOKERS_0188])
+def test_migration_0188_self_check_refuses_a_stale_install(stale):
+    """0188's DO block passes on the installed schema and fails when any one
+    replaced body lacks #2294's change, or a replaced definer lost SECURITY
+    DEFINER. Each stale install runs in a rolled-back transaction."""
+    text = (MIGRATIONS / "0188_staff_open_after_close.sql").read_text(encoding="utf-8")
+    check = re.search(r"^DO \$check\$.*?\$check\$;", text, re.M | re.S)[0]
+    with connection.cursor() as cursor:
+        cursor.execute(check)
+        with transaction.atomic():
+            if stale in INVOKERS_0188:
+                cursor.execute(
+                    f"ALTER FUNCTION public.{INVOKERS_0188[stale]}() SECURITY INVOKER"
+                )
+            else:
+                function, new, old = STALE_0188[stale]
+                body = frozen_body("0188_staff_open_after_close.sql", function)
+                assert body.count(new) == 1
+                cursor.execute(body.replace(new, old))
+            with (
+                pytest.raises(DatabaseError, match="Migration 0188"),
                 transaction.atomic(),
             ):
                 cursor.execute(check)

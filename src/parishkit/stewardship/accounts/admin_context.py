@@ -153,6 +153,12 @@ def portal_chrome(request):
             "debug_in_production": _debug_in_production(configuration),
             "restored": configuration.restore_review_required,
             "paused": bool(campaign and campaign.delivery_paused),
+            # The current campaign's end, already read with the campaign: a
+            # review worklist marks an item submitted at or after it Late
+            # (#2294; only Open form can submit then).
+            "campaign_ends_at": campaign.active_configuration.ends_at
+            if campaign
+            else None,
             "delivery_pause": delivery_pause,
             "go_live": go_live,
             # A key change in progress holds every later settings change.

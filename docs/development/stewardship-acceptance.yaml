@@ -270,6 +270,7 @@ sections:
     "Response lists": [RPT-03]
     "Timeline": [RPT-03]
     "Open form": [RPT-03]
+    "Open form after the campaign closes": [RPT-03]
     "Timeline review lines": [RPT-03]
     "Timeline request lines": [RPT-03]
     "Timeline export": [RPT-03]
