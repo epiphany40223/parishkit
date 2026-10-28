@@ -1244,7 +1244,11 @@ if has_command "$new_commands" egress-probe; then
     if [ -z "$(uploader_cron_lines)" ]; then
         contract_problems+=("This host's cron runs no off-site uploader line, so off-site copies would stop with this release: install it first (docs/guides/stewardship-backup-runbook.md#the-uploaders-cron-line).")
     fi
-    engine=$(timeout --kill-after=5 30 docker version --format '{{.Server.Version}}' 2>/dev/null) || engine=""
+    # Every question below is bounded and an expired limit logged (what,
+    # the limit, the elapsed time) by layout_limited; a failure to answer
+    # refuses like a wrong answer.
+    engine=$(layout_limited 30 "asking Docker Engine for its version" \
+        docker version --format '{{.Server.Version}}') || engine=""
     if engine_fixed "$engine"; then
         echo "    Docker Engine ${engine} has the embedded-DNS fix for internal networks"
     else
@@ -1268,10 +1272,17 @@ if has_command "$new_commands" egress-probe; then
         echo "    the host drops traffic from the one-shot networks ($offline) to itself, ahead of any rule that could admit them, and $input_drop_unit keeps it"
     fi
     probe_network="${project}_offline-backup-worker"
-    internal=$(docker network inspect --format '{{.Internal}}' "$probe_network" 2>/dev/null) || internal=""
-    gateway=$(docker network inspect --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}' "$probe_network" 2>/dev/null) || gateway=""
-    google=$(timeout --kill-after=5 30 getent ahostsv4 www.googleapis.com 2>/dev/null | awk 'NR == 1 { print $1 }') || google=""
-    listeners=$(ss -Htlnu 2>/dev/null | gateway_listeners "$gateway") || listeners="unreadable"
+    internal=$(layout_limited 30 "inspecting $probe_network" \
+        docker network inspect --format '{{.Internal}}' "$probe_network") || internal=""
+    gateway=$(layout_limited 30 "reading the gateway of $probe_network" docker network inspect \
+        --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}' "$probe_network") || gateway=""
+    google=$(layout_limited 30 "resolving www.googleapis.com" getent ahostsv4 www.googleapis.com |
+        awk 'NR == 1 { print $1 }') || google=""
+    if sockets=$(layout_limited 30 "listing the host's listening ports" ss -Htlnu); then
+        listeners=$(gateway_listeners "$gateway" <<<"$sockets")
+    else
+        listeners="unreadable"
+    fi
     if [ "$internal" != true ] || ! [[ $gateway =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
         contract_problems+=("Could not read the backup worker's internal network $probe_network (internal: ${internal:-unknown}, gateway: ${gateway:-unknown}); run one backup on the current release, then repeat.")
     elif ! [[ $google =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
@@ -1288,12 +1299,19 @@ if has_command "$new_commands" egress-probe; then
             --security-opt no-new-privileges:true \
             --tmpfs /tmp:rw,nosuid,nodev,noexec,mode=1777 \
             "$image" egress-probe --gateway "$gateway" --google-address "$google" \
-            --listen "$listeners" --engine-version "${engine:-0.0.0}" </dev/null 2>/dev/null) || probe_rc=$?
+            --listen "$listeners" --engine-version "${engine:-0.0.0}" </dev/null \
+            2>"$work/egress-probe.err") || probe_rc=$?
         if [ "$probe_rc" -eq 124 ] || [ "$probe_rc" -eq 137 ]; then
             echo "TIMEOUT: the egress probe killed after $(( $(date -u +%s) - started ))s (limit 120s)" >&3
             stop_oneoff "time limit" >&3
         fi
         oneoff_name=""
+        # Its error output (a refused argument, Docker's own complaint) goes
+        # into the log: the probe prints nothing secret, only its arguments.
+        if [ -s "$work/egress-probe.err" ]; then
+            echo "    egress probe's error output:" >&2
+            sed 's/^/    | /' "$work/egress-probe.err" >&2
+        fi
         echo "    egress probe: ${probed:-no result}"
         echo "$(date -u +%FT%TZ) egress probe: ${probed:-no result}" >>"$logdir/stewardship-backup.log"
         closed=$(jq -r '.closed' <<<"$probed" 2>/dev/null || true)

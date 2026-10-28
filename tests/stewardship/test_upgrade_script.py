@@ -316,7 +316,7 @@ case "$*" in
     # version (FAKE_ENGINE_FAIL: no answer); FAKE_PROBE_INTERNAL and
     # FAKE_PROBE_GATEWAY what the backup worker's network answers; the
     # probe records its arguments and prints FAKE_PROBE (default closed),
-    # exiting FAKE_PROBE_RC.
+    # and FAKE_PROBE_ERR on its error output, exiting FAKE_PROBE_RC.
     "version --format {{.Server.Version}}")
         [ -z "${FAKE_ENGINE_FAIL-}" ] || exit 1
         echo "${FAKE_ENGINE:-27.3.1}" ;;
@@ -326,6 +326,7 @@ case "$*" in
         echo "${FAKE_PROBE_GATEWAY-172.29.242.65}" ;;
     *" egress-probe --gateway "*)
         echo "$*" >"$FAKE_STATE/probe"
+        [ -z "${FAKE_PROBE_ERR-}" ] || echo "$FAKE_PROBE_ERR" >&2
         closed='{"closed": true, "engine_version": "27.3.1", "reached": []}'
         echo "${FAKE_PROBE:-$closed}"
         exit "${FAKE_PROBE_RC:-0}" ;;
@@ -3684,3 +3685,58 @@ def test_a_rule_that_could_admit_the_block_ahead_of_the_drop_refuses(tmp_path, e
     """An overlapping, negated or unknown match ahead of the drop refuses."""
     _, output, _ = contract(tmp_path, status=1, input=earlier + "\n" + INPUT_CHAIN)
     assert f"comes after a rule that could admit them: {earlier}." in output
+
+
+@pytest.mark.parametrize(
+    ("fragment", "what", "message"),
+    [
+        (
+            "Server.Version",
+            "asking Docker Engine for its version",
+            "Docker Engine 'unknown' lacks",
+        ),
+        (
+            "-S INPUT",
+            "listing the host's INPUT chain",
+            "Could not list the host's INPUT",
+        ),
+        ("is-enabled", "asking systemd whether", "is not persisted"),
+        (" cat stewardship-offline", "reading stewardship-offline", "is not persisted"),
+        (
+            "{{.Internal}}",
+            "inspecting stewardship_offline",
+            "Could not read the backup",
+        ),
+        ("{{.Gateway}}", "reading the gateway of", "Could not read the backup"),
+        ("ahostsv4", "resolving www.googleapis.com", "could not resolve"),
+        (
+            "ss -Htlnu",
+            "listing the host's listening ports",
+            "Could not list the host's",
+        ),
+    ],
+)
+def test_every_host_question_is_bounded_and_its_kill_logged(
+    tmp_path, fragment, what, message
+):
+    """A preflight question past its limit: logged (what, limit, elapsed), refused."""
+    _, output, _ = contract(tmp_path, status=1, timeout=fragment)
+    log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    assert re.search(
+        f"TIMEOUT: {re.escape(what)}.* killed after [0-9]+s \\(limit 30s\\)", log
+    )
+    assert message in output
+
+
+def test_the_probes_error_output_is_kept_in_the_log(tmp_path):
+    """A refused argument's message reaches the log, not only its exit status."""
+    _, output, _ = contract(
+        tmp_path,
+        status=1,
+        probe="",
+        probe_rc="2",
+        probe_err="ERROR: egress-probe --listen takes tcp:PORT and udp:PORT items.",
+    )
+    log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    assert "    | ERROR: egress-probe --listen takes tcp:PORT" in log
+    assert "The egress probe did not answer (exit 2)" in output
