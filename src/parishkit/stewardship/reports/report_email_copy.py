@@ -25,7 +25,7 @@ from parishkit.stewardship.web.dates import format_date
 from .report_blocks import REGISTRY
 from .report_blocks.registry import CopyFrame
 from .report_document import PREVIOUS_DAY_END, ReportDocument, send_path
-from .report_email_inputs import recorded_inputs, report_days
+from .report_email_inputs import report_days, send_inputs
 from .report_email_list import GROUP_LABELS, _how, version_user_names
 
 HOW_LABELS = {
@@ -112,16 +112,18 @@ def copy_document(snapshot, preparation, projection, slot):
 
     It answers the email's own title, report day and covered days
     (``ReportDocument``), derived from the inputs the send recorded exactly
-    as the compiler derived them (``recorded_inputs``, ``report_days``).
+    as the compiler derived them (``send_inputs``, ``report_days``), under
+    the send's own submission watermark, so a response entered after the
+    send never moves its report day (#2298).
     """
     values = snapshot.values
-    inputs = recorded_inputs(
+    inputs = send_inputs(
         values,
         preparation.covered_slots,
         preparation.captured_at,
-        projection.start_date,
-        projection.end_date,
-        projection.timezone,
+        projection,
+        campaign_id=preparation.campaign_id,
+        watermark=preparation.submission_watermark,
     )
     how = _how(slot)
     return ReportDocument(

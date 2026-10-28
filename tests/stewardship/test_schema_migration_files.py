@@ -596,6 +596,9 @@ FROZEN = {
     "0188_staff_open_after_close.sql": (
         "35fb46ac1c70763fdbbd47828ed8f160f0ae4054d8622f494e063e05fe92f0fc"
     ),
+    "0192_late_report_totals.sql": (
+        "e4cdc8672d12fe45e8aec4ec60018c37d04c0ae220174d14f7d40643b8e35372"
+    ),
 }
 
 

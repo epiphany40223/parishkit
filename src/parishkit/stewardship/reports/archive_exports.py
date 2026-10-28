@@ -59,6 +59,9 @@ TIMEZONE = "UTC"
 NO_CAMPAIGN = "no_campaign"
 BEFORE_DAY_1 = "before_day_1"
 CLOSED_TODAY = "closed_today"
+# A response Staff entered today, after the campaign closed (#2298): the
+# final file waits for the next day, as for CLOSED_TODAY, with its own words.
+LATE_TODAY = "late_today"
 NO_RESPONSE = "no_response"
 NO_YEAR = "no_year"
 NOT_READY = "not_ready"
@@ -184,13 +187,19 @@ def archive_offer(campaign_id, *, now):
     exact rule; a campaign closed with no response that day is final at
     once, and any other waits at most until the next day (the review's
     refinement of that decision, 2026-10-13). No Family responded by the
-    cutoff is unavailable too.
+    cutoff is unavailable too. The cap is the report end (#2298): the end
+    date, or the day of the newest response Staff entered after the close,
+    whose file waits for the next day while that response is from today.
     """
+    from zoneinfo import ZoneInfo
+
     from parishkit.stewardship.archive.export import archive_cutoff
     from parishkit.stewardship.archive.imports import ArchiveRefusal, year_from_values
     from parishkit.stewardship.campaigns.intervals import local_day
     from parishkit.stewardship.campaigns.models import Campaign
     from parishkit.stewardship.responses.models import Submission
+
+    from .inputs import newest_response, report_end
 
     if campaign_id is None:
         return ArchiveOffer(NO_CAMPAIGN)
@@ -207,10 +216,14 @@ def archive_offer(campaign_id, *, now):
         base["year"] = year_from_values(projection.values)
     except ArchiveRefusal:
         return ArchiveOffer(NO_YEAR, **base)
+    # The cutoff is capped at the report end, not the end date, so the file
+    # covers the responses Staff entered after the close (#2298).
     cutoff = archive_cutoff(
         campaign.state,
         projection.start_date,
-        projection.end_date,
+        report_end(
+            projection.end_date, newest_response(campaign_id), projection.timezone
+        ),
         projection.timezone,
         now,
     )
@@ -229,7 +242,11 @@ def archive_offer(campaign_id, *, now):
             campaign_id=campaign_id, mode="live", submitted_at__gte=cutoff_instant
         ).exists()
     ):
-        return ArchiveOffer(CLOSED_TODAY, **base)
+        # After the end date, the response after the cutoff can only be
+        # one Staff entered today through Open form after the close.
+        today = now.astimezone(ZoneInfo(projection.timezone)).date()
+        late = today > projection.end_date
+        return ArchiveOffer(LATE_TODAY if late else CLOSED_TODAY, **base)
     # A Family must have been in the historical cohort by the cutoff, as
     # the archive's Families are; the read applies the exact rule.
     if not Submission.objects.filter(

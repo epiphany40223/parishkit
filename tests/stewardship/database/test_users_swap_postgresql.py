@@ -584,6 +584,11 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # missing (so it may run whole again), and replaces in place functions
 # that 0095's, 0156's and 0161's reinstalled files bring back older, so
 # ``CLOSURE_REPLACED_ONLY`` restores 0185's bodies last.
+# 0192 (#2298) creates nothing: it replaces the baseline's fact set guard,
+# which no closure file installs again, and the exact export request and
+# report email preparation guards, which 0185's (and 0156's and 0161's)
+# reruns bring back older, so its ``CLOSURE_REPLACED_ONLY`` entries restore
+# 0192's bodies instead, the preparation guard's in 0185's entry's place.
 # The columns 0185 (#2202) adds, by table.
 SERIES_IN_FORCE_COLUMNS = (
     ("stewardship_daily_fact_set", "pledge_edits"),
@@ -1772,6 +1777,17 @@ CLOSURE_REPLACED_ONLY = {
             ("stewardship_campaign_comparison_v1", "selected.pledge_edits"),
         )
     },
+    # 0192 (#2298) replaces 0185's preparation guard: this key's value
+    # replaces 0185's entry above (in its place), so the restore installs
+    # 0192's body, held at the report end.
+    "stewardship_report_email_preparation_guard_v1": (
+        ("stewardship_reports", "0053_late_report_totals"),
+        "s.campaign_sequence<=NEW.submission_watermark",
+    ),
+    "stewardship_exact_request_guard_v1": (
+        ("stewardship_reports", "0053_late_report_totals"),
+        "r.campaign_sequence<=NEW.submission_watermark",
+    ),
 }
 
 

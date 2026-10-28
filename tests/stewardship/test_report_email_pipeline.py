@@ -68,6 +68,28 @@ def test_a_recovery_send_covers_every_missed_day_held_at_the_last():
     )
 
 
+def test_a_late_response_moves_the_hold_to_its_own_day():
+    """After a response Staff entered on November 8, past the November 6 end
+    date, the send passes that day as the campaign's report end
+    (``send_inputs``, #2298): a send on November 10 reports November 8,
+    not the end date, and is still held there; one on November 9 is not
+    held at all."""
+    late = date(2026, 11, 8)
+    captured = datetime(2026, 11, 10, 12, tzinfo=UTC)
+    inputs = recorded_inputs(daily(), ["2026-11-09"], captured, START, late, ZONE)
+    assert inputs.report_day == inputs.through_date == late and inputs.held
+    assert inputs.as_of == datetime(2026, 11, 9, 5, tzinfo=UTC)
+    on_time = recorded_inputs(
+        daily(),
+        ["2026-11-08"],
+        datetime(2026, 11, 9, 12, tzinfo=UTC),
+        START,
+        late,
+        ZONE,
+    )
+    assert on_time.report_day == late and not on_time.held
+
+
 def test_before_the_campaign_there_is_no_report_day():
     """A send before the first day has ended reports no day and pins no facts."""
     captured = datetime(2026, 10, 5, 11, tzinfo=UTC)
