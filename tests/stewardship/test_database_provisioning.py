@@ -747,6 +747,17 @@ def test_after_restore_refuses_every_other_state(tmp_path, monkeypatch, case):
     assert not any("GRANT" in statement for statement in cursor.statements)
 
 
+def test_a_set_name_with_non_ascii_digits_is_not_a_set_name():
+    """Arabic-Indic digits match \\d and strptime, but not a set's name."""
+    from parishkit.stewardship.backup import SET_NAME
+
+    name = "".join(chr(0x0660 + int(c)) if c.isdigit() else c for c in SET)
+    assert SET_NAME.fullmatch(SET)
+    assert SET_NAME.fullmatch(name) is None
+    with pytest.raises(ConfigError, match="must be a backup set's name"):
+        provisioning.require_restore_loaded(Cursor([]), name)
+
+
 def test_without_after_restore_a_restored_database_still_needs_a_recent_backup(
     tmp_path,
 ):
