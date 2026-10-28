@@ -103,11 +103,13 @@ def test_every_service_role_runner_reaches_an_assembly_that_records_it():
     assert "configure_operator_database(configuration)" in inspect.getsource(
         runtime_background.configure_background
     )
-    # Every other role is an operator command, a backup or a load check, all of
-    # which configure Django through the same operator assembly.
+    # Every other role is an operator command, a backup, the off-site
+    # uploader's one-shot (#235) or a load check, all of which configure
+    # Django through the same operator assembly.
     offline = set(ServiceRole) - online
     assert offline == {
         ServiceRole.BACKUP_WORKER,
+        ServiceRole.BACKUP_UPLOADER,
         ServiceRole.TOKEN_KEY_ROTATION,
         ServiceRole.BOOTSTRAP,
         ServiceRole.MIGRATION,

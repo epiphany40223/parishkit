@@ -390,25 +390,26 @@ def test_a_linked_or_shared_source_rules_directory_is_refused(deployment, tmp_pa
     assert record(deployment)["image"] == OLD
 
 
-# The identity the creation tests use in place of the off-site uploader
-# (#235), which no release has yet: one this release has, so its path and
-# its place in the plan are real.
-STAND_IN = "backup-worker"
+# The identity the creation tests act on: the off-site uploader (#235), the
+# one listed identity, which this release has. (P2 shipped before it and
+# tested with a stand-in; the tests keep their monkeypatch of the list so
+# each states what it relies on.)
+STAND_IN = "backup-uploader"
 
 
-def test_the_creation_list_is_closed_and_inert_in_this_release(deployment):
-    """Only the uploader is listed, and this release has no uploader identity.
+def test_the_creation_list_is_closed_and_names_this_releases_uploader(deployment):
+    """Only the uploader is listed, and this release has that identity.
 
-    So a missing password still refuses for every identity this release
-    has, and nothing is created.
+    A missing password of any other identity this release has still
+    refuses, and nothing is created.
     """
     from parishkit.stewardship.runtime_identities import database_identities
 
     assert sorted(retarget.RETARGET_CREATES) == ["backup-uploader"]
     assert isinstance(retarget.RETARGET_CREATES, frozenset)
     names = {name for name, *_ in database_identities()}
-    assert not retarget.RETARGET_CREATES & names
-    path = RuntimeLayout(deployment).database_password(STAND_IN)
+    assert names >= retarget.RETARGET_CREATES
+    path = RuntimeLayout(deployment).database_password("backup-worker")
     path.unlink()
     with pytest.raises(CryptographicError, match=UNAVAILABLE):
         retarget.retarget_image(deployment, image=OLD)

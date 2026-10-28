@@ -110,12 +110,34 @@ def test_rendered_foundation_enforces_individual_mounts_and_profiles(
                 "offline-backup-worker",
                 "application-egress",
             }
+        if name == "backup-uploader":
+            # The off-site uploader (#235): its own one-shot network and the
+            # route out, never backend; every mount read-only, and only the
+            # documented inventory (no tree, no recipient key, no record).
+            mounts = {Path(m["source"]): m["read_only"] for m in service["volumes"]}
+            assert mounts == {
+                layout.service_directory / "backup-uploader.yaml": True,
+                layout.database_password("backup-uploader"): True,
+                layout.interlock: True,
+                layout.credential("google_workspace").parent: True,
+                configuration.paths["backups"]: True,
+            }
+            assert service["command"] == [
+                "database-sources",
+                "--config",
+                str(layout.service_directory / "backup-uploader.yaml"),
+            ]
+            assert set(service["networks"]) == {
+                "offline-backup-uploader",
+                "application-egress",
+            }
         if name in {
             "bootstrap",
             "migration",
             "admin-recovery",
             "database-provision",
             "backup-worker",
+            "backup-uploader",
         }:
             assert service["profiles"] == [name]
             assert service["restart"] == "no"
@@ -610,6 +632,7 @@ PROFILED_SERVICES = {
     "admin-recovery",
     "database-provision",
     "backup-worker",
+    "backup-uploader",
 }
 
 

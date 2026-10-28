@@ -8,6 +8,7 @@ import pytest
 
 from parishkit.config import ConfigError
 from parishkit.stewardship import database_provisioning as provisioning
+from parishkit.stewardship import uploader_password
 from parishkit.stewardship.accounts.key_files import write_private
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.runtime_grants import (
@@ -277,6 +278,12 @@ def test_role_creation_preflights_all_identities_and_never_emits_plaintext(
 
     monkeypatch.setattr(provisioning, "_check_role", role_check)
     monkeypatch.setattr(provisioning, "_connection", connect)
+    verified = []
+    monkeypatch.setattr(
+        uploader_password,
+        "require_matching_password",
+        lambda cursor, login, password: verified.append((login, password)),
+    )
     inspected = []
     monkeypatch.setattr(
         provisioning, "ensure_inspect_login", lambda *args: inspected.append(args)
@@ -295,7 +302,13 @@ def test_role_creation_preflights_all_identities_and_never_emits_plaintext(
     assert ("CREATE ROLE" in sql) is (not existing)
     assert ("SCRAM-SYNTHETIC" in sql) is (not existing)
     assert "ALTER PASSWORD" not in sql
-    assert len(connections) == 1 + (len(admissions) if existing else 0)
+    # Every existing login is verified by connecting as it, except the
+    # off-site uploader (#235), whose source rule refuses this network: its
+    # file is checked against the stored verifier instead.
+    uploader = login_name(ServiceRole.BACKUP_UPLOADER)
+    assert len(connections) == 1 + ((len(admissions) - 1) if existing else 0)
+    assert uploader not in connections
+    assert verified == ([(uploader, b"private-password")] if existing else [])
 
 
 def grant_statements(tmp_path, monkeypatch, applied):
@@ -317,6 +330,8 @@ def grant_statements(tmp_path, monkeypatch, applied):
     # The inspection login's own SQL is covered by test_inspect_login.py.
     monkeypatch.setattr(provisioning, "ensure_inspect_login", lambda *args: None)
     monkeypatch.setattr(provisioning, "grant_inspect", lambda *args: None)
+    # The uploader's creation and password check have their own tests.
+    monkeypatch.setattr(provisioning, "_ensure_uploader", lambda *args: None)
     assert provisioning.provision_grants(configuration, uuid4())[
         "database_grants_provisioned"
     ]
@@ -468,6 +483,7 @@ def test_grants_tolerate_a_closure_revoke_only_until_it_applies(
     monkeypatch.setattr(provisioning, "_admit_writer_guard", lambda *args: None)
     monkeypatch.setattr(provisioning, "ensure_inspect_login", lambda *args: None)
     monkeypatch.setattr(provisioning, "grant_inspect", lambda *args: None)
+    monkeypatch.setattr(provisioning, "_ensure_uploader", lambda *args: None)
     provisioning.provision_grants(configuration, uuid4())
     mail = admitted[login_name(ServiceRole.MAIL_DISPATCH)]
     assert ("ciphertext" in mail["stewardship_family_token"]["SELECT"]) is not applied

@@ -331,6 +331,99 @@ def _connection(configuration, name, password):
     )
 
 
+def _create_login(database, cursor, configuration, marker, login, role, password):
+    """Create one runtime login exactly as provisioning does, from its password.
+
+    The SCRAM verifier is computed locally, so the plaintext never becomes
+    SQL text. ``pg_dump`` runs with row security off, which PostgreSQL
+    refuses for a login subject to a forced policy, so the backup login
+    bypasses row-level security, and nothing else does.
+    """
+    identifier = sql.Identifier(login)
+    verifier = database.pgconn.encrypt_password(
+        password, login.encode("ascii"), b"scram-sha-256"
+    ).decode("ascii")
+    cursor.execute(
+        sql.SQL(
+            "CREATE ROLE {} LOGIN NOINHERIT NOSUPERUSER {} "
+            "NOCREATEDB NOCREATEROLE NOREPLICATION "
+            "CONNECTION LIMIT {} PASSWORD {}"
+        ).format(
+            identifier,
+            sql.SQL(
+                "BYPASSRLS" if role is ServiceRole.BACKUP_WORKER else "NOBYPASSRLS"
+            ),
+            sql.Literal(role_limit(configuration, role)),
+            sql.Literal(verifier),
+        )
+    )
+    cursor.execute(
+        sql.SQL("COMMENT ON ROLE {} IS {}").format(identifier, sql.Literal(marker))
+    )
+
+
+def _open_login(cursor, configuration, login, role):
+    """The database CONNECT, schema USAGE and search_path every login gets.
+
+    The backup login also gets its one membership, pg_read_all_data with
+    inheritance (the login is NOINHERIT, so the membership itself must carry
+    it, PostgreSQL 16+).
+    """
+    identifier = sql.Identifier(login)
+    cursor.execute(
+        sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
+            sql.Identifier(configuration.postgres.name), identifier
+        )
+    )
+    cursor.execute(sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(identifier))
+    cursor.execute(
+        sql.SQL("ALTER ROLE {} SET search_path = {}").format(
+            identifier,
+            sql.SQL(
+                "public, pg_catalog"
+                if role is ServiceRole.MIGRATION
+                else "pg_catalog, public"
+            ),
+        )
+    )
+    if role is ServiceRole.BACKUP_WORKER:
+        cursor.execute(
+            sql.SQL("GRANT pg_read_all_data TO {} WITH INHERIT TRUE").format(identifier)
+        )
+
+
+def _ensure_uploader(database, cursor, configuration, marker):
+    """Create the off-site uploader's login when absent, else check its password.
+
+    The first login an existing deployment gains with a password (#235): the
+    expand upgrade's ``database-grants`` creates it here, before the
+    per-identity loop that refuses a missing role, from the password file
+    ``retarget-image`` created. An existing one is checked against the
+    stored verifier (``uploader_password``), since the source rules refuse
+    the uploader from this profile's network, so connecting as it cannot
+    prove the password. A missing or mismatched file refuses before any
+    grant. A login that differs from provisioning is refused by the loop's
+    ``_check_role``, never repaired.
+    """
+    from .uploader_password import (
+        UPLOADER_IDENTITY,
+        require_matching_password,
+        uploader_password,
+    )
+
+    login = next(
+        entry[1] for entry in database_identities() if entry[0] == UPLOADER_IDENTITY
+    )
+    password = uploader_password(configuration)
+    cursor.execute("SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname=%s)", [login])
+    if cursor.fetchone()[0]:
+        require_matching_password(cursor, login, password)
+        return
+    role = ServiceRole.BACKUP_UPLOADER
+    _create_login(database, cursor, configuration, marker, login, role, password)
+    _open_login(cursor, configuration, login, role)
+
+
 def provision_roles(configuration, deployment_id):
     """Create all foundation roles atomically before migrations, with matching retry."""
     if not isinstance(deployment_id, UUID):
@@ -359,10 +452,18 @@ def provision_roles(configuration, deployment_id):
             )
             for name, login, role, _ in identities
         }
-        for name, login, _, _ in identities:
-            if existing[name]:
-                with _connection(configuration, login, passwords[name]):
-                    pass  # Verify matching supplied password; never ALTER PASSWORD.
+        for name, login, role, _ in identities:
+            if not existing[name]:
+                continue
+            if role is ServiceRole.BACKUP_UPLOADER:
+                from .uploader_password import require_matching_password
+
+                # The source rules refuse the uploader from this profile's
+                # network, so its password is checked against the verifier.
+                require_matching_password(cursor, login, passwords[name])
+                continue
+            with _connection(configuration, login, passwords[name]):
+                pass  # Verify matching supplied password; never ALTER PASSWORD.
         cursor.execute(
             sql.SQL("COMMENT ON DATABASE {} IS {}").format(
                 sql.Identifier(configuration.postgres.name), sql.Literal(marker)
@@ -375,62 +476,17 @@ def provision_roles(configuration, deployment_id):
         )
         cursor.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
         for name, login, role, _ in identities:
-            identifier = sql.Identifier(login)
             if not existing[name]:
-                # SCRAM is generated locally: plaintext never becomes SQL text.
-                verifier = database.pgconn.encrypt_password(
-                    passwords[name], login.encode("ascii"), b"scram-sha-256"
-                ).decode("ascii")
-                # pg_dump runs with row security off, which PostgreSQL refuses
-                # for a login subject to a forced policy; the backup login
-                # therefore bypasses row-level security, and nothing else does.
-                cursor.execute(
-                    sql.SQL(
-                        "CREATE ROLE {} LOGIN NOINHERIT NOSUPERUSER {} "
-                        "NOCREATEDB NOCREATEROLE NOREPLICATION "
-                        "CONNECTION LIMIT {} PASSWORD {}"
-                    ).format(
-                        identifier,
-                        sql.SQL(
-                            "BYPASSRLS"
-                            if role is ServiceRole.BACKUP_WORKER
-                            else "NOBYPASSRLS"
-                        ),
-                        sql.Literal(role_limit(configuration, role)),
-                        sql.Literal(verifier),
-                    )
+                _create_login(
+                    database,
+                    cursor,
+                    configuration,
+                    marker,
+                    login,
+                    role,
+                    passwords[name],
                 )
-                cursor.execute(
-                    sql.SQL("COMMENT ON ROLE {} IS {}").format(
-                        identifier, sql.Literal(marker)
-                    )
-                )
-            cursor.execute(
-                sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
-                    sql.Identifier(configuration.postgres.name), identifier
-                )
-            )
-            cursor.execute(
-                sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(identifier)
-            )
-            cursor.execute(
-                sql.SQL("ALTER ROLE {} SET search_path = {}").format(
-                    identifier,
-                    sql.SQL(
-                        "public, pg_catalog"
-                        if role is ServiceRole.MIGRATION
-                        else "pg_catalog, public"
-                    ),
-                )
-            )
-            if role is ServiceRole.BACKUP_WORKER:
-                # pg_dump needs every table; the login is NOINHERIT, so the
-                # membership itself must carry inheritance (PostgreSQL 16+).
-                cursor.execute(
-                    sql.SQL("GRANT pg_read_all_data TO {} WITH INHERIT TRUE").format(
-                        identifier
-                    )
-                )
+            _open_login(cursor, configuration, login, role)
         # The System logs search's trigram indexes (#765, migration file
         # 0117) need pg_trgm. Creating an extension needs CREATE on the
         # database, which no service login holds (revoked above), so the
@@ -447,6 +503,9 @@ def provision_roles(configuration, deployment_id):
 
 def provision_grants(configuration, deployment_id):
     """Grant only the explicit foundation registry after its migrations exist.
+
+    The off-site uploader's login is created, or its password checked,
+    before the per-identity loop (``_ensure_uploader``).
 
     On the users upgrade's base (#952), the swap and what depends on it are
     still pending, so a definer routine, a table or a column one of those
@@ -478,6 +537,7 @@ def provision_grants(configuration, deployment_id):
     ):
         _admit_operator(cursor, configuration, marker, initial=False)
         _admit_writer_guard(cursor)
+        _ensure_uploader(database, cursor, configuration, marker)
         cursor.execute("SELECT app,name FROM public.django_migrations")
         applied = set(cursor.fetchall())
         pending, absent = pending_functions(applied), pending_tables(applied)

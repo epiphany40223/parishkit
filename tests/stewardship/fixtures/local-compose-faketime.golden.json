@@ -20,6 +20,26 @@
     }
    ]
   },
+  "backup-uploader": {
+   "environment": {
+    "FAKETIME_CACHE_DURATION": "1",
+    "FAKETIME_DONT_FAKE_MONOTONIC": "1",
+    "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
+    "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
+   },
+   "image": "parishkit-stewardship-local-faketime-stewardship:0123456789abcdef0123456789abcdef01234567-1700000000",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/local/clock",
+     "target": "/run/parishkit-clock",
+     "type": "bind"
+    }
+   ]
+  },
   "backup-worker": {
    "environment": {
     "FAKETIME_CACHE_DURATION": "1",
