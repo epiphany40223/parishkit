@@ -982,3 +982,73 @@ def test_whole_dollars_rounds_halves_up():
     """Tooltip pledges are whole dollars, a half rounding up."""
     assert whole_dollars(Decimal("760409.50")) == "$760,410"
     assert whole_dollars(Decimal("0.49")) == "$0"
+
+
+def closed_participation():
+    """The daily chart's document after a response entered after the close.
+
+    The fixture's three days are October 31 to November 2; with an end date
+    of November 1 the last day holds a response Staff entered after the
+    campaign closed (#2298).
+    """
+    return replace(participation(), end_date=participation().first_date + timedelta(1))
+
+
+def test_participation_chart_marks_the_campaign_closed():
+    """Each panel draws the dashed Campaign closed line at the start of the
+    first late day's band, the top panel names it, and the description
+    says what the later dates hold (#2298). It compiles without a warning,
+    in token colours, and draws its label once."""
+    chart = participation_chart(closed_participation())
+    late = chart.spec["data"]["values"][2]["tick"]
+    panels = chart.spec["vconcat"]
+    for index, panel in enumerate(panels):
+        rules = [
+            layer
+            for layer in panel["layer"]
+            if layer.get("data", {}).get("values", [{}])[0].get("tick") == late
+        ]
+        assert [layer["mark"]["type"] for layer in rules] == (
+            ["rule", "text", "text"] if index == 0 else ["rule"]
+        )
+        rule = rules[0]
+        assert rule["mark"]["color"] == chart_specs.MARKER
+        assert rule["mark"]["strokeDash"] == [4, 4]
+        assert rule["mark"]["aria"] is False
+        # The panel's own date encoding, at the band's start.
+        assert rule["encoding"]["x"] == panel["encoding"]["x"] | {"bandPosition": 0}
+    # The label over a paper halo drawn first (Vega strokes text over its
+    # fill), so it keeps its contrast over a bar.
+    halo, label = (layer["mark"] for layer in panels[0]["layer"][2:4])
+    assert (halo["color"], halo["stroke"]) == (chart_specs.HALO,) * 2
+    assert halo["strokeWidth"] == 3
+    assert label["color"] == chart_specs.MARKER and "stroke" not in label
+    assert {key: halo[key] for key in ("align", "dx")} == {"align": "right", "dx": -3}
+    assert chart.summary.endswith(
+        " The campaign closed at the end of November 1, 2026; the dates after "
+        "it hold responses Staff entered after the campaign closed."
+    )
+    assert chart.spec["description"] == chart.summary
+    svg = vl_convert.vegalite_to_svg(chart.spec)
+    assert svg.count(">Campaign closed<") == 2
+    assert hover_guides(chart.spec) and all(
+        len(hover_guides(panel)) == 1 for panel in panels
+    )
+
+
+def test_participation_chart_closed_compiles_without_warnings(capfd):
+    """The closed line adds no Vega-Lite warning (the page logs each one)."""
+    chart = participation_chart(closed_participation())
+    assert page_warnings(chart.spec, capfd) == []
+
+
+def test_participation_chart_marks_nothing_up_to_the_end_date():
+    """A series that stops at or before the end date draws no line: the chart
+    is exactly what it was before #2298."""
+    plain = participation_chart(participation())
+    ended = participation_chart(
+        replace(participation(), end_date=participation().last_date)
+    )
+    assert plain.spec == ended.spec
+    assert "Campaign closed" not in json.dumps(plain.spec)
+    assert "closed" not in plain.summary

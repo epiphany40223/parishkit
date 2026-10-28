@@ -60,7 +60,8 @@ def recorded_inputs(values, covered, captured_at, start, end, zone):
     As of the end of the previous day, the report day is the last covered
     slot's day (for a manual send, the day before the capture); as of when
     the email is made, it is the capture's own day. Either is held at the
-    campaign's last day and is None before its first. A report as of the end
+    campaign's last day ``end`` (its report end, ``send_inputs``) and is
+    None before its first. A report as of the end
     of the previous day counts every figure at the end of that day (never
     after the capture); one as of when it is made, at the capture instant.
     """
@@ -78,6 +79,30 @@ def recorded_inputs(values, covered, captured_at, start, end, zone):
         as_of = min(resolve_local(end_of_day, zone), captured_at)
     facts = any(entry["block"] in FACT_BLOCKS for entry in values["blocks"])
     return RecordedInputs(report_day, base > end, as_of, report_day if facts else None)
+
+
+def send_inputs(values, covered, captured_at, projection, *, campaign_id, watermark):
+    """``recorded_inputs`` with the report day held at the report end (#2298).
+
+    ``projection`` is the campaign configuration the send reads (its dates
+    and zone). The report end is the later of the end date and the day of
+    the newest live response at or under ``watermark``, the send's recorded
+    submission watermark (None: every live response, for a Preview), so a
+    send after a response Staff entered after the close reports that day,
+    and recomputing a sent report's inputs later gives the same day. The
+    preparation's guard computes the same end in SQL (frozen migration
+    0192).
+    """
+    from .inputs import newest_response, report_end
+
+    end = report_end(
+        projection.end_date,
+        newest_response(campaign_id, watermark),
+        projection.timezone,
+    )
+    return recorded_inputs(
+        values, covered, captured_at, projection.start_date, end, projection.timezone
+    )
 
 
 def report_days(values, covered, inputs, start):

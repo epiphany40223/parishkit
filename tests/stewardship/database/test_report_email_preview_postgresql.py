@@ -194,7 +194,10 @@ def test_a_preview_draws_what_a_send_drew_and_writes_nothing(family_mail, google
             # Signed, not encrypted: the readable recipe holds no free text.
             payload = signing.b64_decode(token.split(":")[0].lstrip(".").encode())
             recipe = json.loads(zlib.decompress(payload))
-            assert set(recipe) == {"c", "f", "t", "a", "b"}
+            assert set(recipe) == {"c", "f", "t", "w", "a", "b"}
+            # The Preview's submission watermark, which holds its report
+            # day against a response entered after the close (#2298).
+            assert isinstance(recipe["w"], int)
             assert values["name"] not in json.dumps(recipe)
             altered = path.replace(token, token[:-6] + "AAAAAA")
             assert browser.get(altered).status_code == 404

@@ -28,6 +28,7 @@ from parishkit.stewardship.reports.comparison import (
     Comparison,
     Day,
     Distribution,
+    LateEntries,
     Renewal,
     Year,
     average,
@@ -35,6 +36,7 @@ from parishkit.stewardship.reports.comparison import (
     change,
     change_text,
     distribution_rows,
+    late_entries,
     outside_document,
     protected,
     table_rows,
@@ -710,3 +712,82 @@ def test_a_pledge_total_of_a_million_or_more_has_two_decimal_places(pledged, sho
     drawn = comparison_views.headline_tiles(tiles(found))
     assert [tile.fit for tile in drawn] == [""] * 5
     assert f"${Decimal(pledged):,.2f}" in str(table_rows(found)[0])
+
+
+def test_late_entries_are_the_tail_after_the_end_date():
+    """Families who first responded after the end date, and the pledge change
+    since it, from the series' last day (#2298); None while the series stops
+    at the end date, or when either day's population is unavailable."""
+    end = date(2054, 10, 5)
+    days = (
+        fact(1, 10, pledge="1000.00"),
+        fact(2, 12, pledge="1500.00"),  # The end date.
+        fact(3, 12, pledge="1700.50"),  # A changed pledge, entered late.
+        fact(4, 13, pledge="1900.50"),  # A first-ever late response.
+    )
+    assert days[1].local_date == end
+    assert late_entries(days, end, True) == LateEntries(end, 1, Decimal("400.50"))
+    assert late_entries(days, end, False) == LateEntries(end, 1, None)
+    assert late_entries(days[:2], end, True) is None
+    gap = (*days[:3], fact(4, 13, available=False, pledge="1900.50"))
+    assert late_entries(gap, end, True) is None
+    unknown = (*days[:3], fact(4, 13))
+    assert late_entries(unknown, end, True) == LateEntries(end, 1, None)
+    assert LateEntries(end, 1, Decimal("400.50")).pledges_text == "+$400.50"
+    assert LateEntries(end, 0, Decimal("-40")).pledges_text == "-$40.00"
+    assert LateEntries(end, 0, Decimal("0")).pledges_text is None
+    assert LateEntries(end, 2).pledges_text is None
+
+
+@pytest.mark.parametrize(
+    ("late", "shown"),
+    [
+        (
+            LateEntries(date(2054, 11, 2), 2, Decimal("400.50")),
+            "Entered after the campaign closed on November 2, 2054: 2 more "
+            "Families responded, and effective annual pledges changed by "
+            "+$400.50.",
+        ),
+        (
+            LateEntries(date(2054, 11, 2), 1),
+            "Entered after the campaign closed on November 2, 2054: 1 more "
+            "Family responded.",
+        ),
+        # Only changed responses, and no pledge change: neither "0 more
+        # Families" nor "changed by $0.00".
+        (
+            LateEntries(date(2054, 11, 2), 0, Decimal("0")),
+            "Responses were entered after the campaign closed on November 2, "
+            "2054, but no more Families responded.",
+        ),
+        (
+            LateEntries(date(2054, 11, 2), 0, Decimal("-40")),
+            "Responses were entered after the campaign closed on November 2, "
+            "2054, but no more Families responded, and effective annual "
+            "pledges changed by -$40.00.",
+        ),
+    ],
+)
+def test_the_page_states_the_late_entries_without_empty_figures(late, shown):
+    """The late entries line (#2298) reads naturally for every tail: a
+    Family count only when one more responded, a pledge change only when it
+    is not zero."""
+    import re
+
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.accounts.policy import Principal
+    from parishkit.stewardship.reports.comparison_views import page_context
+
+    found = replace(comparison([year(2054, day(3, 30))]), late=late)
+    principal = Principal(uuid4(), frozenset({"staff"}), frozenset())
+    html = render_to_string(
+        "stewardship/campaign-comparison.html",
+        page_context(found, principal) | {"csrf_token": "a" * 64},
+    )
+    (line,) = re.findall(r"<p>[^<]*after the campaign closed on[^<]*</p>", html)
+    tail = (
+        "The figures below compare every year up to its end date, so they "
+        "leave these out."
+    )
+    assert line == f"<p>{shown} {tail}</p>"

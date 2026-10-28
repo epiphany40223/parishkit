@@ -122,6 +122,9 @@ class ArchiveSource:
     facts: tuple
     converted_at: datetime
     outside_cohort: int = 0
+    # The campaign's end date: a submission dated after it was entered by
+    # Staff after the campaign closed (late, #2298). None leaves none late.
+    end_date: date | None = None
 
     @property
     def cutoff(self):
@@ -146,12 +149,14 @@ def archive_cutoff(state, start_date, end_date, timezone, now):
     """(cutoff date, final) for a campaign at ``now``, or None before day 1 ends.
 
     The cutoff is the last complete local day (the comparison report's
-    comparison day), never today's unfinished day, and never past the end
-    date. A ``closed`` or ``archived`` campaign's file is final, the others'
-    partial. So a campaign closed before its end date gets its final file
-    at once, through its last full day, rather than waiting for the end
-    date (Administrator decision, 2026-10-13, #1018); once the end date has
-    passed, the cutoff is the end date.
+    comparison day), never today's unfinished day, and never past
+    ``end_date``, which the caller passes as the campaign's report end: the
+    end date, or the day of the newest response Staff entered after the
+    close (#2298). A ``closed`` or ``archived`` campaign's file is final,
+    the others' partial. So a campaign closed before its end date gets its
+    final file at once, through its last full day, rather than waiting for
+    the end date (Administrator decision, 2026-10-13, #1018); once the end
+    date has passed, the cutoff is that report end.
     """
     last = min(now.astimezone(ZoneInfo(timezone)).date() - timedelta(days=1), end_date)
     return None if last < start_date else (last, state in CLOSED_STATES)
@@ -388,9 +393,30 @@ def _as_of(source):
     return source.cutoff
 
 
+def late_submissions(source, submissions):
+    """How many ``submissions`` rows were entered after the campaign closed.
+
+    A row dated after the end date is late (#2298): only Staff's Open form
+    can submit then, and the Admin pages mark it with the Late chip. Format
+    1.0 has no column for that, so the metadata counts the rows and a note
+    names the end date they follow.
+    """
+    if source.end_date is None:
+        return 0
+    return sum(row["local_date"] > source.end_date for row in submissions)
+
+
 def archive_metadata(source, families, submissions, daily, ministry, unchecked):
     """The metadata sheet's (key, value, note) rows."""
     notes = []
+    late = late_submissions(source, submissions)
+    if late:
+        notes.append(
+            f"{late} submission(s), the submissions rows dated after "
+            f"{source.end_date.isoformat()} (the campaign's end date), were "
+            "entered by Staff after the campaign closed (Late); the daily "
+            "rows count them on the day they were entered."
+        )
     if source.outside_cohort:
         notes.append(
             "Live responses of Families outside the campaign's historical cohort "
@@ -445,6 +471,8 @@ def archive_metadata(source, families, submissions, daily, ministry, unchecked):
     ]
     if source.outside_cohort:
         rows.append(("count.outside_cohort", source.outside_cohort, None))
+    if late:
+        rows.append(("count.late_submissions", late, None))
     rows += [(f"note.{index:02d}", text, None) for index, text in enumerate(notes, 1)]
     return rows
 
@@ -681,6 +709,7 @@ def read_source(fact_set_id, *, cutoff_date, final, converted_at):
         facts=facts,
         converted_at=converted_at,
         outside_cohort=len(outside),
+        end_date=projection.end_date,
     )
 
 

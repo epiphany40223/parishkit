@@ -8,7 +8,7 @@ read now:
 
 - the as-of moment and report day follow from the report's as-of choice
   and the database clock, derived as a Send now records them
-  (``report_email_inputs.recorded_inputs`` with no covered slot);
+  (``report_email_inputs.send_inputs`` with no covered slot);
 - the open requests and the funnel come from the readers a send uses;
 - the fact blocks read one ready fact generation, never built or pinned
   here (``select_facts``): the one a send would build now when it is ready,
@@ -55,7 +55,7 @@ from .report_email_capture import (
     open_requests,
 )
 from .report_email_cohort import frozen_cohort
-from .report_email_inputs import recorded_inputs, report_days
+from .report_email_inputs import report_days, send_inputs
 
 # The population a report's fact blocks count (the preparations' scope).
 SCOPE = "historical"
@@ -84,7 +84,9 @@ class Preview:
     kind, ref}]``); ``updating`` says the figures are not the generation a
     send would build now (or there is none); ``fact_set_id`` names the
     generation drawn (None without one); ``observed_at`` is the database
-    clock the as-of moment was derived from.
+    clock the as-of moment was derived from, and ``watermark`` the live
+    submission watermark observed with it, which holds the report end
+    (#2298).
     """
 
     subject: str
@@ -99,6 +101,7 @@ class Preview:
     observed_at: datetime
     covered_dates: tuple
     mode: str
+    watermark: int | None = None
 
 
 def _observe(campaign_id):
@@ -202,6 +205,7 @@ def build_document(
     source_id=None,
     fact_set_id=None,
     lists=True,
+    watermark=None,
 ):
     """The report's source as a send now would draw it (``ReportDocument``).
 
@@ -210,15 +214,18 @@ def build_document(
     name and date format). ``fact_set_id`` is the generation to draw (None:
     no facts). ``lists`` False leaves out the funnel and the open requests,
     which only the dialog's email draws, never its redrawn images.
+    ``watermark`` is the observed submission watermark the report end is
+    counted under (#2298), the Preview's own for its redrawn images; None
+    counts every live response.
     """
     projection = campaign.active_configuration
-    inputs = recorded_inputs(
+    inputs = send_inputs(
         values,
         (),
         observed_at,
-        projection.start_date,
-        projection.end_date,
-        projection.timezone,
+        projection,
+        campaign_id=campaign.pk,
+        watermark=watermark,
     )
     covered = report_days(values, (), inputs, projection.start_date)
     participation = None
@@ -284,13 +291,13 @@ def preview_report(values, system, campaign, *, public_origin):
     """
     observed_at, source_id, watermark, reviews = _observe(campaign.pk)
     projection = campaign.active_configuration
-    inputs = recorded_inputs(
+    inputs = send_inputs(
         values,
         (),
         observed_at,
-        projection.start_date,
-        projection.end_date,
-        projection.timezone,
+        projection,
+        campaign_id=campaign.pk,
+        watermark=watermark,
     )
     fact_set_id, updating = None, False
     if inputs.through_date is not None:
@@ -313,6 +320,7 @@ def preview_report(values, system, campaign, *, public_origin):
         observed_at=observed_at,
         source_id=source_id,
         fact_set_id=fact_set_id,
+        watermark=watermark,
     )
     if document.participation is None and fact_set_id is not None:
         # The generation vanished or ends before the campaign's first day.
@@ -340,6 +348,7 @@ def preview_report(values, system, campaign, *, public_origin):
         observed_at=observed_at,
         covered_dates=document.covered_dates,
         mode=system.mode,
+        watermark=watermark,
     )
 
 
@@ -351,7 +360,9 @@ def _salt(actor_id):
 def image_token(preview, values, campaign_id, actor_id):
     """A short-lived signed recipe for the preview's chart images, or None.
 
-    It names the generation, the observed clock and the image-drawing
+    It names the generation, the observed clock and submission watermark
+    (so a response entered after the close between the Preview and the
+    image's fetch cannot move its report day, #2298) and the image-drawing
     blocks with their options, so ``preview_image`` draws the same images
     again; they hold only aggregate figures. The token is signed, not
     encrypted, and travels in the image's path, so it holds no free text
@@ -366,6 +377,7 @@ def image_token(preview, values, campaign_id, actor_id):
             "c": str(campaign_id),
             "f": str(preview.fact_set_id),
             "t": preview.observed_at.isoformat(),
+            "w": preview.watermark,
             "a": values["as_of"],
             "b": entries,
         },
@@ -402,6 +414,7 @@ def preview_image(token, actor_id, system, campaign, name):
         observed_at=datetime.fromisoformat(recipe["t"]),
         fact_set_id=UUID(recipe["f"]),
         lists=False,
+        watermark=recipe.get("w"),
     )
     if document.participation is None:
         raise LookupError("The preview's facts are no longer kept.")

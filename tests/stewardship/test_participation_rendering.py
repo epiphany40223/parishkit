@@ -576,3 +576,42 @@ def test_the_gaps_note_speaks_only_for_the_panels_drawn():
     families = (charts.FIRST_SUBMISSIONS, charts.CUMULATIVE_FAMILIES)
     with participation_figure(value, email=True, charts=families) as figure:
         assert note not in [text.get_text() for text in figure.texts]
+
+
+def figure_text(figure):
+    """Every text the figure draws, in its axes and on the figure itself."""
+    return [text.get_text() for text in figure.findobj(Text)]
+
+
+def closed_lines(axes):
+    """The x positions of an axes' dashed vertical Campaign closed lines."""
+    return [
+        line.get_xdata()[0]
+        for line in axes.get_lines()
+        if line.get_linestyle() == "--" and len(set(line.get_xdata())) == 1
+    ]
+
+
+@pytest.mark.parametrize("pdf", [False, True])
+def test_the_static_chart_marks_the_campaign_closed(pdf):
+    """A series past the end date draws the dashed line in every panel,
+    between the end date's column and the next, and names it once on the
+    top panel (#2298); the PDF page draws the same."""
+    value = replace(document(), end_date=date(2026, 11, 1))
+    assert value.closed_after == 2
+    with participation_figure(value, pdf=pdf) as figure:
+        panels = [axes for axes in figure.axes if axes.get_title(loc="left")]
+        assert len(panels) == 3
+        assert all(closed_lines(axes) == [1.5] for axes in panels)
+        assert [text.strip() for text in figure_text(figure)].count(
+            charts.CLOSED_LABEL
+        ) == 1
+
+
+def test_the_static_chart_marks_nothing_up_to_the_end_date():
+    """A series that stops at the end date draws no line or label."""
+    for value in (document(), replace(document(), end_date=date(2026, 11, 2))):
+        assert value.closed_after is None
+        with participation_figure(value) as figure:
+            assert all(closed_lines(axes) == [] for axes in figure.axes)
+            assert not any(charts.CLOSED_LABEL in text for text in figure_text(figure))

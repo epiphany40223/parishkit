@@ -64,17 +64,22 @@ COLLISIONS = """() => {
       && Number(getComputedStyle(text).opacity) > 0
       && text.getAttribute("opacity") !== "0"
       && text.getAttribute("fill-opacity") !== "0";
+    // A label's halo (#2298) is a stroked copy drawn under it, so it is
+    // checked for being cut off but not for overlapping its own label.
     const boxes = [...svg.querySelectorAll("text")]
       .filter(drawn)
-      .map((text) => [text.textContent, text.getBoundingClientRect()]);
+      .map((text) => [
+        text.textContent, text.getBoundingClientRect(), text.hasAttribute("stroke"),
+      ]);
     for (const [name, box] of boxes) {
       if (box.left < frame.left - 1 || box.right > frame.right + 1
           || box.top < frame.top - 1 || box.bottom > frame.bottom + 1) {
         found.push(["cut off", view.dataset.chartTitle, name]);
       }
     }
-    boxes.forEach(([a, one], index) => {
-      boxes.slice(index + 1).forEach(([b, two]) => {
+    boxes.forEach(([a, one, haloA], index) => {
+      boxes.slice(index + 1).forEach(([b, two, haloB]) => {
+        if (a === b && haloA !== haloB) return;
         const wide = Math.min(one.right, two.right) - Math.max(one.left, two.left);
         const tall = Math.min(one.bottom, two.bottom) - Math.max(one.top, two.top);
         if (wide > 1 && tall > 1) found.push([view.dataset.chartTitle, a, b]);
