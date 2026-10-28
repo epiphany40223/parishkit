@@ -136,9 +136,18 @@ def require_restore_loaded(cursor, set_name):
     schema's comment is exactly ``pk-restore:SET:<manifest SHA-256>``, which
     step 6's load writes last in its transaction, and no backup run row
     started at or after the set's start (a fresh load holds none, while the
-    comment alone survives into later backups and restores). ``set_name``
-    must be a set's name, ``YYYYMMDDTHHMMSSZ``, naming a real UTC time. A
-    missing run table refuses too: every set has one.
+    comment alone survives into later backups and restores). On top of that,
+    the restore review of that set must not have been released: a
+    ``restore_release`` runtime transition with that ``backup_at`` means the
+    site was reopened and has taken live writes since, which a failing
+    backup schedule would otherwise leave waived for good. The review's
+    own records are the evidence (``restore-begin`` writes the
+    ``restore_begin`` row with the set's time, and releasing writes
+    ``restore_release`` with the same time), so a ``pk-restore --from 7``
+    while the review is still open keeps working. ``set_name`` must be a
+    set's name, ``YYYYMMDDTHHMMSSZ``, naming a real UTC time. A missing run
+    or transition table refuses too, whether or not the database is
+    configured: every set has both.
     """
     from datetime import UTC, datetime
 
@@ -158,18 +167,29 @@ def require_restore_loaded(cursor, set_name):
         raise ConfigError(
             "--after-restore needs the database pk-restore just loaded from that set."
         )
-    cursor.execute("SELECT to_regclass('public.stewardship_backup_run')")
-    if cursor.fetchone()[0] is None:
+    cursor.execute(
+        "SELECT to_regclass('public.stewardship_backup_run') IS NOT NULL "
+        "AND to_regclass('public.stewardship_runtime_transition') IS NOT NULL"
+    )
+    if not cursor.fetchone()[0]:
         raise ConfigError("--after-restore needs the restored set's backup records.")
     cursor.execute(
         "SELECT EXISTS(SELECT 1 FROM public.stewardship_backup_run "
-        "WHERE started_at>=%s)",
-        [start],
+        "WHERE started_at>=%s),"
+        "EXISTS(SELECT 1 FROM public.stewardship_runtime_transition "
+        "WHERE action='restore_release' AND backup_at=%s)",
+        [start, start],
     )
-    if cursor.fetchone()[0]:
+    later, released = cursor.fetchone()
+    if later:
         raise ConfigError(
             "--after-restore is refused: a backup ran on this database after the "
             "restore."
+        )
+    if released:
+        raise ConfigError(
+            "--after-restore is refused: the restore review of that set was "
+            "released, so the site has run since."
         )
 
 

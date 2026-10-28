@@ -646,16 +646,18 @@ SET = "20261020T020000Z"
 MARKER = "pk-restore:" + SET + ":" + "ab" * 32
 
 
-def restore_rows(configuration, comment, table=True, later=False, configured=True):
+def restore_rows(
+    configuration, comment, table=True, later=False, configured=True, released=False
+):
     """The fake cursor's answers for ``_admit_operator(after_restore=SET)``."""
     rows = [
         ("pk_stewardship_operator", "pk_stewardship_operator", True, "stewardship"),
         ("matching",),
         (comment,),
-        ("stewardship_backup_run" if table else None,),
+        (table,),
     ]
     if table:
-        rows.append((later,))
+        rows.append((later, released))
     rows.append(("stewardship_system_configuration" if configured else None,))
     if configured:
         rows.append((True,))
@@ -688,6 +690,7 @@ def test_after_restore_admits_the_loaded_set_without_a_recent_backup(
     queries = "\n".join(cursor.statements)
     assert "obj_description('public'::regnamespace,'pg_namespace')" in queries
     assert "started_at>=%s" in queries
+    assert "action='restore_release' AND backup_at=%s" in queries
     assert "completed_at" not in queries
 
 
@@ -698,20 +701,24 @@ def test_after_restore_admits_the_loaded_set_without_a_recent_backup(
         "no marker",
         "another digest form",
         "a later backup",
+        "a released review",
         "no run table",
         "not a set name",
         "not a real time",
     ],
 )
 def test_after_restore_refuses_every_other_state(tmp_path, monkeypatch, case):
-    """Only the exact marker with no later run row; never weakens anything else."""
+    """Only the exact marker, no later run row and no released review.
+
+    It never weakens anything else.
+    """
     from parishkit.stewardship import backup
 
     configuration = configuration_at(tmp_path)
     monkeypatch.setattr(
         backup, "require_recent_backup", lambda cursor: pytest.fail("not reached")
     )
-    name, comment, table, later = SET, MARKER, True, False
+    name, comment, table, later, released = SET, MARKER, True, False, False
     if case == "another set":
         comment = "pk-restore:20261019T020000Z:" + "ab" * 32
     elif case == "no marker":
@@ -720,13 +727,19 @@ def test_after_restore_refuses_every_other_state(tmp_path, monkeypatch, case):
         comment = "pk-restore:" + SET + ":" + "AB" * 32
     elif case == "a later backup":
         later = True
+    elif case == "a released review":
+        released = True
     elif case == "no run table":
         table = False
     elif case == "not a set name":
         name = "2026-10-20T02:00:00Z"
     else:
         name = "20261340T020000Z"
-    cursor = Cursor(restore_rows(configuration, comment, table=table, later=later))
+    cursor = Cursor(
+        restore_rows(
+            configuration, comment, table=table, later=later, released=released
+        )
+    )
     with pytest.raises(ConfigError, match="--after-restore"):
         provisioning._admit_operator(
             cursor, configuration, "matching", initial=False, after_restore=name

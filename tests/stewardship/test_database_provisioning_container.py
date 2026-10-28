@@ -1329,8 +1329,9 @@ def test_grants_after_a_restore_need_the_restored_sets_marker(
 
     A configured database whose newest backup row is days old, as a
     restored set's is (it never holds its own row): plain grants refuse;
-    with the set's marker and no later row they pass; another set's marker
-    or a later row refuses.
+    with the set's marker and no later row they pass, also while the set's
+    restore review is open (``pk-restore --from 7``); another set's marker,
+    a released review of the set, or a later row refuses.
     """
     from datetime import UTC, datetime, timedelta
 
@@ -1372,6 +1373,30 @@ def test_grants_after_a_restore_need_the_restored_sets_marker(
         provision_grants(configuration, deployment, after_restore=other)
     with pytest.raises(RecentBackupRequired):
         provision_grants(configuration, deployment)
+
+    def transition(action, version, backup_at):
+        """Record a restore review transition, as restore-begin or release does."""
+        with connect(configuration) as database:
+            database.execute("SET session_replication_role = replica")
+            database.execute(
+                "INSERT INTO stewardship_runtime_transition (id, correlation_id, "
+                "request_id, expected_version, action, before_mode, after_mode, "
+                "restore_id, backup_at, reason) "
+                "VALUES (%s,%s,%s,%s,%s,'testing','testing',%s,%s,'restore')",
+                [uuid4(), uuid4(), uuid4(), version, action, review, backup_at],
+            )
+
+    # An open review of the set (restore-begin ran, then a --from 7 resume)
+    # still passes; another set's released review does not matter.
+    review = uuid4()
+    transition("restore_begin", 1, set_start)
+    transition("restore_release", 2, set_start - timedelta(days=1))
+    result = provision_grants(configuration, deployment, after_restore=set_name)
+    assert result == {"database_grants_provisioned": True, "after_restore": set_name}
+    # Once the set's own review is released the site has run: refused.
+    transition("restore_release", 3, set_start)
+    with pytest.raises(ConfigError, match="restore review of that set was released"):
+        provision_grants(configuration, deployment, after_restore=set_name)
     with connect(configuration) as database:
         database.execute("SET session_replication_role = replica")
         database.execute(
