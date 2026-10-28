@@ -6,10 +6,10 @@ command re-renders every generated document from the recorded inputs with the
 new image, rewrites those that differ and updates the completion marker; it
 refuses a changed deployment input, a missing once-generated password, an
 unfinished provisioning, or an image the profile does not admit. It does not
-create new passwords, SQL logins or storage a later release introduces: a
-deployment provisioned before such a release is reinstalled under the
-pre-production policy. The one exception is the generated documents' own
-owner-only ``pg-hba`` directory beside them (#2111), which it creates when
+create new SQL logins or storage a later release introduces, and creates a
+new password only for an identity in the closed ``RETARGET_CREATES`` list
+(#235) whose file is absent. The other exception is the generated documents'
+own owner-only ``pg-hba`` directory beside them (#2111), which it creates when
 absent. It runs offline, holding the startup interlock
 exclusively, so no online service can observe a half-written document; it
 starts nothing and connects to nothing. Schema migrations, grants and service
@@ -18,12 +18,14 @@ restarts remain the operator's separate, documented upgrade steps.
 
 import json
 import os
+import secrets
 import stat
 
 from parishkit.config import ConfigError
 
 from .accounts.authority import _sync_directory
 from .accounts.key_files import read_private, write_private
+from .runtime_identities import database_identities
 from .runtime_paths import (
     PROVISIONING_RECORD,
     RuntimeLayout,
@@ -34,6 +36,14 @@ from .runtime_provisioning import MAX_DOCUMENT, provisioning_plan
 from .startup_interlock import StartupLease
 
 TOPOLOGIES = ("compose.json", "compose-initial.json", "compose-slack.json")
+# The only database identities whose missing password file retarget creates
+# (#235): a login an existing deployment gains with a release, deployed
+# through the upgrade rather than a reinstall. Closed on purpose: a later
+# identity that needs the same path is added here by its own reviewed
+# change, never by being new. An identity is acted on only when the running
+# release has it (database_identities), so a release without it does
+# nothing.
+RETARGET_CREATES = frozenset({"backup-uploader"})
 
 
 def read_provisioning_record(path):
@@ -117,6 +127,92 @@ def recorded_plan(configuration, *, image=None):
     return recorded, plan
 
 
+def _absent_passwords(layout):
+    """The ``RETARGET_CREATES`` password files of this release that are absent.
+
+    Absent means nothing at all at the path (``lstat``): a dangling link or
+    any other entry is not absent, so it is left to the password read loop,
+    which refuses it as it refuses any unusable password file.
+    """
+    absent = {}
+    for name, *_ in database_identities():
+        if name not in RETARGET_CREATES:
+            continue
+        path = layout.database_password(name)
+        try:
+            os.lstat(path)
+        except FileNotFoundError:
+            absent[path] = name
+    return absent
+
+
+def _discard(*paths):
+    """Remove this call's own files after a failure; return a cleanup error.
+
+    Every path is attempted even when an earlier one fails, so as little as
+    possible is left behind; the first error is returned for chaining.
+    """
+    failure = None
+    for each in paths:
+        try:
+            os.unlink(each)
+        except FileNotFoundError:
+            pass
+        except OSError as error:
+            failure = failure or error
+    return failure
+
+
+def _create_password(path):
+    """Generate one password as provisioning does, all-or-nothing and owner-only.
+
+    The value is written and flushed under a temporary name in the same
+    directory and only then linked to ``path``: ``os.link`` fails if
+    anything appeared there after the absence check and never follows a
+    link at the target, so the password either appears whole or not at all.
+    The temporary name is created with ``O_EXCL`` and ``O_NOFOLLOW`` and set
+    to 0600 explicitly, so the umask cannot change its mode. On any failure
+    this call's own files are removed (the target only if this call linked
+    it); a cleanup failure is chained to the refusal rather than hiding it.
+    The file is then read back through the usual admission. Its directory
+    must already be real owner-only storage, as provisioning left it.
+    """
+    private_directory(path.parent)
+    value = secrets.token_urlsafe(32).encode("ascii")
+    temporary = path.with_name(f".{path.name}.{secrets.token_hex(8)}.creating")
+    try:
+        descriptor = os.open(
+            temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600
+        )
+    except OSError:
+        raise ConfigError(
+            "A new database password file could not be created."
+        ) from None
+    linked = False
+    try:
+        try:
+            os.fchmod(descriptor, 0o600)
+            if os.write(descriptor, value) != len(value):
+                raise OSError("short write")
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        os.link(temporary, path, follow_symlinks=False)
+        linked = True
+        os.unlink(temporary)
+        _sync_directory(path.parent)
+    except OSError as error:
+        # Only this call's own inode is removed: the target is unlinked only
+        # after this call's link put it there (the interlock is held
+        # exclusively, so nothing else writes the directory meanwhile).
+        failure = _discard(temporary, *((path,) if linked else ()))
+        verb = "created" if isinstance(error, FileExistsError) else "written"
+        raise ConfigError(
+            f"A new database password file could not be {verb}."
+        ) from failure
+    read_private(path, maximum=MAX_DOCUMENT)
+
+
 def retarget_image(configuration, *, image):
     """Re-render the generated documents of a completed deployment for an image.
 
@@ -129,12 +225,20 @@ def retarget_image(configuration, *, image):
     already match are left alone, so an interrupted retarget is finished by
     running the same command again and undone by asking for the recorded
     image, and a repeat is no change.
+
+    The one password it creates is that of a ``RETARGET_CREATES`` identity
+    the running release has, when its file is absent: that is found first,
+    before the loop below reads every password file (which would refuse the
+    missing one) and before the no-change return, so a retarget to the
+    recorded image (the lost-file recovery) still creates it. Every other
+    missing password still refuses.
     """
     recorded, plan = recorded_plan(configuration, image=image)
     configuration, _, passwords, documents, acl, intent = plan
     root = explicit_path(configuration.paths.root)
     completed = root / PROVISIONING_RECORD
     layout = RuntimeLayout(configuration)
+    created = _absent_passwords(layout)
     changed = recorded["image"] != image
     # A document the running release renders but the provisioned release did
     # not is simply absent: it is written like any other differing document.
@@ -145,8 +249,9 @@ def retarget_image(configuration, *, image):
     }
     for path in (*passwords, acl):
         # Presence and privacy only: the values are generated once and kept.
-        read_private(path, maximum=MAX_DOCUMENT)
-    if not stale and not changed:
+        if path not in created:
+            read_private(path, maximum=MAX_DOCUMENT)
+    if not stale and not changed and not created:
         return {
             "image_changed": False,
             "documents_changed": 0,
@@ -154,12 +259,14 @@ def retarget_image(configuration, *, image):
         }
     with StartupLease(layout.interlock, offline=True):
         # A deployment provisioned before the source rules (#2111) lacks
-        # their directory; it is the one storage this command creates. An
+        # their directory; it is the one directory this command creates. An
         # existing one must be a real owner-only directory (lstat: no link).
-        created = not os.path.lexists(layout.hba_directory)
+        rules_created = not os.path.lexists(layout.hba_directory)
         private_directory(layout.hba_directory, create=True)
-        if created:
+        if rules_created:
             _sync_directory(layout.service_directory)
+        for path in sorted(created):
+            _create_password(path)
         for path in sorted(stale):
             write_private(path, documents[path], maximum=MAX_DOCUMENT)
         _sync_directory(layout.service_directory)
@@ -169,8 +276,13 @@ def retarget_image(configuration, *, image):
         if changed:
             write_private(completed, intent, maximum=MAX_DOCUMENT)
             _sync_directory(root)
-    return {
+    result = {
         "image_changed": changed,
         "documents_changed": len(stale),
         "services_started": False,
     }
+    if created:
+        # Named only when there are any, so every other retarget reports
+        # exactly what it did before #235.
+        result["passwords_created"] = sorted(created.values())
+    return result
