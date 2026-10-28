@@ -11,6 +11,7 @@ from contextlib import nullcontext
 from uuid import uuid4
 
 import pytest
+from django.core import signing
 from django.urls import reverse
 
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
@@ -72,20 +73,27 @@ def uncertain_test(family_test):  # noqa: F811
     return message
 
 
-def preview_unsent(browser, purpose="all"):
-    """Preview recording every uncertain email as not sent."""
+def review(browser, *ids, kind="confirm_unsent", **values):
+    """The bulk bar's action on the ticked rows ``ids`` (or, with
+    ``scope="matching"``, on every email the view's filters match)."""
+    fields = dict(action="preview", kind=kind, scope="page") | values
+    if ids:
+        fields["delivery"] = [str(message_id) for message_id in ids]
+    return outgoing(browser, **fields)
+
+
+def apply(browser, answer, **values):
+    """The review dialog's Apply for the review fragment ``answer``."""
+    fields = dict(action="confirm", preview=answer.context["review"]["token"])
+    fields |= dict(note=NOTE, checked="yes") | values
+    # None leaves a field out.
     return outgoing(
-        browser,
-        action="preview",
-        kind="confirm_unsent",
-        purpose=purpose,
-        note=NOTE,
-        checked="yes",
+        browser, **{name: value for name, value in fields.items() if value is not None}
     )
 
 
 def outgoing(browser, **values):
-    """Post one bulk form to Sent mail as the signed-in Administrator."""
+    """Post one bulk step to Sent mail as the signed-in Administrator."""
     with web_login():
         return post(browser, reverse("admin:deliveries"), values)
 
@@ -109,58 +117,69 @@ def bulk_events():
     return found
 
 
-def test_confirm_all_not_sent_previews_then_skips_what_changed(family_test):  # noqa: F811
-    """One preview, a required note and check, a refusal, then a resolution.
+def refused(answer, reason, status=409):
+    """``answer`` is the review dialog's refusal for ``reason``."""
+    assert answer.status_code == status, answer.content[:300]
+    assert answer.context["refused"] == reason
+    assert b"data-review-refusal" in answer.content and b"<html" not in answer.content
 
-    An email settled on its own page after the preview is skipped rather
-    than forced; a later preview records the next uncertain email as not
-    sent, and confirming it again repeats nothing.
+
+def test_record_as_not_sent_reviews_the_selection_then_skips_what_changed(
+    family_test,  # noqa: F811
+):
+    """A box of its kind, a review of exactly the ticked rows, a required
+    note and check at Apply, a skip, then a resolution (#2296).
+
+    An email settled on its own page after the review is skipped rather
+    than forced; a later review records the next uncertain email as not
+    sent, its Continue reviews what is left, and applying it again
+    repeats nothing.
     """
     harness, browser, _, _ = family_test
     first = uncertain_test(family_test)
     with web_login():
         page = browser.get(reverse("admin:deliveries"))
     assert page.status_code == 200
-    assert page.context["bulk_overview"] == {
-        "confirm_unsent": {"total": 1, "purposes": [("family_test", 1)]}
-    }
-    assert b"Fix many emails at once" in page.content
-    # The note and the records check are both required, and the choice
-    # must be one the action takes.
-    for values in (
-        dict(note="  "),
-        dict(checked=None),
-        dict(kind="retry_failed"),
-        dict(purpose="unknown"),
+    (row,) = [row for row in page.context["table"].rows if row["id"] == first.pk]
+    assert row["bulk_kind"] == "confirm_unsent" and page.context["bulk_shown"]
+    assert f'name="delivery" value="{first.pk}"'.encode() in page.content
+    assert b'data-confirm-kind="confirm_unsent"' in page.content
+    assert b"Fix many emails at once" not in page.content
+    # Every match is on this page: no Select all N matching.
+    assert page.context["matching"] is None
+    # A selection that does not fit the action, or names an email no
+    # action covers, is refused whole;
+    refused(review(browser, first.pk, kind="retry_failed"), "changed")
+    refused(review(browser, first.pk, uuid4()), "changed")
+    # a hand-built one says so in its own words, not the note's.
+    for answer in (
+        review(browser),
+        review(browser, "not-an-id"),
+        review(browser, *(uuid4() for _ in range(101))),
+        review(browser, first.pk, scope="all"),
     ):
-        fields = (
-            dict(
-                action="preview",
-                kind="confirm_unsent",
-                purpose="all",
-                note=NOTE,
-                checked="yes",
-            )
-            | values
-        )
-        refused = outgoing(
-            browser, **{key: value for key, value in fields.items() if value}
-        )
-        assert refused.status_code == 400, values
-        assert refused.context["bulk_errors"]
-        assert b"data-error-summary" in refused.content
-    review = preview_unsent(browser, "family_test")
-    assert review.status_code == 200
-    preview = review.context["bulk_review"]
-    assert preview["count"] == 1 and preview["form"] == "bulk-confirm_unsent"
-    assert b"Record 1 email as not sent" in review.content
-    # Previewing changed nothing.
+        refused(answer, "selection", 400)
+        assert b"could not be read, or more than one page" in answer.content
+        assert b"Enter the evidence" not in answer.content
+    shown = review(browser, first.pk, mode="testing", size="50")
+    assert shown.status_code == 200
+    assert b"data-review-answer" in shown.content and b"<html" not in shown.content
+    assert shown.context["review"]["count"] == 1
+    assert shown.context["review"]["purposes"] == [("family_test", 1)]
+    assert b"Record 1 email as not sent?" in shown.content
+    # The view's fields go back with Apply, so its answer draws this view.
+    assert shown.context["view"] == [("mode", "testing"), ("size", "50")]
+    # Previewing changed nothing; Apply needs the note and the check.
+    assert not DeliveryResolution.objects.exists()
+    refused(apply(browser, shown, checked=None), "invalid", 400)
+    refused(apply(browser, shown, note="  "), "invalid", 400)
     assert not DeliveryResolution.objects.exists()
     resolve(harness, user("admin@example.org"), first, "accept")
-    skipped = outgoing(browser, action="confirm", preview=preview["token"], note=NOTE)
+    skipped = apply(browser, shown)
     assert skipped.status_code == 200
     result = skipped.context["bulk_result"]
     assert (result.total, result.resolved, result.newly, result.skipped) == (1, 0, 0, 1)
+    assert b"data-review-applied" in skipped.content
     first.refresh_from_db()
     assert first.state == "delivered"
     assert not DeliveryResolution.objects.filter(action="confirm_unsent").exists()
@@ -169,9 +188,24 @@ def test_confirm_all_not_sent_previews_then_skips_what_changed(family_test):  # 
     # Needs attention (#1562) lists an uncertain email; on a Testing
     # system the page shows Testing email by default.
     assert second.pk in listed(browser, "needs_attention")
-    preview = preview_unsent(browser).context["bulk_review"]
-    assert preview["count"] == 1
-    done = outgoing(browser, action="confirm", preview=preview["token"], note=NOTE)
+    # Select all N matching reads the emails again from the filters.
+    matched = review(browser, scope="matching", state="needs_attention")
+    assert matched.context["review"]["count"] == 1
+    # Continue's review counts what the preview has left, with its note.
+    binding = signing.loads(matched.context["review"]["token"], salt=delivery_bulk.SALT)
+    resumed = delivery_bulk.sign(
+        binding | {"note_digest": delivery_bulk.note_digest(NOTE)}
+    )
+    shown = outgoing(browser, action="continue", preview=resumed, note=NOTE)
+    assert shown.status_code == 200
+    assert shown.context["review"] | dict(token=None) == dict(
+        kind="confirm_unsent", count=1, token=None, note=NOTE, continuing=True
+    )
+    refused(
+        outgoing(browser, action="continue", preview=resumed, note="Other"),
+        "changed",
+    )
+    done = apply(browser, shown, checked=None)
     result = done.context["bulk_result"]
     assert (result.resolved, result.newly, result.skipped, result.remaining) == (
         1,
@@ -190,51 +224,72 @@ def test_confirm_all_not_sent_previews_then_skips_what_changed(family_test):  # 
         subject_id=resolution.pk, event_type="delivery_resolution_confirm_unsent"
     ).exists()
     # Recorded as not sent, it is settled: Failed still lists it, but
-    # Needs attention no longer does (#1562).
+    # Needs attention no longer does (#1562), and it has no box.
     assert second.pk in listed(browser, "permanent_failure")
     assert second.pk not in listed(browser, "needs_attention")
-    # Confirming the same preview again replays: nothing new is resolved.
-    again = outgoing(browser, action="confirm", preview=preview["token"], note=NOTE)
+    # With nothing left to select, the page draws no selection column or
+    # bulk bar.
+    with web_login():
+        page = browser.get(reverse("admin:deliveries"))
+    assert not page.context["bulk_shown"]
+    assert b"data-select-table" not in page.content
+    assert b'class="bulk-bar"' not in page.content
+    # Applying the same preview again replays: nothing new is resolved.
+    again = apply(browser, shown, checked=None)
     result = again.context["bulk_result"]
     assert (result.resolved, result.newly, result.skipped) == (1, 0, 0)
     assert DeliveryResolution.objects.filter(action="confirm_unsent").count() == 1
     assert bulk_events() == [(0, 1), (1, 1)]
-    # Nothing qualifies any more.
-    empty = preview_unsent(browser)
-    assert empty.status_code == 409 and empty.context["bulk_errors"]
-    # A bulk form carries the applied Recipient, which is never in the
-    # address it posts to, so the answer's list keeps it (#1562).
-    kept = outgoing(
-        browser,
-        action="confirm",
-        preview=preview["token"],
-        note=NOTE,
-        recipient="nobody@example.org",
-    )
+    # The first preview, which binds no note, is refused once Continue's
+    # (which binds it) applied one of its emails: it cannot apply the rest
+    # with another note.
+    refused(apply(browser, matched, note="Other", checked="yes"), "changed")
+    # Nothing qualifies any more, and Continue has nothing left.
+    refused(review(browser, scope="matching"), "empty")
+    refused(outgoing(browser, action="continue", preview=resumed, note=NOTE), "empty")
+    # Apply carries the applied Recipient, which is never in the address it
+    # posts to, so the answer's list keeps it (#1562).
+    kept = apply(browser, shown, checked=None, recipient="nobody@example.org")
     assert kept.status_code == 200
     assert kept.context["recipient"] == "nobody@example.org"
     assert kept.context["table"].rows == []
 
 
+def test_select_all_matching_refuses_a_mix_of_kinds(family_test, monkeypatch):  # noqa: F811
+    """The matching emails must all be of the action's kind (#2296)."""
+    _, browser, _, _ = family_test
+    available = {
+        uuid4(): dict(version=1, purpose="initial", kind=kind)
+        for kind in ("retry_failed", "confirm_unsent")
+    }
+    available = {key: value | dict(id=key) for key, value in available.items()}
+    monkeypatch.setattr(delivery_bulk, "selectable", lambda: available)
+    monkeypatch.setattr(
+        delivery_bulk, "matching_ids", lambda values, **kwargs: list(available)
+    )
+    refused(review(browser, scope="matching", kind="retry_failed"), "mixed")
+    # The page offers the toggle, of the mixed kind, since neither email
+    # is listed on it.
+    with web_login():
+        page = browser.get(reverse("admin:deliveries"))
+    assert page.context["matching"] == dict(count=2, kind="mixed")
+    assert b"Select all 2 matching" in page.content
+    assert not DeliveryResolution.objects.exists()
+
+
 def test_a_preview_belongs_to_its_administrator_and_expires(family_test, monkeypatch):  # noqa: F811
     """Another Administrator's or an expired preview changes nothing."""
     _, browser, _, _ = family_test
-    uncertain_test(family_test)
-    review = preview_unsent(browser)
-    token = review.context["bulk_review"]["token"]
+    message = uncertain_test(family_test)
+    shown = review(browser, message.pk)
+    token = shown.context["review"]["token"]
     with pytest.raises(PermissionError):
-        delivery_bulk.load_preview(token, uuid4(), NOTE)
+        delivery_bulk.load_preview(token, uuid4(), NOTE, checked=True)
     monkeypatch.setattr(delivery_bulk, "PREVIEW_SECONDS", -1)
-    expired = outgoing(browser, action="confirm", preview=token, note=NOTE)
-    assert expired.status_code == 409 and expired.context["bulk_errors"]
-    altered = outgoing(browser, action="confirm", preview=token[:-2] + "xx", note=NOTE)
-    assert altered.status_code == 409
+    refused(apply(browser, shown), "changed")
+    refused(apply(browser, shown, preview=token[:-2] + "xx"), "changed")
     monkeypatch.setattr(delivery_bulk, "PREVIEW_SECONDS", 900)
-    # The preview carries only the note's digest: another note is refused.
-    other = outgoing(browser, action="confirm", preview=token, note="Other note")
-    assert other.status_code == 409
-    missing = outgoing(browser, action="confirm", preview=token)
-    assert missing.status_code == 400
+    refused(outgoing(browser, action="confirm", preview=token), "invalid", 400)
     assert not DeliveryResolution.objects.exists()
     assert not bulk_events()
 
@@ -255,9 +310,8 @@ def test_retry_all_failed_runs_the_ordinary_retry_in_batches(family_mail):  # no
             review = delivery_bulk.preview(
                 principal.pk,
                 kind="retry_failed",
-                purpose="initial",
-                note=NOTE,
-                checked=False,
+                ids=[message.pk],
+                available=delivery_bulk.selectable(),
             )
             binding = delivery_bulk.load_preview(review["token"], principal.pk, NOTE)
 
@@ -378,9 +432,8 @@ def test_a_bulk_retried_invitation_keeps_its_code_and_link(family_mail):  # noqa
             review = delivery_bulk.preview(
                 principal.pk,
                 kind="retry_failed",
-                purpose="all",
-                note=NOTE,
-                checked=False,
+                ids=[message.pk],
+                available=delivery_bulk.selectable(),
             )
             assert review["count"] == 1
             result = delivery_bulk.apply_preview(

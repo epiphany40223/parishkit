@@ -1,24 +1,33 @@
 {% load i18n stewardship delivery %}{% comment %}
-  The contents of Sent mail's #bulk-review region (delivery-bulk.html),
-  at most one at a time: a refusal's error summary (bulk_errors); the
-  preview of one bulk action (bulk_review) with Confirm, which posts its
-  signed preview and the note again (the preview carries only its
-  digest); or what confirming did (bulk_result), with Continue, posting
-  bulk_result.token and bulk_note, while the batch limit left emails for
-  another request.
-{% endcomment %}{% if bulk_errors %}{% include 'stewardship/components/errors.html' with errors=bulk_errors %}
-{% elif bulk_review %}<section class="panel" data-review-of="{{ bulk_review.form }}" data-stale-note="{% translate 'You changed the form after previewing it. Choose Preview again to see what it covers now.' %}" aria-labelledby="bulk-review-title">
-<h2 id="bulk-review-title" tabindex="-1" data-in-place-focus>{% if bulk_review.kind == "retry_failed" %}{% blocktranslate count count=bulk_review.count trimmed %}Retry {{ count }} failed email?{% plural %}Retry {{ count }} failed emails?{% endblocktranslate %}{% else %}{% blocktranslate count count=bulk_review.count trimmed %}Record {{ count }} email as not sent?{% plural %}Record {{ count }} emails as not sent?{% endblocktranslate %}{% endif %}</h2>
-<p>{% translate "Type of email:" %} {% if bulk_review.purpose == "all" %}{% translate "All types" %}{% else %}{{ bulk_review.purpose|delivery_label }}{% endif %}.</p>
-<p>{% translate "Evidence or reason:" %} {{ bulk_review.note }}</p>
-<p>{% if bulk_review.kind == "retry_failed" %}{% translate "Each email goes back to the mail sender, which sends it shortly, and keeps its own history." %}{% else %}{% translate "Each email is recorded as failed, with this note, and is not sent again." %}{% endif %} {% translate "An email that changes before you confirm is skipped. This preview expires after 15 minutes." %}</p>
-<p data-review-note>{% translate "Nothing changes until you confirm." %}</p>
-<form method="post" action="#bulk-review" data-in-place data-in-place-message="{% translate 'Done.' %}">{% csrf_token %}{% if recipient %}<input type="hidden" name="recipient" value="{{ recipient }}">{% endif %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ bulk_review.token }}"><input type="hidden" name="note" value="{{ bulk_review.note }}">
-{% if bulk_review.kind == "retry_failed" %}{% button type="submit" %}{% blocktranslate count count=bulk_review.count trimmed %}Retry {{ count }} email{% plural %}Retry {{ count }} emails{% endblocktranslate %}{% endbutton %}{% else %}{% button type="submit" %}{% blocktranslate count count=bulk_review.count trimmed %}Record {{ count }} email as not sent{% plural %}Record {{ count }} emails as not sent{% endblocktranslate %}{% endbutton %}{% endif %}</form>
-</section>{% elif bulk_result %}<section class="panel" aria-labelledby="bulk-result-title">
-<h2 id="bulk-result-title" tabindex="-1" data-in-place-focus>{% if bulk_result.remaining %}{% translate "Partly done" %}{% else %}{% translate "Done" %}{% endif %}</h2>
-<p>{% if bulk_result.kind == "retry_failed" %}{% blocktranslate with done=bulk_result.resolved|number total=bulk_result.total|number trimmed %}Retried {{ done }} of {{ total }} failed emails.{% endblocktranslate %}{% else %}{% blocktranslate with done=bulk_result.resolved|number total=bulk_result.total|number trimmed %}Recorded {{ done }} of {{ total }} emails as not sent.{% endblocktranslate %}{% endif %}</p>
-{% if bulk_result.skipped %}<p>{% blocktranslate count count=bulk_result.skipped trimmed %}{{ count }} email was skipped because it changed since the preview or is no longer allowed. Open it in the list to see why.{% plural %}{{ count }} emails were skipped because they changed since the preview or are no longer allowed. Open them in the list to see why.{% endblocktranslate %}</p>{% endif %}
-{% if bulk_result.token %}<p>{% blocktranslate count count=bulk_result.remaining trimmed %}{{ count }} more email is left. Choose Continue to handle it.{% plural %}{{ count }} more emails are left. Choose Continue to handle the next ones.{% endblocktranslate %}</p>
-<form method="post" action="#bulk-review" data-in-place data-in-place-message="{% translate 'Done.' %}">{% csrf_token %}{% if recipient %}<input type="hidden" name="recipient" value="{{ recipient }}">{% endif %}<input type="hidden" name="action" value="confirm"><input type="hidden" name="preview" value="{{ bulk_result.token }}"><input type="hidden" name="note" value="{{ bulk_note }}">{% button type="submit" %}{% translate "Continue" %}{% endbutton %}</form>{% endif %}
-</section>{% endif %}
+  Sent mail's bulk review (#2296; jobs.delivery_views._bulk_answer), drawn
+  into the shared review dialog of deliveries.html (UX conventions,
+  "Review dialog"), never as a page of its own.
+
+  - ``review``: what the bulk bar's Send again or Record as not sent (or
+    the notice's Continue, ``review.continuing``) would do: the question
+    (data-review-title) with the count the server will act on, what each
+    email goes through, the count by type of email, and the evidence or
+    reason note recorded on every email; to record emails as not sent,
+    also the "I checked the mail service's own records" box. Both fields
+    name the dialog's Apply form (form attribute) and hold Apply until
+    they are filled in (data-review-require). Continue shows the note it
+    carries instead, posted again as a hidden field. The signed preview
+    (data-review-preview) and the view's fields (``view``: filters, sort,
+    size and page) move into the Apply form, so Apply's answer draws the
+    same view.
+  - ``refused``: why the review or its Apply was refused, in ``text``,
+    marked data-review-refusal so the dialog shows it as drawn; nothing
+    changed.
+{% endcomment %}{% if review %}{% if review.kind == "retry_failed" %}{% if review.continuing %}{% blocktranslate count count=review.count asvar title trimmed %}Send {{ count }} more email again?{% plural %}Send {{ count }} more emails again?{% endblocktranslate %}{% else %}{% blocktranslate count count=review.count asvar title trimmed %}Send {{ count }} email again?{% plural %}Send {{ count }} emails again?{% endblocktranslate %}{% endif %}{% translate "Emails sent again." as done %}{% else %}{% if review.continuing %}{% blocktranslate count count=review.count asvar title trimmed %}Record {{ count }} more email as not sent?{% plural %}Record {{ count }} more emails as not sent?{% endblocktranslate %}{% else %}{% blocktranslate count count=review.count asvar title trimmed %}Record {{ count }} email as not sent?{% plural %}Record {{ count }} emails as not sent?{% endblocktranslate %}{% endif %}{% translate "Emails recorded as not sent." as done %}{% endif %}<div data-review-answer data-review-done="{{ done }}" data-review-title="{{ title }}" data-review-describedby="delivery-bulk-summary">
+<p id="delivery-bulk-summary">{% if review.kind == "retry_failed" %}{% translate "Each email is sent again, as answering “Send it again?” with Yes does on its own page. Codes and links that Families already received stay valid." %}{% else %}{% translate "Use this only when the mail service's own records (for example the sending mailbox's Sent folder) show that these emails were not sent." %}{% endif %}</p>
+{% if review.kind == "confirm_unsent" %}<p>{% translate "Each is recorded as failed, as answering “It was not sent” and then No to sending it again does on its own page, and is not sent again; you can send it again afterwards. No address is blocked." %}</p>{% endif %}
+{% if review.purposes %}<ul class="delivery-bulk-types">{% for purpose, count in review.purposes %}<li>{{ purpose|delivery_label }}: {{ count|number }}</li>{% endfor %}</ul>{% endif %}
+{% if review.continuing %}<p>{% translate "Continuing your last review. Evidence or reason:" %} {{ review.note }}</p>
+<input type="hidden" name="note" value="{{ review.note }}">
+{% else %}<div><label for="delivery-bulk-note">{% translate "Evidence or reason, recorded on every email" %}</label>
+<input id="delivery-bulk-note" name="note" form="delivery-bulk-review-apply" maxlength="2000" required pattern=".*\S.*" autocomplete="off" aria-describedby="delivery-bulk-note-help" data-review-require data-missing-hint="{% translate 'Enter the evidence or reason to apply.' %}">
+<p id="delivery-bulk-note-help" class="help">{% translate "Keep it brief. Do not include passwords, Family links, codes, or complete provider responses." %}</p></div>
+{% if review.kind == "confirm_unsent" %}<p><label><input type="checkbox" name="checked" value="yes" form="delivery-bulk-review-apply" required data-review-require data-missing-hint="{% translate 'Confirm that you checked the mail service records to apply.' %}"> {% translate "I checked the mail service's own records, and these emails were not sent." %}</label></p>{% endif %}{% endif %}
+<p>{% translate "Nothing changes until you choose Apply. Each email is then checked and recorded on its own, and one that changed since this review is skipped. At most 100 are handled at a time; Continue then handles the rest. This review expires after 15 minutes." %}</p>
+<input type="hidden" name="preview" value="{{ review.token }}" data-review-preview>{% for name, value in view %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+</div>{% else %}<div data-review-refusal><p data-delivery-bulk-refused="{{ refused }}">{{ text }}</p></div>{% endif %}

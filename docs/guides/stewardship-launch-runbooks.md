@@ -347,10 +347,10 @@ to `DATA`, for example), becomes
    and look at the messages last changed during the outage.
    Open each one that should still go and answer **Send it again?** with
    **Yes** on its page (unavailable while delivery is paused), or,
-   when all of one type should go, use **Fix many emails at once** →
-   **Failed emails: send them all again?** on the same page, which retries
-   each the same way after one preview
-   ([Sent mail bulk actions](../specs/stewardship/admin-portal/spec.md#fix-many-emails-at-once)).
+   when many should go, tick them in the list (or, with **Failed**
+   chosen, use **Select all N matching**) and choose **Send again**, which
+   retries each the same way after one review
+   ([Sent mail bulk actions](../specs/stewardship/admin-portal/spec.md#sent-mail-bulk-actions)).
    Then check the **Still sending (queued)** and **Still sending (waiting
    to retry)** states for messages last changed during the outage whose
    page offers **Try again now**, and choose it for each that should still
@@ -768,9 +768,10 @@ the top what happened and what to check, and asks one question
    [recording as not sent](stewardship-unsent-resolution.md).
 
 When the provider's records show that many of them were not sent, answer
-for all of them at once with **Fix many emails at once** → **Not sure they
-arrived: record them all as not sent?** on Sent mail, after one preview and
-with one note ([Sent mail bulk actions](../specs/stewardship/admin-portal/spec.md#fix-many-emails-at-once)).
+for all of them at once on Sent mail: choose **Not sure it arrived** under
+Delivery, tick them (or use **Select all N matching**) and choose **Record
+as not sent**, after one review and with one note
+([Sent mail bulk actions](../specs/stewardship/admin-portal/spec.md#sent-mail-bulk-actions)).
 A failed report whose recipient is still an Administrator holds its report
 open until it is sent again; on a campaign closed while paused, remove a
 recipient who should no longer be an Administrator through the ordinary

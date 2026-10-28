@@ -44,27 +44,102 @@ def test_bulk_actions_follow_each_message_page(
     assert (kind in offered) is expected
 
 
+FAILED, UNSURE, OTHER = (UUID(int=number) for number in (1, 2, 3))
+# selectable()'s answer for two failed emails and one uncertain one, in
+# candidates order (oldest first).
+AVAILABLE = {
+    FAILED: dict(id=FAILED, version=2, purpose="receipt", kind="retry_failed"),
+    OTHER: dict(id=OTHER, version=5, purpose="initial", kind="retry_failed"),
+    UNSURE: dict(id=UNSURE, version=1, purpose="initial", kind="confirm_unsent"),
+}
+
+
+def test_a_preview_binds_exactly_the_selected_emails():
+    """In candidates order, counted by type, with no note bound yet."""
+    review = delivery_bulk.preview(
+        ACTOR, kind="retry_failed", ids=[OTHER, FAILED], available=AVAILABLE
+    )
+    assert review["count"] == 2 and review["kind"] == "retry_failed"
+    # PURPOSES order, whatever order the rows posted.
+    assert review["purposes"] == [("initial", 1), ("receipt", 1)]
+    binding = signing.loads(review["token"], salt=delivery_bulk.SALT, max_age=60)
+    assert binding["items"] == [[str(FAILED), 2], [str(OTHER), 5]]
+    assert binding["note_digest"] is None and binding["skipped"] == []
+    assert set(binding) == delivery_bulk.BINDING
+
+
 @pytest.mark.parametrize(
-    "kind,purpose,note,checked",
+    "kind,ids,error",
     [
-        ("resend", "all", "Evidence", False),
-        ("accept", "all", "Evidence", False),
-        ("retry_failed", "family_test", "Evidence", False),
-        ("retry_failed", "unknown", "Evidence", False),
-        ("retry_failed", "all", "   ", False),
-        ("retry_failed", "all", "x" * 2001, False),
-        ("retry_failed", "all", "Evidence", True),
-        ("confirm_unsent", "all", "Evidence", False),
-        ("confirm_unsent", "all", "", True),
-        ("confirm_unsent", "all", "Evidence", "yes"),
+        ("resend", [FAILED], ValueError),
+        ("accept", [FAILED], ValueError),
+        ("retry_failed", [FAILED, FAILED], ValueError),
+        ("retry_failed", [], delivery_bulk.NothingToResolve),
+        # A row of the other kind, or one no action covers any more: the
+        # whole selection is refused, never shrunk.
+        ("retry_failed", [FAILED, UNSURE], delivery_bulk.SelectionChanged),
+        ("confirm_unsent", [UNSURE, uuid4()], delivery_bulk.SelectionChanged),
     ],
 )
-def test_a_preview_needs_a_valid_choice_note_and_check(kind, purpose, note, checked):
-    """Refused before any database read: resend is never offered in bulk."""
+def test_a_preview_refuses_an_action_or_selection_that_does_not_fit(kind, ids, error):
+    """Resend is never offered in bulk; every selected email must fit."""
+    with pytest.raises(error):
+        delivery_bulk.preview(ACTOR, kind=kind, ids=ids, available=AVAILABLE)
+
+
+def resolutions(monkeypatch, done):
+    """Stand in for the resolution table, holding the command ids ``done``.
+
+    Answers ``filter(pk__in=...).exists()``, as ``load_preview`` asks it
+    whether a first preview was already applied.
+    """
+
+    class Resolutions:
+        """Answers ``filter(pk__in=...).exists()`` from ``done``."""
+
+        class objects:
+            @staticmethod
+            def filter(pk__in):
+                found = bool(done & set(pk__in))
+                return type("Q", (), {"exists": lambda self: found})()
+
+    monkeypatch.setattr(delivery_bulk, "DeliveryResolution", Resolutions)
+
+
+def test_a_first_application_takes_the_note_and_needs_the_records_check(
+    monkeypatch,
+):
+    """The review dialog asks for the note; recording emails as not sent
+    also needs the check, which a retry refuses."""
+    resolutions(monkeypatch, set())
+    first = token(note_digest=None)
+    loaded = delivery_bulk.load_preview(first, ACTOR, "Any note", checked=True)
+    assert loaded["note"] == "Any note"
     with pytest.raises(ValueError):
-        delivery_bulk.preview(
-            ACTOR, kind=kind, purpose=purpose, note=note, checked=checked
-        )
+        delivery_bulk.load_preview(first, ACTOR, "Any note")
+    with pytest.raises(ValueError):
+        delivery_bulk.load_preview(first, ACTOR, "   ", checked=True)
+    retry = token(note_digest=None, kind="retry_failed")
+    assert delivery_bulk.load_preview(retry, ACTOR, "Any note")
+    with pytest.raises(ValueError):
+        delivery_bulk.load_preview(retry, ACTOR, "Any note", checked=True)
+
+
+def test_a_first_preview_is_refused_once_any_email_is_resolved(monkeypatch):
+    """Once Apply resolved one of its emails, only Continue's preview,
+    which binds the note, goes on: the first, which binds none, could
+    otherwise apply the rest with another note (#2296)."""
+    command, message = uuid4(), str(uuid4())
+    done = set()
+    resolutions(monkeypatch, done)
+    shape = dict(command=str(command), items=[[message, 3], [str(uuid4()), 3]])
+    first = token(note_digest=None, **shape)
+    assert delivery_bulk.load_preview(first, ACTOR, "Any note", checked=True)
+    done.add(uuid5(command, message))
+    with pytest.raises(signing.BadSignature):
+        delivery_bulk.load_preview(first, ACTOR, "Other note", checked=True)
+    # Continue's preview of the same command still goes on, with its note.
+    assert delivery_bulk.load_preview(token(**shape), ACTOR, "Evidence")
 
 
 def token(**binding):
@@ -73,7 +148,6 @@ def token(**binding):
         actor=str(ACTOR),
         command=str(uuid4()),
         kind="confirm_unsent",
-        purpose="all",
         note_digest=delivery_bulk.note_digest("Evidence"),
         items=[[str(uuid4()), 3]],
         skipped=[],
@@ -90,7 +164,13 @@ def test_a_preview_binds_its_administrator_and_shape():
         delivery_bulk.load_preview(token(), uuid4(), "Evidence")
     with pytest.raises(signing.BadSignature):
         delivery_bulk.load_preview(token()[:-3] + "abc", ACTOR, "Evidence")
-    for binding in (dict(kind="resend"), dict(items=[]), dict(note="Evidence")):
+    for binding in (
+        dict(kind="resend"),
+        dict(items=[]),
+        dict(note="Evidence"),
+        dict(note_digest=3),
+        dict(purpose="all"),
+    ):
         with pytest.raises(ValueError):
             delivery_bulk.load_preview(token(**binding), ACTOR, "Evidence")
     with pytest.raises(ValueError):
@@ -168,8 +248,7 @@ def binding(count):
         actor=str(ACTOR),
         command=str(uuid4()),
         kind="confirm_unsent",
-        purpose="all",
-        note_digest=delivery_bulk.note_digest("Evidence"),
+        note_digest=None,
         items=[[str(uuid4()), 2] for _ in range(count)],
         skipped=[],
         issued=int(time.time()),
@@ -281,6 +360,10 @@ def test_continue_moves_past_what_a_batch_skipped(monkeypatch):
     # replay) and issue time.
     assert continued(first)["command"] == preview["command"]
     assert continued(first)["issued"] == preview["issued"]
+    # It binds the note the first application recorded, by its digest.
+    assert continued(first)["note_digest"] == delivery_bulk.note_digest("Evidence")
+    with pytest.raises(signing.BadSignature):
+        delivery_bulk.load_preview(first.token, ACTOR, "Other evidence")
 
 
 def test_lost_access_or_an_outage_stops_the_run_but_is_audited(monkeypatch):

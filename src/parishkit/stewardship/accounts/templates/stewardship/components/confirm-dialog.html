@@ -96,7 +96,10 @@
   - redraw_body=True instead redraws the page's regions from Apply's answer
     itself, which then holds every region the change redraws, without
     reading the page again: System health's actions (#1356), whose page
-    read is audited.
+    read is audited, and Sent mail's bulk actions (#2296). An answer that
+    counts what Apply did marks that sentence data-review-applied, which
+    then starts the status line in place of the review's data-review-done
+    (Sent mail skips an email that changed since the review).
   - A review answer's field marked data-review-require (the Confirm
     Production dialog's typed word, #1585) holds Apply until it is valid,
     saying its data-missing-hint in the status line under the buttons,
