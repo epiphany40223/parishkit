@@ -1089,11 +1089,18 @@ uploader_cron_lines() {
     # ends the command (the shell's comment), so a name in a trailing
     # comment is not a match; nor is any other command, wrapper or service
     # that merely contains the name, nor `--entrypoint` (another command in
-    # the uploader's image). Lines are printed as the crontabs hold them.
+    # the uploader's image). Also never a match, since the uploader would not
+    # run (#235): a line with a `%` anywhere (cron ends the command there and
+    # feeds the rest as input), compose's `--dry-run`, and a `run` option
+    # this does not know, so that an option's value (`--network
+    # backup-uploader`) is never taken for the service; a known option that
+    # takes a value consumes the next word, so a service must still follow.
+    # Lines are printed as the crontabs hold them.
     cron_tagged | awk '
         function docker(word) { return word == "docker" || word ~ /\/docker$/ }
         {
             line = substr($0, 3)
+            if (index(line, "%")) next
             command = line
             sub(/^[ \t]+/, "", command)
             sub(/[ \t]#.*/, "", command)
@@ -1101,12 +1108,15 @@ uploader_cron_lines() {
             at = (word[1] ~ /^@/) ? 2 : 6
             if (substr($0, 1, 1) == "s") at++
             if (!docker(word[at]) || word[at + 1] != "compose") next
-            for (i = at + 2; i <= n && word[i] ~ /^-/; i++)
+            for (i = at + 2; i <= n && word[i] ~ /^-/; i++) {
+                if (word[i] ~ /^--dry-run(=|$)/) next
                 if (word[i] ~ /^(-f|-p|--file|--project-name|--project-directory|--env-file|--profile|--ansi|--progress|--parallel)$/) i++
+            }
             if (word[i] != "run") next
             for (i++; i <= n && word[i] ~ /^-/; i++) {
-                if (word[i] ~ /^--entrypoint/) next
+                if (word[i] ~ /^(--entrypoint|--dry-run)/) next
                 if (word[i] ~ /^(-e|--env|--env-from-file|--name|-u|--user|-w|--workdir|-l|--label|-v|--volume|-p|--publish|--cap-add|--cap-drop|--pull)$/) i++
+                else if (word[i] !~ /^(--rm|-T|--no-TTY|-d|--detach|-i|--interactive|--no-deps|--build|-P|--service-ports|--use-aliases|--remove-orphans|--quiet|--quiet-build|--quiet-pull|--(env|env-from-file|name|user|workdir|label|volume|publish|cap-add|cap-drop|pull)=.*)$/) next
             }
             if (word[i] != "backup-uploader") next
             i++

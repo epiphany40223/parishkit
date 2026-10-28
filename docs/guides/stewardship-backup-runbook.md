@@ -597,6 +597,12 @@ script, a `cd ... &&` prefix or the name in a trailing `#` comment is not
 the uploader's line to them, and a line in any other user's crontab is not
 read.
 
+Do not install the uploader's line through a wrapper or a prefix (`env`,
+`timeout`, `nice`, `sh -c`): the upgrade's contract check finds only this
+exact form, and refuses on Production without it. Nor does it count a line
+with a `%` anywhere (cron ends the command there), compose's `--dry-run`,
+or a `run` option it does not know.
+
 It runs `upload` and is silent when there is nothing to do, so one line
 covers the scheduled backups, **Take a backup now**, manual runs and the
 catch-up after an outage. Send its output off the host as the backup's is.

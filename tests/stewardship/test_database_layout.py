@@ -164,6 +164,9 @@ def test_the_uploader_line_is_found_by_its_documented_command(tmp_path):
         "stewardship": [
             f"*/5 * * * * root {COMPOSE} run --rm -T -e A=1 backup-uploader upload",
             f"*/5 * * * * root {COMPOSE} run --rm backup-uploader upload -c x; :",
+            # A valued option consumes its value, and the service follows.
+            f"*/5 * * * * root {COMPOSE} run --name backup-uploader backup-uploader",
+            f"*/5 * * * * root {COMPOSE} run --name=up --no-deps -T backup-uploader",
         ]
     }
     _, uploader = run_cron_block(tmp_path, user, system, cron_d)
@@ -195,6 +198,19 @@ def test_the_uploader_line_is_found_by_its_documented_command(tmp_path):
         ("system", f"*/5 * * * * {COMPOSE} run --rm -T backup-uploader"),
         # A cron.d file cron skips.
         ("stewardship.bak", f"*/5 * * * * root {COMPOSE} run --rm -T backup-uploader"),
+        # cron ends the command at a `%`, wherever it is: no uploader runs.
+        ("user", f"*/5 * * * * {COMPOSE} run --rm -T backup-uploader >/tmp/u.%d"),
+        ("user", f"*/5 * * * * {COMPOSE} run -e D=%s -T backup-uploader"),
+        ("system", f"*/5 * * * * root {COMPOSE} run --rm -T backup-uploader # 5%"),
+        # compose's --dry-run runs nothing.
+        ("user", f"*/5 * * * * {COMPOSE} --dry-run run --rm -T backup-uploader"),
+        ("user", f"*/5 * * * * {COMPOSE} run --dry-run --rm backup-uploader"),
+        # An option's value naming the service, with no service after it.
+        ("user", f"*/5 * * * * {COMPOSE} run --network backup-uploader"),
+        ("user", f"*/5 * * * * {COMPOSE} run --rm --name backup-uploader"),
+        ("user", f"*/5 * * * * {COMPOSE} run --label backup-uploader upload"),
+        # An option this does not know may take a value: never guessed.
+        ("user", f"*/5 * * * * {COMPOSE} run --unknown x backup-uploader"),
     ],
 )
 def test_no_other_line_is_taken_for_the_uploaders(tmp_path, where, line):
