@@ -411,6 +411,101 @@ docker compose ... run --rm --entrypoint pk-stewardship backup-worker \
 file already passes to the profile. The
 [smoke tools guide](stewardship-smoke-tools.md) describes its output.
 
+### The off-site uploader's login
+
+The dedicated off-site uploader
+([#235](https://github.com/epiphany40223/parishkit/issues/235)) is being
+added in steps. This release adds its login,
+`pk_stewardship_backup_uploader`, its one-shot `backup-uploader` profile
+(its own offline network plus `application-egress`, never `backend`) and
+its source rule. It copies nothing yet: the backup profile's own copy above
+is still the off-site copy. The profile's command is the source check, and
+`smoke --target backup_drive` runs there probe-only (`--send` is refused
+until the copy arrives):
+
+```text
+docker compose ... run --rm backup-uploader
+docker compose ... run --rm --entrypoint pk-stewardship backup-uploader \
+  smoke --config UPLOADER_CONFIG --target backup_drive \
+  --delegated-email ADDRESS --folder-link LINK
+```
+
+`UPLOADER_CONFIG` is the `backup-uploader` service configuration
+(`config/services/backup-uploader.yaml`). The login's password file is an
+ordinary runtime password, `credentials/database/backup-uploader` unless
+`postgres.password_files` moves it. It is the first login an existing
+deployment gains with a password: the upgrade that brings it creates the
+file (`retarget-image`) and then the login (`database-grants`). Because a
+dump holds no roles, the file and the cluster's stored password can
+disagree after a same-host restore of an older set or a lost file, so
+every check compares the file with the stored SCRAM verifier: the upgrade
+script before it stops anything, `database-grants` before any grant, and
+`pk-stewardship uploader-password-check` by hand (below). A mismatch names
+the recovery below.
+
+### Uploader lost-file recovery
+
+Use this when the uploader's password file is lost, or no longer matches
+its login (the upgrade script, `database-grants` or `pk-restore` says so).
+Nothing else changes, and no other login's password is touched.
+`retarget-image` and `database-grants` are offline commands: stop the
+online services first, as an upgrade's step 2 does (caddy serves the
+maintenance page), and start them again at the end.
+
+1. If the uploader's cron line is installed, comment it out.
+2. Drop the login, as the operator through the socket. It owns nothing (its
+   grant admission refuses ownership), so `DROP OWNED` only revokes its
+   grants in this database and its `CONNECT`; its outcome rows stay:
+
+   ```text
+   docker compose ... exec -T postgres psql --username pk_stewardship_operator \
+     --dbname DATABASE -v ON_ERROR_STOP=1 \
+     -c 'DROP OWNED BY pk_stewardship_backup_uploader' \
+     -c 'DROP ROLE pk_stewardship_backup_uploader'
+   ```
+
+3. Move any stale password file out of the credentials tree (for example
+   to a root-only directory), so nothing is at its path.
+4. Run `retarget-image` with the image the deployment already runs (the
+   rendered Compose file's `web` image), as the
+   [deployment runbook](stewardship-deployment-runbook.md) shows. It
+   creates the absent file and reports it as `passwords_created`.
+5. Run `database-grants`, which creates the login from that file:
+   `docker compose ... run --rm database-provision database-grants --config PROVISION_CONFIG --confirm-deployment UUID`.
+6. Prove the login: `docker compose ... run --rm backup-uploader` (its
+   source rule) must report that the sources match, and the password must
+   match the stored verifier:
+
+   ```text
+   docker compose ... exec -T postgres psql --username pk_stewardship_operator \
+     --dbname DATABASE -At \
+     -c "SELECT rolpassword FROM pg_authid WHERE rolname='pk_stewardship_backup_uploader'" |
+   docker run -i --rm --init --network none --user 10001:10001 --read-only \
+     --cap-drop ALL --security-opt no-new-privileges:true \
+     --mount type=bind,source=RUNTIME_ROOT,target=RUNTIME_ROOT,readonly \
+     --mount type=bind,source=/path/to/deployment.yaml,target=/run/operator.yaml,readonly \
+     IMAGE uploader-password-check --config /run/operator.yaml
+   ```
+
+   It prints only `match` or `mismatch`, never the file or the verifier.
+7. Start the online services, and put the cron line back if step 1 removed
+   one.
+
+During a restore that stopped in step 7 (below), do only steps 2 and 3,
+then resume with `pk-restore --from 7`: its retarget creates the file and
+its `database-grants --after-restore SET_NAME` creates the login. A by-hand
+`database-grants` would refuse there, since the restored database holds no
+recent backup row.
+
+### Stopping a running uploader
+
+A restore or drill must not start while an uploader run is in progress.
+When one is running and must be stopped: comment out the uploader's cron
+line, if installed; find the container with
+`docker ps --filter label=com.docker.compose.service=backup-uploader`; and
+wait for it to exit, or stop that exact container by name with
+`docker stop NAME` (never by pattern). Then run the restore.
+
 ## Checking
 
 The scheduler raises the `backup_rpo_breach` operational incident, through
@@ -962,6 +1057,26 @@ again (`the hba check answers t`) and the source check from `web` and from
 login, the source and the service) fails the run with `web` still up, and
 the Restore review waits for a fix.
 
+The [off-site uploader's login](#the-off-site-uploaders-login) (#235) adds
+three things for an image that has it (its command list names
+`uploader-password-check`); an older image does none of them. In step 4,
+when the set's credentials tree has no uploader password file (a set from
+before the login), the host's own file is copied in from the tree just
+moved aside (a regular file, never a link, owner-only), or, on a resumed
+run, from the newest other `credentials.pre-restore-*` tree that has one;
+the log says which. In step 7, after the retarget, the full stop and the
+hba reload, it runs
+`database-grants --after-restore SET_NAME`: the restored set's load
+evidence (the schema comment above, and no later backup row) stands in for
+the recent backup `database-grants` otherwise requires, so an older set is
+not refused for its age, and the result names the set. It creates a
+missing login from the file, or checks an existing one against the
+cluster's stored password. In step 8 the source check also runs from the
+`backup-uploader` profile. A set restored from before a
+[lost-file recovery](#uploader-lost-file-recovery) brings back a file that
+no longer matches the login, so step 7 refuses with the services down:
+follow that recovery's restore note, then resume with `--from 7`.
+
 ### Scripted replacement and drill restore
 
 On a new host, `pk-restore --replacement` also runs steps 3 and 5. With
@@ -1061,6 +1176,11 @@ All of the replacement checks above apply as well. Only `postgres`,
   once `web` runs. A refusal after `web` was created removes it.
 - **`restore-begin` still runs.** It closes Family sign-in and holds Family
   mail on this copy.
+- **The uploader's source check** (an image with the
+  [off-site uploader](#the-off-site-uploaders-login)) runs a short
+  `backup-uploader` one-off, which joins `application-egress` and mounts
+  the Workspace key like any uploader run. The `DOCKER-USER` rule blocks
+  its egress, and it runs only `database-sources`.
 
 `caddy`, the scheduler, the worker, mail-dispatch, the installers and
 `backup-worker` are never created. After web's health check, it refuses if
