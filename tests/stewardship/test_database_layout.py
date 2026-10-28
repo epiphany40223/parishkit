@@ -89,18 +89,17 @@ def test_the_crontab_block_finds_only_uncommented_uploader_lines(tmp_path):
     if shutil.which("bash") is None:
         pytest.skip("bash is not installed")
     script = tmp_path / "cron.sh"
+    # The crontab stand-in is a shell function, not a file on PATH: the
+    # Compose test container mounts /tmp noexec, so a stand-in program there
+    # could not run (and a host's own crontab would answer instead).
     script.write_text(
         layout_block(HOST, CRON_BEGIN, CRON_END)
+        + "crontab() {\n"
+        + '    echo "*/5 * * * * run --rm -T backup-uploader"\n'
+        + '    echo "# */5 * * * * run --rm -T backup-uploader commented"\n'
+        + "}\n"
         + 'echo "all:"; cron_lines; echo "uploader:"; uploader_cron_lines\n'
     )
-    bin_dir = tmp_path / "bin"
-    bin_dir.mkdir()
-    (bin_dir / "crontab").write_text(
-        "#!/usr/bin/env bash\n"
-        'echo "*/5 * * * * run --rm -T backup-uploader"\n'
-        'echo "# */5 * * * * run --rm -T backup-uploader commented"\n'
-    )
-    (bin_dir / "crontab").chmod(0o755)
     (tmp_path / "crontab").write_text(
         "0 3 * * * root run --rm -T backup-worker\n"
         "  # 0 4 * * * root backup-uploader indented comment\n"
@@ -113,7 +112,7 @@ def test_the_crontab_block_finds_only_uncommented_uploader_lines(tmp_path):
     result = subprocess.run(
         ["bash", str(script)],
         env={
-            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "PATH": os.environ["PATH"],
             "SUDO_USER": "operator",
             "PK_RESTORE_CRONTAB": str(tmp_path / "crontab"),
             "PK_RESTORE_CRON_DIR": str(tmp_path / "cron.d"),
@@ -197,13 +196,16 @@ def test_a_lock_file_swapped_before_the_open_refuses_without_hanging(tmp_path, p
     target.write_text("kept")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    flock = bin_dir / "flock"
-    flock.write_text('#!/usr/bin/env bash\necho "$*" >>"$FLOCK_LOG"\n')
-    flock.chmod(0o755)
     install_gnu_tools(bin_dir)
     script = tmp_path / "lock.sh"
+    # The flock stand-in is a shell function, not a file on PATH: the
+    # Compose test container mounts /tmp noexec, so a stand-in program there
+    # could not run, and `command -v flock` would find the real one instead.
+    # (The GNU stat and ln stand-ins are installed only on hosts without
+    # them, such as macOS, where the temporary directory can run them.)
     script.write_text(
         layout_block(HOST, LOCK_BEGIN, LOCK_END)
+        + 'flock() { echo "$*" >>"$FLOCK_LOG"; }\n'
         + "umask() {\n"
         + '    if [ "$#" -gt 0 ] && [ -n "$PLANT" ] && [ ! -e "$TARGET.done" ]; then\n'
         + '        : >"$TARGET.done"; rm -f "$LOCK"\n'
