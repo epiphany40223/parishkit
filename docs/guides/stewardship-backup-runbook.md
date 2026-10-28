@@ -433,13 +433,19 @@ docker compose ... run --rm --entrypoint pk-stewardship backup-uploader \
 `UPLOADER_CONFIG` is the `backup-uploader` service configuration
 (`config/services/backup-uploader.yaml`). The login's password file is an
 ordinary runtime password, `credentials/database/backup-uploader` unless
-`postgres.password_files` moves it. It is the first login an existing
-deployment gains with a password: the upgrade that brings it creates the
-file (`retarget-image`) and then the login (`database-grants`). Because a
-dump holds no roles, the file and the cluster's stored password can
-disagree after a same-host restore of an older set or a lost file, so
-every check compares the file with the stored SCRAM verifier: the upgrade
-script before it stops anything, `database-grants` before any grant, and
+`postgres.password_files` moves it. Two scripts support only some of those
+moves, and both refuse before they stop anything: the upgrade script's
+password check mounts only the runtime root, so a file outside it refuses
+the upgrade; `pk-restore` keeps only a file at the default path, so for an
+image with the uploader it refuses a deployment YAML or rendering that
+moves it (restore such a deployment by hand). It is the first login an
+existing deployment gains with a password: the upgrade that brings it
+creates the file (`retarget-image`) and then the login
+(`database-grants`). Because a dump holds no roles, the file and the
+cluster's stored password can disagree after a same-host restore of an
+older set or a lost file, so every check compares the file with the stored
+SCRAM verifier: the upgrade script before it stops anything,
+`database-grants` before any grant, and
 `pk-stewardship uploader-password-check` by hand (below). A mismatch names
 the recovery below.
 
@@ -448,12 +454,24 @@ the recovery below.
 Use this when the uploader's password file is lost, or no longer matches
 its login (the upgrade script, `database-grants` or `pk-restore` says so).
 Nothing else changes, and no other login's password is touched.
-`retarget-image` and `database-grants` are offline commands: stop the
-online services first, as an upgrade's step 2 does (caddy serves the
-maintenance page), and start them again at the end.
+`retarget-image` and `database-grants` are offline commands: they need
+the startup lock that every running service holds shared, so they refuse
+while any of them runs.
 
-1. If the uploader's cron line is installed, comment it out.
-2. Drop the login, as the operator through the socket. It owns nothing (its
+1. Confirm that a backup completed within the last 24 hours (the System
+   health page, or `stewardship-backup.log`), or take one now by hand (see
+   [The nightly backup](#the-nightly-backup)). Step 7's `database-grants`
+   refuses without one, and it runs with the services already stopped.
+2. Comment out the uploader's cron line, if installed, and the backup's
+   cron lines (the scheduled and the request one), so that no one-off run
+   contends for the startup lock while the services are down.
+3. Stop every online service except caddy, postgres and valkey, as an
+   upgrade does in its steps 1 and 2: first the background services
+   (every running service but web, caddy, postgres and valkey), then web.
+   Caddy keeps serving the maintenance page. The running list is
+   `docker compose ... ps --services --status running`; stop by those exact
+   names with `docker compose ... stop NAME ...`.
+4. Drop the login, as the operator through the socket. It owns nothing (its
    grant admission refuses ownership), so `DROP OWNED` only revokes its
    grants in this database and its `CONNECT`; its outcome rows stay:
 
@@ -464,15 +482,16 @@ maintenance page), and start them again at the end.
      -c 'DROP ROLE pk_stewardship_backup_uploader'
    ```
 
-3. Move any stale password file out of the credentials tree (for example
+5. Move any stale password file out of the credentials tree (for example
    to a root-only directory), so nothing is at its path.
-4. Run `retarget-image` with the image the deployment already runs (the
+6. Run `retarget-image` with the image the deployment already runs (the
    rendered Compose file's `web` image), as the
    [deployment runbook](stewardship-deployment-runbook.md) shows. It
    creates the absent file and reports it as `passwords_created`.
-5. Run `database-grants`, which creates the login from that file:
+7. Run `database-grants`, which creates the login from that file (it
+   needs the recent backup of step 1):
    `docker compose ... run --rm database-provision database-grants --config PROVISION_CONFIG --confirm-deployment UUID`.
-6. Prove the login: `docker compose ... run --rm backup-uploader` (its
+8. Prove the login: `docker compose ... run --rm backup-uploader` (its
    source rule) must report that the sources match, and the password must
    match the stored verifier:
 
@@ -488,10 +507,10 @@ maintenance page), and start them again at the end.
    ```
 
    It prints only `match` or `mismatch`, never the file or the verifier.
-7. Start the online services, and put the cron line back if step 1 removed
-   one.
+9. Start the online services (web, then the background services that step
+   3 stopped), and put back the cron lines that step 2 commented out.
 
-During a restore that stopped in step 7 (below), do only steps 2 and 3,
+During a restore that stopped in step 7 (below), do only steps 4 and 5,
 then resume with `pk-restore --from 7`: its retarget creates the file and
 its `database-grants --after-restore SET_NAME` creates the login. A by-hand
 `database-grants` would refuse there, since the restored database holds no
@@ -1064,13 +1083,17 @@ when the set's credentials tree has no uploader password file (a set from
 before the login), the host's own file is copied in from the tree just
 moved aside (a regular file, never a link, owner-only), or, on a resumed
 run, from the newest other `credentials.pre-restore-*` tree that has one;
-the log says which. In step 7, after the retarget, the full stop and the
-hba reload, it runs
+the log says which. A linked tree or `database/` directory on either side,
+or an existing `backup-uploader.copying`, refuses instead. In step 7,
+after the retarget, the full stop and the hba reload, it runs
 `database-grants --after-restore SET_NAME`: the restored set's load
-evidence (the schema comment above, and no later backup row) stands in for
-the recent backup `database-grants` otherwise requires, so an older set is
-not refused for its age, and the result names the set. It creates a
-missing login from the file, or checks an existing one against the
+evidence (the schema comment above, no later backup row, and no released
+restore review of that set) stands in for the recent backup
+`database-grants` otherwise requires, so an older set is not refused for
+its age, and the result names the set. A `--from 7` resume while the
+review is still open passes; once the review is released, the site has
+run, and a by-hand `database-grants` needs a recent backup again. It
+creates a missing login from the file, or checks an existing one against the
 cluster's stored password. In step 8 the source check also runs from the
 `backup-uploader` profile. A set restored from before a
 [lost-file recovery](#uploader-lost-file-recovery) brings back a file that
