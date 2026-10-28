@@ -36,7 +36,7 @@ from pathlib import Path
 
 import pytest
 
-from .host_stubs import install_gnu_stat
+from .host_stubs import install_gnu_tools
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools" / "stewardship-ops" / "pk-restore"
@@ -288,14 +288,14 @@ def host(tmp_path):
     # The off-site copy lock (#235): util-linux flock is not on every test
     # host, so the stand-in records each call (its options and descriptor)
     # and exits with FAKE_FLOCK_FAIL when set (75 is `flock -E 75 -w`'s
-    # expired wait). The lock's identity check needs GNU stat.
+    # expired wait). The lock needs GNU stat and ln.
     stub(
         bin_dir,
         "flock",
         '#!/usr/bin/env bash\necho "$*" >>"$FAKE_STATE/flock"\n'
         '[ -z "${FAKE_FLOCK_FAIL:-}" ] || exit "$FAKE_FLOCK_FAIL"\n',
     )
-    install_gnu_stat(bin_dir)
+    install_gnu_tools(bin_dir)
     # This host's name and addresses, and what the public origin resolves to.
     stub(
         bin_dir,

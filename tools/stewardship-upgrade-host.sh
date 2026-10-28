@@ -643,8 +643,9 @@ copy_lock_take() {
             return 1
         fi
         # A failed link is fine when something else now has the name (the
-        # backup profile made the file meanwhile): it is checked below.
-        ln -n -- "$tmp" "$file" 2>/dev/null || [ -e "$file" ] || [ -L "$file" ] ||
+        # backup profile made the file meanwhile): it is checked below. -T
+        # never links into a directory that took the name meanwhile.
+        ln -T -- "$tmp" "$file" 2>/dev/null || [ -e "$file" ] || [ -L "$file" ] ||
             { rm -f -- "$tmp"; echo "Could not create the copy lock file $file." >&2; return 1; }
         rm -f -- "$tmp"
     fi

@@ -24,7 +24,7 @@ import pytest
 
 from parishkit.parishsoft import DEFAULT_API_BASE_URL
 
-from .host_stubs import install_gnu_stat
+from .host_stubs import install_gnu_tools
 
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools" / "stewardship-upgrade.sh"
@@ -726,14 +726,14 @@ def run_host(
     # every test host, so the stand-in records each call and exits with
     # FAKE_FLOCK_FAIL when set (75 is `flock -E 75 -w`'s expired wait);
     # crontab answers FAKE_CRONTAB, and the system crontab and cron.d are
-    # the test's own (below). The lock's identity check needs GNU stat.
+    # the test's own (below). The lock needs GNU stat and ln.
     executable_stub(
         bin_dir,
         "flock",
         'echo "$*" >>"$FAKE_STATE/flock"; '
         '[ -z "$FAKE_FLOCK_FAIL" ] || exit "$FAKE_FLOCK_FAIL"',
     )
-    install_gnu_stat(bin_dir)
+    install_gnu_tools(bin_dir)
     executable_stub(bin_dir, "crontab", 'echo "${FAKE_CRONTAB:-}"')
     executable_stub(bin_dir, "chown", 'echo "$*" >>"$FAKE_STATE/chown"')
     # The host's routes for the uploader's subnet-overlap preflight (#235).

@@ -1,7 +1,8 @@
 """Stand-ins for host tools the scripts' tests cannot rely on everywhere.
 
 The host scripts run on Linux with GNU coreutils; the tests also run on a
-developer's macOS, whose BSD ``stat`` has no ``-c``.
+developer's macOS, whose BSD ``stat`` has no ``-c`` and whose BSD ``ln``
+has no ``-T``.
 """
 
 import subprocess
@@ -31,6 +32,22 @@ except (OSError, ValueError):
 print(f"{status.st_dev}:{status.st_ino}")
 """
 
+# GNU ``ln -T -- SOURCE NAME`` for the copy lock's creation (#2318): a hard
+# link that fails when NAME exists (even as a directory) instead of linking
+# into it. Any other ``ln`` call runs the host's own.
+GNU_LN = """\
+import os
+import sys
+
+args = sys.argv[1:]
+if args[:2] != ["-T", "--"]:
+    os.execv("/bin/ln", ["ln", *args])
+try:
+    os.link(args[2], args[3], follow_symlinks=False)
+except (OSError, IndexError):
+    sys.exit(1)
+"""
+
 
 def gnu_stat_missing():
     """Whether this host's ``stat`` lacks GNU's ``-c`` format option."""
@@ -40,11 +57,22 @@ def gnu_stat_missing():
     return result.returncode != 0
 
 
-def install_gnu_stat(bin_dir):
-    """Put a GNU-compatible ``stat`` on ``bin_dir`` where the host has none."""
-    if not gnu_stat_missing():
-        return
-    bin_dir.mkdir(parents=True, exist_ok=True)
-    path = bin_dir / "stat"
-    path.write_text(f"#!{sys.executable} -I\n{GNU_STAT}")
-    path.chmod(0o755)
+def gnu_ln_missing():
+    """Whether this host's ``ln`` lacks GNU's ``-T`` option."""
+    result = subprocess.run(
+        ["ln", "-T", "--help"], capture_output=True, text=True, check=False
+    )
+    return result.returncode != 0
+
+
+def install_gnu_tools(bin_dir):
+    """Put GNU-compatible ``stat`` and ``ln`` on ``bin_dir`` where the host has none."""
+    for name, missing, source in (
+        ("stat", gnu_stat_missing, GNU_STAT),
+        ("ln", gnu_ln_missing, GNU_LN),
+    ):
+        if missing():
+            bin_dir.mkdir(parents=True, exist_ok=True)
+            path = bin_dir / name
+            path.write_text(f"#!{sys.executable} -I\n{source}")
+            path.chmod(0o755)

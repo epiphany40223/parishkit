@@ -185,7 +185,7 @@ def test_a_lock_file_swapped_before_the_open_refuses_without_hanging(tmp_path, p
     not the regular file at the name, so the block refuses before flock.
     The run is bounded, so a hang fails the test instead of stalling it.
     """
-    from .host_stubs import install_gnu_stat
+    from .host_stubs import install_gnu_tools
 
     if shutil.which("bash") is None:
         pytest.skip("bash is not installed")
@@ -200,7 +200,7 @@ def test_a_lock_file_swapped_before_the_open_refuses_without_hanging(tmp_path, p
     flock = bin_dir / "flock"
     flock.write_text('#!/usr/bin/env bash\necho "$*" >>"$FLOCK_LOG"\n')
     flock.chmod(0o755)
-    install_gnu_stat(bin_dir)
+    install_gnu_tools(bin_dir)
     script = tmp_path / "lock.sh"
     script.write_text(
         layout_block(HOST, LOCK_BEGIN, LOCK_END)
