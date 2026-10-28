@@ -175,6 +175,10 @@ class FailureKind(StrEnum):
     # the clock.
     BACKUP_RETENTION_GAP = "backup_retention_paused_gap"
     BACKUP_RETENTION_FUTURE = "backup_retention_paused_future_set"
+    # Backup retention skipped a run because an off-site copy held the copy
+    # lock (#235): INFO, or WARNING once four or more complete sets are
+    # already past the prune point. Process log only.
+    BACKUP_RETENTION_PAUSED_COPY = "backup_retention_paused_copy"
     # A new integration key has been installed for a while but not selected,
     # so its consumers hold their work (#307 M1); it needs an Administrator.
     CREDENTIAL_SWITCH_UNFINISHED = "credential_switch_unfinished"

@@ -218,17 +218,29 @@ def test_recipient_evidence_writes_are_closed_across_all_installed_identities():
             )
             assert grants.get(table, set()) & writes == expected
             assert not set(columns.get(table, {})) & writes
-    # The backup identity writes only its own records (the run and its
-    # off-site copy outcome) and settles backup requests through a column
-    # UPDATE (ADM-13 PR 3); rotation stays reserved.
+    # The backup identity writes only its own run record, every column but
+    # completed_at (#235, contract: the copy outcomes are the uploader's),
+    # and settles backup requests through a column UPDATE (ADM-13 PR 3);
+    # rotation stays reserved.
     assert runtime_grants(ServiceRole.BACKUP_WORKER) == (
         {
-            "stewardship_backup_run": {"SELECT", "INSERT"},
-            "stewardship_backup_upload": {"SELECT", "INSERT"},
+            "stewardship_backup_run": {"SELECT"},
+            "stewardship_backup_upload": {"SELECT"},
             "stewardship_operational_log": {"INSERT"},
             "stewardship_backup_request": {"SELECT"},
         },
         {
+            "stewardship_backup_run": {
+                "INSERT": {
+                    "id",
+                    "started_at",
+                    "database_bytes",
+                    "files_bytes",
+                    "manifest_digest",
+                    "recipient_fingerprint",
+                    "application_version",
+                }
+            },
             "stewardship_backup_request": {
                 "UPDATE": {
                     "state",

@@ -78,6 +78,8 @@ GOLDEN_ROOT = Path("/opt/parishkit")
 # offline network, PostgreSQL's address on it, its password file in
 # database-provision's mounts and its service document (the Compose and
 # document digests and fixture; its source rule is in the hba fixture).
+# #235's contract takes the backup worker off application-egress (the
+# Compose digests and fixture only).
 # Intentional change for new installs only (#2228): "initial" renders
 # exactly the "configured" topology, so its digests are configured's; the
 # configured and configured-slack renderings, which Production runs, are
@@ -86,19 +88,19 @@ GOLDEN_ROOT = Path("/opt/parishkit")
 # full under fixtures/ so a difference can be read, not just detected.
 GOLDEN_DIGESTS = {
     ("initial", "compose"): (
-        "6b9b27b00d5e310ea06c497d7635e9e20ca3b63a3bcc89a7e7b958402a85c6dd"
+        "639dbe4ca02cbf24eb292a4f20909dd66fd18e04e963def2fb405dd1f0127e1c"
     ),
     ("initial", "documents"): (
         "12cb572114939fbb76dda907148aa56dd0a3cad419d1e39accd9b9429d029b9d"
     ),
     ("configured", "compose"): (
-        "6b9b27b00d5e310ea06c497d7635e9e20ca3b63a3bcc89a7e7b958402a85c6dd"
+        "639dbe4ca02cbf24eb292a4f20909dd66fd18e04e963def2fb405dd1f0127e1c"
     ),
     ("configured", "documents"): (
         "12cb572114939fbb76dda907148aa56dd0a3cad419d1e39accd9b9429d029b9d"
     ),
     ("configured-slack", "compose"): (
-        "27cb1026622eb48b0778169c6f4b2e550675ec0fb298e0851facfbd214834864"
+        "7e53c2d9f207a8a220f97388127ad13864b3a3293e3ee032f68bdad51974f21b"
     ),
     ("configured-slack", "documents"): (
         "983d1e04f66b30d5a97ff3fb103ebe64ecc0361a4f3245cf38cab6f2ae5d6d30"
