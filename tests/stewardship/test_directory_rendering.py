@@ -70,6 +70,17 @@ def item(**values):
     )
 
 
+def formula_item():
+    """A Family whose shown name starts with a spreadsheet formula sign.
+
+    The heads of ``item`` have another surname than its "=Sample Family", so
+    their surname leads the shown name (#2320); this Family's head shares
+    its surname, so "=Williams" leads.
+    """
+    head = {"name": "Aaron =Williams", "first": "Aaron", "last": "=Williams"}
+    return item(family_name="=Williams", heads=[head | {"emails": SHARED}])
+
+
 def document(rows, *, postal=False, reach="any", testing=False):
     """Build a document the way the export worker does."""
     payload = dict(
@@ -165,7 +176,7 @@ def test_code_directory_csv_has_exactly_six_plain_columns():
     # Family, ParishSoft status, Family DUID, Envelope number (#932, #933)
     # and Family code.
     assert rows[1] == [
-        "'=Sample Family, Aaron Williams and Isabelle Williams",
+        "Williams, Aaron and Isabelle",
         "",
         "12345",
         "",
@@ -174,6 +185,7 @@ def test_code_directory_csv_has_exactly_six_plain_columns():
     ]
     rows = csv_rows(document([item(envelope="4711")]))
     assert rows[1][3] == "4711"
+    assert csv_rows(document([formula_item()]))[1][0] == "'=Williams, Aaron"
     rows = csv_rows(document([item(family_name="Williams")]))
     assert rows[1][0] == "Williams, Aaron and Isabelle"
     # A Family no longer active keeps its name; the mark is its own cell.
@@ -315,14 +327,20 @@ def test_xlsx_and_pdf_carry_the_same_columns_and_details():
     sheet = book["Families"]
     assert tuple(cell.value for cell in sheet[1]) == (*CODE_HEADINGS, EMAIL_HEADING)
     assert sheet["F2"].value == EMAILS
-    assert sheet["A2"].value == "=Sample Family, Aaron Williams and Isabelle Williams"
+    assert sheet["A2"].value == "Williams, Aaron and Isabelle"
+    book.close()
+    output = io.BytesIO()
+    render_directory(document([formula_item()]), output, format="xlsx")
+    book = load_workbook(output)
+    sheet = book["Families"]
+    assert sheet["A2"].value == "=Williams, Aaron"
     assert sheet["A2"].data_type == "s"
     assert dict(
         (row[0].value, row[1].value) for row in book["Report information"].iter_rows()
     )["Privacy"].startswith("Sensitive: Family codes.")
     book.close()
     cells = directory_table(report).cells(report.rows[0])
-    assert "".join(cells[0]) == "=Sample Family, Aaron Williams and Isabelle Williams"
+    assert "".join(cells[0]) == "Williams, Aaron and Isabelle"
     assert cells[4] == ["ABCDEFGH"] and "".join(cells[5]) == EMAILS
     for postal in (False, True):
         output = io.BytesIO()
@@ -665,7 +683,7 @@ def test_response_columns_and_checks_follow_the_page():
     render_directory(report, output, format="csv")
     lines = list(csv.reader(io.StringIO(output.getvalue().decode())))
     assert lines[1][:9] == [
-        "'=Sample Family, Aaron Williams and Isabelle Williams",
+        "Williams, Aaron and Isabelle",
         "",
         "12345",
         "0",

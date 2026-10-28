@@ -924,7 +924,7 @@ def test_directory_names_lead_with_the_surname_then_the_heads(live_response_serv
     assert [row["display_name"] for row in report["rows"]] == [
         "Example",
         "Example, Amy and Bob",
-        "Example, Member and Second Other",
+        "Example / Other, Member / Second",
         "Example, Zed",
     ]
     assert [row["family_duid"] for row in report["rows"]] == [9, 8, 1, 7]
@@ -950,7 +950,7 @@ def test_directory_names_lead_with_the_surname_then_the_heads(live_response_serv
     # Search matches the whole shown name, so a head's first name finds the Family.
     for text, expected in (
         ("zed", [7]),
-        ("Example, Member and Second Other", [1]),
+        ("Example / Other, Member / Second", [1]),
         ("amy and bob", [8]),
         ("Other", [1]),
     ):

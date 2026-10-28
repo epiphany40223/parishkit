@@ -9,7 +9,7 @@ SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE f jsonb:=parameters->'filters'; answer jsonb;
 BEGIN
     IF jsonb_typeof(parameters) IS DISTINCT FROM 'object'
-       OR NOT parameters ?& ARRAY['filters','postal','exact','family_id']
+       OR NOT parameters OPERATOR(pg_catalog.?&) ARRAY['filters','postal','exact','family_id']
        OR parameters-ARRAY['filters','postal','exact','family_id']<>'{}'::jsonb
        OR jsonb_typeof(parameters->'postal') IS DISTINCT FROM 'boolean'
        OR jsonb_typeof(parameters->'exact') IS DISTINCT FROM 'boolean'
@@ -18,7 +18,7 @@ BEGIN
            parameters->>'family_id' !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
        OR (parameters->'exact'='false'::jsonb AND parameters->>'family_id' IS NOT NULL)
        OR jsonb_typeof(f) IS DISTINCT FROM 'object'
-       OR NOT f ?& ARRAY['search','reason','phone','response','sort']
+       OR NOT f OPERATOR(pg_catalog.?&) ARRAY['search','reason','phone','response','sort']
        -- reach is optional: captures made before it existed omit it (= any).
        OR f-ARRAY['search','reason','phone','response','sort','reach']<>'{}'::jsonb
        OR EXISTS(SELECT 1 FROM jsonb_each(f) WHERE jsonb_typeof(value)<>'string')
@@ -122,10 +122,11 @@ WITH selected AS MATERIALIZED (
         ON i.campaign_id=s.id AND i.family_duid=f.source_key::bigint
     LEFT JOIN email_counts ec ON ec.source_key=f.source_key
 ), head_names AS MATERIALIZED (
-    -- The Family as shown (family_names.family_heads_name): the surname,
-    -- then the heads' first names ("A", "A and B", "A, B and C"), a head of
-    -- another surname in full. One set-based join over every head: a
-    -- per-Family subquery rescanned every Member for every Family.
+    -- Each head's first and last name for the Family as shown
+    -- (family_names.family_heads_name), encoded as
+    -- stewardship_family_head_part_v1 encodes them: a JSON array
+    -- [first,last], '' for a nameless head. One set-based join over every
+    -- head: a per-Family subquery rescanned every Member for every Family.
     SELECT b.source_key,array_agg(p.part ORDER BY h.head::bigint)
         FILTER (WHERE p.part<>'') AS parts
     FROM base b
@@ -133,22 +134,20 @@ WITH selected AS MATERIALIZED (
     JOIN members m ON m.source_key=h.head
     CROSS JOIN LATERAL (SELECT btrim(coalesce(m.value->>'firstName',''),(SELECT ws FROM name_trim)),
         btrim(coalesce(m.value->>'lastName',''),(SELECT ws FROM name_trim))) t(first,last)
-    CROSS JOIN LATERAL (SELECT CASE WHEN t.last=b.family_name THEN t.first
-        ELSE concat_ws(' ',nullif(t.first,''),nullif(t.last,'')) END) p(part)
+    CROSS JOIN LATERAL (SELECT CASE WHEN t.first='' AND t.last='' THEN ''
+        ELSE jsonb_build_array(t.first,t.last)::text END) p(part)
     GROUP BY b.source_key
 ), rows AS MATERIALIZED (
     SELECT b.*,CASE WHEN email_deliverable THEN 'deliverable'
         WHEN head_count=0 THEN 'no_head' WHEN address_count=0 THEN 'no_address'
         WHEN NOT email_eligible THEN 'invalid_address'
         ELSE 'provider_refused' END AS reason,
-        -- The Family as shown (family_names.family_heads_name): the surname,
-        -- then the heads' first names ("A", "A and B", "A, B and C"), a head
-        -- of another surname in full. Search matches it and same-surname
-        -- Families sort by it; the page computes it again for display.
-        family_name||coalesce(', '||(SELECT CASE WHEN cardinality(n.parts)<3
-                THEN array_to_string(n.parts,' and ')
-                ELSE array_to_string(n.parts[1:cardinality(n.parts)-1],', ')
-                    ||' and '||n.parts[cardinality(n.parts)] END),'') AS display_name
+        -- The Family as shown (family_names.family_heads_name): "Squyres,
+        -- Tracy and Jeff", or "Kelly / Thieneman, Maureen / Linda" when the
+        -- heads have other surnames (#2320). Search matches it and
+        -- same-surname Families sort by it; the page computes it again for
+        -- display.
+        stewardship_family_heads_name_v1(family_name,n.parts) AS display_name
     FROM base b LEFT JOIN head_names n ON n.source_key=b.source_key
 ), member_matches AS MATERIALIZED (
     -- Families with an active Member whose name contains the search (#664):

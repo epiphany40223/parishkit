@@ -549,8 +549,11 @@ def test_several_families_summary_order_and_pages(response_service, google):
     # Positive pledges must name a share method, so only the zero pledge has none.
     assert summary["no_share"] == 1 and sum(dict(summary["shares"]).values()) == 2
 
+    # The name sort orders by each Family's own surname, then the shown name.
+    # These heads all have another surname, which leads the shown name
+    # (#2320), so the shown names alone are not in alphabetical order.
     names = [row["family_name"] for row in page["rows"]]
-    assert names == sorted(names, key=str.lower)
+    assert names == ["Of2, Head", "Example, Member", "Of6, Head"]
     by_name = [row["family_duid"] for row in page["rows"]]
     for sort, expected in (
         ("name", by_name),
@@ -574,7 +577,8 @@ def test_several_families_summary_order_and_pages(response_service, google):
         ({"share": CHECK}, {1}),
         ({"share": "none"}, {6}),
         ({"pledge_min": "500", "pledge_max": "500.00"}, {2}),
-        ({"search": "zETa"}, {6}),
+        # Family 6 (Zeta) is shown under its head's surname, "Of6, Head" (#2320).
+        ({"search": "oF6"}, {6}),
         ({"search": "6"}, {6}),
         # Dates are days in the browser's zone (#558), here the campaign's:
         # every response is on the opening day. Other zones and a DST day:
@@ -670,7 +674,7 @@ def test_several_families_summary_order_and_pages(response_service, google):
         ]
 
     every, all_rows = counted({"sort": "name"})
-    one, one_row = counted({"search": "zETa"})
+    one, one_row = counted({"search": "oF6"})
     assert (every, one) == (3, 1)
     assert len(link_reads(all_rows)) == len(link_reads(one_row)) == 1
 
@@ -1014,7 +1018,7 @@ def test_sql_shown_name_matches_snapshot_family_names(response_service):
     shown = snapshot_family_names(snapshot, {6, 7, 8})
     assert shown == {
         6: "Alpha, Ann, Bea and Cy",
-        7: "Bravo, Dan and Eve Smith",
+        7: "Bravo / Smith, Dan / Eve",
         8: "Charlie, Jo",
     }
     for duid, name in shown.items():
@@ -1063,6 +1067,9 @@ def test_a_family_no_longer_in_parishsoft_has_no_name(response_service):
     snapshot = SourceCurrent.objects.get().snapshot_id
     blank = {"lastName": "", "mailingName": "", "firstName": ""}
     _rewrite_payload("family", snapshot, 6, blank)
+    # Its head has no surname either: a head's own surname would lead the
+    # shown name instead, since it is not the Family's (#2320).
+    _rewrite_payload("member", snapshot, 36, {"lastName": ""})
     _rewrite_payload("family", snapshot, 8, {"active": False})
     with unguarded(), connection.cursor() as cursor:
         cursor.execute(
