@@ -26,11 +26,13 @@ ROOT = Path(__file__).resolve().parents[2]
 DEPLOY = ROOT / "deploy/stewardship"
 FIXTURES = Path(__file__).with_name("fixtures")
 # The in-image run executes the whole default (non-database) suite. On
-# 2026-10-14 CI it took 468-594s; this is about 1.5x the slowest, as a guard
-# against a hung container rather than a performance budget (#500, #1278).
+# 2026-10-14 CI it took 468-594s; by October 2026 the suite had grown to
+# 27,228 tests taking a measured 845s, and a train adding about 60 more
+# exceeded the old 900s limit (#2313). 1500s is a guard against a hung
+# container rather than a performance budget (#500, #1278).
 # The test prints elapsed against this limit on success; raise it, or split
 # the run into parallel parts, when that figure approaches the limit.
-BASELINE_TIMEOUT = 900
+BASELINE_TIMEOUT = 1500
 
 
 def collection_manifest(output):
