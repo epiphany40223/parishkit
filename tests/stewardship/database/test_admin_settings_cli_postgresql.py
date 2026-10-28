@@ -130,14 +130,15 @@ def test_ministries_list_without_a_catalog_is_unavailable(admin):
 
 
 def test_branding_show_lists_the_current_logos(admin):
-    """The logos the page draws, in slot order, each with its stored facts;
-    a slot whose asset row is missing is left out, as on the page."""
+    """The logos the page draws, in slot order (smallest first), each with
+    its stored facts; a slot whose asset row is missing is left out, as on
+    the page."""
     store = admin.service.store
     parish = editable_configuration(admin.service).active_configuration.parish
     row = bundle(store.active(), uuid4())
     # Created out of slot order, and without the menu logo's row.
-    favicon = asset(row, "favicon", id=parish.favicon_id, width=32, height=32)
     large = asset(row, "large", id=parish.large_logo_id, width=512, height=256)
+    favicon = asset(row, "favicon", id=parish.favicon_id, width=32, height=32)
     _, reader, _ = paired(admin.service, scope="read-only")
     events = AuditEvent.objects.count()
     result = read(admin, reader, "branding", "show")
@@ -152,7 +153,7 @@ def test_branding_show_lists_the_current_logos(admin):
                 "size": item.size,
                 "sha256": item.sha256,
             }
-            for slot, item in (("large", large), ("favicon", favicon))
+            for slot, item in (("favicon", favicon), ("large", large))
         ],
     }
     assert AuditEvent.objects.count() == events

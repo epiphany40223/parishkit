@@ -3038,7 +3038,10 @@ BEGIN
         OR input_source.generation IS DISTINCT FROM NEW.source_generation THEN
         RAISE EXCEPTION 'Fact inputs are inconsistent' USING ERRCODE='23514';
     END IF;
-    last_day := LEAST(projection.end_date,NEW.through_date);
+    -- The dates run through through_date, which may pass the end date:
+    -- its callers cap it at the campaign's report end, so a response Staff
+    -- entered after the close counts on its own day (0192, #2298).
+    last_day := NEW.through_date;
     first_day := projection.start_date;
     expected := GREATEST(0,last_day-first_day+1);
     IF expected=0 THEN first_day:=NULL; last_day:=NULL; END IF;

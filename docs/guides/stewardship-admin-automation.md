@@ -1487,7 +1487,7 @@ pk-admin campaign shares [--campaign ID]
 | `campaign_id` (`ministries list`) | The current campaign, or null without one |
 | `snapshot_id` | The ParishSoft data the Ministry catalog comes from |
 | `ministries` | Every Ministry, by name as on the page: its ParishSoft `duid`, `name` and `included` (in the current campaign) |
-| `logos` | The current logos the page shows, in the order `large`, `menu`, `icon`, `favicon`: `slot`, `id`, `width` and `height` (pixels), `size` (bytes) and `sha256` |
+| `logos` | The current logos the page shows, in the order `favicon`, `icon`, `menu`, `large`: `slot`, `id`, `width` and `height` (pixels), `size` (bytes) and `sha256` |
 | `campaign_id` (`campaign shares`) | The campaign, the current one unless `--campaign` names another |
 | `editable` | Whether the page would edit the options now: an unlocked current Testing draft that no background work holds, with the financial module |
 | `short_names_editable` | Whether the short labels can change now: wherever `editable` is true, and on a locked campaign, where nothing else can |
@@ -1598,7 +1598,7 @@ upload, with its review, and the review's **Apply**. They need a
 full-scope session. `branding preview` reads one PNG, JPEG or WebP image
 (up to 5 MB) from standard input: without `--size` it is the page's
 Basic mode, and the image is made into all four sizes; with `--size
-large`, `menu`, `icon` or `favicon` it is Advanced for that one size, and
+favicon`, `icon`, `menu` or `large` it is Advanced for that one size, and
 the other three keep their current images. To replace several sizes one by
 one, apply each before previewing the next. The preview stores the sizes
 it made, as the page's upload does, but nothing changes on the site until
@@ -1617,7 +1617,7 @@ pk-admin branding confirm --bundle "$(jq -r .result.bundle review.json)" \
 | `version` (`branding preview`) | The configuration version the logos were made and reviewed against |
 | `bundle` | The uploaded logos, which `branding confirm --bundle` names |
 | `mode` | `basic` (one image for every size) or `advanced` (one size replaced) |
-| `logos` | Each size in the order `large`, `menu`, `icon`, `favicon`: `slot`, `name` (its label on the page), the new image's `id`, `width` and `height` (pixels), `size` (bytes) and `sha256`, and `changed`, whether this upload changes that size |
+| `logos` | Each size in the order `favicon`, `icon`, `menu`, `large`: `slot`, `name` (its label on the page), the new image's `id`, `width` and `height` (pixels), `size` (bytes) and `sha256`, and `changed`, whether this upload changes that size |
 | `preview.token` | What `branding confirm --token` takes with the same `--bundle`, valid for fifteen minutes |
 | `created`, `request` (`branding confirm`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
 

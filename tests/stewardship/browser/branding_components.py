@@ -28,7 +28,7 @@ from django import forms
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts.admin_editing import summary_errors
-from parishkit.stewardship.accounts.branding_views import LogoUploadForm
+from parishkit.stewardship.accounts.branding_views import LogoUploadForm, logo_frames
 
 PAGE = "/admin/parish/logos/"
 BUNDLE = UUID("75000000-0000-4000-8000-0000000000d1")
@@ -80,7 +80,7 @@ def components(context, admin):
                 | {
                     "admin_chrome": admin | {"flow_steps": steps},
                     "form": drawn,
-                    "assets": current,
+                    "logos": logo_frames(current),
                     "page_url": PAGE,
                     "refresh_url": refresh,
                     "errors": summary_errors(drawn) if form is not None else [],

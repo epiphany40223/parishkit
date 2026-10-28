@@ -365,6 +365,33 @@ def test_families_outside_the_cohort_are_counted_and_noted():
     )
 
 
+def test_late_submissions_are_counted_and_noted_with_the_end_date():
+    """Submissions dated after the end date were entered after the close.
+
+    With an end date of day 3, the day 4 version is late (#2298): the file
+    keeps it on its own day in every sheet, counts it in
+    count.late_submissions and names the end date in a note, and the
+    reader keeps both. Without a late one there is neither.
+    """
+    end = START + timedelta(days=2)
+    written = write_source(source(end_date=end), check=in_process)
+    archive = read_archive(written.data)
+    assert archive.other_counts == {"count.late_submissions": "1"}
+    (note,) = archive.notes.values()
+    assert note.startswith(
+        "1 submission(s), the submissions rows dated after 2054-10-06 (the "
+        "campaign's end date), were entered by Staff after the campaign closed"
+    )
+    plain = write_source(source(), check=in_process)
+    assert written.data != plain.data
+    # The same sheets otherwise: the late row stays on its own day.
+    assert archive_sheets(source(end_date=end)) == archive_sheets(source())
+    for unlate in (source(end_date=START + timedelta(days=4)), source()):
+        assert (
+            read_archive(write_source(unlate, check=in_process).data).other_counts == {}
+        )
+
+
 def test_no_respondent_means_nothing_to_export():
     """An archive needs at least one Family."""
     with pytest.raises(ArchiveUnavailable):

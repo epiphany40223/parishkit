@@ -55,7 +55,7 @@ from .recovery import recover_fact_set
 from .report_blocks.compiler import capture_report, compile_report, has_content
 from .report_document import ReportDocument, report_subject
 from .report_email_cohort import frozen_cohort
-from .report_email_inputs import recorded_inputs, report_days
+from .report_email_inputs import report_days, send_inputs
 from .report_email_models import ReportEmailSnapshot
 from .report_email_ownership import (
     TASK_TYPE,
@@ -119,13 +119,13 @@ def record_inputs(claim):
         raise FactUnavailable("Report inputs need a promoted ParishSoft source.")
     captured_at, source_id, watermark, reviews = observed
     values = _values(row)
-    inputs = recorded_inputs(
+    inputs = send_inputs(
         values,
         covered,
         captured_at.astimezone(UTC),
-        configuration.start_date,
-        configuration.end_date,
-        configuration.timezone,
+        configuration,
+        campaign_id=row.campaign_id,
+        watermark=watermark,
     )
 
     def admit(action, source):
@@ -262,13 +262,13 @@ def load_report_document(claim, fact_set):
             requested_at=row.captured_at,
         )
     occurrence = ScheduleOccurrence.objects.get(pk=row.occurrence_id)
-    inputs = recorded_inputs(
+    inputs = send_inputs(
         values,
         row.covered_slots,
         row.captured_at,
-        projection.start_date,
-        projection.end_date,
-        projection.timezone,
+        projection,
+        campaign_id=row.campaign_id,
+        watermark=row.submission_watermark,
     )
     document = ReportDocument(
         send_id=row.pk,
