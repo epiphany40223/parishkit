@@ -37,6 +37,14 @@ STATUS = "/admin/campaign/work-status/"
 ANNOUNCER = "[data-live-announcer=campaign-work]"
 
 
+@pytest.fixture(autouse=True)
+def settle_routes(page):
+    """Let any routed read still being fetched finish before the page
+    closes, so its fulfil never fails into the next test (#1850, #2311)."""
+    yield
+    page.unroute_all(behavior="wait")
+
+
 def opened(page, origin, address):
     """Open ``address`` under a fake clock and mark the page."""
     page.set_viewport_size(VIEWPORT)
