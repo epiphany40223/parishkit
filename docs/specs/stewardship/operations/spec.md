@@ -2359,6 +2359,10 @@ an Administrator can restore it. The rest is listed under
     completed_at)`, for the handoff's row and name checks;
   - SELECT on `stewardship_system_configuration (id)`, the set tag's source
     (`backup_offsite.set_tag`), and nothing else of that table;
+  - SELECT on `django_migrations`, which the current-schema check reads
+    before any copy, as every runtime login's registry grants it (a table
+    grant: Django's migration recorder selects every column, and the table
+    holds only applied migration names and times);
   - INSERT on `stewardship_operational_log`, for timeout events only (the
     writer trigger's existing timeout clause gains this login);
   - EXECUTE on `stewardship_backup_destination_v1()` and the debug-off read
