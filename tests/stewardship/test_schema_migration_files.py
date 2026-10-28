@@ -602,6 +602,9 @@ FROZEN = {
     "0189_commitment_roster_date.sql": (
         "e3e2420103c7bb4a937e7bc5e91bbb32d63156db0e35b894b47ea0d54f9f4ad2"
     ),
+    "0190_settle_notices.sql": (
+        "eb081595d2be4556aca0bfebeb3c039941e95728f51472e1d69f05f69fb71210"
+    ),
 }
 
 

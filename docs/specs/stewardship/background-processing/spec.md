@@ -2631,6 +2631,17 @@ Slack delivery failure is logged and cannot mask the original error. If email
 itself is failing, the system does not recursively create email-failure alerts;
 Slack/logs remain. Sensitive values and full free text never enter Slack.
 
+An alert or security notice email whose provider answer is lost stays
+`delivery_unknown` and is never sent again, automatically or by an
+Administrator. An Administrator settles it from evidence on its
+[Mail message page](../admin-portal/spec.md#outcome-panel), or with
+`pk-admin delivery resolve`: marked delivered (`accept`) or recorded as
+not sent (`confirm_unsent`), each with its evidence note and audited, as
+the [delivery resolution](#family-invitations-and-reminders) of any email
+([#2295](https://github.com/epiphany40223/parishkit/issues/2295)). Until
+then it holds a recorded mail halt from being cleared, as every unsettled
+`delivery_unknown` email does.
+
 ### Unresponsive web server
 
 Docker restarts a container only when its process exits, and a failing

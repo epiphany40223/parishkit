@@ -19,6 +19,7 @@ from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.jobs.delivery_bulk import BulkResult
 from parishkit.stewardship.jobs.delivery_metadata import (
     DELIVERY_SORTING,
+    NOTICE_ACTIONS,
     PURPOSE_CHOICES,
     RECIPIENT_PATTERN,
     RECIPIENT_REFUSAL,
@@ -126,6 +127,7 @@ def panel(
     blocked=None,
     refusal=None,
     countable=False,
+    notice=False,
     **extra,
 ):
     """The outcome panel's context as the view draws it (#1563): the email
@@ -133,13 +135,15 @@ def panel(
     ``blocked`` or a send's ``refusal`` naming why an answer is unavailable;
     ``extra`` overrides read_detail's other fields (refused, paused,
     last_attempt_at, report_waiting); ``countable`` is a report email's
-    pending coverage decision (#1872)."""
+    pending coverage decision (#1872); ``notice`` an operational or security
+    notice's question (#2295)."""
     data = dict(refused=[], paused=False, last_attempt_at=None) | extra
     return outcome_context(
         data
         | dict(
             outcome=email_outcome(state, bool(data["refused"])),
             actions=list(actions),
+            notice=notice,
             choices=question_choices(
                 state,
                 task,
@@ -147,6 +151,7 @@ def panel(
                 blocked=blocked,
                 refusal=refusal,
                 countable=countable,
+                notice=notice,
             ),
         )
     )
@@ -491,6 +496,42 @@ def components(now):
         ],
     )
     yield "/delivery", "delivery", delivery
+    # An operational notice to an Administrator (#2295): it is never sent
+    # again, so It was not sent records it at once (/delivery-notice). One
+    # whose answers can't be given yet shows only why: its task is still
+    # running (its note waits in the closed form) or its answers are not
+    # admitted. A Failed one says a notice is never sent again.
+    for path, state, actions, extra in (
+        ("/delivery-notice", "delivery_unknown", NOTICE_ACTIONS, {}),
+        ("/delivery-notice-task", "delivery_unknown", ("note",), dict(task="running")),
+        ("/delivery-notice-held", "delivery_unknown", (), dict(blocked="notice_held")),
+        ("/delivery-notice-failed", "permanent_failure", ("note",), {}),
+    ):
+        yield (
+            path,
+            "delivery",
+            delivery
+            | dict(
+                delivery=page_message
+                | dict(
+                    state=state,
+                    purpose="operational",
+                    family_id=None,
+                    family__family_duid=None,
+                    family_name=None,
+                ),
+                refused=[],
+                recipients=dict(
+                    intended=["admin@example.org"],
+                    routed=["admin@example.org"],
+                    intended_links=[("admin@example.org", "not sure it arrived", None)],
+                    routed_rows=[("admin@example.org", "not sure it arrived")],
+                    reached=None,
+                    refused_for_now=False,
+                ),
+                **panel(state, actions, notice=True, last_attempt_at=now, **extra),
+            ),
+        )
     # No Admin evidence saved yet (#227 empty state).
     yield "/delivery-no-evidence", "delivery", delivery | dict(notes=[])
     # Other campaign work holds the email: its decisions stay in view,

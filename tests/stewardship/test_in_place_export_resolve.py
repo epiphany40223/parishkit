@@ -121,6 +121,7 @@ def test_delivery_resolutions_survive_paging():
     assert '<details id="delivery-note-disclosure" data-keep-open>' in text
     # Every resolution form posts from one of the two regions.
     assert text.count("admin:delivery_resolve") == 1
-    # Seven answers of the unknown, failed and still-sending questions, and
-    # the two of a stuck report email's (#1872).
-    assert text.count('include "stewardship/delivery-answer.html"') == 9
+    # Seven answers of the unknown, failed and still-sending questions, the
+    # two of a stuck report email's (#1872), and a notice's It was not sent,
+    # which asks no send-again question (#2295).
+    assert text.count('include "stewardship/delivery-answer.html"') == 10

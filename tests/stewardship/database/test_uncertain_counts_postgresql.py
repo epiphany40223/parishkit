@@ -4,11 +4,13 @@ The status bar's "Not sure it arrived — review needed" count, Home's Sent
 mail step and the Background work counts endpoint read the operating mode's
 uncertain emails an Administrator can resolve (Sent mail's Not sure it
 arrived — review needed), and link Sent mail filtered to that mode; the
-other mode's get a separate link and are never added in. An operational or
-security notice, or an archived campaign's email, offers no resolution and
-is in no such count. System health's Waiting to retry counts and links
-Family invitations and reminders, split by mode the same way (#1632). These
-tests follow each link on the real pages, on a Production and a Testing
+other mode's get a separate link and are never added in. An archived
+campaign's email offers no resolution and is in no such count; an
+operational or security notice that is Not sure it arrived is settled from
+evidence (#2295), so it counts in its mode like any other. System
+health's Waiting to retry counts and links Family invitations and
+reminders, split by mode the same way (#1632). These tests follow each link
+on the real pages, on a Production and a Testing
 system, and compare the number shown with the rows Sent mail lists.
 
 Uncertain and waiting emails are seeded by setting the state of queued
@@ -107,8 +109,9 @@ def system(request, response_service, google):
     Returns ``(mode, browser, emails)``: ``emails`` maps a name to an email
     id: ``other`` (a Family email of the other mode), ``initial`` and
     ``reminder`` (Family emails of the operating mode), and ``notice``, an
-    operational notice to an Administrator, which Sent mail lists but no
-    Administrator can resolve. A Production system makes its Testing email
+    operational notice to an Administrator, of the operating mode, which an
+    Administrator settles from evidence (#2295). A Production system makes
+    its Testing email
     before Production is activated; a Testing system has a Production one
     seeded directly, as a system that left Production could keep.
     """
@@ -135,14 +138,14 @@ def system(request, response_service, google):
     ("uncertain", "here", "other"),
     [
         # Both modes: two links, never one summed number. The uncertain
-        # notice is in neither: nobody can resolve it (#1576 decision).
-        (("other", "initial", "reminder", "notice"), 2, 1),
+        # notice counts in its mode: it can be settled (#2295).
+        (("other", "initial", "reminder", "notice"), 3, 1),
         # Only the other mode: its link alone; the operating mode's hides.
         (("other",), 0, 1),
         # Only the operating mode: no second link.
         (("initial",), 1, 0),
-        # Only a notice: nothing to review, so the warning hides.
-        (("notice",), 0, 0),
+        # Only a notice: it needs review too (#2295).
+        (("notice",), 1, 0),
         # None: the warning hides.
         ((), 0, 0),
     ],
@@ -180,13 +183,13 @@ def test_each_status_link_lists_exactly_what_it_counts(system, uncertain, here, 
         assert f"state=needs_review&amp;mode={link_mode}" in href
         assert (hidden, shown) == (count == 0, count)
         # The number shown is exactly the rows its link lists, and they are
-        # the emails of that mode that were made uncertain (never a notice).
+        # the emails of that mode that were made uncertain.
         listed = rows(browser, href)
         assert len(listed) == shown
         assert listed == {
             emails[name]
             for name in uncertain
-            if name != "notice" and (name == "other") == (link_mode == other_mode)
+            if (name == "other") == (link_mode == other_mode)
         }
     # Sent mail's plain Not sure it arrived still lists the notice.
     if "notice" in uncertain:

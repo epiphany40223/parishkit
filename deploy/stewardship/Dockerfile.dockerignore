@@ -214,6 +214,7 @@
 !src/parishkit/stewardship/schema/migrations/0187_consumer_readmission_log.sql
 !src/parishkit/stewardship/schema/migrations/0188_staff_open_after_close.sql
 !src/parishkit/stewardship/schema/migrations/0189_commitment_roster_date.sql
+!src/parishkit/stewardship/schema/migrations/0190_settle_notices.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

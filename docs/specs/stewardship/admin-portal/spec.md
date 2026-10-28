@@ -2376,8 +2376,10 @@ Administrators have two always-visible indicators:
   it never displays credentials or sealed substitutions. Its count is the
   emails of the system's operating mode that Sent mail lists under its
   Delivery choice Not sure it arrived — review needed: Not sure it arrived,
-  of a kind an Administrator can resolve (not an operational or security
-  notice or a Ministry leader email) in a campaign that is not archived.
+  of a kind an Administrator can resolve (not a Ministry leader email) in a
+  campaign that is not archived, or an operational or security notice,
+  which an Administrator settles from evidence
+  ([#2295](https://github.com/epiphany40223/parishkit/issues/2295)).
   An email nobody can resolve would otherwise keep the warning up for good.
   It links Sent mail filtered
   to them in that mode, so the count is exactly the list it opens: both
@@ -6992,8 +6994,12 @@ line the first rows start on a laptop screen with the help closed
 
 Operational and security notices and Ministry leader emails open the same
 Mail message page, with their recipient, state and attempt history. They
-belong to no campaign, and the resolutions and their admission are a
-campaign's, so their page offers no resolution, note or bulk action.
+belong to no campaign. A notice that is Not sure it arrived is settled
+from evidence on its page (its [outcome panel](#outcome-panel)),
+and any notice takes a note; nothing else is offered for a notice, and no
+bulk action selects one. A Ministry leader email's page offers no
+resolution or note, since the resolutions and their admission are a
+campaign's.
 
 The Mode and Provider attempts columns of Sent mail are gone: the
 Production and Testing choice below replaces Mode, and the attempt history
@@ -7056,14 +7062,17 @@ a phone, without sideways scrolling) holds:
     it arrived (`delivery_unknown`), and Failed (`permanent_failure`) unless
     its latest decision other than a note recorded it as not sent (Confirm
     not sent, or Fix many's record as not sent), which settles it. Either
-    must be of a kind whose Mail message page offers resolutions (not an
-    operational or security notice or a Ministry leader email) in a campaign
-    that is not archived.
+    must be of a kind whose Mail message page offers resolutions (not a
+    Ministry leader email) in a campaign that is not archived. An
+    operational or security notice is in it only while Not sure it
+    arrived, the one state its page settles
+    ([#2295](https://github.com/epiphany40223/parishkit/issues/2295)): a
+    Failed notice is never sent again, so nothing is left to act on.
     One set-based condition: the campaign join and one correlated lookup of
     the latest resolution per candidate, through its history index.
   - **Not sure it arrived — review needed**: the Not sure it arrived part
     of Needs attention (`delivery_unknown`, of a kind whose page offers
-    resolutions, in a campaign that is not archived). The status bar's and
+    resolutions, in a campaign that is not archived, or a notice). The status bar's and
     Home's counts link it ([Background indicators](#background-indicators),
     [#1576](https://github.com/epiphany40223/parishkit/issues/1576)).
   - **Not delivered**: emails that finished without being delivered, Failed
@@ -7486,9 +7495,38 @@ Reporting a bounce redraws only its own panel, so a delivered email's
 outcome panel names the newly set-aside address the next time the page is
 opened, as its Refused addresses line did before.
 
-An operational or security notice belongs to no campaign, and every
-resolution is a campaign's, so its panel shows its outcome but offers
-nothing, saying that such a notice cannot be resolved here.
+An operational or security notice (an automatic email to the
+Administrators about a system problem, or about a sign-in policy or backup
+key change) belongs to no campaign and is never sent again
+([#2295](https://github.com/epiphany40223/parishkit/issues/2295)). When
+it is Not sure it arrived, its panel says in plain words what the notice
+is, that it is never sent again and no Family is affected, and that a
+halted mail sender cannot be
+[cleared](#clear-a-halted-mail-sender) until it is settled; what to check
+first is the same as for any email. It asks "What did you find?" without
+the send-again question: "It was sent" → **Mark as delivered**
+(`accept`), "It was not sent" → "Where did you see that it was not
+sent?" → **Record as not sent** (`confirm_unsent`), and "I can't tell
+yet" → **Save note** (`note`). Each records its note in the email's
+history and the audit log, as for any email. A notice in any other state
+asks nothing, so its panel shows no unavailable answer: a Failed notice
+says that a notice is never sent again, and the note waits in its closed
+disclosure. The answers' admission is not a campaign's: the guard admits a
+current Administrator while the deployment has an active configuration and
+no restore under review, which the page's own admission already requires.
+While any of its answers can't be given yet (that admission refuses, or its
+background task has not finished), a Not sure it arrived notice draws no
+answer at all, unavailable or not: one short line in place of the question
+says why and that it can be settled once that is done (`notice_held` or
+`notice_task_running`, [below](#resolution-questions)), as
+[conditional fields](../ui-conventions/spec.md#conditional-fields) ask, and
+the note waits in its closed disclosure while it is offered. A waiting
+notice's answers would all become available at once, so a disabled group
+would only repeat that line three times.
+Settling a notice changes nothing else: no occurrence, fulfillment,
+statistic or recipient refusal reads it. A Ministry leader email belongs
+to no campaign either, and its panel still shows its outcome but offers
+nothing, saying that it cannot be resolved here.
 
 ##### Resolution questions
 
@@ -7503,7 +7541,10 @@ refusal (409 with its plain-language message and code) and audit as before.
 No answer adds a server command or a rule, except a cancelled report
 email's two coverage decisions (#1872), which the
 [report emails spec](../report-emails/spec.md#catch-up-recovery-and-holds)
-adds as two new actions of the same command, each with its own guard.
+adds as two new actions of the same command, each with its own guard, and
+a notice's answers (#2295), which the resolution guard admits for a notice
+since frozen migration 0190 (note, accept and confirm_unsent only, as for
+a chosen-Family test).
 
 - **Not sure it arrived** asks "What did you find?":
   - "It was sent": "Where did you see that it was sent?" → **Mark as
@@ -7535,16 +7576,19 @@ Every answer needs its note, as the server requires; each prompt is
 specific to the answer. An answer the rules do not allow now stays in the
 group, unavailable, named by its reason (`aria-describedby`), as
 [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates) require,
-and its fields are never shown. The reasons, each with the code
-[`delivery show`](../admin-automation/spec.md#operations) reports, are
+and its fields are never shown; a notice's panel shows only its reason
+line instead ([outcome panel](#outcome-panel)). The reasons, each with the
+code [`delivery show`](../admin-automation/spec.md#operations) reports, are
 read in this order, the first that applies:
 
 | Code | When | The page says |
 | --- | --- | --- |
-| `no_campaign` | An operational or security notice | Notices belong to no campaign, so they can't be resolved here. |
+| `no_campaign` | A Ministry leader email | Ministry leader emails belong to no campaign, so they can't be resolved here. |
 | `archived` | The campaign is archived | The campaign is archived, so its email can't be changed. |
 | `held` | The campaign's export admission refuses (other campaign work holds it, #1331) | The notice about other campaign work |
 | `task_running` | Its latest background task has not failed | This email's background task has not finished, so it can be answered once it has. |
+| `notice_held` | A notice; the deployment has no active configuration, or a restore is under review | This notice can be settled once the system's setup is active and no restore is waiting for review. |
+| `notice_task_running` | A notice; its latest background task has not failed | This notice's background task has not finished, so it can be settled once it has. |
 | `campaign_ended` | A Production invitation or reminder; the campaign is no longer scheduled or active, or its end has passed | The campaign has ended, so it is not sent again. |
 | `family_responded` | A Production invitation or reminder; the Family has responded | The Family has already responded, so it is not sent again. |
 | `family_unreachable` | A Production Family email; the Family is no longer active, eligible or deliverable | The Family can no longer be emailed (ParishSoft no longer gives it a usable address, or it left the campaign). |
@@ -7581,7 +7625,9 @@ campaign work holds stay in view, unavailable, named by its notice (#1331).
 The command line offers the same questions: `delivery show` reports the
 panel's `outcome` and each answer's `choice`, `action` and reason code
 (`unavailable`, null when allowed); each choice maps to one `delivery resolve` action or
-`delivery resend`, unchanged.
+`delivery resend`, unchanged. A notice's `delivery resolve` takes `note`,
+`accept` and `confirm_unsent` only; any other action, and `delivery
+resend`, is refused (`denied`), as the page's server refuses it (403).
 
 #### Refused addresses
 
@@ -11415,7 +11461,15 @@ means the Administrator decides about every message Gmail may have accepted
 before sending starts again, so nothing is sent twice by mistake. The rule
 covers every unsettled `delivery_unknown` email, not only the halt's
 own: the bulk send commits several submissions before it sends any, so no
-time window reliably separates the halt's attempts from earlier ones.
+time window reliably separates the halt's attempts from earlier ones. It
+covers operational and security notices too, which their Mail message page
+settles with "It was sent" or "It was not sent"
+([outcome panel](#outcome-panel),
+[#2295](https://github.com/epiphany40223/parishkit/issues/2295)). Two kinds
+it counts still cannot be settled from their page: a Ministry leader email,
+and any email of an archived campaign. While one of those is Not sure it
+arrived, the halt cannot be cleared here
+([#2300](https://github.com/epiphany40223/parishkit/issues/2300)).
 
 **Checks (server):** the [shared rules](#shared-rules-for-health-actions),
 without a recent sign-in; the halt matches the one the preview showed and
