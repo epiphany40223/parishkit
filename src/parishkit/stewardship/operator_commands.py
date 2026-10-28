@@ -595,12 +595,16 @@ def execute_operator(args):
                 )
             with StartupLease(RuntimeLayout(configuration).interlock, offline=True):
                 configure_operator_database(configuration)
-                procedure = (
-                    provision_roles
-                    if args.command == "database-roles"
-                    else provision_grants
-                )
-                result = procedure(configuration, _uuid(args.confirm_deployment))
+                if args.command == "database-roles":
+                    result = provision_roles(
+                        configuration, _uuid(args.confirm_deployment)
+                    )
+                else:
+                    result = provision_grants(
+                        configuration,
+                        _uuid(args.confirm_deployment),
+                        after_restore=args.after_restore,
+                    )
         elif args.command == "preview-admin-recovery":
             result = preview_recovery_command(
                 configuration,

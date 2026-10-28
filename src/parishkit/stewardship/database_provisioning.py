@@ -7,6 +7,7 @@ and populated application databases are refused rather than adopted or reset.
 """
 
 import hashlib
+import logging
 import re
 from pathlib import Path
 from uuid import UUID
@@ -65,8 +66,16 @@ def role_limit(configuration, role):
     return configuration.runtime_budget.operator_connections
 
 
-def _admit_operator(cursor, configuration, marker, *, initial):
-    """A role name alone cannot authorize takeover of a database or cluster roles."""
+def _admit_operator(cursor, configuration, marker, *, initial, after_restore=None):
+    """A role name alone cannot authorize takeover of a database or cluster roles.
+
+    On a configured database a change needs a backup recorded within the
+    window (``backup.require_recent_backup``). ``after_restore`` (a set
+    name, ``database-grants --after-restore``) replaces that one rule, and
+    only when the database is that set freshly loaded by ``pk-restore``
+    (``require_restore_loaded``); the evidence is checked whether or not the
+    database is configured, so the option is refused in any other state.
+    """
     cursor.execute(
         "SELECT current_user,session_user,rolsuper,current_database() "
         "FROM pg_roles WHERE rolname=current_user"
@@ -93,6 +102,8 @@ def _admit_operator(cursor, configuration, marker, *, initial):
         )
         if cursor.fetchone()[0]:
             raise ConfigError("Only an empty database may receive initial ownership.")
+    if after_restore is not None:
+        require_restore_loaded(cursor, after_restore)
     cursor.execute("SELECT to_regclass('public.stewardship_system_configuration')")
     if cursor.fetchone()[0] is not None:
         cursor.execute(
@@ -101,9 +112,65 @@ def _admit_operator(cursor, configuration, marker, *, initial):
         if cursor.fetchone()[0]:
             from .backup import require_recent_backup
 
-            # A configured deployment changes only behind a recent verified
-            # backup: the v1 reduction of the deferred upgrade admission.
-            require_recent_backup(cursor)
+            if after_restore is None:
+                # A configured deployment changes only behind a recent
+                # verified backup: the v1 reduction of the deferred upgrade
+                # admission.
+                require_recent_backup(cursor)
+            else:
+                # The restored set is the backup: logged, since this is the
+                # one path past the rule (operations, "Restore admission").
+                from .observability import Event, FailureKind, emit
+
+                emit(
+                    Event.STARTUP_VALIDATED,
+                    level=logging.WARNING,
+                    failure_kind=FailureKind.BACKUP_WAIVED_AFTER_RESTORE,
+                )
+
+
+def require_restore_loaded(cursor, set_name):
+    """Refuse unless the database is ``set_name`` as ``pk-restore`` just loaded it.
+
+    The evidence ``pk-restore``'s own ``set_loaded`` trusts: the public
+    schema's comment is exactly ``pk-restore:SET:<manifest SHA-256>``, which
+    step 6's load writes last in its transaction, and no backup run row
+    started at or after the set's start (a fresh load holds none, while the
+    comment alone survives into later backups and restores). ``set_name``
+    must be a set's name, ``YYYYMMDDTHHMMSSZ``, naming a real UTC time. A
+    missing run table refuses too: every set has one.
+    """
+    from datetime import UTC, datetime
+
+    from .backup import SET_NAME
+
+    try:
+        if type(set_name) is not str or SET_NAME.fullmatch(set_name) is None:
+            raise ValueError
+        start = datetime.strptime(set_name, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+    except ValueError:
+        raise ConfigError("--after-restore must be a backup set's name.") from None
+    cursor.execute(
+        "SELECT coalesce(obj_description('public'::regnamespace,'pg_namespace'),'')"
+    )
+    marker = re.compile("pk-restore:" + re.escape(set_name) + ":[0-9a-f]{64}")
+    if marker.fullmatch(cursor.fetchone()[0]) is None:
+        raise ConfigError(
+            "--after-restore needs the database pk-restore just loaded from that set."
+        )
+    cursor.execute("SELECT to_regclass('public.stewardship_backup_run')")
+    if cursor.fetchone()[0] is None:
+        raise ConfigError("--after-restore needs the restored set's backup records.")
+    cursor.execute(
+        "SELECT EXISTS(SELECT 1 FROM public.stewardship_backup_run "
+        "WHERE started_at>=%s)",
+        [start],
+    )
+    if cursor.fetchone()[0]:
+        raise ConfigError(
+            "--after-restore is refused: a backup ran on this database after the "
+            "restore."
+        )
 
 
 def _admit_reader(cursor, login, tables, columns):
@@ -501,11 +568,13 @@ def provision_roles(configuration, deployment_id):
     return {"database_roles_provisioned": True}
 
 
-def provision_grants(configuration, deployment_id):
+def provision_grants(configuration, deployment_id, *, after_restore=None):
     """Grant only the explicit foundation registry after its migrations exist.
 
-    The off-site uploader's login is created, or its password checked,
-    before the per-identity loop (``_ensure_uploader``).
+    ``after_restore`` is ``pk-restore`` step 7's set name: it replaces the
+    recent-backup rule with that set's restore-load evidence and nothing else
+    (``_admit_operator``). The off-site uploader's login is created, or its
+    password checked, before the per-identity loop (``_ensure_uploader``).
 
     On the users upgrade's base (#952), the swap and what depends on it are
     still pending, so a definer routine, a table or a column one of those
@@ -535,7 +604,9 @@ def provision_grants(configuration, deployment_id):
         ) as database,
         database.cursor() as cursor,
     ):
-        _admit_operator(cursor, configuration, marker, initial=False)
+        _admit_operator(
+            cursor, configuration, marker, initial=False, after_restore=after_restore
+        )
         _admit_writer_guard(cursor)
         _ensure_uploader(database, cursor, configuration, marker)
         cursor.execute("SELECT app,name FROM public.django_migrations")
@@ -613,7 +684,10 @@ def provision_grants(configuration, deployment_id):
         # credential material, decided from the catalog just migrated.
         ensure_inspect_login(cursor, marker, configuration.postgres.name)
         grant_inspect(cursor)
-    return {"database_grants_provisioned": True}
+    result = {"database_grants_provisioned": True}
+    if after_restore is not None:
+        result["after_restore"] = after_restore
+    return result
 
 
 def _with_tolerated(columns, tolerated):

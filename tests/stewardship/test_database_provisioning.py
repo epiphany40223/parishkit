@@ -640,3 +640,144 @@ def test_grant_provisioning_refuses_excess_table_and_column_authority(rows):
             provisioning._admit_existing_grants(
                 cursor, "web", {"table": {"SELECT"}}, {"metadata": {"SELECT": {"id"}}}
             )
+
+
+SET = "20261020T020000Z"
+MARKER = "pk-restore:" + SET + ":" + "ab" * 32
+
+
+def restore_rows(configuration, comment, table=True, later=False, configured=True):
+    """The fake cursor's answers for ``_admit_operator(after_restore=SET)``."""
+    rows = [
+        ("pk_stewardship_operator", "pk_stewardship_operator", True, "stewardship"),
+        ("matching",),
+        (comment,),
+        ("stewardship_backup_run" if table else None,),
+    ]
+    if table:
+        rows.append((later,))
+    rows.append(("stewardship_system_configuration" if configured else None,))
+    if configured:
+        rows.append((True,))
+    return rows
+
+
+def test_after_restore_admits_the_loaded_set_without_a_recent_backup(
+    tmp_path, monkeypatch, caplog
+):
+    """The set's load evidence replaces the 24-hour rule, and is logged.
+
+    No recent-backup query runs, and one WARNING names the category.
+    """
+    from parishkit.stewardship import backup
+
+    configuration = configuration_at(tmp_path)
+    monkeypatch.setattr(
+        backup,
+        "require_recent_backup",
+        lambda cursor: pytest.fail("the recent-backup rule must not run"),
+    )
+    cursor = Cursor(restore_rows(configuration, MARKER))
+    with caplog.at_level("WARNING"):
+        provisioning._admit_operator(
+            cursor, configuration, "matching", initial=False, after_restore=SET
+        )
+    (record,) = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert record.getMessage() == "startup_validated"
+    assert "upgrade_backup_waived_after_restore" in repr(record.__dict__)
+    queries = "\n".join(cursor.statements)
+    assert "obj_description('public'::regnamespace,'pg_namespace')" in queries
+    assert "started_at>=%s" in queries
+    assert "completed_at" not in queries
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "another set",
+        "no marker",
+        "another digest form",
+        "a later backup",
+        "no run table",
+        "not a set name",
+        "not a real time",
+    ],
+)
+def test_after_restore_refuses_every_other_state(tmp_path, monkeypatch, case):
+    """Only the exact marker with no later run row; never weakens anything else."""
+    from parishkit.stewardship import backup
+
+    configuration = configuration_at(tmp_path)
+    monkeypatch.setattr(
+        backup, "require_recent_backup", lambda cursor: pytest.fail("not reached")
+    )
+    name, comment, table, later = SET, MARKER, True, False
+    if case == "another set":
+        comment = "pk-restore:20261019T020000Z:" + "ab" * 32
+    elif case == "no marker":
+        comment = ""
+    elif case == "another digest form":
+        comment = "pk-restore:" + SET + ":" + "AB" * 32
+    elif case == "a later backup":
+        later = True
+    elif case == "no run table":
+        table = False
+    elif case == "not a set name":
+        name = "2026-10-20T02:00:00Z"
+    else:
+        name = "20261340T020000Z"
+    cursor = Cursor(restore_rows(configuration, comment, table=table, later=later))
+    with pytest.raises(ConfigError, match="--after-restore"):
+        provisioning._admit_operator(
+            cursor, configuration, "matching", initial=False, after_restore=name
+        )
+    assert not any("GRANT" in statement for statement in cursor.statements)
+
+
+def test_without_after_restore_a_restored_database_still_needs_a_recent_backup(
+    tmp_path,
+):
+    """Ordinary grants never read the restore marker and keep the 24-hour rule."""
+    configuration = configuration_at(tmp_path)
+    rows = [
+        ("pk_stewardship_operator", "pk_stewardship_operator", True, "stewardship"),
+        ("matching",),
+        ("stewardship_system_configuration",),
+        (True,),
+        ("stewardship_backup_run",),
+        (False,),
+    ]
+    cursor = Cursor(rows)
+    with pytest.raises(ConfigError, match="a backup recorded within 24 hours"):
+        provisioning._admit_operator(cursor, configuration, "matching", initial=False)
+    assert not any("pg_namespace')" in statement for statement in cursor.statements)
+
+
+def test_grants_pass_after_restore_through_and_report_it(tmp_path, monkeypatch):
+    """The command's result names the set it was admitted for."""
+    seen = {}
+    configuration = configuration_at(tmp_path)
+    cursor = Cursor()
+    cursor.fetchall = lambda: []
+    monkeypatch.setattr(provisioning, "_password", lambda path: b"private-password")
+    monkeypatch.setattr(
+        provisioning,
+        "_admit_operator",
+        lambda *args, **kwargs: seen.update(kwargs),
+    )
+    monkeypatch.setattr(provisioning, "_check_role", lambda *args, **kwargs: True)
+    monkeypatch.setattr(provisioning, "_connection", lambda *args: Database(cursor))
+    for name in ("_admit_existing_grants", "_admit_reader", "_admit_writer_guard"):
+        monkeypatch.setattr(provisioning, name, lambda *args: None)
+    monkeypatch.setattr(provisioning, "ensure_inspect_login", lambda *args: None)
+    monkeypatch.setattr(provisioning, "grant_inspect", lambda *args: None)
+    monkeypatch.setattr(provisioning, "_ensure_uploader", lambda *args: None)
+    assert provisioning.provision_grants(configuration, uuid4(), after_restore=SET) == {
+        "database_grants_provisioned": True,
+        "after_restore": SET,
+    }
+    assert seen == {"initial": False, "after_restore": SET}
+    assert provisioning.provision_grants(configuration, uuid4()) == {
+        "database_grants_provisioned": True
+    }
+    assert seen == {"initial": False, "after_restore": None}
