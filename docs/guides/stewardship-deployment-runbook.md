@@ -728,6 +728,11 @@ one mail consumer or the bulk send quick-stop), which a recreate would
 silently undo; a pulled image that does not carry the named digest; and,
 unless `STEWARDSHIP_SCHEMA_CHANGE=1`, an advisory upgrade check that
 answers anything but `t`, which is step 1's cue to read the release notes.
+From the off-site uploader's contract release on it also refuses a backup
+profile with a route out, and on Production a host without the uploader's
+cron line, a fixed Docker Engine or the one-shot networks' `INPUT` drop
+(backup runbook,
+[Upgrading to the contract release](stewardship-backup-runbook.md#upgrading-to-the-contract-release)).
 It then stops the background services and takes the required backup; a
 backup without a recorded off-host copy abandons the upgrade and restarts
 those services. When the running release has the off-site uploader, the
@@ -871,17 +876,23 @@ services healthy`, with exit status 0, and then one backup run by hand.
 The upgrade's own step-1 backup ran before the full stop, on the old
 networks, so right after the rollout run `run --rm backup-worker` as the
 backup runbook's [nightly backup](stewardship-backup-runbook.md#the-nightly-backup)
-says. Its JSON line must show `"backup_recorded": true` and an `offsite`
-whose `state` is `uploaded`; keep its manifest digest off the host as
-usual. That proves the backup worker connects from its new network and
-that the off-site copy still leaves through `application-egress`, which
-the full stop recreated. A refusal (one generic line, exit `2`) means the
-next cron backup would fail too, and an `offsite` state of `failed` means
-the off-site copies would stop: find the cause before the window ends, or
-roll back. A state of `busy` means another run held the off-site copy
-lock, and that run copies this set too; run the backup once more to see
-`uploaded`. `not_configured` is right only on a deployment with no
-off-site copy set up, such as pk-local.
+says. Its JSON line must show `"backup_recorded": true`; keep its manifest
+digest off the host as usual. That proves the backup worker connects from
+its new network. Then prove the off-site copy, which leaves through
+`application-egress` (the full stop recreated it): on a release before the
+off-site uploader's
+[contract](stewardship-backup-runbook.md#upgrading-to-the-contract-release)
+the backup line itself carries an `offsite` field whose `state` must be
+`uploaded`; from the contract release on, the backup has no route out and
+no `offsite` field, so run
+`docker compose ... run --rm backup-uploader upload --config UPLOADER_CONFIG --wait-lock 1800 --require-digest DIGEST`
+with that manifest digest, whose `required_copy` must be `uploaded`. A
+refusal (one generic line, exit `2`) means the next cron run would fail
+too, and a `failed` state means the off-site copies would stop: find the
+cause before the window ends, or roll back. A `busy` state means another
+run held the off-site copy lock; that run copies this set too, so repeat
+the check to see `uploaded`. `not_configured` is right only on a
+deployment with no off-site copy set up, such as pk-local.
 
 To see the rules in force, ask
 PostgreSQL which file it read:

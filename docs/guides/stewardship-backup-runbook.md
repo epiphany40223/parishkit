@@ -194,8 +194,8 @@ the scheduled run plus `request_id`, so send its output off the host the
 same way. A request it never picks up lapses after 30 minutes and is never
 run late: the page then says the server did not pick it up and links this
 section. Every backup run, scheduled or requested, holds one backup lock
-while it makes its set, so two never make sets at the same time (an
-off-site upload that follows may still be running): a scheduled run waits
+while it makes its set, so two never make sets at the same time (the
+off-site uploader copies the set on its own schedule): a scheduled run waits
 for a running one for at most 30 minutes, then records a `task_timed_out`
 entry (`lock_timeout`) and exits `2`. A scheduled run also completes a
 request that is waiting. Both request mode and scheduled runs record
@@ -261,6 +261,17 @@ dated after the clock. Otherwise the next run prunes normally once its set
 is close to the previous one, and the fourteen-set floor bounds what a
 clock that stays wrong can remove.
 
+Retention on the host also never removes a set mid-upload. It only tries
+the off-site copy lock (an exclusive lock on the `backups/` directory, see
+[off-site copies](#off-site-copies-to-google-drive)) and holds it while it
+prunes; when an off-site copy holds it, the run prunes nothing and logs a
+`task_failed` line with `failure_kind` `backup_retention_paused_copy`: INFO,
+since it is routine and the next backup prunes, or WARNING once four or
+more complete sets are already past the rules above (two days of skipped
+prunes at two backups a day), so a stuck lock shows in the cron output
+before the disk fills. Find the copy holding the lock as
+[Stopping a running uploader](#stopping-a-running-uploader) says.
+
 Get a copy of every set off the host, either with the application's
 [off-site copies to Google Drive](#off-site-copies-to-google-drive) or with
 `rsync` or `rclone` from the same cron job to the parish's own off-host
@@ -272,10 +283,13 @@ no secret.
 An Administrator can turn on off-site copies from the portal: Integrations,
 then **Off-site backups (Google Drive)**, or during initial setup, in its
 optional **Off-site backups** step, which queues one Test access check of
-the folder when setup completes. After each successful backup, the
-same `backup-worker` run uploads the new set's three files (the two sealed
-files and `manifest.json`, never anything unencrypted) into a subfolder named
-like the set, inside the Drive folder the Administrator chose. It then moves
+the folder when setup completes. The off-site uploader's own
+[cron line](#the-uploaders-cron-line) then uploads each new set's three
+files (the two sealed files and `manifest.json`, never anything
+unencrypted) within five minutes of its backup, into a subfolder named like
+the set, inside the Drive folder the Administrator chose. Since the
+[contract release](#upgrading-to-the-contract-release) the backup profile
+itself has no route out and copies nothing. The uploader then moves
 the subfolders [retention](#retention) does not keep to the Drive trash; it
 never touches a file or folder it did not create. A subfolder from the last
 seven days is never trashed. Older subfolders count only if they hold all
@@ -289,15 +303,14 @@ day exists. The host and the Drive folder may therefore keep different sets
 for a day whose newest set failed to copy: the host keeps that set and
 Drive keeps the day's newest verified copy, so each day in the window still
 has a set in each place. Only one run copies and prunes at a time: a run
-that finds another still copying (the copy lock: a lock file,
-`.offsite-copy.lock`, in `backups/`, and, from the release that adds the
-[off-site uploader](#the-off-site-uploaders-login), a lock on the
-`backups/` directory itself, always taken in that order) leaves the copy to
-it, and its JSON line's `offsite` field says `busy`; the run holding the
-lock looks for new sets once more after its uploads, so a set left to it
-this way is copied in the same run. The
-`smoke --target backup_drive --send` check takes the same lock and reports
-`busy` while a copy is running. Each subfolder is tagged
+that finds another still copying (the copy lock: an exclusive lock on the
+`backups/` directory itself) leaves the copy to it, silently from cron or
+as `busy` with `--wait-lock`; the run holding the lock looks for new sets
+once more after its uploads, so a set finished meanwhile is copied in the
+same run. The `smoke --target backup_drive --send` check takes the same
+lock and reports `busy` while a copy is running. The expand release also
+locked a file, `.offsite-copy.lock`, in `backups/`; since the contract
+release nothing uses it, and a leftover one may be deleted. Each subfolder is tagged
 with the deployment's identity, so two deployments pointed at the same folder
 (for example a validation server and production) each keep and prune only
 their own sets. Even so, give each deployment its own folder: a shared one
@@ -308,18 +321,18 @@ tag, so the two would prune each other's sets. Set folders created before
 this tagging keep the old tag: they are never pruned, and the first copy
 after the change writes a new folder of the same name beside any old one
 (which may be a partial copy). Delete the old-tag folders by hand once newer
-copies exist. The run's JSON line gains
-an `offsite` field (`uploaded`, `failed` with a category, `busy`, or
-`not_configured`), and a failed copy never fails the backup itself: the local
-set is recorded as usual, and the next run copies any of the three newest
-sets not yet in the folder. A failure that belongs to one set (its copy did
+copies exist. The uploader's JSON line (see
+[its login](#the-off-site-uploaders-login)) says `uploaded`, `failed` with a
+category, `busy`, or `not_configured`, and a failed copy never touches the
+backup itself: the local set is recorded as usual, and the next pass copies
+any of the three newest sets not yet in the folder. A failure that belongs to one set (its copy did
 not verify, or Drive stayed unreachable through the retries) is recorded
 and the run moves on to the next set; any other failure (the key, the
 delegation or the folder) stops the run, since every set would fail alike.
 
-The copy never blocks the Admin or Family portals: it runs only in this
-one-shot profile, after the backup has released its startup lease, and
-outside any database transaction, so it holds no work-order or row lock
+The copy never blocks the Admin or Family portals: it runs only in the
+one-shot uploader profile, after the uploader has released its startup
+lease, and outside any database transaction, so it holds no work-order or row lock
 while files are in flight. Every request has a timeout, retries are
 bounded, and the whole copy stops after four hours, an upload still sending
 included (a network operation stalled at that moment can hold it up to five
@@ -391,28 +404,21 @@ Drive request timeouts (one minute, or five minutes for each wait while
 a file uploads, 15 seconds for a **Test access** check) apply to each
 network operation, not to a whole upload, which only the four-hour budget
 bounds. These lines are in the process
-log of the `backup-worker` run (the cron job's output) or of the Google
+log of the `backup-uploader` run (the cron job's output) or of the Google
 Workspace credential installer, and each is also written to the durable
 operational log in the database, as `work_budget_reached`
 (`drive_copy_budget`, `drive_retry_budget`) or `task_timed_out`
 (`drive_request`, `drive_probe_wait`) with the same limit and elapsed
 seconds.
 
-To check the setup by hand from the host, run the smoke check in the backup
-profile; `--send` also uploads the newest complete local set, into a set
-folder tagged with this deployment's identity as a real copy would, so the
-next backup's copy finds it complete and reuses it and retention prunes it
-like any other:
-
-```text
-docker compose ... run --rm --entrypoint pk-stewardship backup-worker \
-  smoke --config SERVICE_CONFIG --target backup_drive \
-  --delegated-email ADDRESS --folder-link LINK [--send]
-```
-
-`SERVICE_CONFIG` is the `backup-worker` service configuration the Compose
-file already passes to the profile. The
-[smoke tools guide](stewardship-smoke-tools.md) describes its output.
+To check the setup by hand from the host, run the smoke check in the
+uploader's profile, as [its login](#the-off-site-uploaders-login) shows;
+`--send` also uploads the newest complete local set bound to its run row,
+into a set folder tagged with this deployment's identity as a real copy
+would, so the next copy finds it complete and reuses it and retention
+prunes it like any other. The backup profile refuses the check: it has no
+route to Drive. The [smoke tools guide](stewardship-smoke-tools.md)
+describes its output.
 
 ### The off-site uploader's login
 
@@ -421,13 +427,13 @@ The dedicated off-site uploader
 added in steps. The expand release adds its login,
 `pk_stewardship_backup_uploader`, its one-shot `backup-uploader` profile
 (its own offline network plus `application-egress`, never `backend`), its
-source rule and its copy, `upload`, which is the profile's command. The
-backup profile's own copy above still runs too, until the later contract
-release removes it: both take the same copy lock, so whichever copies a
-set first records it and the other finds nothing pending. The uploader
-copies exactly as the backup's copy does (the same three files, budgets,
-retries, outcome rows, alert and Drive retention), with stricter rules for
-which sets it copies:
+source rule and its copy, `upload`, which is the profile's command. Until
+the contract release the backup profile's own copy ran too, under the same
+copy lock; since the [contract release](#upgrading-to-the-contract-release)
+the uploader alone copies, and the backup login can no longer record a copy
+outcome or choose a run's completion time. The uploader copies with the
+same three files, budgets, retries, outcome rows, alert and Drive
+retention, and these rules for which sets it copies:
 
 - only a set whose manifest digest has a backup run row in the database,
   and whose name is that row's start time (to the second, in UTC), with
@@ -459,8 +465,8 @@ the copy lock, nothing is pending, the database cannot be reached or is
 mid-upgrade, or offline work holds the startup interlock. A database that
 refuses its login (a missed `database-grants`, or a source rule not in
 force) logs one WARNING `startup_rejected` line. When it copies or records
-anything it prints one JSON line, as the backup's `offsite` field does
-(`state`, `sets`, and `failure_kind` for a failure). `--wait-lock SECONDS`
+anything it prints one JSON line (`state`, `sets`, and `failure_kind` for
+a failure). `--wait-lock SECONDS`
 (at most four hours) waits for a copy already running instead, prints a
 line whatever happens, and reports `busy` when the wait expires, which
 also records a `task_timed_out` entry (`lock_timeout`) with the limit and
@@ -595,8 +601,9 @@ It runs `upload` and is silent when there is nothing to do, so one line
 covers the scheduled backups, **Take a backup now**, manual runs and the
 catch-up after an outage. Send its output off the host as the backup's is.
 If the line is missing, the existing check that a backup's copy recorded
-something within six hours raises the `backup_offsite_failed` incident once
-the contract release has removed the backup's own copy. A restore or drill
+something within six hours raises the `backup_offsite_failed` incident,
+since the backup itself no longer copies, and the scripted upgrade refuses
+on Production while no uncommented uploader line is installed. A restore or drill
 disables it with the other backup jobs (the scripted restores refuse while
 it is uncommented), and the upgrade's own step 1 runs the uploader itself.
 
@@ -637,6 +644,84 @@ rollback of the expand release also needs evidence that the previous
 release's image accepts the expanded database; without it, rolling back is
 a restore. The left-over login has no source rule in the previous
 rendering, so PostgreSQL refuses it, and its password file is unused.
+
+### Upgrading to the contract release
+
+The contract release takes the backup profile off `application-egress`,
+removes its own copy, and carries frozen migration 0195, which revokes the
+backup login's INSERT on the off-site copy outcomes and its table INSERT on
+the run record (the grants that follow give it the run record's other
+columns, never `completed_at`). It changes no network PostgreSQL is on, so
+there is no full stop: run the
+[scripted upgrade](stewardship-deployment-runbook.md#scripted-upgrade) with
+`STEWARDSHIP_SCHEMA_CHANGE=1`. An application-only rollback of it is refused,
+as for every release with a migration.
+
+Its upgrade (and every later one) checks before it stops anything that the
+backup profile has [no route out](#no-route-out-for-the-backup-profile),
+and on Production refuses unless all of these hold, each with the
+Administrator's approval where it changes the host:
+
+1. The running release is the expand release or later (it has the
+   uploader's `upload`): deploy that one first, prove the uploader and
+   install its cron line.
+2. The [uploader's cron line](#the-uploaders-cron-line) is installed and
+   uncommented in root's or the `sudo` user's crontab, `/etc/crontab` or
+   `/etc/cron.d`, so copies do not stop with this release.
+3. Docker Engine is 26.0.0 or later, or 25.0.5 / 23.0.11 or a later patch
+   of those (24.x and pre-releases refuse): those carry the fix for
+   CVE-2024-29018, which stops `dockerd`'s embedded DNS server forwarding
+   queries for containers on internal networks only.
+4. The host's `INPUT` drop for the one-shot networks is installed (below).
+5. The egress probe reaches nothing (below).
+
+LOCAL (pk-local) runs the same checks and only reports them. After the
+upgrade, the next cron backup's JSON line no longer carries an `offsite`
+field; the uploader's cron line copies the set.
+
+### No route out for the backup profile
+
+Since the contract release the backup worker is on its own internal Docker
+network alone. Three routes could still leave it, and the upgrade's
+`egress-probe` (run from the new image in a container joined only to that
+network, five seconds per attempt) checks each, printing its answers and
+the Engine version into the upgrade log and `stewardship-backup.log`:
+
+- direct TCP to two public addresses and to a Google API address the host
+  resolved;
+- DNS through Docker's embedded resolver (`127.0.0.11`, answered by
+  `dockerd` from the host's own network, where no container firewall rule
+  sees it) and straight to a public resolver;
+- the network's gateway, which is the host itself: every port the host
+  listens on at a wildcard address or at that gateway (`ss -Htlnu`), by TCP
+  and by UDP.
+
+Any answer refuses the upgrade before anything stops, naming what answered.
+Production always has listeners there (Docker publishes Caddy's 80 and 443
+on the host's wildcard address, and `sshd` usually listens there too), and
+a UDP service can take a datagram without answering it, so the upgrade also
+requires a persisted host `INPUT` drop for the whole `runtime_network.offline`
+block (default `172.29.242.0/24`), whatever the probe says. With the
+Administrator's approval, before the contract upgrade:
+
+```text
+sudo iptables -I INPUT 1 -s OFFLINE_BLOCK -j DROP
+sudo iptables -C INPUT -s OFFLINE_BLOCK -j DROP && echo installed
+sudo netfilter-persistent save   # with the iptables-persistent package
+```
+
+`OFFLINE_BLOCK` is the deployment's `runtime_network.offline` (in
+`config/services/web.yaml`, `deployment.runtime_network.offline`). The rule
+drops only traffic from the one-shot networks to the host's own addresses:
+PostgreSQL's traffic stays on the bridge between containers, and Caddy's
+public traffic does not come from that block. Keep it across reboots with
+the host's own mechanism (`netfilter-persistent` above, or the firewall
+tool the host already uses), beside the drill's `DOCKER-USER` rule below.
+A DNS answer through the embedded resolver is the Engine's own forwarding,
+which no host rule sees: upgrade Docker Engine to a fixed version (above).
+If it cannot be upgraded at once, the advisory's workaround is a per-service
+`dns:` address for the backup worker, but that needs a code change here:
+file an issue rather than editing the rendered Compose file.
 
 ### A copy named in the future
 
@@ -708,8 +793,9 @@ public key's pair: find out why before relying on any backup.
 **Never back up from a disposable drill host.** A set restored onto a second
 host carries the source deployment's off-site Drive folder, its Google
 Workspace key and its deployment identity, so the copy's tag is the same.
-One `backup-worker` run there, whether by hand, from a copied cron job or by
-following step 9, uploads that host's restored state into the source
+One `backup-uploader` run there (or a `backup-worker` run of a release
+before the uploader's contract), whether by hand, from a copied cron job or
+by following step 9, uploads that host's restored state into the source
 deployment's live Drive folder and then prunes the source deployment's own
 sets as though they were its own. On a drill host, never run
 `backup-worker` (request mode included), never install the backup,
