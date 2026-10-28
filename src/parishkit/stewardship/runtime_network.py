@@ -22,6 +22,7 @@ OFFLINE_PROFILES = (
     "admin-recovery",
     "database-provision",
     "backup-worker",
+    "backup-uploader",
 )
 # Inside each /28: the gateway at offset 1, PostgreSQL at offset 2, and the
 # profile's containers only from the upper /29 (offsets 8 to 15).
@@ -52,7 +53,7 @@ class RuntimeNetwork:
 
     backend: str = "172.29.240.0/24"
     proxy: str = "172.29.241.0/24"
-    # A /24 holds 16 one-shot slices and a /25 eight; five are used.
+    # A /24 holds 16 one-shot slices and a /25 eight; six are used.
     offline: str = DEFAULT_OFFLINE
 
     def __post_init__(self):

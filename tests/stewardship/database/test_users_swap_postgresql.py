@@ -2635,8 +2635,11 @@ def provisioned_logins(monkeypatch):
         monkeypatch.setattr(provisioning, name, lambda *a, **k: None)
     monkeypatch.setattr(provisioning, "_check_role", lambda *a, **k: True)
     # The inspection login (#2148) is cluster-wide and has its own Docker
-    # provisioning test; this shared cluster never gets it.
-    for name in ("ensure_inspect_login", "grant_inspect"):
+    # provisioning test; this shared cluster never gets it. The off-site
+    # uploader's creation and password check (#235) read its password file,
+    # which this stand-in configuration has none of; the login itself is
+    # made above like every other, and its own tests cover that step.
+    for name in ("ensure_inspect_login", "grant_inspect", "_ensure_uploader"):
         monkeypatch.setattr(provisioning, name, lambda *a: None)
     connection.ensure_connection()
     monkeypatch.setattr(

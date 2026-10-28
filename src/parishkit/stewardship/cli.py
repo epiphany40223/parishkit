@@ -71,7 +71,11 @@ _COMMAND_OPTIONS = {
         "send",
     },
     "database-roles": {"config", "confirm_deployment"},
-    "database-grants": {"config", "confirm_deployment"},
+    # --after-restore: pk-restore step 7 only (#235, "Restore admission").
+    "database-grants": {"config", "confirm_deployment", "after_restore"},
+    # The off-site uploader's password against a stored verifier on stdin
+    # (#235); also the upgrade script's "image has the uploader" marker.
+    "uploader-password-check": {"config"},
     "recover-admin": {
         "config",
         "confirm_deployment",
@@ -259,6 +263,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "wait-seconds",
         "ca-file",
         "backup-at",
+        "after-restore",
         "confirm-administrators",
         "name",
     ):
@@ -515,6 +520,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         from .database_sources import execute
 
         return execute(args)
+    if args.command == "uploader-password-check":
+        from .uploader_password import execute_password_check
+
+        return execute_password_check(args)
     if args.command == "service":
         if args.bind_all_interfaces and (
             args.profile != DeploymentProfile.DEVELOPMENT

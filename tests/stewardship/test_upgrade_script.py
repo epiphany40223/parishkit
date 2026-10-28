@@ -296,6 +296,38 @@ upper=$(tr '[:lower:]' '[:upper:]' <<<"$layout")
 networks_var=FAKE_NETWORKS_$upper
 postgres_var=FAKE_POSTGRES_$upper
 case "$*" in
+    # The command-list probe (#235): FAKE_HELP is every image's list, and
+    # FAKE_HELP_RUNNING the running image's (CURRENT) when set;
+    # FAKE_HELP_FAIL names an image that does not answer.
+    *" --help")
+        img=${*: -2:1}
+        [ "$img" != "${FAKE_HELP_FAIL-}" ] || exit 1
+        listed="usage: pk-stewardship {config-check,retarget-image,smoke}"
+        if [ -n "${FAKE_HELP_RUNNING-}" ] && [ "$img" = "${FAKE_RUNNING_IMAGE-}" ]; then
+            echo "$FAKE_HELP_RUNNING"
+        else
+            echo "${FAKE_HELP:-$listed}"
+        fi ;;
+    # The uploader's password preflight: FAKE_UPLOADER_LOGINS is the count,
+    # FAKE_UPLOADER_QUERY_FAIL fails it, FAKE_UPLOADER_ANSWER is the check's.
+    *"count(*) FROM pg_authid"*)
+        [ -z "$FAKE_UPLOADER_QUERY_FAIL" ] || exit 1
+        echo "${FAKE_UPLOADER_LOGINS-0}" ;;
+    *"coalesce(rolpassword"*) echo 'SCRAM-SHA-256$4096:c2FsdA==$x:y' ;;
+    *" uploader-password-check --config "*)
+        cat >"$FAKE_STATE/verifier_seen"
+        [ -z "$FAKE_UPLOADER_CHECK_FAIL" ] || exit 2
+        echo "${FAKE_UPLOADER_ANSWER:-match}" ;;
+    # The subnet-overlap preflight: FAKE_UPLOADER_NETWORK is the subnet of the
+    # project's own uploader network when Docker has it; FAKE_SUBNETS the
+    # other networks, one "name subnet..." line each.
+    *"{{range .IPAM.Config}}{{.Subnet}} {{end}} "*"_offline-backup-uploader")
+        [ -n "${FAKE_UPLOADER_NETWORK-}" ] || exit 1
+        echo "$FAKE_UPLOADER_NETWORK " ;;
+    "network ls --quiet --no-trunc")
+        [ -z "${FAKE_SUBNETS-}" ] || awk '{print "id-" $1}' <<<"$FAKE_SUBNETS" ;;
+    "network inspect --format {{.Name}}{{range .IPAM.Config}} {{.Subnet}}{{end}} "*)
+        echo "$FAKE_SUBNETS" ;;
     "network ls --quiet --filter "*)
         [ -z "$layout" ] || jq -r '.[].Id' <<<"${!networks_var}" ;;
     "network inspect --format "*)
@@ -672,6 +704,8 @@ def run_host(
     # replaced; FAKE_ORIGIN_FAIL makes the origin unreachable.
     executable_stub(bin_dir, "install", 'mkdir -p "${@: -1}"')
     executable_stub(bin_dir, "sleep", "exit 0")
+    # The host's routes for the uploader's subnet-overlap preflight (#235).
+    executable_stub(bin_dir, "ip", 'echo "ip $*" >>"$FAKE_LOG"; echo "$FAKE_ROUTES"')
     # The stand-in answers as the application does through caddy (the local
     # mode reads the Server header; Production only the exit status).
     executable_stub(
@@ -2746,3 +2780,246 @@ def test_a_service_that_is_not_running_is_not_probed(tmp_path):
     assert any("exec -T web pk-stewardship database-sources" in c for c in calls)
     assert any("-T migration database-sources" in c for c in calls)
     assert f"Upgraded to {TARGET} in" in output
+
+
+# ---------------------------------------------------------------------------
+# The off-site uploader's preflights (#235): the command-list probe of both
+# images, the read-only password check and the subnet-overlap check, all
+# before step 1 stops anything.
+
+UPLOADER_HELP = (
+    "usage: pk-stewardship {config-check,retarget-image,smoke,uploader-password-check}"
+)
+
+
+def before_the_stop(calls, fragment):
+    """The fragment's first call comes before any service is stopped."""
+    stop = next((i for i, call in enumerate(calls) if " stop " in call), len(calls))
+    return first(calls, fragment) < stop
+
+
+def test_both_images_are_probed_and_no_marker_means_no_uploader_checks(tmp_path):
+    """Without uploader-password-check the image has no uploader: nothing runs.
+
+    Every image lists smoke, so smoke is not the marker.
+    """
+    calls, output, _ = run_host(tmp_path, "upgrade")
+    helps = [call for call in calls if call.endswith(" --help")]
+    assert [call.split()[-2] for call in helps] == [TARGET, CURRENT]
+    assert all("--network none" in call for call in helps)
+    assert not any(
+        "pg_authid" in call or "uploader-password-check" in call for call in calls
+    )
+    assert "off-site uploader" not in output
+
+
+@pytest.mark.parametrize("which", ["target", "running"])
+def test_an_image_that_does_not_list_its_commands_refuses_first(tmp_path, which):
+    """A probe failure stops the run before anything stops."""
+    image = TARGET if which == "target" else CURRENT
+    calls, output, _ = run_host(tmp_path, "upgrade", status=1, help_fail=image)
+    assert "Could not list the commands of" in output
+    assert not any(" stop " in call for call in calls)
+
+
+def test_a_command_list_without_retarget_image_is_not_an_answer(tmp_path):
+    """Output that is not a command list refuses rather than reading as none."""
+    calls, output, _ = run_host(tmp_path, "upgrade", status=1, help="Error: nope")
+    assert "Could not list the commands of" in output
+    assert not any(" stop " in call for call in calls)
+
+
+def test_no_uploader_login_yet_needs_no_file_check(tmp_path):
+    """The expand upgrade: the count is 0, step 4 creates the login."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", help=UPLOADER_HELP, uploader_logins=0, routes=""
+    )
+    assert "no uploader login yet" in output
+    assert before_the_stop(calls, "count(*) FROM pg_authid")
+    assert "default_transaction_read_only=on" in calls[first(calls, "pg_authid")]
+    assert not any("uploader-password-check" in call for call in calls)
+
+
+def test_an_existing_login_needs_its_file_to_match(tmp_path):
+    """A row: the new image's check answers match, in its isolated container."""
+    calls, output, root = run_host(
+        tmp_path, "upgrade", help=UPLOADER_HELP, uploader_logins=1, routes=""
+    )
+    assert "the uploader's password file matches its login" in output
+    check = calls[first(calls, "uploader-password-check")]
+    assert check.startswith("run -i --rm --init --network none")
+    assert f"source={root},target={root},readonly" in check
+    assert "target=/run/operator.yaml,readonly" in check
+    assert check.endswith(
+        f"{TARGET} uploader-password-check --config /run/operator.yaml"
+    )
+    assert before_the_stop(calls, "uploader-password-check")
+    # The verifier reached the check on stdin, and never the log.
+    assert (
+        (tmp_path / "state" / "verifier_seen").read_text().startswith("SCRAM-SHA-256$")
+    )
+    assert "SCRAM-SHA-256$" not in output
+    assert not any(
+        "SCRAM-SHA-256$" in path.read_text() for path in (tmp_path / "logs").iterdir()
+    )
+
+
+@pytest.mark.parametrize(
+    "fake",
+    [
+        {"uploader_answer": "mismatch"},
+        {"uploader_check_fail": "1"},
+        {"uploader_answer": "matched"},
+    ],
+)
+def test_a_missing_or_mismatched_file_refuses_before_anything_stops(tmp_path, fake):
+    """Any answer but match names the lost-file recovery; nothing stops."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        status=1,
+        help=UPLOADER_HELP,
+        uploader_logins=1,
+        routes="",
+        **fake,
+    )
+    assert "uploader-lost-file-recovery" in output
+    assert "Nothing was" in output
+    assert not any(" stop " in call for call in calls)
+
+
+def test_a_killed_password_check_is_logged_removed_and_refuses(tmp_path):
+    """The 120 s limit: the kill is logged, the container removed by name."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        status=1,
+        help=UPLOADER_HELP,
+        uploader_logins=1,
+        routes="",
+        timeout=" uploader-password-check ",
+    )
+    killed = next(call for call in calls if call.startswith("timeout "))
+    assert killed.startswith("timeout --kill-after=10 120 docker run ")
+    name = killed.split("--name ", 1)[1].split()[0]
+    assert name.endswith("-uploader-password-check")
+    assert calls.index(f"kill {name}") < calls.index(f"rm --force {name}")
+    assert "TIMEOUT: the off-site uploader's password check killed after " in output
+    assert "(limit 120s)" in output
+    assert f"one-off container {name} killed and removed (time limit)" in output
+    assert "answer: none" in output
+    assert not any(" stop " in call for call in calls)
+    log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    assert "TIMEOUT: the off-site uploader's password check killed after " in log
+
+
+@pytest.mark.parametrize(
+    "fake, message",
+    [
+        ({"uploader_query_fail": "1"}, "Could not ask the database"),
+        ({"uploader_logins": "t"}, "Unexpected answer"),
+        ({"uploader_logins": ""}, "Unexpected answer"),
+        ({"uploader_logins": "2"}, "Unexpected answer"),
+    ],
+)
+def test_a_failed_login_query_is_never_read_as_no_login(tmp_path, fake, message):
+    """The query's own failure, or an answer other than 0 or 1, refuses."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", status=1, help=UPLOADER_HELP, routes="", **fake
+    )
+    assert message in output
+    assert not any(" stop " in call for call in calls)
+    assert not any("uploader-password-check" in call for call in calls)
+
+
+def test_only_the_new_image_decides_the_password_check(tmp_path):
+    """A running image with the uploader and a new one without: no check."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        help_running=UPLOADER_HELP,
+        running_image=CURRENT,
+    )
+    assert "the running image has the off-site uploader" in output
+    assert not any("pg_authid" in call for call in calls)
+
+
+def test_the_uploaders_subnet_is_checked_against_networks_and_routes(tmp_path):
+    """Slice 5 of the default offline block, before anything stops."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        help=UPLOADER_HELP,
+        subnets="bridge 172.17.0.0/16\nstewardship_offline-bootstrap 172.29.242.0/28",
+        routes="default via 10.0.0.1 dev eth0\n172.17.0.0/16 dev docker0 scope link",
+    )
+    assert "172.29.242.80/28 overlaps no Docker network or host route" in output
+    assert before_the_stop(calls, "network ls --quiet --no-trunc")
+    assert before_the_stop(calls, "ip -4 route show")
+
+
+@pytest.mark.parametrize(
+    "fake, named",
+    [
+        ({"subnets": "vpn 172.29.242.64/26", "routes": ""}, "Docker network vpn"),
+        ({"subnets": "", "routes": "172.16.0.0/12 via 10.0.0.1"}, "host route 172.16"),
+        ({"subnets": "", "routes": "172.29.242.90 via 10.0.0.1"}, "host route 172.29"),
+        (
+            {"subnets": "", "routes": "blackhole 172.29.242.80/28"},
+            "host route 172.29.242.80/28",
+        ),
+    ],
+)
+def test_an_overlapping_network_or_route_refuses_before_anything_stops(
+    tmp_path, fake, named
+):
+    """It names what overlaps; the remedy is to move that, not the setting.
+
+    retarget-image refuses any change to runtime_network.offline on an
+    existing deployment, so the message must not send the operator there.
+    """
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", status=1, help=UPLOADER_HELP, **fake
+    )
+    assert named in output
+    assert "Move or remove the" in output
+    assert "conflicting network or route" in output
+    assert "Do not change" in output
+    assert "Choose another" not in output
+    assert "Nothing was stopped or changed" in output
+    assert not any(" stop " in call for call in calls)
+
+
+def test_a_chosen_offline_block_moves_the_uploaders_slice(tmp_path):
+    """The /28 follows runtime_network.offline from the rendered documents."""
+
+    def prepare(root):
+        """Render a non-default offline block, as the record would carry it."""
+        web = root / "config" / "services" / "web.yaml"
+        document = json.loads(web.read_text())
+        document["deployment"]["runtime_network"] = {"offline": "10.44.7.0/25"}
+        web.write_text(json.dumps(document))
+
+    _, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        status=1,
+        prepare=prepare,
+        help=UPLOADER_HELP,
+        subnets="",
+        routes="10.44.7.80/28 dev eth9",
+    )
+    assert "10.44.7.80/28 (slice 5 of runtime_network.offline" in output
+
+
+def test_the_uploaders_existing_network_needs_no_overlap_check(tmp_path):
+    """Its own bridge route would overlap itself; Docker already made it."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        help=UPLOADER_HELP,
+        uploader_network="172.29.242.80/28",
+        routes="172.29.242.80/28 dev br-1234 scope link",
+    )
+    assert "the uploader's network 172.29.242.80/28 already exists" in output
+    assert not any(call.startswith("ip ") for call in calls)

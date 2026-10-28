@@ -993,9 +993,11 @@ def read_destination():
 
 
 def test_only_the_workspace_installer_reads_the_backup_destination(destination):
-    """The definer answers the installer alone, with just the two settings (#269).
+    """The definer answers the installer, with just the two settings (#269).
 
-    Every other runtime login lacks EXECUTE, and a login granted EXECUTE by
+    The off-site uploader (#235) is the one other login the registry grants
+    it (0193's caller check admits it; see the uploader tests below). Every
+    other runtime login lacks EXECUTE, and a login granted EXECUTE by
     mistake is still refused by the definer's own caller check.
     """
     from parishkit.stewardship.runtime_grants import (
@@ -1010,7 +1012,10 @@ def test_only_the_workspace_installer_reads_the_backup_destination(destination):
         if role is not ServiceRole.MIGRATION
         and BACKUP_DESTINATION_FUNCTION in runtime_functions(role, target=target)
     }
-    assert granted == {"pk_stewardship_credential_google_workspace"}
+    assert granted == {
+        "pk_stewardship_credential_google_workspace",
+        "pk_stewardship_backup_uploader",
+    }
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT has_function_privilege('public', "
@@ -1144,9 +1149,11 @@ def test_the_recheck_migration_refuses_a_partial_install(broken):
             cursor.execute(check)
 
 
-# The dedicated off-site uploader's login (#235). No release creates it yet:
-# frozen file 0193 only names it, in the destination definer's caller check
-# and the log writer's timeout clause.
+# The dedicated off-site uploader's login (#235). Frozen file 0193 names it
+# in the destination definer's caller check and the log writer's timeout
+# clause; the expand release's database-grants creates it and grants it
+# from the registry (test_uploader_grants_postgresql.py). These tests make
+# it themselves with only the grants each needs.
 UPLOADER = "pk_stewardship_backup_uploader"
 MIGRATION_FILES = Path(backup_probes.__file__).with_name("schema") / "migrations"
 PREPARATION_SQL = (MIGRATION_FILES / "0193_backup_uploader_preparation.sql").read_text(
@@ -1178,11 +1185,11 @@ def uploader_login(*grants):
             cursor.execute(f"DROP ROLE {role}")
 
 
-def test_the_uploader_login_is_not_part_of_this_release():
-    """0193 is inert: no identity, login or EXECUTE grant for the uploader yet."""
+def test_the_uploader_login_is_an_identity_of_this_release():
+    """The registry names it; the test database itself has no such role."""
     from parishkit.stewardship.runtime_identities import database_identities
 
-    assert UPLOADER not in {sql_name for _, sql_name, _, _ in database_identities()}
+    assert UPLOADER in {sql_name for _, sql_name, _, _ in database_identities()}
     with connection.cursor() as cursor:
         cursor.execute("SELECT 1 FROM pg_roles WHERE rolname=%s", [UPLOADER])
         assert cursor.fetchone() is None

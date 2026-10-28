@@ -17,6 +17,7 @@ ONE_SHOTS = (
     "admin-recovery",
     "database-provision",
     "backup-worker",
+    "backup-uploader",
 )
 # One connection with the password from PGPASSWORD; prints what happened.
 CONNECT = (
@@ -140,6 +141,38 @@ def check_refused_sources(file, project, configuration, passwords, wrong, run):
             operator,
             database,
             OPERATOR,
+            run,
+        )
+        == "REFUSED"
+    )
+    # The off-site uploader (#235): its password works from its own
+    # profile only. The backup worker reads every login's password (it
+    # archives the credentials tree), so the two one-shots are refused each
+    # other's logins by the final reject (28000), whatever the password.
+    probes = probe_file(file)
+    uploader, backup = passwords("backup-uploader"), passwords("backup-worker")
+    login = "pk_stewardship_backup_uploader"
+    assert (
+        _connect(
+            probes, project, "run", "backup-uploader", uploader, database, login, run
+        )
+        == "CONNECTED"
+    )
+    assert (
+        _connect(
+            probes, project, "run", "backup-worker", uploader, database, login, run
+        )
+        == "REFUSED"
+    )
+    assert (
+        _connect(
+            probes,
+            project,
+            "run",
+            "backup-uploader",
+            backup,
+            database,
+            "pk_stewardship_backup_worker",
             run,
         )
         == "REFUSED"

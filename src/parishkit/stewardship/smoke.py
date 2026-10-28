@@ -336,13 +336,17 @@ def _deployment_tag(configuration):
 
 
 def check_backup_drive(configuration, *, delegated_email, folder_link, send=False):
-    """The backup profile can write to the off-site Drive folder.
+    """The backup or uploader profile can write to the off-site Drive folder.
 
     Runs in the backup-worker container, which reads the installed Google
-    Workspace key through its read-only credentials tree. The check writes
-    one small file and trashes it; ``--send`` also copies the newest complete
-    local backup set, exactly as the backup command would, into a set folder
-    tagged with this deployment's identity (so it reads the database too).
+    Workspace key through its read-only credentials tree, or in the off-site
+    uploader's (#235), which mounts that key alone, after admitting its
+    mounts. The check writes one small file and trashes it; ``--send`` also
+    copies the newest complete local backup set, exactly as the backup
+    command would, into a set folder tagged with this deployment's identity
+    (so it reads the database too). The uploader profile refuses ``--send``
+    for now: the copy needs its own copy lock and its own database
+    admission, which arrive with its ``upload`` command.
     """
     from .backup_drive import (
         DriveClient,
@@ -356,15 +360,31 @@ def check_backup_drive(configuration, *, delegated_email, folder_link, send=Fals
     from .mail_catcher import admit_real_workspace
     from .runtime_paths import explicit_path, private_directory
 
-    if configuration.service_role is not ServiceRole.BACKUP_WORKER:
+    role = configuration.service_role
+    if role not in {ServiceRole.BACKUP_WORKER, ServiceRole.BACKUP_UPLOADER}:
         raise ConfigError("Run the off-site backup check in the backup profile.")
+    if role is ServiceRole.BACKUP_UPLOADER:
+        if send:
+            raise ConfigError(
+                "The uploader profile's backup check is probe-only in this release."
+            )
+        from .uploader_boundaries import admit_uploader_service
+
+        admit_uploader_service(configuration)
     # Drive opens in LOCAL only where a real Workspace key may be used: with a
     # mail redirect, on the normal clock (#1399). Refused before the key or
     # the database is read.
     admit_real_workspace(configuration.profile, configuration.mail_redirect)
     folder = folder_id_from_url(folder_link or "")
     tag = {"tag": _deployment_tag(configuration)} if send else {}
-    value = read_private(RuntimeLayout(configuration).credential("google_workspace"))
+    # The uploader mounts the key itself (its rotating directory, or the
+    # overridden file); the backup profile reads it inside its tree.
+    key = (
+        configuration.secrets["google_workspace"]
+        if role is ServiceRole.BACKUP_UPLOADER
+        else RuntimeLayout(configuration).credential("google_workspace")
+    )
+    value = read_private(key)
     try:
         client = DriveClient(
             workspace_session(
@@ -427,6 +447,7 @@ def execute_smoke(args):
             ServiceRole.WORKER,
             ServiceRole.MAIL_DISPATCH,
             ServiceRole.BACKUP_WORKER,
+            ServiceRole.BACKUP_UPLOADER,
         }:
             raise ConfigError("Run the smoke check inside a deployed consumer.")
         if args.target == "backup_drive":
@@ -438,7 +459,10 @@ def execute_smoke(args):
             )
             print(json.dumps({"target": args.target, **result}, sort_keys=True))
             return 0
-        if configuration.service_role is ServiceRole.BACKUP_WORKER:
+        if configuration.service_role in {
+            ServiceRole.BACKUP_WORKER,
+            ServiceRole.BACKUP_UPLOADER,
+        }:
             raise ConfigError("Run the smoke check inside a deployed consumer.")
         if args.target == "parishsoft":
             result = check_parishsoft(
