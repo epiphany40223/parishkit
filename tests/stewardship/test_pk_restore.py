@@ -1800,3 +1800,178 @@ def test_a_rendering_without_rules_reloads_and_checks_nothing(host):
     assert result.returncode == 0, output(result)
     for fragment in ("hba-check", "pg_reload_conf", " -v since="):
         assert not any(fragment in c for c in calls), fragment
+
+
+# ---------------------------------------------------------------------------
+# The off-site uploader (#235): an image that lists uploader-password-check.
+# Step 4 keeps the host's password file for a set without one, step 7 runs
+# database-grants --after-restore SET, and step 8 checks the sources from
+# the backup-uploader profile too.
+
+HELP_UPLOADER = HELP.replace(
+    "restore-begin}",
+    "restore-begin,database-sources,database-grants,uploader-password-check}",
+)
+UPLOADER_FILE = Path("credentials") / "database" / "backup-uploader"
+
+
+def uploader_set(host, password=None):
+    """Re-seal the fixture's set with a credentials/database directory.
+
+    With ``password``, the set carries its own uploader password file. The
+    manifest's plaintext digest follows the new files.tar.
+    """
+    set_web = json.dumps(
+        {
+            **json.loads((host["root"] / "config/services/web.yaml").read_text()),
+            "set": True,
+        }
+    ).encode()
+    members = {
+        **SET_FILES,
+        "config/services/web.yaml": set_web,
+        "credentials/database": None,
+        "credentials/database/web": b"set web password\n",
+    }
+    if password is not None:
+        members[str(UPLOADER_FILE)] = password
+    write_tar(host["files"], members)
+    manifest = json.loads(host["manifest"].read_text())
+    manifest["files"]["plaintext_sha256"] = sha256(host["files"])
+    host["manifest"].write_text(json.dumps(manifest))
+    host["env"]["FAKE_RECORDED"] = sha256(host["manifest"])
+
+
+def host_password(host, value=b"the host's uploader password\n", tree=None):
+    """Give the host (or a moved-aside ``tree``) an uploader password file."""
+    path = (tree or host["root"] / "credentials") / "database" / "backup-uploader"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(value)
+    path.chmod(0o600)
+    return path
+
+
+def index(calls, text):
+    """The first call containing ``text``."""
+    return next(i for i, c in enumerate(calls) if text in c)
+
+
+def test_an_uploader_image_keeps_the_hosts_password_and_runs_the_grants(host):
+    """A set from before the login: the host's file, then grants after restore."""
+    import stat
+
+    uploader_set(host)
+    host_password(host)
+    result, calls = restore(host, FAKE_HELP=HELP_UPLOADER)
+    assert result.returncode == 0, output(result)
+    restored = host["root"] / UPLOADER_FILE
+    assert restored.read_bytes() == b"the host's uploader password\n"
+    assert not restored.is_symlink()
+    assert stat.S_IMODE(restored.stat().st_mode) == 0o600
+    assert restored.stat().st_uid == os.getuid()
+    assert "kept the host's off-site uploader password file from " in result.stdout
+    assert "credentials.pre-restore-" in result.stdout
+    services = f"{host['root']}/config/services"
+    grants = index(calls, "database-provision database-grants")
+    assert calls[grants].endswith(
+        f"database-grants --config {services}/database-provision.yaml "
+        f"--confirm-deployment {UUID} --after-restore {SET}"
+    )
+    assert index(calls, " retarget-image ") < grants < index(calls, " restore-begin ")
+    sources = index(calls, " backup-uploader database-sources ")
+    assert calls[sources].endswith(
+        f"database-sources --config {services}/backup-uploader.yaml"
+    )
+    assert index(calls, " admin-recovery database-sources ") < sources
+    assert "from web, admin-recovery and backup-uploader" in result.stdout
+
+
+def test_a_set_with_its_own_uploader_password_keeps_it(host):
+    """The set's file is the cluster's; nothing is copied over it."""
+    uploader_set(host, password=b"the set's uploader password\n")
+    host_password(host)
+    result, _ = restore(host, FAKE_HELP=HELP_UPLOADER)
+    assert result.returncode == 0, output(result)
+    assert (host["root"] / UPLOADER_FILE).read_bytes() == (
+        b"the set's uploader password\n"
+    )
+    assert "kept the host's off-site uploader password file" not in result.stdout
+
+
+def test_a_resumed_run_takes_the_newest_moved_aside_file(host):
+    """--from 4 after a failed run: this run's moved-aside tree has none.
+
+    The failed run's tree (the newest other one) holds the host's own file;
+    an older restore's tree holds another, which is not taken.
+    """
+    uploader_set(host)
+    older = host["root"] / "credentials.pre-restore-20260901T000000Z"
+    newer = host["root"] / "credentials.pre-restore-20261001T000000Z"
+    host_password(host, b"an older restore's password\n", tree=older)
+    host_password(host, b"the host's own password\n", tree=newer)
+    result, _ = restore(host, "--from", "4", FAKE_HELP=HELP_UPLOADER)
+    assert result.returncode == 0, output(result)
+    assert (host["root"] / UPLOADER_FILE).read_bytes() == b"the host's own password\n"
+    assert f"from {newer}/database/backup-uploader" in result.stdout
+
+
+def test_a_linked_uploader_file_is_never_followed(host, tmp_path):
+    """A symlink in the moved-aside tree is not a regular file: nothing copied."""
+    uploader_set(host)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.write_text("not a password\n")
+    link = host["root"] / "credentials" / "database" / "backup-uploader"
+    link.parent.mkdir(parents=True)
+    link.symlink_to(elsewhere)
+    result, _ = restore(host, FAKE_HELP=HELP_UPLOADER)
+    assert result.returncode == 0, output(result)
+    assert not (host["root"] / UPLOADER_FILE).exists()
+    assert "no moved-aside tree has one" in result.stdout
+
+
+def test_an_image_without_the_uploader_runs_no_grants_or_uploader_check(host):
+    """Every image lists smoke; only uploader-password-check is the marker."""
+    uploader_set(host)
+    host_password(host)
+    help_text = HELP.replace("restore-begin}", "restore-begin,database-sources,smoke}")
+    result, calls = restore(host, FAKE_HELP=help_text)
+    assert result.returncode == 0, output(result)
+    assert not any("database-grants" in c for c in calls)
+    assert not any(" backup-uploader " in c for c in calls)
+    assert "from web and admin-recovery" in result.stdout
+
+
+def test_an_uploader_image_without_database_grants_refuses_first(host):
+    """The needed list refuses before anything stops."""
+    help_text = HELP_UPLOADER.replace("database-grants,", "")
+    result, calls = restore(host, FAKE_HELP=help_text)
+    assert result.returncode == 1, output(result)
+    assert "has no database-grants" in output(result)
+    assert not stopped(calls)
+
+
+def test_a_refused_restore_grant_stops_in_step_seven(host):
+    """A mismatched file (or any refusal) stops there; --from 7 resumes."""
+    uploader_set(host)
+    host_password(host)
+    result, calls = restore(host, FAKE_HELP=HELP_UPLOADER, FAKE_FAIL="database-grants")
+    assert result.returncode == 1, output(result)
+    assert "Stopped in step 7" in output(result)
+    assert "run again with --from 7" in output(result)
+    assert not any(" restore-begin " in c for c in calls)
+
+
+@pytest.mark.parametrize("drill", [False, True])
+def test_a_new_host_creates_the_login_through_the_restore_grants(new_host, drill):
+    """Replacement and drill: step 7's grants, then the uploader's source check."""
+    new_host["env"]["FAKE_HELP"] = HELP_NEW_HOST.replace(
+        "database-roles}",
+        "database-roles,database-sources,database-grants,uploader-password-check}",
+    )
+    result, calls = new(new_host, *(["--drill"] if drill else []))
+    assert result.returncode == 0, output(result)
+    grants = index(calls, "database-provision database-grants")
+    assert calls[grants].endswith(f"--after-restore {SET}")
+    assert index(calls, " retarget-image ") < grants < index(calls, " restore-begin ")
+    assert index(calls, "database-roles") < grants
+    assert any(" backup-uploader database-sources " in c for c in calls)

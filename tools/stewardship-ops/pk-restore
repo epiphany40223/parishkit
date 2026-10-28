@@ -88,15 +88,19 @@
 #
 # Then: 1 stops every online service (after waiting, bounded, for a running
 # backup-worker); 4 moves each current tree aside as NAME.pre-restore-STAMP
-# (never deleting it) and puts the set's in place; 6 copies the dump into
+# (never deleting it) and puts the set's in place, keeping the host's
+# off-site uploader password file when the set's credentials have none
+# (below); 6 copies the dump into
 # the PostgreSQL store (on disk, beside its data directory and never inside
 # it, written by the postgres container's own user), converts it with
 # pg_restore, deletes the dump copy, checks the room again (about twice
 # the database's size), replaces the
 # application schema in one psql transaction and deletes the SQL; 7 runs
-# retarget-image and pull, moves cache/static aside and cache/static.next
-# in, runs revoke-automation-sessions when the image has it, and
-# restore-begin; 8 starts web and caddy only and waits for web's health.
+# retarget-image and pull, runs database-grants --after-restore SET when the
+# image has the off-site uploader (below), moves cache/static aside and
+# cache/static.next in, runs revoke-automation-sessions when the image has
+# it, and restore-begin; 8 starts web and caddy only and waits for web's
+# health.
 # The scheduler, worker, mail-dispatch and installers stay stopped until
 # the Restore review is released.
 #
@@ -139,6 +143,22 @@
 # ends after web's health check: destroy the host (runbook step 10).
 # Container egress is blocked on the host before the run (the runbook's
 # DOCKER-USER rule); the host's own pulls and DNS still work.
+#
+# The off-site uploader (#235): an image has it when its command list names
+# uploader-password-check. Its login is a cluster role, which a dump does not
+# hold, so in step 4, when the set's credentials tree has no
+# database/backup-uploader password file, the one from the tree just moved
+# aside is copied in (a regular file, not a link, owner-only and the owner's;
+# on a resumed run whose moved-aside tree lacks it, from the newest other
+# credentials.pre-restore-* tree that has one). Nothing else is changed, and
+# the copy is logged. For an image with the uploader, the checks also need
+# database-grants; step 7 runs it with --after-restore SET (the restored set
+# stands in for the recent backup it otherwise requires): it creates the
+# login from the file retarget-image created on a new host, or checks an
+# existing login's stored password against the file; step 8's source check
+# also runs from the backup-uploader profile. On a drill host that one-off
+# joins application-egress like any uploader run; the DOCKER-USER rule
+# blocks its egress, and it runs only database-sources.
 #
 # Every Docker call runs under a time limit; a kill is logged with what was
 # stopped, the limit and the elapsed time. Each step is logged with a
@@ -332,7 +352,7 @@ EOF
     [ "$from" -lt 5 ] || echo "1. Stop every online service (postgres and valkey keep running)."
     [ "$from" -gt 5 ] || echo "5. Start postgres and valkey; database-roles --confirm-deployment $uuid; the database marker must then be $uuid."
     [ "$from" -gt 6 ] || echo "6. Copy the dump into the PostgreSQL store, convert it with pg_restore, delete the dump copy, then replace the public schema in one psql transaction that marks the schema as set $set_name; delete the SQL."
-    echo "7. retarget-image to $image, $pull, move cache/static.next in, revoke-automation-sessions (when the image has it), restore-begin --backup-at $set_name."
+    echo "7. retarget-image to $image, $pull, database-grants --after-restore $set_name (when the image has the off-site uploader), move cache/static.next in, revoke-automation-sessions (when the image has it), restore-begin --backup-at $set_name."
     echo "8. Start $start and wait for web's health."
     echo "Log: $log_dir/restore-STAMP.log"
     exit 0
@@ -364,9 +384,9 @@ Checks, before anything stops: the database marker is $uuid (typed again);
 1. Wait for any backup-worker, then stop every online service (postgres
    and valkey keep running).
 EOF
-    [ "$from" -gt 4 ] || echo "4. Move config, credentials, media and the provisioning record aside as NAME.pre-restore-STAMP; put the set's in place, owned by $owner."
+    [ "$from" -gt 4 ] || echo "4. Move config, credentials, media and the provisioning record aside as NAME.pre-restore-STAMP; put the set's in place, owned by $owner, keeping the host's off-site uploader password file when the set has none."
     [ "$from" -gt 6 ] || echo "6. Copy the dump into the PostgreSQL store, convert it with pg_restore, delete the dump copy, then replace the public schema in one psql transaction that marks the schema as set $set_name; delete the SQL."
-    echo "7. retarget-image to $image, pull, move cache/static aside and cache/static.next in, revoke-automation-sessions (when the image has it), restore-begin --backup-at $set_name."
+    echo "7. retarget-image to $image, pull, database-grants --after-restore $set_name (when the image has the off-site uploader), move cache/static aside and cache/static.next in, revoke-automation-sessions (when the image has it), restore-begin --backup-at $set_name."
     echo "8. Start web and caddy only and wait for web's health; then the Restore review."
     echo "Log: $log_dir/restore-STAMP.log"
     exit 0
@@ -1256,6 +1276,12 @@ help=$(limited "$LIMIT_QUERY" "the image's command list" "${isolated[@]}" "$imag
 has_command() { grep -qE "[{,]$1[,}]" <<<"$help"; }
 needed=(validate-deployment retarget-image collect-static restore-check restore-begin)
 [ "$replace" -eq 0 ] || needed+=(database-roles)
+# The off-site uploader's marker (header): step 7 then needs database-grants.
+uploader=0
+if has_command uploader-password-check; then
+    uploader=1
+    needed+=(database-grants)
+fi
 for name in "${needed[@]}"; do
     has_command "$name" ||
         refuse "$image has no $name; restore this set by hand (runbook, Restore limitations in v1)"
@@ -1453,6 +1479,42 @@ move_aside() {
         echo "    kept $1.pre-restore-$stamp"
     fi
 }
+keep_uploader_password() {
+    # The off-site uploader's password file (header): when the restored
+    # credentials tree has none, copy the host's own from the tree just
+    # moved aside, else from the newest other moved-aside tree with one.
+    # Only a regular file (never a link) is copied, owner-only and the
+    # owner's, under a temporary name first. Nothing else changes.
+    local name=database/backup-uploader target from="" tree
+    target=$credentials_dir/$name
+    if [ -e "$target" ] || [ -L "$target" ]; then
+        return 0
+    fi
+    # This run's moved-aside tree first, then the others newest first (the
+    # stamps sort by time); an unmatched glob is checked and skipped.
+    while read -r tree; do
+        if [ -f "$tree/$name" ] && [ ! -L "$tree/$name" ]; then
+            from=$tree/$name
+            break
+        fi
+    done < <(printf '%s\n' "$credentials_dir.pre-restore-$stamp"
+        printf '%s\n' "$credentials_dir".pre-restore-* | sort -r)
+    if [ -z "$from" ]; then
+        echo "    the set has no off-site uploader password file, and no moved-aside tree has one"
+        return 0
+    fi
+    if [ ! -d "$credentials_dir/database" ] || [ -L "$credentials_dir/database" ]; then
+        refuse "the restored credentials have no database directory for the uploader's password file"
+    fi
+    if ! { (umask 077 && cp -- "$from" "$target.copying") &&
+        chown "$owner" "$target.copying" &&
+        chmod 0600 "$target.copying" &&
+        mv -- "$target.copying" "$target"; }; then
+        rm -f -- "$target.copying"
+        refuse "could not keep the host's off-site uploader password file"
+    fi
+    echo "    kept the host's off-site uploader password file from $from"
+}
 if [ "$from" -le 4 ]; then
     current=4
     step "4. Restoring the files"
@@ -1466,6 +1528,7 @@ if [ "$from" -le 4 ]; then
     done
     rmdir "$stage"
     stage=""
+    keep_uploader_password
 fi
 [ -f "$compose" ] || refuse "the restored files have no $compose"
 
@@ -1578,6 +1641,16 @@ if [ -n "$hba_rules" ]; then
     hba_render || refuse "cannot render the hba check in $image"
     hba_reload || refuse "PostgreSQL's source rules are not in force (above)"
 fi
+if [ "$uploader" -eq 1 ]; then
+    # The off-site uploader's login (header): created from the file the
+    # retarget created, or an existing one checked against it. The restored
+    # set's load evidence stands in for the recent backup grants otherwise
+    # require; the result names the set.
+    echo "    database-grants after restoring $set_name (its load evidence stands in for a recent backup)"
+    oneoff "database-grants" database-provision database-grants \
+        --config "$services/database-provision.yaml" --confirm-deployment "$uuid" \
+        --after-restore "$set_name"
+fi
 move_aside "$static_dir"
 mv "$static_dir.next" "$static_dir"
 if has_command revoke-automation-sessions; then
@@ -1657,7 +1730,11 @@ if has_command database-sources; then
     # two services a restore starts: web and the admin-recovery one-off. It
     # uses no password. A difference names the login and the source; web
     # stays up, but the review must wait for a fix.
-    step "8. Checking the database sources from web and admin-recovery"
+    if [ "$uploader" -eq 1 ]; then
+        step "8. Checking the database sources from web, admin-recovery and backup-uploader"
+    else
+        step "8. Checking the database sources from web and admin-recovery"
+    fi
     sources_ok=1
     if [ -n "$hba_rules" ]; then
         # The rules step 7 loaded are still the rendered ones, in force.
@@ -1674,6 +1751,11 @@ if has_command database-sources; then
         sources_ok=0
     oneoff "the source check from admin-recovery" admin-recovery database-sources \
         --config "$services/admin-recovery.yaml" || sources_ok=0
+    if [ "$uploader" -eq 1 ]; then
+        # With step 7's verifier check, the restore's proof of the login.
+        oneoff "the source check from backup-uploader" backup-uploader database-sources \
+            --config "$services/backup-uploader.yaml" || sources_ok=0
+    fi
     if [ "$sources_ok" -eq 0 ]; then
         phase=sources  # finish adds no resume hint
         [ "$drill" -eq 0 ] ||
