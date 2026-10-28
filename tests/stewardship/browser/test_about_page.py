@@ -134,10 +134,20 @@ def test_locked_campaign_dates_are_one_line_with_a_tip(page, component_origin):
     expect(bubble).to_contain_text("lock once the campaign goes live")
 
 
-def test_every_about_control_sits_beside_its_heading(page, component_origin):
+# The About index has about 900 pages; one test opening all of them took
+# about two minutes in CI WebKit and hit the per-test timeout. Each shard
+# opens every SHARDS-th page instead. The index is only known once the
+# fixture server runs, so the split is by position, not one test per page
+# (a test per page would pay the per-test browser setup 900 times).
+SHARDS = 8
+
+
+@pytest.mark.parametrize("shard", range(SHARDS))
+def test_every_about_control_sits_beside_its_heading(page, component_origin, shard):
     """On every fixture page with an About panel, the closed control is in the
     heading row: the panel directly follows the page's h1, and its summary is
-    drawn on the same line as the heading, to the right of it (#227)."""
+    drawn on the same line as the heading, to the right of it (#227). The
+    shards together cover the whole index."""
     page.set_viewport_size({"width": 1366, "height": 768})
     # A page that starts its check on arrival (#2271) would submit its form
     # while loading; every page here is served waiting for a press.
@@ -146,7 +156,7 @@ def test_every_about_control_sits_beside_its_heading(page, component_origin):
     paths = page.inner_text("body").split()
     assert len(paths) >= 20, paths
     misplaced = []
-    for path in paths:
+    for path in paths[shard::SHARDS]:
         open_page(page, component_origin + path)
         placement = placement_on(page)
         if placement:
