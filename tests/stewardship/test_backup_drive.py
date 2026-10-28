@@ -184,7 +184,17 @@ def test_a_set_that_no_longer_matches_its_manifest_is_not_copied(
 
 
 @pytest.mark.parametrize(
-    "plant", ["symlink", "fifo", "directory", "manifest_link", "set_link", "huge"]
+    "plant",
+    [
+        "symlink",
+        "fifo",
+        "directory",
+        "manifest_link",
+        "set_link",
+        "huge",
+        "hard_link",
+        "manifest_hard_link",
+    ],
 )
 def test_a_set_with_a_planted_file_is_refused_before_any_upload(
     tmp_path, caplog, plant
@@ -193,7 +203,9 @@ def test_a_set_with_a_planted_file_is_refused_before_any_upload(
 
     A symlink planted in a set (to the uploader's own key, say, with a
     matching checksum in the manifest) is never followed, a FIFO never
-    stalls the open, and a manifest past the cap is not parsed.
+    stalls the open, a file with a second name (a hard link planted to a
+    file the backup cannot read) is not opened as the set's, and a manifest
+    past the cap is not parsed.
     """
     drive = FakeDrive(FOLDER)
     directory = make_set(tmp_path)
@@ -216,6 +228,10 @@ def test_a_set_with_a_planted_file_is_refused_before_any_upload(
         real = tmp_path / "real-set"
         directory.rename(real)
         directory.symlink_to(real)
+    elif plant == "hard_link":
+        os.link(directory / backup.DUMP, tmp_path / "second-name")
+    elif plant == "manifest_hard_link":
+        os.link(directory / backup.MANIFEST, tmp_path / "second-name")
     else:
         manifest = json.loads((directory / backup.MANIFEST).read_bytes())
         manifest["padding"] = "x" * backup_drive.MANIFEST_CAP
@@ -227,6 +243,17 @@ def test_a_set_with_a_planted_file_is_refused_before_any_upload(
     assert not caught.value.retryable
     assert drive.calls.count("upload") == 0 and not drive.sets()
     assert logged_kinds(caplog) == [("ERROR", "backup_set_mismatch")]
+
+
+def test_a_hard_linked_manifest_has_no_digest(tmp_path):
+    """The selection's digest reads the manifest as the copy opens it (#235)."""
+    from parishkit.stewardship.backup_offsite import _digest
+
+    directory = make_set(tmp_path)
+    data = (directory / backup.MANIFEST).read_bytes()
+    assert _digest(directory) == hashlib.sha256(data).hexdigest()
+    os.link(directory / backup.MANIFEST, tmp_path / "second-name")
+    assert _digest(directory) is None
 
 
 def test_a_set_swapped_since_its_digest_was_chosen_is_not_copied(tmp_path, caplog):

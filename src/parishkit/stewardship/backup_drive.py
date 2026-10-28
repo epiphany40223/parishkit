@@ -531,12 +531,14 @@ def open_set(directory, names):
 
     The set's directory is opened ``O_DIRECTORY|O_NOFOLLOW`` and each file
     in it ``O_RDONLY|O_NOFOLLOW`` (``O_NONBLOCK`` too, so a planted FIFO
-    cannot stall the open), and each must be a regular file by ``fstat`` on
-    that descriptor (#235, "Regular files only"). The same descriptors are
-    hashed and then uploaded, so a symlink planted in a set (to the
-    uploader's own key, say, with a matching checksum in the manifest) is
-    never followed. Anything else is refused as the same non-retryable
-    ``verification`` a damaged set is.
+    cannot stall the open), and each must be a regular file with one link
+    by ``fstat`` on that descriptor (#235, "Regular files only"): a set's
+    files are written once, so a second name means a hard link planted to
+    a file the uploader can read and the backup cannot. The same
+    descriptors are hashed and then uploaded, so a symlink planted in a set
+    (to the uploader's own key, say, with a matching checksum in the
+    manifest) is never followed. Anything else is refused as the same
+    non-retryable ``verification`` a damaged set is.
     """
     with ExitStack() as stack:
         try:
@@ -550,12 +552,17 @@ def open_set(directory, names):
                     dir_fd=folder,
                 )
                 handle = stack.enter_context(os.fdopen(descriptor, "rb"))
-                if not stat.S_ISREG(os.fstat(descriptor).st_mode):
-                    raise OSError("not a regular file")
+                if not single_regular(os.fstat(descriptor)):
+                    raise OSError("not a regular file with one link")
                 handles[name] = handle
         except OSError:
             _set_mismatch()
         yield handles
+
+
+def single_regular(status):
+    """Whether an ``fstat`` result is a regular file with exactly one link."""
+    return stat.S_ISREG(status.st_mode) and status.st_nlink == 1
 
 
 def read_manifest(handle):

@@ -34,7 +34,6 @@ import fcntl
 import hashlib
 import logging
 import os
-import stat
 import time
 from contextlib import contextmanager, suppress
 from functools import partial
@@ -52,6 +51,7 @@ from .backup_drive import (
     folder_id_from_url,
     log_timeout,
     prune,
+    single_regular,
     upload_set,
     with_retries,
     workspace_session,
@@ -142,7 +142,8 @@ def _digest(directory):
 
     The manifest is read as ``backup_drive.open_set`` reads it (#235): the
     set's directory and the file are opened without following a link, the
-    file must be a regular one, and nothing past ``MANIFEST_CAP`` is read.
+    file must be a regular one with a single link, and nothing past
+    ``MANIFEST_CAP`` is read.
     None means the manifest broke one of those rules (or could not be read);
     the copy then refuses the set as ``verification`` when it tries it.
     Nothing is logged here, so choosing what to copy stays silent.
@@ -156,7 +157,7 @@ def _digest(directory):
         finally:
             os.close(folder)
         with os.fdopen(descriptor, "rb") as handle:
-            if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            if not single_regular(os.fstat(descriptor)):
                 return None
             data = handle.read(MANIFEST_CAP + 1)
     except OSError:
