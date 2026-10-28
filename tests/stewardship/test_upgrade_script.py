@@ -2948,12 +2948,19 @@ def test_the_uploaders_subnet_is_checked_against_networks_and_routes(tmp_path):
 def test_an_overlapping_network_or_route_refuses_before_anything_stops(
     tmp_path, fake, named
 ):
-    """It names what overlaps and the setting to change."""
+    """It names what overlaps; the remedy is to move that, not the setting.
+
+    retarget-image refuses any change to runtime_network.offline on an
+    existing deployment, so the message must not send the operator there.
+    """
     calls, output, _ = run_host(
         tmp_path, "upgrade", status=1, help=UPLOADER_HELP, **fake
     )
     assert named in output
-    assert "runtime_network.offline" in output
+    assert "Move or remove the" in output
+    assert "conflicting network or route" in output
+    assert "Do not change" in output
+    assert "Choose another" not in output
     assert "Nothing was stopped or changed" in output
     assert not any(" stop " in call for call in calls)
 

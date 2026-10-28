@@ -1083,8 +1083,10 @@ if has_command "$new_commands" uploader-password-check; then
         if [ "${#clashes[@]}" -gt 0 ]; then
             echo "The off-site uploader's network $uploader_subnet (slice 5 of runtime_network.offline" >&2
             echo "$offline) overlaps: ${clashes[*]}. Docker would refuse it at the full stop," >&2
-            echo "after PostgreSQL stopped. Nothing was stopped or changed. Choose another" >&2
-            echo "runtime_network.offline block in the deployment YAML, or move the other network." >&2
+            echo "after PostgreSQL stopped. Nothing was stopped or changed. Move or remove the" >&2
+            echo "conflicting network or route named above, then repeat. Do not change" >&2
+            echo "runtime_network.offline: on an existing deployment retarget-image refuses any" >&2
+            echo "change to it (only the image may change)." >&2
             exit 1
         fi
         echo "    the uploader's network $uploader_subnet overlaps no Docker network or host route"
