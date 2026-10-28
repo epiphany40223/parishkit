@@ -1149,12 +1149,13 @@ fi
 # and no host firewall rule, so there the same checks only report.
 engine_fixed() {
     # Whether Docker Engine version $1 has the CVE-2024-29018 fix: 26.0.0
-    # or later, 25.0.5 or a later 25, 23.0.11 or a later 23. A pre-release
-    # (-rc, -beta, -alpha, -dev) of any version is refused; a distribution
-    # suffix after the three numbers is not.
+    # or later, 25.0.5 or a later 25, 23.0.11 or a later 23. Only a `+`
+    # suffix (build metadata, such as a distribution's `+dfsg1`) may follow
+    # the three numbers: a `-` suffix is a pre-release in semantic
+    # versioning (-rc1, -RC1, -beta.1, -dev) and `~` is how Debian packages
+    # spell one (~rc1, ~beta), so either refuses, whatever its case.
     local major minor patch
-    [[ $1 =~ ^([0-9]{1,4})\.([0-9]{1,4})\.([0-9]{1,4})([+~-][0-9A-Za-z.+~-]*)?$ ]] || return 1
-    case "${BASH_REMATCH[4]}" in -rc* | -beta* | -alpha* | -dev*) return 1 ;; esac
+    [[ $1 =~ ^([0-9]{1,4})\.([0-9]{1,4})\.([0-9]{1,4})(\+[0-9A-Za-z.+]*)?$ ]] || return 1
     major=$((10#${BASH_REMATCH[1]})) minor=$((10#${BASH_REMATCH[2]})) patch=$((10#${BASH_REMATCH[3]}))
     if [ "$major" -ge 26 ]; then return 0; fi
     case "$major" in

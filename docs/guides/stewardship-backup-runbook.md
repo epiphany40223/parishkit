@@ -669,9 +669,9 @@ Administrator's approval where it changes the host:
    uncommented in root's or the `sudo` user's crontab, `/etc/crontab` or
    `/etc/cron.d`, so copies do not stop with this release.
 3. Docker Engine is 26.0.0 or later, or 25.0.5 / 23.0.11 or a later patch
-   of those (24.x and pre-releases refuse): those carry the fix for
-   CVE-2024-29018, which stops `dockerd`'s embedded DNS server forwarding
-   queries for containers on internal networks only.
+   of those (24.x and any pre-release, `-rc1` or `~rc1` alike, refuse):
+   those carry the fix for CVE-2024-29018, which stops `dockerd`'s embedded
+   DNS server forwarding queries for containers on internal networks only.
 4. [The host's `INPUT` drop](#the-hosts-input-drop) for the one-shot
    networks is installed, first in `INPUT` and kept by its unit.
 5. The egress probe reaches nothing (below).

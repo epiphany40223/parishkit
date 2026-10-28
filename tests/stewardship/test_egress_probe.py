@@ -69,6 +69,13 @@ def test_a_closed_network_answers_nothing_and_exits_zero(stubbed, capsys):
     )
 
 
+@pytest.mark.parametrize("version", ["25.0.5~rc1", "26.1.0-RC1", "28.1.1+dfsg1"])
+def test_a_refused_engine_version_is_still_recorded(stubbed, capsys, version):
+    """The host refuses pre-releases; the probe still records them as evidence."""
+    assert egress_probe.execute(args(engine_version=version)) == 0
+    assert json.loads(capsys.readouterr().out)["engine_version"] == version
+
+
 @pytest.mark.parametrize(
     "reached",
     [

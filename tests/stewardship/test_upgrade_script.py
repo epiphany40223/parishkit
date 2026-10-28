@@ -3562,6 +3562,10 @@ def test_an_image_without_egress_probe_runs_no_route_out_check(tmp_path):
         ({"engine": "23.0.10"}, "Docker Engine '23.0.10' lacks"),
         ({"engine": "20.10.24+dfsg1"}, "Docker Engine '20.10.24+dfsg1' lacks"),
         ({"engine": "26.0.0-rc2"}, "Docker Engine '26.0.0-rc2' lacks"),
+        ({"engine": "26.1.0-RC1"}, "Docker Engine '26.1.0-RC1' lacks"),
+        ({"engine": "27.0.0-beta.1"}, "Docker Engine '27.0.0-beta.1' lacks"),
+        ({"engine": "25.0.5~rc1"}, "Docker Engine '25.0.5~rc1' lacks"),
+        ({"engine": "27.0.0~beta"}, "Docker Engine '27.0.0~beta' lacks"),
         ({"engine": "not a version"}, "lacks the embedded-DNS fix"),
         ({"engine_fail": "1"}, "Docker Engine 'unknown' lacks"),
         (
@@ -3624,7 +3628,9 @@ def test_an_expired_probe_is_killed_logged_and_refuses(tmp_path):
     assert not any(" stop " in call for call in calls)
 
 
-@pytest.mark.parametrize("engine", ["26.0.0", "25.0.5", "23.0.11", "28.1.1+dfsg1"])
+@pytest.mark.parametrize(
+    "engine", ["26.0.0", "25.0.5", "25.0.10", "23.0.11", "28.1.1+dfsg1", "29.8.1"]
+)
 def test_every_fixed_engine_passes(tmp_path, engine):
     """The CVE-2024-29018 floor: 26.0.0, or 25.0.5 / 23.0.11 and later."""
     _, output, _ = contract(tmp_path, engine=engine)

@@ -56,7 +56,7 @@ PUBLIC_NAME = "www.google.com"
 # Bounds on what the host may pass, so a probe run stays short.
 MAX_LISTENERS = 256
 LISTEN = re.compile(r"(tcp|udp):([1-9][0-9]{0,4})")
-VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]{0,40}")
+VERSION = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+~-]{0,40}")
 # Answers that mean the route is closed; anything else is "reached".
 CLOSED = frozenset({"refused", "unanswered", "no_route"})
 
