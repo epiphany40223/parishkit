@@ -399,11 +399,12 @@ def test_the_census_tabs_keep_each_members_entity():
 def test_only_a_member_with_no_response_skips_the_ministry_read(monkeypatch):
     """A No submission yet tab reads no Ministry requests (the Family has no
     response); a No census answers yet tab (a response from before census
-    joined) still reads its Member's requests."""
+    joined) still reads its Member's requests. A Joined tab (#2319: the
+    response does not name the Member) reads none either."""
     from types import SimpleNamespace
 
     from parishkit.stewardship.reports import timeline_views
-    from parishkit.stewardship.reports.hub_census import unsubmitted
+    from parishkit.stewardship.reports.hub_census import shape, unsubmitted
 
     calls = []
     monkeypatch.setattr(
@@ -431,3 +432,12 @@ def test_only_a_member_with_no_response_skips_the_ministry_read(monkeypatch):
         )
         assert calls == expected
         assert (reads["hub_ministry"] is None) is (not responded)
+    answered = {"members": {"3": {"first_name": "Anne", "last_name": "Adams"}}}
+    census = shape(answered, {}, [], [*roster, ("8", "Hal", "Baker")], census=False)
+    assert [item.mark for item in census.members] == ["", "joined"]
+    for chosen, expected in (("member-1", [("member", "3")]), ("member-2", [])):
+        calls.clear()
+        reads = timeline_views.hub_reads(
+            campaign, family, census, chosen, principal=None, parish_name=""
+        )
+        assert calls == expected

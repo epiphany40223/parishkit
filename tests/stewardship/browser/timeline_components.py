@@ -280,6 +280,10 @@ STREAMS = {
         )
     },
 }
+# The hub's census once ParishSoft added Member 9 to the Family after it
+# answered (#2319): a Joined tab, the fifth, served with it chosen.
+HUB_JOINED = "/hub-joined"
+JOINED = shape(ANSWERS, NAMES, ROWS, [("3", "Ann", "Adams"), ("9", "Ida", "Cole")])
 # The Family tab with its row actions (#2064): its home address change as
 # Census changes decorates it, To review, then once accepted (the page the
 # tab redraws from after Accept; a test serves it at the tab's address).
@@ -390,6 +394,10 @@ def components(context, admin):
             (HUB_ACCEPTED, acting(decision="approved")),
         )
     }
+    pages[HUB_JOINED] = (
+        TIMELINE,
+        {"full": True, "parameters": {"tab": "member-5"}, "census": JOINED},
+    )
     pages |= {
         path: (
             TIMELINE,
