@@ -2888,6 +2888,31 @@ def test_a_missing_or_mismatched_file_refuses_before_anything_stops(tmp_path, fa
     assert not any(" stop " in call for call in calls)
 
 
+def test_a_killed_password_check_is_logged_removed_and_refuses(tmp_path):
+    """The 120 s limit: the kill is logged, the container removed by name."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        status=1,
+        help=UPLOADER_HELP,
+        uploader_logins=1,
+        routes="",
+        timeout=" uploader-password-check ",
+    )
+    killed = next(call for call in calls if call.startswith("timeout "))
+    assert killed.startswith("timeout --kill-after=10 120 docker run ")
+    name = killed.split("--name ", 1)[1].split()[0]
+    assert name.endswith("-uploader-password-check")
+    assert calls.index(f"kill {name}") < calls.index(f"rm --force {name}")
+    assert "TIMEOUT: the off-site uploader's password check killed after " in output
+    assert "(limit 120s)" in output
+    assert f"one-off container {name} killed and removed (time limit)" in output
+    assert "answer: none" in output
+    assert not any(" stop " in call for call in calls)
+    log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
+    assert "TIMEOUT: the off-site uploader's password check killed after " in log
+
+
 @pytest.mark.parametrize(
     "fake, message",
     [

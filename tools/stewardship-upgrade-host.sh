@@ -995,15 +995,30 @@ if has_command "$new_commands" uploader-password-check; then
                 "SELECT coalesce(rolpassword,'') FROM pg_authid WHERE rolname='$uploader_login'" \
                 </dev/null >"$work/uploader.verifier" 2>/dev/null ||
                 { echo "Could not read the off-site uploader's stored password; refusing." >&2; exit 1; }
+            # Named like a one-off, so a kill (or a signal's trap, through
+            # stop_oneoff) removes the container itself: killing only the
+            # docker run client leaves it running. A kill is logged with
+            # what, the limit and the elapsed time, and still refuses below
+            # (answer: none).
+            oneoff_name=$oneoff_prefix-uploader-password-check
+            started=$(date -u +%s)
+            check_rc=0
             answer=$(timeout --kill-after=10 120 docker run -i --rm --init --network none \
+                --name "$oneoff_name" \
                 --user 10001:10001 --read-only --cap-drop ALL \
                 --security-opt no-new-privileges:true \
                 --tmpfs /tmp:rw,nosuid,nodev,noexec,mode=1777 \
                 --mount "type=bind,source=$root,target=$root,readonly" \
                 --mount "type=bind,source=$yaml,target=/run/operator.yaml,readonly" \
                 "$image" uploader-password-check --config /run/operator.yaml \
-                <"$work/uploader.verifier" 2>/dev/null) || true
+                <"$work/uploader.verifier" 2>/dev/null) || check_rc=$?
             rm -f "$work/uploader.verifier"
+            if [ "$check_rc" -eq 124 ] || [ "$check_rc" -eq 137 ]; then
+                echo "TIMEOUT: the off-site uploader's password check killed after $(( $(date -u +%s) - started ))s (limit 120s)" >&3
+                stop_oneoff "time limit" >&3
+                answer=""
+            fi
+            oneoff_name=""
             if [ "$answer" != match ]; then
                 echo "The off-site uploader's password file is missing or does not match the" >&2
                 echo "database's login ${uploader_login} (answer: ${answer:-none}). Nothing was" >&2
