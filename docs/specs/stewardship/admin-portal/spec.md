@@ -313,10 +313,11 @@ and links the step that fixes it, keeping the HTTP status of the underlying
 refusal; closed JSON errors remain for polling and command endpoints.
 
 The setup Parish logos page previews the logo before the Administrator
-advances (#2270). Under the file field a preview box of fixed height holds
-the logo the field would save. Choosing a file draws it at once from the
-browser's own copy of the file (an object URL, revoked when the file is
-replaced or the page is left), with no upload. With no file chosen, the box
+advances (#2270). Above the file field
+([image previews](../ui-conventions/spec.md#image-previews), #2279) a
+preview box of fixed height holds the logo the field would save. Choosing
+a file draws it at once from the browser's own copy of the file (an object
+URL, revoked when the file is replaced or the page is left), with no upload. With no file chosen, the box
 shows the saved logo from the server, so a revisit shows what is saved, and
 its empty text before either exists. A file the page refuses (over 5 MB, or
 one the browser types as something other than an image) or that the browser
@@ -326,8 +327,9 @@ server's own words (the page carries them in data attributes), without
 waiting for Save and continue. The box, the error line and the
 buttons below keep their places in every case, including at 320 px
 ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). Only this
-page's response adds `blob:` to the content security policy's `img-src`; the
-server still checks the size and type of every upload. The post-setup
+page's response and Parish logos' (below) add `blob:` to the content
+security policy's `img-src`; the server still checks the size and type of
+every upload. The post-setup
 Parish logos page (Admin menu) keeps its own review dialog, which already
 shows every generated size; the setup page lists no generated sizes, because its
 preview box already shows the saved logo.
@@ -2501,16 +2503,37 @@ review and Apply happen in the
 [review dialog](../ui-conventions/spec.md#review-dialog) (#750): an upload
 answers with the dialog's review of the staged logos, and Apply posts the
 signed preview, with the staged bundle it was signed for, to Parish logos.
-Once the change is applied, the form and the current logos below it are
-redrawn. An upload from a page whose settings changed elsewhere, and an
+Once the change is applied, the form and the current logos above it
+([image previews](../ui-conventions/spec.md#image-previews), #2279) are
+redrawn. Each of the form's file fields (Basic's one image and each
+Advanced size) has the setup step's chosen-image box directly above it,
+which shows the file at once as it is chosen, before Upload and review,
+keeps its empty text until then, and holds no saved logo (the current
+logos show those). A file the browser types as other than an image, or
+one over that size's limit (refused at the field at once), leaves the box
+empty, and
+a field emptied by a switch of mode empties its box too. Each Advanced
+size's box, and each current logo's frame, draws its image the way that
+size is saved: fitted within the size's bound (32 × 32 for the favicon,
+128 × 128 for the icon, 512 × 128 for the menu logo) at one CSS pixel per
+image pixel and never enlarged, so the same image chosen for every size
+shows how small the favicon and how wide the menu logo will be. The large
+logo (1,024 pixels) is capped at its box, and an image shrinks only where
+the column is narrower than its bound. Each size's box has its own fixed
+height, so choosing a file still moves nothing. Basic's one box is the
+shared box, and the review dialog draws each generated size at its own
+pixels, fitted to the dialog's width. An upload from a
+page whose settings changed elsewhere, and an
 Apply of logos that expired, belong to another sign-in or were staged
 against settings changed since, are refused in the dialog, which says to
 reload the page first.
 
 Parish logos take either one image, resized into all four sizes, or each
-size uploaded separately (#1062): the large
-logo, the menu logo beside the parish name on both portals, the icon and
-the favicon in the browser tab on both portals. The two are the page's
+size uploaded separately (#1062). The four sizes, which the page always
+lists from smallest to largest (the current logos, the Advanced fields and
+the review dialog, and the branding commands; #2288), are the favicon in
+the browser tab on both portals, the icon, the menu logo beside the parish
+name on both portals and the large logo. The two are the page's
 [Basic and Advanced modes](../ui-conventions/spec.md#basic-and-advanced-modes)
 (#1062 slice 3): **Basic** is one image, resized for every size, and
 **Advanced** is each size uploaded separately. Each staged bundle records

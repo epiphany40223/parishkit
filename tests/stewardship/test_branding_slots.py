@@ -259,7 +259,9 @@ def test_each_size_mode_checks_every_chosen_size():
     nothing is staged; an empty upload asks for at least one size."""
     form = bound("advanced")
     assert not form.is_valid()
-    assert form.errors["large"] == ["Choose an image for at least one size to upload."]
+    assert form.errors["favicon"] == [
+        "Choose an image for at least one size to upload."
+    ]
     form = bound("advanced", favicon=image(400, 120), icon=image(200, 200))
     assert not form.is_valid()
     assert list(form.errors) == ["favicon"]
@@ -289,10 +291,10 @@ def test_each_size_field_shows_its_rule_and_is_shown_only_in_its_mode():
     form = LogoUploadForm(initial={"base_digest": "a" * 64})
     assert list(form.fields) == [
         "logo",
-        "large",
-        "menu",
-        "icon",
         "favicon",
+        "icon",
+        "menu",
+        "large",
         "base_digest",
         "editor_mode",
     ]

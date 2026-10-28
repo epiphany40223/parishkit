@@ -2435,7 +2435,7 @@ Apply. The preview reads one image from standard input after the preamble
 for `history preview -`) and admits as the page's upload does
 (`CONFIGURE`, recording activity). It binds the image to the page's own
 form (`branding_views.LogoUploadForm`): without `--size` it is Basic, one
-image made into all four sizes; `--size large|menu|icon|favicon` is
+image made into all four sizes; `--size favicon|icon|menu|large` is
 Advanced for that one size, the others keeping their current images, as
 on the page (one size per run, as standard input carries one file). It
 stages the sizes through the page's own `branding_views.stage_upload`

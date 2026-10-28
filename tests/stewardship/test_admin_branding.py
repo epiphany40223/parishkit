@@ -231,3 +231,79 @@ def test_unusable_storage_or_configuration_is_unavailable(monkeypatch, failure):
             context=context,
         )
     assert "committed" not in context
+
+
+def test_logo_frames_are_one_per_size_in_size_order():
+    """Parish logos draws one frame per size, in size order, whatever is
+    saved (#2279): a missing size has no asset and an unknown label is
+    ignored, so the current logos keep one height."""
+    from parishkit.stewardship.accounts.branding_views import logo_frames
+
+    menu = SimpleNamespace(label="menu")
+    frames = logo_frames([SimpleNamespace(label="other"), menu])
+    assert [frame["title"] for frame in frames] == [s.title for s in SLOTS.values()]
+    assert [frame["name"] for frame in frames] == list(SLOTS)
+    assert [frame["asset"] for frame in frames] == [None, None, menu, None]
+    assert all(frame["asset"] is None for frame in logo_frames([]))
+
+
+def test_logo_sizes_run_smallest_to_largest_whatever_the_row_order():
+    """The four sizes run favicon, icon, menu logo, large logo, by their
+    LOGO_SIZES bounds (#2288), and the current logos' frames keep that
+    order whatever order the saved rows come in."""
+    from parishkit.stewardship.accounts.branding_views import logo_frames
+    from parishkit.stewardship.web.content import LOGO_SIZES
+
+    assert list(SLOTS) == ["favicon", "icon", "menu", "large"]
+    assert list(SLOTS) == sorted(
+        LOGO_SIZES, key=lambda name: LOGO_SIZES[name][0] * LOGO_SIZES[name][1]
+    )
+    rows = [SimpleNamespace(label=name) for name in ("large", "menu", "icon")]
+    rows.append(SimpleNamespace(label="favicon"))
+    for ordered in (rows, rows[::-1], sorted(rows, key=lambda row: row.label)):
+        frames = logo_frames(ordered)
+        assert [str(frame["title"]) for frame in frames] == [
+            "Favicon",
+            "Icon",
+            "Menu logo",
+            "Large logo",
+        ]
+        assert [frame["asset"].label for frame in frames] == list(SLOTS)
+
+
+def test_every_logo_field_names_its_own_preview_box():
+    """Basic's one field and each Advanced size field name the chosen-image
+    box drawn above them, by the field's id plus "_preview" (#2279)."""
+    from parishkit.stewardship.accounts.branding_views import LogoUploadForm
+
+    form = LogoUploadForm()
+    for name in ("logo", *SLOTS):
+        widget = form.fields[name].widget
+        assert widget.attrs["data-preview-target"] == f"id_{name}_preview"
+
+
+def test_logo_preview_bounds_match_the_saved_sizes():
+    """Each size's preview is drawn within the bound that size is saved at
+    (LOGO_SIZES), so the CSS bounds cannot drift from the saved sizes; the
+    large logo, too big for the page, is capped at its box instead."""
+    import re
+    from pathlib import Path
+
+    from parishkit.stewardship.accounts import branding_slots
+    from parishkit.stewardship.web.content import LOGO_SIZES
+
+    static = Path(branding_slots.__file__).parent / "static/stewardship"
+    css = (static / "ui-v1.css").read_text(encoding="utf-8")
+    bounds = dict(
+        (name, (int(width), height))
+        for name, width, height in re.findall(
+            r"\[data-logo-size=(\w+)\] \{ --logo-width: (\d+)px; "
+            r"--logo-height: ([^;]+); \}",
+            css,
+        )
+    )
+    assert set(bounds) == set(LOGO_SIZES) == set(SLOTS)
+    for name, (width, height) in LOGO_SIZES.items():
+        assert bounds[name][0] == width
+        if name != "large":
+            assert bounds[name][1] == f"{height}px"

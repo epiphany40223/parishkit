@@ -483,6 +483,7 @@ sections:
     "Prerequisite gates": [ADM-02, ADM-03]
     "Field errors and live checks": [ADM-02, ADM-03]
     "Secret fields": [ADM-02, ADM-03]
+    "Image previews": [ADM-02, ADM-03]
     "Review, Apply and Change status": [ADM-03, ADM-04]
     "Review dialog": [ADM-03, ADM-04]
     "Conditional fields": [ADM-03]

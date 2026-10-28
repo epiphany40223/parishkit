@@ -7493,12 +7493,19 @@
   const logoSizes = (root) => [...(modePanel(root, "advanced")
     ?.querySelectorAll("input[type=file]") || [])];
   const basicLogo = (root) => modePanel(root, "basic")?.querySelector("input[type=file]");
+  // An emptied field says so with a change event, so its preview box
+  // (wireFilePreview, #2279) and its size check let the file go too.
+  const emptyFile = (input) => {
+    if (!input || !input.value) return;
+    input.value = "";
+    input.dispatchEvent(new Event("change", {bubbles: true}));
+  };
   editorAdapters.set("parish-logos", {
     // A Basic image replaces all four sizes, so any size chosen before
     // (kept by Switch to Basic) is emptied rather than sent unseen.
     toAdvanced(root) {
       if (!basicLogo(root)?.files?.length) return;
-      logoSizes(root).forEach((input) => { input.value = ""; });
+      logoSizes(root).forEach(emptyFile);
     },
     // Basic can show the configuration only while no size is chosen and
     // the current logos came from one image. A Basic image chosen before a
@@ -7509,8 +7516,7 @@
     },
     // Switch to Basic leaves no image chosen.
     clearBasic(root) {
-      const input = basicLogo(root);
-      if (input) input.value = "";
+      emptyFile(basicLogo(root));
     },
   });
 

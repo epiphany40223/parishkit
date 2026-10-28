@@ -49,7 +49,7 @@ from .admin_reads import NotAvailable, ReadModel, Unavailable, _held, _recheck
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
 # The page's sizes, in its order (``branding_slots.SLOTS``); a test keeps
 # them equal.
-SIZES = ("large", "menu", "icon", "favicon")
+SIZES = ("favicon", "icon", "menu", "large")
 
 
 @dataclass(frozen=True)

@@ -29,15 +29,15 @@ from .test_in_place import MARK, MARKED
 from .waits import eventually, hidden, same_place, visible
 
 # The four logo sizes uploaded separately (#1062), by field name.
-SIZES = ("large", "menu", "icon", "favicon")
+SIZES = ("favicon", "icon", "menu", "large")
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
 FOCUSED = "document.activeElement && document.activeElement.id"
-# The form's, the status line's and the current logos' places in the
-# document: nothing may move them, and logos appearing below never move
-# what is above.
-PLACES = """() => ['branding-upload', 'branding-outcome', 'branding-current']
+# The current logos', the form's and the status line's places in the
+# document: nothing may move them, and logos appearing above in their
+# fixed frames never move what is below (#2279).
+PLACES = """() => ['branding-current', 'branding-upload', 'branding-outcome']
     .map((id) => {
         const box = document.getElementById(id).getBoundingClientRect();
         return [box.left + window.scrollX, box.top + window.scrollY];
@@ -136,10 +136,11 @@ def test_an_upload_is_reviewed_and_applied_in_the_dialog(page, component_origin)
     uploads = answer_uploads(page, component_origin)
     page.goto(component_origin + PAGE)
     failures = watch(page)
-    # The current logos sit below the form and the status line, so logos
-    # appearing there can never move either (#736).
+    # The current logos sit above the form (image previews, #2279), whose
+    # status line follows it.
+    assert page.evaluate(FOLLOWS, ["#branding-current", "#branding-upload"])
     assert page.evaluate(FOLLOWS, ["#branding-upload", "#branding-outcome"])
-    assert page.evaluate(FOLLOWS, ["#branding-outcome", "#branding-current"])
+    expect(page.locator("#branding-current figure")).to_have_count(4)
     assert page.locator("#settings-review").count() == 0
     places = page.evaluate(PLACES)
     page.locator("#id_logo").set_input_files(png())
@@ -149,14 +150,14 @@ def test_an_upload_is_reviewed_and_applied_in_the_dialog(page, component_origin)
     assert page.evaluate(FOCUSED) == "branding-review-title"
     assert "not yet in use" in dialog.inner_text()
     expect(dialog.locator("figure")).to_have_count(4)
-    expect(page.locator("#branding-current figure")).to_have_count(0)
+    expect(page.locator("#branding-current img")).to_have_count(0)
     dialog.get_by_role("button", name="Apply").click()
     hidden(dialog)
     eventually(page, "document.getElementById('branding-outcome').textContent !== ''")
     line = page.locator("#branding-outcome").inner_text()
     assert applied_line("Parish logos changed.").search(line), line
     assert page.evaluate(FOCUSED) == "branding-outcome"
-    expect(page.locator("#branding-current figure")).to_have_count(4)
+    expect(page.locator("#branding-current img")).to_have_count(4)
     assert page.locator("#id_logo").evaluate("node => node.files.length") == 0
     assert same_place(page.evaluate(PLACES), places)
     assert page.url == component_origin + PAGE
@@ -192,7 +193,7 @@ def test_an_advanced_upload_is_applied_and_reopens_in_advanced(page, component_o
     expect(mode(page, "Advanced")).to_be_checked()
     expect(page.locator("#id_favicon")).to_be_visible()
     assert page.locator("#id_favicon").evaluate("node => node.files.length") == 0
-    expect(page.locator("#branding-current figure")).to_have_count(4)
+    expect(page.locator("#branding-current img")).to_have_count(4)
     assert page.evaluate(MARKED) == "kept"
     assert not failures
 
@@ -251,7 +252,7 @@ def test_a_refused_apply_shows_in_the_dialog(page, component_origin):
     dialog.get_by_role("button", name="Cancel").click()
     hidden(dialog)
     assert page.locator("#branding-outcome").inner_text() == ""
-    assert page.locator("#branding-current figure").count() == 0
+    assert page.locator("#branding-current img").count() == 0
     assert page.evaluate(MARKED) == "kept"
     assert not failures
 
@@ -272,6 +273,10 @@ def test_each_size_upload_shows_its_fields_and_refusals_on_them(page, component_
     for field in sizes:
         expect(field).to_be_hidden()
     choice = mode(page, "Advanced")
+    # The current logos are sized per logo (#2281), so the toggle may start
+    # below the fold; bring it into view first, as a pointer would, so its
+    # check does not scroll and only a real shift would move it.
+    choice.scroll_into_view_if_needed()
     top = choice.bounding_box()["y"]
     choice.check()
     expect(one).to_be_hidden()
@@ -402,6 +407,8 @@ def test_basic_is_one_required_image_and_advanced_needs_one_size(
     expect(upload).to_be_disabled()
     expect(hint).to_have_text(BASIC_HINT)
     line = hint.bounding_box()["height"]
+    # In view first (the current logos may push it below the fold, #2281).
+    mode(page, "Advanced").scroll_into_view_if_needed()
     toggle = mode(page, "Advanced").bounding_box()["y"]
     mode(page, "Advanced").check()
     expect(page.locator("#id_logo")).to_be_hidden()
