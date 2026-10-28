@@ -151,7 +151,10 @@
 # aside is copied in (a regular file, not a link, owner-only and the owner's;
 # on a resumed run whose moved-aside tree lacks it, from the newest other
 # credentials.pre-restore-* tree that has one). Nothing else is changed, and
-# the copy is logged. For an image with the uploader, the checks also need
+# the copy is logged; no link is followed on the way, and an existing
+# temporary name refuses. Only that default path is kept, so a deployment
+# whose postgres.password_files moves the file refuses before step 1. For
+# an image with the uploader, the checks also need
 # database-grants; step 7 runs it with --after-restore SET (the restored set
 # stands in for the recent backup it otherwise requires): it creates the
 # login from the file retarget-image created on a new host, or checks an
@@ -1281,6 +1284,17 @@ uploader=0
 if has_command uploader-password-check; then
     uploader=1
     needed+=(database-grants)
+    # Step 4 keeps the host's file only at its default path, which is where
+    # step 7's database-grants then looks unless postgres.password_files
+    # moves it. A moved file would leave step 7 refusing with the services
+    # down, so a move (in the rendering read above, or in the deployment
+    # YAML step 7 renders from) refuses now, before anything stops.
+    moved=$(jq -r '.deployment.postgres.password_files["backup-uploader"] // empty' "$web_yaml") ||
+        refuse "cannot read the uploader's password file path from $web_yaml"
+    if { [ -n "$moved" ] && [ "$moved" != "$credentials_dir/database/backup-uploader" ]; } ||
+        grep -qE "^[[:space:]]*[\"']?backup-uploader[\"']?[[:space:]]*:" "$yaml"; then
+        refuse "postgres.password_files moves the off-site uploader's password file; pk-restore keeps it only at credentials/database/backup-uploader: restore this deployment by hand (runbook, Restore for real)"
+    fi
 fi
 for name in "${needed[@]}"; do
     has_command "$name" ||

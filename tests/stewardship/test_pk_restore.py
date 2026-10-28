@@ -1988,6 +1988,48 @@ def test_a_linked_moved_aside_database_directory_is_refused(host, tmp_path):
     assert not (host["root"] / UPLOADER_FILE).exists()
 
 
+@pytest.mark.parametrize("where", ["rendering", "yaml"])
+def test_a_moved_uploader_password_file_refuses_before_anything_stops(host, where):
+    """postgres.password_files moving the file: step 4 could not keep it.
+
+    Step 7's database-grants would then refuse with the services down, so
+    the move (rendered, or in the deployment YAML) refuses up front.
+    """
+    uploader_set(host)
+    host_password(host)
+    moved = str(host["tmp"] / "elsewhere" / "backup-uploader")
+    if where == "rendering":
+        web = host["root"] / "config/services/web.yaml"
+        document = json.loads(web.read_text())
+        postgres = document["deployment"].setdefault("postgres", {})
+        postgres.setdefault("password_files", {})["backup-uploader"] = moved
+        web.write_text(json.dumps(document))
+    else:
+        host["yaml"].write_text(
+            f"deployment:\n  postgres:\n    password_files:\n"
+            f"      backup-uploader: {moved}\n"
+        )
+    result, calls = restore(host, FAKE_HELP=HELP_UPLOADER)
+    assert result.returncode == 1, output(result)
+    assert "postgres.password_files moves the off-site uploader's" in output(result)
+    assert not stopped(calls)
+
+
+def test_the_default_uploader_path_in_the_rendering_is_not_a_move(host):
+    """A rendering that names the default path explicitly restores as usual."""
+    uploader_set(host)
+    host_password(host)
+    web = host["root"] / "config/services/web.yaml"
+    document = json.loads(web.read_text())
+    postgres = document["deployment"].setdefault("postgres", {})
+    postgres.setdefault("password_files", {})["backup-uploader"] = str(
+        host["root"] / UPLOADER_FILE
+    )
+    web.write_text(json.dumps(document))
+    result, _ = restore(host, FAKE_HELP=HELP_UPLOADER)
+    assert result.returncode == 0, output(result)
+
+
 def test_an_image_without_the_uploader_runs_no_grants_or_uploader_check(host):
     """Every image lists smoke; only uploader-password-check is the marker."""
     uploader_set(host)
