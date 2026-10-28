@@ -1052,22 +1052,67 @@ hba_reload() {
 # BEGIN host crontab collection (#235). This block is kept identical in
 # tools/stewardship-upgrade-host.sh and tools/stewardship-ops/pk-restore
 # (tests/stewardship/test_database_layout.py compares the two copies).
-cron_lines() {
-    # Every uncommented line of the crontabs this host's jobs live in:
-    # root's and SUDO_USER's, /etc/crontab and /etc/cron.d (PK_RESTORE_CRONTAB
-    # and PK_RESTORE_CRON_DIR for tests). Scripts in /etc/cron.{hourly,...},
-    # anacron, `at` jobs and other users' crontabs are not read.
+cron_tagged() {
+    # Every uncommented line of the crontabs this host's jobs live in, each
+    # after `u ` (root's and SUDO_USER's crontabs: no user field) or `s `
+    # (/etc/crontab and the /etc/cron.d files cron reads: a user field);
+    # PK_RESTORE_CRONTAB and PK_RESTORE_CRON_DIR for tests. cron skips a
+    # cron.d file whose name has anything but letters, digits, `_` and `-`
+    # (a dot, as in `stewardship.bak` or `.placeholder`), so this does too.
+    # Scripts in /etc/cron.{hourly,...}, anacron, `at` jobs and other
+    # users' crontabs are not read. awk ends every file's last line.
+    local file
     {
-        crontab -l -u root 2>/dev/null || true
-        [ -z "${SUDO_USER:-}" ] || crontab -l -u "$SUDO_USER" 2>/dev/null || true
-        cat "${PK_RESTORE_CRONTAB:-/etc/crontab}" 2>/dev/null || true
-        cat "${PK_RESTORE_CRON_DIR:-/etc/cron.d}"/* 2>/dev/null || true
-    } | grep -v '^[[:space:]]*#' || true
+        {
+            crontab -l -u root 2>/dev/null || true
+            [ -z "${SUDO_USER:-}" ] || crontab -l -u "$SUDO_USER" 2>/dev/null || true
+        } | awk '{ print "u " $0 }'
+        awk '{ print "s " $0 }' "${PK_RESTORE_CRONTAB:-/etc/crontab}" 2>/dev/null || true
+        for file in "${PK_RESTORE_CRON_DIR:-/etc/cron.d}"/*; do
+            case ${file##*/} in *[!A-Za-z0-9_-]*) continue ;; esac
+            [ ! -f "$file" ] || awk '{ print "s " $0 }' "$file" 2>/dev/null || true
+        done
+    } | grep -v '^. [[:space:]]*#' || true
+}
+cron_lines() {
+    # cron_tagged's lines as the crontabs hold them.
+    cron_tagged | cut -c3-
 }
 uploader_cron_lines() {
-    # The uncommented cron lines that run the off-site uploader: any line
-    # naming the backup-uploader service, whose one job is `upload`.
-    cron_lines | grep -E '(^|[^[:alnum:]_-])backup-uploader([^[:alnum:]_-]|$)' || true
+    # The cron lines (of cron_tagged) that run the off-site uploader, as the
+    # backup runbook's "The uploader's cron line" gives it: the schedule
+    # (five fields or an @keyword), the user field in /etc/crontab and
+    # cron.d, then `docker compose` (docker by name or by path), compose's
+    # own options, `run`, run's options, the service `backup-uploader`, and
+    # nothing after it but its `upload` command and its arguments, up to a
+    # redirection or the shell's `;`, `&` or `|`. A `#` starting a word
+    # ends the command (the shell's comment), so a name in a trailing
+    # comment is not a match; nor is any other command, wrapper or service
+    # that merely contains the name, nor `--entrypoint` (another command in
+    # the uploader's image). Lines are printed as the crontabs hold them.
+    cron_tagged | awk '
+        function docker(word) { return word == "docker" || word ~ /\/docker$/ }
+        {
+            line = substr($0, 3)
+            command = line
+            sub(/^[ \t]+/, "", command)
+            sub(/[ \t]#.*/, "", command)
+            n = split(command, word, /[ \t]+/)
+            at = (word[1] ~ /^@/) ? 2 : 6
+            if (substr($0, 1, 1) == "s") at++
+            if (!docker(word[at]) || word[at + 1] != "compose") next
+            for (i = at + 2; i <= n && word[i] ~ /^-/; i++)
+                if (word[i] ~ /^(-f|-p|--file|--project-name|--project-directory|--env-file|--profile|--ansi|--progress|--parallel)$/) i++
+            if (word[i] != "run") next
+            for (i++; i <= n && word[i] ~ /^-/; i++) {
+                if (word[i] ~ /^--entrypoint/) next
+                if (word[i] ~ /^(-e|--env|--env-from-file|--name|-u|--user|-w|--workdir|-l|--label|-v|--volume|-p|--publish|--cap-add|--cap-drop|--pull)$/) i++
+            }
+            if (word[i] != "backup-uploader") next
+            i++
+            if (i <= n && word[i] != "upload" && word[i] !~ /^([0-9]*[<>]|&>|[;&|])/) next
+            print line
+        }' || true
 }
 # END host crontab collection (#235).
 # BEGIN off-site copy lock (#235). This block is kept identical in
