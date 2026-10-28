@@ -443,8 +443,15 @@ def _copy_sets(
                 return _failed(folder_id, directory.name, digest, "unavailable")
             try:
                 with_retries(
-                    lambda directory=directory: upload_set(
-                        client, folder_id, directory, SEALED_FILES
+                    # The digest this set was chosen (and, for the
+                    # uploader, bound) by: a set swapped on disk since is
+                    # refused, not uploaded under the row's digest (#235).
+                    lambda directory=directory, digest=digest: upload_set(
+                        client,
+                        folder_id,
+                        directory,
+                        SEALED_FILES,
+                        expected_digest=digest,
                     ),
                     sleep=sleep,
                     deadline=deadline,

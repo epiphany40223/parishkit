@@ -567,7 +567,7 @@ def read_manifest(handle):
     return data
 
 
-def _local_files(handles):
+def _local_files(handles, expected_digest=None):
     """Each file's size and MD5 (as Drive reports them), checked against the manifest.
 
     The manifest records each sealed file's SHA-256 when the set was written.
@@ -578,17 +578,31 @@ def _local_files(handles):
     so the operator can find the damaged set; the copy moves on to the next.
     A file that cannot be read at all (an I/O error on a failing disk) is the
     same per-set damage, not a reason to stop the whole copy.
+
+    ``expected_digest``, when given, is the manifest SHA-256 the caller
+    chose the set by (and bound to its backup run row, #235): a set swapped
+    on disk after that choice agrees with itself but not with it, and is
+    refused the same way, before anything is uploaded.
     """
     try:
-        return _checked_files(handles)
+        return _checked_files(handles, expected_digest)
     except OSError:
         return _set_mismatch()
 
 
-def _checked_files(handles):
-    """Hash each open file and compare the sealed ones with the manifest."""
+def _checked_files(handles, expected_digest):
+    """Hash each open file and compare the sealed ones with the manifest.
+
+    The manifest's own bytes, read from the descriptor that is uploaded,
+    must also hash to ``expected_digest`` when one is given.
+    """
+    data = read_manifest(handles[MANIFEST])
+    if expected_digest is not None and hashlib.sha256(data).hexdigest() != (
+        expected_digest
+    ):
+        _set_mismatch()
     try:
-        manifest = json.loads(read_manifest(handles[MANIFEST]))
+        manifest = json.loads(data)
         expected = {
             manifest[kind]["file"]: manifest[kind]["sealed_sha256"]
             for kind in ("database", "files")
@@ -621,18 +635,19 @@ def _set_mismatch():
     raise DriveFailure("verification", retryable=False)
 
 
-def upload_set(client, folder_id, directory, names):
+def upload_set(client, folder_id, directory, names, *, expected_digest=None):
     """Copy one complete sealed set into a tagged subfolder named like it.
 
     The local files must be regular files (``open_set``) that still match
     the set's manifest (``_local_files``); the descriptors checked are the
-    ones uploaded. An existing subfolder that already holds every file with
-    the local size and MD5 is reused unchanged; an incomplete or mismatched
-    one is trashed and written again, so a partial earlier attempt never
-    counts as a copy. Returns the subfolder ID.
+    ones uploaded. With ``expected_digest`` the manifest must also be the
+    one the caller chose the set by. An existing subfolder that already
+    holds every file with the local size and MD5 is reused unchanged; an
+    incomplete or mismatched one is trashed and written again, so a
+    partial earlier attempt never counts as a copy. Returns the subfolder ID.
     """
     with open_set(directory, names) as handles:
-        local = _local_files(handles)
+        local = _local_files(handles, expected_digest)
         for existing in client.children(folder_id, tagged=True, folders=True):
             if existing.get("name") != directory.name:
                 continue

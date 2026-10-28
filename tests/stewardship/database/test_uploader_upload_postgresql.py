@@ -241,6 +241,41 @@ def test_a_set_not_newer_than_the_newest_copy_is_silently_skipped(uploader):
     assert not uploader.drive.items[copied_folder["id"]]["trashed"]
 
 
+def test_a_set_swapped_after_its_binding_is_refused_not_copied(uploader, monkeypatch):
+    """The uploaded manifest must have the digest the run row bound (#235).
+
+    Anything that writes the backups directory could otherwise wait until
+    a bound set was chosen, then swap in another set that agrees with
+    itself, and have it copied under the bound name with the row's digest.
+    """
+    directory = bound_set(uploader, timedelta(minutes=10))
+    digest = backup_offsite._digest(directory)
+    upload_set = backup_offsite.upload_set
+
+    def swap_then_upload(client, folder_id, chosen, names, **options):
+        """Replace the chosen set on disk after the binding, then upload."""
+        for name in backup_offsite.SEALED_FILES:
+            (chosen / name).unlink()
+        write_sealed_set(chosen, b"an impostor that agrees with itself")
+        return upload_set(client, folder_id, chosen, names, **options)
+
+    monkeypatch.setattr(backup_offsite, "upload_set", swap_then_upload)
+    result = upload(uploader, require_digest=digest)
+    assert result == {
+        "state": "failed",
+        "failure_kind": "verification",
+        "sets": 0,
+        "required_copy": "not_uploaded",
+    }
+    assert uploader.drive.calls.count("upload") == 0 and not uploader.drive.sets()
+    row = BackupUpload.objects.get()
+    assert (row.state, row.set_name, row.manifest_digest) == (
+        "failed",
+        directory.name,
+        digest,
+    )
+
+
 def failure_kinds(caplog):
     """The failure_kind of every formatted process-log line so far."""
     return [
@@ -328,7 +363,10 @@ def test_smoke_send_copies_only_a_set_its_row_binds(uploader):
         _bound_newest(uploader.backups)
     directory = bound_set(uploader, timedelta(minutes=5))
     with task_login(ServiceRole.BACKUP_UPLOADER, exact=True):
-        assert _bound_newest(uploader.backups) == directory
+        assert _bound_newest(uploader.backups) == (
+            directory,
+            backup_offsite._digest(directory),
+        )
     unbound = bound_set(
         uploader, timedelta(minutes=1), name_shift=timedelta(seconds=30)
     )

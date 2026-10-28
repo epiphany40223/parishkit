@@ -229,6 +229,30 @@ def test_a_set_with_a_planted_file_is_refused_before_any_upload(
     assert logged_kinds(caplog) == [("ERROR", "backup_set_mismatch")]
 
 
+def test_a_set_swapped_since_its_digest_was_chosen_is_not_copied(tmp_path, caplog):
+    """The uploaded manifest must be the one the caller bound (#235).
+
+    A set replaced on disk after its digest was chosen agrees with its own
+    manifest, but not with that digest: refused before any upload.
+    """
+    drive = FakeDrive(FOLDER)
+    directory = make_set(tmp_path)
+    bound = hashlib.sha256((directory / backup.MANIFEST).read_bytes()).hexdigest()
+    for name in SEALED_FILES:
+        (directory / name).unlink()
+    write_sealed_set(directory, b"an impostor that agrees with itself")
+    caplog.set_level(logging.INFO, logger="parishkit.stewardship")
+    with pytest.raises(DriveFailure) as caught:
+        upload_set(drive, FOLDER, directory, SEALED_FILES, expected_digest=bound)
+    assert caught.value.kind == "verification"
+    assert not caught.value.retryable
+    assert drive.calls.count("upload") == 0 and not drive.sets()
+    assert logged_kinds(caplog) == [("ERROR", "backup_set_mismatch")]
+    swapped = hashlib.sha256((directory / backup.MANIFEST).read_bytes()).hexdigest()
+    upload_set(drive, FOLDER, directory, SEALED_FILES, expected_digest=swapped)
+    assert drive.sets() == [directory.name]
+
+
 def test_a_manifest_at_the_cap_is_still_read(tmp_path):
     """The cap refuses only what is past it; a real manifest is far below."""
     directory = make_set(tmp_path)

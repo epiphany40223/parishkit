@@ -642,7 +642,7 @@ def test_the_uploader_profile_sends_the_bound_set_under_its_lock(
     copies the set ``_deployment_tag`` returned (the newest one bound to its
     run row), tagged as this deployment's.
     """
-    from parishkit.stewardship.backup_offsite import COPY_LOCK, _copy_lock
+    from parishkit.stewardship.backup_offsite import COPY_LOCK, _copy_lock, _digest
 
     from .drive_fakes import write_sealed_set
 
@@ -655,7 +655,7 @@ def test_the_uploader_profile_sends_the_bound_set_under_its_lock(
     def tag(configuration, backups):
         """The uploader's own admission and binding, stood in for."""
         seen.append((configuration.service_role, backups))
-        return "deployment-abc", directory
+        return "deployment-abc", (directory, _digest(directory))
 
     monkeypatch.setattr(smoke, "_deployment_tag", tag)
     send = SimpleNamespace(**{**vars(case.args), "send": True})
@@ -669,6 +669,40 @@ def test_the_uploader_profile_sends_the_bound_set_under_its_lock(
         assert held
         assert smoke.execute_smoke(send) == 0
         assert json.loads(capsys.readouterr().out)["reason"] == "busy"
+
+
+def test_the_uploader_profile_refuses_send_of_a_set_swapped_after_binding(
+    tmp_path, monkeypatch, capsys
+):
+    """The set sent must still have the digest its run row bound (#235).
+
+    Bound before the copy lock and the Drive session; a set swapped on disk
+    meanwhile agrees with itself but not with that digest, and is refused
+    under the lock before any upload.
+    """
+    from parishkit.stewardship.backup_offsite import SEALED_FILES, _digest
+
+    from .drive_fakes import write_sealed_set
+
+    case = uploader_smoke(tmp_path, monkeypatch)
+    directory = case.backups / "20260927T020000Z"
+    directory.mkdir(mode=0o700)
+    write_sealed_set(directory)
+
+    def bound_then_swapped(configuration, backups):
+        """Bind the set, then let it be replaced before the upload."""
+        digest = _digest(directory)
+        for name in SEALED_FILES:
+            (directory / name).unlink()
+        write_sealed_set(directory, b"an impostor that agrees with itself")
+        return "deployment-abc", (directory, digest)
+
+    monkeypatch.setattr(smoke, "_deployment_tag", bound_then_swapped)
+    send = SimpleNamespace(**{**vars(case.args), "send": True})
+    smoke.execute_smoke(send)
+    assert json.loads(capsys.readouterr().out)["reason"] == "verification"
+    # The probe's own small file is the only upload.
+    assert case.drive.calls.count("upload") == 1 and not case.drive.sets()
 
 
 def test_the_uploader_profile_refuses_send_of_an_unbound_set(

@@ -1607,9 +1607,9 @@ def test_the_lock_holder_copies_a_set_taken_while_it_uploaded(offsite, monkeypat
     upload = backup_offsite.upload_set
     later = offsite.directory.parent / "20260927T140000Z"
 
-    def upload_then_back_up(client, folder_id, directory, names):
+    def upload_then_back_up(client, folder_id, directory, names, **options):
         """Upload, and meanwhile let another backup finish its set."""
-        result = upload(client, folder_id, directory, names)
+        result = upload(client, folder_id, directory, names, **options)
         if not later.exists():
             later.mkdir(mode=0o700)
             write_sealed_set(later, b"later")

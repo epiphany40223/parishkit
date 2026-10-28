@@ -322,7 +322,8 @@ def _deployment_tag(configuration, backups=None):
     its ``backups`` directory: it copies the newest local set that a backup
     run row binds (``uploader_commands.binds``), so a set a compromised
     backup image staged under a borrowed name is refused, not copied. It
-    returns ``(tag, digest)`` then; the backup profile returns the tag.
+    returns ``(tag, (directory, digest))`` then; the backup profile returns
+    the tag.
     """
     from django.db import connection
 
@@ -349,7 +350,13 @@ def _deployment_tag(configuration, backups=None):
 
 
 def _bound_newest(backups):
-    """The newest complete local set, refused unless a run row binds it."""
+    """The newest complete local set and its digest, refused unless bound.
+
+    Returns ``(directory, digest)``; the copy then uploads the set only if
+    its manifest still has that digest (``upload_set``'s
+    ``expected_digest``), so a set swapped on disk after this binding is
+    refused rather than copied under the bound name (#235).
+    """
     from .backup_offsite import _complete_sets, _digest
     from .jobs.backup_models import BackupRun
     from .uploader_commands import binds
@@ -359,12 +366,16 @@ def _bound_newest(backups):
         raise ConfigError("There is no complete backup set to copy.")
     newest = sets[-1]
     digest = _digest(newest)
-    runs = BackupRun.objects.filter(manifest_digest=digest).values_list(
-        "started_at", "completed_at"
+    runs = (
+        BackupRun.objects.filter(manifest_digest=digest).values_list(
+            "started_at", "completed_at"
+        )
+        if digest is not None
+        else ()
     )
-    if digest is None or not any(binds(newest.name, *times) for times in runs):
+    if not any(binds(newest.name, *times) for times in runs):
         raise ConfigError("The newest backup set is not bound to its backup run.")
-    return newest
+    return newest, digest
 
 
 def check_backup_drive(configuration, *, delegated_email, folder_link, send=False):
@@ -406,12 +417,12 @@ def check_backup_drive(configuration, *, delegated_email, folder_link, send=Fals
     admit_real_workspace(configuration.profile, configuration.mail_redirect)
     folder = folder_id_from_url(folder_link or "")
     uploader = role is ServiceRole.BACKUP_UPLOADER
-    backups = newest = None
+    backups = newest = digest = None
     if send:
         backups = private_directory(explicit_path(configuration.paths["backups"]))
     tag = {}
     if send and uploader:
-        value, newest = _deployment_tag(configuration, backups)
+        value, (newest, digest) = _deployment_tag(configuration, backups)
         tag = {"tag": value}
     elif send:
         tag = {"tag": _deployment_tag(configuration)}
@@ -450,7 +461,9 @@ def check_backup_drive(configuration, *, delegated_email, folder_link, send=Fals
                         "reason": "busy",
                         "message": "A backup copy is running; try again later.",
                     }
-                upload_set(client, folder, newest, SEALED_FILES)
+                # The uploader's set must still be the one its run row
+                # bound: checked here, under the lock, before any upload.
+                upload_set(client, folder, newest, SEALED_FILES, expected_digest=digest)
             copied = newest.name
     except DriveFailure as failure:
         return {"accepted": False, "reason": failure.kind, "message": failure.message}
