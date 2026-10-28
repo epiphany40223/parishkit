@@ -2015,9 +2015,23 @@ an Administrator can restore it. The rest is listed under
     that it matches, by the same parse and comparison as above; it prints
     only `match` or `mismatch`, never the file or the verifier. A missing
     file or any other answer refuses with the lost-file recovery's name.
+    The query's own failure refuses too: a failed `pg_authid` query (the
+    service is down, the session is refused, the output is not a single
+    row or an empty result) is never read as "no row", so the script does
+    not copy the digest-retirement check's `2>&1 || true` pattern here.
+    It tells "no row" from failure by the query's exit status and by
+    selecting the row's existence explicitly (`count(*)`, one line), and
+    anything else refuses before step 1.
     An image without the uploader (a rollback past the expand release) has
     no use for the login, so the check is skipped there, as the left-over
-    login is under **Rollback**.
+    login is under **Rollback**. The script knows whether the *new* image
+    has the uploader from the command-list probe that E1 adds to the
+    upgrade script (see **Scripted upgrades**, *The command probe*): one
+    `--help` capture and `has_command()` per image, run against both the
+    new image and the running one, so E2 reuses it rather than adding its
+    own. The uploader is present when the image lists the uploader's
+    `smoke` command, the first command E1 ships; a probe that fails
+    refuses before anything stops.
   - *Same-host restore: keep the host's file.* In step 4, when the set's
     credentials tree has no uploader password file and the tree it just
     moved aside has one, `pk-restore` copies that one file into the
@@ -2135,6 +2149,12 @@ an Administrator can restore it. The rest is listed under
     and its `failed` row stays in the history. `verification` refusals
     remain only for the name-binding rule above and the regular-file
     rule below, which mean the set itself is wrong.
+    Those refusals are not silent while the set is the newest: each cron
+    pass logs the refusal and takes the startup lock, every five minutes,
+    until a newer set copies (at most 12 hours), after which the refused
+    set is no longer pending and drops out without a word. That is intended: the set is genuinely wrong
+    (a hash mismatch counts too), and the repeated refusal is how the
+    operator learns of it.
   - *A clock that jumped.* "The newest copy" counts only `uploaded` rows
     whose set name is not more than `CLOCK_SKEW` after the database's
     current time (the margin `backup.retention_paused` uses). A host
@@ -2268,14 +2288,16 @@ an Administrator can restore it. The rest is listed under
     command the image lacks.
   - *The command probe is new.* `tools/stewardship-upgrade-host.sh` has no
     command-list probe today (only `pk-restore` has one: it captures the
-    image's `--help` and greps it in `has_command()`). E2 adds the same two
-    lines to the
-    upgrade script, run against the *running* image (the rendered Compose
-    file's `web` image, which the script already reads as `previous`), not
-    the new one: step 1 runs the running image's uploader, so that is the
-    image whose commands matter. A probe that fails (the image is gone, or
-    `--help` does not answer within its limit) refuses before anything
-    stops.
+    image's `--help` and greps it in `has_command()`). E1 adds the same two
+    lines to the upgrade script (so the password preflight can tell whether
+    the new image has the uploader, **Uploader password**), as one helper
+    run against both images: the *new* image, for that preflight, and the
+    *running* image (the rendered Compose file's `web` image, which the
+    script already reads as `previous`). Step 1 runs the running image's
+    uploader, so for step 1 that is the image whose `upload` command
+    matters; E2 only adds the `upload` test on the probe's result. A probe
+    that fails (the image is gone, or `--help` does not answer within its
+    limit) refuses before anything stops.
   - *Full stop.* The host holds the copy lock from the end of step 1, so a
     cron uploader that starts during a later full stop exits at the lock
     within seconds. If the full stop's one-off check sees it running, the
@@ -2438,8 +2460,21 @@ an Administrator can restore it. The rest is listed under
   retarget, the full stop and the hba reload and before
   `restore-begin`: it creates a missing login from the file (replacement
   and drill) or checks an existing one against its verifier (same host).
+  `pk-restore` detects "the image has the uploader identity" with its
+  existing `has_command()` on the image's `--help` list, testing for the
+  uploader's `smoke` command, and E1 adds `database-grants` to the
+  `needed` command list for exactly those images (an older image has the
+  command anyway, but the list is where a missing one is refused before
+  anything changes). An image without that command skips the grants step.
   `pk-restore`'s step 7 already does the full stop for a set rendered on
   the old networks.
+
+  The checking has a runbook consequence. A same-host restore of a set from
+  before a lost-file recovery brings back a credentials tree whose uploader
+  file (or absence) no longer matches the cluster's login, so step 7's
+  `database-grants` refuses with the services down. The restore stops at
+  step 7; the operator runs the lost-file recovery, then resumes with
+  `pk-restore --from 7`. The backup runbook's restore section says so.
 - **Delivery: preparation, then expand, then contract.**
   1. The preparation release ships migration 0193 and retarget's
      absent-password exception. Neither does anything on its own.
