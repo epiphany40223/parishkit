@@ -2181,13 +2181,24 @@ def test_one_off_containers_do_not_inherit_the_copy_lock(host):
     assert not (host["tmp"] / "state" / "held-fds").exists()
 
 
-@pytest.mark.parametrize("where", ["crontab", "system", "cron.d"])
-def test_the_uploaders_cron_line_refuses_before_anything_stops(host, where):
-    """Its line names backup-uploader, which the job filter matches (#235)."""
-    line = (
+UPLOADER_LINES = {
+    "compose": (
         "*/5 * * * * root docker compose -f /opt/parishkit/config/services/"
         "compose.json -p stewardship run --rm -T backup-uploader"
-    )
+    ),
+    "wrapper": "*/5 * * * * root stewardship-backup-uploader",
+    "path": "*/5 * * * * root /usr/local/sbin/stewardship-backup-uploader",
+}
+
+
+@pytest.mark.parametrize("form", sorted(UPLOADER_LINES))
+@pytest.mark.parametrize("where", ["crontab", "system", "cron.d"])
+def test_the_uploaders_cron_line_refuses_before_anything_stops(host, where, form):
+    """Its line names backup-uploader, which the job filter matches (#235).
+
+    As the runbook gives it, or run by a wrapper, by name or by path.
+    """
+    line = UPLOADER_LINES[form]
     fake = {}
     if where == "crontab":
         fake["FAKE_CRONTAB"] = line
@@ -2198,7 +2209,7 @@ def test_the_uploaders_cron_line_refuses_before_anything_stops(host, where):
     result, calls = restore(host, **fake)
     assert result.returncode == 1
     assert "disable the backup and off-host copy cron jobs" in output(result)
-    assert "run --rm -T backup-uploader" in output(result)
+    assert line in output(result)
     assert not stopped(calls)
     assert flock_calls(host) == []
 

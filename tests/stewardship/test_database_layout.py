@@ -22,6 +22,7 @@ import json
 import os
 import random
 import re
+import shlex
 import shutil
 import subprocess
 from dataclasses import replace
@@ -84,31 +85,30 @@ def test_both_scripts_carry_the_same_crontab_and_copy_lock_blocks():
         assert "copy_lock_take " in path.read_text().split(LOCK_END, 1)[1]
 
 
-def test_the_crontab_block_finds_only_uncommented_uploader_lines(tmp_path):
-    """Run the shared block itself over every crontab it reads."""
-    if shutil.which("bash") is None:
-        pytest.skip("bash is not installed")
+COMPOSE = "docker compose -f /opt/parishkit/config/services/compose.json -p stewardship"
+
+
+def run_cron_block(tmp_path, user_crontab, system_crontab, cron_d):
+    """Run the shared crontab block; return (cron_lines, uploader_cron_lines).
+
+    The crontab stand-in is a shell function, not a file on PATH: the
+    Compose test container mounts /tmp noexec, so a stand-in program there
+    could not run (and a host's own crontab would answer instead). It
+    answers for root's and SUDO_USER's crontabs alike.
+    """
     script = tmp_path / "cron.sh"
-    # The crontab stand-in is a shell function, not a file on PATH: the
-    # Compose test container mounts /tmp noexec, so a stand-in program there
-    # could not run (and a host's own crontab would answer instead).
+    body = "".join(f"    echo {shlex.quote(line)}\n" for line in user_crontab)
     script.write_text(
         layout_block(HOST, CRON_BEGIN, CRON_END)
         + "crontab() {\n"
-        + '    echo "*/5 * * * * run --rm -T backup-uploader"\n'
-        + '    echo "# */5 * * * * run --rm -T backup-uploader commented"\n'
+        + (body or "    :\n")
         + "}\n"
         + 'echo "all:"; cron_lines; echo "uploader:"; uploader_cron_lines\n'
     )
-    (tmp_path / "crontab").write_text(
-        "0 3 * * * root run --rm -T backup-worker\n"
-        "  # 0 4 * * * root backup-uploader indented comment\n"
-    )
+    (tmp_path / "crontab").write_text("".join(f"{line}\n" for line in system_crontab))
     (tmp_path / "cron.d").mkdir()
-    (tmp_path / "cron.d" / "other").write_text(
-        "0 5 * * * root my-backup-uploader-copy\n"
-        "0 6 * * * root run backup-uploader upload --config x\n"
-    )
+    for name, lines in cron_d.items():
+        (tmp_path / "cron.d" / name).write_text("".join(f"{line}\n" for line in lines))
     result = subprocess.run(
         ["bash", str(script)],
         env={
@@ -122,19 +122,88 @@ def test_the_crontab_block_finds_only_uncommented_uploader_lines(tmp_path):
         check=True,
     )
     everything, uploader = result.stdout.split("uploader:\n")
-    # root's and SUDO_USER's crontabs, then /etc/crontab and cron.d.
-    assert everything.splitlines()[1:] == [
-        "*/5 * * * * run --rm -T backup-uploader",
-        "*/5 * * * * run --rm -T backup-uploader",
-        "0 3 * * * root run --rm -T backup-worker",
-        "0 5 * * * root my-backup-uploader-copy",
-        "0 6 * * * root run backup-uploader upload --config x",
+    return everything.splitlines()[1:], uploader.splitlines()
+
+
+def test_the_crontab_block_reads_each_crontab_cron_reads(tmp_path):
+    """Root's and SUDO_USER's crontabs, /etc/crontab and cron.d, uncommented.
+
+    cron skips a cron.d file whose name has a dot, so the block does too.
+    """
+    everything, _ = run_cron_block(
+        tmp_path,
+        ["*/5 * * * * user-job", "# */5 * * * * commented"],
+        ["0 3 * * * root system-job", "  # 0 4 * * * root indented comment"],
+        {
+            "stewardship": ["0 5 * * * root cron-d-job"],
+            "stewardship.bak": [
+                f"*/5 * * * * root {COMPOSE} run --rm -T backup-uploader"
+            ],
+            ".placeholder": ["0 6 * * * root hidden-job"],
+            "no-newline_2": [],
+        },
+    )
+    assert everything == [
+        "*/5 * * * * user-job",
+        "*/5 * * * * user-job",
+        "0 3 * * * root system-job",
+        "0 5 * * * root cron-d-job",
     ]
-    assert uploader.splitlines() == [
-        "*/5 * * * * run --rm -T backup-uploader",
-        "*/5 * * * * run --rm -T backup-uploader",
-        "0 6 * * * root run backup-uploader upload --config x",
+
+
+def test_the_uploader_line_is_found_by_its_documented_command(tmp_path):
+    """The runbook's line, in each crontab and each spelling cron accepts."""
+    user = [
+        f"*/5 * * * * {COMPOSE} run --rm -T backup-uploader",
+        "@hourly /usr/bin/docker compose -p stewardship run --rm -T backup-uploader",
     ]
+    system = [
+        f"*/5 * * * * root {COMPOSE} run --rm -T backup-uploader >>/var/log/up 2>&1",
+    ]
+    cron_d = {
+        "stewardship": [
+            f"*/5 * * * * root {COMPOSE} run --rm -T -e A=1 backup-uploader upload",
+            f"*/5 * * * * root {COMPOSE} run --rm backup-uploader upload -c x; :",
+        ]
+    }
+    _, uploader = run_cron_block(tmp_path, user, system, cron_d)
+    assert uploader == [*user, *user, *system, *cron_d["stewardship"]]
+
+
+@pytest.mark.parametrize(
+    "where, line",
+    [
+        # Commented out, or the name only in a trailing comment.
+        ("user", f"# */5 * * * * {COMPOSE} run --rm -T backup-uploader"),
+        ("user", "*/5 * * * * true # docker compose run --rm -T backup-uploader"),
+        ("system", "*/5 * * * * root true #backup-uploader"),
+        # Another command, wrapper or service containing the name.
+        ("system", "0 5 * * * root my-backup-uploader-copy"),
+        ("system", "0 5 * * * root /opt/other/bin/backup-uploader"),
+        ("system", "*/5 * * * * root /usr/local/sbin/stewardship-backup-uploader"),
+        ("system", "*/5 * * * * root other-tool --notify backup-uploader"),
+        ("user", "*/5 * * * * other-tool docker compose run --rm backup-uploader"),
+        ("user", f"*/5 * * * * {COMPOSE} run --rm -T backup-uploader-copy"),
+        ("user", f"*/5 * * * * {COMPOSE} run --rm -T backup-worker backup-uploader"),
+        ("user", f"*/5 * * * * {COMPOSE} logs backup-uploader"),
+        ("user", "*/5 * * * * dockerx compose run --rm -T backup-uploader"),
+        # The uploader's image running something else.
+        ("user", f"*/5 * * * * {COMPOSE} run --rm backup-uploader database-sources"),
+        ("user", f"*/5 * * * * {COMPOSE} run --entrypoint sh backup-uploader"),
+        # A user crontab has no user field, and /etc/crontab needs one.
+        ("user", f"*/5 * * * * root {COMPOSE} run --rm -T backup-uploader"),
+        ("system", f"*/5 * * * * {COMPOSE} run --rm -T backup-uploader"),
+        # A cron.d file cron skips.
+        ("stewardship.bak", f"*/5 * * * * root {COMPOSE} run --rm -T backup-uploader"),
+    ],
+)
+def test_no_other_line_is_taken_for_the_uploaders(tmp_path, where, line):
+    """Never accepted: the contract release relies on this match (#235)."""
+    user = [line] if where == "user" else []
+    system = [line] if where == "system" else []
+    cron_d = {} if where in ("user", "system") else {where: [line]}
+    _, uploader = run_cron_block(tmp_path, user, system, cron_d)
+    assert uploader == []
 
 
 @pytest.mark.skipif(shutil.which("flock") is None, reason="util-linux flock only")

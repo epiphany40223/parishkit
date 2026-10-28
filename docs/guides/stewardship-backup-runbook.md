@@ -578,6 +578,19 @@ five minutes, beside request mode:
 */5 * * * * docker compose ... run --rm -T backup-uploader
 ```
 
+Install it in root's crontab (`sudo crontab -e`) exactly in this form, or
+with `root` as the user field in `/etc/crontab` or in an `/etc/cron.d` file
+whose name has only letters, digits, `_` and `-` (cron skips any other, such
+as `stewardship.bak`). The `...` is the deployment's own `-f` and `-p`
+options; `docker` may be named by its path, and `upload` with its options
+and a redirection of the output may follow the service. The scripted
+upgrade, rollback and restore read exactly those places (and, when run
+with `sudo`, the `sudo` user's crontab) and recognize the line by that
+command: `docker compose`, `run`, the service `backup-uploader`. A wrapper
+script, a `cd ... &&` prefix or the name in a trailing `#` comment is not
+the uploader's line to them, and a line in any other user's crontab is not
+read.
+
 It runs `upload` and is silent when there is nothing to do, so one line
 covers the scheduled backups, **Take a backup now**, manual runs and the
 catch-up after an outage. Send its output off the host as the backup's is.
@@ -614,8 +627,9 @@ Comment out the uploader's cron line first: the previous release renders
 no `backup-uploader` service, so the line would fail every five minutes,
 and the backup profile's own copy is the copier again. The scripted
 rollback (and any upgrade to an image without `upload`) refuses before it
-stops anything while an uncommented uploader line is in root's or the
-`sudo` user's crontab, `/etc/crontab` or `/etc/cron.d`. The rollback
+stops anything while an uncommented uploader line, in the form
+[the uploader's cron line](#the-uploaders-cron-line) gives, is in one of
+the places that section names. The rollback
 changes the database networks back, so it runs the same full stop in the
 other direction; run it from the expand release's checkout, as the
 deployment runbook says for every network change. An application-only

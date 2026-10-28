@@ -3345,33 +3345,46 @@ def test_a_rollback_holds_the_copy_lock_too(tmp_path):
     assert_lock_waits(flock_calls(tmp_path), 1800)
 
 
-UPLOADER_LINE = (
-    "*/5 * * * * root docker compose -f /opt/parishkit/config/services/"
-    "compose.json -p stewardship run --rm -T backup-uploader"
-)
+# The uploader's command as the runbook gives it, and with docker by path,
+# its `upload` command and a redirection. A user crontab's line has no user
+# field; /etc/crontab's and cron.d's have one.
+UPLOADER_COMMANDS = {
+    "compose": (
+        "docker compose -f /opt/parishkit/config/services/"
+        "compose.json -p stewardship run --rm -T backup-uploader"
+    ),
+    "path": (
+        "/usr/bin/docker compose -p stewardship run --rm -T backup-uploader "
+        "upload >>/var/log/up 2>&1"
+    ),
+}
+UPLOADER_LINE = "*/5 * * * * " + UPLOADER_COMMANDS["compose"]
 
 
+@pytest.mark.parametrize("form", sorted(UPLOADER_COMMANDS))
 @pytest.mark.parametrize("where", ["crontab", "system", "cron.d"])
 def test_an_image_without_upload_refuses_while_the_uploader_line_is_installed(
-    tmp_path, where
+    tmp_path, where, form
 ):
     """The expand rollback's preflight, through the shared crontab block."""
+    user = "" if where == "crontab" else "root "
+    line = f"*/5 * * * * {user}{UPLOADER_COMMANDS[form]}"
     fake = {}
     if where == "crontab":
-        fake["crontab"] = UPLOADER_LINE
+        fake["crontab"] = line
     else:
 
         def install(root):
             if where == "system":
-                (tmp_path / "crontab").write_text(UPLOADER_LINE + "\n")
+                (tmp_path / "crontab").write_text(line + "\n")
             else:
                 (tmp_path / "cron.d").mkdir()
-                (tmp_path / "cron.d" / "stewardship").write_text(UPLOADER_LINE + "\n")
+                (tmp_path / "cron.d" / "stewardship").write_text(line + "\n")
 
         fake["prepare"] = install
     calls, output, _ = run_host(tmp_path, "rollback", status=1, **fake)
     assert "has no off-site uploader, but this host's cron still runs it" in output
-    assert "    | */5 * * * * root docker compose" in output
+    assert f"    | {line}" in output
     assert "#rolling-back-the-expand-release" in output
     assert "Nothing was stopped or changed" in output
     assert not any(" stop " in call for call in calls)
