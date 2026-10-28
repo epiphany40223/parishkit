@@ -147,10 +147,10 @@ BEGIN
     SELECT * INTO o FROM public.stewardship_schedule_occurrence WHERE id=m.semantic_key FOR UPDATE;
     IF session_user<>'pk_stewardship_web'
        OR NOT public.stewardship_export_authorized_v1(NEW.actor_id,true)
-       OR m.id IS NULL OR m.purpose NOT IN ('initial','reminder','receipt','family_test','daily_digest','weekly_digest','admin_report','admin_report_test','operational','security_event')
+       OR m.id IS NULL OR m.purpose NOT IN ('initial','reminder','receipt','family_test','daily_digest','weekly_digest','admin_report','admin_report_test','operational','security_event','leader_email')
        OR NEW.expected_version<>m.version OR NEW.correlation_id<>NEW.id
        OR btrim(NEW.evidence_note)=''
-       OR (m.purpose NOT IN ('receipt','family_test','daily_digest','weekly_digest','admin_report','admin_report_test','operational','security_event') AND o.outbox_id IS DISTINCT FROM m.id)
+       OR (m.purpose NOT IN ('receipt','family_test','daily_digest','weekly_digest','admin_report','admin_report_test','operational','security_event','leader_email') AND o.outbox_id IS DISTINCT FROM m.id)
        OR (m.purpose='daily_digest' AND NOT EXISTS (
            SELECT 1 FROM public.stewardship_daily_digest_recipient recipient
            JOIN public.stewardship_daily_digest_ready ready ON ready.id=recipient.ready_id
@@ -203,7 +203,20 @@ BEGIN
            OR m.family_id IS NOT NULL OR m.campaign_id IS NOT NULL OR m.routing<>'operational'
            OR NOT EXISTS(SELECT 1 FROM public.stewardship_system_configuration r
                WHERE r.active_configuration_id IS NOT NULL AND NOT r.restore_review_required)))
-       OR (m.purpose NOT IN ('operational','security_event')
+       -- A Ministry leader email (#2300) belongs to no campaign either and
+       -- is never sent again from here (applying the Email Ministry leaders
+       -- review again sends a new one): it takes only a note or the
+       -- evidence answers, under the notices' admission, and must be the
+       -- Family-less, campaign-less message of one leader email recipient
+       -- it always is. It is never an occurrence or fulfillment.
+       OR (m.purpose='leader_email' AND (
+           NEW.action NOT IN ('note','accept','confirm_unsent')
+           OR m.family_id IS NOT NULL OR m.campaign_id IS NOT NULL
+           OR NOT EXISTS(SELECT 1 FROM public.stewardship_leader_email_recipient leader
+               WHERE leader.outbox_id=m.id)
+           OR NOT EXISTS(SELECT 1 FROM public.stewardship_system_configuration r
+               WHERE r.active_configuration_id IS NOT NULL AND NOT r.restore_review_required)))
+       OR (m.purpose NOT IN ('operational','security_event','leader_email')
            AND NOT public.stewardship_export_admitted_v1(m.campaign_id,true))
        OR EXISTS(SELECT 1 FROM public.stewardship_campaign WHERE id=m.campaign_id AND state='archived')
        OR NEW.duplicate_acknowledged IS DISTINCT FROM (NEW.action='resend')
@@ -244,7 +257,7 @@ BEGIN
                 finished_at=statement_timestamp(),
                 sealed_substitutions=NULL,sealed_key_id=NULL,pause_hold_id=NULL,
                 actor_id=NEW.actor_id,correlation_id=NEW.id,version=version+1 WHERE id=m.id;
-            IF m.purpose NOT IN ('receipt','family_test','daily_digest','weekly_digest','admin_report','admin_report_test','operational','security_event') THEN
+            IF m.purpose NOT IN ('receipt','family_test','daily_digest','weekly_digest','admin_report','admin_report_test','operational','security_event','leader_email') THEN
                 IF NEW.action='accept' THEN
                     UPDATE public.stewardship_schedule_occurrence SET state='succeeded',reason='recovery_complete',
                         actor_id=NEW.actor_id,correlation_id=NEW.id,version=version+1 WHERE id=o.id;

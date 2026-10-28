@@ -545,8 +545,9 @@ def test_sent_mail_lists_ministry_leader_emails(production):
     """Sent mail lists the Ministry leader emails (#1562): each is named by
     its leader's Users-page Name, which links that user's Timeline (#1885)
     rather than filtering in place, the Purpose filter names the kind, and
-    its own page says whom it was for, never its content, and offers no
-    resolution."""
+    its own page says whom it was for, never its content, and offers only
+    a note while it is still being sent (#2300: it is settled from evidence
+    only once Not sure it arrived)."""
     harness, browser = production
     rows = prepared(
         harness.service.store, ["leader-9@example.org", "leader-4-9@example.org"]
@@ -573,7 +574,8 @@ def test_sent_mail_lists_ministry_leader_emails(production):
     assert status == 200
     assert f"/admin/mail/sent/{ids['leader-9@example.org']}/" in html
     assert f"/admin/mail/sent/{ids['leader-4-9@example.org']}/" not in html
-    # Not an email anyone resolves: Needs attention never lists one.
+    # Still being sent, so nothing to act on: Needs attention lists it only
+    # once it is Not sure it arrived (test_settle_leader_emails).
     status, html = sent_mail(browser, state="needs_attention")
     assert status == 200 and not any(i in html for i in ids.values())
     status, own = sent_mail(browser, f"/admin/mail/sent/{ids['leader-9@example.org']}/")
@@ -581,7 +583,11 @@ def test_sent_mail_lists_ministry_leader_emails(production):
     assert "<h1>Ministry leader email</h1>" in own
     assert "<p>Ministry leader email</p>" in own
     assert "leader-9@example.org" in own
-    assert "Resolve this email" not in own and 'name="action"' not in own
+    assert "Resolve this email" not in own
+    # A queued leader email asks nothing; only the closed note form (#2300).
+    assert re.findall(r'name="action" value="(\w+)"', own) == ["note"]
+    panel = own[own.index('id="delivery-resolve"') : own.index('id="delivery-state"')]
+    assert "disabled" not in panel and "belong to no campaign" not in panel
     # Whom it was for, never what it said.
     assert rows["leader-9@example.org"].subject not in own
 

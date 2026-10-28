@@ -136,7 +136,7 @@ def panel(
     ``extra`` overrides read_detail's other fields (refused, paused,
     last_attempt_at, report_waiting); ``countable`` is a report email's
     pending coverage decision (#1872); ``notice`` an operational or security
-    notice's question (#2295)."""
+    notice's or a Ministry leader email's question (#2295, #2300)."""
     data = dict(refused=[], paused=False, last_attempt_at=None) | extra
     return outcome_context(
         data
@@ -500,12 +500,58 @@ def components(now):
     # again, so It was not sent records it at once (/delivery-notice). One
     # whose answers can't be given yet shows only why: its task is still
     # running (its note waits in the closed form) or its answers are not
-    # admitted. A Failed one says a notice is never sent again.
-    for path, state, actions, extra in (
-        ("/delivery-notice", "delivery_unknown", NOTICE_ACTIONS, {}),
-        ("/delivery-notice-task", "delivery_unknown", ("note",), dict(task="running")),
-        ("/delivery-notice-held", "delivery_unknown", (), dict(blocked="notice_held")),
-        ("/delivery-notice-failed", "permanent_failure", ("note",), {}),
+    # admitted. A Failed one says a notice is never sent again. A Ministry
+    # leader email (#2300) asks the same question and says what it is and
+    # how a new one is sent (/delivery-leader, /delivery-leader-failed).
+    for path, state, actions, extra, purpose, address in (
+        (
+            "/delivery-notice",
+            "delivery_unknown",
+            NOTICE_ACTIONS,
+            {},
+            "operational",
+            "admin@example.org",
+        ),
+        (
+            "/delivery-notice-task",
+            "delivery_unknown",
+            ("note",),
+            dict(task="running"),
+            "operational",
+            "admin@example.org",
+        ),
+        (
+            "/delivery-notice-held",
+            "delivery_unknown",
+            (),
+            dict(blocked="notice_held"),
+            "operational",
+            "admin@example.org",
+        ),
+        (
+            "/delivery-notice-failed",
+            "permanent_failure",
+            ("note",),
+            {},
+            "operational",
+            "admin@example.org",
+        ),
+        (
+            "/delivery-leader",
+            "delivery_unknown",
+            NOTICE_ACTIONS,
+            {},
+            "leader_email",
+            "leader@example.org",
+        ),
+        (
+            "/delivery-leader-failed",
+            "permanent_failure",
+            ("note",),
+            {},
+            "leader_email",
+            "leader@example.org",
+        ),
     ):
         yield (
             path,
@@ -515,17 +561,17 @@ def components(now):
                 delivery=page_message
                 | dict(
                     state=state,
-                    purpose="operational",
+                    purpose=purpose,
                     family_id=None,
                     family__family_duid=None,
                     family_name=None,
                 ),
                 refused=[],
                 recipients=dict(
-                    intended=["admin@example.org"],
-                    routed=["admin@example.org"],
-                    intended_links=[("admin@example.org", "not sure it arrived", None)],
-                    routed_rows=[("admin@example.org", "not sure it arrived")],
+                    intended=[address],
+                    routed=[address],
+                    intended_links=[(address, "not sure it arrived", None)],
+                    routed_rows=[(address, "not sure it arrived")],
                     reached=None,
                     refused_for_now=False,
                 ),

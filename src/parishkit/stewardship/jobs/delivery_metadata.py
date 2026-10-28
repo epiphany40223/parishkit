@@ -23,7 +23,7 @@ from parishkit.stewardship.source.snapshot_name_sql import SnapshotFamilyName
 from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 from parishkit.stewardship.web.tables import Fixed, Sorting, bounded_count, read_window
 
-from .outbox_models import ADMINISTRATOR_PURPOSES, OutboxMessage
+from .outbox_models import ADMINISTRATOR_PURPOSES, PARISH_PURPOSES, OutboxMessage
 from .send_history import email_ids
 
 FIELDS = (
@@ -44,8 +44,8 @@ FIELDS = (
 )
 # The purposes an Administrator resolves on an email's page: each belongs
 # to a campaign, whose admission rules decide what may be done. The banner's
-# count (with the notices, ``actionable``), the bulk actions and the
-# resolution commands read these.
+# count (with the notices and Ministry leader emails, ``actionable``), the
+# bulk actions and the resolution commands read these.
 PURPOSES = (
     "initial",
     "reminder",
@@ -64,12 +64,18 @@ PURPOSES = (
 # as not sent, with a note. Nothing else about them can be changed, and no
 # bulk action selects them (the bulk actions read PURPOSES only).
 NOTICE_PURPOSES = ADMINISTRATOR_PURPOSES
-# The resolutions a notice takes: the evidence answers, never a send.
+# A Ministry leader email (#1592) belongs to no campaign either, and its
+# page never sends it again (applying the Email Ministry leaders review
+# again sends a new one), so one whose outcome is unknown is settled from
+# evidence as a notice is (#2300). The kinds settled that way: their page
+# offers only NOTICE_ACTIONS, and no bulk action selects them.
+EVIDENCE_PURPOSES = PARISH_PURPOSES
+# The resolutions a notice or Ministry leader email takes: the evidence
+# answers, never a send.
 NOTICE_ACTIONS = ("note", "accept", "confirm_unsent")
 # Sent mail lists every email of every kind (#1562): also the notices and
-# the Ministry leader emails (#1592), which belong to no campaign, so a
-# leader email's page shows its history but offers no resolution.
-LISTED_PURPOSES = PURPOSES + NOTICE_PURPOSES + ("leader_email",)
+# the Ministry leader emails, which belong to no campaign.
+LISTED_PURPOSES = PURPOSES + EVIDENCE_PURPOSES
 # Sent mail is a log of emails (#931): it sorts on the server by When
 # (changed: the time of the email's current state, its last change; the
 # default, newest first), Recipient (name), Family DUID (duid), Purpose and
@@ -512,18 +518,19 @@ def uncertain_by_mode():
 def actionable(selected):
     """Narrow ``selected`` to the emails whose page offers resolutions.
 
-    Of a kind an Administrator resolves (``PURPOSES``; a Ministry leader
-    email offers none) in a campaign that is not archived (whose page offers
-    nothing), or a notice that is Not sure it arrived, the one state its
-    page settles (#2295; a Failed notice is never sent again). Needs
-    attention and its Not sure it arrived part, needs_review, read it, so an
-    email nobody can act on never keeps a "review needed" count up (#1576),
-    and an unsettled notice, which holds a mail halt from being cleared,
-    is counted and linked like any other.
+    Of a kind an Administrator resolves (``PURPOSES``) in a campaign that
+    is not archived (whose page offers nothing), or a notice or Ministry
+    leader email (``EVIDENCE_PURPOSES``) that is Not sure it arrived, the
+    one state its page settles (#2295, #2300; its page never sends it
+    again, so a Failed one leaves nothing to do). Needs attention and its
+    Not sure it arrived part, needs_review, read it, so an email nobody can
+    act on never keeps a "review needed" count up (#1576), and an unsettled
+    notice or leader email, which holds a mail halt from being cleared, is
+    counted and linked like any other.
     """
     return selected.filter(
         (Q(purpose__in=PURPOSES) & ~Q(campaign__state="archived"))
-        | Q(purpose__in=NOTICE_PURPOSES, state="delivery_unknown")
+        | Q(purpose__in=EVIDENCE_PURPOSES, state="delivery_unknown")
     )
 
 
@@ -534,8 +541,8 @@ def needs_attention(selected):
     unless its latest decision (a resolution other than a note) was to
     record it as not sent, which settles it ("Confirm not sent", or Fix
     many's "record as not sent"). Either must be one whose page offers
-    resolutions (``actionable``: a notice only while Not sure it arrived,
-    a Ministry leader email never, nor an archived campaign's email). One
+    resolutions (``actionable``: a notice or Ministry leader email only
+    while Not sure it arrived, never an archived campaign's email). One
     correlated lookup per candidate email, through the resolutions' history
     index; no per-row admission read.
     """

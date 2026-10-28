@@ -693,7 +693,8 @@ def outcome_context(data):
     form's command id while the note is offered but no answer offers it,
     else None. ``report_waiting`` says a later send of this report email's
     report waits on it (#1872). ``notice`` says the email is an operational
-    or security notice (#2295); ``notice_wait`` is then the words of why
+    or security notice (#2295) or a Ministry leader email (#2300), which
+    are settled from evidence only; ``notice_wait`` is then the words of why
     its answers can't be given yet, which its panel shows in place of the
     question, or None. A waiting notice draws no answer, so its note, when
     offered, waits in the closed "Add a note" form instead.

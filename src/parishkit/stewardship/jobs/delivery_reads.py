@@ -22,9 +22,9 @@ from parishkit.stewardship.web.tables import Sorting, bounded_count, read_window
 
 from .delivery_metadata import (
     DELIVERY_SORTING,
+    EVIDENCE_PURPOSES,
     FIELDS,
     MODES,
-    NOTICE_PURPOSES,
     PURPOSES,
     family_duid,
     listed_messages,
@@ -854,10 +854,11 @@ QUESTIONS = {
     # other cancelled email asks nothing.
     "cancelled": (("reached", "count_delivered"), ("not_reached", "count_unsent")),
 }
-# A notice's question (#2295): it is never sent again, so a notice that is
-# Not sure it arrived asks "What did you find?" without the send-again
-# question, and every other state asks nothing (a Failed notice is final),
-# so its page never shows an answer it can never give.
+# A notice's question (#2295), and a Ministry leader email's (#2300): its
+# page never sends it again, so one that is Not sure it arrived asks "What
+# did you find?" without the send-again question, and every other state
+# asks nothing (a Failed one is final here), so its page never shows an
+# answer it can never give.
 NOTICE_QUESTIONS = {
     "delivery_unknown": (
         ("sent", "accept"),
@@ -872,9 +873,6 @@ SENDING_ACTIONS = frozenset({"resend", "retry_failed", "retry_unsent"})
 # admin-portal spec, Resolution questions). The last five explain a refused
 # send only.
 UNAVAILABLE_REASONS = {
-    "no_campaign": _(
-        "Ministry leader emails belong to no campaign, so they can't be resolved here."
-    ),
     "archived": _("The campaign is archived, so its email can't be changed."),
     "held": _(
         "Other campaign work (a restore review, or a cleanup, purge or go-live "
@@ -885,14 +883,15 @@ UNAVAILABLE_REASONS = {
         "This email's background task has not finished, so it can be "
         "answered once it has."
     ),
-    # A notice's own two (#2295), in place of held and task_running: it
-    # belongs to no campaign, and its page shows only this line.
+    # A notice's or Ministry leader email's own two (#2295, #2300), in
+    # place of held and task_running: it belongs to no campaign, and its
+    # page shows only this line.
     "notice_held": _(
-        "This notice can be settled once the system's setup is active and "
+        "This email can be settled once the system's setup is active and "
         "no restore is waiting for review."
     ),
     "notice_task_running": _(
-        "This notice's background task has not finished, so it can be "
+        "This email's background task has not finished, so it can be "
         "settled once it has."
     ),
     "campaign_ended": _("The campaign has ended, so it is not sent again."),
@@ -942,7 +941,8 @@ def question_choices(
     as before. A cancelled email asks only when ``countable`` (a report
     email whose coverage decision is still to be made, #1872); its answers
     send nothing, so they never wait for a task. A ``notice`` (an
-    operational or security notice, #2295) asks ``NOTICE_QUESTIONS``, and
+    operational or security notice, #2295, or a Ministry leader email,
+    #2300: ``EVIDENCE_PURPOSES``) asks ``NOTICE_QUESTIONS``, and
     an answer of one is unavailable only as ``notice_held`` (its ``blocked``)
     or ``notice_task_running``, never for a campaign's reason.
     """
@@ -1133,9 +1133,9 @@ def read_detail(message_id, parameters, actor=None):
 
     The outcome panel (#1563): ``outcome`` (``email_outcome``) and
     ``choices``, its question's answers with why any is unavailable
-    (``question_choices``): nothing can be changed for a Ministry leader
-    email (``no_campaign``), on an archived campaign, or while other campaign
-    work holds it (``held``, the export admission refusing, #1331); a
+    (``question_choices``): nothing can be changed on an archived campaign
+    (``archived``), or while other campaign work holds it (``held``, the
+    export admission refusing, #1331); a
     refused send is named by ``retry_refusal``. ``paused`` says campaign
     email is paused and ``last_attempt_at`` is when the provider was last
     asked to send it (None before any attempt). Raises
@@ -1148,15 +1148,18 @@ def read_detail(message_id, parameters, actor=None):
 
     Every email Sent mail lists opens here, operational and security
     notices and Ministry leader emails too (#1562). Those belong to no
-    campaign. A Ministry leader email offers nothing, and no admission is
-    read for it. A notice takes a note, and while it is Not sure it arrived
-    it is settled from evidence (#2295, ``NOTICE_QUESTIONS``); it is never
-    sent again, so no resend admission is read for it either. Its answers
-    are admitted, as the resolution guard admits them (frozen file 0190),
-    while the deployment has an active configuration and no restore under
-    review (``notice_admitted``). ``notice`` says the email is one, so its
-    panel names a notice's own reasons (``notice_held``,
-    ``notice_task_running``) and draws no unavailable answer.
+    campaign. A notice or Ministry leader email (``EVIDENCE_PURPOSES``)
+    takes a note, and while it is Not sure it arrived it is settled from
+    evidence (#2295, #2300, ``NOTICE_QUESTIONS``); its page never sends it
+    again, so no resend admission is read for it. Its answers are admitted,
+    as the resolution guard admits them (frozen files 0190 and 0191), while
+    the deployment has an active configuration and no restore under review
+    (``notice_admitted``). ``notice`` says the email is one, so its panel
+    names a notice's own reasons (``notice_held``, ``notice_task_running``)
+    and draws no unavailable answer. Every other listed email belongs to a
+    campaign (the outbox_routing check), so ``resolvable`` always holds for
+    it; were it ever not, nothing would be offered, as on an archived
+    campaign.
     """
     from parishkit.stewardship.campaigns.models import Campaign
 
@@ -1180,7 +1183,7 @@ def read_detail(message_id, parameters, actor=None):
         .first()
     )
     resolvable = message["purpose"] in PURPOSES and message["campaign_id"]
-    notice = message["purpose"] in NOTICE_PURPOSES
+    notice = message["purpose"] in EVIDENCE_PURPOSES
     campaign_state, can_resolve, can_retry = "archived", False, False
     paused = False
     if notice:
@@ -1226,8 +1229,6 @@ def read_detail(message_id, parameters, actor=None):
     blocked = (
         ("notice_held" if not can_resolve else None)
         if notice
-        else "no_campaign"
-        if not resolvable
         else "archived"
         if campaign_state == "archived"
         else "held"
@@ -1277,11 +1278,12 @@ def read_detail(message_id, parameters, actor=None):
 
 
 def notice_admitted():
-    """Whether a notice's resolutions are admitted now (#2295).
+    """Whether a notice's or leader email's resolutions are admitted now.
 
-    The resolution guard (frozen file 0190) admits a notice's answers while
-    the deployment has an active configuration and no restore is under
-    review: the part of a campaign's export admission that does not name a
+    The resolution guard (frozen files 0190 and 0191, #2295 and #2300)
+    admits a notice's or Ministry leader email's answers while the
+    deployment has an active configuration and no restore is under review:
+    the part of a campaign's export admission that does not name a
     campaign. The page itself is withheld during a restore review, so this
     mostly guards a deployment that is not set up yet.
     """

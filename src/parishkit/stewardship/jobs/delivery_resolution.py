@@ -16,7 +16,7 @@ from parishkit.stewardship.reports.models import ReportEmailCoverageDecision
 from parishkit.stewardship.storage import StaleRecordError
 
 from .delivery_admin import authorize, evidence_note
-from .delivery_metadata import NOTICE_ACTIONS, NOTICE_PURPOSES, PURPOSES
+from .delivery_metadata import EVIDENCE_PURPOSES, NOTICE_ACTIONS, PURPOSES
 from .delivery_reads import COUNT_ACTIONS, coverage_undecided
 from .delivery_resolution_models import ACTIONS, DeliveryResolution
 from .family_dispatch_grants import METADATA_FIELDS
@@ -188,11 +188,13 @@ def resolve_delivery(
     commit; the decision's own guard (frozen file 0164) admits it. A
     replay finds both and returns the note.
 
-    An operational or security notice (#2295) takes only ``NOTICE_ACTIONS``:
-    a note, or settling an unknown outcome from evidence (``accept``,
-    ``confirm_unsent``). It is never sent again, so any other action is
-    refused (``PermissionError``) before anything is prepared; the guard
-    (frozen file 0190) refuses it too.
+    An operational or security notice (#2295) or a Ministry leader email
+    (#2300), ``EVIDENCE_PURPOSES``, takes only ``NOTICE_ACTIONS``: a note,
+    or settling an unknown outcome from evidence (``accept``,
+    ``confirm_unsent``). It is never sent again from here (a new leader
+    email comes from applying the Email Ministry leaders review again), so
+    any other action is refused (``PermissionError``) before anything is
+    prepared; the guard (frozen files 0190 and 0191) refuses it too.
     """
     if any(not isinstance(value, UUID) for value in (user_id, message_id, command_id)):
         raise ValueError("Resolution requires canonical identities.")
@@ -237,10 +239,10 @@ def resolve_delivery(
                 raise ValueError("Resolution command is already bound.")
             return previous
         message = OutboxMessage.objects.only(*METADATA_FIELDS).get(
-            pk=message_id, purpose__in=PURPOSES + NOTICE_PURPOSES
+            pk=message_id, purpose__in=PURPOSES + EVIDENCE_PURPOSES
         )
-        if message.purpose in NOTICE_PURPOSES and action not in NOTICE_ACTIONS:
-            raise PermissionError("Notices are settled from evidence; never resent.")
+        if message.purpose in EVIDENCE_PURPOSES and action not in NOTICE_ACTIONS:
+            raise PermissionError("Settled from evidence only; never resent here.")
         if message.version != expected_version:
             raise StaleRecordError("Delivery changed; review it again.")
         latest = (
