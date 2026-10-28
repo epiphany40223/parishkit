@@ -200,19 +200,29 @@ def test_removing_an_integration_counts():
 @pytest.mark.parametrize(
     ("query", "expected"),
     [
-        ("action=preview&kind=a&purpose=b&note=c&zz=1", (1, ())),
-        ("action=preview&kind=a&kind=b&purpose=b&note=c", (0, ("kind",))),
-        ("action=confirm&preview=p&note=c&checked=yes", (1, ())),
+        ("action=preview&kind=a&scope=page&zz=1", (1, ())),
+        ("action=preview&kind=a&kind=b&scope=page", (0, ("kind",))),
+        # The ticked rows repeat ``delivery``; only the unknown name counts.
+        ("action=preview&kind=a&scope=page&delivery=x&delivery=y&zz=1", (1, ())),
+        # Only Apply after a review posts the records check.
+        ("action=continue&preview=p&note=c&checked=yes", (1, ())),
+        ("action=confirm&preview=p&note=c&checked=yes&zz=1", (1, ())),
         ("action=nope&kind=a", (None, ())),
     ],
 )
 def test_the_bulk_mail_actions_count(monkeypatch, query, expected):
-    """Sent mail's bulk actions: each action's own fields, from one table."""
+    """Sent mail's bulk actions: each action's own fields, from one table.
+    The refusal is the review dialog's fragment (#2296), which carries the
+    count and the duplicated names for the refusal log."""
     monkeypatch.setattr(delivery_views, "runtime", lambda: SimpleNamespace(store=None))
     monkeypatch.setattr(delivery_views, "_principal", lambda *_, **__: None)
-    context, status = delivery_views._bulk(form_post(query))
-    assert status == 400
-    assert counted(context["_refusal"]) == expected
+    response = delivery_views._bulk(form_post(query))
+    assert response.status_code == 400
+    assert response.stewardship_reason == "unexpected_fields"
+    assert (
+        response.stewardship_unexpected_count,
+        response.stewardship_duplicates,
+    ) == expected
 
 
 def test_a_submitted_file_is_counted():

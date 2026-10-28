@@ -50,6 +50,7 @@ from parishkit.stewardship.web.filter_errors import (
 from parishkit.stewardship.web.refusals import (
     annotate,
     refusal_text,
+    refused_step,
     unexpected_fields,
     with_codes,
     with_default_code,
@@ -298,26 +299,20 @@ def _listing_parameters(request):
 
     A GET (a bookmark, or a link from another page) carries only the
     filters a link may carry; one naming a Recipient is refused, without
-    echoing it. A bulk action posts to the page's address, so its filters
-    are that address's, plus the Recipient its form carries. Any other POST
-    is the page's own filter form or table control: every filter is in its
-    body, and it never comes with a query string. Raises ``ValueError``.
+    echoing it. Every POST carries every filter in its body and never comes
+    with a query string: the page's own filter form or table control, or a
+    bulk step (#2296), whose own fields (``BULK_ONLY``) are left out here.
+    Raises ``ValueError``.
     """
     if request.method != "POST":
         if PRIVATE_FILTERS & set(request.GET):
             raise ValueError(RECIPIENT_IN_LINK)
         return request.GET
-    if "action" in request.POST:
-        parameters = request.GET.copy()
-        if PRIVATE_FILTERS & set(parameters):
-            raise ValueError(RECIPIENT_IN_LINK)
-        if request.POST.get("recipient"):
-            parameters["recipient"] = request.POST["recipient"]
-        return parameters
     if request.GET:
         raise ValueError("Invalid delivery filter.")
     parameters = request.POST.copy()
-    parameters.pop("csrfmiddlewaretoken", None)
+    for name in BULK_ONLY if "action" in parameters else {"csrfmiddlewaretoken"}:
+        parameters.pop(name, None)
     return parameters
 
 
@@ -445,13 +440,11 @@ def delivery_list(request):
     the result or the refusal in place. Any other POST reads the page with
     the filters in its body (``_listing_parameters``).
     """
-    bulk, status = ({}, 200)
+    bulk = {}
     if request.method == "POST" and "action" in request.POST:
-        bulk, status = _bulk(request)
+        bulk = _bulk(request)
     if isinstance(bulk, HttpResponse):
         return bulk
-    # The refusal behind a refused bulk action, for the refusal log only.
-    refusal = bulk.pop("_refusal", None)
     # A Recipient refused at its field, which load notes (#1562).
     field_refusal = []
 
@@ -498,6 +491,26 @@ def delivery_list(request):
                 actor.identity,
             )
         )
+        # The bulk actions' rows (#2296): each row a bulk action covers gets
+        # a selection box of its kind, and Select all N matching counts them
+        # on every page of this view.
+        available = delivery_bulk.selectable()
+        rows = [
+            row | {"bulk_kind": available.get(row["id"], {}).get("kind")}
+            for row in rows
+        ]
+        matching = _matching(
+            available,
+            delivery_bulk.matching_ids(
+                values,
+                snapshot=data["snapshot"],
+                actor=actor.identity,
+                among=available,
+            )
+            if problem is None
+            else [],
+            sum(1 for row in rows if row["bulk_kind"]),
+        )
         table = replace(
             window_table(
                 data["window"],
@@ -536,7 +549,14 @@ def delivery_list(request):
             report_waiting=waiting_emails(actor.identity),
             # The link line's count (#935), drawn once per page load.
             refusal_count=unresolved_refusals().count(),
-            bulk_overview=delivery_bulk.overview(),
+            # The view's fields every bulk step posts again, so its answer
+            # draws this same view (#2296).
+            bulk_view=table.page_fields(table.number),
+            matching=matching,
+            # The selection column and bulk bar, only while there is
+            # something to select (#2296): a box on this page, or Select all
+            # N matching.
+            bulk_shown=bool(matching) or any(row["bulk_kind"] for row in rows),
             **bulk,
         )
         if problem is not None:
@@ -547,57 +567,89 @@ def delivery_list(request):
             }
         return context, len(data["rows"])
 
-    response = _page(request, "stewardship/deliveries.html", load, status=status)
+    response = _page(request, "stewardship/deliveries.html", load)
     if field_refusal and response.status_code == 200:
         # This page drawn again for a Recipient refused at its field: a
         # 400 refusal the in-place Apply swaps in, keeping the form.
         refused(response)
-    # Only the bulk region's own refusal: a page that answered with a
-    # refusal of its own (its 400 error page) keeps that one's reason.
-    if (
-        refusal is not None
-        and response.status_code == status
-        and getattr(response, "stewardship_exception_class", None) is None
-    ):
-        annotate(response, refusal)
     return response
 
 
-# What a refused bulk action says in the page's error summary.
+def _matching(available, ids, shown):
+    """Select all N matching's toggle for this view, or None (#2296).
+
+    ``ids`` are the selectable emails the view's filters match on every
+    page, ``shown`` how many of them this page gives a box. The toggle is
+    offered only when the filters match more than the page shows. Its
+    ``kind`` is the one kind of all of them, or ``mixed``, by which the
+    bulk buttons fit while it is pressed.
+    """
+    if len(ids) <= shown:
+        return None
+    kinds = {available[message_id]["kind"] for message_id in ids}
+    return dict(count=len(ids), kind=kinds.pop() if len(kinds) == 1 else "mixed")
+
+
+# What a refused bulk action says in its review dialog (#2296).
 BULK_REFUSALS = {
-    "stale": _(
-        "These emails changed, or the preview expired, before you confirmed. "
-        "Choose Preview again to see what qualifies now."
+    "changed": _(
+        "Some of the selected emails changed, or this review expired, so "
+        "nothing was changed. Close this, then select the emails again to "
+        "see what qualifies now."
     ),
-    "empty": _("No email qualifies for this action any more."),
+    "empty": _(
+        "No selected email qualifies for this action any more, so nothing "
+        "was changed. Close this to see the current list."
+    ),
+    "mixed": _(
+        "The emails matching these filters are both Failed and Not sure it "
+        "arrived, which need different actions, so nothing was changed. "
+        "Close this, choose one of them under Delivery, then select again."
+    ),
+    "selection": _(
+        "The selected emails could not be read, or more than one page of "
+        "them was selected, so nothing was changed. Close this, then select "
+        "the emails again in the list."
+    ),
     "invalid": _(
-        "Enter a note, choose a type of email and, to record emails as not "
-        "sent, confirm that you checked the mail service's records."
+        "Enter the evidence or reason and, to record emails as not sent, "
+        "confirm that you checked the mail service's records. Nothing was "
+        "changed."
     ),
 }
-# The fields each bulk action posts besides the CSRF token, as (required,
-# optional): the checks below refuse any other, and the refusal log counts
-# them (#1444). Each may carry the applied Recipient, which is private
-# filter state and never in the address the forms post to, so the answer's
-# list keeps it (#1562).
+# The fields each bulk step posts besides the CSRF token and the view's
+# filters, sort, size and page (``VIEW_FIELDS``), as (required, optional):
+# the checks below refuse any other, and the refusal log counts them
+# (#1444). The selection form posts ``preview`` with the ticked rows
+# (``delivery``, the only field that repeats) or Select all N matching's
+# ``scope``; the review dialog's Apply posts ``confirm``; the notice's
+# Continue posts ``continue``, whose review's Apply posts ``confirm``.
 _BULK_FIELDS = {
-    "preview": ({"action", "kind", "purpose", "note"}, {"checked", "recipient"}),
-    "confirm": ({"action", "preview", "note"}, {"recipient"}),
+    "preview": ({"action", "kind", "scope"}, {"delivery"}),
+    "continue": ({"action", "preview", "note"}, set()),
+    "confirm": ({"action", "preview", "note"}, {"checked"}),
 }
+BULK_ONLY = {"csrfmiddlewaretoken", "kind", "scope", "delivery", "note", "checked"}
+BULK_ONLY |= {"action", "preview"}
+VIEW_FIELDS = LISTING_FILTERS | TABLE_FIELDS
 
 
 def _bulk(request):
-    """Preview or apply one bulk action; returns ``(context, status)``.
+    """One bulk step (#2296): a review, or what applying one did.
 
-    ``context`` fills the page's bulk review region: ``bulk_review`` (a
-    preview to confirm), ``bulk_result`` (what applying it did) or
-    ``bulk_errors`` (a refusal, with a 4xx status). A denial or an outage
-    is answered by the fixed error page instead, returned in place of the
-    context. Previewing changes nothing; applying resolves each message with
-    the ordinary per-message command (``delivery_bulk.apply_preview``). A
-    refused input's error is returned under the private key ``_refusal``,
-    which ``delivery_list`` takes out for the refusal log; the region never
-    sees it.
+    ``preview`` (the bulk bar's Send again or Record as not sent) and
+    ``continue`` (the notice's Continue) are answered with the review
+    dialog's fragment, ``delivery-bulk-review.html``: the count to review,
+    the note and records check it asks for, and the signed preview and the
+    view's fields that its Apply posts back. ``confirm`` (that Apply)
+    resolves each message with the ordinary per-message command
+    (``delivery_bulk.apply_preview``) and returns the page's context,
+    ``bulk_result`` and ``bulk_note``: Sent mail is drawn again with them,
+    and the dialog redraws the page's regions from that answer. A refusal
+    is the fragment with its reason (``data-review-refusal``) and a 4xx
+    status, shown in the dialog with nothing changed; a denial or an
+    outage is the fixed error page. Returns an ``HttpResponse`` or the
+    context.
     """
     try:
         service = runtime()
@@ -609,28 +661,51 @@ def _bulk(request):
             raise unexpected_fields()
         required, optional = _BULK_FIELDS[action]
         if (
-            any(len(request.POST.getlist(key)) != 1 for key in request.POST)
+            any(
+                len(request.POST.getlist(key)) != 1
+                for key in request.POST
+                if key != "delivery"
+            )
             or not required <= supplied
-            or supplied - required - optional
+            or supplied - required - optional - VIEW_FIELDS
         ):
             raise unexpected_fields(
-                request.POST, allowed=required | optional | {"csrfmiddlewaretoken"}
+                request.POST,
+                allowed=required | optional | VIEW_FIELDS | {"csrfmiddlewaretoken"},
+                multiple=("delivery",),
             )
+        view = [
+            (name, value)
+            for name, value in _listing_parameters(request).items()
+            if value
+        ]
         if action == "preview":
             with transaction.atomic():
                 _available()
-                review = delivery_bulk.preview(
-                    actor.identity,
-                    kind=request.POST["kind"],
-                    purpose=request.POST["purpose"],
-                    note=request.POST["note"],
-                    checked=request.POST.get("checked") == "yes",
-                )
-            return dict(bulk_review=review | {"form": f"bulk-{review['kind']}"}), 200
-        # The signed preview carries only the note's digest; the note is
-        # posted again beside it and must match.
+                review = _bulk_preview(request, actor)
+            return _bulk_answer(request, dict(review=review, view=view))
+        if action == "continue":
+            binding = delivery_bulk.load_preview(
+                request.POST["preview"], actor.identity, request.POST["note"]
+            )
+            with transaction.atomic():
+                _available()
+                count = delivery_bulk.left(binding)
+            if not count:
+                raise delivery_bulk.NothingToResolve("Nothing is left.")
+            review = dict(
+                kind=binding["kind"],
+                count=count,
+                token=request.POST["preview"],
+                note=binding["note"],
+                continuing=True,
+            )
+            return _bulk_answer(request, dict(review=review, view=view))
         binding = delivery_bulk.load_preview(
-            request.POST["preview"], actor.identity, request.POST["note"]
+            request.POST["preview"],
+            actor.identity,
+            request.POST["note"],
+            checked=request.POST.get("checked") == "yes",
         )
         with transaction.atomic():
             _available()
@@ -643,35 +718,106 @@ def _bulk(request):
             preparation_inputs=_retry_inputs,
         )
         # Continue applies the rest of the same preview, past what it skipped.
-        return dict(bulk_result=result, bulk_note=binding["note"]), 200
-    except delivery_bulk.NothingToResolve:
-        return _bulk_refused("empty", 409)
-    except (StaleRecordError, TaskRetryConflict, signing.BadSignature):
-        return _bulk_refused("stale", 409)
+        return dict(bulk_result=result, bulk_note=binding["note"])
+    except delivery_bulk.NothingToResolve as error:
+        return _bulk_answer(request, dict(refused="empty"), 409, error)
+    except _MixedSelection as error:
+        return _bulk_answer(request, dict(refused="mixed"), 409, error)
+    except _BadSelection as error:
+        return _bulk_answer(request, dict(refused="selection"), 400, error)
+    except (StaleRecordError, TaskRetryConflict, signing.BadSignature) as error:
+        return _bulk_answer(request, dict(refused="changed"), 409, error)
     except SHARED_REFUSALS as error:
         # A role that lacks the page, or an ended session: the shared
-        # refusal (#1924, #2062), not this page's own error. ``_bulk``
-        # returns a pair.
-        return role_response(error), 403
+        # refusal (#1924, #2062), not this page's own error.
+        return role_response(error)
     except PermissionError:
-        return _error(ErrorCode.DENIED, 403), 403
+        return _error(ErrorCode.DENIED, 403)
     except DatabaseError as error:
-        return _database_error(error), 503
+        return _database_error(error)
     except UNAVAILABLE:
-        return _error(ErrorCode.UNAVAILABLE, 503), 503
+        return _error(ErrorCode.UNAVAILABLE, 503)
     except ValueError as error:
-        # A stale form's unexpected fields say so; other invalid input keeps
-        # the region's "Enter a note…" guidance (#1401).
-        text = refusal_text(error)
-        if text:
-            return dict(bulk_errors=[dict(message=text)], _refusal=error), 400
-        context, status = _bulk_refused("invalid", 400)
-        return context | {"_refusal": error}, status
+        # A stale form's unexpected fields say so; other invalid input (a
+        # missing note or records check) keeps the "Enter…" guidance (#1401).
+        return _bulk_answer(
+            request, dict(refused="invalid", text=refusal_text(error)), 400, error
+        )
 
 
-def _bulk_refused(reason, status):
-    """A refused bulk action: the page again, with its reason in the region."""
-    return dict(bulk_errors=[dict(message=BULK_REFUSALS[reason])]), status
+class _MixedSelection(ValueError):
+    """Select all N matching covers both kinds of email (#2296)."""
+
+
+class _BadSelection(ValueError):
+    """A hand-built selection: a malformed id, more than one page of ids,
+    or no rows and no Select all N matching (#2296)."""
+
+
+def _bulk_preview(request, actor):
+    """The review of the bulk bar's action for the posted selection.
+
+    A page selection posts its ticked rows' ids (at most one page,
+    ``delivery_bulk.SELECTION_LIMIT``); Select all N matching posts
+    ``scope=matching`` with the view's filters, and the emails are read
+    again from them, refused when they mix the two kinds. Runs inside the
+    caller's transaction; returns ``delivery_bulk.preview``'s answer.
+    """
+    available = delivery_bulk.selectable()
+    kind, scope = request.POST["kind"], request.POST["scope"]
+    if scope == "matching":
+        data = read_listing(
+            _listing_parameters(request),
+            actor=actor.identity,
+            default_mode=SystemConfiguration.objects.values_list(
+                "mode", flat=True
+            ).first(),
+        )
+        ids = delivery_bulk.matching_ids(
+            data["values"],
+            snapshot=data["snapshot"],
+            actor=actor.identity,
+            among=available,
+        )
+        if len({available[message_id]["kind"] for message_id in ids}) > 1:
+            raise _MixedSelection("The matching emails mix both kinds.")
+    elif scope == "page" and "delivery" in request.POST:
+        posted = request.POST.getlist("delivery")
+        if len(posted) > delivery_bulk.SELECTION_LIMIT:
+            raise _BadSelection("Select at most one page of emails.")
+        try:
+            ids = [UUID(text) for text in posted]
+        except ValueError as error:
+            raise _BadSelection("Invalid email in the bulk selection.") from error
+    else:
+        raise _BadSelection("Invalid bulk selection.")
+    return delivery_bulk.preview(
+        actor.identity, kind=kind, ids=ids, available=available
+    )
+
+
+def _bulk_answer(request, context, status=200, error=None):
+    """The review dialog's fragment for a bulk step, or its refusal.
+
+    ``context`` holds ``review`` (and the ``view`` fields its Apply posts
+    back) or ``refused``, a ``BULK_REFUSALS`` key whose words the fragment
+    shows (``text`` replaces them for a stale form's unexpected fields).
+    A refusal keeps its own explanation and records its reason and code.
+    """
+    if "refused" in context and not context.get("text"):
+        context["text"] = BULK_REFUSALS[context["refused"]]
+    response = render(
+        request, "stewardship/delivery-bulk-review.html", context, status=status
+    )
+    response["Cache-Control"] = "no-store"
+    if status != 200:
+        response.stewardship_safe_error = True
+        refused_step(
+            response,
+            context["refused"],
+            error if context["refused"] == "invalid" else None,
+        )
+    return response
 
 
 def _available():
