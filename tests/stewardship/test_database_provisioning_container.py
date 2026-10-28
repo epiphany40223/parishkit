@@ -288,11 +288,14 @@ def test_migration_owner_and_narrow_runtime_grants(empty_operator_database, tmp_
         with connect(configuration, login) as database, database.cursor() as cursor:
             if role is ServiceRole.BACKUP_UPLOADER:
                 # The off-site uploader (#235) reads only what binds a set to
-                # its run row, and nothing else of the schema.
+                # its run row, plus django_migrations for its current-schema
+                # check (E2), and nothing else of the schema.
                 cursor.execute(
                     "SELECT count(manifest_digest) FROM stewardship_backup_run"
                 )
                 assert cursor.fetchone() == (0,)
+                cursor.execute("SELECT COUNT(*) FROM django_migrations")
+                assert cursor.fetchone()[0] > 0
                 cursor.execute(
                     "SELECT has_function_privilege(current_user,"
                     "'public.stewardship_bootstrap_empty_database()','EXECUTE'),"
@@ -301,7 +304,7 @@ def test_migration_owner_and_narrow_runtime_grants(empty_operator_database, tmp_
                 )
                 assert cursor.fetchone() == (False, True)
                 with pytest.raises(psycopg.errors.InsufficientPrivilege):
-                    cursor.execute("SELECT COUNT(*) FROM django_migrations")
+                    cursor.execute("SELECT COUNT(*) FROM stewardship_campaign")
                 continue
             if role == "download":
                 cursor.execute("SELECT COUNT(*) FROM stewardship_campaign")
