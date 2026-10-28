@@ -147,6 +147,23 @@ def role_matches(login, marker, limit, *, reader, exempt=frozenset()):
     )
 
 
+def login_present(login, checks):
+    """``checks`` for one login, answered only once the login is known to exist.
+
+    The privilege functions raise for a role name that does not exist, and
+    PostgreSQL may evaluate ``AND`` terms in any order, so a login a release
+    adds (the off-site uploader, #235) would turn the whole query into an
+    error rather than ``f``. The lookup in ``pg_roles`` comes first inside a
+    ``CASE``, which evaluates its branches lazily, so a missing login answers
+    ``f`` and the upgrade runs as a schema change.
+    """
+    joined = " AND ".join(f"({check})" for check in checks)
+    return (
+        f"CASE WHEN EXISTS(SELECT 1 FROM pg_roles WHERE rolname={literal(login)}) "
+        f"THEN ({joined}) ELSE false END"
+    )
+
+
 def grants_held(login, tables, columns):
     """Every table and column privilege the registry grants is already held."""
     table_rows = sorted(
@@ -312,7 +329,7 @@ def upgrade_noop_query(configuration, deployment_id):
     ]
     for _, login, role, target in database_identities():
         reader = role is ServiceRole.BACKUP_WORKER
-        checks.append(
+        login_checks = [
             role_matches(
                 login,
                 marker,
@@ -320,14 +337,15 @@ def upgrade_noop_query(configuration, deployment_id):
                 reader=reader,
                 exempt=migration_exemption(role),
             )
-        )
-        if role is ServiceRole.MIGRATION:
-            continue  # The schema owner receives no runtime grants.
-        tables, columns = runtime_grants(role, target=target)
-        checks.append(grants_held(login, tables, columns))
-        checks.append(no_excess(login, tables, columns, reader=reader))
-        if not reader:
-            checks.append(no_create(login))
+        ]
+        if role is not ServiceRole.MIGRATION:
+            # The schema owner receives no runtime grants.
+            tables, columns = runtime_grants(role, target=target)
+            login_checks.append(grants_held(login, tables, columns))
+            login_checks.append(no_excess(login, tables, columns, reader=reader))
+            if not reader:
+                login_checks.append(no_create(login))
+        checks.append(login_present(login, login_checks))
     checks += [inspect_login.role_matches(marker), inspect_login.grants_exact()]
     proof = "\n AND ".join(f"({check})" for check in checks)
     # The answer is text, printed by psql exactly as the boolean was: t or

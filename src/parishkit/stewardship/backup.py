@@ -68,7 +68,9 @@ CLOCK_SKEW = timedelta(hours=1)
 # each, and the hosted-file library (#346) at most 200 MB in all. Anything
 # larger is not what this backup was designed for and stops before sealing.
 MAX_FILES_BYTES = 512 * 1024 * 1024
-SET_NAME = re.compile(r"^\d{8}T\d{6}Z$")
+# ASCII digits only: \d also matches other scripts' digits on str, which
+# strptime accepts too, so a non-ASCII name could pass as a set's time.
+SET_NAME = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
 DUMP = "database.pgdump.sealed"
 FILES = "files.tar.sealed"
 MANIFEST = "manifest.json"

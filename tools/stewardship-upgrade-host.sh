@@ -935,6 +935,184 @@ if [ "$mode" = upgrade ]; then
     fi
 fi
 
+# The command-list probe (#235): one bounded `--help` capture per image, read
+# by has_command() as pk-restore reads its own. The new image's list says
+# whether it has the off-site uploader (it lists uploader-password-check,
+# which no release before the uploader has; `smoke` cannot be the marker, as
+# every image lists it). The running image's list is what a later release's
+# step 1 keys its uploader run on. An image that does not answer (gone, or
+# no list within the limit) refuses before anything stops. That holds for
+# the running image too, although in this release its list only drives a
+# message: the design (operations specification, "Scripted upgrades", *The
+# command probe*) requires the refusal, since a later release's step 1
+# runs that image's uploader. A pruned or unpullable running image
+# therefore refuses the upgrade; pull it again, or restore it, and repeat.
+command_list() {
+    # Prints $1's command list; fails when it does not answer with one.
+    local out rc=0 started
+    started=$(date -u +%s)
+    out=$(timeout --kill-after=10 60 "${isolated[@]}" "$1" --help 2>/dev/null) || rc=$?
+    if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+        echo "TIMEOUT: listing the commands of $1 killed after $(( $(date -u +%s) - started ))s (limit 60s)" >&3
+    fi
+    [ "$rc" -eq 0 ] || return 1
+    # Every release lists retarget-image; anything else is not a command list.
+    grep -qE '[{,]retarget-image[,}]' <<<"$out" || return 1
+    printf '%s\n' "$out"
+}
+has_command() { grep -qE "[{,]$2[,}]" <<<"$1"; }
+new_commands=$(command_list "$image") ||
+    { echo "Could not list the commands of $image; refusing." >&2; exit 1; }
+running_commands=""
+if [ -n "$previous" ] && [ "$previous" != "$image" ]; then
+    running_commands=$(command_list "$previous") ||
+        { echo "Could not list the commands of the running image $previous; refusing." >&2; exit 1; }
+else
+    running_commands=$new_commands
+fi
+if has_command "$running_commands" uploader-password-check; then
+    echo "    the running image has the off-site uploader"
+fi
+
+uploader_login=pk_stewardship_backup_uploader
+uploader_recovery="docs/guides/stewardship-backup-runbook.md#uploader-lost-file-recovery"
+if has_command "$new_commands" uploader-password-check; then
+    # The off-site uploader's password (#235, operations specification,
+    # "Uploader password"): step 4's database-grants refuses a login whose
+    # file is missing or does not match the cluster's stored verifier, but
+    # only after the full stop. So, read-only and before anything stops: no
+    # login yet is nothing to check (step 4 creates it); a login needs its
+    # file and the new image's `match`. The query's own failure refuses too
+    # and is never read as "no login" (the exit status, and exactly 0 or 1).
+    step "1. Checking the off-site uploader's password file"
+    read_only=(-e PGOPTIONS='-c default_transaction_read_only=on')
+    count=$("${dc[@]}" exec -T "${read_only[@]}" postgres \
+        psql -U pk_stewardship_operator -d "$database" -At -v ON_ERROR_STOP=1 -c \
+        "SELECT count(*) FROM pg_authid WHERE rolname='$uploader_login'" </dev/null 2>/dev/null) ||
+        { echo "Could not ask the database whether the off-site uploader's login exists; refusing." >&2; exit 1; }
+    case "$count" in
+        0) echo "    no uploader login yet: step 4's database-grants creates it" ;;
+        1)
+            # The verifier goes from psql to the check through a file in
+            # this run's owner-only work directory, never through the log.
+            "${dc[@]}" exec -T "${read_only[@]}" postgres \
+                psql -U pk_stewardship_operator -d "$database" -At -v ON_ERROR_STOP=1 -c \
+                "SELECT coalesce(rolpassword,'') FROM pg_authid WHERE rolname='$uploader_login'" \
+                </dev/null >"$work/uploader.verifier" 2>/dev/null ||
+                { echo "Could not read the off-site uploader's stored password; refusing." >&2; exit 1; }
+            # Named like a one-off, so a kill (or a signal's trap, through
+            # stop_oneoff) removes the container itself: killing only the
+            # docker run client leaves it running. A kill is logged with
+            # what, the limit and the elapsed time, and still refuses below
+            # (answer: none).
+            oneoff_name=$oneoff_prefix-uploader-password-check
+            started=$(date -u +%s)
+            check_rc=0
+            answer=$(timeout --kill-after=10 120 docker run -i --rm --init --network none \
+                --name "$oneoff_name" \
+                --user 10001:10001 --read-only --cap-drop ALL \
+                --security-opt no-new-privileges:true \
+                --tmpfs /tmp:rw,nosuid,nodev,noexec,mode=1777 \
+                --mount "type=bind,source=$root,target=$root,readonly" \
+                --mount "type=bind,source=$yaml,target=/run/operator.yaml,readonly" \
+                "$image" uploader-password-check --config /run/operator.yaml \
+                <"$work/uploader.verifier" 2>/dev/null) || check_rc=$?
+            rm -f "$work/uploader.verifier"
+            if [ "$check_rc" -eq 124 ] || [ "$check_rc" -eq 137 ]; then
+                echo "TIMEOUT: the off-site uploader's password check killed after $(( $(date -u +%s) - started ))s (limit 120s)" >&3
+                stop_oneoff "time limit" >&3
+                answer=""
+            fi
+            oneoff_name=""
+            if [ "$answer" != match ]; then
+                echo "The off-site uploader's password file is missing or does not match the" >&2
+                echo "database's login ${uploader_login} (answer: ${answer:-none}). Nothing was" >&2
+                echo "stopped or changed. Follow the uploader lost-file recovery in" >&2
+                echo "$uploader_recovery, then repeat." >&2
+                exit 1
+            fi
+            echo "    the uploader's password file matches its login" ;;
+        *) echo "Unexpected answer about the off-site uploader's login ($(head -1 <<<"$count")); refusing." >&2
+           exit 1 ;;
+    esac
+
+    # Docker refuses a network whose subnet overlaps another, but only at
+    # the full stop's `up`, after PostgreSQL has stopped. So the uploader's
+    # one-shot network, new with this release, is compared now with every
+    # other Docker network and with the host's routes. Its /28 is slice 5
+    # of runtime_network.offline (tests tie the index to OFFLINE_PROFILES).
+    # Once Docker runs the project's own network with that subnet there is
+    # nothing to create, so later upgrades skip the comparison.
+    offline=$(jq -r '.deployment.runtime_network.offline // "172.29.242.0/24"' "$services/web.yaml")
+    [[ $offline =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})/(24|25)$ ]] ||
+        { echo "Could not read runtime_network.offline ($offline); refusing." >&2; exit 1; }
+    ip_number() {
+        # A dotted IPv4 address as one number.
+        local a b c d
+        IFS=. read -r a b c d <<<"$1"
+        echo $(( (a << 24) | (b << 16) | (c << 8) | d ))
+    }
+    ip_text() {
+        echo "$(( ($1 >> 24) & 255 )).$(( ($1 >> 16) & 255 )).$(( ($1 >> 8) & 255 )).$(( $1 & 255 ))"
+    }
+    overlaps() {
+        # Whether the IPv4 CIDR $1 overlaps the uploader's /28.
+        local address=${1%/*} bits=28 mask
+        [[ $1 == */* ]] && bits=${1#*/}
+        [[ $address =~ ^[0-9]+(\.[0-9]+){3}$ ]] && [[ $bits =~ ^[0-9]+$ ]] || return 1
+        [ "$bits" -le 28 ] || bits=28
+        mask=$(( (0xFFFFFFFF << (32 - bits)) & 0xFFFFFFFF ))
+        [ $(( $(ip_number "$address") & mask )) -eq $(( uploader_base & mask )) ]
+    }
+    uploader_base=$(( $(ip_number "${offline%/*}") + 5 * 16 ))
+    uploader_subnet="$(ip_text "$uploader_base")/28"
+    own="${project}_offline-backup-uploader"
+    ours=$(docker network inspect --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' "$own" 2>/dev/null || true)
+    if [ "${ours% }" = "$uploader_subnet" ]; then
+        echo "    the uploader's network $uploader_subnet already exists"
+    else
+        command -v ip >/dev/null ||
+            { echo "Cannot read the host's routes (no ip command) to check $uploader_subnet; refusing." >&2; exit 1; }
+        clashes=()
+        ids=$(docker network ls --quiet --no-trunc) ||
+            { echo "Could not list Docker's networks to check $uploader_subnet; refusing." >&2; exit 1; }
+        if [ -n "$ids" ]; then
+            # shellcheck disable=SC2086 # one network id per word
+            subnets=$(docker network inspect --format '{{.Name}}{{range .IPAM.Config}} {{.Subnet}}{{end}}' $ids) ||
+                { echo "Could not read Docker's network subnets to check $uploader_subnet; refusing." >&2; exit 1; }
+            while read -r name ranges; do
+                # The project's own offline networks are kept apart by the
+                # renderer; the uploader's own is handled above.
+                case "$name" in "${project}_offline-"*) continue ;; esac
+                for range in $ranges; do
+                    if overlaps "$range"; then clashes+=("Docker network $name ($range)"); fi
+                done
+            done <<<"$subnets"
+        fi
+        routes=$(ip -4 route show) ||
+            { echo "Could not read the host's routes to check $uploader_subnet; refusing." >&2; exit 1; }
+        while read -r first second _; do
+            case "$first" in
+                "" | default) continue ;;
+                blackhole | unreachable | prohibit | throw | unicast | local | broadcast | multicast | anycast) destination=$second ;;
+                *) destination=$first ;;
+            esac
+            [ "$destination" != default ] || continue
+            if overlaps "$destination"; then clashes+=("host route $destination"); fi
+        done <<<"$routes"
+        if [ "${#clashes[@]}" -gt 0 ]; then
+            echo "The off-site uploader's network $uploader_subnet (slice 5 of runtime_network.offline" >&2
+            echo "$offline) overlaps: ${clashes[*]}. Docker would refuse it at the full stop," >&2
+            echo "after PostgreSQL stopped. Nothing was stopped or changed. Move or remove the" >&2
+            echo "conflicting network or route named above, then repeat. Do not change" >&2
+            echo "runtime_network.offline: on an existing deployment retarget-image refuses any" >&2
+            echo "change to it (only the image may change)." >&2
+            exit 1
+        fi
+        echo "    the uploader's network $uploader_subnet overlaps no Docker network or host route"
+    fi
+fi
+
 step "1. Stopping the background services (web keeps serving)"
 background=$("${dc[@]}" ps --services --status running | grep -vxE 'web|caddy|postgres|valkey' || true)
 restart_background() {

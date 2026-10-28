@@ -737,3 +737,110 @@ def test_the_upgrade_path_proves_the_rules_from_every_service(tmp_path):
         ).stdout.split():  # fmt: skip
             docker("network", "rm", network, check=False)
         docker("volume", "rm", volume, check=False)
+
+
+def pre_uploader_rendering(new):
+    """The release before the off-site uploader (#235), from the new rendering.
+
+    The source rules and the five earlier one-shot networks are there; the
+    uploader's service, its network and PostgreSQL's address on it are not.
+    """
+    old = json.loads(json.dumps(new))
+    old["services"].pop("backup-uploader")
+    old["networks"].pop("offline-backup-uploader")
+    old["services"]["postgres"]["networks"].pop("offline-backup-uploader")
+    return old
+
+
+@runtime
+def test_the_expand_rollout_and_rollback_fully_stop_for_the_uploader(tmp_path):
+    """The uploader's network alone triggers the full stop, both ways (#235).
+
+    Rolling out the expand release adds a network PostgreSQL joins, so the
+    shared block's comparison finds it and the full stop recreates the
+    stores on it; every service's source check (the uploader's included)
+    then matches. Rolling back removes it the same way, and the services
+    that remain still match.
+    """
+    volume = f"pk-235e1-{uuid4().hex[:8]}"
+    project = volume
+    try:
+        root, yaml, rendered, present = provisioned_root(volume, free_networks())
+        new = probe_rendering(rendered, present)
+        old = pre_uploader_rendering(new)
+        files = {name: tmp_path / f"{name}.json" for name in ("old", "new")}
+        files["old"].write_text(json.dumps(old))
+        files["new"].write_text(json.dumps(new))
+        work = tmp_path / "work"
+        work.mkdir()
+        driver = tmp_path / "driver.sh"
+        driver.write_text(
+            "set -euo pipefail\n"
+            + layout_block(HOST)
+            + "project=$1 compose=$2 work=$3\n"
+            + 'dc=(docker compose -f "$compose" -p "$project")\n'
+            + "case $4 in\n"
+            + "    changes) layout_changes ;;\n"
+            + "    full-stop) layout_full_stop ;;\n"
+            + "esac\n"
+        )
+
+        def shared(name, action):
+            """One shared-block action against one rendering."""
+            result = subprocess.run(
+                ["bash", str(driver), project, str(files[name]), str(work), action],
+                capture_output=True,
+                text=True,
+                timeout=900,
+                check=False,
+            )
+            assert result.returncode == 0, result.stdout + result.stderr
+            return result.stdout
+
+        def sources(name):
+            """``database-sources`` from every application service, by ``run``."""
+            outcomes = {}
+            for service, value in json.loads(files[name].read_text())[
+                "services"
+            ].items():
+                if service in ("postgres", "valkey"):
+                    continue
+                outcomes[service] = docker(
+                    "compose", "-f", str(files[name]), "-p", project, "run",
+                    "--rm", "--no-deps", "-T", service, "database-sources",
+                    "--config", value["command"][2], check=False, timeout=180,
+                )  # fmt: skip
+            return outcomes
+
+        docker(
+            "compose", "-f", str(files["old"]), "-p", project, "up", "--detach",
+            "--wait", "postgres", "valkey", timeout=300,
+        )  # fmt: skip
+        assert shared("old", "changes") == ""
+        changes = shared("new", "changes")
+        assert "offline-backup-uploader" in changes
+        shared("new", "full-stop")
+        assert shared("new", "changes") == ""
+        outcomes = sources("new")
+        assert "backup-uploader" in outcomes
+        for service, result in outcomes.items():
+            assert result.returncode == 0, service + result.stdout + result.stderr
+            assert "database sources match the rendered rules" in result.stdout
+        assert "offline-backup-uploader" in shared("old", "changes")
+        shared("old", "full-stop")
+        assert shared("old", "changes") == ""
+        for service, result in sources("old").items():
+            assert result.returncode == 0, service + result.stdout + result.stderr
+    finally:
+        ids = docker(
+            "ps", "--all", "--quiet", "--filter",
+            f"label=com.docker.compose.project={project}", check=False,
+        ).stdout.split()  # fmt: skip
+        if ids:
+            docker("rm", "--force", "--volumes", *ids, check=False)
+        for network in docker(
+            "network", "ls", "--quiet", "--filter",
+            f"label=com.docker.compose.project={project}", check=False,
+        ).stdout.split():  # fmt: skip
+            docker("network", "rm", network, check=False)
+        docker("volume", "rm", volume, check=False)

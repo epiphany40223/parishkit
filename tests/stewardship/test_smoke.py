@@ -562,6 +562,61 @@ def test_backup_drive_probes_and_copies_the_newest_set(tmp_path, monkeypatch, ca
     assert json.loads(capsys.readouterr().out)["reason"] == "permission"
 
 
+def test_the_uploader_profile_probes_drive_and_refuses_send(
+    tmp_path, monkeypatch, capsys
+):
+    """The off-site uploader (#235) runs the probe only, after its mount admission.
+
+    It reads the Workspace key it mounts itself, never opens the database,
+    and refuses --send (the copy arrives with its upload command) before
+    reading the key.
+    """
+    from parishkit.stewardship import backup_drive, uploader_boundaries
+    from parishkit.stewardship.deployment_documents import deployment_document
+
+    from .drive_fakes import FakeDrive
+
+    drive = FakeDrive("1AbCdEfGhIjKlMnOpQrStUv")
+    sessions, admitted = [], []
+    monkeypatch.setattr(
+        backup_drive,
+        "workspace_session",
+        lambda value, subject, profile, redirect: sessions.append(value),
+    )
+    monkeypatch.setattr(backup_drive, "DriveClient", lambda session, **o: drive)
+    monkeypatch.setattr(
+        uploader_boundaries,
+        "admit_uploader_service",
+        lambda configuration: admitted.append(configuration.service_role),
+    )
+    monkeypatch.setattr(
+        smoke, "_deployment_tag", lambda c: pytest.fail("no database read")
+    )
+    monkeypatch.setenv("PARISHKIT_ROOT", str(tmp_path))
+    monkeypatch.setattr(smoke, "configure_logging", lambda: None)
+    configuration = consumer(
+        tmp_path, ServiceRole.BACKUP_UPLOADER, google_workspace=b"service-account"
+    )
+    path = tmp_path / "backup-uploader.yaml"
+    path.write_text(json.dumps(deployment_document(configuration)))
+    _, args = backup_args(tmp_path / "other")
+    args.config = str(path)
+    assert smoke.execute_smoke(args) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "accepted": True,
+        "copied_set": None,
+        "target": "backup_drive",
+    }
+    assert sessions == [b"service-account"]
+    assert admitted == [ServiceRole.BACKUP_UPLOADER]
+    assert smoke.execute_smoke(SimpleNamespace(**{**vars(args), "send": True})) == 2
+    assert "smoke check refused" in capsys.readouterr().err
+    assert sessions == [b"service-account"]
+    # Any other target is refused in the uploader profile.
+    other = SimpleNamespace(**{**vars(args), "target": "google_workspace"})
+    assert smoke.execute_smoke(other) == 2
+
+
 def test_backup_drive_runs_only_in_the_backup_profile(tmp_path, monkeypatch, capsys):
     """Another profile has no Workspace key to read; the check is refused."""
     from parishkit.stewardship.deployment_documents import deployment_document

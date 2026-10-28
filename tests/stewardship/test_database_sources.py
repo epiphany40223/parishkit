@@ -85,8 +85,8 @@ def test_each_services_expected_row_is_exactly_its_rendered_rules(profile):
         allowed = {fields[2] for fields in rules if fields[3] == source}
         assert set(held_logins(document)) == allowed, name
         checked += 1
-    # Web, its installers and background services, and the five one-shots.
-    assert checked == 5 + 12 + 5
+    # Web, its installers and background services, and the six one-shots.
+    assert checked == 5 + 12 + 6
 
 
 def test_a_probe_sends_no_password_and_classifies_the_servers_answer(monkeypatch):

@@ -155,6 +155,10 @@ class FailureKind(StrEnum):
     # reviewed startup_rejected event as categories instead.
     BACKUP_DUMP = "backup_dump_failed"
     BACKUP_REQUIRED = "upgrade_backup_required"
+    # pk-restore step 7's database-grants --after-restore (#235): the
+    # restored set's load evidence stood in for the recent-backup rule.
+    # WARNING, process log only (the set's name is in the result).
+    BACKUP_WAIVED_AFTER_RESTORE = "upgrade_backup_waived_after_restore"
     # A set was taken but not copied to the off-site Drive folder.
     BACKUP_OFFSITE = "backup_offsite_failed"
     # A backup sealed to a different public key than the previous run did.
