@@ -26,8 +26,10 @@ FROZEN_SQL = (
 
 class Migration(migrations.Migration):
     dependencies = [
-        # The migration that installed the previous frozen file.
+        # The jobs app's previous migration, so the app keeps one leaf.
         ("stewardship_jobs", "0040_settle_leader_emails"),
+        # The migration that installs the previous frozen file (0192).
+        ("stewardship_reports", "0053_late_report_totals"),
     ]
 
     operations = [migrations.RunSQL(FROZEN_SQL.read_text(encoding="utf-8"))]
