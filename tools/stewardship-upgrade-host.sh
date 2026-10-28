@@ -1143,8 +1143,9 @@ fi
 #   may sshd and any UDP service, whose silence alone proves nothing;
 # - the new image's egress-probe, in a container joined only to the
 #   existing backup-worker network, reaches nothing: external TCP, DNS
-#   through the embedded resolver and straight to a public one, and every
-#   port the host listens on at a wildcard address or that gateway.
+#   through the embedded resolver and straight to a public one, every
+#   port the host listens on at a wildcard address or that gateway, and
+#   TCP 80 and 443 there always.
 # Every failure to ask refuses too. LOCAL (pk-local) has no off-site target
 # and no host firewall rule, so there the same checks only report.
 engine_fixed() {
@@ -1220,8 +1221,12 @@ input_drop_persisted() {
 gateway_listeners() {
     # gateway_listeners GATEWAY: the host's listening TCP and UDP ports at a
     # wildcard address or at GATEWAY, from `ss -Htlnu` on stdin, as one
-    # comma-separated tcp:PORT,udp:PORT list (empty when there are none).
+    # comma-separated tcp:PORT,udp:PORT list. TCP 80 and 443 are always in
+    # it: Caddy's ports are published there, and with Docker's userland
+    # proxy turned off a published port has no listener for `ss` to show
+    # (Docker forwards it by NAT instead, which the INPUT drop does not see).
     awk -v gw="$1" '
+        BEGIN { seen["tcp:80"] = 1; seen["tcp:443"] = 1 }
         {
             listening = $5
             n = split(listening, part, ":")

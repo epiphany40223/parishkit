@@ -17,7 +17,8 @@ attempt bounded by ``ATTEMPT_SECONDS``:
 - TCP and UDP to the network's gateway (``--gateway``, an address of the
   host itself), on every port the host listens on at a wildcard address or
   at that gateway (``--listen``, which the upgrade script builds from
-  ``ss -Htlnu``).
+  ``ss -Htlnu``, always with TCP 80 and 443, Caddy's published ports,
+  which ``ss`` does not list when Docker's userland proxy is off).
 
 Every TCP attempt and DNS query must be refused or go unanswered. A DNS
 reply counts as reaching the outside only when it carries an answer record:

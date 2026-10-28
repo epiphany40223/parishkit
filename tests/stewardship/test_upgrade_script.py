@@ -3522,7 +3522,7 @@ def test_the_contract_preflight_probes_the_backup_network_first(tmp_path):
     for option, value in (
         ("--gateway", "172.29.242.65"),
         ("--google-address", "142.250.1.95"),
-        ("--listen", "tcp:22,tcp:443,tcp:9999,udp:68"),
+        ("--listen", "tcp:22,tcp:443,tcp:80,tcp:9999,udp:68"),
         ("--engine-version", "27.3.1"),
         ("--user", "10001:10001"),
     ):
@@ -3740,3 +3740,12 @@ def test_the_probes_error_output_is_kept_in_the_log(tmp_path):
     log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
     assert "    | ERROR: egress-probe --listen takes tcp:PORT" in log
     assert "The egress probe did not answer (exit 2)" in output
+
+
+def test_caddys_published_ports_are_probed_without_a_listener(tmp_path):
+    """No userland proxy: 80 and 443 have no `ss` line but are probed anyway."""
+    contract(
+        tmp_path, ss="tcp   LISTEN 0      4096         0.0.0.0:22         0.0.0.0:*"
+    )
+    probe = (tmp_path / "state" / "probe").read_text().split()
+    assert probe[probe.index("--listen") + 1] == "tcp:22,tcp:443,tcp:80"

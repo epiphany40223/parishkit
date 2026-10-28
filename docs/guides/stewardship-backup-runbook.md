@@ -695,7 +695,10 @@ the Engine version into the upgrade log and `stewardship-backup.log`:
   sees it) and straight to a public resolver;
 - the network's gateway, which is the host itself: every port the host
   listens on at a wildcard address or at that gateway (`ss -Htlnu`), by TCP
-  and by UDP.
+  and by UDP, and TCP 80 and 443 always. Those are Caddy's published
+  ports: with Docker's userland proxy turned off they have no listener for
+  `ss` to show, and Docker forwards them by NAT, which the `INPUT` drop
+  below does not see, so only the probe covers them.
 
 Any answer refuses the upgrade before anything stops, naming what answered.
 Production always has listeners there (Docker publishes Caddy's 80 and 443
