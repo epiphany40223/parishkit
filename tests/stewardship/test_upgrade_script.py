@@ -24,6 +24,8 @@ import pytest
 
 from parishkit.parishsoft import DEFAULT_API_BASE_URL
 
+from .host_stubs import install_gnu_stat
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools" / "stewardship-upgrade.sh"
 HOST = ROOT / "tools" / "stewardship-upgrade-host.sh"
@@ -723,12 +725,14 @@ def run_host(
     # The off-site copy lock and crontabs (#235): util-linux flock is not on
     # every test host, so the stand-in records each call and
     # FAKE_FLOCK_FAIL makes the wait expire; crontab answers FAKE_CRONTAB,
-    # and the system crontab and cron.d are the test's own (below).
+    # and the system crontab and cron.d are the test's own (below). The
+    # lock's identity check needs GNU stat.
     executable_stub(
         bin_dir,
         "flock",
         'echo "$*" >>"$FAKE_STATE/flock"; [ -z "$FAKE_FLOCK_FAIL" ] || exit 1',
     )
+    install_gnu_stat(bin_dir)
     executable_stub(bin_dir, "crontab", 'echo "${FAKE_CRONTAB:-}"')
     executable_stub(bin_dir, "chown", 'echo "$*" >>"$FAKE_STATE/chown"')
     # The host's routes for the uploader's subnet-overlap preflight (#235).
@@ -3259,14 +3263,16 @@ def test_an_existing_lock_file_is_kept(tmp_path):
     assert not (tmp_path / "state" / "chown").exists()
 
 
-@pytest.mark.parametrize("plant", ["link", "directory"])
+@pytest.mark.parametrize("plant", ["link", "directory", "fifo"])
 def test_a_planted_lock_file_refuses_before_web_stops(tmp_path, plant):
-    """A link or anything but a regular file is never opened."""
+    """A link or anything but a regular file is never opened (a FIFO never hangs)."""
 
     def prepare(root):
         lock = root / "backups" / ".offsite-copy.lock"
         if plant == "link":
             lock.symlink_to(root / "elsewhere")
+        elif plant == "fifo":
+            os.mkfifo(lock)
         else:
             lock.mkdir()
 

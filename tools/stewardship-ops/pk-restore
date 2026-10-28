@@ -1071,6 +1071,14 @@ uploader_cron_lines() {
 # BEGIN off-site copy lock (#235). This block is kept identical in
 # tools/stewardship-upgrade-host.sh and tools/stewardship-ops/pk-restore
 # (tests/stewardship/test_database_layout.py compares the two copies).
+copy_lock_same() {
+    # copy_lock_same FD PATH: whether open descriptor FD is PATH itself, by
+    # device and inode, PATH's final component not followed (GNU stat).
+    local open named
+    open=$(stat -L -c %d:%i "/dev/fd/$1" 2>/dev/null) &&
+        named=$(stat -c %d:%i -- "$2" 2>/dev/null) &&
+        [ -n "$open" ] && [ "$open" = "$named" ]
+}
 copy_lock_take() {
     # copy_lock_take DIR SECONDS: hold this host's off-site copy lock on the
     # backups directory DIR for the rest of the run (operations
@@ -1078,14 +1086,24 @@ copy_lock_take() {
     # first and a cron uploader exits at the lock. Taken as every copier
     # takes it, in the expand release's order: the legacy file lock (an
     # old-release copy holds only that one), then the directory lock, each
-    # with `flock -w` on a read-only descriptor (8 and 9) this shell keeps
-    # open until it exits. A missing legacy file is created exclusively
-    # (noclobber opens it O_EXCL, which also refuses a link planted
-    # meanwhile), owned like DIR and mode 0600, so the backup profile can
-    # still open it; a link or anything but a regular file refuses. A wait
-    # longer than SECONDS in all is logged with what, the limit and the
-    # elapsed time, and returns non-zero, as does any other failure.
-    local dir=$1 limit=$2 file uid gid started left fd
+    # with `flock -w` on a descriptor (8 and 9) this shell keeps open until
+    # it exits.
+    #
+    # The backup worker can write DIR, so anything at the lock file's name
+    # may change between a check and an open. A missing legacy file is
+    # made beside it (mktemp: O_EXCL, mode 0600), owned like DIR, and
+    # linked into place: link(2) neither follows nor replaces whatever is
+    # at the name by then, and that is checked like any existing file. A
+    # link or anything but a regular file there refuses before the open.
+    # The file is opened read-write (`<>`, nothing is written), which never
+    # blocks on a FIFO as a read-only open would, and the open descriptors
+    # must then be the regular file and the directory at those names, by
+    # device and inode, so a link or a FIFO swapped in after the checks
+    # refuses instead of being locked or hanging the run.
+    #
+    # A wait longer than SECONDS in all is logged with what, the limit and
+    # the elapsed time, and returns non-zero, as does any other failure.
+    local dir=$1 limit=$2 file uid gid started left fd tmp mask
     file=$dir/.offsite-copy.lock
     command -v flock >/dev/null || { echo "flock is not installed; cannot take the off-site copy lock." >&2; return 1; }
     { [ -d "$dir" ] && [ ! -L "$dir" ]; } ||
@@ -1093,16 +1111,38 @@ copy_lock_take() {
     if [ ! -e "$file" ] && [ ! -L "$file" ]; then
         read -r _ _ uid gid _ < <(ls -ldn "$dir") ||
             { echo "Could not read the owner of $dir." >&2; return 1; }
-        if ! (umask 077 && set -o noclobber && : >"$file") 2>/dev/null ||
-            ! chown -h "$uid:$gid" "$file"; then
+        if ! tmp=$(mktemp "$file.XXXXXX" 2>/dev/null) || ! chown -h "$uid:$gid" "$tmp"; then
+            [ -z "${tmp:-}" ] || rm -f -- "$tmp"
             echo "Could not create the copy lock file $file." >&2
             return 1
         fi
+        # A failed link is fine when something else now has the name (the
+        # backup profile made the file meanwhile): it is checked below.
+        ln -n -- "$tmp" "$file" 2>/dev/null || [ -e "$file" ] || [ -L "$file" ] ||
+            { rm -f -- "$tmp"; echo "Could not create the copy lock file $file." >&2; return 1; }
+        rm -f -- "$tmp"
     fi
     { [ -f "$file" ] && [ ! -L "$file" ]; } ||
         { echo "The copy lock file $file is not a regular file." >&2; return 1; }
-    exec 8<"$file" 9<"$dir" ||
-        { echo "Could not open the copy lock on $dir." >&2; return 1; }
+    # Owner-only, should a name removed meanwhile make the open create it.
+    mask=$(umask)
+    umask 077
+    if ! exec 8<>"$file" 9<"$dir"; then
+        umask "$mask"
+        echo "Could not open the copy lock on $dir." >&2
+        return 1
+    fi
+    umask "$mask"
+    if ! { [ -f /dev/fd/8 ] && copy_lock_same 8 "$file"; }; then
+        exec 8<&- 9<&-
+        echo "The copy lock file $file is not a regular file." >&2
+        return 1
+    fi
+    if ! { [ -d /dev/fd/9 ] && copy_lock_same 9 "$dir"; }; then
+        exec 8<&- 9<&-
+        echo "The backups directory $dir is not a directory." >&2
+        return 1
+    fi
     started=$(date -u +%s)
     for fd in 8 9; do
         left=$((limit - ($(date -u +%s) - started)))

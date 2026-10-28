@@ -36,6 +36,8 @@ from pathlib import Path
 
 import pytest
 
+from .host_stubs import install_gnu_stat
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools" / "stewardship-ops" / "pk-restore"
 UUID = "00000000-0000-4000-8000-000000000000"
@@ -285,13 +287,15 @@ def host(tmp_path):
     stub(bin_dir, "sleep", "#!/usr/bin/env bash\nexit 0\n")
     # The off-site copy lock (#235): util-linux flock is not on every test
     # host, so the stand-in records each call (its options and descriptor)
-    # and FAKE_FLOCK_FAIL makes the wait expire, as `flock -w` does.
+    # and FAKE_FLOCK_FAIL makes the wait expire, as `flock -w` does. The
+    # lock's identity check needs GNU stat.
     stub(
         bin_dir,
         "flock",
         '#!/usr/bin/env bash\necho "$*" >>"$FAKE_STATE/flock"\n'
         '[ -z "${FAKE_FLOCK_FAIL:-}" ] || exit 1\n',
     )
+    install_gnu_stat(bin_dir)
     # This host's name and addresses, and what the public origin resolves to.
     stub(
         bin_dir,
@@ -2124,9 +2128,17 @@ def test_a_copy_still_running_refuses_before_anything_stops(host):
     assert not stopped(calls)
 
 
-def test_a_planted_lock_file_refuses_before_anything_stops(host):
-    """A link where the legacy lock file belongs is never opened."""
-    (host["root"] / "backups" / ".offsite-copy.lock").symlink_to(host["tmp"] / "x")
+@pytest.mark.parametrize("plant", ["link", "fifo"])
+def test_a_planted_lock_file_refuses_before_anything_stops(host, plant):
+    """A link or a FIFO where the legacy lock file belongs is never locked.
+
+    A FIFO is refused at once, never waited on.
+    """
+    lock = host["root"] / "backups" / ".offsite-copy.lock"
+    if plant == "link":
+        lock.symlink_to(host["tmp"] / "x")
+    else:
+        os.mkfifo(lock)
     result, calls = restore(host)
     assert result.returncode == 1
     assert "is not a regular file" in output(result)

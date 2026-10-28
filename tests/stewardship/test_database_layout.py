@@ -174,6 +174,70 @@ def test_the_copy_lock_block_waits_for_a_held_lock_and_logs_its_expiry(tmp_path)
     assert lock.is_file() and (lock.stat().st_mode & 0o777) == 0o600
 
 
+@pytest.mark.parametrize("plant", ["link", "fifo", "none"])
+def test_a_lock_file_swapped_before_the_open_refuses_without_hanging(tmp_path, plant):
+    """A link or FIFO swapped in after the checks is never locked (#235, L1).
+
+    The backup worker can write the backups directory, so the name may
+    change between the block's checks and its open. A ``umask`` stand-in
+    (run just before the open) swaps the lock file at that moment: the
+    read-write open never blocks on a FIFO, and the opened descriptor is
+    not the regular file at the name, so the block refuses before flock.
+    The run is bounded, so a hang fails the test instead of stalling it.
+    """
+    from .host_stubs import install_gnu_stat
+
+    if shutil.which("bash") is None:
+        pytest.skip("bash is not installed")
+    backups = tmp_path / "backups"
+    backups.mkdir(mode=0o700)
+    lock = backups / ".offsite-copy.lock"
+    lock.write_text("")
+    target = tmp_path / "elsewhere"
+    target.write_text("kept")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    flock = bin_dir / "flock"
+    flock.write_text('#!/usr/bin/env bash\necho "$*" >>"$FLOCK_LOG"\n')
+    flock.chmod(0o755)
+    install_gnu_stat(bin_dir)
+    script = tmp_path / "lock.sh"
+    script.write_text(
+        layout_block(HOST, LOCK_BEGIN, LOCK_END)
+        + "umask() {\n"
+        + '    if [ "$#" -gt 0 ] && [ -n "$PLANT" ] && [ ! -e "$TARGET.done" ]; then\n'
+        + '        : >"$TARGET.done"; rm -f "$LOCK"\n'
+        + '        if [ "$PLANT" = link ]; then ln -s "$TARGET" "$LOCK"; '
+        + 'else mkfifo "$LOCK"; fi\n'
+        + "    fi\n"
+        + '    builtin umask "$@"\n'
+        + "}\n"
+        + 'if copy_lock_take "$1" 2; then echo held; else echo refused; fi\n'
+    )
+    log = tmp_path / "flock.log"
+    result = subprocess.run(
+        ["bash", str(script), str(backups)],
+        env={
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "PLANT": "" if plant == "none" else plant,
+            "LOCK": str(lock),
+            "TARGET": str(target),
+            "FLOCK_LOG": str(log),
+        },
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if plant == "none":
+        assert result.stdout.strip() == "held", result.stderr
+        assert log.read_text().splitlines() == ["-w 2 8", "-w 2 9"]
+        return
+    assert result.stdout.strip() == "refused"
+    assert "is not a regular file" in result.stderr
+    assert not log.exists()
+    assert target.read_text() == "kept"
+
+
 def test_both_scripts_carry_the_same_layout_block():
     """The upgrade and pk-restore must decide and stop the same way."""
     assert layout_block(HOST) == layout_block(RESTORE)
