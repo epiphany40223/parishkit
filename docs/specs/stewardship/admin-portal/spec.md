@@ -7085,9 +7085,10 @@ a phone, without sideways scrolling) holds:
   - **Needs attention**: what an Administrator can still act on: Not sure
     it arrived (`delivery_unknown`), and Failed (`permanent_failure`) unless
     its latest decision other than a note recorded it as not sent (Confirm
-    not sent, or Fix many's record as not sent), which settles it. Either
-    must be of a kind whose Mail message page offers resolutions in a
-    campaign that is not archived. An operational or security notice or a
+    not sent, or the bulk Record as not sent on Sent mail's row selection,
+    see [Sent mail bulk actions](#sent-mail-bulk-actions)), which settles
+    it. Either must be of a kind whose Mail message page offers resolutions
+    in a campaign that is not archived. An operational or security notice or a
     Ministry leader email is in it only while Not sure it arrived, the one
     state its page settles
     ([#2295](https://github.com/epiphany40223/parishkit/issues/2295),

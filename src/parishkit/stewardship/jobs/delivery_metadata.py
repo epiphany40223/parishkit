@@ -572,10 +572,11 @@ def needs_attention(selected):
 
     Only emails a person can still act on: Not sure it arrived, or Failed
     unless its latest decision (a resolution other than a note) was to
-    record it as not sent, which settles it ("Confirm not sent", or Fix
-    many's "record as not sent"). Either must be one whose page offers
-    resolutions (``actionable``: a notice or Ministry leader email only
-    while Not sure it arrived, never an archived campaign's email). One
+    record it as not sent, which settles it ("Confirm not sent", or the
+    bulk "Record as not sent" on Sent mail's row selection). Either must
+    be one whose page offers resolutions (``actionable``: a notice or
+    Ministry leader email only while Not sure it arrived, never an archived
+    campaign's email). One
     correlated lookup per candidate email, through the resolutions' history
     index; no per-row admission read.
     """
