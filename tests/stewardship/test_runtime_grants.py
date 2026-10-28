@@ -250,7 +250,7 @@ def test_recipient_evidence_writes_are_closed_across_all_installed_identities():
                     "backup_run_id",
                     "failure_kind",
                 }
-            }
+            },
         },
     )
     with pytest.raises(ConfigError):
