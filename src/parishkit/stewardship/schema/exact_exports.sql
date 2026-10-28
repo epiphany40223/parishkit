@@ -106,7 +106,12 @@ BEGIN
         JOIN stewardship_campaign_configuration p ON p.id=c.active_configuration_id
         JOIN stewardship_source_current s ON s.snapshot_id=NEW.source_id
         WHERE c.id=NEW.campaign_id AND p.id=NEW.timezone_configuration_id
-          AND NEW.through_date=least(p.end_date,
+          -- Today, capped at the report end: the end date, or the day of the
+          -- newest live response under the watermark (0192, #2298).
+          AND NEW.through_date=least(greatest(p.end_date,(SELECT max((r.submitted_at
+              AT TIME ZONE stewardship_timezone_name_v1(p.timezone))::date)
+            FROM stewardship_submission r WHERE r.campaign_id=NEW.campaign_id AND r.mode='live'
+              AND r.campaign_sequence<=NEW.submission_watermark)),
             (stewardship_campaign_now_v1() AT TIME ZONE stewardship_timezone_name_v1(p.timezone))::date))
       OR NEW.submission_watermark<>coalesce((SELECT max(campaign_sequence)
         FROM stewardship_submission WHERE campaign_id=NEW.campaign_id AND mode='live'),0)

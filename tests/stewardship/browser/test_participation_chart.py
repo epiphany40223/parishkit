@@ -366,3 +366,50 @@ def test_daily_chart_fits_and_is_accessible(page, component_origin, axe_source, 
     assert page.evaluate(COLLISIONS) == []
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
+
+
+# The Campaign closed lines (the rule marks that are not hidden hover
+# guides) and the first panel's plot box, as page coordinates.
+CLOSED = """() => {
+  const plot = document.querySelector(
+    "#participation-chart svg g.mark-group.role-scope > g > path.background"
+  ).getBoundingClientRect();
+  const lines = [...document.querySelectorAll(
+    "#participation-chart svg g.mark-rule.role-mark line"
+  )].filter((line) => getComputedStyle(line).opacity !== "0"
+    && line.getAttribute("stroke-opacity") !== "0")
+    .map((line) => line.getBoundingClientRect().left);
+  return {lines, left: plot.left, width: plot.width};
+}"""
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_the_campaign_closed_line_stands_after_the_end_date(
+    page, component_origin, axe_source, width
+):
+    """After responses entered after the close (#2298), every panel draws
+    the dashed line at the boundary between the end date's band (the 60th
+    of 75) and the next, the top panel names it once over a halo, and the
+    chart still
+    fits, overlaps no text, logs no error and passes axe."""
+    errors = watch(page)
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + "/participation-closed")
+    chart = page.locator(f"{DAILY} figure.chart")
+    expect(page.locator(f"{DAILY} [data-chart-state=rendered]")).to_have_count(1)
+    eventually(page, FITTED)
+    # Named once, over its paper halo: a stroked copy drawn under it.
+    label = chart.locator("svg text", has_text="Campaign closed")
+    assert [text.get_attribute("stroke") is not None for text in label.all()] == [
+        True,
+        False,
+    ]
+    found = page.evaluate(CLOSED)
+    assert len(found["lines"]) == len(TITLES)
+    boundary = found["left"] + found["width"] * 60 / 75
+    assert all(abs(line - boundary) < 1.5 for line in found["lines"])
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert page.evaluate(COLLISIONS) == []
+    page.evaluate(axe_source)
+    assert page.evaluate(AXE) == []
+    assert_clean(page, errors)

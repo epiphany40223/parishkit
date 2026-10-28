@@ -21,7 +21,7 @@ from parishkit.stewardship.schema_primitives import timezone_names
 from .documents import participation_document
 from .export_services import admit_campaign, authorize
 from .facts import FactUnavailable, fact_inputs, read_fact_set
-from .inputs import FactInputs
+from .inputs import FactInputs, report_end
 from .models import POPULATION_SCOPES, CampaignDailyFactSet, CampaignFactPointer
 from .participation import ParticipationDocument
 
@@ -56,6 +56,9 @@ def current_inputs(campaign_id, population_scope):
     from 0185's count-only definer in the same statement. No locks or long
     transactions block writers;
     freshness is explicitly relative to this statement's captured instant.
+    The through-date is the lesser of today and the report end, which the
+    newest live response (read in the same statement) moves past the end
+    date when Staff entered it after the close (#2298).
     The caller owns authorization and the campaign read guard.
     """
     with connection.cursor() as cursor:
@@ -65,7 +68,9 @@ def current_inputs(campaign_id, population_scope):
             "ELSE s.snapshot_id END, COALESCE((SELECT max(r.campaign_sequence) "
             "FROM stewardship_submission r WHERE r.campaign_id=c.id "
             "AND r.mode='live'),0), stewardship_campaign_now_v1(), "
-            "public.stewardship_pledge_review_watermark_v1(c.id) "
+            "public.stewardship_pledge_review_watermark_v1(c.id), "
+            "(SELECT max(r.submitted_at) FROM stewardship_submission r "
+            "WHERE r.campaign_id=c.id AND r.mode='live') "
             "FROM stewardship_campaign c "
             "JOIN stewardship_campaign_configuration p "
             "ON p.id=c.active_configuration_id "
@@ -77,7 +82,7 @@ def current_inputs(campaign_id, population_scope):
         row = cursor.fetchone()
     if row is None:
         raise FactUnavailable("Campaign report inputs are unavailable.")
-    configuration, end, zone, source, watermark, instant, reviews = row
+    configuration, end, zone, source, watermark, instant, reviews, newest = row
     if source is None:
         return None, instant
     return FactInputs(
@@ -86,7 +91,10 @@ def current_inputs(campaign_id, population_scope):
         source,
         watermark,
         configuration,
-        min(end, instant.astimezone(ZoneInfo(zone)).date()),
+        min(
+            report_end(end, newest, zone),
+            instant.astimezone(ZoneInfo(zone)).date(),
+        ),
         review_watermark=reviews,
     ), instant
 

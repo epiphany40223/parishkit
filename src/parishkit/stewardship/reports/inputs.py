@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from .models import POPULATION_SCOPES
 
@@ -101,12 +102,50 @@ class FactInputs:
 
 
 def expected_dates(start, end, through):
-    """Resolve the complete displayed date range, including a pre-start empty chart."""
+    """Resolve the complete displayed date range, including a pre-start empty chart.
+
+    The range runs from ``start`` through ``through``, which may pass
+    ``end``: a response Staff enter after the campaign closes counts on its
+    own day (#2298), and the callers take ``through`` from ``report_end``
+    rather than capping it at the end date. The database's fact-set guard
+    computes the same bounds (frozen migration 0192).
+    """
     if any(type(value) is not date for value in (start, end, through)) or end < start:
         raise ValueError("Fact date inputs require an ordered campaign interval.")
-    last = min(end, through)
-    if last < start:
+    if through < start:
         return ()
     return tuple(
-        start + timedelta(days=index) for index in range((last - start).days + 1)
+        start + timedelta(days=index) for index in range((through - start).days + 1)
     )
+
+
+def report_end(end, newest=None, zone=None):
+    """The last day a campaign's reports cover (reports spec, "Report end").
+
+    The later of the end date ``end`` and the campaign-local date of
+    ``newest``, the newest live response under the watermark in question
+    (None without one), so a response entered after the close (#2298)
+    extends the reports to its own day and no further. The database's
+    guards compute the same in SQL (frozen migration 0192).
+    """
+    if newest is None:
+        return end
+    return max(end, newest.astimezone(ZoneInfo(zone)).date())
+
+
+def newest_response(campaign_id, watermark=None):
+    """The newest live response's instant, at or under ``watermark``; or None.
+
+    ``report_end``'s input. ``watermark`` (a campaign sequence) keeps a
+    recorded generation or send to the responses it counted, so a later
+    late response never changes what it covers; None reads every live
+    response.
+    """
+    from django.db.models import Max
+
+    from parishkit.stewardship.responses.models import Submission
+
+    rows = Submission.objects.filter(campaign_id=campaign_id, mode="live")
+    if watermark is not None:
+        rows = rows.filter(campaign_sequence__lte=watermark)
+    return rows.aggregate(newest=Max("submitted_at"))["newest"]

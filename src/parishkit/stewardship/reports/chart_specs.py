@@ -45,6 +45,11 @@ SERIES = (
 )
 # The send markers' rules and names.
 MARKER = CHART_COLORS["chart-marker"]
+# The halo under the "Campaign closed" label (#2298): the page's paper,
+# which the page redraws in its colour scheme (chart-v1.js), so the label
+# keeps its 4.5:1 where it overlaps a bar, as the Matplotlib chart's white
+# box does.
+HALO = COLORS["paper"]
 STAGE_LABELS = {
     "invited": "Invited",
     "link_followed": "Link followed",
@@ -858,8 +863,67 @@ def round_ticks(top):
     return [step * index for index in range(int(top // step) + 1)]
 
 
+def closed_layers(x, closed, *, label):
+    """The "Campaign closed" line on one daily-chart panel (#2298).
+
+    ``closed`` is the tick of the first day after the end date, whose days
+    hold responses Staff entered after the campaign closed: the dashed rule
+    stands at the start of that day's band (``bandPosition`` 0), between it
+    and the end date, in the send markers' color. ``x`` is the panel's own
+    date encoding, repeated so the layers share one scale and axis.
+    ``label`` names the line, on the top panel only, over a paper-colour
+    halo (a stroked copy drawn first, since Vega strokes text over its
+    fill). Hidden from assistive technology like the marks: the chart's
+    description says it.
+    """
+    at = {"values": [{"tick": closed, "name": "Campaign closed"}]}
+    position = {"x": x | {"bandPosition": 0}}
+    layers = [
+        {
+            "data": at,
+            "mark": {
+                "type": "rule",
+                "color": MARKER,
+                "strokeDash": [4, 4],
+                "aria": False,
+            },
+            "encoding": position,
+        }
+    ]
+    if label:
+        # Ending at the line, on the end date's side: the late days after
+        # it are few, so a label there would run past the plot's right edge
+        # on a phone-width chart.
+        text = {
+            "type": "text",
+            "align": "right",
+            "baseline": "top",
+            "dx": -3,
+            "dy": 2,
+            "aria": False,
+        }
+        encoding = position | {"text": {"field": "name"}, "y": {"value": 0}}
+        halo = {"color": HALO, "stroke": HALO, "strokeWidth": 3, "strokeJoin": "round"}
+        layers += [
+            {"data": at, "mark": text | halo, "encoding": encoding},
+            {"data": at, "mark": text | {"color": MARKER}, "encoding": encoding},
+        ]
+    return layers
+
+
 def participation_panel(
-    title, field, unit, values, mark, *, tooltip, x, axis=None, hover=HOVER, guide=None
+    title,
+    field,
+    unit,
+    values,
+    mark,
+    *,
+    tooltip,
+    x,
+    axis=None,
+    hover=HOVER,
+    guide=None,
+    closed=None,
 ):
     """One panel of the daily chart: a hover column per date under one mark.
 
@@ -881,6 +945,10 @@ def participation_panel(
     differs from the page's daily table. The view's name and summary, and
     that table, are the chart's accessible path (reports spec, "Chart
     engine").
+
+    ``closed`` is ``(tick, label)`` when the series runs past the end date:
+    the first late day's tick and whether this panel names the line
+    (``closed_layers``, #2298); None draws no line.
     """
     top = axis_top([value for value in values if value is not None])
     settings = {
@@ -898,6 +966,7 @@ def participation_panel(
         "scale": {"domain": [0, top], "nice": False},
         "axis": {key: value for key, value in settings.items() if value is not None},
     }
+    late = [] if closed is None else closed_layers(x, closed[0], label=closed[1])
     return {
         "title": {"text": title, "anchor": "start", "fontSize": 12},
         "width": WIDTH,
@@ -905,6 +974,7 @@ def participation_panel(
         "encoding": {"x": x},
         "layer": [
             {"mark": mark | {"aria": False}, "encoding": {"y": y}},
+            *late,
             # On the panel's date axis, in the date's middle as the points.
             hover_guide(names=guide or (hover,)),
             # On top, so the pointer always reaches a whole date's column:
@@ -1056,6 +1126,11 @@ def participation_chart(document, charts=None):
     # One selection per panel (a chart names each once), all of which every
     # panel's guide line follows, so one line crosses every panel.
     names = [f"{HOVER}{index}" for index in range(len(shown))]
+    # The first day after the end date, when responses were entered after
+    # the campaign closed (#2298): every panel draws the line, the top one
+    # names it.
+    after = document.closed_after
+    late = None if after is None else rows[after]["tick"]
     panels = [
         participation_panel(
             title,
@@ -1068,6 +1143,7 @@ def participation_chart(document, charts=None):
             axis=axis,
             hover=names[index],
             guide=names,
+            closed=None if late is None else (late, index == 0),
         )
         for index, (title, field, unit, mark, axis) in enumerate(shown)
     ]
@@ -1126,7 +1202,11 @@ def participation_summary(document, fields=None):
         f"{format_date(days[0].local_date)} to {format_date(last.local_date)}"
     )
     if not last.population_available:
-        return text + "; the last date's figures are unavailable."
+        return (
+            text
+            + "; the last date's figures are unavailable."
+            + closed_sentence(document)
+        )
     # Every panel drawn reads as it always has; a subset keeps the same
     # phrases, with the first-time count standing alone when the cumulative
     # line is not drawn.
@@ -1145,4 +1225,20 @@ def participation_summary(document, fields=None):
             if clause
             else f"by the last date effective annual pledges totaled {dollars}"
         )
-    return text + (f"; {clause}." if clause else ".")
+    return text + (f"; {clause}." if clause else ".") + closed_sentence(document)
+
+
+def closed_sentence(document):
+    """The description's words for the "Campaign closed" line (#2298), or "".
+
+    The line is hidden from assistive technology, so the chart's
+    description says where the campaign closed and what the later dates
+    hold.
+    """
+    if document.closed_after is None:
+        return ""
+    return (
+        f" The campaign closed at the end of {format_date(document.end_date)}; "
+        "the dates after it hold responses Staff entered after the campaign "
+        "closed."
+    )

@@ -36,7 +36,10 @@ from parishkit.stewardship.campaigns.engagement import (
     engagement_mode,
     record_engagement_best_effort,
 )
-from parishkit.stewardship.campaigns.lifecycle import portal_admitted
+from parishkit.stewardship.campaigns.lifecycle import (
+    portal_admitted,
+    staff_entry_admitted,
+)
 from parishkit.stewardship.campaigns.runtime import _now, campaign_facts
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.web.security import login_denial
@@ -199,13 +202,19 @@ def _rejected(request, service, kind):
     return response
 
 
-def _scope(service):
-    """Fresh coherent runtime and date gates precede every Family object lookup."""
+def _scope(service, *, assisted=False):
+    """Fresh coherent runtime and date gates precede every Family object lookup.
+
+    ``assisted`` is for Open form's sign-in and the Family session it made
+    (``FamilySession.assisted_by_id``, set only by SQL): that admission also
+    holds after the campaign closes (``staff_entry_admitted``, #2294). Every
+    Family's own code, link and session uses the portal's admission.
+    """
     configuration = coherent_configuration(service.store)
     campaign = configuration.current_campaign
-    if campaign is None or not portal_admitted(
-        campaign_facts(campaign, configuration), _now()
-    ):
+    admitted = staff_entry_admitted if assisted else portal_admitted
+    facts = None if campaign is None else campaign_facts(campaign, configuration)
+    if facts is None or not admitted(facts, _now()):
         return None
     scope = CampaignCredentialState.objects.filter(
         campaign=campaign, go_live_gate=False, population_dirty=False
@@ -220,10 +229,14 @@ def _scope(service):
     return configuration, campaign, scope, deployment
 
 
-def lookup(service, *, code=None, token=None, lock=False, current=None):
-    """Indexed lookup only, with no decryption scans or cross-mode fallback."""
+def lookup(service, *, code=None, token=None, lock=False, current=None, assisted=False):
+    """Indexed lookup only, with no decryption scans or cross-mode fallback.
+
+    ``assisted`` takes Open form's admission (``_scope``); only the hand-off
+    passes it, and only with the Family's code.
+    """
     with transaction.atomic():
-        current = _scope(service) if current is None else current
+        current = _scope(service, assisted=assisted) if current is None else current
         if current is None:
             return None
         configuration, campaign, scope, deployment = current
@@ -299,7 +312,9 @@ class _SessionRefused(Exception):
     """SQL refused to mint the session; roll back the new Django session."""
 
 
-def _mint_session(session_key, family_id, *, digests=None, token=None):
+def _mint_session(
+    session_key, family_id, *, digests=None, token=None, assisted_session=None
+):
     """Create the Family session row in SQL, which re-proves the credential.
 
     Web has no INSERT on the Family session table (#306 M3); the SECURITY
@@ -308,6 +323,13 @@ def _mint_session(session_key, family_id, *, digests=None, token=None):
     uses a server-side-bound psycopg cursor, so a personal link token travels
     only as a bound parameter and never appears in statement text that
     PostgreSQL might log with an error.
+
+    ``assisted_session`` is the Admin portal session whose Open form
+    hand-off is being redeemed (#2294). It selects the separate assisted
+    login function, which takes only a code, checks that this Admin session
+    is live and its user may open forms, admits a closed Production
+    campaign too, and records the Admin on the new row
+    (``assisted_by_id``). A Family's own code or link never reaches it.
     """
     from psycopg import Cursor
     from psycopg.types.json import Jsonb
@@ -316,6 +338,21 @@ def _mint_session(session_key, family_id, *, digests=None, token=None):
 
     connection.ensure_connection()
     with connection.wrap_database_errors, Cursor(connection.connection) as cursor:
+        if assisted_session is not None:
+            if digests is None or token is not None:
+                raise ValueError("Open form signs in with the Family's code only.")
+            cursor.execute(
+                "SELECT public.stewardship_family_assisted_login_v1("
+                "%s::varchar, %s::uuid, %s::uuid, %s::jsonb, %s::uuid)",
+                [
+                    session_key,
+                    family_id,
+                    current_correlation(),
+                    Jsonb(digests),
+                    assisted_session,
+                ],
+            )
+            return cursor.fetchone()[0]
         cursor.execute(
             "SELECT public.stewardship_family_login_v1("
             "%s::varchar, %s::uuid, %s::uuid, %s::jsonb, %s::text)",
@@ -331,7 +368,14 @@ def _mint_session(session_key, family_id, *, digests=None, token=None):
 
 
 def issue_family(
-    request, service, identity, *, code=None, token=None, assisted_by=None
+    request,
+    service,
+    identity,
+    *,
+    code=None,
+    token=None,
+    assisted_by=None,
+    assisted_session=None,
 ):
     """Mint a token-free, mode-bound session after checking current admission.
 
@@ -340,12 +384,23 @@ def issue_family(
     same credential again (``_mint_session``). A SQL refusal rolls this whole
     sign-in back and restores the browser's previous session, so it ends in
     the same uniform denial as any other rejected credential. ``assisted_by``
-    is the Admin whose Open form hand-off started this sign-in (#529).
+    is the Admin whose Open form hand-off started this sign-in (#529), and
+    ``assisted_session`` that Admin's portal session; the two come together
+    and only from the hand-off, whose sign-in also admits a closed campaign
+    (#2294).
     """
+    if (assisted_by is None) != (assisted_session is None):
+        raise ValueError("Open form names both its Admin and their session.")
     previous = request.session
     try:
         return _issue_family(
-            request, service, identity, code=code, token=token, assisted_by=assisted_by
+            request,
+            service,
+            identity,
+            code=code,
+            token=token,
+            assisted_by=assisted_by,
+            assisted_session=assisted_session,
         )
     except _SessionRefused:
         request.session = previous
@@ -353,10 +408,18 @@ def issue_family(
 
 
 def _issue_family(
-    request, service, identity, *, code=None, token=None, assisted_by=None
+    request,
+    service,
+    identity,
+    *,
+    code=None,
+    token=None,
+    assisted_by=None,
+    assisted_session=None,
 ):
     """The transaction behind ``issue_family``; see there."""
     digests = None
+    assisted = assisted_session is not None
     with transaction.atomic(), connection.cursor() as cursor:
         # Shared locks allow unrelated logins concurrently while keeping source,
         # restore and mode writers from changing admission during session minting.
@@ -368,7 +431,7 @@ def _issue_family(
                 "WHERE campaign_id=%s FOR SHARE",
                 [identity[1]],
             )
-            current = _scope(service)
+            current = _scope(service, assisted=assisted)
             if current is None:
                 return False
             if (
@@ -403,7 +466,11 @@ def _issue_family(
         request.session.set_expiry(now + FAMILY_ABSOLUTE)
         request.session.save()
         row_id = _mint_session(
-            request.session.session_key, family_id, digests=digests, token=token
+            request.session.session_key,
+            family_id,
+            digests=digests,
+            token=token,
+            assisted_session=assisted_session,
         )
         if row_id is None:
             raise _SessionRefused
@@ -447,7 +514,10 @@ def authenticated_family(
         row = query.filter(session_id=request.session.session_key).first()
         if row is None or row.revoked_at is not None:
             return None
-        now, current = database_now(), _scope(service)
+        # Open form's session keeps Open form's admission after close
+        # (#2294); SQL alone sets assisted_by_id, never a Family's sign-in.
+        now = database_now()
+        current = _scope(service, assisted=row.assisted_by_id is not None)
         valid = (
             now < min(row.expires_at, row.last_activity_at + FAMILY_IDLE)
             and current is not None

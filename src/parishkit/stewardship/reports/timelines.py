@@ -137,11 +137,15 @@ WHERE s.family_id=%(family)s AND s.campaign_id=%(campaign)s
 """
 # The Family's submissions in the mode, oldest first, each with its receipt
 # outcome: queued (the receipt email is among _EMAILS) or no deliverable
-# recipient (no receipt was sent), and whether Staff entered it (#529).
+# recipient (no receipt was sent), whether Staff entered it (#529) and
+# whether it came after the campaign's end (late, #2294: only Open form can
+# submit then).
 _SUBMISSIONS = """
 SELECT s.id, s.submitted_at, r.disposition, r.outbox_id,
-    s.entered_by_id IS NOT NULL
+    s.entered_by_id IS NOT NULL, s.submitted_at>=cc.ends_at
 FROM stewardship_submission s
+JOIN stewardship_campaign c ON c.id=s.campaign_id
+JOIN stewardship_campaign_configuration cc ON cc.id=c.active_configuration_id
 LEFT JOIN stewardship_submission_receipt r ON r.submission_id=s.id
 WHERE s.family_id=%(family)s AND s.campaign_id=%(campaign)s
   AND s.mode=%(response_mode)s
@@ -218,7 +222,8 @@ class Submitted:
     ``receipt`` is the receipt email when one was queued; ``no_receipt`` says
     the Family had no email address to send one to; ``by_staff`` that Staff
     entered it for the Family through Open form (#529). Who did is in the
-    System logs, not here.
+    System logs, not here. ``late`` that it was submitted at or after the
+    campaign's end, which only Open form can do (#2294).
     """
 
     id: UUID
@@ -226,6 +231,7 @@ class Submitted:
     receipt: Email | None = None
     no_receipt: bool = False
     by_staff: bool = False
+    late: bool = False
 
 
 @dataclass(frozen=True)
@@ -504,6 +510,8 @@ def events(
         details = []
         if submission.by_staff:
             details.append(str(_("Entered by Staff for the Family")))
+        if submission.late:
+            details.append(str(_("Late: after the campaign closed")))
         if submission.no_receipt:
             details.append(str(_("No receipt: no email address")))
         # A response Staff entered through Open form is not the Family's
@@ -613,8 +621,9 @@ def read_submissions(cursor, values, emails):
             by_id.get(outbox),
             disposition == "no_deliverable_recipient",
             by_staff,
+            bool(late),
         )
-        for submission, at, disposition, outbox, by_staff in cursor.fetchall()
+        for submission, at, disposition, outbox, by_staff, late in cursor.fetchall()
     ]
 
 

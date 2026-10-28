@@ -252,6 +252,28 @@ def portal_admitted(facts: CampaignFacts, now: datetime) -> bool:
     return facts.state in {State.SCHEDULED, State.ACTIVE}
 
 
+def staff_entry_admitted(facts: CampaignFacts, now: datetime) -> bool:
+    """Admission for a Family session Staff opened through Open form (#2294).
+
+    The Family portal's own admission, and also a Production campaign whose
+    end has passed, closed or not yet processed: Staff can always enter or
+    replace a Family's response for the current campaign once it has begun,
+    with no cutoff. An archived (or later) campaign and Testing mode stay
+    refused, and so does a campaign that has not started. Families' own
+    codes and links never use this; only the hand-off's sign-in and the
+    Family session it creates do (``family_authentication._scope``).
+    """
+    if portal_admitted(facts, now):
+        return True
+    return (
+        facts.current
+        and not facts.restore_required
+        and facts.mode is Mode.PRODUCTION
+        and facts.state in {State.SCHEDULED, State.ACTIVE, State.CLOSED}
+        and facts.interval.start <= now
+    )
+
+
 def campaign_work_admitted(facts: CampaignFacts, now: datetime, kind: CampaignWorkKind):
     """Decide ordinary/live versus explicit-test applicability, not authorization.
 

@@ -475,6 +475,16 @@ def test_the_campaign_archive_section_offers_or_explains_the_download(
     assert "A final archive of Stewardship 2027, through day 9" in text
     assert "its last full day: the campaign was closed before its end date" in text
     assert "stewardship-2027.xlsx" in text
+    # Responses entered after the close (#2298): through the newest one's
+    # day, past the end date, and not "closed before its end date".
+    page.goto(component_origin + f"{PAGE}-archive-late")
+    text = page.locator("[aria-labelledby=campaign-archive-heading]").inner_text()
+    assert (
+        "A final archive of Stewardship 2027, through day 61 (December 3, 2026), "
+        "the day of the newest response entered after the campaign closed on "
+        "November 30, 2026."
+    ) in text
+    assert "closed before its end date" not in text
     page.goto(component_origin + f"{PAGE}-archive-unavailable")
     button = page.locator("#campaign-archive").get_by_role(
         "button", name="Download campaign archive"

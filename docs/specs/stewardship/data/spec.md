@@ -1517,7 +1517,11 @@ Every final click creates an immutable `Submission` version containing:
 - `entered_by_id`, the portal user who entered it for the Family through
   [Open form](../reports/spec.md#open-form), or null when the Family
   entered it (a soft reference with no foreign key, added by frozen migration
-  0065); and
+  0065; the Family session such a response is submitted in records the same
+  user in `assisted_by_id`, added by frozen migration 0188, which admits it
+  after the campaign closes, see
+  [Open form after the campaign closes](../reports/spec.md#open-form-after-the-campaign-closes));
+  and
 - `upcoming_pledge`, ParishSoft's pledge for the campaign's upcoming
   financial period in the validation snapshot, recorded only for a response
   that answers the financial questions and only when that snapshot's giving

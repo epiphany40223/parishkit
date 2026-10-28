@@ -377,7 +377,9 @@ invalid, absent, and suppressed head email without showing credential/link data.
 **Access:** Admin and Staff.
 
 The x-axis is every campaign-local date from campaign start through the lesser
-of campaign end and today, using the Campaign's immutable timezone snapshot.
+of the campaign's [report end](#responses-entered-after-the-campaign-closes)
+and today, using the Campaign's immutable timezone snapshot. The report end
+is the end date unless Staff entered a response after the campaign closed.
 The graph is stacked panels on that one shared date axis, top to bottom, each
 named by its own title (so there is no legend):
 
@@ -673,6 +675,61 @@ no Edits, the inputs they were built from. After the upgrade, a campaign
 with any pledge review has a higher watermark, so the scheduler's first
 reconciliation builds one new generation per population scope with the
 Edits in force, and the dashboard shows Updating until it is ready.
+
+#### Responses entered after the campaign closes
+
+Staff and Administrators can enter or replace a Family's response after the
+campaign closes ([Open form after the campaign
+closes](#open-form-after-the-campaign-closes),
+[#2294](https://github.com/epiphany40223/parishkit/issues/2294)). Every
+report total counts such a late response, and a pledge it changes, on the
+campaign-local date Staff entered it, never moved back to the end date, so
+figures already emailed never change
+([#2298](https://github.com/epiphany40223/parishkit/issues/2298)):
+
+- **Report end.** A campaign's report end is the later of its end date and
+  the campaign-local date of its newest live response, counted under the
+  submission watermark in question. It is the end date until a response is
+  entered after the close, and then that response's day. A fact
+  generation's dates run from the start date through its `through_date`,
+  which the database no longer caps at the end date (frozen migration
+  0192), and the current inputs take the lesser of the report end and today
+  as their `through_date`. So a closed campaign's daily series runs through
+  the day of its newest late response, not on to today, and the close
+  itself builds nothing new. Because the report end is counted under a
+  generation's or a send's own watermark, a later late response never
+  changes what an earlier generation or send covers.
+- **Charts.** When the series runs past the end date, the Response
+  dashboard's chart, the participation PNG and PDF and a report email's
+  chart draw a dashed "Campaign closed" line between the end date and the
+  next day, labelled on the top panel over a paper-coloured halo (so the
+  label keeps 4.5:1 over a bar), so the late days are visible but
+  distinct. The chart's description adds "The campaign closed at the end
+  of {end date}; the dates after it hold responses Staff entered after the
+  campaign closed." The daily table and the exports list the late days
+  like any other.
+- **Report emails.** A send's report day is held at the report end counted
+  under its own submission watermark, rather than at the end date
+  ([as of](../report-emails/spec.md#as-of)), so a send after a late
+  response reports that response's day, and its Campaign totals,
+  Participation charts and Day by day table include it. A saved copy
+  recomputes the same report day from the send's recorded watermark, so a
+  send already made keeps its figures.
+- **Home.** Home's Campaign Families responded tile reads each Family's
+  first response, late ones included, so it agrees with the reports after
+  the close as it does before.
+- **Campaign archive.** The archive export's cutoff is capped at the report
+  end rather than the end date, so the file covers the same dates as the
+  reports; how the file marks its late submissions is in
+  [what the export reads](../campaign-history/spec.md#what-the-export-reads).
+- **Comparison with past campaigns.** The comparison day stays at the end
+  date, so every year is still compared like for like
+  ([alignment by campaign day](../campaign-history/spec.md#alignment-by-campaign-day)).
+  When responses were entered after the close, the page adds a late entries
+  line under its heading: how many Families first responded after the
+  campaign closed and, with giving enabled, how much the effective annual
+  pledge total has changed since the end date. Its downloads and a report
+  email's comparison section are unchanged.
 
 ## Campaign statistics
 
@@ -1478,6 +1535,76 @@ a response submitted in it is still marked as entered by Staff. Pages and
 lists say only "Entered by Staff", never who: who opened the form is in the
 System logs. The receipt email is the ordinary one. No Family code or link is
 created, replaced or cancelled, so emailed codes and links keep working.
+The Family-side refusal page names no reason ("This Open form request did
+not work. Choose Open form again in the Admin portal."), so it never
+misleads; the Timeline's disabled Open form, with its reason, is where a
+lasting reason shows.
+
+##### Open form after the campaign closes
+
+Staff and Administrators can always use Open form to submit or resubmit a
+Family's response for the current campaign, before or after the campaign
+closes, with no cutoff date
+([#2294](https://github.com/epiphany40223/parishkit/issues/2294),
+Administrator decision 2026-10-27). Families themselves stay closed out after
+the end, exactly as before ([after the campaign
+ends](../parishioner-portal/spec.md#after-the-campaign-ends)): only the
+session Open form's hand-off creates gets past the close, never a Family's
+own code, link or session.
+
+- **Bound to the hand-off.** Redeeming the hand-off signs in through its own
+  SQL function, `stewardship_family_assisted_login_v1` (frozen migration
+  0188), not the Family's `stewardship_family_login_v1`. It takes the
+  Family's code (never a link) and the Admin portal session named in the
+  hand-off, requires that session to be live and its user a current
+  Administrator or Staff member, and records that user on the new Family
+  session (`stewardship_family_session.assisted_by_id`). Only that function
+  writes the column, and the session's guard keeps it immutable. The
+  Family's own sign-in is unchanged and still refuses after the end.
+- **What is admitted.** That session's admission
+  (`lifecycle.staff_entry_admitted`) is the Family portal's, plus the
+  current Production campaign once it has started and while it is
+  `scheduled`, `active` or `closed`, whether or not the close has been
+  processed yet. Testing mode, a campaign not yet started and an `archived`
+  (or later) campaign stay refused; the single-campaign interim has no
+  archive flow yet, so in practice the campaign stays closed. The form,
+  submit and receipt guards admit the closed campaign for that session only.
+- **Kept through the close.** Processing the close revokes every Family's own
+  session, as before, but not a session Open form started
+  (`stewardship_token_campaign_effects_v1`, frozen migration 0188), so Staff
+  entering a response at the moment of the close keep their unsaved work and
+  can still submit it. The session's ordinary 60-minute idle and 4-hour
+  limits still apply.
+- **Everything else is unchanged.** The hand-off stays single-use, one
+  minute, bound to the Admin's browser and session, audited, and
+  CSRF/origin-checked as above; the response records `entered_by_id`, gets
+  the ordinary receipt email, and flows into the
+  [review pipeline](../review-pipeline/spec.md#submitted-stage) like any
+  other. Scheduled Family mail stays off after close. The Timeline and the
+  directory keep offering Open form after close; it shows unavailable, with
+  its reason, only where it genuinely cannot be used (no code, Testing, not
+  the current campaign, a Family no longer in it).
+- **Late.** A response submitted at or after the campaign's end is late.
+  Its Timeline line's detail adds "Late: after the campaign closed", and
+  every [review worklist](../review-pipeline/spec.md#review-worklist) row
+  from it carries a **Late** chip beside its Submitted time (the shared
+  `status-badge`, read as "Late: after the campaign closed"), as Financial
+  stewardship's date carries its Staff chip. The Timeline and directory
+  About panels say that Open form works after close and that such a
+  response is marked Late.
+- **In report totals.** A late response, and a pledge it changes, count in
+  every report total on the day Staff entered it, as
+  [responses entered after the campaign closes](#responses-entered-after-the-campaign-closes)
+  says.
+- **A campaign with no response before its end.** The campaign records the
+  time of its first live response once, and only for a response inside the
+  campaign's dates. So if no Family at all responded before the end, the
+  first late response cannot be recorded: Open form signs in, but the
+  database refuses the submission (the campaign control guard,
+  `stewardship_control_guard_v1`), the request fails with a server error,
+  and nothing is saved. This is a known limit, not a plain refusal yet. A
+  campaign with even one response before its end, as every real campaign
+  has, is not affected.
 
 #### Timeline export
 

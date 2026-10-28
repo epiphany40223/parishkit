@@ -3038,7 +3038,10 @@ BEGIN
         OR input_source.generation IS DISTINCT FROM NEW.source_generation THEN
         RAISE EXCEPTION 'Fact inputs are inconsistent' USING ERRCODE='23514';
     END IF;
-    last_day := LEAST(projection.end_date,NEW.through_date);
+    -- The dates run through through_date, which may pass the end date:
+    -- its callers cap it at the campaign's report end, so a response Staff
+    -- entered after the close counts on its own day (0192, #2298).
+    last_day := NEW.through_date;
     first_day := projection.start_date;
     expected := GREATEST(0,last_day-first_day+1);
     IF expected=0 THEN first_day:=NULL; last_day:=NULL; END IF;
@@ -3210,7 +3213,7 @@ CREATE FUNCTION public.stewardship_family_session_mutable_v1() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
             BEGIN
-                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."session_id" IS DISTINCT FROM OLD."session_id" OR NEW."family_id" IS DISTINCT FROM OLD."family_id" OR NEW."mode" IS DISTINCT FROM OLD."mode" OR NEW."rehearsal_epoch_id" IS DISTINCT FROM OLD."rehearsal_epoch_id" OR NEW."authenticated_at" IS DISTINCT FROM OLD."authenticated_at" OR NEW."expires_at" IS DISTINCT FROM OLD."expires_at" OR NEW."credential_epoch" IS DISTINCT FROM OLD."credential_epoch" OR (OLD."revoked_at" IS NOT NULL AND NEW."revoked_at" IS DISTINCT FROM OLD."revoked_at") THEN
+                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."session_id" IS DISTINCT FROM OLD."session_id" OR NEW."family_id" IS DISTINCT FROM OLD."family_id" OR NEW."mode" IS DISTINCT FROM OLD."mode" OR NEW."rehearsal_epoch_id" IS DISTINCT FROM OLD."rehearsal_epoch_id" OR NEW."authenticated_at" IS DISTINCT FROM OLD."authenticated_at" OR NEW."expires_at" IS DISTINCT FROM OLD."expires_at" OR NEW."credential_epoch" IS DISTINCT FROM OLD."credential_epoch" OR NEW."assisted_by_id" IS DISTINCT FROM OLD."assisted_by_id" OR (OLD."revoked_at" IS NOT NULL AND NEW."revoked_at" IS DISTINCT FROM OLD."revoked_at") THEN
                     RAISE EXCEPTION 'Record identity and bindings are immutable'
                         USING ERRCODE = '23514';
                 END IF;
@@ -11008,8 +11011,14 @@ CREATE FUNCTION public.stewardship_token_campaign_effects_v1() RETURNS trigger
         WHERE campaign_id=NEW.id AND destroyed_at IS NULL;
         UPDATE stewardship_family_token_generation SET state='superseded',version=version+1
         WHERE campaign_id=NEW.id AND state NOT IN ('superseded','cancelled');
+        -- At the close, a session Open form's hand-off started (#2294:
+        -- assisted_by_id, set only by stewardship_family_assisted_login_v1)
+        -- stays live, so Staff mid-entry keep their unsaved work; every
+        -- Family's own session ends here, and every session ends when a
+        -- scheduled campaign returns to draft.
         UPDATE stewardship_family_session SET revoked_at=greatest(stewardship_campaign_now_v1(),last_activity_at),version=version+1
-        WHERE family_id IN(SELECT id FROM stewardship_family_campaign WHERE campaign_id=NEW.id) AND revoked_at IS NULL;
+        WHERE family_id IN(SELECT id FROM stewardship_family_campaign WHERE campaign_id=NEW.id) AND revoked_at IS NULL
+          AND (NEW.state<>'closed' OR assisted_by_id IS NULL);
     END IF;
     RETURN NEW;
 END $$;

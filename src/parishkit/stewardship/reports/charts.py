@@ -17,6 +17,7 @@ from threading import RLock
 from typing import NamedTuple
 
 from parishkit.stewardship.web.dates import format_date
+from parishkit.stewardship.web.design_tokens import CHART_COLORS
 
 from . import pdf_design
 from .participation import ParticipationDocument
@@ -77,6 +78,10 @@ EMAIL_LAYOUT = ChartLayout(EMAIL_PLOT_LAYOUT, 11, (0.09, 0.055), False, False)
 # The vertical gap between panels, as a share of one panel's height: room
 # for the next panel's title above it.
 PANEL_GAP = 0.35
+# The line between the end date and the days after it, which hold responses
+# Staff entered after the campaign closed (#2298), and its label.
+CLOSED_LABEL = "Campaign closed"
+CLOSED_COLOR = CHART_COLORS["chart-marker"]
 
 
 def pdf_layout(frame):
@@ -328,7 +333,9 @@ def _draw(figure, document, layout, charts=CHARTS):
 
     The panels fill the layout's plot box together. Each is named by its own
     title, so there is no legend; dates are labelled once, under the last.
-    Only the ``charts`` panels are drawn; at least one must remain.
+    Only the ``charts`` panels are drawn; at least one must remain. A
+    series that runs past the end date gets a dashed "Campaign closed" line
+    across every panel after the end date's column (#2298).
     """
     from matplotlib.ticker import FuncFormatter, MaxNLocator
 
@@ -395,7 +402,33 @@ def _draw(figure, document, layout, charts=CHARTS):
                 zorder=3,
             )
         axes.set_ylim(bottom=0, top=axis_top(panel.values))
+        if document.closed_after is not None:
+            # Between the end date's column and the next: the late days
+            # stay visible, but read as after the close (#2298).
+            axes.axvline(
+                document.closed_after - 0.5,
+                color=CLOSED_COLOR,
+                linestyle="--",
+                linewidth=1,
+                zorder=4,
+            )
     first, last = grid[0][0], grid[-1][0]
+    if document.closed_after is not None:
+        # Named once, at the top of the first panel, ending at the line on
+        # the end date's side: the late days after it are few.
+        first.text(
+            document.closed_after - 0.5,
+            0.98,
+            f"{CLOSED_LABEL} ",
+            transform=first.get_xaxis_transform(),
+            ha="right",
+            va="top",
+            fontsize=8,
+            color=CLOSED_COLOR,
+            # Readable over a bar it overlaps.
+            bbox={"facecolor": "white", "edgecolor": "none", "pad": 1},
+            zorder=5,
+        )
     # The email's as-of line names the zone once (#720); the page names it here.
     last.set_xlabel(
         f"Campaign date ({document.campaign_timezone})"

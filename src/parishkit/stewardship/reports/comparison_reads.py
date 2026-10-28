@@ -41,6 +41,7 @@ from .comparison import (
     Distribution,
     Renewal,
     Year,
+    late_entries,
 )
 from .selection import guarded_participation
 
@@ -482,4 +483,8 @@ def compare(document, projection, latest, number, *, status, current_year):
         latest_day=latest[0] if latest else None,
         checksums=tuple((a.campaign_year, a.checksum) for a in archives),
         fact_set_id=document.fact_set_id if document is not None else None,
+        # The late tail beside the like-for-like comparison (#2298).
+        late=late_entries(document.days, projection.end_date, financial)
+        if document is not None
+        else None,
     )

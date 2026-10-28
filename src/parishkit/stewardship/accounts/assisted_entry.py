@@ -373,14 +373,21 @@ def assisted(request):
         ):
             record = None
         code = _family_code(service, record)
-        identity = lookup(service, code=code) if code else None
+        # Open form's admission, which also holds after the campaign closes
+        # (#2294): only this hand-off asks for it, never a Family's own code.
+        identity = lookup(service, code=code, assisted=True) if code else None
         # Only the hand-off's Family, in Production: never a Testing sign-in.
         if (
             identity is not None
             and identity[0] == record["family"]
             and identity[2] == "production"
             and issue_family(
-                request, service, identity, code=code, assisted_by=record["admin"]
+                request,
+                service,
+                identity,
+                code=code,
+                assisted_by=record["admin"],
+                assisted_session=record["session"],
             )
         ):
             response = HttpResponseRedirect("/family/")
