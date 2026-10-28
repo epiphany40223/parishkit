@@ -1836,7 +1836,10 @@ the form again (status 400); any other refusal is the closed JSON refusal, or a 
 `data-review-refusal` that the dialog shows as drawn. A page whose own
 address records a view when read (System health) marks its dialog
 `data-review-redraw="body"`: Apply's answer then holds the regions the
-change redraws, and the page is not read again. A dialog whose Apply
+change redraws, and the page is not read again; when that answer counts
+what Apply did (Sent mail's bulk actions, which skip an email that changed,
+#2296), its `data-review-applied` line starts the status line in place of
+`data-review-done`. A dialog whose Apply
 leads to another step's page (the Go live page's Start go-live) marks it
 `data-review-redraw="leave"`: Apply's redirect is opened as a page, and
 that page follows its own work. **Precedent.**
@@ -4823,6 +4826,20 @@ The shared `table-selection.html` include and its `ui-v1.js` wiring give
 every such table this behavior. The server validates every submitted
 selection.
 
+A table whose bulk actions are meant for more rows than one page shows may
+also offer a **select-all-matching toggle**, "Select all N matching", where
+N counts the rows with a selection box that the applied filters match on
+every page. It is drawn only while N is more than the page's own boxes, and
+then always in the same place beside Select all, with a label that never
+changes, so nothing moves when it is chosen. Choosing it ticks every row
+shown, marks it pressed (`aria-pressed`) and makes the selected count say
+N; unticking any row, Clear selection or choosing it again ends it. While
+it is pressed the bulk buttons fit by the kind of all N rows, which the
+server gives the toggle, and the selection posts the applied filters
+instead of only the ticked rows, which the server reads again. So far only
+[Sent mail](../admin-portal/spec.md#sent-mail-bulk-actions) has one
+([#2296](https://github.com/epiphany40223/parishkit/issues/2296)).
+
 A **worklist** (a table a reader works through, such as the review
 pipeline's [review worklist](../review-pipeline/spec.md#review-worklist)) has its filters
 always open, never behind a disclosure, above the table, and its export
@@ -4908,7 +4925,10 @@ review worklist (#1131, #1684) and the
 Entered by hand tick of
 [Ministry requests](../admin-portal/spec.md#roster-entry-on-ministry-requests) and
 the row actions of
-[Census changes](../reports/spec.md#manual-census-resolution); the
+[Census changes](../reports/spec.md#manual-census-resolution) and the
+bulk actions of
+[Sent mail](../admin-portal/spec.md#sent-mail-bulk-actions) (#2296),
+which open the review dialog; the
 other Admin tables with per-row actions move to it in later changes, as the
 inventory on #879 lists.
 
