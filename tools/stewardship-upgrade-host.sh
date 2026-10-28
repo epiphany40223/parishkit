@@ -684,6 +684,11 @@ copy_lock_take() {
 }
 # END off-site copy lock (#235).
 
+# The offline phase holds the off-site copy lock (after step 1, below) with
+# util-linux flock; refuse now, before step 1's backup and copy, as
+# pk-restore does, rather than find it missing hours later.
+command -v flock >/dev/null || { echo "flock is not installed (util-linux); refusing." >&2; exit 1; }
+
 # The project keeps whichever Compose file it already runs under; an upgrade
 # or a rollback changes images and the documents rendered for them (once,
 # #2111, the database networks too: the full stop after step 3).

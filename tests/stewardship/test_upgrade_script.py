@@ -3306,6 +3306,16 @@ def test_a_failed_copy_lock_call_is_not_logged_as_a_timeout(tmp_path):
     assert not any(" stop web" in call for call in calls)
 
 
+def test_flock_is_checked_before_step_1():
+    """A host without util-linux flock refuses before the backup (#235, B-L3)."""
+    script = HOST.read_text()
+    preflight = script.index("flock is not installed (util-linux); refusing.")
+    line = script[script.rindex("\n", 0, preflight) + 1 : preflight]
+    assert line.startswith("command -v flock >/dev/null || ")
+    assert preflight > script.index("# END off-site copy lock (#235).")
+    assert preflight < script.index('step "1. ')
+
+
 def test_a_rollback_holds_the_copy_lock_too(tmp_path):
     """Every offline phase holds it, whichever direction."""
     run_host(tmp_path, "rollback")
