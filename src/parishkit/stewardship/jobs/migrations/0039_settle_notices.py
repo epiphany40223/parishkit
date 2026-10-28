@@ -26,10 +26,10 @@ class Migration(migrations.Migration):
     dependencies = [
         # The jobs app's previous migration.
         ("stewardship_jobs", "0038_probe_settings_changed"),
-        # The migration that installs the previous frozen file (0186), so the
+        # The migration that installs the previous frozen file (0189), so the
         # files apply in prefix order. It follows 0173 (reports 0047), whose
         # guard body this file replaces.
-        ("stewardship_accounts", "0039_setup_backup_step"),
+        ("stewardship_responses", "0033_commitment_roster_date"),
     ]
 
     operations = [migrations.RunSQL(FROZEN_SQL.read_text(encoding="utf-8"))]
