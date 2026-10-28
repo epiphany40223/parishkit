@@ -230,7 +230,7 @@ def test_a_lock_file_swapped_before_the_open_refuses_without_hanging(tmp_path, p
     )
     if plant == "none":
         assert result.stdout.strip() == "held", result.stderr
-        assert log.read_text().splitlines() == ["-w 2 8", "-w 2 9"]
+        assert log.read_text().splitlines() == ["-E 75 -w 2 8", "-E 75 -w 2 9"]
         return
     assert result.stdout.strip() == "refused"
     assert "is not a regular file" in result.stderr

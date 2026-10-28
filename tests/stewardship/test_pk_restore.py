@@ -287,13 +287,13 @@ def host(tmp_path):
     stub(bin_dir, "sleep", "#!/usr/bin/env bash\nexit 0\n")
     # The off-site copy lock (#235): util-linux flock is not on every test
     # host, so the stand-in records each call (its options and descriptor)
-    # and FAKE_FLOCK_FAIL makes the wait expire, as `flock -w` does. The
-    # lock's identity check needs GNU stat.
+    # and exits with FAKE_FLOCK_FAIL when set (75 is `flock -E 75 -w`'s
+    # expired wait). The lock's identity check needs GNU stat.
     stub(
         bin_dir,
         "flock",
         '#!/usr/bin/env bash\necho "$*" >>"$FAKE_STATE/flock"\n'
-        '[ -z "${FAKE_FLOCK_FAIL:-}" ] || exit 1\n',
+        '[ -z "${FAKE_FLOCK_FAIL:-}" ] || exit "$FAKE_FLOCK_FAIL"\n',
     )
     install_gnu_stat(bin_dir)
     # This host's name and addresses, and what the public origin resolves to.
@@ -2106,7 +2106,7 @@ def test_the_run_holds_the_copy_lock_before_anything_stops(host):
     """Both locks, file then directory, at most 60 seconds, before step 1's stop."""
     result, calls = restore(host)
     assert result.returncode == 0, output(result)
-    assert flock_calls(host) == ["-w 60 8", "-w 60 9"]
+    assert flock_calls(host) == ["-E 75 -w 60 8", "-E 75 -w 60 9"]
     # Taken in step 1 before its stop: an expired wait stops nothing (below).
     text = output(result)
     assert text.index("1. Stopping every online service") < text.index(
@@ -2118,7 +2118,7 @@ def test_the_run_holds_the_copy_lock_before_anything_stops(host):
 
 def test_a_copy_still_running_refuses_before_anything_stops(host):
     """An expired wait is logged with its limit and refuses the run."""
-    result, calls = restore(host, FAKE_FLOCK_FAIL="1")
+    result, calls = restore(host, FAKE_FLOCK_FAIL="75")
     assert result.returncode == 1
     text = output(result)
     assert "TIMEOUT: waiting for the off-site copy lock on" in text
@@ -2144,6 +2144,17 @@ def test_a_planted_lock_file_refuses_before_anything_stops(host, plant):
     assert "is not a regular file" in output(result)
     assert not stopped(calls)
     assert not (host["tmp"] / "x").exists()
+
+
+def test_a_failed_copy_lock_call_is_not_logged_as_a_timeout(host):
+    """Only flock's 75 is an expired wait; another failure says it failed."""
+    result, calls = restore(host, FAKE_FLOCK_FAIL="1")
+    assert result.returncode == 1
+    text = output(result)
+    assert "FAILED: flock on the off-site copy lock on" in text
+    assert "exited with status 1" in text
+    assert "TIMEOUT" not in text
+    assert not stopped(calls)
 
 
 @pytest.mark.parametrize("where", ["crontab", "system", "cron.d"])
@@ -2181,7 +2192,7 @@ def test_a_replacement_takes_the_copy_lock_once_step_3_made_the_directory(new_ho
     """A new host has no backups directory until step 3 creates it."""
     result, _ = new(new_host)
     assert result.returncode == 0, output(result)
-    assert flock_calls(new_host) == ["-w 60 8", "-w 60 9"]
+    assert flock_calls(new_host) == ["-E 75 -w 60 8", "-E 75 -w 60 9"]
     text = output(result)
     assert text.index("3. Preparing this host") < text.index(
         "holding the off-site copy lock"

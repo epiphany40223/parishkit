@@ -1102,8 +1102,10 @@ copy_lock_take() {
     # refuses instead of being locked or hanging the run.
     #
     # A wait longer than SECONDS in all is logged with what, the limit and
-    # the elapsed time, and returns non-zero, as does any other failure.
-    local dir=$1 limit=$2 file uid gid started left fd tmp mask
+    # the elapsed time (flock's exit 75); any other flock failure is logged
+    # as a failure with its status. Either returns non-zero, as does every
+    # other refusal.
+    local dir=$1 limit=$2 file uid gid started left fd tmp mask rc
     file=$dir/.offsite-copy.lock
     command -v flock >/dev/null || { echo "flock is not installed; cannot take the off-site copy lock." >&2; return 1; }
     { [ -d "$dir" ] && [ ! -L "$dir" ]; } ||
@@ -1147,8 +1149,13 @@ copy_lock_take() {
     for fd in 8 9; do
         left=$((limit - ($(date -u +%s) - started)))
         [ "$left" -ge 1 ] || left=1
-        if ! flock -w "$left" "$fd"; then
+        rc=0
+        flock -E 75 -w "$left" "$fd" || rc=$?
+        if [ "$rc" -eq 75 ]; then
             echo "TIMEOUT: waiting for the off-site copy lock on $dir gave up after $(($(date -u +%s) - started))s (limit ${limit}s)" >&2
+            return 1
+        elif [ "$rc" -ne 0 ]; then
+            echo "FAILED: flock on the off-site copy lock on $dir exited with status $rc after $(($(date -u +%s) - started))s" >&2
             return 1
         fi
     done

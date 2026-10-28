@@ -723,14 +723,15 @@ def run_host(
     executable_stub(bin_dir, "install", 'mkdir -p "${@: -1}"')
     executable_stub(bin_dir, "sleep", "exit 0")
     # The off-site copy lock and crontabs (#235): util-linux flock is not on
-    # every test host, so the stand-in records each call and
-    # FAKE_FLOCK_FAIL makes the wait expire; crontab answers FAKE_CRONTAB,
-    # and the system crontab and cron.d are the test's own (below). The
-    # lock's identity check needs GNU stat.
+    # every test host, so the stand-in records each call and exits with
+    # FAKE_FLOCK_FAIL when set (75 is `flock -E 75 -w`'s expired wait);
+    # crontab answers FAKE_CRONTAB, and the system crontab and cron.d are
+    # the test's own (below). The lock's identity check needs GNU stat.
     executable_stub(
         bin_dir,
         "flock",
-        'echo "$*" >>"$FAKE_STATE/flock"; [ -z "$FAKE_FLOCK_FAIL" ] || exit 1',
+        'echo "$*" >>"$FAKE_STATE/flock"; '
+        '[ -z "$FAKE_FLOCK_FAIL" ] || exit "$FAKE_FLOCK_FAIL"',
     )
     install_gnu_stat(bin_dir)
     executable_stub(bin_dir, "crontab", 'echo "${FAKE_CRONTAB:-}"')
@@ -3241,7 +3242,7 @@ def flock_calls(tmp_path):
 def test_the_host_holds_both_copy_locks_for_the_offline_work(tmp_path):
     """File lock, then directory lock, each bounded, after step 1's copy."""
     calls, output, root = run_host(tmp_path, "upgrade")
-    assert flock_calls(tmp_path) == ["-w 1800 8", "-w 1800 9"]
+    assert flock_calls(tmp_path) == ["-E 75 -w 1800 8", "-E 75 -w 1800 9"]
     assert "1. Holding the off-site copy lock for the offline work" in output
     assert output.index("Holding the off-site copy lock") < output.index(
         "2. Stopping web"
@@ -3285,7 +3286,7 @@ def test_a_planted_lock_file_refuses_before_web_stops(tmp_path, plant):
 
 def test_an_expired_copy_lock_wait_is_logged_and_abandons(tmp_path):
     """A copy started since step 1 and still running: no web stop."""
-    calls, output, _ = run_host(tmp_path, "upgrade", status=1, flock_fail=1)
+    calls, output, _ = run_host(tmp_path, "upgrade", status=1, flock_fail=75)
     assert "TIMEOUT: waiting for the off-site copy lock on" in output
     assert "(limit 1800s)" in output
     assert "holds the copy lock; abandoning the upgrade" in output
@@ -3295,10 +3296,20 @@ def test_an_expired_copy_lock_wait_is_logged_and_abandons(tmp_path):
     assert "TIMEOUT: waiting for the off-site copy lock" in log
 
 
+def test_a_failed_copy_lock_call_is_not_logged_as_a_timeout(tmp_path):
+    """Only flock's 75 is an expired wait; another failure says it failed."""
+    calls, output, _ = run_host(tmp_path, "upgrade", status=1, flock_fail=1)
+    assert "FAILED: flock on the off-site copy lock on" in output
+    assert "exited with status 1" in output
+    assert "TIMEOUT" not in output
+    assert "abandoning the upgrade" in output
+    assert not any(" stop web" in call for call in calls)
+
+
 def test_a_rollback_holds_the_copy_lock_too(tmp_path):
     """Every offline phase holds it, whichever direction."""
     run_host(tmp_path, "rollback")
-    assert flock_calls(tmp_path) == ["-w 1800 8", "-w 1800 9"]
+    assert flock_calls(tmp_path) == ["-E 75 -w 1800 8", "-E 75 -w 1800 9"]
 
 
 UPLOADER_LINE = (
