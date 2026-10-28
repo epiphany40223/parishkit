@@ -619,5 +619,17 @@ def check_restore_grants(
         timeout=120,
     )
     assert checked.stdout.strip() == "match"
-    sources = compose_run(file, project, "run", "--rm", "backup-uploader", timeout=120)
+    # The service's own command is the copy (E2), so name the source check
+    # as pk-restore's step 8 does.
+    sources = compose_run(
+        file,
+        project,
+        "run",
+        "--rm",
+        "backup-uploader",
+        "database-sources",
+        "--config",
+        str(layout.service_directory / "backup-uploader.yaml"),
+        timeout=120,
+    )
     assert "database sources match the rendered rules" in sources.stdout
