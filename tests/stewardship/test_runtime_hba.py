@@ -60,6 +60,7 @@ HOLDERS = {
     "pk_stewardship_migration": "migration",
     "pk_stewardship_admin_recovery": "admin-recovery",
     "pk_stewardship_backup_worker": "backup-worker",
+    "pk_stewardship_backup_uploader": "backup-uploader",
     OPERATOR: "database-provision",
 }
 
@@ -196,7 +197,7 @@ def test_every_container_is_unprivileged_and_on_fixed_or_one_shot_addresses(
                 f"offline-{name}"
             }
             assert ("application-egress" in service["networks"]) is (
-                name == "backup-worker"
+                name == "backup-uploader"
             )
     if "x-local-seeder" in compose:
         addresses.append(ip_address(compose["x-local-seeder"]["ipv4_address"]))

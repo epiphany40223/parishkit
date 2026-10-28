@@ -151,3 +151,45 @@ def test_the_scheduler_may_record_the_web_health_alert():
             assert "operational_event_safe" in str(error), error
         with pytest.raises(DatabaseError, match="may not record"):
             insert("failure", "web_unhealthy", "ERROR")
+
+
+def test_the_future_uploader_keeps_timeout_entries_only():
+    """0193 admits the off-site uploader's login (#235) to timeout entries only.
+
+    No release creates that login yet; the test makes it with only the
+    INSERT the later release's registry will grant. Like mail dispatch and
+    backup, it records the timeout events and nothing else, never CRITICAL,
+    never with an actor, and always at the database's own time.
+    """
+    from .test_backup_offsite_postgresql import uploader_login
+
+    grant = "GRANT INSERT ON stewardship_operational_log TO {role}"
+    with uploader_login(grant):
+        recorded = [
+            insert("timeout", event, level)
+            for event, level in (
+                ("task_timed_out", "WARNING"),
+                ("helper_timed_out", "ERROR"),
+                ("work_budget_reached", "INFO"),
+                ("task_lease_lost", "WARNING"),
+            )
+        ]
+        for entry in (
+            ("timeout", "task_timed_out", "CRITICAL"),
+            ("failure", "task_failed", "ERROR"),
+            ("failure", "retry_refusal_unrecorded", "CRITICAL"),
+        ):
+            with pytest.raises(DatabaseError, match="may not record"):
+                insert(*entry)
+        with pytest.raises(DatabaseError, match="may not record"):
+            insert("timeout", "task_timed_out", "WARNING", actor_id=uuid4())
+        backdated = insert(
+            "timeout",
+            "task_timed_out",
+            "WARNING",
+            created_at=timezone.now() - timedelta(days=30),
+        )
+    assert OperationalLog.objects.filter(pk__in=recorded).count() == len(recorded)
+    assert OperationalLog.objects.get(pk=backdated).created_at > (
+        timezone.now() - timedelta(minutes=5)
+    )

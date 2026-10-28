@@ -13,11 +13,13 @@ run records a row; the scheduler reads the newest row to alert when a backup
 is overdue, and the offline upgrade commands read it as the verified-backup
 evidence a configured deployment requires. Copying the sets off the host is
 the operator's cron job or, when an Administrator configured a Google Drive
-folder, :mod:`.backup_offsite` after each run, as the backup runbook says.
+folder, the off-site uploader's own cron line (``uploader_commands``, #235),
+as the backup runbook says; the backup itself has no route out.
 The reduced scope,
 and what it defers, is the v1 launch scope's.
 """
 
+import fcntl
 import hashlib
 import json
 import logging
@@ -30,6 +32,7 @@ import tarfile
 import tempfile
 import threading
 import time
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -64,11 +67,18 @@ MINIMUM_SETS = 14
 # after the one before it, or when a set is dated this far after ``now``.
 CLOCK_GAP = timedelta(days=2)
 CLOCK_SKEW = timedelta(hours=1)
+# Retention skipped because an off-site copy holds the copy lock is routine
+# (INFO); once this many complete sets are already past the prune point (two
+# days of skipped prunes at two backups a day) it is a WARNING, so a stuck
+# lock shows in the cron output before the disk fills (#235, "Retention").
+PAUSED_COPY_WARN_SETS = 4
 # The archived trees are small: branding images are at most a few megabytes
 # each, and the hosted-file library (#346) at most 200 MB in all. Anything
 # larger is not what this backup was designed for and stops before sealing.
 MAX_FILES_BYTES = 512 * 1024 * 1024
-SET_NAME = re.compile(r"^\d{8}T\d{6}Z$")
+# ASCII digits only: \d also matches other scripts' digits on str, which
+# strptime accepts too, so a non-ASCII name could pass as a set's time.
+SET_NAME = re.compile(r"^[0-9]{8}T[0-9]{6}Z$")
 DUMP = "database.pgdump.sealed"
 FILES = "files.tar.sealed"
 MANIFEST = "manifest.json"
@@ -316,14 +326,45 @@ def retention_paused(names, now):
     return True
 
 
+@contextmanager
+def copy_lock_free(backups):
+    """Hold the host's off-site copy lock if it is free; yield whether it was.
+
+    The copy lock is an exclusive flock on the backups directory itself
+    (``backup_offsite._copy_lock``, #235), which the off-site uploader holds
+    for a whole copy. Retention only tries it, never waits, and holds it
+    while it prunes, so it can never remove a set mid-upload and no copy
+    starts on a set it is removing. No link is followed.
+    """
+    descriptor = os.open(backups, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            yield False
+            return
+        yield True
+    finally:
+        os.close(descriptor)
+
+
 def _prune(backups, now):
     """Remove complete local sets that ``retained`` does not keep.
 
     A failed run's directory has no manifest: it is left for inspection and
     never counts toward retention, so a run of failures cannot evict good
     sets. The operator removes failed directories by hand. Nothing is
-    removed while ``retention_paused`` says the clock looks wrong.
+    removed while ``retention_paused`` says the clock looks wrong, or while
+    an off-site copy holds the copy lock (``copy_lock_free``): that skip is
+    an INFO line, or a WARNING once ``PAUSED_COPY_WARN_SETS`` complete sets
+    are already past the prune point; the next backup prunes again.
     """
+    with copy_lock_free(backups) as free:
+        _prune_locked(backups, now, free=free)
+
+
+def _prune_locked(backups, now, *, free):
+    """``_prune``'s body, run with the copy lock held when ``free``."""
     sets = [
         path
         for path in backups.iterdir()
@@ -333,6 +374,14 @@ def _prune(backups, now):
         and (path / MANIFEST).is_file()
     ]
     names = [path.name for path in sets]
+    if not free:
+        past = len(set(names) - retained(names, now))
+        emit(
+            Event.TASK_FAILED,
+            level=logging.WARNING if past >= PAUSED_COPY_WARN_SETS else logging.INFO,
+            failure_kind=FailureKind.BACKUP_RETENTION_PAUSED_COPY,
+        )
+        return
     if retention_paused(names, now):
         return
     keep = retained(names, now)

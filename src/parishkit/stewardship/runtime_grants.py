@@ -501,6 +501,23 @@ PLEDGE_REFRESH_ITEMS_FUNCTION = "stewardship_pledge_refresh_items_v2(uuid, uuid,
 # #269): the Google Workspace installer compares a queued "Test access"
 # check with them before it runs it, without reading the applied settings.
 BACKUP_DESTINATION_FUNCTION = "stewardship_backup_destination_v1()"
+# What the off-site uploader reads of a backup run row (#235): the digest
+# that names a finished set's manifest and the two times its name is
+# bound to. Nothing else of the row (sizes, recipient, version).
+UPLOADER_RUN_COLUMNS = ("manifest_digest", "started_at", "completed_at")
+# What the backup login writes of its run row (#235, contract, 0195): every
+# column but completed_at, whose STATEMENT_TIMESTAMP() default the database
+# alone sets, so a set's name stays bound to the database's clock
+# (``backup_commands.record_run`` names exactly these).
+BACKUP_RUN_INSERT_COLUMNS = (
+    "id",
+    "started_at",
+    "database_bytes",
+    "files_bytes",
+    "manifest_digest",
+    "recipient_fingerprint",
+    "application_version",
+)
 # Each Family's pledge Edit in force, as the response it is in force on and
 # the Edit's annual pledge (0184, #2202): the campaign statistics capture
 # counts the values in force. Web runs every production capture today (the
@@ -904,6 +921,40 @@ CLOSURE_REVOKES = {
 }
 
 
+# Table grants an earlier release declared that a migration in the users
+# swap's closure revokes, with that migration: role -> table -> privileges.
+# Like ``CLOSURE_REVOKES`` (column grants), they are tolerated, never
+# granted, until their migration is applied (``pending_table_revokes``);
+# a table grant also covers each of its columns, so the column comparison
+# tolerates them too.
+CLOSURE_TABLE_REVOKES = {
+    # The off-site uploader's contract (#235, 0195): the backup login no
+    # longer appends copy outcomes, and its run-row INSERT becomes the
+    # column grant BACKUP_RUN_INSERT_COLUMNS.
+    ("stewardship_jobs", "0042_backup_uploader_contract"): {
+        ServiceRole.BACKUP_WORKER: {
+            "stewardship_backup_run": frozenset({"INSERT"}),
+            "stewardship_backup_upload": frozenset({"INSERT"}),
+        },
+    },
+}
+
+
+def pending_table_revokes(role, applied):
+    """The table grants ``role`` may still hold until a pending revoke applies.
+
+    ``applied`` is the ``(app, name)`` pairs of ``django_migrations``; the
+    answer is table -> privileges, for admission only.
+    """
+    tolerated = {}
+    for migration, roles in CLOSURE_TABLE_REVOKES.items():
+        if migration in applied:
+            continue
+        for table, privileges in roles.get(role, {}).items():
+            tolerated.setdefault(table, set()).update(privileges)
+    return tolerated
+
+
 def pending_functions(applied):
     """The registry routines whose creating migration is not in ``applied``.
 
@@ -1012,7 +1063,9 @@ def runtime_functions(role, *, target=None):
     ``upgrade-reports`` asks whether digest work still holds the report
     email conversion back (#1786). The backup login
     reads the table through pg_read_all_data instead: its admission refuses
-    any definer grant.
+    any definer grant. The off-site uploader (#235) reads the applied backup
+    folder and delegated mailbox through the same destination definer as
+    the google_workspace installer (0193 admits its session login).
     """
     role = _identity_role(role, target)
     if role is ServiceRole.CREDENTIAL_INSTALLER:
@@ -1097,6 +1150,10 @@ def runtime_functions(role, *, target=None):
                 MEMBER_NAMES_FUNCTION,
                 DEBUG_OFF_FUNCTION,
                 DEBUG_OFF_CLEAR_FUNCTION,
+            },
+            ServiceRole.BACKUP_UPLOADER: {
+                BACKUP_DESTINATION_FUNCTION,
+                DEBUG_OFF_FUNCTION,
             },
         }.get(role, ())
     )
@@ -1236,18 +1293,43 @@ def runtime_grants(role, *, target=None):
     if role is ServiceRole.BACKUP_WORKER:
         # The dump itself reads through the pg_read_all_data membership that
         # provisioning grants; the registry holds the one row it may write and
-        # read back (the database supplies the completion time), and the
-        # off-site copy outcome it appends after each set. A copy stopped by
-        # its whole-copy deadline, or a backup task's lost lease, is logged
-        # (#293): insert only, and a trigger admits only timeout events.
-        # Request mode (ADM-13 PR 3) reads requests and settles them through
-        # a column UPDATE; the request's guard checks every move.
+        # read back. Since the contract release (#235, 0195) that row's INSERT
+        # is a column grant without completed_at, so the database alone sets
+        # the completion time a set's name is bound to, and the off-site copy
+        # outcomes are the uploader's alone (no INSERT here). A backup task's
+        # lost lease is logged (#293): insert only, and a trigger admits only
+        # timeout events. Request mode (ADM-13 PR 3) reads requests and
+        # settles them through a column UPDATE; the request's guard checks
+        # every move. The table SELECTs stay: pg_read_all_data reads every
+        # table anyway, so dropping them would narrow nothing.
         return {
-            "stewardship_backup_run": {"SELECT", "INSERT"},
-            "stewardship_backup_upload": {"SELECT", "INSERT"},
+            "stewardship_backup_run": {"SELECT"},
+            "stewardship_backup_upload": {"SELECT"},
             "stewardship_operational_log": {"INSERT"},
             "stewardship_backup_request": {"SELECT"},
-        }, {"stewardship_backup_request": {"UPDATE": set(BACKUP_REQUEST_COLUMNS)}}
+        }, {
+            "stewardship_backup_request": {"UPDATE": set(BACKUP_REQUEST_COLUMNS)},
+            "stewardship_backup_run": {"INSERT": set(BACKUP_RUN_INSERT_COLUMNS)},
+        }
+    if role is ServiceRole.BACKUP_UPLOADER:
+        # The off-site uploader (#235): it appends its copy outcomes, reads
+        # only what binds a set to its run row (the digest and the two
+        # times) and the runtime row's id (the Drive set tag), and logs
+        # timeout entries only (the writer trigger's timeout clause admits
+        # this login, 0193). The folder link and mailbox come from
+        # stewardship_backup_destination_v1(), never the configuration.
+        # Like every runtime login it reads the applied migrations, for the
+        # current-schema check its ``upload`` makes before it copies.
+        return {
+            "django_migrations": {"SELECT"},
+            "stewardship_backup_upload": {"SELECT", "INSERT"},
+            "stewardship_operational_log": {"INSERT"},
+        }, {
+            "stewardship_backup_run": {
+                "SELECT": set(UPLOADER_RUN_COLUMNS),
+            },
+            "stewardship_system_configuration": {"SELECT": {"id"}},
+        }
     if role not in {ServiceRole.WEB, "download"}:
         raise ConfigError(
             "This service's runtime database authority is not implemented."
@@ -1527,6 +1609,7 @@ def login_name(role, *, target=None):
             ServiceRole.BOOTSTRAP,
             ServiceRole.ADMIN_RECOVERY,
             ServiceRole.BACKUP_WORKER,
+            ServiceRole.BACKUP_UPLOADER,
             "download",
         }
         or target is not None

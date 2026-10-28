@@ -500,69 +500,192 @@ def backup_args(tmp_path, **changed):
     )
 
 
-def test_backup_drive_probes_and_copies_the_newest_set(tmp_path, monkeypatch, capsys):
-    """The off-site check runs as the backup profile; --send copies one set."""
+def test_backup_drive_is_refused_in_the_backup_profile(tmp_path, monkeypatch, capsys):
+    """The backup profile has no route out (#235, contract): no probe, no key read.
+
+    Its ``--send`` is refused as well; the off-site uploader's profile runs
+    the check instead.
+    """
     from parishkit.stewardship import backup_drive
 
-    from .drive_fakes import FakeDrive, write_sealed_set
-
-    drive = FakeDrive("1AbCdEfGhIjKlMnOpQrStUv")
     sessions = []
     monkeypatch.setattr(
         backup_drive,
         "workspace_session",
-        lambda value, subject, profile, redirect: sessions.append(
-            (value, subject, profile, redirect)
-        ),
+        lambda *a, **k: sessions.append(a) or pytest.fail("no Drive session"),
     )
-    tags = []
+    monkeypatch.setattr(
+        smoke, "_deployment_tag", lambda *a: pytest.fail("no database read")
+    )
+    monkeypatch.setenv("PARISHKIT_ROOT", str(tmp_path))
+    monkeypatch.setattr(smoke, "configure_logging", lambda: None)
+    _, args = backup_args(tmp_path)
+    for send in (None, True):
+        assert smoke.execute_smoke(SimpleNamespace(**{**vars(args), "send": send})) == 2
+        assert "smoke check refused" in capsys.readouterr().err
+    assert sessions == []
+
+
+def uploader_smoke(tmp_path, monkeypatch):
+    """The uploader profile's smoke options, with a fake Drive and session."""
+    from parishkit.stewardship import backup_drive, uploader_boundaries
+    from parishkit.stewardship.deployment_documents import deployment_document
+
+    from .drive_fakes import FakeDrive
+
+    drive = FakeDrive("1AbCdEfGhIjKlMnOpQrStUv")
+    sessions, admitted, tags = [], [], []
 
     def client(session, **options):
         """Record the set tag each client is given."""
         tags.append(options.get("tag"))
         return drive
 
+    monkeypatch.setattr(
+        backup_drive,
+        "workspace_session",
+        lambda value, subject, profile, redirect: sessions.append(value),
+    )
     monkeypatch.setattr(backup_drive, "DriveClient", client)
-    # --send reads this deployment's tag from its database; the check alone
-    # never opens the database.
-    monkeypatch.setattr(smoke, "_deployment_tag", lambda c: "deployment-abc")
+    monkeypatch.setattr(
+        uploader_boundaries,
+        "admit_uploader_service",
+        lambda configuration: admitted.append(configuration.service_role),
+    )
     monkeypatch.setenv("PARISHKIT_ROOT", str(tmp_path))
     monkeypatch.setattr(smoke, "configure_logging", lambda: None)
-    configuration, args = backup_args(tmp_path)
-    assert smoke.execute_smoke(args) == 0
+    configuration = consumer(
+        tmp_path, ServiceRole.BACKUP_UPLOADER, google_workspace=b"service-account"
+    )
+    path = tmp_path / "backup-uploader.yaml"
+    path.write_text(json.dumps(deployment_document(configuration)))
+    _, args = backup_args(tmp_path / "other")
+    args.config = str(path)
+    backups = private_directory(configuration.paths["backups"], create=True)
+    return SimpleNamespace(
+        args=args,
+        drive=drive,
+        sessions=sessions,
+        admitted=admitted,
+        tags=tags,
+        backups=backups,
+    )
+
+
+def test_the_uploader_profile_probes_drive_without_the_database(
+    tmp_path, monkeypatch, capsys
+):
+    """The off-site uploader (#235) runs the probe after its mount admission.
+
+    It reads the Workspace key it mounts itself and never opens the database
+    for the probe alone; any other target is refused there.
+    """
+    case = uploader_smoke(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        smoke, "_deployment_tag", lambda *a: pytest.fail("no database read")
+    )
+    assert smoke.execute_smoke(case.args) == 0
     assert json.loads(capsys.readouterr().out) == {
         "accepted": True,
         "copied_set": None,
         "target": "backup_drive",
     }
-    assert sessions == [
-        (b"service-account", "mail@example.org", configuration.profile, None)
-    ]
-    backups = private_directory(configuration.paths["backups"], create=True)
-    directory = backups / "20260927T020000Z"
+    assert case.sessions == [b"service-account"]
+    assert case.admitted == [ServiceRole.BACKUP_UPLOADER]
+    other = SimpleNamespace(**{**vars(case.args), "target": "google_workspace"})
+    assert smoke.execute_smoke(other) == 2
+
+
+def test_the_uploader_profile_sends_the_bound_set_under_its_lock(
+    tmp_path, monkeypatch, capsys
+):
+    """--send from the uploader copies the set its own login bound (#235).
+
+    It takes the directory copy lock, writing nothing on its read-only
+    mount, so a held lock makes it report busy, and it copies the set
+    ``_deployment_tag`` returned (the newest one bound to its run row),
+    tagged as this deployment's.
+    """
+    from parishkit.stewardship.backup_offsite import _copy_lock, _digest
+
+    from .drive_fakes import write_sealed_set
+
+    case = uploader_smoke(tmp_path, monkeypatch)
+    directory = case.backups / "20260927T020000Z"
     directory.mkdir(mode=0o700)
     write_sealed_set(directory)
-    assert smoke.execute_smoke(SimpleNamespace(**{**vars(args), "send": True})) == 0
+    seen = []
+
+    def tag(configuration, backups):
+        """The uploader's own admission and binding, stood in for."""
+        seen.append((configuration.service_role, backups))
+        return "deployment-abc", (directory, _digest(directory))
+
+    monkeypatch.setattr(smoke, "_deployment_tag", tag)
+    send = SimpleNamespace(**{**vars(case.args), "send": True})
+    assert smoke.execute_smoke(send) == 0
     assert json.loads(capsys.readouterr().out)["copied_set"] == directory.name
-    assert drive.sets() == [directory.name]
-    # The copied set is tagged as this deployment's, like a real copy (#305 L3).
-    assert tags == [None, "deployment-abc"]
-    # While a backup's own copy holds the lock, --send copies nothing.
-    from parishkit.stewardship.backup_offsite import _copy_lock
-
-    uploads = drive.calls.count("upload")
-    with _copy_lock(backups) as held:
+    assert seen == [(ServiceRole.BACKUP_UPLOADER, case.backups)]
+    assert case.drive.sets() == [directory.name]
+    assert case.tags == ["deployment-abc"]
+    assert sorted(path.name for path in case.backups.iterdir()) == [directory.name]
+    with _copy_lock(case.backups) as held:
         assert held
-        assert smoke.execute_smoke(SimpleNamespace(**{**vars(args), "send": True})) == 0
+        assert smoke.execute_smoke(send) == 0
         assert json.loads(capsys.readouterr().out)["reason"] == "busy"
-    # Only the access check's own marker file was uploaded.
-    assert drive.calls.count("upload") == uploads + 1
-    drive.can_add = False
-    assert smoke.execute_smoke(args) == 0
-    assert json.loads(capsys.readouterr().out)["reason"] == "permission"
 
 
-def test_backup_drive_runs_only_in_the_backup_profile(tmp_path, monkeypatch, capsys):
+def test_the_uploader_profile_refuses_send_of_a_set_swapped_after_binding(
+    tmp_path, monkeypatch, capsys
+):
+    """The set sent must still have the digest its run row bound (#235).
+
+    Bound before the copy lock and the Drive session; a set swapped on disk
+    meanwhile agrees with itself but not with that digest, and is refused
+    under the lock before any upload.
+    """
+    from parishkit.stewardship.backup_offsite import SEALED_FILES, _digest
+
+    from .drive_fakes import write_sealed_set
+
+    case = uploader_smoke(tmp_path, monkeypatch)
+    directory = case.backups / "20260927T020000Z"
+    directory.mkdir(mode=0o700)
+    write_sealed_set(directory)
+
+    def bound_then_swapped(configuration, backups):
+        """Bind the set, then let it be replaced before the upload."""
+        digest = _digest(directory)
+        for name in SEALED_FILES:
+            (directory / name).unlink()
+        write_sealed_set(directory, b"an impostor that agrees with itself")
+        return "deployment-abc", (directory, digest)
+
+    monkeypatch.setattr(smoke, "_deployment_tag", bound_then_swapped)
+    send = SimpleNamespace(**{**vars(case.args), "send": True})
+    smoke.execute_smoke(send)
+    assert json.loads(capsys.readouterr().out)["reason"] == "verification"
+    # The probe's own small file is the only upload.
+    assert case.drive.calls.count("upload") == 1 and not case.drive.sets()
+
+
+def test_the_uploader_profile_refuses_send_of_an_unbound_set(
+    tmp_path, monkeypatch, capsys
+):
+    """A newest set no run row binds is refused before any upload (#235)."""
+    case = uploader_smoke(tmp_path, monkeypatch)
+
+    def unbound(configuration, backups):
+        raise ConfigError("The newest backup set is not bound to its backup run.")
+
+    monkeypatch.setattr(smoke, "_deployment_tag", unbound)
+    send = SimpleNamespace(**{**vars(case.args), "send": True})
+    assert smoke.execute_smoke(send) == 2
+    assert "smoke check refused" in capsys.readouterr().err
+    assert case.sessions == [] and case.drive.calls.count("upload") == 0
+
+
+def test_backup_drive_runs_only_in_the_uploader_profile(tmp_path, monkeypatch, capsys):
     """Another profile has no Workspace key to read; the check is refused."""
     from parishkit.stewardship.deployment_documents import deployment_document
 

@@ -86,17 +86,24 @@
 # neither (an older restore, or a set this deployment never recorded) is
 # refused: restore it by hand.
 #
-# Then: 1 stops every online service (after waiting, bounded, for a running
+# Then: 1 takes this host's off-site copy lock on the backups directory
+# (#235: the directory lock, waiting at most 60 seconds for a running copy,
+# else refusing; held until the run ends) and
+# stops every online service (after waiting, bounded, for a running
 # backup-worker); 4 moves each current tree aside as NAME.pre-restore-STAMP
-# (never deleting it) and puts the set's in place; 6 copies the dump into
+# (never deleting it) and puts the set's in place, keeping the host's
+# off-site uploader password file when the set's credentials have none
+# (below); 6 copies the dump into
 # the PostgreSQL store (on disk, beside its data directory and never inside
 # it, written by the postgres container's own user), converts it with
 # pg_restore, deletes the dump copy, checks the room again (about twice
 # the database's size), replaces the
 # application schema in one psql transaction and deletes the SQL; 7 runs
-# retarget-image and pull, moves cache/static aside and cache/static.next
-# in, runs revoke-automation-sessions when the image has it, and
-# restore-begin; 8 starts web and caddy only and waits for web's health.
+# retarget-image and pull, runs database-grants --after-restore SET when the
+# image has the off-site uploader (below), moves cache/static aside and
+# cache/static.next in, runs revoke-automation-sessions when the image has
+# it, and restore-begin; 8 starts web and caddy only and waits for web's
+# health.
 # The scheduler, worker, mail-dispatch and installers stay stopped until
 # the Restore review is released.
 #
@@ -112,7 +119,8 @@
 # reads from the dump offline, and the manifest's SHA-256 must be
 # --manifest-digest. Step 1 has nothing to stop on a new host; 3 creates
 # the runtime root's other directories (owned by the owner, mode 0700) and
-# run/startup.lock and collects the static files; 4 as above; 5 starts
+# run/startup.lock, collects the static files and takes the copy lock; 4
+# as above; 5 starts
 # postgres and valkey and runs database-roles, after which the database
 # marker must be the UUID; 6, 7 and 8 as above. The log directory (and the
 # runtime root) is created first when missing. --from 5 and 6 need step 4's
@@ -139,6 +147,25 @@
 # ends after web's health check: destroy the host (runbook step 10).
 # Container egress is blocked on the host before the run (the runbook's
 # DOCKER-USER rule); the host's own pulls and DNS still work.
+#
+# The off-site uploader (#235): an image has it when its command list names
+# uploader-password-check. Its login is a cluster role, which a dump does not
+# hold, so in step 4, when the set's credentials tree has no
+# database/backup-uploader password file, the one from the tree just moved
+# aside is copied in (a regular file, not a link, owner-only and the owner's;
+# on a resumed run whose moved-aside tree lacks it, from the newest other
+# credentials.pre-restore-* tree that has one). Nothing else is changed, and
+# the copy is logged; no link is followed on the way, and an existing
+# temporary name refuses. Only that default path is kept, so a deployment
+# whose postgres.password_files moves the file refuses before step 1. For
+# an image with the uploader, the checks also need
+# database-grants; step 7 runs it with --after-restore SET (the restored set
+# stands in for the recent backup it otherwise requires): it creates the
+# login from the file retarget-image created on a new host, or checks an
+# existing login's stored password against the file; step 8's source check
+# also runs from the backup-uploader profile. On a drill host that one-off
+# joins application-egress like any uploader run; the DOCKER-USER rule
+# blocks its egress, and it runs only database-sources.
 #
 # Every Docker call runs under a time limit; a kill is logged with what was
 # stopped, the limit and the elapsed time. Each step is logged with a
@@ -332,7 +359,7 @@ EOF
     [ "$from" -lt 5 ] || echo "1. Stop every online service (postgres and valkey keep running)."
     [ "$from" -gt 5 ] || echo "5. Start postgres and valkey; database-roles --confirm-deployment $uuid; the database marker must then be $uuid."
     [ "$from" -gt 6 ] || echo "6. Copy the dump into the PostgreSQL store, convert it with pg_restore, delete the dump copy, then replace the public schema in one psql transaction that marks the schema as set $set_name; delete the SQL."
-    echo "7. retarget-image to $image, $pull, move cache/static.next in, revoke-automation-sessions (when the image has it), restore-begin --backup-at $set_name."
+    echo "7. retarget-image to $image, $pull, database-grants --after-restore $set_name (when the image has the off-site uploader), move cache/static.next in, revoke-automation-sessions (when the image has it), restore-begin --backup-at $set_name."
     echo "8. Start $start and wait for web's health."
     echo "Log: $log_dir/restore-STAMP.log"
     exit 0
@@ -364,9 +391,9 @@ Checks, before anything stops: the database marker is $uuid (typed again);
 1. Wait for any backup-worker, then stop every online service (postgres
    and valkey keep running).
 EOF
-    [ "$from" -gt 4 ] || echo "4. Move config, credentials, media and the provisioning record aside as NAME.pre-restore-STAMP; put the set's in place, owned by $owner."
+    [ "$from" -gt 4 ] || echo "4. Move config, credentials, media and the provisioning record aside as NAME.pre-restore-STAMP; put the set's in place, owned by $owner, keeping the host's off-site uploader password file when the set has none."
     [ "$from" -gt 6 ] || echo "6. Copy the dump into the PostgreSQL store, convert it with pg_restore, delete the dump copy, then replace the public schema in one psql transaction that marks the schema as set $set_name; delete the SQL."
-    echo "7. retarget-image to $image, pull, move cache/static aside and cache/static.next in, revoke-automation-sessions (when the image has it), restore-begin --backup-at $set_name."
+    echo "7. retarget-image to $image, pull, database-grants --after-restore $set_name (when the image has the off-site uploader), move cache/static aside and cache/static.next in, revoke-automation-sessions (when the image has it), restore-begin --backup-at $set_name."
     echo "8. Start web and caddy only and wait for web's health; then the Restore review."
     echo "Log: $log_dir/restore-STAMP.log"
     exit 0
@@ -533,7 +560,9 @@ limited() {
     local limit=$1 what=$2 started rc=0 elapsed
     shift 2
     started=$(date -u +%s)
-    timeout --kill-after=30 "$((limit + 60))" "$@" || rc=$?
+    # The copy lock's descriptors stay with this shell: a client left
+    # behind by a killed shell would otherwise hold the lock until it exits.
+    timeout --kill-after=30 "$((limit + 60))" "$@" 8<&- 9<&- || rc=$?
     elapsed=$(($(date -u +%s) - started))
     if [ "$rc" -eq 124 ] || { [ "$rc" -eq 137 ] && [ "$elapsed" -ge "$limit" ]; }; then
         echo "TIMEOUT: $what killed after ${elapsed}s (limit ${limit}s)" >&2
@@ -558,7 +587,7 @@ sha256() {
     # The SHA-256 of one file: GNU coreutils on the host, shasum elsewhere.
     if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1
 }
-for tool in docker timeout tar df; do
+for tool in docker timeout tar df flock; do
     command -v "$tool" >/dev/null || refuse "$tool is not installed"
 done
 if [ "$owner" != "$(id -u):$(id -g)" ] && [ "$(id -u)" -ne 0 ]; then
@@ -669,15 +698,16 @@ confirm_typed() {
 check_jobs() {
     # Cron and timers: a backup that starts mid-restore archives a mix and
     # is copied off the host; the runbook disables those jobs until step 9.
-    # Debian and Ubuntu's own dpkg-db-backup timer (it keeps copies of the
-    # package database in /var/backups) is no such job and is ignored.
+    # The off-site uploader's line (#235) names backup-uploader, so the
+    # filter refuses it too. The crontabs are read by the shared block's
+    # cron_lines (the upgrade reads them the same way); the filter is this
+    # script's own. Debian and Ubuntu's own dpkg-db-backup timer (it keeps
+    # copies of the package database in /var/backups) is no such job and is
+    # ignored.
     local jobs
     jobs=$(
         {
-            crontab -l -u root 2>/dev/null || true
-            [ -z "${SUDO_USER:-}" ] || crontab -l -u "$SUDO_USER" 2>/dev/null || true
-            cat "${PK_RESTORE_CRONTAB:-/etc/crontab}" 2>/dev/null || true
-            cat "${PK_RESTORE_CRON_DIR:-/etc/cron.d}"/* 2>/dev/null || true
+            cron_lines
             if command -v systemctl >/dev/null; then
                 # Only the timer listing's own dpkg-db-backup row, by its last
                 # two columns (the timer and the unit it activates).
@@ -1019,6 +1049,137 @@ hba_reload() {
     esac
 }
 # END PostgreSQL source rules check (#2111).
+# BEGIN host crontab collection (#235). This block is kept identical in
+# tools/stewardship-upgrade-host.sh and tools/stewardship-ops/pk-restore
+# (tests/stewardship/test_database_layout.py compares the two copies).
+cron_tagged() {
+    # Every uncommented line of the crontabs this host's jobs live in, each
+    # after `u ` (root's and SUDO_USER's crontabs: no user field) or `s `
+    # (/etc/crontab and the /etc/cron.d files cron reads: a user field);
+    # PK_RESTORE_CRONTAB and PK_RESTORE_CRON_DIR for tests. cron skips a
+    # cron.d file whose name has anything but letters, digits, `_` and `-`
+    # (a dot, as in `stewardship.bak` or `.placeholder`), so this does too.
+    # Scripts in /etc/cron.{hourly,...}, anacron, `at` jobs and other
+    # users' crontabs are not read. awk ends every file's last line.
+    local file
+    {
+        {
+            crontab -l -u root 2>/dev/null || true
+            [ -z "${SUDO_USER:-}" ] || crontab -l -u "$SUDO_USER" 2>/dev/null || true
+        } | awk '{ print "u " $0 }'
+        awk '{ print "s " $0 }' "${PK_RESTORE_CRONTAB:-/etc/crontab}" 2>/dev/null || true
+        for file in "${PK_RESTORE_CRON_DIR:-/etc/cron.d}"/*; do
+            case ${file##*/} in *[!A-Za-z0-9_-]*) continue ;; esac
+            [ ! -f "$file" ] || awk '{ print "s " $0 }' "$file" 2>/dev/null || true
+        done
+    } | grep -v '^. [[:space:]]*#' || true
+}
+cron_lines() {
+    # cron_tagged's lines as the crontabs hold them.
+    cron_tagged | cut -c3-
+}
+uploader_cron_lines() {
+    # The cron lines (of cron_tagged) that run the off-site uploader, as the
+    # backup runbook's "The uploader's cron line" gives it: the schedule
+    # (five fields or an @keyword), the user field in /etc/crontab and
+    # cron.d, then `docker compose` (docker by name or by path), compose's
+    # own options, `run`, run's options, the service `backup-uploader`, and
+    # nothing after it but its `upload` command and its arguments, up to a
+    # redirection or the shell's `;`, `&` or `|`. A `#` starting a word
+    # ends the command (the shell's comment), so a name in a trailing
+    # comment is not a match; nor is any other command, wrapper or service
+    # that merely contains the name, nor `--entrypoint` (another command in
+    # the uploader's image). Also never a match, since the uploader would not
+    # run (#235): a line with a `%` anywhere (cron ends the command there and
+    # feeds the rest as input), compose's `--dry-run`, and a `run` option
+    # this does not know, so that an option's value (`--network
+    # backup-uploader`) is never taken for the service; a known option that
+    # takes a value consumes the next word, so a service must still follow.
+    # Lines are printed as the crontabs hold them.
+    cron_tagged | awk '
+        function docker(word) { return word == "docker" || word ~ /\/docker$/ }
+        {
+            line = substr($0, 3)
+            if (index(line, "%")) next
+            command = line
+            sub(/^[ \t]+/, "", command)
+            sub(/[ \t]#.*/, "", command)
+            n = split(command, word, /[ \t]+/)
+            at = (word[1] ~ /^@/) ? 2 : 6
+            if (substr($0, 1, 1) == "s") at++
+            if (!docker(word[at]) || word[at + 1] != "compose") next
+            for (i = at + 2; i <= n && word[i] ~ /^-/; i++) {
+                if (word[i] ~ /^--dry-run(=|$)/) next
+                if (word[i] ~ /^(-f|-p|--file|--project-name|--project-directory|--env-file|--profile|--ansi|--progress|--parallel)$/) i++
+            }
+            if (word[i] != "run") next
+            for (i++; i <= n && word[i] ~ /^-/; i++) {
+                if (word[i] ~ /^(--entrypoint|--dry-run)/) next
+                if (word[i] ~ /^(-e|--env|--env-from-file|--name|-u|--user|-w|--workdir|-l|--label|-v|--volume|-p|--publish|--cap-add|--cap-drop|--pull)$/) i++
+                else if (word[i] !~ /^(--rm|-T|--no-TTY|-d|--detach|-i|--interactive|--no-deps|--build|-P|--service-ports|--use-aliases|--remove-orphans|--quiet|--quiet-build|--quiet-pull|--(env|env-from-file|name|user|workdir|label|volume|publish|cap-add|cap-drop|pull)=.*)$/) next
+            }
+            if (word[i] != "backup-uploader") next
+            i++
+            if (i <= n && word[i] != "upload" && word[i] !~ /^([0-9]*[<>]|&>|[;&|])/) next
+            print line
+        }' || true
+}
+# END host crontab collection (#235).
+# BEGIN off-site copy lock (#235). This block is kept identical in
+# tools/stewardship-upgrade-host.sh and tools/stewardship-ops/pk-restore
+# (tests/stewardship/test_database_layout.py compares the two copies).
+copy_lock_same() {
+    # copy_lock_same FD PATH: whether open descriptor FD is PATH itself, by
+    # device and inode, PATH's final component not followed (GNU stat).
+    local open named
+    open=$(stat -L -c %d:%i "/dev/fd/$1" 2>/dev/null) &&
+        named=$(stat -c %d:%i -- "$2" 2>/dev/null) &&
+        [ -n "$open" ] && [ "$open" = "$named" ]
+}
+copy_lock_take() {
+    # copy_lock_take DIR SECONDS: hold this host's off-site copy lock on the
+    # backups directory DIR for the rest of the run (operations
+    # specification, "Offline work"), so an upload still running finishes
+    # first and a cron uploader exits at the lock. Since the contract
+    # release every copier takes the directory lock alone (the expand
+    # release's legacy .offsite-copy.lock file is no longer locked, and a
+    # leftover one is ignored), so this takes it with `flock -w` on a
+    # descriptor (9) this shell keeps open until it exits.
+    #
+    # The name may still change between the check and the open, so the
+    # open descriptor must be the directory at that name, by device and
+    # inode: a link or anything else swapped in meanwhile refuses instead
+    # of being locked.
+    #
+    # A wait longer than SECONDS is logged with what, the limit and the
+    # elapsed time (flock's exit 75); any other flock failure is logged as a
+    # failure with its status. Either returns non-zero, as does every other
+    # refusal.
+    local dir=$1 limit=$2 started rc
+    command -v flock >/dev/null || { echo "flock is not installed; cannot take the off-site copy lock." >&2; return 1; }
+    { [ -d "$dir" ] && [ ! -L "$dir" ]; } ||
+        { echo "The backups directory $dir is not a directory." >&2; return 1; }
+    if ! exec 9<"$dir"; then
+        echo "Could not open the copy lock on $dir." >&2
+        return 1
+    fi
+    if ! { [ -d /dev/fd/9 ] && copy_lock_same 9 "$dir"; }; then
+        exec 9<&-
+        echo "The backups directory $dir is not a directory." >&2
+        return 1
+    fi
+    started=$(date -u +%s)
+    rc=0
+    flock -E 75 -w "$limit" 9 || rc=$?
+    if [ "$rc" -eq 75 ]; then
+        echo "TIMEOUT: waiting for the off-site copy lock on $dir gave up after $(($(date -u +%s) - started))s (limit ${limit}s)" >&2
+        return 1
+    elif [ "$rc" -ne 0 ]; then
+        echo "FAILED: flock on the off-site copy lock on $dir exited with status $rc after $(($(date -u +%s) - started))s" >&2
+        return 1
+    fi
+}
+# END off-site copy lock (#235).
 collect_static() {
     # The image's static files, collected into cache/static.next (this
     # command's own staging tree) and moved in at step 7.
@@ -1256,6 +1417,23 @@ help=$(limited "$LIMIT_QUERY" "the image's command list" "${isolated[@]}" "$imag
 has_command() { grep -qE "[{,]$1[,}]" <<<"$help"; }
 needed=(validate-deployment retarget-image collect-static restore-check restore-begin)
 [ "$replace" -eq 0 ] || needed+=(database-roles)
+# The off-site uploader's marker (header): step 7 then needs database-grants.
+uploader=0
+if has_command uploader-password-check; then
+    uploader=1
+    needed+=(database-grants)
+    # Step 4 keeps the host's file only at its default path, which is where
+    # step 7's database-grants then looks unless postgres.password_files
+    # moves it. A moved file would leave step 7 refusing with the services
+    # down, so a move (in the rendering read above, or in the deployment
+    # YAML step 7 renders from) refuses now, before anything stops.
+    moved=$(jq -r '.deployment.postgres.password_files["backup-uploader"] // empty' "$web_yaml") ||
+        refuse "cannot read the uploader's password file path from $web_yaml"
+    if { [ -n "$moved" ] && [ "$moved" != "$credentials_dir/database/backup-uploader" ]; } ||
+        grep -qE "^[[:space:]]*[\"']?backup-uploader[\"']?[[:space:]]*:" "$yaml"; then
+        refuse "postgres.password_files moves the off-site uploader's password file; pk-restore keeps it only at credentials/database/backup-uploader: restore this deployment by hand (runbook, Restore for real)"
+    fi
+fi
 for name in "${needed[@]}"; do
     has_command "$name" ||
         refuse "$image has no $name; restore this set by hand (runbook, Restore limitations in v1)"
@@ -1385,6 +1563,14 @@ fi
 # once cache/ exists.
 if [ "$replace" -eq 0 ] || [ "$from" -ge 5 ]; then collect_static; fi
 
+hold_copy_lock() {
+    # The shared block's copy lock on the backups directory, waited for at
+    # most 60 seconds; an expiry (logged by the block) refuses before
+    # anything stops.
+    copy_lock_take "$(path backups)" 60 ||
+        refuse "an off-site copy is still running and holds the copy lock; run again after it finishes (backup runbook, Stopping a running uploader)"
+    echo "    holding the off-site copy lock on $(path backups)"
+}
 backup_running() {
     # The running backup-worker's container ids; a failed listing refuses.
     limited "$LIMIT_QUERY" "listing backup-worker" docker ps --quiet \
@@ -1396,6 +1582,10 @@ if [ "$replace" -eq 0 ] || [ "$from" -ge 5 ]; then
     # A new host (a replacement's steps 3 and 4) has nothing to stop: the
     # checks found no container of the project.
     step "1. Stopping every online service"
+    # The off-site copy lock (#235), held to the end of the run: an upload
+    # still running finishes first (or the run refuses), so the restored
+    # database never receives a later upload's outcome rows.
+    hold_copy_lock
     waited=$(date -u +%s)
     while :; do
         backups=$(backup_running)
@@ -1443,6 +1633,9 @@ if [ "$replace" -eq 1 ] && [ "$from" -le 4 ]; then
     chmod 0600 "$lock"
     chown "$owner" "$lock"
     collect_static
+    # A new host runs no copy, but the lock is held all the same, as on the
+    # deployment's own host (step 1 there).
+    hold_copy_lock
 fi
 
 move_aside() {
@@ -1452,6 +1645,56 @@ move_aside() {
         mv "$1" "$1.pre-restore-$stamp"
         echo "    kept $1.pre-restore-$stamp"
     fi
+}
+keep_uploader_password() {
+    # The off-site uploader's password file (header): when the restored
+    # credentials tree has none, copy the host's own from the tree just
+    # moved aside, else from the newest other moved-aside tree with one.
+    # Only a regular file (never a link) is copied, owner-only and the
+    # owner's, under a temporary name first. Nothing else changes.
+    # Root does the copy, and both trees came from a set's tar, which a
+    # compromised backup image could have written: so no link is followed
+    # anywhere on the way (#2093, "Same-host restore: keep the host's
+    # file"). A linked tree or database/ directory, on either side, and an
+    # existing or linked temporary name refuse; only the final component's
+    # link was refused before, and cp, chown and chmod follow links.
+    local name=database/backup-uploader target from="" tree
+    target=$credentials_dir/$name
+    if [ -e "$target" ] || [ -L "$target" ]; then
+        return 0
+    fi
+    # This run's moved-aside tree first, then the others newest first (the
+    # stamps sort by time); an unmatched glob is checked and skipped.
+    while read -r tree; do
+        if [ -L "$tree" ] || [ -L "$tree/database" ]; then
+            refuse "$tree or its database directory is a symbolic link; restore by hand (runbook, Restore for real)"
+        fi
+        if [ -f "$tree/$name" ] && [ ! -L "$tree/$name" ]; then
+            from=$tree/$name
+            break
+        fi
+    done < <(printf '%s\n' "$credentials_dir.pre-restore-$stamp"
+        printf '%s\n' "$credentials_dir".pre-restore-* | sort -r)
+    if [ -z "$from" ]; then
+        echo "    the set has no off-site uploader password file, and no moved-aside tree has one"
+        return 0
+    fi
+    if [ ! -d "$credentials_dir/database" ] || [ -L "$credentials_dir/database" ] ||
+        [ -L "$credentials_dir" ]; then
+        refuse "the restored credentials have no database directory for the uploader's password file (or it is a symbolic link)"
+    fi
+    if [ -e "$target.copying" ] || [ -L "$target.copying" ]; then
+        refuse "$target.copying already exists in the restored credentials; restore by hand (runbook, Restore for real)"
+    fi
+    if ! { (umask 077 && cp -- "$from" "$target.copying") &&
+        [ -f "$target.copying" ] && [ ! -L "$target.copying" ] &&
+        chown -h "$owner" "$target.copying" &&
+        chmod 0600 "$target.copying" &&
+        mv -- "$target.copying" "$target"; }; then
+        rm -f -- "$target.copying"
+        refuse "could not keep the host's off-site uploader password file"
+    fi
+    echo "    kept the host's off-site uploader password file from $from"
 }
 if [ "$from" -le 4 ]; then
     current=4
@@ -1466,6 +1709,7 @@ if [ "$from" -le 4 ]; then
     done
     rmdir "$stage"
     stage=""
+    keep_uploader_password
 fi
 [ -f "$compose" ] || refuse "the restored files have no $compose"
 
@@ -1578,6 +1822,16 @@ if [ -n "$hba_rules" ]; then
     hba_render || refuse "cannot render the hba check in $image"
     hba_reload || refuse "PostgreSQL's source rules are not in force (above)"
 fi
+if [ "$uploader" -eq 1 ]; then
+    # The off-site uploader's login (header): created from the file the
+    # retarget created, or an existing one checked against it. The restored
+    # set's load evidence stands in for the recent backup grants otherwise
+    # require; the result names the set.
+    echo "    database-grants after restoring $set_name (its load evidence stands in for a recent backup)"
+    oneoff "database-grants" database-provision database-grants \
+        --config "$services/database-provision.yaml" --confirm-deployment "$uuid" \
+        --after-restore "$set_name"
+fi
 move_aside "$static_dir"
 mv "$static_dir.next" "$static_dir"
 if has_command revoke-automation-sessions; then
@@ -1657,7 +1911,11 @@ if has_command database-sources; then
     # two services a restore starts: web and the admin-recovery one-off. It
     # uses no password. A difference names the login and the source; web
     # stays up, but the review must wait for a fix.
-    step "8. Checking the database sources from web and admin-recovery"
+    if [ "$uploader" -eq 1 ]; then
+        step "8. Checking the database sources from web, admin-recovery and backup-uploader"
+    else
+        step "8. Checking the database sources from web and admin-recovery"
+    fi
     sources_ok=1
     if [ -n "$hba_rules" ]; then
         # The rules step 7 loaded are still the rendered ones, in force.
@@ -1674,6 +1932,11 @@ if has_command database-sources; then
         sources_ok=0
     oneoff "the source check from admin-recovery" admin-recovery database-sources \
         --config "$services/admin-recovery.yaml" || sources_ok=0
+    if [ "$uploader" -eq 1 ]; then
+        # With step 7's verifier check, the restore's proof of the login.
+        oneoff "the source check from backup-uploader" backup-uploader database-sources \
+            --config "$services/backup-uploader.yaml" || sources_ok=0
+    fi
     if [ "$sources_ok" -eq 0 ]; then
         phase=sources  # finish adds no resume hint
         [ "$drill" -eq 0 ] ||

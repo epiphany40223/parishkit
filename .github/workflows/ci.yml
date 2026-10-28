@@ -248,6 +248,17 @@ jobs:
             done
           done
           python -m pytest "${cases[@]}" --require-no-skips --ci-progress --durations=10 -q
+      - name: Prove the backup profile has no route out (egress probe)
+        # #235's contract evidence: the backup worker's probe from its
+        # rendered internal network on this runner's Docker Engine, with
+        # positive controls (TCP and both DNS routes from a network with
+        # egress, listeners on the network), the upgrade script's own
+        # listener parsing on real `ss` output, and the host INPUT drop.
+        env:
+          PARISHKIT_RUN_RUNTIME_TESTS: "1"
+        run: |
+          docker version --format 'Docker Engine {{.Server.Version}}'
+          python -m pytest tests/stewardship/test_egress_probe_container.py --require-no-skips -q -s
 
   # Preserve the branch-protection check name, and fail on cancellation too.
   stewardship-compose:

@@ -29,4 +29,5 @@ host "stewardship" pk_stewardship_migration 172.29.242.24/29 scram-sha-256
 host "stewardship" pk_stewardship_admin_recovery 172.29.242.40/29 scram-sha-256
 host "stewardship" pk_stewardship_operator 172.29.242.56/29 scram-sha-256
 host "stewardship" pk_stewardship_backup_worker 172.29.242.72/29 scram-sha-256
+host "stewardship" pk_stewardship_backup_uploader 172.29.242.88/29 scram-sha-256
 host all all all reject

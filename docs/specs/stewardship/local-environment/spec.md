@@ -196,7 +196,7 @@ The profile, which Production can never hold, stays the switch.
 | `stewardship/runtime_topology.py`: `_image`, `render_runtime`, `render_faketime_override`, `_project_name`, `_networks`, `_backend_addresses`, `_mailpit`, `_fake_parishsoft`, `_caddy`; `stewardship/runtime_hba.py`: `source_rules` | The local image tags, the `mailpit` and `fake-parishsoft` services, the fake-clock override, the `parishkit-local` project, the no-masquerade `ingress` network, loopback-only Caddy; the fixed `backend` addresses of `mailpit`, `fake-parishsoft` and the seeder, after all of Production's, and the seeder's [source rule](../operations/spec.md#database-connection-sources) for web's logins, refused in any other profile | Laptop topology ([topology](#topology-and-web-differences)); Mailpit and the fake refuse any other profile |
 | `stewardship/runtime_ingress.py`: `render_local_caddy`, `render_ingress` | The local Caddyfile with `tls internal` on `localhost` | Laptop topology: no public name, so no ACME |
 | `stewardship/runtime_provisioning.py`: `provisioning_plan` | The fake-clock override document and the Mailpit store directory | Laptop topology |
-| `stewardship/service_boundaries.py`: `_check_extra`; `stewardship/backup_boundaries.py`: `validate_backup_mounts`; `stewardship/offline_boundaries.py`: `validate_offline_mounts` | Admit the read-only [fake-clock](#fake-clock) mount | Laptop topology: the fake clock exists only here |
+| `stewardship/service_boundaries.py`: `_check_extra`; `stewardship/backup_boundaries.py`: `validate_backup_mounts`; `stewardship/offline_boundaries.py`: `validate_offline_mounts`; `stewardship/uploader_boundaries.py`: `validate_uploader_mounts` | Admit the read-only [fake-clock](#fake-clock) mount | Laptop topology: the fake clock exists only here |
 | `stewardship/deployment.py`: `load_deployment`, `recorded_mail_redirect` | `local_smtp_latency_ms` and `mail_redirect` are refused outside LOCAL; `parishsoft_publication` is refused in LOCAL unless it reads the fake | Safety rule: a rehearsal delay or a redirect would withhold real mail; LOCAL never writes to the real ParishSoft |
 | `stewardship/mail_catcher.py`: `admit_real_workspace`, `workspace_transport`, `request_redirect`, `envelope`; `stewardship/provider_checks.py`: `check_candidate`; `stewardship/accounts/integration_views.py`: `_drive_in_local` | The mail catcher only in LOCAL; a real Workspace key, and Drive, in LOCAL only beside the [mail redirect](#safety-guarantees) on the normal clock; the redirect only in LOCAL | Safety rule: the redirect is what keeps real-data mail to one address |
 | `stewardship/family_delivery_process.py`: `local_smtp_latency` | The modeled SMTP latency waits only before a mail-catcher submission | Safety rule: a real deployment never waits on purpose |
@@ -241,7 +241,8 @@ The LOCAL rendering differs from Production only as follows:
 - **Networks.** `backend` and `proxy` are already `internal: true` in every
   profile, and outbound traffic leaves through the non-internal
   `application-egress` network (web, worker, mail-dispatch, the ParishSoft,
-  Workspace and Slack installers, and the backup worker). LOCAL renders
+  Workspace and Slack installers, and the off-site uploader; since the
+  uploader's contract release, #235, not the backup worker). LOCAL renders
   `application-egress` with exactly the same members as Production
   ([#1399](https://github.com/epiphany40223/parishkit/issues/1399)), so its
   integrations run through Production's code; what a LOCAL service may reach
@@ -328,7 +329,7 @@ Production in either direction.
   beside `profile` only when it is set, so the environment-free helper
   applies the same rule. The clock term is checked at the intakes and in the
   faked processes that use the key in-process (web, the CLI, smoke and the
-  backup worker's Drive copies and Test access). The mail helpers start
+  off-site uploader's Drive copies and Test access). The mail helpers start
   with an empty environment and so always run on real time: a key installed
   on the normal clock keeps sending, only to the redirect, if the
   deployment later runs under the fake clock. That is correct, since the
@@ -553,7 +554,7 @@ Production in either direction.
   target is refused, at the Backup destination page and `pk-admin
   integration` (reason `drive_not_in_local`, with what is missing), and again
   at use, whatever the configuration or the credentials tree holds: the
-  backup's off-site copy (`backup_offsite.copy_offsite`) reports
+  off-site uploader's copy (`uploader_commands.run_upload`) reports
   `not_configured` without reading its destination or key, the Drive session
   (`backup_drive.workspace_session`, which every copy, Test access check and
   smoke check builds with the caller's profile and redirect) refuses before
@@ -2000,6 +2001,12 @@ the upload and that invocation. Local mode differs in exactly these ways:
 - it requires the pre-upgrade backup to succeed (not best effort), accepting
   an off-site copy state of `not_configured` (LOCAL copies off site only
   beside a mail redirect on the normal clock) alongside `uploaded`;
+- it runs the off-site uploader's contract checks (the backup profile's
+  [route out](../../../guides/stewardship-backup-runbook.md#no-route-out-for-the-backup-profile),
+  the Docker Engine version, the host `INPUT` drop, the uploader's cron line
+  and a running release with `upload`) but only reports them: pk-local has
+  no off-site folder by default and no host firewall rule, so a refusal
+  there would only block local deploys;
 - it keeps the services in the mode recorded by the
   [clock-mode marker](#fake-clock): the fake-clock override is applied when
   the marker says `fake`, and the derived fake-clock image of the new

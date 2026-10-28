@@ -61,6 +61,7 @@ def rotating_directories(configuration):
     if configuration.service_role not in {
         ServiceRole.WORKER,
         ServiceRole.MAIL_DISPATCH,
+        ServiceRole.BACKUP_UPLOADER,
     }:
         return {}
     root = configuration.paths["credentials"]

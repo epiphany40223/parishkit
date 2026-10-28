@@ -4,7 +4,10 @@ import hashlib
 import json
 import logging
 import re
+import time
+from contextlib import contextmanager
 from datetime import timedelta
+from functools import partial
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import uuid4
@@ -24,7 +27,7 @@ from parishkit.stewardship.accounts.configuration_installation import install_re
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.audit.models import OperationalLog
 from parishkit.stewardship.backup_drive import PROBE_WAIT, DriveFailure
-from parishkit.stewardship.backup_offsite import SEALED_FILES, copy_offsite
+from parishkit.stewardship.backup_offsite import CATCH_UP_SETS, SEALED_FILES
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import DeploymentProfile, ServiceRole
 from parishkit.stewardship.jobs import backup_health
@@ -52,7 +55,7 @@ URL = "/admin/system/integrations/backup/"
 
 @pytest.fixture
 def offsite(tmp_path, monkeypatch):
-    """A backup profile with one local set, a fake Drive and a fake key file."""
+    """An off-site copier with one local set, a fake Drive and a fake key file."""
     backups = tmp_path / "backups"
     backups.mkdir(mode=0o700)
     directory = backups / "20260927T020000Z"
@@ -60,18 +63,15 @@ def offsite(tmp_path, monkeypatch):
     write_sealed_set(directory)
     drive = FakeDrive(FOLDER)
     target = [(FOLDER, "mail@example.org")]
-    monkeypatch.setattr(backup_offsite, "destination", lambda: target[0])
     monkeypatch.setattr(backup_offsite, "DriveClient", lambda session, **options: drive)
     monkeypatch.setattr(backup_offsite, "set_tag", lambda: drive.tag)
-    monkeypatch.setattr(
-        backup_offsite, "RuntimeLayout", lambda c: SimpleNamespace(credential=str)
-    )
     monkeypatch.setattr(key_files, "read_private", lambda path: b"key")
     return SimpleNamespace(
         configuration=SimpleNamespace(
             paths={"backups": backups},
             profile=DeploymentProfile.PRODUCTION,
             mail_redirect=None,
+            target=target,
         ),
         drive=drive,
         target=target,
@@ -87,13 +87,69 @@ def logged(caplog):
     ]
 
 
+def newest_uncopied(backups, folder_id):
+    """The newest ``CATCH_UP_SETS`` complete sets with no copy in this folder."""
+    copied = set(
+        BackupUpload.objects.filter(state="uploaded", folder_id=folder_id).values_list(
+            "manifest_digest", flat=True
+        )
+    )
+    return [
+        (directory, digest, None)
+        for directory in backup_offsite._complete_sets(backups)[-CATCH_UP_SETS:]
+        if (digest := backup_offsite._digest(directory)) not in copied
+    ]
+
+
+def copy_offsite(configuration, *, session_factory, sleep, clock=time.monotonic):
+    """One pass of the shared off-site copy, as the uploader's ``upload`` drives it.
+
+    Since the contract release (#235) only the uploader copies. These tests
+    keep exercising what its pass runs: ``backup_offsite._copy_sets`` under
+    the host's copy lock, with its budgets, retries, outcome rows, alert and
+    Drive retention, a "disabled" row once the destination is removed, and
+    an "unexpected" row for any other failure. Its set selection
+    (``uploader_pending``, which binds a set to its run row) is covered by
+    test_uploader_upload_postgresql.py; here every one of the newest sets
+    not yet copied is pending, so a test need not record a run row for each.
+    """
+    from parishkit.stewardship.observability import Event, emit_failure
+
+    backups = configuration.paths["backups"]
+    target = configuration.target[0]
+    if target is None:
+        if backup_offsite._newest_state() not in {None, "disabled"}:
+            backup_offsite._record("disabled")
+        return {"state": "not_configured"}
+    folder_id, subject = target
+    try:
+        with backup_offsite._copy_lock(backups) as held:
+            if not held:
+                return {"state": "busy"}
+            return backup_offsite._copy_sets(
+                backups,
+                configuration,
+                folder_id,
+                subject,
+                session_factory=session_factory,
+                sleep=sleep,
+                clock=clock,
+                deadline=clock() + backup_offsite.COPY_SECONDS,
+                pending_sets=partial(newest_uncopied, backups, folder_id),
+                key="google-workspace-key",
+            )
+    except Exception as error:
+        emit_failure(error, event=Event.TASK_FAILED)
+        return backup_offsite._failed(folder_id, None, None, "unexpected")
+
+
 def copy(offsite):
-    """Copy under the real backup identity, never sleeping between retries.
+    """Copy under the real uploader identity, never sleeping between retries.
 
     The copy closes its idle connection before uploading, so the test role
     must survive a reconnect.
     """
-    with task_login(ServiceRole.BACKUP_WORKER, exact=True, reconnect=True):
+    with task_login(ServiceRole.BACKUP_UPLOADER, exact=True, reconnect=True):
         return copy_offsite(
             offsite.configuration,
             session_factory=lambda value, subject: None,
@@ -115,7 +171,7 @@ def episode():
 
 
 def test_a_copy_is_recorded_once_and_the_rows_are_immutable(offsite):
-    """The backup login records the copy; a second run uploads nothing."""
+    """The uploader's login records the copy; a second run uploads nothing."""
     assert copy(offsite) == {"state": "uploaded", "sets": 1}
     assert offsite.drive.sets() == [offsite.directory.name]
     row = BackupUpload.objects.get()
@@ -127,7 +183,7 @@ def test_a_copy_is_recorded_once_and_the_rows_are_immutable(offsite):
     assert len(row.manifest_digest) == 64
     assert copy(offsite) == {"state": "uploaded", "sets": 0}
     assert BackupUpload.objects.count() == 1
-    with task_login(ServiceRole.BACKUP_WORKER, exact=True):
+    with task_login(ServiceRole.BACKUP_UPLOADER, exact=True):
         with pytest.raises(DatabaseError), transaction.atomic():
             BackupUpload.objects.filter(pk=row.pk).update(state="failed")
         with pytest.raises(DatabaseError), transaction.atomic():
@@ -199,7 +255,7 @@ def test_the_whole_copy_is_bounded_in_time(offsite, caplog):
     """Past the copy's deadline no set is started; the outcome is recorded."""
     caplog.set_level(logging.WARNING, logger="parishkit.stewardship")
     ticks = iter([0, backup_offsite.COPY_SECONDS + 1])
-    with task_login(ServiceRole.BACKUP_WORKER, exact=True, reconnect=True):
+    with task_login(ServiceRole.BACKUP_UPLOADER, exact=True, reconnect=True):
         result = copy_offsite(
             offsite.configuration,
             session_factory=lambda value, subject: None,
@@ -213,7 +269,7 @@ def test_the_whole_copy_is_bounded_in_time(offsite, caplog):
     assert stopped["timeout"] == "drive_copy_budget"
     assert stopped["limit_seconds"] == backup_offsite.COPY_SECONDS
     assert stopped["elapsed_seconds"] == backup_offsite.COPY_SECONDS + 1
-    # The backup login also records it durably (#293).
+    # The uploader's login also records it durably (#293).
     entry = OperationalLog.objects.get(event="work_budget_reached")
     assert entry.level == "WARNING"
     assert entry.context == {
@@ -266,7 +322,7 @@ def test_a_copy_stopped_by_its_budget_mid_upload_starts_nothing_more(
     """An upload the budget stopped ends the run: one row, no further sets.
 
     A real client stops sending when the budget runs out and writes the
-    durable budget entry as the backup login; the run records that set only
+    durable budget entry as the uploader's login; the run records that set only
     and never starts the next one (#357 review L5a).
     """
     from parishkit.stewardship import backup_drive
@@ -276,7 +332,7 @@ def test_a_copy_stopped_by_its_budget_mid_upload_starts_nothing_more(
     drive = BudgetedDrive(now)
     monkeypatch.setattr(backup_offsite, "DriveClient", backup_drive.DriveClient)
     monkeypatch.setattr(backup_offsite, "set_tag", lambda: "deployment-test")
-    with task_login(ServiceRole.BACKUP_WORKER, exact=True, reconnect=True):
+    with task_login(ServiceRole.BACKUP_UPLOADER, exact=True, reconnect=True):
         result = copy_offsite(
             offsite.configuration,
             session_factory=lambda value, subject: drive,
@@ -315,7 +371,7 @@ def test_a_budget_spent_after_every_set_copied_logs_no_stop(offsite, monkeypatch
     drive.request = request
     monkeypatch.setattr(backup_offsite, "DriveClient", backup_drive.DriveClient)
     monkeypatch.setattr(backup_offsite, "set_tag", lambda: "deployment-test")
-    with task_login(ServiceRole.BACKUP_WORKER, exact=True, reconnect=True):
+    with task_login(ServiceRole.BACKUP_UPLOADER, exact=True, reconnect=True):
         result = copy_offsite(
             offsite.configuration,
             session_factory=lambda value, subject: drive,
@@ -344,7 +400,7 @@ def test_a_retry_refused_by_the_budget_starts_nothing_more(offsite, caplog):
         raise DriveFailure("unavailable")
 
     offsite.drive.upload = unavailable
-    with task_login(ServiceRole.BACKUP_WORKER, exact=True, reconnect=True):
+    with task_login(ServiceRole.BACKUP_UPLOADER, exact=True, reconnect=True):
         result = copy_offsite(
             offsite.configuration,
             session_factory=lambda value, subject: None,
@@ -487,11 +543,17 @@ def test_a_catch_up_killed_during_the_newest_set_still_alerts(offsite, monkeypat
     newest = new_set(offsite, "20260928T020000Z")
     run = record_run(newest)
     upload = offsite.drive.upload
+    sent = []
 
     def killed(path, name, parent, **kwargs):
-        """The process stops (e.g. the container is killed) mid-upload."""
-        if path.parent == newest:
+        """The process stops (e.g. the container is killed) mid-upload.
+
+        The files arrive as open descriptors (#235), so the newest set's
+        first file is told by count: the older set's three come first.
+        """
+        if len(sent) == len(SEALED_FILES):
             raise SystemExit(137)
+        sent.append(name)
         return upload(path, name, parent, **kwargs)
 
     monkeypatch.setattr(offsite.drive, "upload", killed)
@@ -992,9 +1054,11 @@ def read_destination():
 
 
 def test_only_the_workspace_installer_reads_the_backup_destination(destination):
-    """The definer answers the installer alone, with just the two settings (#269).
+    """The definer answers the installer, with just the two settings (#269).
 
-    Every other runtime login lacks EXECUTE, and a login granted EXECUTE by
+    The off-site uploader (#235) is the one other login the registry grants
+    it (0193's caller check admits it; see the uploader tests below). Every
+    other runtime login lacks EXECUTE, and a login granted EXECUTE by
     mistake is still refused by the definer's own caller check.
     """
     from parishkit.stewardship.runtime_grants import (
@@ -1009,7 +1073,10 @@ def test_only_the_workspace_installer_reads_the_backup_destination(destination):
         if role is not ServiceRole.MIGRATION
         and BACKUP_DESTINATION_FUNCTION in runtime_functions(role, target=target)
     }
-    assert granted == {"pk_stewardship_credential_google_workspace"}
+    assert granted == {
+        "pk_stewardship_credential_google_workspace",
+        "pk_stewardship_backup_uploader",
+    }
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT has_function_privilege('public', "
@@ -1143,17 +1210,207 @@ def test_the_recheck_migration_refuses_a_partial_install(broken):
             cursor.execute(check)
 
 
+# The dedicated off-site uploader's login (#235). Frozen file 0193 names it
+# in the destination definer's caller check and the log writer's timeout
+# clause; the expand release's database-grants creates it and grants it
+# from the registry (test_uploader_grants_postgresql.py). These tests make
+# it themselves with only the grants each needs.
+UPLOADER = "pk_stewardship_backup_uploader"
+MIGRATION_FILES = Path(backup_probes.__file__).with_name("schema") / "migrations"
+PREPARATION_SQL = (MIGRATION_FILES / "0193_backup_uploader_preparation.sql").read_text(
+    encoding="utf-8"
+)
+PREPARATION_CHECK = PREPARATION_SQL[PREPARATION_SQL.index("DO $check$") :]
+
+
+@contextmanager
+def uploader_login(*grants):
+    """Act as the future uploader login, made here with only ``grants``.
+
+    Each grant is a statement with ``{role}`` for the quoted login name, so
+    a test grants exactly what it needs, as the later release's registry
+    will. The login and everything granted to it are dropped afterwards.
+    """
+    role = f'"{UPLOADER}"'
+    with connection.cursor() as cursor:
+        cursor.execute(f"CREATE ROLE {role} LOGIN NOINHERIT")
+        for grant in grants:
+            cursor.execute(grant.format(role=role))
+        cursor.execute(f"SET SESSION AUTHORIZATION {role}")
+    try:
+        yield
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("RESET SESSION AUTHORIZATION")
+            cursor.execute(f"DROP OWNED BY {role}")
+            cursor.execute(f"DROP ROLE {role}")
+
+
+def test_the_uploader_login_is_an_identity_of_this_release():
+    """The registry names it; the test database itself has no such role."""
+    from parishkit.stewardship.runtime_identities import database_identities
+
+    assert UPLOADER in {sql_name for _, sql_name, _, _ in database_identities()}
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM pg_roles WHERE rolname=%s", [UPLOADER])
+        assert cursor.fetchone() is None
+
+
+def test_the_destination_also_answers_the_uploader_once_granted(destination):
+    """0193's caller check admits the uploader; EXECUTE still gates it (#235).
+
+    The installer keeps reading the destination exactly as before. The
+    uploader's login without EXECUTE is refused by the privilege check, and
+    with it (as the later release's registry grants it) reads the same two
+    settings.
+    """
+    with target_login("google_workspace"):
+        assert read_destination() == (LINK, "mail@example.org")
+        assert backup_probes.applied_mailbox() == "mail@example.org"
+    with uploader_login():
+        assert read_destination() == "42501"
+    grant = (
+        "GRANT EXECUTE ON FUNCTION public.stewardship_backup_destination_v1() TO {role}"
+    )
+    with uploader_login(grant):
+        assert read_destination() == (LINK, "mail@example.org")
+
+
+def test_a_login_that_only_takes_the_uploaders_role_is_refused(destination):
+    """The caller check reads the session login, not a role it switched to.
+
+    A stray login granted EXECUTE and membership in the uploader's role,
+    with SET ROLE to it, is still refused: inside the definer only
+    ``session_user`` names the caller.
+    """
+    stray = "test_destination_" + uuid4().hex
+    grant = (
+        "GRANT EXECUTE ON FUNCTION public.stewardship_backup_destination_v1() TO {role}"
+    )
+    with uploader_login(grant):
+        with connection.cursor() as cursor:
+            cursor.execute("RESET SESSION AUTHORIZATION")
+            cursor.execute(f'CREATE ROLE "{stray}" LOGIN INHERIT')
+            cursor.execute(f'GRANT "{UPLOADER}" TO "{stray}"')
+            cursor.execute(f'SET SESSION AUTHORIZATION "{stray}"')
+            cursor.execute(f'SET ROLE "{UPLOADER}"')
+        try:
+            assert read_destination() == "42501"
+        finally:
+            with connection.cursor() as cursor:
+                cursor.execute("RESET ROLE")
+                cursor.execute("RESET SESSION AUTHORIZATION")
+                cursor.execute(f'DROP OWNED BY "{stray}"')
+                cursor.execute(f'DROP ROLE "{stray}"')
+                cursor.execute(f'SET SESSION AUTHORIZATION "{UPLOADER}"')
+
+
+def _statement(text, start, end):
+    """The text from ``start`` to the end of the first ``end`` after it."""
+    first = text.index(start)
+    return text[first : text.index(end, first) + len(end)]
+
+
+# 0176's destination definer, put back in place of 0193's: its body has no
+# uploader, so it is what an install that stopped before 0193 would hold.
+STALE_DESTINATION = (
+    "CREATE OR REPLACE"
+    + _statement(
+        RECHECK_SQL, "CREATE FUNCTION public.stewardship_backup_destination_v1(", "$$;"
+    )[len("CREATE") :]
+    + " ALTER FUNCTION public.stewardship_backup_destination_v1() SECURITY DEFINER;"
+)
+# 0106's log writer, the body before 0193's, without the uploader.
+WRITER = "CREATE OR REPLACE FUNCTION public.stewardship_operational_log_writer_v1("
+STALE_WRITER = _statement(
+    (MIGRATION_FILES / "0106_admin_input_refusal_log.sql").read_text(encoding="utf-8"),
+    WRITER,
+    "\nEND;\n$$;",
+)
+# 0193's writer with the uploader named a second time, outside the timeout
+# clause (in web's arm).
+WRITER_TWICE = _statement(PREPARATION_SQL, WRITER, "\nEND;\n$$;").replace(
+    "OR (current_user='pk_stewardship_web' AND (",
+    f"OR (current_user IN ('pk_stewardship_web','{UPLOADER}') AND (",
+)
+
+
+def test_the_stale_bodies_lack_the_uploader():
+    """The bodies the check below must refuse really are the older ones."""
+    assert UPLOADER not in STALE_DESTINATION
+    assert UPLOADER not in STALE_WRITER
+    assert "'pk_stewardship_backup_worker')" in STALE_WRITER
+    assert WRITER_TWICE.count(UPLOADER) == 2
+
+
+@pytest.mark.parametrize(
+    "broken",
+    [
+        STALE_DESTINATION,
+        STALE_WRITER,
+        "GRANT EXECUTE ON FUNCTION public.stewardship_backup_destination_v1() "
+        "TO PUBLIC",
+        "ALTER FUNCTION public.stewardship_backup_destination_v1() SECURITY INVOKER",
+        "ALTER FUNCTION public.stewardship_backup_destination_v1() VOLATILE",
+        "ALTER FUNCTION public.stewardship_backup_destination_v1() "
+        "SET search_path = public",
+        "ALTER FUNCTION public.stewardship_operational_log_writer_v1() "
+        "SECURITY DEFINER",
+        "ALTER TABLE public.stewardship_operational_log "
+        "DISABLE TRIGGER stewardship_operational_log_writer_v1",
+        WRITER_TWICE,
+        "DROP FUNCTION public.stewardship_backup_destination_v1()",
+    ],
+    ids=[
+        "0176-destination",
+        "0106-writer",
+        "public-execute",
+        "invoker",
+        "volatile",
+        "search-path",
+        "writer-definer",
+        "trigger-disabled",
+        "uploader-twice",
+        "dropped",
+    ],
+)
+def test_the_preparation_migration_refuses_a_stale_or_partial_install(broken):
+    """0193's closing DO block passes as installed and refuses anything else."""
+    with connection.cursor() as cursor:
+        cursor.execute(PREPARATION_CHECK)
+        with pytest.raises(DatabaseError, match="0193"), transaction.atomic():
+            cursor.execute(broken)
+            cursor.execute(PREPARATION_CHECK)
+
+
+def test_the_preparation_file_runs_again_harmlessly():
+    """The whole file runs again (as the users swap test does) and checks itself.
+
+    Rolled back, so the installed bodies stay for the tests that follow.
+    """
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(PREPARATION_SQL)
+        cursor.execute(
+            "SELECT has_function_privilege('public', "
+            "'public.stewardship_backup_destination_v1()', 'EXECUTE')"
+        )
+        assert cursor.fetchone() == (False,)
+        transaction.set_rollback(True)
+
+
 def test_smoke_send_reads_the_deployment_tag(workspace, monkeypatch):
     """``smoke --send`` tags its set folder as a real copy would (#305 L3).
 
-    It admits the backup login first; the real login reads the runtime row
-    through pg_read_all_data, which the test role does not model.
+    Only the uploader's profile sends since the contract release (#235): it
+    admits the uploader's login first (which the real login's column grant
+    on the runtime row's id then lets read the tag), then binds the newest
+    set to its run row.
     """
     from parishkit.stewardship import (
-        backup_commands,
         operator_commands,
         runtime_database,
         smoke,
+        uploader_boundaries,
     )
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
     from parishkit.stewardship.backup_drive import deployment_tag
@@ -1163,12 +1420,19 @@ def test_smoke_send_reads_the_deployment_tag(workspace, monkeypatch):
         operator_commands, "configure_operator_database", admitted.append
     )
     monkeypatch.setattr(
-        backup_commands, "_admit_backup_identity", lambda: admitted.append("login")
+        uploader_boundaries,
+        "admit_uploader_identity",
+        lambda: admitted.append("login"),
     )
     monkeypatch.setattr(runtime_database, "require_current_schema", lambda **_: None)
+    monkeypatch.setattr(smoke, "_bound_newest", lambda backups: ("set", backups))
     expected = deployment_tag(SystemConfiguration.objects.get().pk)
-    assert smoke._deployment_tag("configuration") == expected
-    assert admitted == ["configuration", "login"]
+    configuration = SimpleNamespace(service_role=ServiceRole.BACKUP_UPLOADER)
+    assert smoke._deployment_tag(configuration, "backups") == (
+        expected,
+        ("set", "backups"),
+    )
+    assert admitted == [configuration, "login"]
 
 
 def page_post(browser, values):
@@ -1402,13 +1666,13 @@ def test_a_second_copy_waits_for_the_copy_lock(offsite):
 
 
 def test_the_lock_holder_copies_a_set_taken_while_it_uploaded(offsite, monkeypatch):
-    """A set whose run found the lock held is copied by the holder's re-scan."""
+    """A set finished while the holder uploaded is copied by its re-scan."""
     upload = backup_offsite.upload_set
     later = offsite.directory.parent / "20260927T140000Z"
 
-    def upload_then_back_up(client, folder_id, directory, names):
+    def upload_then_back_up(client, folder_id, directory, names, **options):
         """Upload, and meanwhile let another backup finish its set."""
-        result = upload(client, folder_id, directory, names)
+        result = upload(client, folder_id, directory, names, **options)
         if not later.exists():
             later.mkdir(mode=0o700)
             write_sealed_set(later, b"later")

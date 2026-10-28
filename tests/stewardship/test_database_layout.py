@@ -22,6 +22,7 @@ import json
 import os
 import random
 import re
+import shlex
 import shutil
 import subprocess
 from dataclasses import replace
@@ -46,6 +47,13 @@ BEGIN = "# BEGIN database network layout (#2111)."
 END = "# END database network layout (#2111).\n"
 HBA_BEGIN = "# BEGIN PostgreSQL source rules check (#2111)."
 HBA_END = "# END PostgreSQL source rules check (#2111).\n"
+# The off-site uploader's two shared blocks (#235): the crontab collection
+# (pk-restore's job check and the expand rollback's preflight) and the host's
+# copy lock (the upgrade's, the restore's and the drill's offline work).
+CRON_BEGIN = "# BEGIN host crontab collection (#235)."
+CRON_END = "# END host crontab collection (#235).\n"
+LOCK_BEGIN = "# BEGIN off-site copy lock (#235)."
+LOCK_END = "# END off-site copy lock (#235).\n"
 
 
 def layout_block(path, begin=BEGIN, end=END):
@@ -57,6 +65,268 @@ def layout_block(path, begin=BEGIN, end=END):
 def hba_block(path):
     """The shared source rules check block's text in one script."""
     return layout_block(path, HBA_BEGIN, HBA_END)
+
+
+def test_both_scripts_carry_the_same_crontab_and_copy_lock_blocks():
+    """The upgrade and pk-restore read the crontabs and take the lock alike.
+
+    pk-restore's job check keeps its own filter over the shared collection,
+    and the upgrade its uploader-line filter; both take the copy lock
+    through the one function.
+    """
+    for begin, end in ((CRON_BEGIN, CRON_END), (LOCK_BEGIN, LOCK_END)):
+        assert layout_block(HOST, begin, end) == layout_block(RESTORE, begin, end)
+    restore = RESTORE.read_text()
+    check_jobs = restore[restore.index("check_jobs() {") :]
+    check_jobs = check_jobs[: check_jobs.index("\n}\n")]
+    assert "cron_lines" in check_jobs and "crontab -l" not in check_jobs
+    assert "uploader_cron_lines" in HOST.read_text().split(CRON_END, 1)[1]
+    for path in (HOST, RESTORE):
+        assert "copy_lock_take " in path.read_text().split(LOCK_END, 1)[1]
+
+
+COMPOSE = "docker compose -f /opt/parishkit/config/services/compose.json -p stewardship"
+
+
+def run_cron_block(tmp_path, user_crontab, system_crontab, cron_d):
+    """Run the shared crontab block; return (cron_lines, uploader_cron_lines).
+
+    The crontab stand-in is a shell function, not a file on PATH: the
+    Compose test container mounts /tmp noexec, so a stand-in program there
+    could not run (and a host's own crontab would answer instead). It
+    answers for root's and SUDO_USER's crontabs alike.
+    """
+    script = tmp_path / "cron.sh"
+    body = "".join(f"    echo {shlex.quote(line)}\n" for line in user_crontab)
+    script.write_text(
+        layout_block(HOST, CRON_BEGIN, CRON_END)
+        + "crontab() {\n"
+        + (body or "    :\n")
+        + "}\n"
+        + 'echo "all:"; cron_lines; echo "uploader:"; uploader_cron_lines\n'
+    )
+    (tmp_path / "crontab").write_text("".join(f"{line}\n" for line in system_crontab))
+    (tmp_path / "cron.d").mkdir()
+    for name, lines in cron_d.items():
+        (tmp_path / "cron.d" / name).write_text("".join(f"{line}\n" for line in lines))
+    result = subprocess.run(
+        ["bash", str(script)],
+        env={
+            "PATH": os.environ["PATH"],
+            "SUDO_USER": "operator",
+            "PK_RESTORE_CRONTAB": str(tmp_path / "crontab"),
+            "PK_RESTORE_CRON_DIR": str(tmp_path / "cron.d"),
+        },
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    everything, uploader = result.stdout.split("uploader:\n")
+    return everything.splitlines()[1:], uploader.splitlines()
+
+
+def test_the_crontab_block_reads_each_crontab_cron_reads(tmp_path):
+    """Root's and SUDO_USER's crontabs, /etc/crontab and cron.d, uncommented.
+
+    cron skips a cron.d file whose name has a dot, so the block does too.
+    """
+    everything, _ = run_cron_block(
+        tmp_path,
+        ["*/5 * * * * user-job", "# */5 * * * * commented"],
+        ["0 3 * * * root system-job", "  # 0 4 * * * root indented comment"],
+        {
+            "stewardship": ["0 5 * * * root cron-d-job"],
+            "stewardship.bak": [
+                f"*/5 * * * * root {COMPOSE} run --rm -T backup-uploader"
+            ],
+            ".placeholder": ["0 6 * * * root hidden-job"],
+            "no-newline_2": [],
+        },
+    )
+    assert everything == [
+        "*/5 * * * * user-job",
+        "*/5 * * * * user-job",
+        "0 3 * * * root system-job",
+        "0 5 * * * root cron-d-job",
+    ]
+
+
+def test_the_uploader_line_is_found_by_its_documented_command(tmp_path):
+    """The runbook's line, in each crontab and each spelling cron accepts."""
+    user = [
+        f"*/5 * * * * {COMPOSE} run --rm -T backup-uploader",
+        "@hourly /usr/bin/docker compose -p stewardship run --rm -T backup-uploader",
+    ]
+    system = [
+        f"*/5 * * * * root {COMPOSE} run --rm -T backup-uploader >>/var/log/up 2>&1",
+    ]
+    cron_d = {
+        "stewardship": [
+            f"*/5 * * * * root {COMPOSE} run --rm -T -e A=1 backup-uploader upload",
+            f"*/5 * * * * root {COMPOSE} run --rm backup-uploader upload -c x; :",
+            # A valued option consumes its value, and the service follows.
+            f"*/5 * * * * root {COMPOSE} run --name backup-uploader backup-uploader",
+            f"*/5 * * * * root {COMPOSE} run --name=up --no-deps -T backup-uploader",
+        ]
+    }
+    _, uploader = run_cron_block(tmp_path, user, system, cron_d)
+    assert uploader == [*user, *user, *system, *cron_d["stewardship"]]
+
+
+@pytest.mark.parametrize(
+    "where, line",
+    [
+        # Commented out, or the name only in a trailing comment.
+        ("user", f"# */5 * * * * {COMPOSE} run --rm -T backup-uploader"),
+        ("user", "*/5 * * * * true # docker compose run --rm -T backup-uploader"),
+        ("system", "*/5 * * * * root true #backup-uploader"),
+        # Another command, wrapper or service containing the name.
+        ("system", "0 5 * * * root my-backup-uploader-copy"),
+        ("system", "0 5 * * * root /opt/other/bin/backup-uploader"),
+        ("system", "*/5 * * * * root /usr/local/sbin/stewardship-backup-uploader"),
+        ("system", "*/5 * * * * root other-tool --notify backup-uploader"),
+        ("user", "*/5 * * * * other-tool docker compose run --rm backup-uploader"),
+        ("user", f"*/5 * * * * {COMPOSE} run --rm -T backup-uploader-copy"),
+        ("user", f"*/5 * * * * {COMPOSE} run --rm -T backup-worker backup-uploader"),
+        ("user", f"*/5 * * * * {COMPOSE} logs backup-uploader"),
+        ("user", "*/5 * * * * dockerx compose run --rm -T backup-uploader"),
+        # The uploader's image running something else.
+        ("user", f"*/5 * * * * {COMPOSE} run --rm backup-uploader database-sources"),
+        ("user", f"*/5 * * * * {COMPOSE} run --entrypoint sh backup-uploader"),
+        # A user crontab has no user field, and /etc/crontab needs one.
+        ("user", f"*/5 * * * * root {COMPOSE} run --rm -T backup-uploader"),
+        ("system", f"*/5 * * * * {COMPOSE} run --rm -T backup-uploader"),
+        # A cron.d file cron skips.
+        ("stewardship.bak", f"*/5 * * * * root {COMPOSE} run --rm -T backup-uploader"),
+        # cron ends the command at a `%`, wherever it is: no uploader runs.
+        ("user", f"*/5 * * * * {COMPOSE} run --rm -T backup-uploader >/tmp/u.%d"),
+        ("user", f"*/5 * * * * {COMPOSE} run -e D=%s -T backup-uploader"),
+        ("system", f"*/5 * * * * root {COMPOSE} run --rm -T backup-uploader # 5%"),
+        # compose's --dry-run runs nothing.
+        ("user", f"*/5 * * * * {COMPOSE} --dry-run run --rm -T backup-uploader"),
+        ("user", f"*/5 * * * * {COMPOSE} run --dry-run --rm backup-uploader"),
+        # An option's value naming the service, with no service after it.
+        ("user", f"*/5 * * * * {COMPOSE} run --network backup-uploader"),
+        ("user", f"*/5 * * * * {COMPOSE} run --rm --name backup-uploader"),
+        ("user", f"*/5 * * * * {COMPOSE} run --label backup-uploader upload"),
+        # An option this does not know may take a value: never guessed.
+        ("user", f"*/5 * * * * {COMPOSE} run --unknown x backup-uploader"),
+    ],
+)
+def test_no_other_line_is_taken_for_the_uploaders(tmp_path, where, line):
+    """Never accepted: the contract release relies on this match (#235)."""
+    user = [line] if where == "user" else []
+    system = [line] if where == "system" else []
+    cron_d = {} if where in ("user", "system") else {where: [line]}
+    _, uploader = run_cron_block(tmp_path, user, system, cron_d)
+    assert uploader == []
+
+
+@pytest.mark.skipif(shutil.which("flock") is None, reason="util-linux flock only")
+def test_the_copy_lock_block_waits_for_a_held_lock_and_logs_its_expiry(tmp_path):
+    """On a host with flock: the block takes the directory lock, or times out logged.
+
+    A Python copier holding the directory lock (as the uploader holds it)
+    makes the block's bounded wait expire; released, the block takes it.
+    Since the contract release (#235) it writes nothing in the directory:
+    the expand release's legacy lock file is neither created nor locked.
+    """
+    import fcntl
+
+    backups = tmp_path / "backups"
+    backups.mkdir(mode=0o700)
+    script = tmp_path / "lock.sh"
+    script.write_text(
+        layout_block(HOST, LOCK_BEGIN, LOCK_END)
+        + 'if copy_lock_take "$1" 2; then echo held; else echo refused; fi\n'
+    )
+    descriptor = os.open(backups, os.O_RDONLY)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        result = subprocess.run(
+            ["bash", str(script), str(backups)], capture_output=True, text=True
+        )
+    finally:
+        os.close(descriptor)
+    assert result.stdout.strip() == "refused"
+    assert "TIMEOUT: waiting for the off-site copy lock" in result.stderr
+    assert "(limit 2s)" in result.stderr
+    # A leftover legacy file held by an old copier no longer matters.
+    legacy = backups / ".offsite-copy.lock"
+    legacy.write_text("")
+    descriptor = os.open(legacy, os.O_RDONLY)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        result = subprocess.run(
+            ["bash", str(script), str(backups)], capture_output=True, text=True
+        )
+    finally:
+        os.close(descriptor)
+    assert result.stdout.strip() == "held", result.stderr
+    assert sorted(path.name for path in backups.iterdir()) == [legacy.name]
+
+
+@pytest.mark.parametrize("plant", ["link", "file", "swapped", "none"])
+def test_a_backups_directory_that_is_not_one_refuses(tmp_path, plant):
+    """Only the real directory at the name is ever locked (#235, L1).
+
+    A link or a file at the name refuses before the open; a directory
+    swapped between the check and the open (a ``stat`` stand-in that
+    reports another inode for the name) refuses after it, before flock.
+    The run is bounded, so a hang fails the test instead of stalling it.
+    """
+    from .host_stubs import install_gnu_tools
+
+    if shutil.which("bash") is None:
+        pytest.skip("bash is not installed")
+    real = tmp_path / "real"
+    real.mkdir(mode=0o700)
+    backups = tmp_path / "backups"
+    if plant == "link":
+        backups.symlink_to(real)
+    elif plant == "file":
+        backups.write_text("")
+    else:
+        backups.mkdir(mode=0o700)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    install_gnu_tools(bin_dir)
+    script = tmp_path / "lock.sh"
+    # The flock stand-in is a shell function, not a file on PATH: the
+    # Compose test container mounts /tmp noexec, so a stand-in program there
+    # could not run, and `command -v flock` would find the real one instead.
+    # (The GNU stat and ln stand-ins are installed only on hosts without
+    # them, such as macOS, where the temporary directory can run them.)
+    script.write_text(
+        layout_block(HOST, LOCK_BEGIN, LOCK_END)
+        + 'flock() { echo "$*" >>"$FLOCK_LOG"; }\n'
+        + "stat() {\n"
+        + '    if [ -n "$SWAP" ] && [ "$1" = -c ]; then echo 0:0; return 0; fi\n'
+        + '    command stat "$@"\n'
+        + "}\n"
+        + 'if copy_lock_take "$1" 2; then echo held; else echo refused; fi\n'
+    )
+    log = tmp_path / "flock.log"
+    result = subprocess.run(
+        ["bash", str(script), str(backups)],
+        env={
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "SWAP": "1" if plant == "swapped" else "",
+            "FLOCK_LOG": str(log),
+        },
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if plant == "none":
+        assert result.stdout.strip() == "held", result.stderr
+        assert log.read_text().splitlines() == ["-E 75 -w 2 9"]
+        assert list(backups.iterdir()) == []
+        return
+    assert result.stdout.strip() == "refused"
+    assert "is not a directory" in result.stderr
+    assert not log.exists()
+    assert list(real.iterdir()) == []
 
 
 def test_both_scripts_carry_the_same_layout_block():
@@ -724,6 +994,113 @@ def test_the_upgrade_path_proves_the_rules_from_every_service(tmp_path):
             for login in logins:
                 assert f"{login} allowed from " in result.stdout, (service, login)
             assert " refused from " not in result.stdout
+    finally:
+        ids = docker(
+            "ps", "--all", "--quiet", "--filter",
+            f"label=com.docker.compose.project={project}", check=False,
+        ).stdout.split()  # fmt: skip
+        if ids:
+            docker("rm", "--force", "--volumes", *ids, check=False)
+        for network in docker(
+            "network", "ls", "--quiet", "--filter",
+            f"label=com.docker.compose.project={project}", check=False,
+        ).stdout.split():  # fmt: skip
+            docker("network", "rm", network, check=False)
+        docker("volume", "rm", volume, check=False)
+
+
+def pre_uploader_rendering(new):
+    """The release before the off-site uploader (#235), from the new rendering.
+
+    The source rules and the five earlier one-shot networks are there; the
+    uploader's service, its network and PostgreSQL's address on it are not.
+    """
+    old = json.loads(json.dumps(new))
+    old["services"].pop("backup-uploader")
+    old["networks"].pop("offline-backup-uploader")
+    old["services"]["postgres"]["networks"].pop("offline-backup-uploader")
+    return old
+
+
+@runtime
+def test_the_expand_rollout_and_rollback_fully_stop_for_the_uploader(tmp_path):
+    """The uploader's network alone triggers the full stop, both ways (#235).
+
+    Rolling out the expand release adds a network PostgreSQL joins, so the
+    shared block's comparison finds it and the full stop recreates the
+    stores on it; every service's source check (the uploader's included)
+    then matches. Rolling back removes it the same way, and the services
+    that remain still match.
+    """
+    volume = f"pk-235e1-{uuid4().hex[:8]}"
+    project = volume
+    try:
+        root, yaml, rendered, present = provisioned_root(volume, free_networks())
+        new = probe_rendering(rendered, present)
+        old = pre_uploader_rendering(new)
+        files = {name: tmp_path / f"{name}.json" for name in ("old", "new")}
+        files["old"].write_text(json.dumps(old))
+        files["new"].write_text(json.dumps(new))
+        work = tmp_path / "work"
+        work.mkdir()
+        driver = tmp_path / "driver.sh"
+        driver.write_text(
+            "set -euo pipefail\n"
+            + layout_block(HOST)
+            + "project=$1 compose=$2 work=$3\n"
+            + 'dc=(docker compose -f "$compose" -p "$project")\n'
+            + "case $4 in\n"
+            + "    changes) layout_changes ;;\n"
+            + "    full-stop) layout_full_stop ;;\n"
+            + "esac\n"
+        )
+
+        def shared(name, action):
+            """One shared-block action against one rendering."""
+            result = subprocess.run(
+                ["bash", str(driver), project, str(files[name]), str(work), action],
+                capture_output=True,
+                text=True,
+                timeout=900,
+                check=False,
+            )
+            assert result.returncode == 0, result.stdout + result.stderr
+            return result.stdout
+
+        def sources(name):
+            """``database-sources`` from every application service, by ``run``."""
+            outcomes = {}
+            for service, value in json.loads(files[name].read_text())[
+                "services"
+            ].items():
+                if service in ("postgres", "valkey"):
+                    continue
+                outcomes[service] = docker(
+                    "compose", "-f", str(files[name]), "-p", project, "run",
+                    "--rm", "--no-deps", "-T", service, "database-sources",
+                    "--config", value["command"][2], check=False, timeout=180,
+                )  # fmt: skip
+            return outcomes
+
+        docker(
+            "compose", "-f", str(files["old"]), "-p", project, "up", "--detach",
+            "--wait", "postgres", "valkey", timeout=300,
+        )  # fmt: skip
+        assert shared("old", "changes") == ""
+        changes = shared("new", "changes")
+        assert "offline-backup-uploader" in changes
+        shared("new", "full-stop")
+        assert shared("new", "changes") == ""
+        outcomes = sources("new")
+        assert "backup-uploader" in outcomes
+        for service, result in outcomes.items():
+            assert result.returncode == 0, service + result.stdout + result.stderr
+            assert "database sources match the rendered rules" in result.stdout
+        assert "offline-backup-uploader" in shared("old", "changes")
+        shared("old", "full-stop")
+        assert shared("old", "changes") == ""
+        for service, result in sources("old").items():
+            assert result.returncode == 0, service + result.stdout + result.stderr
     finally:
         ids = docker(
             "ps", "--all", "--quiet", "--filter",

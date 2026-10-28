@@ -29,7 +29,11 @@ pytestmark = pytest.mark.skipif(
     os.environ.get("PARISHKIT_RUN_RUNTIME_TESTS") != "1",
     reason="Requires explicitly opted-in disposable Docker runtime validation",
 )
-IMAGE = "parishkit-stewardship:development"
+# The image under test; a branch's own build may be named instead, as the
+# database layout test allows (#235).
+IMAGE = os.environ.get(
+    "PARISHKIT_RUNTIME_TEST_IMAGE", "parishkit-stewardship:development"
+)
 
 
 def seed_runtime(root, *, production=False, provider_mode="configured"):

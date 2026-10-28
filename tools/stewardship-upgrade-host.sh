@@ -23,6 +23,9 @@
 #     already; nothing is pulled and no registry digest is checked;
 #   - the backup is still required, but LOCAL has no off-host target, so
 #     an off-site state of not_configured is accepted alongside uploaded;
+#   - the off-site uploader's contract checks (#235: the backup profile's
+#     route out, the Engine version, the INPUT drop, the uploader's cron
+#     line, a running release with `upload`) only report, never refuse;
 #   - the services keep the deployment's clock mode (the faketime override
 #     is added when the marker says fake, and the derived fake-clock image
 #     of the new application image is built after the retarget);
@@ -280,8 +283,10 @@ oneoff() {
     oneoff_name=$oneoff_prefix-$3
     shift 3
     started=$(date -u +%s)
+    # The copy lock's descriptors stay with this shell: a client left
+    # behind by a killed shell would otherwise hold the lock until it exits.
     timeout --kill-after=30 "$limit" "${dc[@]}" run --name "$oneoff_name" --rm -T "$@" \
-        </dev/null >"$work/oneoff.out" 2>&1 &
+        </dev/null >"$work/oneoff.out" 2>&1 8<&- 9<&- &
     oneoff_pid=$!
     wait "$oneoff_pid" || rc=$?
     oneoff_pid=""
@@ -569,6 +574,142 @@ hba_reload() {
     esac
 }
 # END PostgreSQL source rules check (#2111).
+# BEGIN host crontab collection (#235). This block is kept identical in
+# tools/stewardship-upgrade-host.sh and tools/stewardship-ops/pk-restore
+# (tests/stewardship/test_database_layout.py compares the two copies).
+cron_tagged() {
+    # Every uncommented line of the crontabs this host's jobs live in, each
+    # after `u ` (root's and SUDO_USER's crontabs: no user field) or `s `
+    # (/etc/crontab and the /etc/cron.d files cron reads: a user field);
+    # PK_RESTORE_CRONTAB and PK_RESTORE_CRON_DIR for tests. cron skips a
+    # cron.d file whose name has anything but letters, digits, `_` and `-`
+    # (a dot, as in `stewardship.bak` or `.placeholder`), so this does too.
+    # Scripts in /etc/cron.{hourly,...}, anacron, `at` jobs and other
+    # users' crontabs are not read. awk ends every file's last line.
+    local file
+    {
+        {
+            crontab -l -u root 2>/dev/null || true
+            [ -z "${SUDO_USER:-}" ] || crontab -l -u "$SUDO_USER" 2>/dev/null || true
+        } | awk '{ print "u " $0 }'
+        awk '{ print "s " $0 }' "${PK_RESTORE_CRONTAB:-/etc/crontab}" 2>/dev/null || true
+        for file in "${PK_RESTORE_CRON_DIR:-/etc/cron.d}"/*; do
+            case ${file##*/} in *[!A-Za-z0-9_-]*) continue ;; esac
+            [ ! -f "$file" ] || awk '{ print "s " $0 }' "$file" 2>/dev/null || true
+        done
+    } | grep -v '^. [[:space:]]*#' || true
+}
+cron_lines() {
+    # cron_tagged's lines as the crontabs hold them.
+    cron_tagged | cut -c3-
+}
+uploader_cron_lines() {
+    # The cron lines (of cron_tagged) that run the off-site uploader, as the
+    # backup runbook's "The uploader's cron line" gives it: the schedule
+    # (five fields or an @keyword), the user field in /etc/crontab and
+    # cron.d, then `docker compose` (docker by name or by path), compose's
+    # own options, `run`, run's options, the service `backup-uploader`, and
+    # nothing after it but its `upload` command and its arguments, up to a
+    # redirection or the shell's `;`, `&` or `|`. A `#` starting a word
+    # ends the command (the shell's comment), so a name in a trailing
+    # comment is not a match; nor is any other command, wrapper or service
+    # that merely contains the name, nor `--entrypoint` (another command in
+    # the uploader's image). Also never a match, since the uploader would not
+    # run (#235): a line with a `%` anywhere (cron ends the command there and
+    # feeds the rest as input), compose's `--dry-run`, and a `run` option
+    # this does not know, so that an option's value (`--network
+    # backup-uploader`) is never taken for the service; a known option that
+    # takes a value consumes the next word, so a service must still follow.
+    # Lines are printed as the crontabs hold them.
+    cron_tagged | awk '
+        function docker(word) { return word == "docker" || word ~ /\/docker$/ }
+        {
+            line = substr($0, 3)
+            if (index(line, "%")) next
+            command = line
+            sub(/^[ \t]+/, "", command)
+            sub(/[ \t]#.*/, "", command)
+            n = split(command, word, /[ \t]+/)
+            at = (word[1] ~ /^@/) ? 2 : 6
+            if (substr($0, 1, 1) == "s") at++
+            if (!docker(word[at]) || word[at + 1] != "compose") next
+            for (i = at + 2; i <= n && word[i] ~ /^-/; i++) {
+                if (word[i] ~ /^--dry-run(=|$)/) next
+                if (word[i] ~ /^(-f|-p|--file|--project-name|--project-directory|--env-file|--profile|--ansi|--progress|--parallel)$/) i++
+            }
+            if (word[i] != "run") next
+            for (i++; i <= n && word[i] ~ /^-/; i++) {
+                if (word[i] ~ /^(--entrypoint|--dry-run)/) next
+                if (word[i] ~ /^(-e|--env|--env-from-file|--name|-u|--user|-w|--workdir|-l|--label|-v|--volume|-p|--publish|--cap-add|--cap-drop|--pull)$/) i++
+                else if (word[i] !~ /^(--rm|-T|--no-TTY|-d|--detach|-i|--interactive|--no-deps|--build|-P|--service-ports|--use-aliases|--remove-orphans|--quiet|--quiet-build|--quiet-pull|--(env|env-from-file|name|user|workdir|label|volume|publish|cap-add|cap-drop|pull)=.*)$/) next
+            }
+            if (word[i] != "backup-uploader") next
+            i++
+            if (i <= n && word[i] != "upload" && word[i] !~ /^([0-9]*[<>]|&>|[;&|])/) next
+            print line
+        }' || true
+}
+# END host crontab collection (#235).
+# BEGIN off-site copy lock (#235). This block is kept identical in
+# tools/stewardship-upgrade-host.sh and tools/stewardship-ops/pk-restore
+# (tests/stewardship/test_database_layout.py compares the two copies).
+copy_lock_same() {
+    # copy_lock_same FD PATH: whether open descriptor FD is PATH itself, by
+    # device and inode, PATH's final component not followed (GNU stat).
+    local open named
+    open=$(stat -L -c %d:%i "/dev/fd/$1" 2>/dev/null) &&
+        named=$(stat -c %d:%i -- "$2" 2>/dev/null) &&
+        [ -n "$open" ] && [ "$open" = "$named" ]
+}
+copy_lock_take() {
+    # copy_lock_take DIR SECONDS: hold this host's off-site copy lock on the
+    # backups directory DIR for the rest of the run (operations
+    # specification, "Offline work"), so an upload still running finishes
+    # first and a cron uploader exits at the lock. Since the contract
+    # release every copier takes the directory lock alone (the expand
+    # release's legacy .offsite-copy.lock file is no longer locked, and a
+    # leftover one is ignored), so this takes it with `flock -w` on a
+    # descriptor (9) this shell keeps open until it exits.
+    #
+    # The name may still change between the check and the open, so the
+    # open descriptor must be the directory at that name, by device and
+    # inode: a link or anything else swapped in meanwhile refuses instead
+    # of being locked.
+    #
+    # A wait longer than SECONDS is logged with what, the limit and the
+    # elapsed time (flock's exit 75); any other flock failure is logged as a
+    # failure with its status. Either returns non-zero, as does every other
+    # refusal.
+    local dir=$1 limit=$2 started rc
+    command -v flock >/dev/null || { echo "flock is not installed; cannot take the off-site copy lock." >&2; return 1; }
+    { [ -d "$dir" ] && [ ! -L "$dir" ]; } ||
+        { echo "The backups directory $dir is not a directory." >&2; return 1; }
+    if ! exec 9<"$dir"; then
+        echo "Could not open the copy lock on $dir." >&2
+        return 1
+    fi
+    if ! { [ -d /dev/fd/9 ] && copy_lock_same 9 "$dir"; }; then
+        exec 9<&-
+        echo "The backups directory $dir is not a directory." >&2
+        return 1
+    fi
+    started=$(date -u +%s)
+    rc=0
+    flock -E 75 -w "$limit" 9 || rc=$?
+    if [ "$rc" -eq 75 ]; then
+        echo "TIMEOUT: waiting for the off-site copy lock on $dir gave up after $(($(date -u +%s) - started))s (limit ${limit}s)" >&2
+        return 1
+    elif [ "$rc" -ne 0 ]; then
+        echo "FAILED: flock on the off-site copy lock on $dir exited with status $rc after $(($(date -u +%s) - started))s" >&2
+        return 1
+    fi
+}
+# END off-site copy lock (#235).
+
+# The offline phase holds the off-site copy lock (after step 1, below) with
+# util-linux flock; refuse now, before step 1's backup and copy, as
+# pk-restore does, rather than find it missing hours later.
+command -v flock >/dev/null || { echo "flock is not installed (util-linux); refusing." >&2; exit 1; }
 
 # The project keeps whichever Compose file it already runs under; an upgrade
 # or a rollback changes images and the documents rendered for them (once,
@@ -935,6 +1076,425 @@ if [ "$mode" = upgrade ]; then
     fi
 fi
 
+# The command-list probe (#235): one bounded `--help` capture per image, read
+# by has_command() as pk-restore reads its own. The new image's list says
+# whether it has the off-site uploader (it lists uploader-password-check,
+# which no release before the uploader has; `smoke` cannot be the marker, as
+# every image lists it). The running image's list is what a later release's
+# step 1 keys its uploader run on. An image that does not answer (gone, or
+# no list within the limit) refuses before anything stops. That holds for
+# the running image too, although in this release its list only drives a
+# message: the design (operations specification, "Scripted upgrades", *The
+# command probe*) requires the refusal, since a later release's step 1
+# runs that image's uploader. A pruned or unpullable running image
+# therefore refuses the upgrade; pull it again, or restore it, and repeat.
+command_list() {
+    # Prints $1's command list; fails when it does not answer with one.
+    local out rc=0 started
+    started=$(date -u +%s)
+    out=$(timeout --kill-after=10 60 "${isolated[@]}" "$1" --help 2>/dev/null) || rc=$?
+    if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+        echo "TIMEOUT: listing the commands of $1 killed after $(( $(date -u +%s) - started ))s (limit 60s)" >&3
+    fi
+    [ "$rc" -eq 0 ] || return 1
+    # Every release lists retarget-image; anything else is not a command list.
+    grep -qE '[{,]retarget-image[,}]' <<<"$out" || return 1
+    printf '%s\n' "$out"
+}
+has_command() { grep -qE "[{,]$2[,}]" <<<"$1"; }
+new_commands=$(command_list "$image") ||
+    { echo "Could not list the commands of $image; refusing." >&2; exit 1; }
+running_commands=""
+if [ -n "$previous" ] && [ "$previous" != "$image" ]; then
+    running_commands=$(command_list "$previous") ||
+        { echo "Could not list the commands of the running image $previous; refusing." >&2; exit 1; }
+else
+    running_commands=$new_commands
+fi
+if has_command "$running_commands" uploader-password-check; then
+    echo "    the running image has the off-site uploader"
+fi
+# The off-site uploader's cron line (#235) runs the backup-uploader service
+# every five minutes. An image without the `upload` command (a rollback past
+# the expand release, or an image between its two parts) renders no such
+# service or cannot run it, so the line would fail every five minutes and
+# the backup profile's own copy is the copier again: it must be commented
+# out first. Refused here, before anything stops (backup runbook, "Rolling
+# back the expand release").
+if ! has_command "$new_commands" upload; then
+    uploader_cron=$(uploader_cron_lines)
+    if [ -n "$uploader_cron" ]; then
+        echo "$image has no off-site uploader, but this host's cron still runs it:" >&2
+        while read -r line; do echo "    | $line"; done <<<"$uploader_cron" >&2
+        echo "Nothing was stopped or changed. Comment out the uploader's cron line first" >&2
+        echo "(docs/guides/stewardship-backup-runbook.md#rolling-back-the-expand-release)," >&2
+        echo "then repeat." >&2
+        exit 1
+    fi
+fi
+
+# The backup profile's route out (#235, operations specification, "No route
+# out"). From the contract release on (the new image lists egress-probe) the
+# backup worker, which reads every tree and all database data, is on its own
+# internal network alone and the off-site uploader alone copies. Before
+# anything stops, every such upgrade or rollback checks on Production:
+# - the running image has the uploader's `upload` (the expand release), so
+#   no copier still running holds only the expand release's legacy file
+#   lock, which this release no longer takes;
+# - this host's cron runs the uploader: the shared crontab block's
+#   uploader_cron_lines prints at least one line that runs the
+#   `backup-uploader` service through `docker compose ... run` (its strict
+#   match: no wrapper, comment, other command or file cron skips counts),
+#   or copies would stop with this release. The lines are logged as
+#   evidence;
+# - Docker Engine has the embedded-DNS fix for internal networks
+#   (CVE-2024-29018: 26.0.0, 25.0.5 or 23.0.11 and later; any 24.x refused);
+# - the host INPUT drop for runtime_network.offline is in place AHEAD of
+#   every rule that could admit that block (iptables -S INPUT), and its
+#   systemd unit (the backup runbook's one persistence procedure) is
+#   enabled for that block: the gateway of every one-shot network is the
+#   host, and Caddy's published 80/443 listen on its wildcard address, as
+#   may sshd and any UDP service, whose silence alone proves nothing;
+# - the new image's egress-probe, in a container joined only to the
+#   existing backup-worker network, reaches nothing: external TCP, DNS
+#   through the embedded resolver and straight to a public one, every
+#   port the host listens on at a wildcard address or that gateway, and
+#   TCP 80 and 443 there always.
+# Every failure to ask refuses too. LOCAL (pk-local) has no off-site target
+# and no host firewall rule, so there the same checks only report.
+engine_fixed() {
+    # Whether Docker Engine version $1 has the CVE-2024-29018 fix: 26.0.0
+    # or later, 25.0.5 or a later 25, 23.0.11 or a later 23. Only a `+`
+    # suffix (build metadata, such as a distribution's `+dfsg1`) may follow
+    # the three numbers: a `-` suffix is a pre-release in semantic
+    # versioning (-rc1, -RC1, -beta.1, -dev) and `~` is how Debian packages
+    # spell one (~rc1, ~beta), so either refuses, whatever its case.
+    local major minor patch
+    [[ $1 =~ ^([0-9]{1,4})\.([0-9]{1,4})\.([0-9]{1,4})(\+[0-9A-Za-z.+]*)?$ ]] || return 1
+    major=$((10#${BASH_REMATCH[1]})) minor=$((10#${BASH_REMATCH[2]})) patch=$((10#${BASH_REMATCH[3]}))
+    if [ "$major" -ge 26 ]; then return 0; fi
+    case "$major" in
+        25) [ "$minor" -gt 0 ] || [ "$patch" -ge 5 ] ;;
+        23) [ "$minor" -gt 0 ] || [ "$patch" -ge 11 ] ;;
+        *) return 1 ;;
+    esac
+}
+input_drop_unit=stewardship-offline-input-drop.service
+input_drop_first() {
+    # input_drop_first BLOCK: whether `iptables -S INPUT` on stdin has the
+    # one-shot networks' drop, exactly `-A INPUT -s BLOCK -j DROP`, ahead of
+    # every rule that could admit traffic from BLOCK. A drop in the filter
+    # table's INPUT chain is final for that packet whatever other tables or
+    # nftables chains do, so only the rules before it matter. An earlier
+    # rule cannot admit BLOCK when it drops or rejects, has no target (it
+    # only counts), matches loopback only (-i lo) or a source that does not
+    # overlap BLOCK. Anything else before it (an ACCEPT, a jump to ufw's or
+    # another chain, a RETURN, a negated match) is printed and fails, since
+    # proving what such a rule admits would mean following chains: insert
+    # the drop first instead (the runbook's unit does). Quoted strings (rule
+    # comments) are blanked first, so a comment cannot look like a match.
+    awk -v block="$1" '
+        function ip(a,   p) { split(a, p, "."); return ((p[1] * 256 + p[2]) * 256 + p[3]) * 256 + p[4] }
+        function overlaps(cidr,   c, len, size) {
+            split(cidr, c, "/")
+            len = (c[2] == "" ? 32 : c[2] + 0)
+            if (len > blen) len = blen
+            size = 2 ^ (32 - len)
+            return int(ip(c[1]) / size) == int(start / size)
+        }
+        BEGIN { split(block, b, "/"); blen = b[2] + 0; start = ip(b[1]) }
+        $1 != "-A" || $2 != "INPUT" { next }
+        $0 == "-A INPUT -s " block " -j DROP" { found = 1; exit }
+        {
+            rule = $0
+            gsub(/"[^"]*"/, "\"\"")
+            target = ""
+            harmless = 0
+            for (i = 3; i <= NF; i++) {
+                negated = ($(i - 1) == "!")
+                if ($i == "-j" || $i == "-g") target = $(i + 1)
+                if ($i == "-i" && $(i + 1) == "lo" && !negated) harmless = 1
+                if ($i == "-s" && !negated && !overlaps($(i + 1))) harmless = 1
+            }
+            if (target == "" || target == "DROP" || target == "REJECT") harmless = 1
+            if (!harmless) { print rule; admits = 1 }
+        }
+        END { exit !(found && !admits) }
+    '
+}
+input_drop_persisted() {
+    # Whether the runbook's unit is enabled and its ExecStart inserts the
+    # drop for BLOCK ($1, already checked to be digits, dots and a prefix
+    # length) first, so the rule comes back ahead of ufw's at every boot.
+    local unit
+    layout_limited 30 "asking systemd whether $input_drop_unit is enabled" \
+        systemctl is-enabled --quiet "$input_drop_unit" || return 1
+    unit=$(layout_limited 30 "reading $input_drop_unit" systemctl cat "$input_drop_unit") || return 1
+    grep -qE "^ExecStart=[^#]* -I INPUT 1 -s ${1//./\\.} -j DROP\$" <<<"$unit"
+}
+gateway_listeners() {
+    # gateway_listeners GATEWAY: the host's listening TCP and UDP ports at a
+    # wildcard address or at GATEWAY, from `ss -Htlnu` on stdin, as one
+    # comma-separated tcp:PORT,udp:PORT list. TCP 80 and 443 are always in
+    # it: Caddy's ports are published there, and with Docker's userland
+    # proxy turned off a published port has no listener for `ss` to show
+    # (Docker forwards it by NAT instead, which the INPUT drop does not see).
+    awk -v gw="$1" '
+        BEGIN { seen["tcp:80"] = 1; seen["tcp:443"] = 1 }
+        {
+            listening = $5
+            n = split(listening, part, ":")
+            port = part[n]
+            address = substr(listening, 1, length(listening) - length(port) - 1)
+            sub(/%.*/, "", address)
+            if (port !~ /^[0-9]+$/) next
+            if (address == "0.0.0.0" || address == "*" || address == "[::]" || address == gw)
+                seen[$1 ":" port] = 1
+        }
+        END { for (item in seen) print item }
+    ' | sort -u | paste -sd, -
+}
+if has_command "$new_commands" egress-probe; then
+    step "1. Checking that the backup profile has no route out"
+    contract_problems=()
+    if ! has_command "$running_commands" upload; then
+        contract_problems+=("The running image ${previous:-unknown} has no off-site uploader: deploy the expand release (the one that adds 'upload') first, prove the uploader and install its cron line (docs/guides/stewardship-backup-runbook.md#the-uploaders-cron-line), then this one.")
+    fi
+    uploader_cron=$(uploader_cron_lines)
+    if [ -z "$uploader_cron" ]; then
+        contract_problems+=("This host's cron runs no off-site uploader line, so off-site copies would stop with this release: install it first, in the form the runbook gives (docs/guides/stewardship-backup-runbook.md#the-uploaders-cron-line).")
+    else
+        echo "    this host's cron runs the off-site uploader:"
+        while read -r line; do echo "    | $line"; done <<<"$uploader_cron"
+    fi
+    # Every question below is bounded and an expired limit logged (what,
+    # the limit, the elapsed time) by layout_limited; a failure to answer
+    # refuses like a wrong answer.
+    engine=$(layout_limited 30 "asking Docker Engine for its version" \
+        docker version --format '{{.Server.Version}}') || engine=""
+    if engine_fixed "$engine"; then
+        echo "    Docker Engine ${engine} has the embedded-DNS fix for internal networks"
+    else
+        contract_problems+=("Docker Engine '${engine:-unknown}' lacks the embedded-DNS fix for internal networks (CVE-2024-29018): upgrade it to 26.0.0 or later (or 25.0.5 / 23.0.11), with the Administrator's approval (docs/guides/stewardship-backup-runbook.md#upgrading-docker-engine).")
+    fi
+    offline=$(jq -r '.deployment.runtime_network.offline // "172.29.242.0/24"' "$services/web.yaml")
+    [[ $offline =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}/(24|25)$ ]] ||
+        { echo "Could not read runtime_network.offline ($offline); refusing." >&2; exit 1; }
+    drop_help="install it with the runbook's unit, with the Administrator's approval (docs/guides/stewardship-backup-runbook.md#the-hosts-input-drop)"
+    if ! input_chain=$(layout_limited 30 "listing the host's INPUT chain" iptables -w 5 -S INPUT); then
+        contract_problems+=("Could not list the host's INPUT chain (iptables -S INPUT) to find the one-shot networks' drop ($offline).")
+    elif ! admitting=$(input_drop_first "$offline" <<<"$input_chain"); then
+        if [ -n "$admitting" ]; then
+            contract_problems+=("The host's INPUT drop for the one-shot networks ($offline) is missing or comes after a rule that could admit them: $(paste -sd';' - <<<"$admitting"). Put it first: sudo systemctl restart $input_drop_unit, or $drop_help.")
+        else
+            contract_problems+=("The host has no INPUT drop for the one-shot networks ($offline): $drop_help.")
+        fi
+    elif ! input_drop_persisted "$offline"; then
+        contract_problems+=("The host's INPUT drop for the one-shot networks ($offline) is not persisted: $input_drop_unit is not enabled or does not insert that block first; $drop_help.")
+    else
+        echo "    the host drops traffic from the one-shot networks ($offline) to itself, ahead of any rule that could admit them, and $input_drop_unit keeps it"
+    fi
+    probe_network="${project}_offline-backup-worker"
+    internal=$(layout_limited 30 "inspecting $probe_network" \
+        docker network inspect --format '{{.Internal}}' "$probe_network") || internal=""
+    gateway=$(layout_limited 30 "reading the gateway of $probe_network" docker network inspect \
+        --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}' "$probe_network") || gateway=""
+    google=$(layout_limited 30 "resolving www.googleapis.com" getent ahostsv4 www.googleapis.com |
+        awk 'NR == 1 { print $1 }') || google=""
+    if sockets=$(layout_limited 30 "listing the host's listening ports" ss -Htlnu); then
+        listeners=$(gateway_listeners "$gateway" <<<"$sockets")
+    else
+        listeners="unreadable"
+    fi
+    if [ "$internal" != true ] || ! [[ $gateway =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+        contract_problems+=("Could not read the backup worker's internal network $probe_network (internal: ${internal:-unknown}, gateway: ${gateway:-unknown}); run one backup on the current release, then repeat.")
+    elif ! [[ $google =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+        contract_problems+=("The host could not resolve www.googleapis.com for the egress probe.")
+    elif [ "$listeners" = unreadable ]; then
+        contract_problems+=("Could not list the host's listening ports (ss -Htlnu) for the egress probe.")
+    else
+        oneoff_name=$oneoff_prefix-egress-probe
+        started=$(date -u +%s)
+        probe_rc=0
+        # shellcheck disable=SC2054 # the tmpfs options are one comma-separated word
+        probed=$(timeout --kill-after=10 120 docker run --rm --init --name "$oneoff_name" \
+            --network "$probe_network" --user 10001:10001 --read-only --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --tmpfs /tmp:rw,nosuid,nodev,noexec,mode=1777 \
+            "$image" egress-probe --gateway "$gateway" --google-address "$google" \
+            --listen "$listeners" --engine-version "${engine:-0.0.0}" </dev/null \
+            2>"$work/egress-probe.err") || probe_rc=$?
+        if [ "$probe_rc" -eq 124 ] || [ "$probe_rc" -eq 137 ]; then
+            echo "TIMEOUT: the egress probe killed after $(( $(date -u +%s) - started ))s (limit 120s)" >&3
+            stop_oneoff "time limit" >&3
+        fi
+        oneoff_name=""
+        # Its error output (a refused argument, Docker's own complaint) goes
+        # into the log: the probe prints nothing secret, only its arguments.
+        if [ -s "$work/egress-probe.err" ]; then
+            echo "    egress probe's error output:" >&2
+            sed 's/^/    | /' "$work/egress-probe.err" >&2
+        fi
+        echo "    egress probe: ${probed:-no result}"
+        echo "$(date -u +%FT%TZ) egress probe: ${probed:-no result}" >>"$logdir/stewardship-backup.log"
+        closed=$(jq -r '.closed' <<<"$probed" 2>/dev/null || true)
+        if [ "$probe_rc" -eq 3 ] || [ "$closed" = false ]; then
+            contract_problems+=("The egress probe reached $(jq -r '.reached | join(", ")' <<<"$probed" 2>/dev/null || echo 'something') from the backup worker's network: close that route (docs/guides/stewardship-backup-runbook.md#no-route-out-for-the-backup-profile).")
+        elif [ "$probe_rc" -ne 0 ] || [ "$closed" != true ]; then
+            contract_problems+=("The egress probe did not answer (exit $probe_rc).")
+        else
+            echo "    the backup worker's network reaches nothing outside"
+        fi
+    fi
+    if [ "${#contract_problems[@]}" -gt 0 ]; then
+        for problem in "${contract_problems[@]}"; do echo "$problem" >&2; done
+        if [ "$profile" = production ]; then
+            echo "Nothing was stopped or changed; refusing." >&2
+            exit 1
+        fi
+        echo "    LOCAL: the checks above only report here; continuing" >&2
+    fi
+fi
+
+uploader_login=pk_stewardship_backup_uploader
+uploader_recovery="docs/guides/stewardship-backup-runbook.md#uploader-lost-file-recovery"
+if has_command "$new_commands" uploader-password-check; then
+    # The off-site uploader's password (#235, operations specification,
+    # "Uploader password"): step 4's database-grants refuses a login whose
+    # file is missing or does not match the cluster's stored verifier, but
+    # only after the full stop. So, read-only and before anything stops: no
+    # login yet is nothing to check (step 4 creates it); a login needs its
+    # file and the new image's `match`. The query's own failure refuses too
+    # and is never read as "no login" (the exit status, and exactly 0 or 1).
+    step "1. Checking the off-site uploader's password file"
+    read_only=(-e PGOPTIONS='-c default_transaction_read_only=on')
+    count=$("${dc[@]}" exec -T "${read_only[@]}" postgres \
+        psql -U pk_stewardship_operator -d "$database" -At -v ON_ERROR_STOP=1 -c \
+        "SELECT count(*) FROM pg_authid WHERE rolname='$uploader_login'" </dev/null 2>/dev/null) ||
+        { echo "Could not ask the database whether the off-site uploader's login exists; refusing." >&2; exit 1; }
+    case "$count" in
+        0) echo "    no uploader login yet: step 4's database-grants creates it" ;;
+        1)
+            # The verifier goes from psql to the check through a file in
+            # this run's owner-only work directory, never through the log.
+            "${dc[@]}" exec -T "${read_only[@]}" postgres \
+                psql -U pk_stewardship_operator -d "$database" -At -v ON_ERROR_STOP=1 -c \
+                "SELECT coalesce(rolpassword,'') FROM pg_authid WHERE rolname='$uploader_login'" \
+                </dev/null >"$work/uploader.verifier" 2>/dev/null ||
+                { echo "Could not read the off-site uploader's stored password; refusing." >&2; exit 1; }
+            # Named like a one-off, so a kill (or a signal's trap, through
+            # stop_oneoff) removes the container itself: killing only the
+            # docker run client leaves it running. A kill is logged with
+            # what, the limit and the elapsed time, and still refuses below
+            # (answer: none).
+            oneoff_name=$oneoff_prefix-uploader-password-check
+            started=$(date -u +%s)
+            check_rc=0
+            answer=$(timeout --kill-after=10 120 docker run -i --rm --init --network none \
+                --name "$oneoff_name" \
+                --user 10001:10001 --read-only --cap-drop ALL \
+                --security-opt no-new-privileges:true \
+                --tmpfs /tmp:rw,nosuid,nodev,noexec,mode=1777 \
+                --mount "type=bind,source=$root,target=$root,readonly" \
+                --mount "type=bind,source=$yaml,target=/run/operator.yaml,readonly" \
+                "$image" uploader-password-check --config /run/operator.yaml \
+                <"$work/uploader.verifier" 2>/dev/null) || check_rc=$?
+            rm -f "$work/uploader.verifier"
+            if [ "$check_rc" -eq 124 ] || [ "$check_rc" -eq 137 ]; then
+                echo "TIMEOUT: the off-site uploader's password check killed after $(( $(date -u +%s) - started ))s (limit 120s)" >&3
+                stop_oneoff "time limit" >&3
+                answer=""
+            fi
+            oneoff_name=""
+            if [ "$answer" != match ]; then
+                echo "The off-site uploader's password file is missing or does not match the" >&2
+                echo "database's login ${uploader_login} (answer: ${answer:-none}). Nothing was" >&2
+                echo "stopped or changed. Follow the uploader lost-file recovery in" >&2
+                echo "$uploader_recovery, then repeat." >&2
+                exit 1
+            fi
+            echo "    the uploader's password file matches its login" ;;
+        *) echo "Unexpected answer about the off-site uploader's login ($(head -1 <<<"$count")); refusing." >&2
+           exit 1 ;;
+    esac
+
+    # Docker refuses a network whose subnet overlaps another, but only at
+    # the full stop's `up`, after PostgreSQL has stopped. So the uploader's
+    # one-shot network, new with this release, is compared now with every
+    # other Docker network and with the host's routes. Its /28 is slice 5
+    # of runtime_network.offline (tests tie the index to OFFLINE_PROFILES).
+    # Once Docker runs the project's own network with that subnet there is
+    # nothing to create, so later upgrades skip the comparison.
+    offline=$(jq -r '.deployment.runtime_network.offline // "172.29.242.0/24"' "$services/web.yaml")
+    [[ $offline =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})/(24|25)$ ]] ||
+        { echo "Could not read runtime_network.offline ($offline); refusing." >&2; exit 1; }
+    ip_number() {
+        # A dotted IPv4 address as one number.
+        local a b c d
+        IFS=. read -r a b c d <<<"$1"
+        echo $(( (a << 24) | (b << 16) | (c << 8) | d ))
+    }
+    ip_text() {
+        echo "$(( ($1 >> 24) & 255 )).$(( ($1 >> 16) & 255 )).$(( ($1 >> 8) & 255 )).$(( $1 & 255 ))"
+    }
+    overlaps() {
+        # Whether the IPv4 CIDR $1 overlaps the uploader's /28.
+        local address=${1%/*} bits=28 mask
+        [[ $1 == */* ]] && bits=${1#*/}
+        [[ $address =~ ^[0-9]+(\.[0-9]+){3}$ ]] && [[ $bits =~ ^[0-9]+$ ]] || return 1
+        [ "$bits" -le 28 ] || bits=28
+        mask=$(( (0xFFFFFFFF << (32 - bits)) & 0xFFFFFFFF ))
+        [ $(( $(ip_number "$address") & mask )) -eq $(( uploader_base & mask )) ]
+    }
+    uploader_base=$(( $(ip_number "${offline%/*}") + 5 * 16 ))
+    uploader_subnet="$(ip_text "$uploader_base")/28"
+    own="${project}_offline-backup-uploader"
+    ours=$(docker network inspect --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' "$own" 2>/dev/null || true)
+    if [ "${ours% }" = "$uploader_subnet" ]; then
+        echo "    the uploader's network $uploader_subnet already exists"
+    else
+        command -v ip >/dev/null ||
+            { echo "Cannot read the host's routes (no ip command) to check $uploader_subnet; refusing." >&2; exit 1; }
+        clashes=()
+        ids=$(docker network ls --quiet --no-trunc) ||
+            { echo "Could not list Docker's networks to check $uploader_subnet; refusing." >&2; exit 1; }
+        if [ -n "$ids" ]; then
+            # shellcheck disable=SC2086 # one network id per word
+            subnets=$(docker network inspect --format '{{.Name}}{{range .IPAM.Config}} {{.Subnet}}{{end}}' $ids) ||
+                { echo "Could not read Docker's network subnets to check $uploader_subnet; refusing." >&2; exit 1; }
+            while read -r name ranges; do
+                # The project's own offline networks are kept apart by the
+                # renderer; the uploader's own is handled above.
+                case "$name" in "${project}_offline-"*) continue ;; esac
+                for range in $ranges; do
+                    if overlaps "$range"; then clashes+=("Docker network $name ($range)"); fi
+                done
+            done <<<"$subnets"
+        fi
+        routes=$(ip -4 route show) ||
+            { echo "Could not read the host's routes to check $uploader_subnet; refusing." >&2; exit 1; }
+        while read -r first second _; do
+            case "$first" in
+                "" | default) continue ;;
+                blackhole | unreachable | prohibit | throw | unicast | local | broadcast | multicast | anycast) destination=$second ;;
+                *) destination=$first ;;
+            esac
+            [ "$destination" != default ] || continue
+            if overlaps "$destination"; then clashes+=("host route $destination"); fi
+        done <<<"$routes"
+        if [ "${#clashes[@]}" -gt 0 ]; then
+            echo "The off-site uploader's network $uploader_subnet (slice 5 of runtime_network.offline" >&2
+            echo "$offline) overlaps: ${clashes[*]}. Docker would refuse it at the full stop," >&2
+            echo "after PostgreSQL stopped. Nothing was stopped or changed. Move or remove the" >&2
+            echo "conflicting network or route named above, then repeat. Do not change" >&2
+            echo "runtime_network.offline: on an existing deployment retarget-image refuses any" >&2
+            echo "change to it (only the image may change)." >&2
+            exit 1
+        fi
+        echo "    the uploader's network $uploader_subnet overlaps no Docker network or host route"
+    fi
+fi
+
 step "1. Stopping the background services (web keeps serving)"
 background=$("${dc[@]}" ps --services --status running | grep -vxE 'web|caddy|postgres|valkey' || true)
 restart_background() {
@@ -983,6 +1543,40 @@ if [ "$recorded" != true ] && [ "${#backup_args[@]}" -gt 0 ] &&
     echo "    $(jq -r '.reused_backup.completed_at' <<<"$backup") (manifest $(jq -r '.reused_backup.manifest_digest' <<<"$backup")) stays this upgrade's restore point"
     recorded=true
 fi
+# The off-site uploader (#235, operations specification, "Scripted
+# upgrades"): when the running image has its `upload` command and the
+# running Compose file has its service, it copies the step-1 set, whatever
+# the backup's own line said (on an expand topology the backup's copy can
+# report busy because the uploader holds the lock). It waits at most 1800 s
+# for a copy already running (an expiry is its own lock_timeout entry) and
+# reports whether an uploaded row exists for that set's digest and the
+# current folder, whichever run wrote it. Keyed on the command as well as
+# the service, so an image between the two expand parts keeps the rule on
+# the backup line above.
+if [ "$recorded" = true ] && has_command "$running_commands" upload &&
+    jq -e '.services["backup-uploader"]' "$compose" >/dev/null 2>&1; then
+    digest=$(jq -r '.manifest_digest // .reused_backup.manifest_digest // empty' <<<"$backup" 2>/dev/null || true)
+    offsite_ok=0
+    if [[ $digest =~ ^[0-9a-f]{64}$ ]]; then
+        step "1. Off-site copy by the uploader (waiting up to 1800s for a running copy)"
+        # The lock wait, the four-hour copy budget and a margin.
+        uploaded=$(oneoff $((1800 + 4 * 3600 + 600)) "the off-site uploader" uploader \
+            backup-uploader upload --config "$services/backup-uploader.yaml" \
+            --wait-lock 1800 --require-digest "$digest") || uploaded=""
+        echo "    ${uploaded:-the uploader printed no result}"
+        echo "$(date -u +%FT%TZ) uploader: ${uploaded:-no result}" >>"$logdir/stewardship-backup.log"
+        required=$(jq -r '.required_copy // empty' <<<"$uploaded" 2>/dev/null || true)
+        case "$profile:$required" in
+            production:uploaded | local:uploaded | local:not_configured) offsite_ok=1 ;;
+        esac
+        if [ "$offsite_ok" -ne 1 ] && [ "$(jq -r '.state // empty' <<<"$uploaded" 2>/dev/null || true)" = busy ]; then
+            echo "An off-site copy is still running (or offline work holds the interlock); try" >&2
+            echo "again later. A whole catch-up can take up to four hours." >&2
+        fi
+    else
+        echo "The backup line names no manifest digest for the uploader to copy." >&2
+    fi
+fi
 if [ "$recorded" != true ] || [ "$offsite_ok" -ne 1 ]; then
     # The EXIT trap restarts the background services (phase background).
     echo "The backup did not complete with its off-host copy; abandoning the $mode." >&2
@@ -990,6 +1584,21 @@ if [ "$recorded" != true ] || [ "$offsite_ok" -ne 1 ]; then
         echo "If an earlier run of the users release stopped in its step 4, repeat it with the" >&2
         echo "STEWARDSHIP_USERS_* variables (runbook, Users upgrade)." >&2
     fi
+    exit 1
+fi
+
+# The off-site copy lock (#235, "Offline work"), held from here to the end
+# of the run on the backups directory, so a cron uploader exits at the lock
+# rather than reaching the interlock, and no copy writes outcome rows while
+# the database is offline. It waits, bounded and logged, for a copy that
+# started since the step-1 copy; an expiry abandons the run like a busy
+# backup (the EXIT trap restarts the background services).
+step "1. Holding the off-site copy lock for the offline work"
+copy_backups=$(jq -er '.deployment.paths.backups' "$services/web.yaml" 2>/dev/null) ||
+    { echo "Could not read the backups directory from $services/web.yaml; abandoning the $mode." >&2; exit 1; }
+if ! copy_lock_take "$copy_backups" 1800; then
+    echo "An off-site copy is still running and holds the copy lock; abandoning the $mode." >&2
+    echo "Try again later (a whole catch-up can take up to four hours)." >&2
     exit 1
 fi
 

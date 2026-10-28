@@ -8,6 +8,7 @@ import pytest
 
 from parishkit.config import ConfigError
 from parishkit.stewardship import database_provisioning as provisioning
+from parishkit.stewardship import uploader_password
 from parishkit.stewardship.accounts.key_files import write_private
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.runtime_grants import (
@@ -277,6 +278,12 @@ def test_role_creation_preflights_all_identities_and_never_emits_plaintext(
 
     monkeypatch.setattr(provisioning, "_check_role", role_check)
     monkeypatch.setattr(provisioning, "_connection", connect)
+    verified = []
+    monkeypatch.setattr(
+        uploader_password,
+        "require_matching_password",
+        lambda cursor, login, password: verified.append((login, password)),
+    )
     inspected = []
     monkeypatch.setattr(
         provisioning, "ensure_inspect_login", lambda *args: inspected.append(args)
@@ -295,7 +302,13 @@ def test_role_creation_preflights_all_identities_and_never_emits_plaintext(
     assert ("CREATE ROLE" in sql) is (not existing)
     assert ("SCRAM-SYNTHETIC" in sql) is (not existing)
     assert "ALTER PASSWORD" not in sql
-    assert len(connections) == 1 + (len(admissions) if existing else 0)
+    # Every existing login is verified by connecting as it, except the
+    # off-site uploader (#235), whose source rule refuses this network: its
+    # file is checked against the stored verifier instead.
+    uploader = login_name(ServiceRole.BACKUP_UPLOADER)
+    assert len(connections) == 1 + ((len(admissions) - 1) if existing else 0)
+    assert uploader not in connections
+    assert verified == ([(uploader, b"private-password")] if existing else [])
 
 
 def grant_statements(tmp_path, monkeypatch, applied):
@@ -317,6 +330,8 @@ def grant_statements(tmp_path, monkeypatch, applied):
     # The inspection login's own SQL is covered by test_inspect_login.py.
     monkeypatch.setattr(provisioning, "ensure_inspect_login", lambda *args: None)
     monkeypatch.setattr(provisioning, "grant_inspect", lambda *args: None)
+    # The uploader's creation and password check have their own tests.
+    monkeypatch.setattr(provisioning, "_ensure_uploader", lambda *args: None)
     assert provisioning.provision_grants(configuration, uuid4())[
         "database_grants_provisioned"
     ]
@@ -468,6 +483,7 @@ def test_grants_tolerate_a_closure_revoke_only_until_it_applies(
     monkeypatch.setattr(provisioning, "_admit_writer_guard", lambda *args: None)
     monkeypatch.setattr(provisioning, "ensure_inspect_login", lambda *args: None)
     monkeypatch.setattr(provisioning, "grant_inspect", lambda *args: None)
+    monkeypatch.setattr(provisioning, "_ensure_uploader", lambda *args: None)
     provisioning.provision_grants(configuration, uuid4())
     mail = admitted[login_name(ServiceRole.MAIL_DISPATCH)]
     assert ("ciphertext" in mail["stewardship_family_token"]["SELECT"]) is not applied
@@ -509,6 +525,106 @@ def test_pending_revokes_name_only_their_role_and_pending_migration():
     assert pending_revokes(ServiceRole.WORKER, set()) == {}
     # The revoking migration is the one that adds the replacement definer.
     assert CLOSURE_FUNCTIONS[DISPATCH_TOKEN_FUNCTION] == migration
+
+
+def test_pending_table_revokes_tolerate_the_backup_logins_old_inserts():
+    """0195 (#235): the backup's two table INSERTs, until 0195 is applied."""
+    from parishkit.stewardship.runtime_grants import (
+        BACKUP_RUN_INSERT_COLUMNS,
+        CLOSURE_TABLE_REVOKES,
+        pending_table_revokes,
+        runtime_grants,
+    )
+
+    (migration,) = CLOSURE_TABLE_REVOKES
+    assert migration == ("stewardship_jobs", "0042_backup_uploader_contract")
+    assert pending_table_revokes(ServiceRole.BACKUP_WORKER, set()) == {
+        "stewardship_backup_run": {"INSERT"},
+        "stewardship_backup_upload": {"INSERT"},
+    }
+    assert pending_table_revokes(ServiceRole.BACKUP_WORKER, {migration}) == {}
+    assert pending_table_revokes(ServiceRole.WEB, set()) == {}
+    # What the registry declares instead: no INSERT on either table, and the
+    # run row's INSERT on every column but completed_at.
+    tables, columns = runtime_grants(ServiceRole.BACKUP_WORKER)
+    assert "INSERT" not in tables["stewardship_backup_run"]
+    assert "INSERT" not in tables["stewardship_backup_upload"]
+    assert columns["stewardship_backup_run"] == {
+        "INSERT": set(BACKUP_RUN_INSERT_COLUMNS)
+    }
+    assert "completed_at" not in BACKUP_RUN_INSERT_COLUMNS
+
+
+CONTRACT_TABLES = {
+    "stewardship_backup_run": {"SELECT"},
+    "stewardship_backup_upload": {"SELECT"},
+}
+CONTRACT_COLUMNS = {"stewardship_backup_run": {"INSERT": {"id", "started_at"}}}
+
+
+@pytest.mark.parametrize(
+    ("tolerated", "privileges", "columns", "accepted"),
+    [
+        # Before 0195: the old table INSERTs, on the table and every column.
+        (
+            {
+                "stewardship_backup_run": {"INSERT"},
+                "stewardship_backup_upload": {"INSERT"},
+            },
+            [
+                ("public", "stewardship_backup_run", "INSERT"),
+                ("public", "stewardship_backup_upload", "INSERT"),
+            ],
+            [
+                ("public", "stewardship_backup_run", "completed_at", "INSERT"),
+                ("public", "stewardship_backup_upload", "state", "INSERT"),
+            ],
+            True,
+        ),
+        # After 0195 nothing is tolerated: the same grants are excess.
+        (
+            {},
+            [("public", "stewardship_backup_upload", "INSERT")],
+            [],
+            False,
+        ),
+        (
+            {},
+            [],
+            [("public", "stewardship_backup_run", "completed_at", "INSERT")],
+            False,
+        ),
+        # The declared column grant passes with nothing tolerated.
+        ({}, [], [("public", "stewardship_backup_run", "started_at", "INSERT")], True),
+        # Tolerance is for its own tables and privileges only.
+        (
+            {"stewardship_backup_run": {"INSERT"}},
+            [("public", "stewardship_backup_run", "UPDATE")],
+            [],
+            False,
+        ),
+        (
+            {"stewardship_backup_run": {"INSERT"}},
+            [("public", "stewardship_backup_request", "INSERT")],
+            [],
+            False,
+        ),
+    ],
+)
+def test_reader_admission_tolerates_only_the_pending_table_revokes(
+    tolerated, privileges, columns, accepted
+):
+    """The backup login's two old INSERTs pass only while 0195 is pending (#235)."""
+    cursor = Cursor([(True,)])
+    sweeps = iter([privileges, columns])
+    cursor.fetchall = lambda: next(sweeps)
+    login = "pk_stewardship_backup_worker"
+    admit = provisioning._admit_reader
+    if accepted:
+        admit(cursor, login, CONTRACT_TABLES, CONTRACT_COLUMNS, tolerated)
+    else:
+        with pytest.raises(ConfigError):
+            admit(cursor, login, CONTRACT_TABLES, CONTRACT_COLUMNS, tolerated)
 
 
 @pytest.mark.parametrize("installed", ["current", "older", "missing"])
@@ -624,3 +740,168 @@ def test_grant_provisioning_refuses_excess_table_and_column_authority(rows):
             provisioning._admit_existing_grants(
                 cursor, "web", {"table": {"SELECT"}}, {"metadata": {"SELECT": {"id"}}}
             )
+
+
+SET = "20261020T020000Z"
+MARKER = "pk-restore:" + SET + ":" + "ab" * 32
+
+
+def restore_rows(
+    configuration, comment, table=True, later=False, configured=True, released=False
+):
+    """The fake cursor's answers for ``_admit_operator(after_restore=SET)``."""
+    rows = [
+        ("pk_stewardship_operator", "pk_stewardship_operator", True, "stewardship"),
+        ("matching",),
+        (comment,),
+        (table,),
+    ]
+    if table:
+        rows.append((later, released))
+    rows.append(("stewardship_system_configuration" if configured else None,))
+    if configured:
+        rows.append((True,))
+    return rows
+
+
+def test_after_restore_admits_the_loaded_set_without_a_recent_backup(
+    tmp_path, monkeypatch, caplog
+):
+    """The set's load evidence replaces the 24-hour rule, and is logged.
+
+    No recent-backup query runs, and one WARNING names the category.
+    """
+    from parishkit.stewardship import backup
+
+    configuration = configuration_at(tmp_path)
+    monkeypatch.setattr(
+        backup,
+        "require_recent_backup",
+        lambda cursor: pytest.fail("the recent-backup rule must not run"),
+    )
+    cursor = Cursor(restore_rows(configuration, MARKER))
+    with caplog.at_level("WARNING"):
+        provisioning._admit_operator(
+            cursor, configuration, "matching", initial=False, after_restore=SET
+        )
+    (record,) = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert record.getMessage() == "startup_validated"
+    assert "upgrade_backup_waived_after_restore" in repr(record.__dict__)
+    queries = "\n".join(cursor.statements)
+    assert "obj_description('public'::regnamespace,'pg_namespace')" in queries
+    assert "started_at>=%s" in queries
+    assert "action='restore_release' AND backup_at=%s" in queries
+    assert "completed_at" not in queries
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "another set",
+        "no marker",
+        "another digest form",
+        "a later backup",
+        "a released review",
+        "no run table",
+        "not a set name",
+        "not a real time",
+    ],
+)
+def test_after_restore_refuses_every_other_state(tmp_path, monkeypatch, case):
+    """Only the exact marker, no later run row and no released review.
+
+    It never weakens anything else.
+    """
+    from parishkit.stewardship import backup
+
+    configuration = configuration_at(tmp_path)
+    monkeypatch.setattr(
+        backup, "require_recent_backup", lambda cursor: pytest.fail("not reached")
+    )
+    name, comment, table, later, released = SET, MARKER, True, False, False
+    if case == "another set":
+        comment = "pk-restore:20261019T020000Z:" + "ab" * 32
+    elif case == "no marker":
+        comment = ""
+    elif case == "another digest form":
+        comment = "pk-restore:" + SET + ":" + "AB" * 32
+    elif case == "a later backup":
+        later = True
+    elif case == "a released review":
+        released = True
+    elif case == "no run table":
+        table = False
+    elif case == "not a set name":
+        name = "2026-10-20T02:00:00Z"
+    else:
+        name = "20261340T020000Z"
+    cursor = Cursor(
+        restore_rows(
+            configuration, comment, table=table, later=later, released=released
+        )
+    )
+    with pytest.raises(ConfigError, match="--after-restore"):
+        provisioning._admit_operator(
+            cursor, configuration, "matching", initial=False, after_restore=name
+        )
+    assert not any("GRANT" in statement for statement in cursor.statements)
+
+
+def test_a_set_name_with_non_ascii_digits_is_not_a_set_name():
+    """Arabic-Indic digits match \\d and strptime, but not a set's name."""
+    from parishkit.stewardship.backup import SET_NAME
+
+    name = "".join(chr(0x0660 + int(c)) if c.isdigit() else c for c in SET)
+    assert SET_NAME.fullmatch(SET)
+    assert SET_NAME.fullmatch(name) is None
+    with pytest.raises(ConfigError, match="must be a backup set's name"):
+        provisioning.require_restore_loaded(Cursor([]), name)
+
+
+def test_without_after_restore_a_restored_database_still_needs_a_recent_backup(
+    tmp_path,
+):
+    """Ordinary grants never read the restore marker and keep the 24-hour rule."""
+    configuration = configuration_at(tmp_path)
+    rows = [
+        ("pk_stewardship_operator", "pk_stewardship_operator", True, "stewardship"),
+        ("matching",),
+        ("stewardship_system_configuration",),
+        (True,),
+        ("stewardship_backup_run",),
+        (False,),
+    ]
+    cursor = Cursor(rows)
+    with pytest.raises(ConfigError, match="a backup recorded within 24 hours"):
+        provisioning._admit_operator(cursor, configuration, "matching", initial=False)
+    assert not any("pg_namespace')" in statement for statement in cursor.statements)
+
+
+def test_grants_pass_after_restore_through_and_report_it(tmp_path, monkeypatch):
+    """The command's result names the set it was admitted for."""
+    seen = {}
+    configuration = configuration_at(tmp_path)
+    cursor = Cursor()
+    cursor.fetchall = lambda: []
+    monkeypatch.setattr(provisioning, "_password", lambda path: b"private-password")
+    monkeypatch.setattr(
+        provisioning,
+        "_admit_operator",
+        lambda *args, **kwargs: seen.update(kwargs),
+    )
+    monkeypatch.setattr(provisioning, "_check_role", lambda *args, **kwargs: True)
+    monkeypatch.setattr(provisioning, "_connection", lambda *args: Database(cursor))
+    for name in ("_admit_existing_grants", "_admit_reader", "_admit_writer_guard"):
+        monkeypatch.setattr(provisioning, name, lambda *args: None)
+    monkeypatch.setattr(provisioning, "ensure_inspect_login", lambda *args: None)
+    monkeypatch.setattr(provisioning, "grant_inspect", lambda *args: None)
+    monkeypatch.setattr(provisioning, "_ensure_uploader", lambda *args: None)
+    assert provisioning.provision_grants(configuration, uuid4(), after_restore=SET) == {
+        "database_grants_provisioned": True,
+        "after_restore": SET,
+    }
+    assert seen == {"initial": False, "after_restore": SET}
+    assert provisioning.provision_grants(configuration, uuid4()) == {
+        "database_grants_provisioned": True
+    }
+    assert seen == {"initial": False, "after_restore": None}

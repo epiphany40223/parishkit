@@ -27,6 +27,18 @@
     ]
    }
   },
+  "offline-backup-uploader": {
+   "internal": true,
+   "ipam": {
+    "config": [
+     {
+      "gateway": "172.29.242.81",
+      "ip_range": "172.29.242.88/29",
+      "subnet": "172.29.242.80/28"
+     }
+    ]
+   }
+  },
   "offline-backup-worker": {
    "internal": true,
    "ipam": {
@@ -167,6 +179,96 @@
     }
    ]
   },
+  "backup-uploader": {
+   "cap_drop": [
+    "ALL"
+   ],
+   "command": [
+    "upload",
+    "--config",
+    "/opt/parishkit/config/services/backup-uploader.yaml"
+   ],
+   "environment": {
+    "PARISHKIT_DEBUG_LOGGING": "${PARISHKIT_DEBUG_LOGGING:-0}",
+    "PARISHKIT_SOURCE_MAX_DROP_PERCENT": "${PARISHKIT_SOURCE_MAX_DROP_PERCENT:-}",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+   },
+   "image": "ghcr.io/example/parishkit/stewardship@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "init": true,
+   "logging": {
+    "driver": "json-file",
+    "options": {
+     "max-file": "5",
+     "max-size": "10m"
+    }
+   },
+   "networks": {
+    "application-egress": {},
+    "offline-backup-uploader": {}
+   },
+   "oom_score_adj": 500,
+   "profiles": [
+    "backup-uploader"
+   ],
+   "read_only": true,
+   "restart": "no",
+   "security_opt": [
+    "no-new-privileges:true"
+   ],
+   "stop_grace_period": "360s",
+   "tmpfs": [
+    "/tmp:rw,nosuid,nodev,noexec,mode=1777"
+   ],
+   "user": "10001:10001",
+   "volumes": [
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/backups",
+     "target": "/opt/parishkit/backups",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/config/services/backup-uploader.yaml",
+     "target": "/opt/parishkit/config/services/backup-uploader.yaml",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/database/backup-uploader",
+     "target": "/opt/parishkit/credentials/database/backup-uploader",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/credentials/google_workspace",
+     "target": "/opt/parishkit/credentials/google_workspace",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
+     "source": "/opt/parishkit/run/startup.lock",
+     "target": "/opt/parishkit/run/startup.lock",
+     "type": "bind"
+    }
+   ]
+  },
   "backup-worker": {
    "cap_drop": [
     "ALL"
@@ -192,7 +294,6 @@
     }
    },
    "networks": {
-    "application-egress": {},
     "offline-backup-worker": {}
    },
    "oom_score_adj": 500,
@@ -2116,6 +2217,15 @@
       "create_host_path": false
      },
      "read_only": true,
+     "source": "/opt/parishkit/credentials/database/backup-uploader",
+     "target": "/opt/parishkit/credentials/database/backup-uploader",
+     "type": "bind"
+    },
+    {
+     "bind": {
+      "create_host_path": false
+     },
+     "read_only": true,
      "source": "/opt/parishkit/credentials/database/backup-worker",
      "target": "/opt/parishkit/credentials/database/backup-worker",
      "type": "bind"
@@ -2573,6 +2683,9 @@
     },
     "offline-admin-recovery": {
      "ipv4_address": "172.29.242.34"
+    },
+    "offline-backup-uploader": {
+     "ipv4_address": "172.29.242.82"
     },
     "offline-backup-worker": {
      "ipv4_address": "172.29.242.66"

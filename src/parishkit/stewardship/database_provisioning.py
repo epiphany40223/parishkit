@@ -7,6 +7,7 @@ and populated application databases are refused rather than adopted or reset.
 """
 
 import hashlib
+import logging
 import re
 from pathlib import Path
 from uuid import UUID
@@ -65,8 +66,16 @@ def role_limit(configuration, role):
     return configuration.runtime_budget.operator_connections
 
 
-def _admit_operator(cursor, configuration, marker, *, initial):
-    """A role name alone cannot authorize takeover of a database or cluster roles."""
+def _admit_operator(cursor, configuration, marker, *, initial, after_restore=None):
+    """A role name alone cannot authorize takeover of a database or cluster roles.
+
+    On a configured database a change needs a backup recorded within the
+    window (``backup.require_recent_backup``). ``after_restore`` (a set
+    name, ``database-grants --after-restore``) replaces that one rule, and
+    only when the database is that set freshly loaded by ``pk-restore``
+    (``require_restore_loaded``); the evidence is checked whether or not the
+    database is configured, so the option is refused in any other state.
+    """
     cursor.execute(
         "SELECT current_user,session_user,rolsuper,current_database() "
         "FROM pg_roles WHERE rolname=current_user"
@@ -93,6 +102,8 @@ def _admit_operator(cursor, configuration, marker, *, initial):
         )
         if cursor.fetchone()[0]:
             raise ConfigError("Only an empty database may receive initial ownership.")
+    if after_restore is not None:
+        require_restore_loaded(cursor, after_restore)
     cursor.execute("SELECT to_regclass('public.stewardship_system_configuration')")
     if cursor.fetchone()[0] is not None:
         cursor.execute(
@@ -101,20 +112,104 @@ def _admit_operator(cursor, configuration, marker, *, initial):
         if cursor.fetchone()[0]:
             from .backup import require_recent_backup
 
-            # A configured deployment changes only behind a recent verified
-            # backup: the v1 reduction of the deferred upgrade admission.
-            require_recent_backup(cursor)
+            if after_restore is None:
+                # A configured deployment changes only behind a recent
+                # verified backup: the v1 reduction of the deferred upgrade
+                # admission.
+                require_recent_backup(cursor)
+            else:
+                # The restored set is the backup: logged, since this is the
+                # one path past the rule (operations, "Restore admission").
+                from .observability import Event, FailureKind, emit
+
+                emit(
+                    Event.STARTUP_VALIDATED,
+                    level=logging.WARNING,
+                    failure_kind=FailureKind.BACKUP_WAIVED_AFTER_RESTORE,
+                )
 
 
-def _admit_reader(cursor, login, tables, columns):
+def require_restore_loaded(cursor, set_name):
+    """Refuse unless the database is ``set_name`` as ``pk-restore`` just loaded it.
+
+    The evidence ``pk-restore``'s own ``set_loaded`` trusts: the public
+    schema's comment is exactly ``pk-restore:SET:<manifest SHA-256>``, which
+    step 6's load writes last in its transaction, and no backup run row
+    started at or after the set's start (a fresh load holds none, while the
+    comment alone survives into later backups and restores). On top of that,
+    the restore review of that set must not have been released: a
+    ``restore_release`` runtime transition with that ``backup_at`` means the
+    site was reopened and has taken live writes since, which a failing
+    backup schedule would otherwise leave waived for good. The review's
+    own records are the evidence (``restore-begin`` writes the
+    ``restore_begin`` row with the set's time, and releasing writes
+    ``restore_release`` with the same time), so a ``pk-restore --from 7``
+    while the review is still open keeps working. ``set_name`` must be a
+    set's name, ``YYYYMMDDTHHMMSSZ``, naming a real UTC time. A missing run
+    or transition table refuses too, whether or not the database is
+    configured: every set has both.
+    """
+    from datetime import UTC, datetime
+
+    from .backup import SET_NAME
+
+    try:
+        if type(set_name) is not str or SET_NAME.fullmatch(set_name) is None:
+            raise ValueError
+        start = datetime.strptime(set_name, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+    except ValueError:
+        raise ConfigError("--after-restore must be a backup set's name.") from None
+    cursor.execute(
+        "SELECT coalesce(obj_description('public'::regnamespace,'pg_namespace'),'')"
+    )
+    marker = re.compile("pk-restore:" + re.escape(set_name) + ":[0-9a-f]{64}")
+    if marker.fullmatch(cursor.fetchone()[0]) is None:
+        raise ConfigError(
+            "--after-restore needs the database pk-restore just loaded from that set."
+        )
+    cursor.execute(
+        "SELECT to_regclass('public.stewardship_backup_run') IS NOT NULL "
+        "AND to_regclass('public.stewardship_runtime_transition') IS NOT NULL"
+    )
+    if not cursor.fetchone()[0]:
+        raise ConfigError("--after-restore needs the restored set's backup records.")
+    cursor.execute(
+        "SELECT EXISTS(SELECT 1 FROM public.stewardship_backup_run "
+        "WHERE started_at>=%s),"
+        "EXISTS(SELECT 1 FROM public.stewardship_runtime_transition "
+        "WHERE action='restore_release' AND backup_at=%s)",
+        [start, start],
+    )
+    later, released = cursor.fetchone()
+    if later:
+        raise ConfigError(
+            "--after-restore is refused: a backup ran on this database after the "
+            "restore."
+        )
+    if released:
+        raise ConfigError(
+            "--after-restore is refused: the restore review of that set was "
+            "released, so the site has run since."
+        )
+
+
+def _admit_reader(cursor, login, tables, columns, tolerated=None):
     """The backup login reads everything by membership and writes only its rows.
 
     `pg_read_all_data` makes every table readable, so the ordinary grant
     comparison cannot apply; instead the membership must be present and no
     privilege other than SELECT may exist beyond the registry: its table
     grants, or for a column write, its column grants (the request columns
-    request mode settles, ADM-13 PR 3).
+    request mode settles, ADM-13 PR 3, and its run row's columns, #235).
+    ``tolerated`` (table -> privileges) adds the table grants a pending
+    closure migration revokes (``runtime_grants.pending_table_revokes``):
+    each is admitted as a table grant, and so for each of its columns.
     """
+    if tolerated:
+        tables = {
+            table: set(tables.get(table, ())) | set(tolerated.get(table, ()))
+            for table in set(tables) | set(tolerated)
+        }
     cursor.execute("SELECT pg_has_role(%s,'pg_read_all_data','MEMBER')", [login])
     if cursor.fetchone() != (True,):
         raise ConfigError("The backup login lacks its read-all membership.")
@@ -331,6 +426,99 @@ def _connection(configuration, name, password):
     )
 
 
+def _create_login(database, cursor, configuration, marker, login, role, password):
+    """Create one runtime login exactly as provisioning does, from its password.
+
+    The SCRAM verifier is computed locally, so the plaintext never becomes
+    SQL text. ``pg_dump`` runs with row security off, which PostgreSQL
+    refuses for a login subject to a forced policy, so the backup login
+    bypasses row-level security, and nothing else does.
+    """
+    identifier = sql.Identifier(login)
+    verifier = database.pgconn.encrypt_password(
+        password, login.encode("ascii"), b"scram-sha-256"
+    ).decode("ascii")
+    cursor.execute(
+        sql.SQL(
+            "CREATE ROLE {} LOGIN NOINHERIT NOSUPERUSER {} "
+            "NOCREATEDB NOCREATEROLE NOREPLICATION "
+            "CONNECTION LIMIT {} PASSWORD {}"
+        ).format(
+            identifier,
+            sql.SQL(
+                "BYPASSRLS" if role is ServiceRole.BACKUP_WORKER else "NOBYPASSRLS"
+            ),
+            sql.Literal(role_limit(configuration, role)),
+            sql.Literal(verifier),
+        )
+    )
+    cursor.execute(
+        sql.SQL("COMMENT ON ROLE {} IS {}").format(identifier, sql.Literal(marker))
+    )
+
+
+def _open_login(cursor, configuration, login, role):
+    """The database CONNECT, schema USAGE and search_path every login gets.
+
+    The backup login also gets its one membership, pg_read_all_data with
+    inheritance (the login is NOINHERIT, so the membership itself must carry
+    it, PostgreSQL 16+).
+    """
+    identifier = sql.Identifier(login)
+    cursor.execute(
+        sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
+            sql.Identifier(configuration.postgres.name), identifier
+        )
+    )
+    cursor.execute(sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(identifier))
+    cursor.execute(
+        sql.SQL("ALTER ROLE {} SET search_path = {}").format(
+            identifier,
+            sql.SQL(
+                "public, pg_catalog"
+                if role is ServiceRole.MIGRATION
+                else "pg_catalog, public"
+            ),
+        )
+    )
+    if role is ServiceRole.BACKUP_WORKER:
+        cursor.execute(
+            sql.SQL("GRANT pg_read_all_data TO {} WITH INHERIT TRUE").format(identifier)
+        )
+
+
+def _ensure_uploader(database, cursor, configuration, marker):
+    """Create the off-site uploader's login when absent, else check its password.
+
+    The first login an existing deployment gains with a password (#235): the
+    expand upgrade's ``database-grants`` creates it here, before the
+    per-identity loop that refuses a missing role, from the password file
+    ``retarget-image`` created. An existing one is checked against the
+    stored verifier (``uploader_password``), since the source rules refuse
+    the uploader from this profile's network, so connecting as it cannot
+    prove the password. A missing or mismatched file refuses before any
+    grant. A login that differs from provisioning is refused by the loop's
+    ``_check_role``, never repaired.
+    """
+    from .uploader_password import (
+        UPLOADER_IDENTITY,
+        require_matching_password,
+        uploader_password,
+    )
+
+    login = next(
+        entry[1] for entry in database_identities() if entry[0] == UPLOADER_IDENTITY
+    )
+    password = uploader_password(configuration)
+    cursor.execute("SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname=%s)", [login])
+    if cursor.fetchone()[0]:
+        require_matching_password(cursor, login, password)
+        return
+    role = ServiceRole.BACKUP_UPLOADER
+    _create_login(database, cursor, configuration, marker, login, role, password)
+    _open_login(cursor, configuration, login, role)
+
+
 def provision_roles(configuration, deployment_id):
     """Create all foundation roles atomically before migrations, with matching retry."""
     if not isinstance(deployment_id, UUID):
@@ -359,10 +547,18 @@ def provision_roles(configuration, deployment_id):
             )
             for name, login, role, _ in identities
         }
-        for name, login, _, _ in identities:
-            if existing[name]:
-                with _connection(configuration, login, passwords[name]):
-                    pass  # Verify matching supplied password; never ALTER PASSWORD.
+        for name, login, role, _ in identities:
+            if not existing[name]:
+                continue
+            if role is ServiceRole.BACKUP_UPLOADER:
+                from .uploader_password import require_matching_password
+
+                # The source rules refuse the uploader from this profile's
+                # network, so its password is checked against the verifier.
+                require_matching_password(cursor, login, passwords[name])
+                continue
+            with _connection(configuration, login, passwords[name]):
+                pass  # Verify matching supplied password; never ALTER PASSWORD.
         cursor.execute(
             sql.SQL("COMMENT ON DATABASE {} IS {}").format(
                 sql.Identifier(configuration.postgres.name), sql.Literal(marker)
@@ -375,62 +571,17 @@ def provision_roles(configuration, deployment_id):
         )
         cursor.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
         for name, login, role, _ in identities:
-            identifier = sql.Identifier(login)
             if not existing[name]:
-                # SCRAM is generated locally: plaintext never becomes SQL text.
-                verifier = database.pgconn.encrypt_password(
-                    passwords[name], login.encode("ascii"), b"scram-sha-256"
-                ).decode("ascii")
-                # pg_dump runs with row security off, which PostgreSQL refuses
-                # for a login subject to a forced policy; the backup login
-                # therefore bypasses row-level security, and nothing else does.
-                cursor.execute(
-                    sql.SQL(
-                        "CREATE ROLE {} LOGIN NOINHERIT NOSUPERUSER {} "
-                        "NOCREATEDB NOCREATEROLE NOREPLICATION "
-                        "CONNECTION LIMIT {} PASSWORD {}"
-                    ).format(
-                        identifier,
-                        sql.SQL(
-                            "BYPASSRLS"
-                            if role is ServiceRole.BACKUP_WORKER
-                            else "NOBYPASSRLS"
-                        ),
-                        sql.Literal(role_limit(configuration, role)),
-                        sql.Literal(verifier),
-                    )
+                _create_login(
+                    database,
+                    cursor,
+                    configuration,
+                    marker,
+                    login,
+                    role,
+                    passwords[name],
                 )
-                cursor.execute(
-                    sql.SQL("COMMENT ON ROLE {} IS {}").format(
-                        identifier, sql.Literal(marker)
-                    )
-                )
-            cursor.execute(
-                sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
-                    sql.Identifier(configuration.postgres.name), identifier
-                )
-            )
-            cursor.execute(
-                sql.SQL("GRANT USAGE ON SCHEMA public TO {}").format(identifier)
-            )
-            cursor.execute(
-                sql.SQL("ALTER ROLE {} SET search_path = {}").format(
-                    identifier,
-                    sql.SQL(
-                        "public, pg_catalog"
-                        if role is ServiceRole.MIGRATION
-                        else "pg_catalog, public"
-                    ),
-                )
-            )
-            if role is ServiceRole.BACKUP_WORKER:
-                # pg_dump needs every table; the login is NOINHERIT, so the
-                # membership itself must carry inheritance (PostgreSQL 16+).
-                cursor.execute(
-                    sql.SQL("GRANT pg_read_all_data TO {} WITH INHERIT TRUE").format(
-                        identifier
-                    )
-                )
+            _open_login(cursor, configuration, login, role)
         # The System logs search's trigram indexes (#765, migration file
         # 0117) need pg_trgm. Creating an extension needs CREATE on the
         # database, which no service login holds (revoked above), so the
@@ -445,8 +596,13 @@ def provision_roles(configuration, deployment_id):
     return {"database_roles_provisioned": True}
 
 
-def provision_grants(configuration, deployment_id):
+def provision_grants(configuration, deployment_id, *, after_restore=None):
     """Grant only the explicit foundation registry after its migrations exist.
+
+    ``after_restore`` is ``pk-restore`` step 7's set name: it replaces the
+    recent-backup rule with that set's restore-load evidence and nothing else
+    (``_admit_operator``). The off-site uploader's login is created, or its
+    password checked, before the per-identity loop (``_ensure_uploader``).
 
     On the users upgrade's base (#952), the swap and what depends on it are
     still pending, so a definer routine, a table or a column one of those
@@ -454,12 +610,14 @@ def provision_grants(configuration, deployment_id):
     ``pending_tables``, ``pending_columns``); the grants after the full
     migration add it. A column grant one of those migrations revokes is
     still held there, so it is tolerated, never granted, until then
-    (``pending_revokes``).
+    (``pending_revokes``), as is a backup login table grant one of them
+    revokes (``pending_table_revokes``).
     """
     from .runtime_grants import (
         pending_columns,
         pending_functions,
         pending_revokes,
+        pending_table_revokes,
         pending_tables,
         runtime_functions,
         runtime_grants,
@@ -476,8 +634,11 @@ def provision_grants(configuration, deployment_id):
         ) as database,
         database.cursor() as cursor,
     ):
-        _admit_operator(cursor, configuration, marker, initial=False)
+        _admit_operator(
+            cursor, configuration, marker, initial=False, after_restore=after_restore
+        )
         _admit_writer_guard(cursor)
+        _ensure_uploader(database, cursor, configuration, marker)
         cursor.execute("SELECT app,name FROM public.django_migrations")
         applied = set(cursor.fetchall())
         pending, absent = pending_functions(applied), pending_tables(applied)
@@ -511,7 +672,13 @@ def provision_grants(configuration, deployment_id):
                 if name not in absent
             }
             if role is ServiceRole.BACKUP_WORKER:
-                _admit_reader(cursor, login, tables, columns)
+                _admit_reader(
+                    cursor,
+                    login,
+                    tables,
+                    columns,
+                    pending_table_revokes(role, applied),
+                )
             else:
                 _admit_existing_grants(
                     cursor,
@@ -553,7 +720,10 @@ def provision_grants(configuration, deployment_id):
         # credential material, decided from the catalog just migrated.
         ensure_inspect_login(cursor, marker, configuration.postgres.name)
         grant_inspect(cursor)
-    return {"database_grants_provisioned": True}
+    result = {"database_grants_provisioned": True}
+    if after_restore is not None:
+        result["after_restore"] = after_restore
+    return result
 
 
 def _with_tolerated(columns, tolerated):

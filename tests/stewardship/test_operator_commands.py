@@ -232,6 +232,42 @@ def test_remaining_operator_dispatch_is_explicit_and_profile_scoped(
     assert main(args) == 0
     procedure.assert_called_once()
     assert procedure.call_args.args[0] is configuration
+    if command == "database-grants":
+        # Ordinary grants never pass a restore admission.
+        assert procedure.call_args.kwargs == {"after_restore": None}
+
+
+def test_only_database_grants_takes_after_restore(tmp_path, monkeypatch, capsys):
+    """pk-restore step 7's option reaches provision_grants and nothing else."""
+    from dataclasses import replace
+    from unittest.mock import Mock
+    from uuid import uuid4
+
+    from .bootstrap_factory import bootstrap_fixture
+
+    configuration, _ = bootstrap_fixture(tmp_path)
+    configuration = replace(configuration, service_role=ServiceRole.DATABASE_PROVISION)
+    monkeypatch.setattr(operator_commands, "load_deployment", lambda _: configuration)
+    monkeypatch.setattr(
+        operator_commands, "admit_offline_service", lambda _: configuration.service_role
+    )
+    monkeypatch.setattr(
+        operator_commands, "configure_operator_database", lambda _: None
+    )
+    procedure = Mock(return_value={"database_grants_provisioned": True})
+    monkeypatch.setattr(
+        "parishkit.stewardship.database_provisioning.provision_grants", procedure
+    )
+    identifier = str(uuid4())
+    base = ["--config", "synthetic", "--confirm-deployment", identifier]
+    restore = ["--after-restore", "20261020T020000Z"]
+    assert main(["database-grants", *base, *restore]) == 0
+    assert procedure.call_args.kwargs == {"after_restore": "20261020T020000Z"}
+    for command in ("database-roles", "migrate", "upgrade-check"):
+        with pytest.raises(SystemExit) as exit_:
+            main([command, *base, *restore])
+        assert exit_.value.code == 2
+        assert "--after-restore" in capsys.readouterr().err
 
 
 def test_recovery_wrappers_refuse_wrong_identity_and_nonapplied_receipt(

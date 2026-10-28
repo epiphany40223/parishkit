@@ -71,7 +71,18 @@ _COMMAND_OPTIONS = {
         "send",
     },
     "database-roles": {"config", "confirm_deployment"},
-    "database-grants": {"config", "confirm_deployment"},
+    # --after-restore: pk-restore step 7 only (#235, "Restore admission").
+    "database-grants": {"config", "confirm_deployment", "after_restore"},
+    # The off-site uploader's password against a stored verifier on stdin
+    # (#235); also the upgrade script's "image has the uploader" marker.
+    "uploader-password-check": {"config"},
+    # The off-site uploader's copy (#235): cron's five-minute pass, and the
+    # upgrade's step 1 with a bounded lock wait and the step-1 set's digest.
+    "upload": {"config", "wait_lock", "require_digest"},
+    # The backup profile's proof that it has no route out (#235, contract):
+    # the upgrade's preflight passes the network's gateway, the host's
+    # listening ports, a Google API address and the Engine version.
+    "egress-probe": {"gateway", "google_address", "listen", "engine_version"},
     "recover-admin": {
         "config",
         "confirm_deployment",
@@ -259,6 +270,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         "wait-seconds",
         "ca-file",
         "backup-at",
+        "after-restore",
+        "wait-lock",
+        "require-digest",
+        "gateway",
+        "google-address",
+        "listen",
+        "engine-version",
         "confirm-administrators",
         "name",
     ):
@@ -515,6 +533,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         from .database_sources import execute
 
         return execute(args)
+    if args.command == "uploader-password-check":
+        from .uploader_password import execute_password_check
+
+        return execute_password_check(args)
+    if args.command == "upload":
+        from .uploader_commands import execute_upload
+
+        return execute_upload(args)
+    if args.command == "egress-probe":
+        from .egress_probe import execute as execute_egress_probe
+
+        return execute_egress_probe(args)
     if args.command == "service":
         if args.bind_all_interfaces and (
             args.profile != DeploymentProfile.DEVELOPMENT

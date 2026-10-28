@@ -310,39 +310,74 @@ def check_google_oauth(configuration):
     }
 
 
-def _deployment_tag(configuration):
-    """This deployment's Drive set tag, read as the backup login (``--send``).
+def _deployment_tag(configuration, backups):
+    """This deployment's Drive set tag and the set to copy (``--send``).
 
     A set folder written with the tag a real copy uses is found complete and
-    reused by the next backup's copy, and retention prunes it like any other
-    (#305 L3). Without it the folder kept the legacy tag: never pruned, and
-    a real copy wrote a second folder of the same name beside it.
+    reused by the next copy, and retention prunes it like any other (#305
+    L3). Read as the off-site uploader's own login (#235), which copies the
+    newest local set that a backup run row binds
+    (``uploader_commands.binds``), so a set a compromised backup image
+    staged under a borrowed name is refused, not copied. Returns ``(tag,
+    (directory, digest))``.
     """
     from django.db import connection
 
-    from .backup_commands import _admit_backup_identity
     from .backup_offsite import set_tag
     from .operator_commands import configure_operator_database
     from .runtime_database import require_current_schema
+    from .uploader_boundaries import admit_uploader_identity
 
     configure_operator_database(configuration)
     try:
-        _admit_backup_identity()
+        admit_uploader_identity()
         require_current_schema()
-        return set_tag()
+        return set_tag(), _bound_newest(backups)
     finally:
         # The uploads that follow can take a long time; hold no connection.
         connection.close()
 
 
-def check_backup_drive(configuration, *, delegated_email, folder_link, send=False):
-    """The backup profile can write to the off-site Drive folder.
+def _bound_newest(backups):
+    """The newest complete local set and its digest, refused unless bound.
 
-    Runs in the backup-worker container, which reads the installed Google
-    Workspace key through its read-only credentials tree. The check writes
-    one small file and trashes it; ``--send`` also copies the newest complete
-    local backup set, exactly as the backup command would, into a set folder
-    tagged with this deployment's identity (so it reads the database too).
+    Returns ``(directory, digest)``; the copy then uploads the set only if
+    its manifest still has that digest (``upload_set``'s
+    ``expected_digest``), so a set swapped on disk after this binding is
+    refused rather than copied under the bound name (#235).
+    """
+    from .backup_offsite import _complete_sets, _digest
+    from .jobs.backup_models import BackupRun
+    from .uploader_commands import binds
+
+    sets = _complete_sets(backups)
+    if not sets:
+        raise ConfigError("There is no complete backup set to copy.")
+    newest = sets[-1]
+    digest = _digest(newest)
+    runs = (
+        BackupRun.objects.filter(manifest_digest=digest).values_list(
+            "started_at", "completed_at"
+        )
+        if digest is not None
+        else ()
+    )
+    if not any(binds(newest.name, *times) for times in runs):
+        raise ConfigError("The newest backup set is not bound to its backup run.")
+    return newest, digest
+
+
+def check_backup_drive(configuration, *, delegated_email, folder_link, send=False):
+    """The off-site uploader's profile can write to the off-site Drive folder.
+
+    Runs only in the off-site uploader's container (#235), which mounts the
+    Google Workspace key by itself, after admitting its mounts; since the
+    contract release the backup profile has no route to Drive. The check
+    writes one small file and trashes it; ``--send`` also copies the newest
+    complete local backup set bound to its run row, exactly as ``upload``
+    would, into a set folder tagged with this deployment's identity (so it
+    admits the uploader's login and reads the database too), under the
+    host's copy lock.
     """
     from .backup_drive import (
         DriveClient,
@@ -352,19 +387,26 @@ def check_backup_drive(configuration, *, delegated_email, folder_link, send=Fals
         upload_set,
         workspace_session,
     )
-    from .backup_offsite import SEALED_FILES, _complete_sets, _copy_lock
+    from .backup_offsite import SEALED_FILES, _copy_lock
     from .mail_catcher import admit_real_workspace
     from .runtime_paths import explicit_path, private_directory
+    from .uploader_boundaries import admit_uploader_service
 
-    if configuration.service_role is not ServiceRole.BACKUP_WORKER:
-        raise ConfigError("Run the off-site backup check in the backup profile.")
+    if configuration.service_role is not ServiceRole.BACKUP_UPLOADER:
+        raise ConfigError("Run the off-site backup check in the uploader profile.")
+    admit_uploader_service(configuration)
     # Drive opens in LOCAL only where a real Workspace key may be used: with a
     # mail redirect, on the normal clock (#1399). Refused before the key or
     # the database is read.
     admit_real_workspace(configuration.profile, configuration.mail_redirect)
     folder = folder_id_from_url(folder_link or "")
-    tag = {"tag": _deployment_tag(configuration)} if send else {}
-    value = read_private(RuntimeLayout(configuration).credential("google_workspace"))
+    backups = newest = digest = None
+    tag = {}
+    if send:
+        backups = private_directory(explicit_path(configuration.paths["backups"]))
+        value, (newest, digest) = _deployment_tag(configuration, backups)
+        tag = {"tag": value}
+    value = read_private(configuration.secrets["google_workspace"])
     try:
         client = DriveClient(
             workspace_session(
@@ -378,12 +420,8 @@ def check_backup_drive(configuration, *, delegated_email, folder_link, send=Fals
         probe(client, folder)
         copied = None
         if send:
-            backups = private_directory(explicit_path(configuration.paths["backups"]))
-            sets = _complete_sets(backups)
-            if not sets:
-                raise ConfigError("There is no complete backup set to copy.")
-            # The backup's own copy may be writing this set's folder; never
-            # replace it mid-upload (upload_set trashes a mismatched folder).
+            # Another copy may be writing this set's folder; never replace
+            # it mid-upload (upload_set trashes a mismatched folder).
             with _copy_lock(backups) as held:
                 if not held:
                     return {
@@ -391,8 +429,10 @@ def check_backup_drive(configuration, *, delegated_email, folder_link, send=Fals
                         "reason": "busy",
                         "message": "A backup copy is running; try again later.",
                     }
-                upload_set(client, folder, sets[-1], SEALED_FILES)
-            copied = sets[-1].name
+                # The set must still be the one its run row bound: checked
+                # here, under the lock, before any upload.
+                upload_set(client, folder, newest, SEALED_FILES, expected_digest=digest)
+            copied = newest.name
     except DriveFailure as failure:
         return {"accepted": False, "reason": failure.kind, "message": failure.message}
     return {"accepted": True, "copied_set": copied}
@@ -426,7 +466,7 @@ def execute_smoke(args):
             ServiceRole.WEB,
             ServiceRole.WORKER,
             ServiceRole.MAIL_DISPATCH,
-            ServiceRole.BACKUP_WORKER,
+            ServiceRole.BACKUP_UPLOADER,
         }:
             raise ConfigError("Run the smoke check inside a deployed consumer.")
         if args.target == "backup_drive":
@@ -438,7 +478,7 @@ def execute_smoke(args):
             )
             print(json.dumps({"target": args.target, **result}, sort_keys=True))
             return 0
-        if configuration.service_role is ServiceRole.BACKUP_WORKER:
+        if configuration.service_role is ServiceRole.BACKUP_UPLOADER:
             raise ConfigError("Run the smoke check inside a deployed consumer.")
         if args.target == "parishsoft":
             result = check_parishsoft(

@@ -74,6 +74,12 @@ GOLDEN_ROOT = Path("/opt/parishkit")
 # one-shot offline networks and PostgreSQL's hba_file (the Compose digests
 # and fixture only; the service documents are unchanged, and pg_hba.conf is
 # pinned in full by its own fixture).
+# #235 adds the off-site uploader's one-shot profile: its service and
+# offline network, PostgreSQL's address on it, its password file in
+# database-provision's mounts and its service document (the Compose and
+# document digests and fixture; its source rule is in the hba fixture).
+# #235's contract takes the backup worker off application-egress (the
+# Compose digests and fixture only).
 # Intentional change for new installs only (#2228): "initial" renders
 # exactly the "configured" topology, so its digests are configured's; the
 # configured and configured-slack renderings, which Production runs, are
@@ -82,22 +88,22 @@ GOLDEN_ROOT = Path("/opt/parishkit")
 # full under fixtures/ so a difference can be read, not just detected.
 GOLDEN_DIGESTS = {
     ("initial", "compose"): (
-        "765d13ff897b360c6ccfdce0339dab021e4c414fde37062edcf03a6a518a36dc"
+        "639dbe4ca02cbf24eb292a4f20909dd66fd18e04e963def2fb405dd1f0127e1c"
     ),
     ("initial", "documents"): (
-        "9d65bab1d7b28eebd476ee671871d675f86ff81cff6259cd82ded7b936a1d360"
+        "12cb572114939fbb76dda907148aa56dd0a3cad419d1e39accd9b9429d029b9d"
     ),
     ("configured", "compose"): (
-        "765d13ff897b360c6ccfdce0339dab021e4c414fde37062edcf03a6a518a36dc"
+        "639dbe4ca02cbf24eb292a4f20909dd66fd18e04e963def2fb405dd1f0127e1c"
     ),
     ("configured", "documents"): (
-        "9d65bab1d7b28eebd476ee671871d675f86ff81cff6259cd82ded7b936a1d360"
+        "12cb572114939fbb76dda907148aa56dd0a3cad419d1e39accd9b9429d029b9d"
     ),
     ("configured-slack", "compose"): (
-        "b22bf08772d88d584e22f21a27c8eea0daf4f0dacf7ecd282781715abc30b49d"
+        "7e53c2d9f207a8a220f97388127ad13864b3a3293e3ee032f68bdad51974f21b"
     ),
     ("configured-slack", "documents"): (
-        "81fa8932b36a6d3a9e41c0301d63dc9ab30501f950cf815bf3e8b2caf2dc8b6c"
+        "983d1e04f66b30d5a97ff3fb103ebe64ecc0361a4f3245cf38cab6f2ae5d6d30"
     ),
 }
 

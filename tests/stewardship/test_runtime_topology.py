@@ -105,9 +105,28 @@ def test_rendered_foundation_enforces_individual_mounts_and_profiles(
             assert mounts[configuration.paths["credentials"]] is True
             assert mounts[configuration.paths["backups"]] is False
             assert service["command"][0] == "backup"
-            # Egress carries the off-site copies to Google Drive.
+            # No route out (#235, contract): its own internal network alone;
+            # the off-site uploader copies the sets.
+            assert set(service["networks"]) == {"offline-backup-worker"}
+        if name == "backup-uploader":
+            # The off-site uploader (#235): its own one-shot network and the
+            # route out, never backend; every mount read-only, and only the
+            # documented inventory (no tree, no recipient key, no record).
+            mounts = {Path(m["source"]): m["read_only"] for m in service["volumes"]}
+            assert mounts == {
+                layout.service_directory / "backup-uploader.yaml": True,
+                layout.database_password("backup-uploader"): True,
+                layout.interlock: True,
+                layout.credential("google_workspace").parent: True,
+                configuration.paths["backups"]: True,
+            }
+            assert service["command"] == [
+                "upload",
+                "--config",
+                str(layout.service_directory / "backup-uploader.yaml"),
+            ]
             assert set(service["networks"]) == {
-                "offline-backup-worker",
+                "offline-backup-uploader",
                 "application-egress",
             }
         if name in {
@@ -116,6 +135,7 @@ def test_rendered_foundation_enforces_individual_mounts_and_profiles(
             "admin-recovery",
             "database-provision",
             "backup-worker",
+            "backup-uploader",
         }:
             assert service["profiles"] == [name]
             assert service["restart"] == "no"
@@ -610,6 +630,7 @@ PROFILED_SERVICES = {
     "admin-recovery",
     "database-provision",
     "backup-worker",
+    "backup-uploader",
 }
 
 
