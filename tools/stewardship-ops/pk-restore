@@ -86,7 +86,10 @@
 # neither (an older restore, or a set this deployment never recorded) is
 # refused: restore it by hand.
 #
-# Then: 1 stops every online service (after waiting, bounded, for a running
+# Then: 1 takes this host's off-site copy lock on the backups directory
+# (#235: the legacy file lock, then the directory lock, waiting at most 60
+# seconds for a running copy, else refusing; held until the run ends) and
+# stops every online service (after waiting, bounded, for a running
 # backup-worker); 4 moves each current tree aside as NAME.pre-restore-STAMP
 # (never deleting it) and puts the set's in place, keeping the host's
 # off-site uploader password file when the set's credentials have none
@@ -116,7 +119,8 @@
 # reads from the dump offline, and the manifest's SHA-256 must be
 # --manifest-digest. Step 1 has nothing to stop on a new host; 3 creates
 # the runtime root's other directories (owned by the owner, mode 0700) and
-# run/startup.lock and collects the static files; 4 as above; 5 starts
+# run/startup.lock, collects the static files and takes the copy lock; 4
+# as above; 5 starts
 # postgres and valkey and runs database-roles, after which the database
 # marker must be the UUID; 6, 7 and 8 as above. The log directory (and the
 # runtime root) is created first when missing. --from 5 and 6 need step 4's
@@ -581,7 +585,7 @@ sha256() {
     # The SHA-256 of one file: GNU coreutils on the host, shasum elsewhere.
     if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1
 }
-for tool in docker timeout tar df; do
+for tool in docker timeout tar df flock; do
     command -v "$tool" >/dev/null || refuse "$tool is not installed"
 done
 if [ "$owner" != "$(id -u):$(id -g)" ] && [ "$(id -u)" -ne 0 ]; then
@@ -692,15 +696,16 @@ confirm_typed() {
 check_jobs() {
     # Cron and timers: a backup that starts mid-restore archives a mix and
     # is copied off the host; the runbook disables those jobs until step 9.
-    # Debian and Ubuntu's own dpkg-db-backup timer (it keeps copies of the
-    # package database in /var/backups) is no such job and is ignored.
+    # The off-site uploader's line (#235) names backup-uploader, so the
+    # filter refuses it too. The crontabs are read by the shared block's
+    # cron_lines (the upgrade reads them the same way); the filter is this
+    # script's own. Debian and Ubuntu's own dpkg-db-backup timer (it keeps
+    # copies of the package database in /var/backups) is no such job and is
+    # ignored.
     local jobs
     jobs=$(
         {
-            crontab -l -u root 2>/dev/null || true
-            [ -z "${SUDO_USER:-}" ] || crontab -l -u "$SUDO_USER" 2>/dev/null || true
-            cat "${PK_RESTORE_CRONTAB:-/etc/crontab}" 2>/dev/null || true
-            cat "${PK_RESTORE_CRON_DIR:-/etc/cron.d}"/* 2>/dev/null || true
+            cron_lines
             if command -v systemctl >/dev/null; then
                 # Only the timer listing's own dpkg-db-backup row, by its last
                 # two columns (the timer and the unit it activates).
@@ -1042,6 +1047,73 @@ hba_reload() {
     esac
 }
 # END PostgreSQL source rules check (#2111).
+# BEGIN host crontab collection (#235). This block is kept identical in
+# tools/stewardship-upgrade-host.sh and tools/stewardship-ops/pk-restore
+# (tests/stewardship/test_database_layout.py compares the two copies).
+cron_lines() {
+    # Every uncommented line of the crontabs this host's jobs live in:
+    # root's and SUDO_USER's, /etc/crontab and /etc/cron.d (PK_RESTORE_CRONTAB
+    # and PK_RESTORE_CRON_DIR for tests). Scripts in /etc/cron.{hourly,...},
+    # anacron, `at` jobs and other users' crontabs are not read.
+    {
+        crontab -l -u root 2>/dev/null || true
+        [ -z "${SUDO_USER:-}" ] || crontab -l -u "$SUDO_USER" 2>/dev/null || true
+        cat "${PK_RESTORE_CRONTAB:-/etc/crontab}" 2>/dev/null || true
+        cat "${PK_RESTORE_CRON_DIR:-/etc/cron.d}"/* 2>/dev/null || true
+    } | grep -v '^[[:space:]]*#' || true
+}
+uploader_cron_lines() {
+    # The uncommented cron lines that run the off-site uploader: any line
+    # naming the backup-uploader service, whose one job is `upload`.
+    cron_lines | grep -E '(^|[^[:alnum:]_-])backup-uploader([^[:alnum:]_-]|$)' || true
+}
+# END host crontab collection (#235).
+# BEGIN off-site copy lock (#235). This block is kept identical in
+# tools/stewardship-upgrade-host.sh and tools/stewardship-ops/pk-restore
+# (tests/stewardship/test_database_layout.py compares the two copies).
+copy_lock_take() {
+    # copy_lock_take DIR SECONDS: hold this host's off-site copy lock on the
+    # backups directory DIR for the rest of the run (operations
+    # specification, "Offline work"), so an upload still running finishes
+    # first and a cron uploader exits at the lock. Taken as every copier
+    # takes it, in the expand release's order: the legacy file lock (an
+    # old-release copy holds only that one), then the directory lock, each
+    # with `flock -w` on a read-only descriptor (8 and 9) this shell keeps
+    # open until it exits. A missing legacy file is created exclusively
+    # (noclobber opens it O_EXCL, which also refuses a link planted
+    # meanwhile), owned like DIR and mode 0600, so the backup profile can
+    # still open it; a link or anything but a regular file refuses. A wait
+    # longer than SECONDS in all is logged with what, the limit and the
+    # elapsed time, and returns non-zero, as does any other failure.
+    local dir=$1 limit=$2 file uid gid started left fd
+    file=$dir/.offsite-copy.lock
+    command -v flock >/dev/null || { echo "flock is not installed; cannot take the off-site copy lock." >&2; return 1; }
+    { [ -d "$dir" ] && [ ! -L "$dir" ]; } ||
+        { echo "The backups directory $dir is not a directory." >&2; return 1; }
+    if [ ! -e "$file" ] && [ ! -L "$file" ]; then
+        read -r _ _ uid gid _ < <(ls -ldn "$dir") ||
+            { echo "Could not read the owner of $dir." >&2; return 1; }
+        if ! (umask 077 && set -o noclobber && : >"$file") 2>/dev/null ||
+            ! chown -h "$uid:$gid" "$file"; then
+            echo "Could not create the copy lock file $file." >&2
+            return 1
+        fi
+    fi
+    { [ -f "$file" ] && [ ! -L "$file" ]; } ||
+        { echo "The copy lock file $file is not a regular file." >&2; return 1; }
+    exec 8<"$file" 9<"$dir" ||
+        { echo "Could not open the copy lock on $dir." >&2; return 1; }
+    started=$(date -u +%s)
+    for fd in 8 9; do
+        left=$((limit - ($(date -u +%s) - started)))
+        [ "$left" -ge 1 ] || left=1
+        if ! flock -w "$left" "$fd"; then
+            echo "TIMEOUT: waiting for the off-site copy lock on $dir gave up after $(($(date -u +%s) - started))s (limit ${limit}s)" >&2
+            return 1
+        fi
+    done
+}
+# END off-site copy lock (#235).
 collect_static() {
     # The image's static files, collected into cache/static.next (this
     # command's own staging tree) and moved in at step 7.
@@ -1425,6 +1497,14 @@ fi
 # once cache/ exists.
 if [ "$replace" -eq 0 ] || [ "$from" -ge 5 ]; then collect_static; fi
 
+hold_copy_lock() {
+    # The shared block's copy lock on the backups directory, waited for at
+    # most 60 seconds; an expiry (logged by the block) refuses before
+    # anything stops.
+    copy_lock_take "$(path backups)" 60 ||
+        refuse "an off-site copy is still running and holds the copy lock; run again after it finishes (backup runbook, Stopping a running uploader)"
+    echo "    holding the off-site copy lock on $(path backups)"
+}
 backup_running() {
     # The running backup-worker's container ids; a failed listing refuses.
     limited "$LIMIT_QUERY" "listing backup-worker" docker ps --quiet \
@@ -1436,6 +1516,10 @@ if [ "$replace" -eq 0 ] || [ "$from" -ge 5 ]; then
     # A new host (a replacement's steps 3 and 4) has nothing to stop: the
     # checks found no container of the project.
     step "1. Stopping every online service"
+    # The off-site copy lock (#235), held to the end of the run: an upload
+    # still running finishes first (or the run refuses), so the restored
+    # database never receives a later upload's outcome rows.
+    hold_copy_lock
     waited=$(date -u +%s)
     while :; do
         backups=$(backup_running)
@@ -1483,6 +1567,9 @@ if [ "$replace" -eq 1 ] && [ "$from" -le 4 ]; then
     chmod 0600 "$lock"
     chown "$owner" "$lock"
     collect_static
+    # A new host runs no copy, but the lock is held all the same, as on the
+    # deployment's own host (step 1 there).
+    hold_copy_lock
 fi
 
 move_aside() {

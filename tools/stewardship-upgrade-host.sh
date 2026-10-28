@@ -569,6 +569,73 @@ hba_reload() {
     esac
 }
 # END PostgreSQL source rules check (#2111).
+# BEGIN host crontab collection (#235). This block is kept identical in
+# tools/stewardship-upgrade-host.sh and tools/stewardship-ops/pk-restore
+# (tests/stewardship/test_database_layout.py compares the two copies).
+cron_lines() {
+    # Every uncommented line of the crontabs this host's jobs live in:
+    # root's and SUDO_USER's, /etc/crontab and /etc/cron.d (PK_RESTORE_CRONTAB
+    # and PK_RESTORE_CRON_DIR for tests). Scripts in /etc/cron.{hourly,...},
+    # anacron, `at` jobs and other users' crontabs are not read.
+    {
+        crontab -l -u root 2>/dev/null || true
+        [ -z "${SUDO_USER:-}" ] || crontab -l -u "$SUDO_USER" 2>/dev/null || true
+        cat "${PK_RESTORE_CRONTAB:-/etc/crontab}" 2>/dev/null || true
+        cat "${PK_RESTORE_CRON_DIR:-/etc/cron.d}"/* 2>/dev/null || true
+    } | grep -v '^[[:space:]]*#' || true
+}
+uploader_cron_lines() {
+    # The uncommented cron lines that run the off-site uploader: any line
+    # naming the backup-uploader service, whose one job is `upload`.
+    cron_lines | grep -E '(^|[^[:alnum:]_-])backup-uploader([^[:alnum:]_-]|$)' || true
+}
+# END host crontab collection (#235).
+# BEGIN off-site copy lock (#235). This block is kept identical in
+# tools/stewardship-upgrade-host.sh and tools/stewardship-ops/pk-restore
+# (tests/stewardship/test_database_layout.py compares the two copies).
+copy_lock_take() {
+    # copy_lock_take DIR SECONDS: hold this host's off-site copy lock on the
+    # backups directory DIR for the rest of the run (operations
+    # specification, "Offline work"), so an upload still running finishes
+    # first and a cron uploader exits at the lock. Taken as every copier
+    # takes it, in the expand release's order: the legacy file lock (an
+    # old-release copy holds only that one), then the directory lock, each
+    # with `flock -w` on a read-only descriptor (8 and 9) this shell keeps
+    # open until it exits. A missing legacy file is created exclusively
+    # (noclobber opens it O_EXCL, which also refuses a link planted
+    # meanwhile), owned like DIR and mode 0600, so the backup profile can
+    # still open it; a link or anything but a regular file refuses. A wait
+    # longer than SECONDS in all is logged with what, the limit and the
+    # elapsed time, and returns non-zero, as does any other failure.
+    local dir=$1 limit=$2 file uid gid started left fd
+    file=$dir/.offsite-copy.lock
+    command -v flock >/dev/null || { echo "flock is not installed; cannot take the off-site copy lock." >&2; return 1; }
+    { [ -d "$dir" ] && [ ! -L "$dir" ]; } ||
+        { echo "The backups directory $dir is not a directory." >&2; return 1; }
+    if [ ! -e "$file" ] && [ ! -L "$file" ]; then
+        read -r _ _ uid gid _ < <(ls -ldn "$dir") ||
+            { echo "Could not read the owner of $dir." >&2; return 1; }
+        if ! (umask 077 && set -o noclobber && : >"$file") 2>/dev/null ||
+            ! chown -h "$uid:$gid" "$file"; then
+            echo "Could not create the copy lock file $file." >&2
+            return 1
+        fi
+    fi
+    { [ -f "$file" ] && [ ! -L "$file" ]; } ||
+        { echo "The copy lock file $file is not a regular file." >&2; return 1; }
+    exec 8<"$file" 9<"$dir" ||
+        { echo "Could not open the copy lock on $dir." >&2; return 1; }
+    started=$(date -u +%s)
+    for fd in 8 9; do
+        left=$((limit - ($(date -u +%s) - started)))
+        [ "$left" -ge 1 ] || left=1
+        if ! flock -w "$left" "$fd"; then
+            echo "TIMEOUT: waiting for the off-site copy lock on $dir gave up after $(($(date -u +%s) - started))s (limit ${limit}s)" >&2
+            return 1
+        fi
+    done
+}
+# END off-site copy lock (#235).
 
 # The project keeps whichever Compose file it already runs under; an upgrade
 # or a rollback changes images and the documents rendered for them (once,
@@ -973,6 +1040,24 @@ fi
 if has_command "$running_commands" uploader-password-check; then
     echo "    the running image has the off-site uploader"
 fi
+# The off-site uploader's cron line (#235) runs the backup-uploader service
+# every five minutes. An image without the `upload` command (a rollback past
+# the expand release, or an image between its two parts) renders no such
+# service or cannot run it, so the line would fail every five minutes and
+# the backup profile's own copy is the copier again: it must be commented
+# out first. Refused here, before anything stops (backup runbook, "Rolling
+# back the expand release").
+if ! has_command "$new_commands" upload; then
+    uploader_cron=$(uploader_cron_lines)
+    if [ -n "$uploader_cron" ]; then
+        echo "$image has no off-site uploader, but this host's cron still runs it:" >&2
+        while read -r line; do echo "    | $line"; done <<<"$uploader_cron" >&2
+        echo "Nothing was stopped or changed. Comment out the uploader's cron line first" >&2
+        echo "(docs/guides/stewardship-backup-runbook.md#rolling-back-the-expand-release)," >&2
+        echo "then repeat." >&2
+        exit 1
+    fi
+fi
 
 uploader_login=pk_stewardship_backup_uploader
 uploader_recovery="docs/guides/stewardship-backup-runbook.md#uploader-lost-file-recovery"
@@ -1161,6 +1246,40 @@ if [ "$recorded" != true ] && [ "${#backup_args[@]}" -gt 0 ] &&
     echo "    $(jq -r '.reused_backup.completed_at' <<<"$backup") (manifest $(jq -r '.reused_backup.manifest_digest' <<<"$backup")) stays this upgrade's restore point"
     recorded=true
 fi
+# The off-site uploader (#235, operations specification, "Scripted
+# upgrades"): when the running image has its `upload` command and the
+# running Compose file has its service, it copies the step-1 set, whatever
+# the backup's own line said (on an expand topology the backup's copy can
+# report busy because the uploader holds the lock). It waits at most 1800 s
+# for a copy already running (an expiry is its own lock_timeout entry) and
+# reports whether an uploaded row exists for that set's digest and the
+# current folder, whichever run wrote it. Keyed on the command as well as
+# the service, so an image between the two expand parts keeps the rule on
+# the backup line above.
+if [ "$recorded" = true ] && has_command "$running_commands" upload &&
+    jq -e '.services["backup-uploader"]' "$compose" >/dev/null 2>&1; then
+    digest=$(jq -r '.manifest_digest // .reused_backup.manifest_digest // empty' <<<"$backup" 2>/dev/null || true)
+    offsite_ok=0
+    if [[ $digest =~ ^[0-9a-f]{64}$ ]]; then
+        step "1. Off-site copy by the uploader (waiting up to 1800s for a running copy)"
+        # The lock wait, the four-hour copy budget and a margin.
+        uploaded=$(oneoff $((1800 + 4 * 3600 + 600)) "the off-site uploader" uploader \
+            backup-uploader upload --config "$services/backup-uploader.yaml" \
+            --wait-lock 1800 --require-digest "$digest") || uploaded=""
+        echo "    ${uploaded:-the uploader printed no result}"
+        echo "$(date -u +%FT%TZ) uploader: ${uploaded:-no result}" >>"$logdir/stewardship-backup.log"
+        required=$(jq -r '.required_copy // empty' <<<"$uploaded" 2>/dev/null || true)
+        case "$profile:$required" in
+            production:uploaded | local:uploaded | local:not_configured) offsite_ok=1 ;;
+        esac
+        if [ "$offsite_ok" -ne 1 ] && [ "$(jq -r '.state // empty' <<<"$uploaded" 2>/dev/null || true)" = busy ]; then
+            echo "An off-site copy is still running (or offline work holds the interlock); try" >&2
+            echo "again later. A whole catch-up can take up to four hours." >&2
+        fi
+    else
+        echo "The backup line names no manifest digest for the uploader to copy." >&2
+    fi
+fi
 if [ "$recorded" != true ] || [ "$offsite_ok" -ne 1 ]; then
     # The EXIT trap restarts the background services (phase background).
     echo "The backup did not complete with its off-host copy; abandoning the $mode." >&2
@@ -1168,6 +1287,21 @@ if [ "$recorded" != true ] || [ "$offsite_ok" -ne 1 ]; then
         echo "If an earlier run of the users release stopped in its step 4, repeat it with the" >&2
         echo "STEWARDSHIP_USERS_* variables (runbook, Users upgrade)." >&2
     fi
+    exit 1
+fi
+
+# The off-site copy lock (#235, "Offline work"), held from here to the end
+# of the run on the backups directory, so a cron uploader exits at the lock
+# rather than reaching the interlock, and no copy writes outcome rows while
+# the database is offline. It waits, bounded and logged, for a copy that
+# started since the step-1 copy; an expiry abandons the run like a busy
+# backup (the EXIT trap restarts the background services).
+step "1. Holding the off-site copy lock for the offline work"
+copy_backups=$(jq -er '.deployment.paths.backups' "$services/web.yaml" 2>/dev/null) ||
+    { echo "Could not read the backups directory from $services/web.yaml; abandoning the $mode." >&2; exit 1; }
+if ! copy_lock_take "$copy_backups" 1800; then
+    echo "An off-site copy is still running and holds the copy lock; abandoning the $mode." >&2
+    echo "Try again later (a whole catch-up can take up to four hours)." >&2
     exit 1
 fi
 
