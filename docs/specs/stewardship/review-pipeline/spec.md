@@ -1268,7 +1268,8 @@ The rules, in order:
    badge, as Ministry requests' roster rows do today.
 
 For a Ministry request, R, A and C are the Member's roster state for that
-Ministry (in or not in), so rule 3 cannot apply: a ticked join is
+Ministry (in or not in) as of the
+[Ministry roster date](#ministry-roster-date), so rule 3 cannot apply: a ticked join is
 Confirmed when the Member appears in the roster, and otherwise unchanged;
 a join still To review or To enter by hand whose Member the roster already
 lists says "ParishSoft already holds this value." (rule 1).
@@ -1506,6 +1507,64 @@ opt-out against it. This changes only confirmation: the Family form's
 baseline for the field stays unavailable until a slice that changes the
 shared projection says otherwise.
 
+### Ministry roster date
+
+Staff enter a campaign's Ministry joins and leaves in ParishSoft by hand,
+dated for the campaign's
+[commitment period](../data/spec.md#commitment-period): for Stewardship
+2027, a leave ends on December 31, 2026 and a join starts on January 1,
+2027. So every check of a hand entry reads ParishSoft's Ministry
+memberships as of the **Ministry roster date**: the later of the refresh's
+own date and the commitment period start (the Administrator,
+[#2293](https://github.com/epiphany40223/parishkit/issues/2293),
+2026-10-27). A membership is held on that day when it has a start or an
+end date, its start date (if any) is on or before that day, and its end
+date (if any) is after it.
+
+- **Before the period begins** the commitment period start is the later
+  day. A join dated the commitment period start is held, and a leave ending
+  the day before it is not, so a refresh made today confirms both, months
+  before the period begins.
+- **Once the period is under way** the refresh's own date is the later
+  day, so a join or leave staff enter late, dated after the start, is still
+  confirmed by the next refresh instead of reading Not seen in ParishSoft.
+
+The refresh date is the day the refresh started, in the campaign's
+time zone (the load's `as_of_date`, the day each roster row's current flag
+is judged on). The promotion and the database guard compute the same day,
+the guard in SQL (`stewardship_ministry_roster_date_v1`), so they agree on
+every check.
+
+The Ministry roster date applies to:
+
+- the [refresh checks](#refresh-checks) of a decided Ministry request
+  (Confirmed, Not seen in ParishSoft, and "ParishSoft now matches the
+  Family's answer" for an Ignored one), both in the promotion and in the
+  database guard that admits each check;
+- "ParishSoft already holds this value." on a request still To review or
+  To enter by hand (rule 1).
+
+It does not apply to what the Family sees: the Family form's current
+Ministries, and the database guard that checks a response's joins and
+leaves against them, stay today's roster, as of the refresh date. The
+Ministry reports and the leaders read from roles also keep today's roster.
+A campaign without a commitment period (Financial stewardship off) reads
+every roster as of the refresh date, as before. Nothing stored is
+rewritten: the change only decides how later refreshes classify each
+request. "ParishSoft already holds this value." on the worklist is read
+when the page is drawn, so it reflects the Ministry roster date as soon as
+the code is deployed; the stored refresh checks (Confirmed, Not seen in
+ParishSoft) change only at the next refresh.
+
+**Staff guidance.** Enter leaves ending the day before the commitment
+period starts and joins starting on its first day. A membership dated
+later in the period (a join that starts after the start, or a leave that
+ends after it) is not what ParishSoft holds until that day: its request is
+not confirmed by refreshes made before then, and becomes Not seen in
+ParishSoft after the usual full refreshes, until a refresh made on or after
+that day confirms it. Once the period is under way, date a join or leave
+on or before the day you enter it.
+
 ## Pipeline vocabulary
 
 These words are used, exactly, on every pipeline page, in exports, help
@@ -1737,8 +1796,9 @@ offering/pledge/list` returns each pledge with `familyID`, `fundID`,
 `installmentAmount`, `numberOfMonths` and `fulfillmentMethod`, filterable by
 Family, fund and date. The refresh already reads every pledge of the
 campaign's configured funds and keeps those whose `pledgeStartDate` falls in
-the **upcoming stewardship year** (the campaign's financial period, its
-`fund_duids`) or in the comparison period (`source/giving.py` keeps the
+the **upcoming stewardship year** (the campaign's
+[commitment period](../data/spec.md#commitment-period) and its pledge
+funds, `fund_duids`) or in the comparison period (`source/giving.py` keeps the
 Family, fund, `currentPledgeAmount` and date), so confirmation needs no new
 read ([#1704](https://github.com/epiphany40223/parishkit/issues/1704)). It
 maps a Family's ParishSoft pledge for the upcoming year to the pipeline item:

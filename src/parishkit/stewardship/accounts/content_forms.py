@@ -604,7 +604,7 @@ def _sample_render(value, *, parish, campaign, confirmation=False, receipt_block
             + " – "
             + parish_date(date.fromisoformat(campaign["financial"]["end"]))
             if campaign["financial"]
-            else "Sample financial period"
+            else "Sample commitment period"
         ),
     }
     assert set(substitutions) == PLACEHOLDERS

@@ -126,7 +126,6 @@ def clone_initial(source, *, digest, timezone, ministries):
         comparison_end=None,
         fund_duids=[],
         comparison_fund_duids=[],
-        overlap_confirmed=False,
         ministry_duids=[key for key, _ in ministries]
         if "ministry" in source["values"]["modules"]
         else [],

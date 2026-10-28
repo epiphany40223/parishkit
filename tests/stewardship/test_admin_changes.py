@@ -666,17 +666,25 @@ def test_a_live_campaign_posts_only_its_end_date():
             bind({"window": window}, [], owner["values"], editable=False, end_only=True)
 
 
-def test_the_overlap_acknowledgement_needs_a_financial_period():
-    """Posted as the page's checkbox; refused, by field, without a period."""
-    owner = campaign_record()
-    with pytest.raises(admin_changes.InvalidChange) as refused:
-        bind({"window": {"overlap_confirmed": True}}, [], owner["values"])
-    assert refused.value.fields[0]["field"] == "window.overlap_confirmed"
+@pytest.mark.parametrize("retired", [True, False, None])
+def test_the_retired_overlap_acknowledgement_is_accepted_and_ignored(retired):
+    """The commitment period starts after the campaign ends (#2293), so
+    there is nothing to acknowledge; as with ``weekday`` (#2102), a document
+    an older script wrote may still carry it, and it is dropped with no
+    error, so a financial campaign's window posts none."""
+    parsed = admin_changes.parse_changes(
+        json.dumps({"window": {"end_date": "2054-10-20", "overlap_confirmed": retired}})
+    )
+    assert parsed["window"] == {"end_date": "2054-10-20"}
     funded = campaign_record(modules=["census", "financial"], financial=financial())
-    data, _ = bind({"window": {"overlap_confirmed": True}}, [], funded["values"])
-    assert data["window-overlap_confirmed"] == "on"
-    data, _ = bind({}, [], funded["values"])
-    assert "window-overlap_confirmed" not in data
+    data, _ = bind({"window": {"overlap_confirmed": retired}}, [], funded["values"])
+    assert not any("overlap" in name for name in data)
+
+
+def test_the_retired_overlap_acknowledgement_still_takes_only_a_boolean():
+    """Any other value is still a malformed window, as before."""
+    with pytest.raises(ValueError):
+        admin_changes.parse_changes(json.dumps({"window": {"overlap_confirmed": 1}}))
 
 
 def test_a_weekday_is_refused_by_field_and_a_null_one_is_accepted():

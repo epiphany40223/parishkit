@@ -89,7 +89,7 @@ def test_clone_resets_dates_funds_names_and_financial_acknowledgment():
         assert initial[name] is None
     assert initial["name"] == initial["year_label"] == ""
     assert initial["fund_duids"] == initial["comparison_fund_duids"] == []
-    assert not initial["overlap_confirmed"]
+    assert "overlap_confirmed" not in initial
     assert initial["timezone"] == "America/Chicago"
     assert initial["ministry_duids"] == ["99"]
 

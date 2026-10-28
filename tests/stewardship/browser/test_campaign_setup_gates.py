@@ -2,14 +2,14 @@
 
 Campaign settings and Setup › First campaign keep their action unavailable
 until a campaign module is ticked and, with Financial stewardship ticked,
-both financial periods and their funds are filled in and a shown overlap is
-confirmed. Campaign settings' Review also waits for a change from the saved
-settings (#921), so its tests make a real edit before the complete gate is
-the one deciding, and one test checks the two gates together. Setup › Slack
-shows the channel ID only while Slack is enabled, and then waits for it.
-Each hint sits after its button, so a line coming or going never moves the
-control just clicked, or the button. Every state is
-worked out again on pageshow, when a page restored from history gets back its
+both financial periods and their funds are filled in, with the commitment
+period starting after the campaign. Campaign settings' Review also waits
+for a change from the saved settings (#921), so its tests make a real edit
+before the complete gate is the one deciding, and one test checks the two
+gates together. Setup › Slack shows the channel ID only while Slack is
+enabled, and then waits for it. Each hint sits after its button, so a line
+coming or going never moves the control just clicked, or the button. Every
+state is worked out again on pageshow, when a page restored from history gets back its
 values without change events.
 """
 
@@ -27,8 +27,8 @@ RESTORE = "window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: 
 MODULE_HINT = (
     "Choose at least one: Census, Ministry stewardship or Financial stewardship."
 )
-FINANCIAL_HINT = "Fill in both financial periods and their funds."
-OVERLAP_HINT = "Confirm the overlap with the campaign dates, or change the dates."
+FINANCIAL_HINT = "Fill in the commitment and comparison periods and their funds."
+COMMITMENT_HINT = "Choose a commitment period start after the campaign end date."
 SLACK_HINT = "Enter the Slack channel ID, or untick Enable Slack notifications."
 UNCHANGED_HINT = "Change a setting to save it."
 END_HINT = "Choose a campaign end date after its start date."
@@ -93,7 +93,8 @@ def test_campaign_settings_waits_for_a_module_and_the_financial_fields(
     page, component_origin
 ):
     """Review needs a module and, for Financial stewardship, every period
-    field, fund and a shown overlap confirmation; nothing clicked moves."""
+    field and fund, with the commitment period starting after the campaign;
+    nothing clicked moves."""
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.goto(component_origin + "/campaign-settings")
@@ -119,23 +120,23 @@ def test_campaign_settings_waits_for_a_module_and_the_financial_fields(
     box = spot(financial)
     financial.check()
     assert spot(financial) == box
-    visible(page.get_by_role("group", name="Financial periods and funds"))
+    visible(page.get_by_role("group", name="Commitment and comparison periods"))
     waits_with(review, hint, FINANCIAL_HINT)
-    page.get_by_label("Upcoming financial period start").fill("2027-01-01")
+    page.get_by_label("Commitment period start").fill("2027-01-01")
     page.get_by_label("Comparison financial period start").fill("2025-01-01")
-    page.get_by_label("Upcoming financial period funds").select_option("9")
+    page.get_by_label("Pledge funds").select_option("9")
     assert review.is_disabled()
     page.get_by_label("Comparison financial period funds").select_option("9")
     ready(review, hint)
-    # A period overlapping the campaign (October 2026) asks for confirmation.
-    page.get_by_label("Upcoming financial period start").fill("2026-01-01")
-    confirm = page.get_by_label("I confirm that the upcoming financial period")
-    visible(confirm)
-    waits_with(review, hint, OVERLAP_HINT)
-    confirm.check()
+    # A commitment period starting before the campaign (October 2026)
+    # ends waits with its own hint (#2293); none asks for a confirmation.
+    page.get_by_label("Commitment period start").fill("2026-01-01")
+    waits_with(review, hint, COMMITMENT_HINT)
+    assert page.locator("[data-overlap-confirmation]").count() == 0
+    page.get_by_label("Commitment period start").fill("2027-01-01")
     ready(review, hint)
     # Unticking Financial stewardship hides and drops every financial field.
-    page.get_by_label("Upcoming financial period start").fill("")
+    page.get_by_label("Commitment period start").fill("")
     assert review.is_disabled()
     financial.uncheck()
     # Its disabled fields no longer count, and the renamed campaign is still

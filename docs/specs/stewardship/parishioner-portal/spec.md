@@ -528,17 +528,20 @@ Review shows the financial answer as "Your *year* pledge: *amount*", followed in
 parentheses by the payment amount under the same exact-or-approximate rule, and,
 for a positive pledge, "This pledge starts on **start date**" ("began on" once
 the period has started) with the date in bold. The *year* names the
-upcoming financial period ("2027", or "2027–2028" for a period that spans two
+commitment period ("2027", or "2027–2028" for a period that spans two
 years), never the campaign's Stewardship year label, so it always agrees with
 the start date; the giving history's "towards your *year* pledge" names the
 comparison period the same way. It does not
 repeat the giving history, and neither Review nor its default text adds a
 "nothing is sent until Submit" prompt.
 
-On the Financial page the configured upcoming period appears only in the "This
-pledge is for the stewardship period of …" sentence, which states its dates
-without claiming the start is in the future, so a campaign that overlaps its
-period is still displayed accurately.
+On the Financial page the [commitment period](../data/spec.md#commitment-period)
+appears only in the "This pledge is for the stewardship period of …"
+sentence, which states its dates without claiming the start is in the
+future: a new period starts after the campaign ends, but a campaign saved
+with an overlapping period before that rule
+([#2293](https://github.com/epiphany40223/parishkit/issues/2293)) keeps it,
+and is still displayed accurately.
 
 Share methods are a multi-select of campaign-versioned options. Default content
 is based on:
@@ -580,9 +583,10 @@ submitted with this answer.
 The `campaign_year` placeholder consistently means the configured campaign year
 label in Admin previews, page content, emails, share labels and Ministry
 packets. When no label is supplied it is the start year of the campaign's
-upcoming financial period, or the campaign start year when the campaign has no
-financial period. Use `financial_period`, `financial_start` and
-`financial_end` for the exact pledge dates. Preserved unresolved census
+commitment period, or the campaign start year when the campaign has no
+commitment period. Use `financial_period`, `financial_start` and
+`financial_end` for the commitment period's exact dates (the placeholders
+keep their names, so saved content still renders). Preserved unresolved census
 intent still contributes to the effective household count if census is later
 disabled; expose the count without exposing disabled census request details.
 

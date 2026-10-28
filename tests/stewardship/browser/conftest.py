@@ -1414,8 +1414,8 @@ def component_responses():
             ),
         ),
         (
-            # A financial campaign: its window shows the overlap confirmation
-            # only while the dates overlap the fixed financial period.
+            # A financial campaign: its window must end before the fixed
+            # commitment period starts (#2293).
             "/schedule-editor-financial",
             "schedule-reconcile",
             schedule_page(financial_campaign, [], now=datetime(2054, 9, 1, tzinfo=UTC))

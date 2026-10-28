@@ -165,10 +165,15 @@ def test_campaign_fields_group_the_modules_and_mark_the_financial_fields():
     for name in FINANCIAL_REQUIRED:
         (field,) = re.findall(rf'<(?:input|select)[^>]*name="{name}"[^>]*>', html)
         assert 'data-required-when="financial_enabled=on"' in field
-    assert 'data-missing-hint="Fill in both financial periods and their funds."' in html
-    # The overlap group carries its own hint, closer than the fieldset's.
-    (overlap,) = re.findall(r"<div data-overlap-confirmation[^>]*>", html)
-    assert 'data-missing-hint="Confirm the overlap' in overlap
+    assert (
+        'data-missing-hint="Fill in the commitment and comparison periods and '
+        'their funds."' in html
+    )
+    # The commitment period's start waits for a day after the campaign
+    # end (#2293); the overlap confirmation it replaced is gone.
+    (start,) = re.findall(r'<input[^>]*name="financial_start"[^>]*>', html)
+    assert 'data-not-before="id_end_date"' in start
+    assert "data-overlap-confirmation" not in html
     # Additional information stays an ordinary field after the modules.
     assert html.index('name="additional_information"') > html.index(
         'name="financial_enabled"'

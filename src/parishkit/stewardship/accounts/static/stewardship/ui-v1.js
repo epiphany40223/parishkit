@@ -5072,6 +5072,19 @@
       String(end.getUTCMonth() + 1).padStart(2, "0"),
       String(end.getUTCDate()).padStart(2, "0")].join("-");
   };
+  // The day after ``value`` (YYYY-MM-DD), in UTC like periodEnd, or null
+  // for a value that is not a whole date or whose next day is past 9999.
+  const nextDay = (value) => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) return null;
+    const [year, month, day] = match.slice(1).map(Number);
+    const next = new Date(0);
+    next.setUTCFullYear(year, month - 1, day + 1);
+    if (!Number.isFinite(next.getTime()) || next.getUTCFullYear() > 9999) return null;
+    return [String(next.getUTCFullYear()).padStart(4, "0"),
+      String(next.getUTCMonth() + 1).padStart(2, "0"),
+      String(next.getUTCDate()).padStart(2, "0")].join("-");
+  };
   // Date and amount order (#563). A Through or To date marked
   // data-not-before="<start input id>" takes the start's value as its min,
   // so the browser itself finds an end before the start (rangeUnderflow):
@@ -5093,7 +5106,10 @@
       // A financial period's end (data-one-year) must be exactly the day
       // its start gives (#1577), as the server requires: that day is both
       // its min and its max, so any other day is out of range. Otherwise
-      // the start is the min. Each is written only when it changes (#1419).
+      // the start is the min, or the day after it for a date that must come
+  // strictly after its start (data-strictly-after: the commitment period
+  // start after the campaign end, #2293, as the server's
+  // starts_after_campaign). Each is written only when it changes (#1419).
       // Rewriting min, even to the same value, makes Chromium rebuild the
       // date's fields; the end's own input event fires once its first year
       // digit makes a whole date, so a rewrite there dropped the year being
@@ -5104,7 +5120,8 @@
         if (value) end.setAttribute(name, value);
         else end.removeAttribute(name);
       };
-      bound("min", exact || start.value);
+      const after = end.hasAttribute("data-strictly-after") ? nextDay(start.value) : null;
+      bound("min", exact || after || start.value);
       bound("max", exact);
     }
   };
@@ -5549,8 +5566,8 @@
   // Financial tick could leave its fields disabled and unsent.
   //
   // Campaign settings' form is redrawn in place once its change is applied
-  // (#1119), so this wiring, the period end filling and the overlap
-  // confirmation below all run again for each swapped region
+  // (#1119), so this wiring and the period end filling below both run
+  // again for each swapped region
   // (parishkit:swap), as well as at load. A pageshow re-run skips what a
   // swap removed.
   let campaignUpdates = []; // {node, update} for each wired group
@@ -5607,7 +5624,7 @@
       end.value = value;
       end.dataset.autofilled = value;
       note.textContent = "End date filled in; change it if needed.";
-      // Let dependent checks (the overlap confirmation) see the new end.
+      // Let dependent checks (the complete gate) see the new end.
       end.dispatchEvent(new Event("input", {bubbles: true}));
     };
     start.addEventListener("input", fill);
@@ -5618,47 +5635,11 @@
   });
   wireFillsEnd(document);
 
-  // The overlap confirmation is needed only while the financial period and
-  // the campaign share at least one day (campaign_forms.overlaps). Hidden, it
-  // is also unchecked so a stale confirmation is never submitted. The server
-  // renders it visible whenever it is needed, so this is only a convenience.
-  // Restored dates (the back/forward cache) fire no event: pageshow checks
-  // again (#563).
-  const wireOverlap = (root) => within(root, "[data-overlap-confirmation]").forEach((group) => {
-    const form = group.closest("form");
-    const box = group.querySelector('input[type="checkbox"]');
-    if (!form || !box) return;
-    const read = (key) => {
-      const name = group.dataset[`${key}Name`];
-      const value = name ? form.elements[name]?.value : group.dataset[`${key}Value`];
-      return /^\d{4}-\d{2}-\d{2}$/.test(value || "") ? value : null;
-    };
-    const update = () => {
-      const [start, end, periodStart, periodEnd] =
-        ["campaignStart", "campaignEnd", "periodStart", "periodEnd"].map(read);
-      const needed = Boolean(start && end && periodStart && periodEnd
-        && periodStart <= end && periodEnd >= start);
-      group.hidden = !needed;
-      if (!needed) box.checked = false;
-      // Under the complete gate (Campaign settings, First campaign) a shown
-      // confirmation must be ticked before Review (#563). Only there: the
-      // schedule pages share this group without the gate, and a required
-      // box would bring the browser's own popup to them instead.
-      if (form.hasAttribute("data-require-complete")) box.required = needed;
-      gateComplete(form); // As for campaign modules above.
-    };
-    form.addEventListener("input", update);
-    form.addEventListener("change", update);
-    campaignUpdates.push({node: group, update});
-    update();
-  });
-  wireOverlap(document);
   document.addEventListener("parishkit:swap", (event) => {
     if (!(event.target instanceof Element)) return;
     pruneCampaignUpdates();
     wireCampaignModules(event.target);
     wireFillsEnd(event.target);
-    wireOverlap(event.target);
   });
 
   // The chosen email's one help line under a schedule's email list (#446,
@@ -8780,7 +8761,8 @@
   //     replaces the date, a greyed series date) or no readable time (its
   //     own refusal holds the button) is left alone.
   //   - While the window fields hold dates the server's window rules
-  //     refuse for another reason (an unconfirmed financial overlap, a live
+  //     refuse for another reason (an end on or after the commitment period
+  //     start, a live
   //     end already past), the server judges the schedules against the
   //     saved dates (build_preview) and this check against the typed ones;
   //     both agree once the window itself is accepted.

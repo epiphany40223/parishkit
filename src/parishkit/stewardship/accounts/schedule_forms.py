@@ -2,7 +2,7 @@
 
 import json
 from collections import Counter
-from datetime import date
+from datetime import date, timedelta
 from uuid import uuid4
 
 from django import forms
@@ -21,7 +21,7 @@ from parishkit.stewardship.web.presentation import parish_date
 from parishkit.stewardship.web.time_entry_fields import FlexibleTimeField
 
 from . import field_tips, schedule_local
-from .campaign_forms import OVERLAP_TEMPLATE, overlap_attributes, overlaps
+from .campaign_forms import COMMITMENT_AFTER_END, starts_after_campaign
 from .content_forms import EMAIL_LABELS
 from .timezone_field import TimezoneField
 
@@ -70,6 +70,16 @@ ZONE_MISSING = _(
     "Your browser didn't report a time zone, so this send time can't be "
     "read. Check your computer's time zone setting, then try again."
 )
+
+
+def commitment_overlap(start):
+    """The refusal of a campaign end on or after its commitment period's
+    ``start`` (a date, #2293): clean()'s words, and the browser's hint for
+    the end date's max (ScheduleWindow._bound_end_date)."""
+    return _(
+        "The campaign must end before its commitment period starts on "
+        "%(start)s: choose an earlier end date."
+    ) % {"start": parish_date(start)}
 
 
 def send_window_attrs():
@@ -145,14 +155,6 @@ class ScheduleWindow(AdminForm):
         widget=forms.DateInput(attrs={"type": "date"}),
         help_text=_("The last day Families can respond."),
     )
-    overlap_confirmed = forms.BooleanField(
-        required=False,
-        label=_("Acknowledge that the financial period overlaps the campaign"),
-        help_text=_(
-            "Needed only when the campaign dates and the upcoming financial "
-            "period overlap. Check it to confirm that is intended."
-        ),
-    )
 
     def __init__(
         self, *args, previous, editable, live_at=None, proposed=None, **kwargs
@@ -161,8 +163,8 @@ class ScheduleWindow(AdminForm):
 
         ``live_at`` is the current instant for a live campaign whose end date
         alone may still change (#912): only that field is editable, and the
-        new end must come after this instant. Its start date, time zone and
-        financial acknowledgement stay locked.
+        new end must come after this instant. Its start date and time zone
+        stay locked.
         """
         self.previous = previous
         # Proposed dates are only a proposal while one differs from the
@@ -183,18 +185,11 @@ class ScheduleWindow(AdminForm):
         initial = {
             name: previous[name] for name in ("timezone", "start_date", "end_date")
         }
-        initial["overlap_confirmed"] = bool(
-            previous["financial"] and previous["financial"]["overlap_confirmed"]
-        )
         if proposed:
             if not open_fields or set(proposed) - open_fields:
                 raise ValueError("Invalid proposed campaign window.")
             initial.update(proposed)
         super().__init__(*args, initial=initial, **kwargs)
-        if previous["financial"] is None:
-            del self.fields["overlap_confirmed"]
-        else:
-            self.fields["overlap_confirmed"].template_name = OVERLAP_TEMPLATE
         for name, field in self.fields.items():
             field.disabled = not editable and name not in open_fields
         # A proposed date is drawn as the field's value, but it is not saved:
@@ -203,54 +198,64 @@ class ScheduleWindow(AdminForm):
         # proposal and unavailable again once it is reverted (#750).
         for name in proposed or {}:
             self.fields[name].widget.attrs["data-saved-value"] = str(previous[name])
+        self._bound_end_date()
+
+    def _bound_end_date(self):
+        """Let the browser hold an end date in the commitment period (#2293).
+
+        Only for a campaign with a commitment period and an editable end
+        date: the day before the period starts is the end's max, so the
+        browser marks a later day as it is left, in the field's reserved
+        error line with clean()'s words (data-field-rule, ui-v1.js
+        sayRule), and the Review dialog waits. A campaign saved before
+        #2293 with a confirmed overlap ends on or after that day already;
+        its end gets no max, so its unchanged end date never holds the page
+        (clean() judges only a changed end date).
+        """
+        financial = self.previous["financial"]
+        field = self.fields["end_date"]
+        if financial is None or field.disabled:
+            return
+        start = date.fromisoformat(financial["start"])
+        last = start - timedelta(days=1)
+        if date.fromisoformat(self.previous["end_date"]) > last:
+            return
+        field.widget.attrs.update(
+            {
+                "max": last.isoformat(),
+                "data-missing-hint": str(commitment_overlap(start)),
+                "data-empty-hint": str(_("Enter the campaign end date.")),
+                "data-field-rule": "commitment_period",
+            }
+        )
+        field.template_name = ERROR_LINE_TEMPLATE
 
     @property
     def open_fields(self):
         """The names of the window fields this form lets change."""
         return {name for name, field in self.fields.items() if not field.disabled}
 
-    @property
-    def overlap_needed(self):
-        """Whether these campaign dates overlap the (fixed) financial period."""
-        financial = self.previous["financial"]
-        return financial is not None and overlaps(
-            self["start_date"].value(),
-            self["end_date"].value(),
-            financial["start"],
-            financial["end"],
-        )
-
-    @property
-    def overlap_attributes(self):
-        """Editable campaign dates by input name; the period's dates as values."""
-        financial = self.previous["financial"] or {}
-        return overlap_attributes(
-            {
-                "campaign-start": ("name", self.add_prefix("start_date")),
-                "campaign-end": ("name", self.add_prefix("end_date")),
-                "period-start": ("value", financial.get("start", "")),
-                "period-end": ("value", financial.get("end", "")),
-            }
-        )
-
     def clean(self):
         """Validate the whole resulting campaign, not dates in isolation."""
         values = super().clean()
         if self.errors:
             return values
+        financial = self.previous["financial"]
         if (
-            "overlap_confirmed" in self.fields
-            and self.overlap_needed
-            and not values["overlap_confirmed"]
+            financial is not None
+            # Judged only when the end date changes: a campaign saved before
+            # #2293 with a confirmed overlap still saves its other schedule
+            # changes, and a locked window (posted as saved) never refuses.
+            and values["end_date"].isoformat() != self.previous["end_date"]
+            and not starts_after_campaign(values["end_date"], financial["start"])
         ):
+            # The commitment period is fixed here, so the end date moves
+            # (#2293; it replaced the overlap acknowledgement).
             self.add_error(
-                "overlap_confirmed",
+                "end_date",
                 forms.ValidationError(
-                    _(
-                        "These campaign dates overlap the upcoming financial period. "
-                        "Check this box to confirm that is intended."
-                    ),
-                    code="overlap_unconfirmed",
+                    commitment_overlap(date.fromisoformat(financial["start"])),
+                    code=COMMITMENT_AFTER_END,
                 ),
             )
             return values
@@ -270,7 +275,7 @@ class ScheduleWindow(AdminForm):
             interval = campaign_values(self.values())
         except ConfigError:
             raise forms.ValidationError(
-                _("Check the campaign dates, timezone and financial overlap."),
+                _("Check the campaign dates and timezone."),
                 code="invalid_campaign",
             ) from None
         if self.live_at is not None and interval.end <= self.live_at:
@@ -296,10 +301,6 @@ class ScheduleWindow(AdminForm):
                 for name in ("start_date", "end_date")
             }
         )
-        if values["financial"] is not None:
-            values["financial"] = values["financial"] | {
-                "overlap_confirmed": self.cleaned_data["overlap_confirmed"],
-            }
         return values
 
 

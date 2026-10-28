@@ -56,13 +56,18 @@ def setup(tmp_path):
     return campaign, keys()
 
 
-def prepare(data=None):
-    """Stage actual normalized output for the configured synthetic tenant."""
+def prepare(data=None, *, as_of=None):
+    """Stage actual normalized output for the configured synthetic tenant.
+
+    ``as_of`` normalizes the data as of that day and records it as the
+    load's ``as_of_date``, as a refresh made that day does; by default the
+    data is read as of ``TODAY`` and the cursor records no load.
+    """
     data = replace(source() if data is None else data, organization_id=12345)
     for family in data.families.values():
         if family.get("registeredOrganizationID") == 5:
             family["registeredOrganizationID"] = 12345
-    corpus = normalize_core(data, as_of=TODAY)
+    corpus = normalize_core(data, as_of=TODAY if as_of is None else as_of)
     claim = acquire_source(**running_source_task(), phase="full")
     snapshot = begin_snapshot(claim, organization_id=12345, admit=permit)
     for kind, values in corpus.items():
@@ -79,7 +84,7 @@ def prepare(data=None):
         snapshot.pk,
         claim,
         expected_counts={kind: len(rows) for kind, rows in corpus.items()},
-        cursor={},
+        cursor={} if as_of is None else {"load": {"as_of_date": as_of.isoformat()}},
         admit=permit,
     )
     return snapshot, claim

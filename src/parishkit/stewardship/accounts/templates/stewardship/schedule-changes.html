@@ -1,6 +1,6 @@
 {% load i18n stewardship %}{% comment %}
 The body of a schedule change's review (schedule_changes.build_preview's
-context): the campaign window and financial acknowledgment when they change,
+context): the campaign window when it changes,
 then each schedule's change with its current and proposed schedule and its
 affected work, and, while sends block the change, why there is no Apply.
 Drawn by the review dialog of New and Edit scheduled email and of the
@@ -12,7 +12,6 @@ build_preview's sum of the changes' sent email); a change to schedules that
 have sent nothing yet has nothing to recall.
 {% endcomment %}{% if delivered %}<p class="notice">{% translate "Email already sent cannot be recalled." %}</p>{% endif %}
 {% if window_changes %}<section class="panel"><h{{ level }}>{% translate "Campaign window" %}</h{{ level }}><p>{% translate "Current:" %} {{ before_window.start_date|parish_date }} – {{ before_window.end_date|parish_date }} ({{ before_window.timezone }})</p><p>{% translate "Proposed:" %} {{ after_window.start_date|parish_date }} – {{ after_window.end_date|parish_date }} ({{ after_window.timezone }})</p></section>{% endif %}
-{% if 'financial' in window_changes %}<section class="panel"><h{{ level }}>{% translate "Financial overlap acknowledgment" %}</h{{ level }}><p>{% translate "Current:" %} {{ before_window.financial.overlap_confirmed|yesno }}</p><p>{% translate "Proposed:" %} {{ after_window.financial.overlap_confirmed|yesno }}</p></section>{% endif %}
 {% for change in changes %}<section class="panel"><h{{ level }}>{{ change.label }} — {{ change.operation|capfirst }}</h{{ level }}>
 <h{{ sublevel }}>{% translate "Current schedule" %}</h{{ sublevel }}>{% include 'stewardship/schedule-summary.html' with value=change.before %}
 <h{{ sublevel }}>{% translate "Proposed schedule" %}</h{{ sublevel }}>{% include 'stewardship/schedule-summary.html' with value=change.after %}

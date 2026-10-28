@@ -683,10 +683,10 @@ The checks, in order:
    campaign's stewardship year is the year Families pledge for, as the
    archive's `campaign_year` is:
    - the Campaign settings year label, when it is one four-digit year and
-     the campaign has no financial period or the label is one of the
-     calendar years the financial period covers (a July–June period starting
+     the campaign has no commitment period or the label is one of the
+     calendar years the commitment period covers (a July–June period starting
      in 2026 may be labelled 2027);
-   - otherwise the start year of the campaign's upcoming financial period,
+   - otherwise the start year of the campaign's commitment period,
      when there is no label, or when a four-digit label lies outside a period
      that falls within one calendar year. Such a label names something else,
      such as the year the campaign runs in (2026 on a 2027-01-01 to
@@ -696,10 +696,10 @@ The checks, in order:
 
    This follows `campaign_year` in `web/presentation.py` except in two
    ways. The start-date fallback that function uses for a campaign without
-   a financial period is not used here, since it names the year the
+   a commitment period is not used here, since it names the year the
    campaign runs in (2026 for Stewardship 2027). And a label outside the
-   financial period gives way to the period, as described above. When
-   no single year results (no label and no financial period, a label such
+   commitment period gives way to the period, as described above. When
+   no single year results (no label and no commitment period, a label such
    as "2026–2027", or a four-digit label outside a period that spans two
    calendar years), every import is refused with that reason and a link to
    Campaign settings, because "last year" cannot be resolved.

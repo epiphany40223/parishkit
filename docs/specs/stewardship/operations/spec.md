@@ -2348,7 +2348,7 @@ for itself (such as `campaign_zone_not_parish`, `image_too_large` or the
 Off-site backups page's Test access refusals); and the error codes of a
 refused form: Django's own (`required`, `invalid_choice`, `max_length`
 and so on) and the closed code every validation error of the package's
-own forms carries (`too_large`, `quarter_hour`, `overlap_unconfirmed` and
+own forms carries (`too_large`, `quarter_hour`, `commitment_before_campaign_end` and
 so on), which every Admin form records through one shared form base. A
 page that answers a refusal with a body of its own (a report's error page,
 a page script's JSON answer, an in-place region's refused step) gives that

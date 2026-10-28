@@ -163,7 +163,7 @@ def test_share_labels_use_the_neutral_household_wording():
         # The Family form's own validated upcoming period, not a second rule.
         OTHER: f"Another way in 2055, {PERIOD}",
     }
-    # No year label falls back to the upcoming financial period's year.
+    # No year label falls back to the commitment period's year.
     unlabeled = CONFIGURATION | {"year_label": None}
     assert (
         share_labels(unlabeled, campaign_id=CAMPAIGN, parish_name="Sample")[OTHER]

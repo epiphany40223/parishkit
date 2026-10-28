@@ -287,7 +287,7 @@ def pane_confirmation(review):
     for one Initial invitation or reminder that sends once, or the
     reminders of a Repeating pane, each with its send time, alongside at
     most the proposed campaign dates. A change to a saved schedule, a
-    digest, a financial acknowledgement, a series, or sends that block the
+    digest, a series, or sends that block the
     change keep the full review. The signed preview, and its audit on
     Apply, are the same either way.
 

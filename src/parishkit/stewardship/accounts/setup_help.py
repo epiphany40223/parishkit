@@ -194,8 +194,8 @@ ADMIN_CAMPAIGN = {
     ),
     "year_label": _(
         "Optional. Pages and emails show this where they mention the campaign "
-        "year. Leave blank to use the upcoming financial period's year (or the "
-        "campaign start year if there's no financial period); fill in to "
+        "year. Leave blank to use the commitment period's year (or the "
+        "campaign start year if there's no commitment period); fill in to "
         "override, for example 2027."
     ),
     "timezone": _(
@@ -216,7 +216,7 @@ ADMIN_CAMPAIGN = {
         "Ask Members which of the Ministries included below they want to join or leave."
     ),
     "financial_enabled": _(
-        "Ask Families for a pledge for the upcoming financial period. After "
+        "Ask Families for a pledge for the commitment period. After "
         "saving, use Share options in the Campaign setup menu to set the "
         "choices Families see for how they will give."
     ),
@@ -225,20 +225,23 @@ ADMIN_CAMPAIGN = {
         "you loaded from ParishSoft."
     ),
     "financial_start": _(
-        "The first day of the one-year period the pledge is for, for example "
-        "July 1, 2026 for a July-to-June fiscal year."
+        "The first day of the commitment period, the one-year period Families "
+        "pledge for and join or leave Ministries for. It starts after the "
+        "campaign ends, for example January 1, 2027, or July 1, 2027 for a "
+        "July-to-June fiscal year."
     ),
     "financial_end": _(
         "The last day of that period: the day before the first anniversary of "
-        "the start, for example June 30, 2027."
+        "the start, for example December 31, 2027 for a January 1, 2027 start, "
+        "or June 30, 2028 for a July 1, 2027 start."
     ),
     "fund_duids": _(
-        "The ParishSoft funds whose giving counts toward this pledge, for "
-        "example the weekly offertory fund."
+        "The ParishSoft funds pledges are for and whose giving counts toward "
+        "them, for example the weekly offertory fund."
     ),
     "comparison_start": _(
         "The first day of an earlier one-year period to compare against, "
-        "usually the year just before the upcoming period."
+        "usually the year just before the commitment period."
     ),
     "comparison_end": _(
         "The last day of the comparison period, the day before its first anniversary."
@@ -246,10 +249,6 @@ ADMIN_CAMPAIGN = {
     "comparison_fund_duids": _(
         "The funds whose giving in the comparison period is shown for "
         "comparison, usually the same funds as above."
-    ),
-    "overlap_confirmed": _(
-        "Needed only when the campaign dates and the upcoming financial period "
-        "overlap. Check it to confirm that is intended."
     ),
     "additional_information": _(
         "Add a final question where Families can write anything else for the "
@@ -308,9 +307,7 @@ HINTS = {
     "census": _(
         "Ask Families to review and correct their household and Member details."
     ),
-    "financial_enabled": _(
-        "Ask Families for a pledge for the upcoming financial period."
-    ),
+    "financial_enabled": _("Ask Families for a pledge for the commitment period."),
     "additional_information": _(
         "Add a final question where Families can write anything else."
     ),

@@ -387,11 +387,14 @@ def past(row, members):
 
 # Whether the current ParishSoft data lists each request's Member in the
 # Ministry carried forward (the Edit's, else the Family's), by the same SQL
-# roster read the guards use (NULL when the Member or Ministry gives no
-# evidence), for the rows ParishSoft may already hold (#1890).
+# roster read the refresh check guard uses (NULL when the Member or Ministry
+# gives no evidence), for the rows ParishSoft may already hold (#1890): as
+# of the Ministry roster date, the later of the refresh date and the
+# campaign's commitment period start (#2293, frozen migration 0189).
 HELD = """
-SELECT r.id, stewardship_response_ministry_current_v1(sc.snapshot_id, s.family_id,
-    r.entity_key, coalesce(r.reviewed_ministry_duid, r.ministry_duid))
+SELECT r.id, stewardship_response_ministry_held_v1(sc.snapshot_id, s.family_id,
+    r.entity_key, coalesce(r.reviewed_ministry_duid, r.ministry_duid),
+    stewardship_ministry_roster_date_v1(s.campaign_id, sc.snapshot_id))
 FROM stewardship_ministry_request r
 JOIN stewardship_submission s ON s.id=r.submission_id
 JOIN stewardship_source_current sc ON sc.singleton AND sc.snapshot_id IS NOT NULL
@@ -408,7 +411,8 @@ def held(rows):
     Refresh rule 1 (#1890): a refresh no longer resolves a request before
     its decision and tick, so a To review or To enter by hand request whose
     Member the current roster already lists (a join) or no longer lists (a
-    leave) keeps its stage and says ParishSoft already holds it. One query,
+    leave), as of the Ministry roster date (#2293), keeps its
+    stage and says ParishSoft already holds it. One query,
     none when no row is at such a stage.
     """
     wanted = {

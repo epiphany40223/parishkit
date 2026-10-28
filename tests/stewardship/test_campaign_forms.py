@@ -66,7 +66,6 @@ def test_census_values_round_trip_and_default_form_are_safe():
         {"financial_end": "2055-12-31"},
         {"comparison_start": "2026-01-01"},
         {"comparison_end": "2026-12-31"},
-        {"overlap_confirmed": True},
         {"financial_enabled": True},
         {"ministry": True, "ministry_duids": ["999"]},
         {"ministry": True, "ministry_duids": ["1", "1"]},
@@ -90,16 +89,13 @@ def test_catalog_selections_are_sorted_and_unknown_ids_are_rejected():
     "changes",
     [
         {},
-        {
-            "financial_start": "2054-10-01",
-            "financial_end": "2055-09-30",
-            "overlap_confirmed": True,
-        },
+        {"financial_start": "2054-11-01", "financial_end": "2055-10-31"},
         {"financial_start": "2056-02-29", "financial_end": "2057-02-27"},
     ],
 )
 def test_exact_financial_periods_and_explicit_fund_mappings(changes):
-    """Leap years and acknowledged overlap use the existing canonical resolver."""
+    """Leap years and the earliest commitment period start (the day after
+    the campaign ends) use the existing canonical resolver."""
     values = campaign(modules=["financial"], financial=financial())["values"]
     form = form_for(initial_fields(values, digest="a" * 64) | changes)
     assert form.is_valid(), form.errors
@@ -241,12 +237,10 @@ def test_confirmation_values_use_names_not_storage_repr():
     text = display_value(
         "financial", financial(), funds=[("1", "Offertory"), ("2", "Prior year")]
     )
-    assert "Upcoming: 2055-01-01 through 2055-12-31" in text
-    assert "Comparison funds: Prior year\n" in text and "DUID" not in text
-    assert "overlap confirmed: No" in text
-    assert "overlap confirmed: Yes" in display_value(
-        "financial", financial(overlap_confirmed=True)
-    )
+    assert "Commitment period: 2055-01-01 through 2055-12-31" in text
+    assert text.endswith("Comparison funds: Prior year") and "DUID" not in text
+    # The retired overlap confirmation is not described (#2293).
+    assert "overlap" not in text
     assert describe_changes({"name": "Before"}, {"name": "After"}) == [
         {"label": "Campaign name", "before": "Before", "after": "After"}
     ]
@@ -272,7 +266,7 @@ def test_form_groups_do_not_duplicate_hidden_or_module_controls():
 
 def test_financial_fields_are_required_in_the_page_only_while_financial_is_on():
     """Every field clean() requires for Financial stewardship tells the page's
-    complete gate the same (#563); the overlap box is the overlap script's."""
+    complete gate the same (#563)."""
     form = CampaignForm()
     marked = {
         name
@@ -280,7 +274,6 @@ def test_financial_fields_are_required_in_the_page_only_while_financial_is_on():
         if field.widget.attrs.get("data-required-when") == "financial_enabled=on"
     }
     assert marked == set(FINANCIAL_REQUIRED)
-    assert "data-required-when" not in form.fields["overlap_confirmed"].widget.attrs
     # Not required in the markup: hidden, the module's fields are not sent.
     assert not any(form.fields[name].required for name in FINANCIAL_REQUIRED)
     # A prefixed form names its own module box.
@@ -322,8 +315,8 @@ def test_each_end_date_takes_its_start_as_its_minimum_in_the_page():
     [
         ({"end_date": "2054-10-01"}, "end_date", "The campaign end date must be"),
         ({"end_date": "2054-09-01"}, "end_date", "The campaign end date must be"),
-        ({"financial_end": "2055-12-30"}, "financial_end", "A financial period"),
-        ({"comparison_end": "2026-12-30"}, "comparison_end", "A financial period"),
+        ({"financial_end": "2055-12-30"}, "financial_end", "A period spans"),
+        ({"comparison_end": "2026-12-30"}, "comparison_end", "A period spans"),
     ],
 )
 def test_date_refusals_are_shown_at_the_end_field(changes, field, start):

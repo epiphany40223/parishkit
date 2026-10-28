@@ -794,7 +794,7 @@ def test_campaign_modules_hide_and_disable_unselected_fields(page, component_ori
     """Conditional groups cannot accidentally post data from a disabled module."""
     page.goto(component_origin + "/campaign-settings")
     ministry = page.get_by_role("group", name="Ministry selections")
-    financial = page.get_by_role("group", name="Financial periods and funds")
+    financial = page.get_by_role("group", name="Commitment and comparison periods")
     assert not ministry.is_visible() and not financial.is_visible()
     page.get_by_label("Ministry stewardship").check()
     visible(ministry)
@@ -805,7 +805,7 @@ def test_campaign_modules_hide_and_disable_unselected_fields(page, component_ori
     included.select_option("4")
     page.get_by_label("Financial stewardship").check()
     visible(financial)
-    page.get_by_label("Upcoming financial period start").fill("2027-01-01")
+    page.get_by_label("Commitment period start").fill("2027-01-01")
     page.get_by_label("Financial stewardship").uncheck()
     posted = page.locator("[data-campaign-form]").evaluate(
         "form => Array.from(new FormData(form).keys())"

@@ -6,10 +6,9 @@ campaign. The owning view binds the complete candidate to current runtime state.
 """
 
 from copy import deepcopy
-from datetime import date
+from datetime import date, timedelta
 
 from django import forms
-from django.utils.html import format_html_join
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.config import ConfigError
@@ -45,11 +44,7 @@ LEADER_ROLES_HELP = _(
     "needs a user; import leaders on the Users page. Choose at least one "
     "role; changes take effect on their next page."
 )
-# The campaign-overlap confirmation renders through this field template so it
-# can be shown only while the entered dates overlap (see overlap_attributes).
-OVERLAP_TEMPLATE = "stewardship/overlap-field.html"
-# The financial fields Financial stewardship requires (the overlap
-# confirmation is required only while the dates overlap).
+# The financial fields Financial stewardship requires.
 FINANCIAL_REQUIRED = (
     "financial_start",
     "financial_end",
@@ -78,32 +73,27 @@ def _as_date(value):
         return None
 
 
-def overlaps(campaign_start, campaign_end, period_start, period_end):
-    """Whether a financial period overlaps the campaign (inclusive days).
+# The closed code of the refusal below, on Campaign settings, Dates and
+# mail schedules and through pk-admin alike.
+COMMITMENT_AFTER_END = "commitment_before_campaign_end"
 
-    This is the rule campaign_values() enforces: such an overlap needs an
-    explicit confirmation. Incomplete or invalid dates never need one yet.
+
+def starts_after_campaign(campaign_end, period_start):
+    """Whether a commitment period starting on ``period_start`` starts after
+    a campaign ending on ``campaign_end`` (#2293).
+
+    The commitment period is the one period pledges and Ministry requests
+    apply to (data spec, "Commitment period"), so it may not begin before
+    the campaign that asks for them has ended. This replaced the overlap
+    confirmation. Incomplete or invalid dates are not judged here.
     """
-    days = [
-        _as_date(value)
-        for value in (campaign_start, campaign_end, period_start, period_end)
-    ]
-    if None in days:
-        return False
-    return days[2] <= days[1] and days[3] >= days[0]
+    end, start = _as_date(campaign_end), _as_date(period_start)
+    return end is None or start is None or start > end
 
 
-def overlap_attributes(sources):
-    """Data attributes telling ui-v1.js where the four overlap dates come from.
-
-    ``sources`` maps campaign-start, campaign-end, period-start and period-end
-    to ("name", form field name) or ("value", ISO date) pairs.
-    """
-    return format_html_join(
-        " ",
-        'data-{}-{}="{}"',
-        ((key, kind, value) for key, (kind, value) in sources.items()),
-    )
+def first_commitment_day(campaign_end):
+    """The earliest commitment period start a campaign end allows, in words."""
+    return parish_date(_as_date(campaign_end) + timedelta(days=1))
 
 
 class SourceChoices(forms.MultipleChoiceField):
@@ -163,12 +153,12 @@ class CampaignForm(AdminForm):
         label=_("Included Ministries"), required=False, help_text=MULTI_SELECT_HELP
     )
     financial_start = forms.DateField(
-        label=_("Upcoming financial period start"),
+        label=_("Commitment period start"),
         required=False,
         widget=forms.DateInput(attrs={"type": "date"}),
     )
     financial_end = forms.DateField(
-        label=_("Upcoming financial period end"),
+        label=_("Commitment period end"),
         required=False,
         widget=forms.DateInput(attrs={"type": "date"}),
     )
@@ -183,7 +173,7 @@ class CampaignForm(AdminForm):
         widget=forms.DateInput(attrs={"type": "date"}),
     )
     fund_duids = SourceChoices(
-        label=_("Upcoming financial period funds"),
+        label=_("Pledge funds"),
         required=False,
         help_text=MULTI_SELECT_HELP,
     )
@@ -191,10 +181,6 @@ class CampaignForm(AdminForm):
         label=_("Comparison financial period funds"),
         required=False,
         help_text=MULTI_SELECT_HELP,
-    )
-    overlap_confirmed = forms.BooleanField(
-        label=_("I confirm that the upcoming financial period overlaps this campaign"),
-        required=False,
     )
     additional_information = forms.BooleanField(
         label=_("Collect additional information"), required=False
@@ -209,7 +195,8 @@ class CampaignForm(AdminForm):
         """Do not trust posted source labels or let fields replace saved content.
 
         ``whole`` False skips the checks between the dates and the financial
-        periods (the overlap confirmation and the whole campaign's rules): a
+        periods (the commitment period's start and the whole campaign's
+        rules): a
         live campaign's Campaign settings (#1119) changes only its end date
         and leader roles, and its end date is judged by its own review
         (``campaign_end_date.end_review``), in that review's own words.
@@ -240,7 +227,6 @@ class CampaignForm(AdminForm):
         # multi-select how-to and the leader roles', opens from its "i".
         # A view's setup_help.apply may replace the help and shorten again.
         field_tips.shorten(self, MULTI_SELECT_HINTS)
-        self.fields["overlap_confirmed"].template_name = OVERLAP_TEMPLATE
         if whole:
             self._mark_date_order()
 
@@ -253,13 +239,17 @@ class CampaignForm(AdminForm):
         (data-one-year) must be exactly one year after its start, so that day
         is its min and max (#1577). A financial end left empty keeps the
         financial fieldset's own hint (data-empty-hint). The server still
-        checks the order and the one-year span (_date_errors). A live
+        checks the order and the one-year span (_date_errors). The commitment
+        period's start names the campaign end as its own (data-not-before)
+        and must come strictly after it (data-strictly-after), so its min is
+        the day after the campaign end and the browser holds a start on or
+        before that day, as the server does (starts_after_campaign). A live
         campaign's end date (``whole`` False) has its own live check instead.
         """
         hints = {
             "end_date": _("Choose a campaign end date after its start date."),
             "financial_end": _(
-                "Choose an upcoming financial period end one year after its start."
+                "Choose a commitment period end one year after its start."
             ),
             "comparison_end": _(
                 "Choose a comparison financial period end one year after its start."
@@ -274,12 +264,37 @@ class CampaignForm(AdminForm):
             attrs["data-missing-hint"] = hints[end]
             if end != "end_date":
                 attrs["data-empty-hint"] = _(
-                    "Fill in both financial periods and their funds."
+                    "Fill in the commitment and comparison periods and their funds."
                 )
                 # Exactly the day before the start's first anniversary, as
                 # _date_errors requires (#1577): the page script makes that
                 # day the end's min and max.
                 attrs["data-one-year"] = True
+        attrs = self.fields["financial_start"].widget.attrs
+        attrs["data-not-before"] = self.auto_id % self.add_prefix("end_date")
+        attrs["data-strictly-after"] = True
+        attrs["data-missing-hint"] = _(
+            "Choose a commitment period start after the campaign end date."
+        )
+        attrs["data-empty-hint"] = _(
+            "Fill in the commitment and comparison periods and their funds."
+        )
+
+    def _commitment_dates_changed(self, data):
+        """Whether the campaign end or the commitment period start differs
+        from the saved one (#2293).
+
+        The rule that the period starts after the campaign is judged only
+        then, so a campaign saved before #2293 with a confirmed overlap
+        still saves its other settings (it keeps its stored answer, see
+        values()). A new campaign has no saved dates, so it is always
+        judged.
+        """
+        saved = (self.previous.get("financial") or {}).get("start")
+        return (
+            data["end_date"].isoformat() != self.previous.get("end_date")
+            or data["financial_start"].isoformat() != saved
+        )
 
     def _date_errors(self, data):
         """Put a date order or one-year refusal at the end field it is about.
@@ -318,7 +333,7 @@ class CampaignForm(AdminForm):
                         end,
                         forms.ValidationError(
                             _(
-                                "A financial period spans exactly one year: with this "
+                                "A period spans exactly one year: with this "
                                 "start, it ends on %(date)s."
                             )
                             % {"date": parish_date(expected)},
@@ -327,36 +342,6 @@ class CampaignForm(AdminForm):
                     )
                     found = True
         return found
-
-    @property
-    def overlap_needed(self):
-        """Whether the entered (or saved) dates need the overlap confirmation."""
-        return overlaps(
-            *(
-                self[name].value()
-                for name in (
-                    "start_date",
-                    "end_date",
-                    "financial_start",
-                    "financial_end",
-                )
-            )
-        )
-
-    @property
-    def overlap_attributes(self):
-        """Where the page script reads the dates that decide the confirmation."""
-        return overlap_attributes(
-            {
-                key: ("name", self.add_prefix(name))
-                for key, name in (
-                    ("campaign-start", "start_date"),
-                    ("campaign-end", "end_date"),
-                    ("period-start", "financial_start"),
-                    ("period-end", "financial_end"),
-                )
-            }
-        )
 
     def clean(self):
         """Reject module-dependent stray data and require complete financial periods."""
@@ -375,9 +360,8 @@ class CampaignForm(AdminForm):
                     code="module_disabled",
                 ),
             )
-        financial_fields = (*FINANCIAL_REQUIRED, "overlap_confirmed")
         if not data["financial_enabled"]:
-            if any(data[name] for name in financial_fields):
+            if any(data[name] for name in FINANCIAL_REQUIRED):
                 raise forms.ValidationError(
                     _("Financial settings require Financial stewardship."),
                     code="module_disabled",
@@ -394,22 +378,18 @@ class CampaignForm(AdminForm):
             if (
                 not self.errors
                 and self.whole
-                and overlaps(
-                    data["start_date"],
-                    data["end_date"],
-                    data["financial_start"],
-                    data["financial_end"],
-                )
-                and not data["overlap_confirmed"]
+                and self._commitment_dates_changed(data)
+                and not starts_after_campaign(data["end_date"], data["financial_start"])
             ):
                 self.add_error(
-                    "overlap_confirmed",
+                    "financial_start",
                     forms.ValidationError(
                         _(
-                            "The upcoming financial period overlaps the campaign "
-                            "dates. Check this box to confirm that is intended."
-                        ),
-                        code="overlap_unconfirmed",
+                            "The commitment period must start after the campaign "
+                            "ends: choose %(date)s or later."
+                        )
+                        % {"date": first_commitment_day(data["end_date"])},
+                        code=COMMITMENT_AFTER_END,
                     ),
                 )
         if not self.errors and self.whole and not self._date_errors(data):
@@ -419,8 +399,9 @@ class CampaignForm(AdminForm):
                 raise forms.ValidationError(
                     _(
                         "Check the campaign dates and settings. The end date must "
-                        "follow the start date; each financial period must span "
-                        "exactly one year. Confirm any campaign overlap."
+                        "follow the start date, each period must span exactly one "
+                        "year, and the commitment period must start after the "
+                        "campaign ends."
                     ),
                     code="invalid_campaign",
                 ) from None
@@ -447,7 +428,12 @@ class CampaignForm(AdminForm):
                 "comparison_end": data["comparison_end"].isoformat(),
                 "fund_duids": data["fund_duids"],
                 "comparison_fund_duids": data["comparison_fund_duids"],
-                "overlap_confirmed": data["overlap_confirmed"],
+                # The retired overlap confirmation (#2293): a saved answer
+                # is kept, so saving changes nothing else, and a new period
+                # stores false. The key stays, as configuration requires.
+                "overlap_confirmed": bool(
+                    (self.previous.get("financial") or {}).get("overlap_confirmed")
+                ),
             }
         allowed_slots = {"welcome", "closing", "review", "thank_you", *modules}
         if data["additional_information"]:
@@ -499,7 +485,6 @@ class CampaignForm(AdminForm):
                 "comparison_start",
                 "comparison_end",
                 "comparison_fund_duids",
-                "overlap_confirmed",
             )
         ]
 
@@ -528,6 +513,8 @@ def initial_fields(values, *, digest):
         financial = deepcopy(values["financial"])
         financial["financial_start"] = financial.pop("start")
         financial["financial_end"] = financial.pop("end")
+        # Stored, but no longer a field (#2293).
+        financial.pop("overlap_confirmed", None)
         result.update(financial)
     return result
 

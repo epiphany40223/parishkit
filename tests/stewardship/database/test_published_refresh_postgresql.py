@@ -504,9 +504,16 @@ def _body(source, name):
 def test_do_block_refuses_the_old_definitions(db):
     """The closing check passes as installed and raises once a guard is put
     back to its earlier body, the constraint is narrowed again, or the new
-    column is gone."""
+    column is gone. Each runs on 0138's own refresh check guard, rolled
+    back: a later file (0189, #2293) replaces it with one that reads the
+    roster as of the Ministry roster date, which 0138's check predates."""
+    own = _body(
+        "0138_published_refresh_conflicts.sql", "stewardship_refresh_check_guard_v1"
+    )
     with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(own)
         cursor.execute(_check())
+        transaction.set_rollback(True)
     for statement, words in (
         (
             _body(
@@ -557,6 +564,7 @@ def test_do_block_refuses_the_old_definitions(db):
             transaction.atomic(),
             connection.cursor() as cursor,
         ):
+            cursor.execute(own)
             cursor.execute(statement)
             cursor.execute(_check())
 
