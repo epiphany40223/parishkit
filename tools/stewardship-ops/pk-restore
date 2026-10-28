@@ -560,7 +560,9 @@ limited() {
     local limit=$1 what=$2 started rc=0 elapsed
     shift 2
     started=$(date -u +%s)
-    timeout --kill-after=30 "$((limit + 60))" "$@" || rc=$?
+    # The copy lock's descriptors stay with this shell: a client left
+    # behind by a killed shell would otherwise hold the lock until it exits.
+    timeout --kill-after=30 "$((limit + 60))" "$@" 8<&- 9<&- || rc=$?
     elapsed=$(($(date -u +%s) - started))
     if [ "$rc" -eq 124 ] || { [ "$rc" -eq 137 ] && [ "$elapsed" -ge "$limit" ]; }; then
         echo "TIMEOUT: $what killed after ${elapsed}s (limit ${limit}s)" >&2

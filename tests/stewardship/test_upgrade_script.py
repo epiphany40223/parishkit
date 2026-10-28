@@ -748,10 +748,15 @@ def run_host(
     )
     # coreutils timeout is Linux-only here; the stand-in skips its options
     # and runs the command, unless the command contains FAKE_TIMEOUT: then
-    # it answers as an expired limit does, without running it.
+    # it answers as an expired limit does, without running it. A one-off
+    # `docker compose run` that inherited the copy lock's descriptors 8 or
+    # 9 is recorded in held-fds (#235).
     executable_stub(
         bin_dir,
         "timeout",
+        'if [[ "$*" == *" run --name "* ]] && '
+        "{ [ -e /dev/fd/8 ] || [ -e /dev/fd/9 ]; }; "
+        'then echo "$*" >>"$FAKE_STATE/held-fds"; fi; '
         'if [ -n "$FAKE_TIMEOUT" ] && [[ "$*" == *"$FAKE_TIMEOUT"* ]]; then '
         'echo "timeout $*" >>"$FAKE_LOG"; exit 124; fi; '
         'while [[ $1 == -* ]]; do shift; done; shift; exec "$@"',
@@ -3304,6 +3309,13 @@ def test_a_failed_copy_lock_call_is_not_logged_as_a_timeout(tmp_path):
     assert "TIMEOUT" not in output
     assert "abandoning the upgrade" in output
     assert not any(" stop web" in call for call in calls)
+
+
+def test_one_off_containers_do_not_inherit_the_copy_lock(tmp_path):
+    """A client left by a killed run cannot keep the lock (#235, B-L4)."""
+    calls, _, _ = run_host(tmp_path, "upgrade")
+    assert flock_calls(tmp_path) and any(" run --name " in call for call in calls)
+    assert not (tmp_path / "state" / "held-fds").exists()
 
 
 def test_flock_is_checked_before_step_1():

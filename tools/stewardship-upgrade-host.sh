@@ -280,8 +280,10 @@ oneoff() {
     oneoff_name=$oneoff_prefix-$3
     shift 3
     started=$(date -u +%s)
+    # The copy lock's descriptors stay with this shell: a client left
+    # behind by a killed shell would otherwise hold the lock until it exits.
     timeout --kill-after=30 "$limit" "${dc[@]}" run --name "$oneoff_name" --rm -T "$@" \
-        </dev/null >"$work/oneoff.out" 2>&1 &
+        </dev/null >"$work/oneoff.out" 2>&1 8<&- 9<&- &
     oneoff_pid=$!
     wait "$oneoff_pid" || rc=$?
     oneoff_pid=""

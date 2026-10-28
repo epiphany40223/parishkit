@@ -312,10 +312,15 @@ def host(tmp_path):
     )
     # pg_restore --file=SQL DUMP, as the container's would convert it.
     stub(bin_dir, "pg_restore", '#!/usr/bin/env bash\ncp "$2" "${1#--file=}"\n')
+    # A one-off `docker compose run` that inherited the copy lock's
+    # descriptors 8 or 9 is recorded in held-fds (#235).
     stub(
         bin_dir,
         "timeout",
         "#!/usr/bin/env bash\n"
+        'if [[ "$*" == *" run --name "* ]] && '
+        "{ [ -e /dev/fd/8 ] || [ -e /dev/fd/9 ]; }; "
+        'then echo "$*" >>"$FAKE_STATE/held-fds"; fi\n'
         'if [ -n "${FAKE_TIMEOUT:-}" ] && [[ "$*" == *"$FAKE_TIMEOUT"* ]]; then '
         "exit 124; fi\n"
         'while [[ $1 == -* ]]; do shift; done; shift; exec "$@"\n',
@@ -2155,6 +2160,14 @@ def test_a_failed_copy_lock_call_is_not_logged_as_a_timeout(host):
     assert "exited with status 1" in text
     assert "TIMEOUT" not in text
     assert not stopped(calls)
+
+
+def test_one_off_containers_do_not_inherit_the_copy_lock(host):
+    """A client left by a killed run cannot keep the lock (#235, B-L4)."""
+    result, calls = restore(host)
+    assert result.returncode == 0, output(result)
+    assert flock_calls(host) and any(" run --name " in call for call in calls)
+    assert not (host["tmp"] / "state" / "held-fds").exists()
 
 
 @pytest.mark.parametrize("where", ["crontab", "system", "cron.d"])
