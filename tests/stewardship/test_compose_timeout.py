@@ -123,8 +123,8 @@ def test_baseline_timeout_preserves_progress_and_disposable_cleanup(
             return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
         assert command[0:2] == ["docker", "compose"]
         assert "--collection-manifest" in command and "--ci-progress" in command
-        assert kwargs["timeout"] == compose_tests.BASELINE_TIMEOUT == 900
-        raise subprocess.TimeoutExpired(command, 900, output=output)
+        assert kwargs["timeout"] == compose_tests.BASELINE_TIMEOUT == 1500
+        raise subprocess.TimeoutExpired(command, 1500, output=output)
 
     runner = Mock(side_effect=run)
     monkeypatch.setattr(compose_tests.subprocess, "run", runner)
@@ -136,7 +136,7 @@ def test_baseline_timeout_preserves_progress_and_disposable_cleanup(
     with (
         warning,
         pytest.raises(
-            pytest.fail.Exception, match=r"exceeded 900s limit after \d+s"
+            pytest.fail.Exception, match=r"exceeded 1500s limit after \d+s"
         ) as failure,
     ):
         compose_tests.test_development_container_lifecycle(tmp_path)
@@ -197,5 +197,5 @@ def test_liveness_timeout_still_retries_through_actual_compose_helper(
     assert "down" in runner.call_args.args[0]
     # A passing baseline still reports its elapsed time against the limit.
     assert re.search(
-        r"In-image baseline took \d+s of its 900s limit", capsys.readouterr().out
+        r"In-image baseline took \d+s of its 1500s limit", capsys.readouterr().out
     )

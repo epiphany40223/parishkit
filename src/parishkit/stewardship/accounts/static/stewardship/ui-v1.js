@@ -909,10 +909,37 @@
     // why nothing can be ticked, from the table's data-none-hint; without
     // one it stays blank, as for an empty table (#1332).
     const noneHint = scope.dataset.noneHint || "";
+    // A select-all-matching toggle (data-select-matching: Sent mail's
+    // bulk actions, #2296; UX conventions, "Admin tables") selects every
+    // row with a box that the applied filters match, on every page. The
+    // server draws it only when there are more than this page shows, with
+    // their count (data-matching-count) and their one kind
+    // (data-confirm-kind, "mixed" when they mix), by which the bulk buttons
+    // then fit. Pressed, it ticks every row shown and sets the form's
+    // data-select-scope field to "matching", so the selection posts the
+    // filters and the server reads the rows again; unticking a row, Clear
+    // selection or choosing it again ends it. Its label never changes.
+    const matching = scope.querySelector("[data-select-matching]");
+    const scopeField = scope.querySelector("input[data-select-scope]");
+    const matched = () => matching?.getAttribute("aria-pressed") === "true";
+    const match = (on) => {
+      matching?.setAttribute("aria-pressed", String(on));
+      if (scopeField) scopeField.value = on ? "matching" : "page";
+    };
     const update = () => {
       const all = rows();
       const chosen = all.filter((node) => node.checked).length;
       const every = chosen > 0 && chosen === all.length;
+      // A box unticked while the toggle is pressed ends it (a page with no
+      // box of its own keeps it). The scope field then follows the toggle
+      // again, as at load and on pageshow: a browser that restores form
+      // fields on reload or from the back/forward cache could otherwise
+      // post "matching" under a toggle drawn off.
+      if (matched() && all.length && !every) match(false);
+      else match(matched());
+      // How many rows the bulk buttons act on: every matching row while
+      // the toggle is pressed.
+      const picked = matched() ? Number(matching.dataset.matchingCount) || 0 : chosen;
       if (header) {
         header.checked = every;
         header.indeterminate = chosen > 0 && !every;
@@ -921,7 +948,8 @@
         button.hidden = !all.length;
         button.textContent = every ? "Clear selection" : "Select all";
       }
-      if (count) count.textContent = chosen ? `${chosen} selected` : "";
+      // Grouped as the toggle's label is (the |number filter's commas).
+      if (count) count.textContent = picked ? `${picked.toLocaleString("en-US")} selected` : "";
       // A bulk button for one kind of row (its data-confirm-kind, matching
       // the rows'; the Ministry follow-up queue's outcomes, #1131) is
       // available only while every ticked row is of its kind. While one is
@@ -931,12 +959,14 @@
       // several kinds (space-separated: the Census changes decisions a
       // row's Review offers, #528) fits each of them; a table whose rows
       // do so gives one data-kind-hint for every case.
-      const ticked = all.filter((node) => node.checked);
+      // While the toggle is pressed the selection is every matching row,
+      // of the toggle's kind, not only the ones shown.
+      const ticked = matched() ? [matching] : all.filter((node) => node.checked);
       const kinds = new Set(ticked.map((node) => node.dataset.confirmKind || ""));
-      const fits = (node) => chosen > 0 && (!node.dataset.confirmKind
+      const fits = (node) => picked > 0 && (!node.dataset.confirmKind
         || ticked.every((row) => (row.dataset.confirmKind || "").split(/\s+/)
           .includes(node.dataset.confirmKind)));
-      const kindHint = !chosen || actions.every(fits) ? ""
+      const kindHint = !picked || actions.every(fits) ? ""
         : scope.dataset.kindHint
           || scope.getAttribute(`data-kind-hint-${kinds.size > 1 ? "mixed" : [...kinds][0]}`) || "";
       // With no rows at all the table itself says it is empty, unless the
@@ -945,7 +975,7 @@
         && Boolean(scope.querySelector("tbody td.select-col"));
       const empty = !all.length && !none && Boolean(emptyHint);
       const explain = Boolean(hint)
-        && (Boolean(kindHint) || (!chosen && (all.length > 0 || empty || none)));
+        && (Boolean(kindHint) || (!picked && (all.length > 0 || empty || none)));
       if (hint) {
         const text = kindHint || (none ? noneHint : empty ? emptyHint : missingHint);
         if (hint.textContent !== text) hint.textContent = text;
@@ -962,9 +992,16 @@
     };
     const choose = (checked) => {
       rows().forEach((node) => { node.checked = checked; });
+      if (!checked) match(false);
       update();
     };
     header?.addEventListener("change", () => choose(header.checked));
+    matching?.addEventListener("click", () => {
+      const on = !matched();
+      rows().forEach((node) => { node.checked = on; });
+      match(on);
+      update();
+    });
     button?.addEventListener("click", () => {
       const all = rows();
       choose(!(all.length && all.every((node) => node.checked)));
@@ -6852,8 +6889,8 @@
     const answer = await followChange(state, formUrl(review.apply), body, recorded);
     if (!answer) return;
     dialog.querySelector("[data-confirm-status]").textContent = dialog.dataset.applied || "Applied.";
-    const text = [review.done, fillIn(dialog.dataset.appliedAt || "Applied at {time}.",
-      {time: clockTime()})].filter(Boolean).join(" ");
+    const appliedAt = fillIn(dialog.dataset.appliedAt || "Applied at {time}.", {time: clockTime()});
+    let text = [review.done, appliedAt].filter(Boolean).join(" ");
     // A dialog marked data-review-redraw="leave" (Start go-live, #1585)
     // ends on the page Apply's answer redirected to, opened as a page: its
     // address, not this one, is then the history entry a reload shows.
@@ -6892,6 +6929,12 @@
       : await freshPage(fromAnswer || region?.dataset.refreshUrl
         || window.location.href);
     if (!fresh) return;
+    // An answer that counts what Apply did says so in its own words
+    // (data-review-applied, in place of the review's data-review-done):
+    // Sent mail's bulk actions, which skip an email that changed since the
+    // review (#2296).
+    const said = fresh.querySelector("[data-review-applied]")?.textContent.trim();
+    if (said) text = [said, appliedAt].join(" ");
     state.done = true;
     dialog.close();
     if (fromAnswer) window.history.replaceState(window.history.state, "", fromAnswer);
@@ -7450,12 +7493,19 @@
   const logoSizes = (root) => [...(modePanel(root, "advanced")
     ?.querySelectorAll("input[type=file]") || [])];
   const basicLogo = (root) => modePanel(root, "basic")?.querySelector("input[type=file]");
+  // An emptied field says so with a change event, so its preview box
+  // (wireFilePreview, #2279) and its size check let the file go too.
+  const emptyFile = (input) => {
+    if (!input || !input.value) return;
+    input.value = "";
+    input.dispatchEvent(new Event("change", {bubbles: true}));
+  };
   editorAdapters.set("parish-logos", {
     // A Basic image replaces all four sizes, so any size chosen before
     // (kept by Switch to Basic) is emptied rather than sent unseen.
     toAdvanced(root) {
       if (!basicLogo(root)?.files?.length) return;
-      logoSizes(root).forEach((input) => { input.value = ""; });
+      logoSizes(root).forEach(emptyFile);
     },
     // Basic can show the configuration only while no size is chosen and
     // the current logos came from one image. A Basic image chosen before a
@@ -7466,8 +7516,7 @@
     },
     // Switch to Basic leaves no image chosen.
     clearBasic(root) {
-      const input = basicLogo(root);
-      if (input) input.value = "";
+      emptyFile(basicLogo(root));
     },
   });
 

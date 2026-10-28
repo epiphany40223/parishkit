@@ -125,6 +125,20 @@ def components(context, admin):
             "response-dashboard",
             page | {"daily_chart": participation_chart(long_campaign(chart))},
         ),
+        # Responses entered after the campaign closed (#2298): the long
+        # campaign ends on its 60th date, so 15 late dates follow the line.
+        "/participation-closed": (
+            "response-dashboard",
+            page
+            | {
+                "daily_chart": participation_chart(
+                    replace(
+                        long_campaign(chart),
+                        end_date=chart.first_date + timedelta(days=59),
+                    )
+                )
+            },
+        ),
         "/report-export": (
             "report-export",
             {

@@ -54,6 +54,7 @@ when it lands.
   [prerequisite gates](#prerequisite-gates),
   [field errors and live checks](#field-errors-and-live-checks),
   [secret fields](#secret-fields),
+  [image previews](#image-previews),
   [Review, Apply and Change status](#review-apply-and-change-status),
   [review dialog](#review-dialog),
   [conditional fields](#conditional-fields),
@@ -954,8 +955,11 @@ never scrolls to show it (Administrator, pk-local review of
   with every generated size, each marked changed or unchanged. The form is
   an in-place region, redrawn after Apply (cleared, and opened in the mode
   that saved the new logos), and the status line sits under it. The current
-  logos are a region of their own below the status line, so logos appearing
-  never move the form or the status line. The form has an id, so a file
+  logos are a region of their own above the form
+  ([image previews](#image-previews), #2279), one fixed-size frame per
+  size, so logos appearing, changing or being absent never move the form
+  or the status line; each file field in the form has its own chosen-image
+  box above it. The form has an id, so a file
   chosen while it is redrawn is said not to be kept.
 - **Review dialog: Parish settings (#750).** Parish settings reviews in the
   [review dialog](#review-dialog) as a compact review (#1356): its button
@@ -1759,6 +1763,45 @@ in this page view. The page script never logs, stores or sends the value.
 A multi-line secret (the Google service-account JSON key) stays a visible
 text area.
 
+### Image previews
+
+**Rule.** Wherever an Admin uploads an image that sets or replaces one the
+site shows (a logo or a campaign image), the image's preview sits above the
+file field: first what is there now, then the control that changes it.
+**Why.** One place for the preview on every upload page means an Admin
+never has to look for it, and reading down the page goes from the current
+image to the way to change it. **Shared code.** A field that previews the
+file chosen in it uses the shared chosen-image box
+(`components/file-preview.html`, the fixed-size `file-preview-box` in
+`ui-v1.css`), which `wireFilePreview` in `ui-v1.js` fills with the chosen
+file; Parish logos' current-logo frames use the same `file-preview-box`, and
+Campaign images uses its fixed slot frame (`artwork-box`). **Precedent.**
+[#2279](https://github.com/epiphany40223/parishkit/issues/2279)
+(Administrator, 2026-10-26), after
+[#2270](https://github.com/epiphany40223/parishkit/issues/2270).
+
+The preview keeps a fixed size whether it holds an image or not, so an
+image appearing, being replaced or being removed never moves the field
+below it ([no layout shift](#no-layout-shift)). The field's own lines (its
+reserved error line and a gate's hint after the action row) stay with the
+field, under the preview. The pages that follow it are Parish logos,
+Campaign images (each slot's current image) and the setup wizard's Parish
+logos step (the "Your logo" box). Parish logos has both kinds: the current
+logos (one frame per size) above the form, and in the form a chosen-image
+box directly above each file field (Basic's one image and each Advanced
+size), so the page reads current logos, form, chosen image, then the
+field's label and the field.
+
+A chosen-image box shows the file at once as it is chosen, drawn from the
+browser's own copy with no upload, and keeps its empty text until then. A
+file the page cannot preview (not typed as an image, empty, or over the
+field's size limit) or cannot draw returns the box to the saved
+image, where it shows one, or to its empty text. The box is a polite live
+region. An
+upload that adds a file rather than replacing an image, such as Hosted
+files, has no preview of its field: its files are listed, with thumbnails,
+in its table.
+
 ### Review, Apply and Change status
 
 **Rule.** A change to configuration or data is made by editing, then
@@ -1842,7 +1885,10 @@ the form again (status 400); any other refusal is the closed JSON refusal, or a 
 `data-review-refusal` that the dialog shows as drawn. A page whose own
 address records a view when read (System health) marks its dialog
 `data-review-redraw="body"`: Apply's answer then holds the regions the
-change redraws, and the page is not read again. A dialog whose Apply
+change redraws, and the page is not read again; when that answer counts
+what Apply did (Sent mail's bulk actions, which skip an email that changed,
+#2296), its `data-review-applied` line starts the status line in place of
+`data-review-done`. A dialog whose Apply
 leads to another step's page (the Go live page's Start go-live) marks it
 `data-review-redraw="leave"`: Apply's redirect is opened as a page, and
 that page follows its own work. **Precedent.**
@@ -2083,7 +2129,7 @@ the [Go live page](../admin-portal/spec.md#go-live-page) describes
 (Administrator decision, 2026-10-17, on
 [#1585](https://github.com/epiphany40223/parishkit/issues/1585); built in
 its slices 2 to 5). Other operational actions that are not editors
-(pausing and resuming mail, fixing many emails at once, test email sends, a
+(pausing and resuming mail, Sent mail's bulk actions, test email sends, a
 manual ParishSoft refresh, Family portal maintenance) keep the flows their
 own sections describe; whether any of them moves to the dialog is decided
 on [#750](https://github.com/epiphany40223/parishkit/issues/750).
@@ -4831,6 +4877,20 @@ The shared `table-selection.html` include and its `ui-v1.js` wiring give
 every such table this behavior. The server validates every submitted
 selection.
 
+A table whose bulk actions are meant for more rows than one page shows may
+also offer a **select-all-matching toggle**, "Select all N matching", where
+N counts the rows with a selection box that the applied filters match on
+every page. It is drawn only while N is more than the page's own boxes, and
+then always in the same place beside Select all, with a label that never
+changes, so nothing moves when it is chosen. Choosing it ticks every row
+shown, marks it pressed (`aria-pressed`) and makes the selected count say
+N; unticking any row, Clear selection or choosing it again ends it. While
+it is pressed the bulk buttons fit by the kind of all N rows, which the
+server gives the toggle, and the selection posts the applied filters
+instead of only the ticked rows, which the server reads again. So far only
+[Sent mail](../admin-portal/spec.md#sent-mail-bulk-actions) has one
+([#2296](https://github.com/epiphany40223/parishkit/issues/2296)).
+
 A **worklist** (a table a reader works through, such as the review
 pipeline's [review worklist](../review-pipeline/spec.md#review-worklist)) has its filters
 always open, never behind a disclosure, above the table, and its export
@@ -4916,7 +4976,10 @@ review worklist (#1131, #1684) and the
 Entered by hand tick of
 [Ministry requests](../admin-portal/spec.md#roster-entry-on-ministry-requests) and
 the row actions of
-[Census changes](../reports/spec.md#manual-census-resolution); the
+[Census changes](../reports/spec.md#manual-census-resolution) and the
+bulk actions of
+[Sent mail](../admin-portal/spec.md#sent-mail-bulk-actions) (#2296),
+which open the review dialog; the
 other Admin tables with per-row actions move to it in later changes, as the
 inventory on #879 lists.
 

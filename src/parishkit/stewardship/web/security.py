@@ -25,9 +25,10 @@ CSP = (
     "form-action 'self' https://accounts.google.com; base-uri 'none'; "
     "frame-ancestors 'none'; object-src 'none'"
 )
-# A page that previews a chosen image (setup's Parish logos, #2270) also lets
-# its own script show the file as a blob: object URL, which 'self' does not
-# cover. Only that page's response asks for it (stewardship_blob_images).
+# A page that previews a chosen image (setup's Parish logos, #2270, and
+# Parish logos, #2279) also lets its own script show the file as a blob:
+# object URL, which 'self' does not cover. Only those pages' responses ask
+# for it (stewardship_blob_images).
 CSP_BLOB_IMAGES = CSP.replace("img-src 'self'", "img-src 'self' blob:")
 # Hosted files (#346) are served under this policy instead: nothing may load
 # or run, and the bytes are never framed.

@@ -8,6 +8,8 @@ hosted-file rename's ``in_use`` code is checked against PostgreSQL in
 ``database/test_hosted_files_postgresql.py``.
 """
 
+from types import SimpleNamespace
+
 import pytest
 from django.http import HttpResponse, QueryDict
 
@@ -37,32 +39,53 @@ def test_the_mail_error_page_records_its_code_and_refusal(recorded):  # noqa: F8
     assert second["codes"] == ["denied"] and second["reason"] == "unclassified"
 
 
-@pytest.mark.parametrize("own_error", [False, True])
+def stale_preview(*_, **__):
+    """A review whose emails changed since it was drawn."""
+    raise StaleRecordError()
+
+
+@pytest.mark.parametrize(
+    ("data", "reason", "codes", "unexpected"),
+    [
+        # A stale form's extra field: the refusal's own reason and count.
+        (
+            {"action": "preview", "kind": "a", "scope": "page", "zz": "1"},
+            "unexpected_fields",
+            ["invalid"],
+            1,
+        ),
+        # A review that changed: its step's reason, and its key as the code.
+        (
+            {"action": "continue", "preview": "p", "note": "c"},
+            "stale_page",
+            ["changed"],
+            None,
+        ),
+    ],
+)
 def test_a_refused_bulk_action_records_its_refusal(
     recorded,  # noqa: F811
     monkeypatch,
-    own_error,
+    data,
+    reason,
+    codes,
+    unexpected,
 ):
-    """The bulk region's refusal is recorded, unless the page answered with
-    a refusal of its own (its 400 error page), which keeps its own reason."""
-    page = HttpResponse(status=400)
-    if own_error:
-        page = delivery_views._error(ErrorCode.INVALID, 400, StaleRecordError())
+    """A refused bulk step answers with the review dialog's fragment (#2296),
+    which records the refusal's reason, its code and any unexpected count."""
+    monkeypatch.setattr(delivery_views, "runtime", lambda: SimpleNamespace(store=None))
     monkeypatch.setattr(
-        delivery_views, "_bulk", lambda _: ({"_refusal": counted_refusal()}, 400)
+        delivery_views, "_principal", lambda *_, **__: SimpleNamespace(identity="a")
     )
-    monkeypatch.setattr(delivery_views, "_page", lambda *_, **__: page)
+    monkeypatch.setattr(delivery_views.delivery_bulk, "load_preview", stale_preview)
     # A bulk action names its action; any other POST is a filtered read.
-    request = request_for("/admin/mail/sent/", data={"action": "preview"})
-    answer(delivery_views.delivery_list(request))
+    request = request_for("/admin/mail/sent/", data=data)
+    answer(delivery_views.delivery_list(request), request)
     (record,) = recorded
     context = record.context()
-    if own_error:
-        assert context["reason"] == "unclassified"
-        assert context["exception_class"] == "stale_record_error"
-    else:
-        assert context["reason"] == "unexpected_fields"
-        assert context["unexpected_count"] == 1
+    assert context["reason"] == reason
+    assert context["codes"] == codes
+    assert context.get("unexpected_count") == unexpected
 
 
 def test_the_logs_error_page_records_its_code(recorded):  # noqa: F811

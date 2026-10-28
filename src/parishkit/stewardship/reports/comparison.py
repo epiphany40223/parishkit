@@ -168,6 +168,58 @@ class Year:
 
 
 @dataclass(frozen=True)
+class LateEntries:
+    """The responses Staff entered after the campaign closed (#2298).
+
+    The comparison day stays at the end date so every year is compared like
+    for like; this is the late tail beside it. ``families`` is how many
+    Families first responded after ``end_date`` (the series' last day's
+    cumulative count less the end date's), ``pledges`` how much the
+    effective annual pledge total has changed since the end date (None
+    without giving, or when either day's total is unavailable).
+    """
+
+    end_date: date
+    families: int
+    pledges: Decimal | None = None
+
+    @property
+    def pledges_text(self):
+        """The pledge change with its sign: "+$1,250.00", "-$40.00".
+
+        None without a known change, and None for no change at all, so the
+        page never says pledges "changed by $0.00".
+        """
+        if not self.pledges:
+            return None
+        return ("+" if self.pledges > 0 else "") + money_text(self.pledges)
+
+
+def late_entries(days, end_date, financial):
+    """The ``LateEntries`` of a participation series, or None without any.
+
+    ``days`` are the current campaign's Historical-as-of-day fact rows,
+    oldest first. None unless the series runs past ``end_date`` and both
+    that day's and the last day's population are available.
+    """
+    by_date = {day.local_date: day for day in days}
+    end = by_date.get(end_date)
+    last = days[-1] if days else None
+    if (
+        end is None
+        or last.local_date <= end_date
+        or not (end.population_available and last.population_available)
+    ):
+        return None
+    pledges = None
+    if financial and end.pledge_available and last.pledge_available:
+        pledges = last.pledge_total - end.pledge_total
+    return LateEntries(
+        end_date, last.cumulative_responses - end.cumulative_responses, pledges
+    )
+
+
+@dataclass(frozen=True)
 class Comparison:
     """Every figure of the report at one comparison day.
 
@@ -179,7 +231,8 @@ class Comparison:
     with its file's SHA-256, which a digest's section records (slice 7).
     ``fact_set_id`` is the participation generation the figures come from
     (None when there is none), which the page's figures status compares
-    with the newest (#1586).
+    with the newest (#1586). ``late`` is the responses Staff entered after
+    the campaign closed (``LateEntries``, #2298), or None.
     """
 
     campaign_name: str
@@ -193,6 +246,7 @@ class Comparison:
     latest_day: int | None = None
     checksums: tuple = ()
     fact_set_id: UUID | None = None
+    late: LateEntries | None = None
 
 
 # ---------------------------------------------------------------- metrics

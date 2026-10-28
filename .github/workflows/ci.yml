@@ -170,9 +170,13 @@ jobs:
     needs: validate
     if: ${{ needs.validate.outputs.compose != 'false' && (github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false)) }}
     runs-on: ubuntu-latest
-    # About 14-17 minutes in October 2026; leave room for the in-image
-    # baseline's own 15-minute limit in test_compose.py (#1278).
-    timeout-minutes: 30
+    # Measured in October 2026: about 17 minutes for the topology step (about
+    # 14 minutes of it the in-image unit suite) plus about 10-11 minutes for
+    # the operational step, about 28 minutes in total. 50 minutes leaves
+    # headroom for busy runners (#2313); 30 cancelled runs mid-way through the
+    # operational step. Keep room for the in-image baseline's own 25-minute
+    # limit in test_compose.py (#1278).
+    timeout-minutes: 50
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

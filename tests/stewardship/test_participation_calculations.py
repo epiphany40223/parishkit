@@ -253,14 +253,59 @@ def test_input_order_never_changes_the_calculation():
     ) == calculate_participation(context)
 
 
-def test_pre_start_is_empty_and_end_caps_the_series():
+def test_pre_start_is_empty_and_the_through_date_ends_the_series():
+    """The series stops at its through-date, past the end date too (#2298).
+
+    Its callers cap the through-date at the campaign's report end, so the
+    calculation itself never cuts the days a response after the close needs.
+    """
     assert (
         calculate_participation(calculation(through_date=DAY - timedelta(days=1))) == ()
     )
     assert (
         len(calculate_participation(calculation(through_date=DAY + timedelta(days=99))))
-        == 3
+        == 100
     )
+
+
+def test_late_responses_count_on_the_day_staff_entered_them():
+    """A first-ever and a resubmitted response after the end date (#2298).
+
+    The campaign ends on day 3; on day 5 Staff enter the second Family's
+    first response (the current population's Family made none before), and
+    on day 6 a changed pledge for the first Family. Each counts on its own
+    day, after the end date, never moved back to it.
+    """
+    end = DAY + timedelta(days=2)
+    late = (
+        LiveResponse(SECOND, 4, START + timedelta(days=4, hours=3), MoneyAmount(40004)),
+        LiveResponse(FIRST, 5, START + timedelta(days=5, hours=3), MoneyAmount(50005)),
+    )
+    context = calculation(
+        through_date=DAY + timedelta(days=5),
+        submission_watermark=5,
+        responses=tuple(
+            row for row in calculation().responses if row.family_id == FIRST
+        )
+        + late,
+    )
+    days = calculate_participation(context)
+    assert [day.local_date for day in days] == [
+        DAY + timedelta(days=index) for index in range(6)
+    ]
+    assert [day.first_responses for day in days] == [1, 0, 0, 0, 1, 0]
+    assert [day.cumulative_responses for day in days] == [1, 1, 1, 1, 2, 2]
+    assert [day.pledge_total for day in days] == [
+        Decimal("100.01"),
+        Decimal("300.03"),
+        Decimal("300.03"),
+        Decimal("300.03"),
+        Decimal("700.07"),
+        Decimal("900.09"),
+    ]
+    # Up to the end date it is exactly the series without the late tail.
+    capped = calculate_participation(replace(context, through_date=end))
+    assert capped == days[:3]
 
 
 def test_reject_response_chronology_that_would_move_the_first_response():

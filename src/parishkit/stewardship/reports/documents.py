@@ -42,4 +42,5 @@ def participation_document(
             for row in facts.days.order_by("local_date").values(*sorted(DAY_FIELDS))
         ),
         summary=summary,
+        end_date=projection.end_date,
     )

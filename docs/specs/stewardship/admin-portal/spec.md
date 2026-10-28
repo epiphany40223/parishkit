@@ -313,10 +313,11 @@ and links the step that fixes it, keeping the HTTP status of the underlying
 refusal; closed JSON errors remain for polling and command endpoints.
 
 The setup Parish logos page previews the logo before the Administrator
-advances (#2270). Under the file field a preview box of fixed height holds
-the logo the field would save. Choosing a file draws it at once from the
-browser's own copy of the file (an object URL, revoked when the file is
-replaced or the page is left), with no upload. With no file chosen, the box
+advances (#2270). Above the file field
+([image previews](../ui-conventions/spec.md#image-previews), #2279) a
+preview box of fixed height holds the logo the field would save. Choosing
+a file draws it at once from the browser's own copy of the file (an object
+URL, revoked when the file is replaced or the page is left), with no upload. With no file chosen, the box
 shows the saved logo from the server, so a revisit shows what is saved, and
 its empty text before either exists. A file the page refuses (over 5 MB, or
 one the browser types as something other than an image) or that the browser
@@ -326,8 +327,9 @@ server's own words (the page carries them in data attributes), without
 waiting for Save and continue. The box, the error line and the
 buttons below keep their places in every case, including at 320 px
 ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). Only this
-page's response adds `blob:` to the content security policy's `img-src`; the
-server still checks the size and type of every upload. The post-setup
+page's response and Parish logos' (below) add `blob:` to the content
+security policy's `img-src`; the server still checks the size and type of
+every upload. The post-setup
 Parish logos page (Admin menu) keeps its own review dialog, which already
 shows every generated size; the setup page lists no generated sizes, because its
 preview box already shows the saved logo.
@@ -2501,16 +2503,37 @@ review and Apply happen in the
 [review dialog](../ui-conventions/spec.md#review-dialog) (#750): an upload
 answers with the dialog's review of the staged logos, and Apply posts the
 signed preview, with the staged bundle it was signed for, to Parish logos.
-Once the change is applied, the form and the current logos below it are
-redrawn. An upload from a page whose settings changed elsewhere, and an
+Once the change is applied, the form and the current logos above it
+([image previews](../ui-conventions/spec.md#image-previews), #2279) are
+redrawn. Each of the form's file fields (Basic's one image and each
+Advanced size) has the setup step's chosen-image box directly above it,
+which shows the file at once as it is chosen, before Upload and review,
+keeps its empty text until then, and holds no saved logo (the current
+logos show those). A file the browser types as other than an image, or
+one over that size's limit (refused at the field at once), leaves the box
+empty, and
+a field emptied by a switch of mode empties its box too. Each Advanced
+size's box, and each current logo's frame, draws its image the way that
+size is saved: fitted within the size's bound (32 × 32 for the favicon,
+128 × 128 for the icon, 512 × 128 for the menu logo) at one CSS pixel per
+image pixel and never enlarged, so the same image chosen for every size
+shows how small the favicon and how wide the menu logo will be. The large
+logo (1,024 pixels) is capped at its box, and an image shrinks only where
+the column is narrower than its bound. Each size's box has its own fixed
+height, so choosing a file still moves nothing. Basic's one box is the
+shared box, and the review dialog draws each generated size at its own
+pixels, fitted to the dialog's width. An upload from a
+page whose settings changed elsewhere, and an
 Apply of logos that expired, belong to another sign-in or were staged
 against settings changed since, are refused in the dialog, which says to
 reload the page first.
 
 Parish logos take either one image, resized into all four sizes, or each
-size uploaded separately (#1062): the large
-logo, the menu logo beside the parish name on both portals, the icon and
-the favicon in the browser tab on both portals. The two are the page's
+size uploaded separately (#1062). The four sizes, which the page always
+lists from smallest to largest (the current logos, the Advanced fields and
+the review dialog, and the branding commands; #2288), are the favicon in
+the browser tab on both portals, the icon, the menu logo beside the parish
+name on both portals and the large logo. The two are the page's
 [Basic and Advanced modes](../ui-conventions/spec.md#basic-and-advanced-modes)
 (#1062 slice 3): **Basic** is one image, resized for every size, and
 **Advanced** is each size uploaded separately. Each staged bundle records
@@ -7062,9 +7085,10 @@ a phone, without sideways scrolling) holds:
   - **Needs attention**: what an Administrator can still act on: Not sure
     it arrived (`delivery_unknown`), and Failed (`permanent_failure`) unless
     its latest decision other than a note recorded it as not sent (Confirm
-    not sent, or Fix many's record as not sent), which settles it. Either
-    must be of a kind whose Mail message page offers resolutions in a
-    campaign that is not archived. An operational or security notice or a
+    not sent, or the bulk Record as not sent on Sent mail's row selection,
+    see [Sent mail bulk actions](#sent-mail-bulk-actions)), which settles
+    it. Either must be of a kind whose Mail message page offers resolutions
+    in a campaign that is not archived. An operational or security notice or a
     Ministry leader email is in it only while Not sure it arrived, the one
     state its page settles
     ([#2295](https://github.com/epiphany40223/parishkit/issues/2295),
@@ -7239,61 +7263,95 @@ A second note, drawn the same way, names the earlier report emails a report
 send is waiting on (#1872); its behavior is in
 [report emails](../report-emails/spec.md#catch-up-recovery-and-holds).
 
-#### Fix many emails at once
+#### Sent mail bulk actions
 
-After a mail outage many emails can need the same decision. A collapsed
-**Fix many emails at once** panel on Sent mail offers two bulk actions
-(#382 item M4), each shown only while some email of the current campaign
-qualifies:
+After a mail outage many emails can need the same decision (#382 item M4).
+Sent mail's table is the shared
+[selection table](../ui-conventions/spec.md#admin-tables) with two bulk
+actions in its bulk bar
+([#2296](https://github.com/epiphany40223/parishkit/issues/2296), which
+replaced a separate "Fix many emails at once" panel that chose emails by
+rule rather than by row):
 
-- **Failed emails: send them all again?** ("Preview sending again"): every
-  failed email whose own page lets "Send it again?" be answered Yes
-  ([resolution questions](#resolution-questions)).
-- **Not sure they arrived: record them all as not sent?** ("Preview
-  recording as not sent"): every uncertain email whose own page lets "What
-  did you find?" be answered "It was not sent" and then "Send it again?"
-  No. As on that page, the evidence is the Administrator's: a required
-  checkbox says they checked the mail service's own records and these
-  emails were not sent. Nothing is resent and no address is blocked.
+- **Send again**: for failed emails whose own page lets "Send it again?" be
+  answered Yes ([resolution questions](#resolution-questions)).
+- **Record as not sent**: for uncertain emails whose own page lets "What did
+  you find?" be answered "It was not sent" and then "Send it again?" No. As
+  on that page, the evidence is the Administrator's: a required checkbox
+  says they checked the mail service's own records and these emails were
+  not sent. Nothing is resent and no address is blocked.
 
-The questions and answers are worded as on each email's own page
-([#1563](https://github.com/epiphany40223/parishkit/issues/1563)).
+The selection column and the bulk bar are drawn only while the page has
+an email with a box, or Select all N matching is offered: most views list
+no email a bulk action covers, and an empty bar would push the first rows
+below a laptop screen ([#227](https://github.com/epiphany40223/parishkit/issues/227);
+[conditional fields](../ui-conventions/spec.md#conditional-fields)).
+A row has a selection box only when one of the two actions covers it, by
+the rules its own page uses (`delivery_reads.offered_actions`): an email of
+the current campaign, which is not archived and whose exports are admitted,
+whose latest delivery task failed, and, for Send again, whose resend
+admission holds. A chosen-Family test and a report email test are never
+sent again in bulk, and a duplicate-risk resend is never offered in bulk.
+Operational and security notices, Ministry leader emails and the emails of
+an earlier campaign have no box: bulk actions stay campaign-scoped, and a
+notice is settled on its own page. Each action fits only one kind of row,
+so it is a [prerequisite gate](../ui-conventions/spec.md#row-actions-and-confirmation):
+it is available only while every selected email is of its kind, and the
+bulk bar's reason line says why otherwise (the selection is all failed,
+all uncertain, or a mix of both, which needs choosing one kind under
+Delivery).
 
-A message qualifies only by the rules its own page uses
-(`delivery_reads.offered_actions`): the campaign is not archived and its
-exports are admitted, its latest delivery task failed, and, for a retry,
-its resend admission holds. A chosen-Family test is never retried. Each
-form names the email types it covers with their counts (and All types when
-there are several) and requires an evidence or reason note, recorded on
-every email. Preview is unavailable until the required fields are filled
-in. A duplicate-risk resend is never offered in bulk.
+**Select all matching.** When the applied filters match more emails with a
+box than the page shows, the bulk bar also offers **Select all N
+matching**, the [select-all-matching toggle](../ui-conventions/spec.md#admin-tables),
+where N counts the matching emails a bulk action covers (not the emails
+without a box). It covers the old by-rule use: Delivery set to Failed (and
+Purpose to one type of email, if wanted) then Select all N matching selects
+every failed email of the campaign that the filters list. The actions then
+fit by the kind of all N emails, and the server reads them again from the
+filters the selection posts.
 
-**Preview** shows the exact count in place, below the forms, and changes
-nothing. Its **Confirm** button posts a signed preview that binds every
-selected email's identity and version, a digest of the note and the
-Administrator, and expires after 15 minutes. The note itself is not in the
-preview: Confirm posts it again beside the preview, and it must match. Changing the form after previewing withdraws the
-preview, as an [in-place review](../ui-conventions/spec.md#in-place-controls) does. Confirming
-resolves each email through the ordinary per-email resolution, one email per
-command and transaction, at its previewed version, so each keeps its own
-guard, resolution record and audit event, and a retry prepares the email
-exactly as a one-at-a-time retry does: Families' codes and links already
-emailed stay valid. An email that changed after the preview, or that its
-own guard refuses, is skipped and counted, never forced; a lost sign-in or a
-database outage stops the run. Each email's command identity is derived
-from the preview and the email, so confirming the same preview again never
-repeats a resolution. At most 100 emails are resolved per request, so a
-request stays well inside the web time limit; the result then offers
-**Continue**, which applies the rest of the same preview. Continue's preview
-also lists the emails skipped so far, which are counted again but not
-retried, so skipped emails never fill a later batch; it expires when the
-original preview would. The result says
-how many were resolved, skipped and left, and the list is refreshed in
-place. Every application that attempted an email records one
-`delivery_bulk_resolved` audit event with the number resolved and the
-number previewed. An expired, altered or another Administrator's preview,
-or a choice that no longer matches any email, is refused in place with an
-error summary and changes nothing.
+**Review and Apply.** Each action opens the shared
+[review dialog](../ui-conventions/spec.md#review-dialog) without a page
+load. The review counts the emails the server will act on, by type of
+email, and asks for an evidence or reason note, recorded on every email,
+and for Record as not sent the "I checked the mail service's own records"
+checkbox; Apply is unavailable until they are filled in. The review is a
+signed preview that binds every selected email's identity and version and
+the Administrator, and expires after 15 minutes. The server refuses the
+whole review, changing nothing, when any selected email no longer
+qualifies for the action (it changed since the list was drawn), when the
+matching emails mix the two kinds, or when nothing qualifies any more;
+the dialog says so, and closing it leaves the page as it was. A page
+selection holds at most one page (100 emails); Select all N matching has
+no such limit.
+
+Apply resolves each email through the ordinary per-email resolution, one
+email per command and transaction, at its previewed version, so each keeps
+its own guard, resolution record and audit event, and a retry prepares the
+email exactly as a one-at-a-time retry does: Families' codes and links
+already emailed stay valid. An email that changed after the review, or that
+its own guard refuses, is skipped and counted, never forced; a lost sign-in
+or a database outage stops the run. Each email's command identity is
+derived from the preview and the email, so applying the same preview again
+never repeats a resolution. At most 100 emails are resolved per request,
+so a request stays well inside the web time limit. Once applied the dialog
+closes, the page's regions are redrawn in place from Apply's answer (no
+reload, no jump) and a status line at the top of the table says what was
+done, counting what was skipped and is left. When emails were skipped or
+are left, a notice under it says how many; while some are left it offers
+**Continue**, which opens the same
+dialog for the rest of the same preview, with the note shown, and whose
+Apply resolves the next batch. Continue's preview carries the note's
+digest (never the note), and the note is posted again beside it and must
+match; it also lists the emails skipped so far, which are counted again but
+not retried, so skipped emails never fill a later batch, and it expires
+when the original preview would. The notice belongs to Apply's answer, so
+a later sort, page or filter redraws the table without it. Every
+application that attempted an email records one `delivery_bulk_resolved`
+audit event with the number resolved and the number previewed. An
+expired, altered or another Administrator's preview is refused in the
+dialog and changes nothing.
 
 The bulk actions are page-only for now; the shared functions in
 `jobs/delivery_bulk.py` would back an

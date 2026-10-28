@@ -384,6 +384,47 @@ def listing(
     definer read for ``actor``, which raises ``PermissionError`` when it
     refuses.
     """
+    selected = filtered(
+        state=state,
+        query=query,
+        send=send,
+        snapshot=snapshot,
+        purpose=purpose,
+        mode=mode,
+        since=since,
+        until=until,
+        actor=actor,
+    )
+    total = bounded_count(selected)
+    if DELIVERY_SORTING.tokens[sort][0] == "name":
+        selected = with_name_keys(selected, snapshot).annotate(
+            recipient_sort_key=recipient_sort_key(selected, actor)
+        )
+    window, rows, has_next = read_window(
+        window, DELIVERY_SORTING.order(selected, sort).values(*FIELDS), total
+    )
+    return window, rows, has_next, total
+
+
+def filtered(
+    *,
+    state,
+    query,
+    send=None,
+    snapshot=None,
+    purpose="all",
+    mode=None,
+    since=None,
+    until=None,
+    actor=None,
+):
+    """Every email Sent mail lists for these filters, unordered and unread.
+
+    ``listing``'s filters (its arguments of the same names), Recipient
+    included: ``listing`` counts and pages this, and Sent mail's Select all
+    N matching (#2296) reads the bulk actions' emails among it, so the
+    emails a bulk action covers are exactly the ones the list shows.
+    """
     scope = recipient_scope(query)
     selected = matching(
         state=state, send=send, purpose=purpose, mode=mode, since=since, until=until
@@ -417,15 +458,7 @@ def listing(
             # the messages by primary key: an address has a few emails per
             # mailing, or one report a day.
             selected = selected.filter(pk__in=address_deliveries(value, actor))
-    total = bounded_count(selected)
-    if DELIVERY_SORTING.tokens[sort][0] == "name":
-        selected = with_name_keys(selected, snapshot).annotate(
-            recipient_sort_key=recipient_sort_key(selected, actor)
-        )
-    window, rows, has_next = read_window(
-        window, DELIVERY_SORTING.order(selected, sort).values(*FIELDS), total
-    )
-    return window, rows, has_next, total
+    return selected
 
 
 def matching(*, state, send=None, purpose="all", mode=None, since=None, until=None):
@@ -539,10 +572,11 @@ def needs_attention(selected):
 
     Only emails a person can still act on: Not sure it arrived, or Failed
     unless its latest decision (a resolution other than a note) was to
-    record it as not sent, which settles it ("Confirm not sent", or Fix
-    many's "record as not sent"). Either must be one whose page offers
-    resolutions (``actionable``: a notice or Ministry leader email only
-    while Not sure it arrived, never an archived campaign's email). One
+    record it as not sent, which settles it ("Confirm not sent", or the
+    bulk "Record as not sent" on Sent mail's row selection). Either must
+    be one whose page offers resolutions (``actionable``: a notice or
+    Ministry leader email only while Not sure it arrived, never an archived
+    campaign's email). One
     correlated lookup per candidate email, through the resolutions' history
     index; no per-row admission read.
     """
