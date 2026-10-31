@@ -216,7 +216,7 @@ your roles would not show on the page is `null`.
 | `campaign` | The current campaign's `id`, `name`, `state`, `version`, `starts_at`, `ends_at` and `delivery_paused`, or `null` |
 | `source` | The last ParishSoft refresh: `refreshed_at` (when the current snapshot was promoted), the last full refresh's success, failure (with `full_failed_task_id`) and `full_running`, `frequency`, `next_full_at`; the [data age and connection](../specs/stewardship/operations/spec.md#parishsoft-data-age-and-connection): `full_started_at`, `data_as_of`, `connection` (`failing`, `not_checked`, `working` or `unknown`) with `connection_at`; `overdue_full_at`, the due time of the first scheduled full refresh since the last one started that has not yet run (`null` when none is due), `out_of_date` when it is more than `source_stale_seconds` late with `late_minutes`, and `held_for_send` when a bulk Family send is holding it within the send's allowance, with `resume_at` (when it runs at the latest) or `catching_up` (the send ended or the resume point passed) |
 | `next_mail` | The next Family mail's `kind` and `due_at` |
-| `families` | Counts: `active`, `eligible`, `responded`, `eligible_responded` |
+| `families` | Counts: `active` and `eligible`, both the campaign Families (those the campaign's Families rule selects; `active` is the same set `go-live` reports under that key, #2331), `responded` (every campaign row with a response, including Families that have since left the campaign) and `eligible_responded` (the campaign Families with a response) |
 | `unreachable_families` | Families no mail can reach (a count) |
 | `offsite_backup` | The off-site copy's `state` (`uploaded`, `failed`, `disabled`, `none` or `unset`), `at`, `last_copy_at` and `set_name` |
 | `unfinished_keys` | Integrations with a new key not yet switched to, by `target` |
@@ -293,7 +293,7 @@ current Testing draft, without its public web address check:
 | `checks_passed`, `problems` | Whether the settings and data checks passed, and the codes of those that did not (for example `full_refresh_required`, `family_test_mail_required`), which the page explains in words |
 | `family_templates` | The selected Family mail templates, by record id |
 | `source` | The full ParishSoft refresh the preview relies on: `state` (`ready` or why not; `full_refresh_stale` does not block, since Start go-live queues its own refresh), `current_id`, `full_id`, `observed_at`, `expires_at` |
-| `families` | Family mail impact counts: `families`, `active`, `eligible` and `not_eligible` (with and without an eligible email address), `deliverable`, `messages` due at once, `coalesced_slots`, `skipped_slots`, `blocked_families` |
+| `families` | Family mail impact counts: `families` (every campaign row), `active` (the campaign Families, those the Families rule selects, as in `status`, #2331), `eligible` and `not_eligible` (campaign Families with and without an eligible email address), `deliverable`, `messages` due at once, `coalesced_slots`, `skipped_slots`, `blocked_families` |
 | `admin_reports` | Admin report mail impact counts: `daily_messages`, `weekly_messages`, `coalesced_slots`, `empty_weekly_reports`, `blocked_groups` |
 | `cleanup` | The Testing data cleanup would delete: `submissions`, `families`, `messages`, `unresolved`, `total`, `inventory` (`category`, `count`) and `message_states` (`state`, `count`) |
 | `mail_test_id` | The successful Family test email that counts, or `null` |

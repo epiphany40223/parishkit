@@ -25,7 +25,7 @@ from .work_locks import require_work_order
 
 FAMILY_FIELDS = (
     "id",
-    "active",
+    "portal_eligible",
     "email_eligible",
     "email_deliverable",
     "effective_submission_id",
@@ -124,7 +124,7 @@ def _groups(campaign_id, definitions, due, digest):
                 slots.append(_slot(definition, target, row))
             yield FamilyImpactInput(
                 family_id=family["id"],
-                active=family["active"],
+                portal_eligible=family["portal_eligible"],
                 email_eligible=family["email_eligible"],
                 deliverable=family["email_deliverable"],
                 responded=family["effective_submission_id"] is not None,

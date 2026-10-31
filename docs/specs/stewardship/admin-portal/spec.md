@@ -1834,10 +1834,15 @@ the next one cannot be created here yet.
 The Responses tiles are a row of
 [stat tiles](../ui-conventions/spec.md#stat-tiles)
 ([#720](https://github.com/epiphany40223/parishkit/issues/720), #1673) for
-one population, the campaign's active Families: the active Families; the
-active Families with a response, as the count, "out of 1,031 (40%)" and a
-share bar; and the Families who responded in the past 24 hours (Testing
-responses while in Testing mode, as the tile's explanation then says).
+one population, the
+[campaign Families](../data/spec.md#campaign-families) (the Families the
+campaign's Families rule selects, never ParishSoft's own active flag, so
+the figure equals the Response dashboard's "In this campaign today";
+[one label, one set](../ui-conventions/spec.md#stat-tiles), #2331): the
+Campaign Families; the Campaign Families responded, as the count, "out of
+1,031 (40%)" and a share bar; and the Families who responded in the past
+24 hours (Testing responses while in Testing mode, as the tile's
+explanation then says).
 The second tile does not count Testing responses; while in Testing mode a
 line under the tiles says so. The Response dashboard keeps the choice
 between all Families and those who can use the Family form now; Home does
@@ -6042,7 +6047,10 @@ outcome.
 3. **Confirm Production.** One impact preview, built once the links are
    prepared and labelled with its browser-local as-of time: whether the
    campaign becomes active now or is scheduled (with its start time), the
-   Families with and without an eligible email, the Family emails due at
+   [campaign Families](../data/spec.md#campaign-families) and those of them
+   with and without an eligible email (the Families rule's Families, as on
+   Home and the Response dashboard, #2331; the Check step's counts and the
+   confirmation progress count the same set), the Family emails due at
    once and the report emails due at once; combined and skipped counts are
    in a disclosure. It updates itself when its inputs change, with a line
    naming what changed since go-live started: "The campaign start time has
