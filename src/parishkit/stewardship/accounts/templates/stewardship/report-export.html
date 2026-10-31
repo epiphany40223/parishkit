@@ -72,8 +72,8 @@
 <dt>{% translate "Matching Families" %}</dt><dd>{{ job.directory_snapshot.row_count|number }}</dd>
 <dt>{% translate "Captured at" %}</dt><dd><time datetime="{{ job.directory_snapshot.created_at|date:'c' }}" data-local-instant>{{ job.directory_snapshot.created_at|date:'c' }}</time></dd>
 {% elif job.parameters.population_scope %}
-{# A campaign archive counts no population: its parameters carry no scope, so it has no Population row rather than a "today" that a closed campaign cannot mean (#2324). #}
-<dt>{% translate "Population" %}</dt><dd>{{ job.parameters.population_scope|scope_label }}</dd>
+{# A campaign archive counts no population: its parameters carry no scope, so it has no Families counted row rather than a "today" that a closed campaign cannot mean (#2324). #}
+<dt>{% families_counted_label %}</dt><dd>{{ job.parameters.population_scope|scope_label }}</dd>
 {% endif %}
 <dt>{% translate "Requested at" %}</dt><dd><time datetime="{{ job.created_at|date:'c' }}" data-local-instant>{{ job.created_at|date:'c' }}</time></dd>
 <dt>{% translate "Export timezone" %}</dt><dd>{{ job.browser_timezone }}</dd></dl>
