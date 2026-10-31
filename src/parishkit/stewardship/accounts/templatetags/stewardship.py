@@ -99,6 +99,21 @@ def scope_label(scope):
     return SCOPE_LABELS["historical" if scope == "historical" else "current"]
 
 
+@register.simple_tag
+def fixed_population(scope):
+    """A one-population page's fixed line: "Families counted: <population>".
+
+    A Reports and queries page that cannot offer the Families counted
+    choice names its population in the choice's own words (ui-conventions
+    "Population of report figures", #2324), so the reader can tell it from
+    the pages that offer the choice. Both words come from their one place,
+    ``reports.participation``.
+    """
+    from parishkit.stewardship.reports.participation import SCOPE_CHOICE_LABEL
+
+    return f"{SCOPE_CHOICE_LABEL}: {scope_label(scope)}"
+
+
 @register.filter
 def share_name(share):
     """A worded share method by its short label, the full one its tooltip.
