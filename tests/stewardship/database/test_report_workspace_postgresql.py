@@ -16,7 +16,7 @@ from parishkit.stewardship.reports.export_models import ExportPublication, Expor
 from parishkit.stewardship.reports.report_email_models import ReportEmailSnapshot
 
 from ..export_urls import export_action
-from .auth_builders import signed_in
+from .auth_builders import signed_in, unguarded
 from .campaign_builders import campaign_clock
 from .report_builders import DAILY_INSTANT as INSTANT
 from .report_builders import allocated
@@ -35,6 +35,11 @@ def http_scenario(family_mail, google):  # noqa: F811
         # A Daily report's send pins a complete fact set (#1786).
         preparation = allocated(family_mail)
         facts = ReportEmailSnapshot.objects.get(preparation=preparation).fact_set
+        # The dashboard shows what the site's mode says (#2324): in
+        # Production mode its statistics, chart and export, rather than the
+        # fixture's rehearsal.
+        with unguarded():
+            SystemConfiguration.objects.update(mode="production")
         browser, _ = signed_in()
         yield (family_mail.service.store, None, facts, None), browser
 
@@ -79,10 +84,10 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
         assert response.status_code == 200
         assert response["Cache-Control"] == "no-store"
         assert b"Updating" in html
-        assert b'aria-label="Active population"' in html
+        assert b'aria-label="Population"' in html
         # One time line, "Data as of"; no Technical details (#1537).
         assert b"Data as of" in html and b"ParishSoft data load" not in html
-        assert b"Historical as of day" in html
+        assert b"Including Families that left" in html
         assert str(setup[2].pk).encode() in html
         # The daily chart is drawn in the browser from its embedded spec
         # (#720); the page has no chart image to fetch.

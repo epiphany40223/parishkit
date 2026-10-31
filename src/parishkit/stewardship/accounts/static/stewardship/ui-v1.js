@@ -1151,7 +1151,7 @@
   //   itself a form[data-in-place] because its options reshape far more of
   //   the page than a table;
   // - a[data-in-place]: a link that shows another view of this page (the
-  //   Response dashboard's mode and Chart population pairs, #1535, #1537,
+  //   Response dashboard's mode and Families counted pairs, #1535, #1537,
   //   whose links sit in the region they refresh, so each refresh redraws
   //   them with the current sort, size and zone; a page's periodic
   //   re-read). Its value, if any, is a stable key that finds the link
@@ -1921,6 +1921,19 @@
       : anchor && heldMatches(anchor, held)[held.index];
     match?.focus({preventScroll: true});
   };
+  // A control whose re-read can take seconds (a report's Families counted,
+  // #2324) is marked data-busy-control and keeps the working spinner's space;
+  // the one the reader just used is marked data-busy-working, and
+  // ui-v1.css shows its spinner while its region is aria-busy (ui-conventions
+  // Working spinner). Every request clears the earlier mark first, so a
+  // refused or failed read, or a periodic re-read the reader did not start
+  // (null), never shows a spinner; a swap draws the control afresh, unmarked.
+  const markWorking = (control) => {
+    document.querySelectorAll("[data-busy-working]")
+      .forEach((node) => node.removeAttribute("data-busy-working"));
+    const choice = control instanceof Element ? control.closest("[data-busy-control]") : null;
+    choice?.setAttribute("data-busy-working", "");
+  };
   const refreshRegions = async (region, control, url, init, fallback, options, controller, form) => {
     const owner = options.owner || null;
     // A periodic re-read (options.background, #1586) never hands the page
@@ -1945,6 +1958,7 @@
     const id = region.id;
     region.setAttribute("aria-busy", "true");
     busyRegion = region;
+    markWorking(background ? null : control);
     let response, text;
     try {
       response = await fetch(url, {

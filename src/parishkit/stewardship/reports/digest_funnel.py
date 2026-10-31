@@ -47,7 +47,7 @@ from .response_metrics import ResponseMetrics, ResponseScope, response_metrics
 # What a Testing digest says in place of the funnel.
 TESTING_NOTE = (
     "Testing digests leave out the response funnel. To see this rehearsal's "
-    "funnel, open the Response dashboard's Testing view."
+    "funnel, open the Response dashboard while the site is in Testing mode."
 )
 # The funnel's heading in the email's text part.
 FUNNEL_HEADING = "Response funnel (Families):"

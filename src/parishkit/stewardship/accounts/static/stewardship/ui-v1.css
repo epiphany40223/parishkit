@@ -995,6 +995,13 @@ button[data-clear-unavailable][aria-disabled=true], button[data-clear-unavailabl
 .live-running { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .5rem; margin: 0 0 .75rem; }
 .live-running .help { flex-basis: 100%; margin: 0; }
 .live-running > .spinner { align-self: center; }
+/* A binary choice whose re-read can take seconds (data-busy-control, a
+   report's Families counted, #2324) keeps the spinner's space after its
+   segments, hidden; it shows only while the read the reader started from
+   that choice is under way (ui-v1.js marks it data-busy-working inside
+   the aria-busy region), so nothing moves when it appears or goes. */
+[data-busy-control] > .spinner { align-self: center; visibility: hidden; }
+[aria-busy="true"] [data-busy-control][data-busy-working] > .spinner { visibility: visible; }
 .live-done { color: var(--accent-strong); }
 .live-failed { color: var(--error-ink); }
 .live-status-problem { margin-top: .5rem; }

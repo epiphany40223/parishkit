@@ -7,9 +7,8 @@ import pytest
 from django.urls import reverse
 
 from ..test_directories import RESPONSE_LIST_PRESETS
-from .report_components import REAL
 from .test_charts import assert_clean, watch
-from .waits import eventually, has_text, visible
+from .waits import eventually, visible
 
 DIRECTORY = reverse("admin:family_directory")
 ZONE = "timezone=America%2FLos_Angeles"
@@ -33,14 +32,14 @@ AXE = """async () => (await axe.run(document, {
 
 
 # The Summary's two rows of tiles (#1537).
-POPULATION = '#response-summary [aria-label="Active population"]'
+POPULATION = '#response-summary [aria-label="Population"]'
 STAGES = '#response-summary [aria-label="Families by stage"]'
 
 
 def test_dashboard_renders_one_summary_and_the_daily_chart_cleanly(
     page, component_origin, axe_source
 ):
-    """One Summary panel, its Active population row of four tiles over its
+    """One Summary panel, its Population row of four tiles over its
     Families by stage row of five, then the daily chart, all drawn with no
     policy violation or error (Administrator, 2026-10-18, #1537).
 
@@ -60,9 +59,9 @@ def test_dashboard_renders_one_summary_and_the_daily_chart_cleanly(
     assert page.locator("section.panel .stat-tiles").count() == 2
     assert summary.locator(".stat-tiles").count() == 2
     assert page.locator(POPULATION + " .stat-label").all_inner_texts() == [
-        "Campaign Families",
+        "Families",
         "Active Members",
-        "Current annual pledges",
+        "Annual pledges",
         "Last year's pledges (all Families)",
     ]
     assert page.locator(STAGES + " .stat-label").all_inner_texts() == [
@@ -150,7 +149,7 @@ def test_summary_rows_fit_and_balance(page, component_origin, width):
         "parseFloat(getComputedStyle(document.documentElement).fontSize)"
     )
     for name, expected in zip(
-        ("Active population", "Families by stage"), SUMMARY_LINES[width], strict=True
+        ("Population", "Families by stage"), SUMMARY_LINES[width], strict=True
     ):
         lines = {}
         for tile in (tile for tile in tiles if tile["row"] == name):
@@ -170,7 +169,7 @@ def test_summary_rows_fit_and_balance(page, component_origin, width):
 # and just over them: four tiles fit on one line from 52.25rem; five from
 # 65.5rem, and three of them from 39rem (#1537).
 THRESHOLDS = (
-    ("Active population", 52.25, [2, 2], [4]),
+    ("Population", 52.25, [2, 2], [4]),
     ("Families by stage", 65.5, [3, 2], [5]),
     ("Families by stage", 39, [1, 1, 1, 1, 1], [3, 2]),
 )
@@ -247,7 +246,7 @@ def test_values_fit_a_phone_with_large_text(page, component_origin, width, font)
     line of the same height, so the page never scrolls sideways (#1667).
 
     At 320px and 150% the full-size "$2,234.56" in Linux's DejaVu font made
-    the Active population tiles about 12px wider than their panel; 150% and
+    the Population tiles about 12px wider than their panel; 150% and
     200% stand in for a reader's larger default font size.
     """
     from parishkit.stewardship.web.stat_tiles import StatTile
@@ -270,16 +269,14 @@ def test_values_fit_a_phone_with_large_text(page, component_origin, width, font)
 def test_testing_view_without_a_rehearsal_is_accessible(
     page, component_origin, axe_source
 ):
-    """The empty Testing view says why it is empty and marks the mode chosen."""
+    """A Testing page whose rehearsal ended while it was read says why it is
+    empty; no choice is offered, since the site's mode decides (#2324)."""
     errors = watch(page)
     page.goto(component_origin + "/response-dashboard-testing")
     main = page.locator("main").inner_text()
     assert "no Testing responses to show" in main
     assert "count Production responses only" in main
-    current = page.get_by_role("group", name="Responses shown").locator(
-        "a[aria-current=page]"
-    )
-    assert current.all_inner_texts() == ["Testing rehearsal"]
+    assert page.locator(".segmented-choice").count() == 0
     assert page.locator("[data-chart]").count() == 0
     assert_clean(page, errors)
     page.evaluate(axe_source)
@@ -290,7 +287,7 @@ def test_testing_view_shows_the_rehearsal_stages_only(
     page, component_origin, axe_source
 ):
     """During a rehearsal the Summary's Families by stage row shows it; the
-    Active population row and the Production-only panels are left out, with
+    Population row and the Production-only panels are left out, with
     one line saying why (#1537)."""
     errors = watch(page)
     page.goto(component_origin + "/response-dashboard-rehearsal")
@@ -301,7 +298,7 @@ def test_testing_view_shows_the_rehearsal_stages_only(
     visible(page.locator("#production-only"))
     for gone in ("#participation-chart", "#participation-export form"):
         assert page.locator(gone).count() == 0
-    assert page.get_by_role("group", name="Chart population").count() == 0
+    assert page.get_by_role("group", name="Families counted").count() == 0
     assert_clean(page, errors)
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
@@ -324,49 +321,54 @@ def test_empty_campaign_renders_cleanly(page, component_origin, axe_source):
     assert page.evaluate(AXE) == []
 
 
-def test_mode_choice_refreshes_the_dashboard_in_place(page, component_origin):
-    """Testing rehearsal and Production change the page without a reload or
-    a jump (#519, #1537).
-
-    The page's own marker survives (no navigation), the scroll position is
-    kept, the address follows the choice (and the region's fragment),
-    keyboard focus stays on the chosen segment, and the live region names
-    the view now shown. The Testing view leaves out the Production panels.
-    """
+def test_families_counted_shows_the_spinner_while_it_reads(page, component_origin):
+    """Choosing In this campaign today (#2324) re-reads the page in place: the
+    shared working spinner shows beside the choice while the read is under
+    way, in space the pair always keeps (nothing moves), then the Summary's
+    tiles are the current population's, with no reload or jump."""
     from playwright.sync_api import expect
+
+    from .report_components import SORTED
 
     errors = watch(page)
     page.set_viewport_size({"width": 1000, "height": 700})
-    page.goto(component_origin + REAL + "?" + ZONE)
+    page.goto(component_origin + SORTED.url())
     expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
-    eventually(page, FITTED)
     page.evaluate("window.__dashboardMarker = 1")
-    testing = page.locator('[data-in-place="mode-testing"]')
-    testing.scroll_into_view_if_needed()
+    choice = page.get_by_role("group", name="Families counted")
+    spinner = choice.locator(".spinner")
+    expect(spinner).to_be_hidden()
+    layout = choice.evaluate(
+        "(node) => [...node.children].map((child) => "
+        "JSON.stringify(child.getBoundingClientRect()))"
+    )
+    families = page.locator(POPULATION + ' [data-stat="active_families"] .stat-value')
+    expect(families).to_have_text("1,010")
     before = page.evaluate("window.scrollY")
-    testing.focus()
-    page.keyboard.press("Enter")
-    page.wait_for_url("**mode=testing*#response-dashboard")
-    expect(page.locator("#production-only")).to_be_visible()
-    expect(page.locator(POPULATION)).to_have_count(0)
-    expect(page.locator(STAGES)).to_have_count(1)
-    expect(page.locator("[data-chart]")).to_have_count(0)
+    # The answer is slow (report_components.SLOW_GETS).
+    choice.get_by_role("link", name="In this campaign today").click()
+    expect(spinner).to_be_visible()
+    expect(page.locator("#response-dashboard")).to_have_attribute("aria-busy", "true")
+    # No layout shift: the spinner fills space that was already kept.
+    assert (
+        choice.evaluate(
+            "(node) => [...node.children].map((child) => "
+            "JSON.stringify(child.getBoundingClientRect()))"
+        )
+        == layout
+    )
+    expect(families).to_have_text("1,000")
+    expect(
+        page.get_by_role("group", name="Families counted").locator(".spinner")
+    ).to_be_hidden()
+    expect(
+        page.get_by_role("group", name="Families counted").locator(
+            "a[aria-current=page]"
+        )
+    ).to_have_text("In this campaign today")
     assert page.evaluate("window.__dashboardMarker") == 1
     assert abs(page.evaluate("window.scrollY") - before) < 2
-    assert page.evaluate("document.activeElement.dataset.inPlace") == "mode-testing"
-    has_text(
-        page.get_by_role("status").filter(has_text="Testing rehearsal"),
-        "Testing rehearsal",
-    )
-    assert testing.get_attribute("aria-current") == "page"
-    assert_clean(page, errors)
-    # Production again: the statistics, chart and export come back.
-    page.locator('[data-in-place="mode-production"]').click()
-    expect(page.locator(POPULATION)).to_have_count(1)
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
-    assert "mode=" not in page.url
-    assert page.evaluate("window.__dashboardMarker") == 1
-    assert page.evaluate("document.activeElement.dataset.inPlace") == "mode-production"
+    assert "scope=current" in page.url
     assert_clean(page, errors)
 
 

@@ -56,7 +56,13 @@ class StatisticsInputs:
 
 @dataclass(frozen=True)
 class PopulationStatistics:
-    """The current active population's counts and its exact annual pledges."""
+    """One population's counts and its exact annual pledges.
+
+    The population is the current campaign Families (``CampaignStatistics.
+    active``) or the historical cohort (``cohort``). A cohort Family no
+    longer in the ParishSoft data has no Members, email or reach to count,
+    so those figures count only the Families still in that data.
+    """
 
     families: int
     active_members: int
@@ -96,6 +102,20 @@ class CampaignStatistics:
     # Family's status (#728). It is the only comparison figure, captured as
     # one aggregate: no Family's own comparison pledges leave the database.
     comparison_pledge_all: MoneyAmount = MoneyAmount(None)
+    # The historical cohort's figures (every Family ever eligible in the
+    # campaign, #2324), from the same capture as ``active``; None without
+    # a source, as ``active`` is.
+    cohort: PopulationStatistics | None = None
+    # The DUIDs of each population, by scope ("current" and "historical"),
+    # so a page can count other rows (the response funnel's) over exactly
+    # these Families. Internal only: no page or export shows them.
+    duids: dict = field(default_factory=dict, repr=False, compare=False)
+
+    def population(self, scope):
+        """The figures of ``scope``: "current" (``active``) or "historical"."""
+        if scope not in ("current", "historical"):
+            raise ValueError("Unknown population scope.")
+        return self.active if scope == "current" else self.cohort
 
 
 def _calculate(document):
@@ -228,6 +248,8 @@ def _calculate(document):
         active=population(active),
         giving=giving,
         comparison_pledge_all=comparison_all,
+        cohort=population(cohort),
+        duids={"current": frozenset(active), "historical": frozenset(cohort)},
     )
 
 

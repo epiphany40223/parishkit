@@ -9,20 +9,22 @@
 <h1>{% translate "Response dashboard" %}</h1>
 {% aboutpage "response-dashboard" %}<p>{% translate "The Summary's Families by stage row counts each Family once per stage. Shares are compared with the Families invited; a Family can follow its link or submit without a delivered invitation, so a share can pass 100%." %}</p>
 <p>{% translate "A mail scanner that opens a Family's personal link counts as a link follow, so that stage includes such prefetches. A Family that submitted counts as having opened the form and progressed, since a submission passes every step; other progress is recorded from ParishKit 1.2.0 on." %}</p>
-<p>{% translate "The statistics count the Families who are eligible right now and their latest answers; repeat submissions do not increase participation, and Testing responses are excluded. The daily chart is calculated separately in the background, so it can lag a little behind the statistics; when it is being updated, the latest complete chart is shown." %}</p>
+<p>{% translate "Families counted chooses which Families every figure on this page counts: the Summary tiles, the daily chart, its table and the export. Including Families that left counts every Family that was ever in this campaign, including Families that later left it or are gone from ParishSoft, so it adds up all the money pledged. In this campaign today counts only the Families in this campaign now. Repeat submissions do not increase participation. The daily chart is calculated separately in the background, so it can lag a little behind the Summary; when it is being updated, the latest complete chart is shown." %}</p>
 {% if 'financial' in campaign.active_configuration.values.modules %}<p>{% translate "Last year's pledges (all Families) adds up every ParishSoft pledge in the comparison period and funds, for every Family, whatever its status today." %}</p>{% endif %}
-<p>{% translate "Historical as of day counts, for each day, every Family that had become eligible by then, including Families that later left this campaign. Current population uses today's campaign Families for every day." %}</p>{% endaboutpage %}
-{# One in-place region (ui-v1.js, #519): the Production / Testing rehearsal and Chart population binary choices (components/segmented-choice.html, #1535) and the daily table's controls each redraw all of it, so every link carries the view now shown. The exports hold campaign dates, never exact action times, so the page asks for no time zone (#1127): report-v1.js puts this browser's zone in the address (in place, on first load) and in this region's choice links; data-report-zone is the zone the page was drawn in, and the exports' frame times (Source as of, Requested) use it. #}
+<p>{% translate "For each day, the daily chart counts the Families that were in this campaign by the end of that day (Including Families that left), or today's campaign Families on every day (In this campaign today). Under Including Families that left, Active Members counts only the Members of the Families still in ParishSoft." %}</p>
+<p>{% translate "Whether these are Testing or live responses follows the site's mode: while the site is in Testing mode and the campaign has a Testing rehearsal, the page shows that rehearsal's responses." %}</p>{% endaboutpage %}
+{# One in-place region (ui-v1.js, #519): the Families counted binary choice (components/segmented-choice.html, #1535, #2324) and the daily table's controls each redraw all of it, so every link carries the view now shown. The exports hold campaign dates, never exact action times, so the page asks for no time zone (#1127): report-v1.js puts this browser's zone in the address (in place, on first load) and in this region's choice links; data-report-zone is the zone the page was drawn in, and the exports' frame times (Source as of, Requested) use it. #}
 <div id="response-dashboard" data-in-place-region data-report-options data-report-zone="{{ query.timezone }}">
-{% if can_test %}{% include "stewardship/components/segmented-choice.html" with choice_id="dashboard-mode" region_id="response-dashboard" label=_("Responses shown") first_key="mode-production" first_label=_("Production") first_href=mode_links.production second_key="mode-testing" second_label=_("Testing rehearsal") second_href=mode_links.testing chosen=testing|yesno:"mode-testing,mode-production" %}{% endif %}
+{# Families counted (ui-conventions "Population of report figures", #2324): at the top, since it sets every figure below; its words come from reports/participation.py, their one place. Drawn only with the statistics, whose populations it chooses between (not in Testing, nor while they cannot be read). Its re-read can take seconds, so the shared spinner shows beside it meanwhile, in space it always keeps (spinner=True). #}
+{% if scope_links %}{% include "stewardship/components/segmented-choice.html" with choice_id="participation-scope" region_id="response-dashboard" label=scope_choice_label first_key="scope-historical" first_label=scope_labels.historical first_href=scope_links.historical second_key="scope-current" second_label=scope_labels.current second_href=scope_links.current chosen="scope-"|add:query.scope spinner=True %}{% endif %}
 {% if testing and metrics %}<p class="notice">{% translate "Testing rehearsal: responses and test emails from the campaign's current rehearsal only. They are never counted in Production." %}</p>{% endif %}
 {% if metrics %}
-{# One Summary panel of two stat-tile rows (#1540; Administrator, 2026-10-18, #1537): the active population, read in Production only, then Families by stage. Two rows in one panel, so each is named by its own label (ui-conventions "Stat tiles"). The tiles give every funnel count, share and bar, so the page draws no funnel chart, and the responses the old "Responses and email reach" chart drew are the Submitted tile. #}
+{# One Summary panel of two stat-tile rows (#1540; Administrator, 2026-10-18, #1537): the Population, read in Production only, then Families by stage, both over the Families counted population (#2324). Two rows in one panel, so each is named by its own label (ui-conventions "Stat tiles"). The tiles give every funnel count, share and bar, so the page draws no funnel chart, and the responses the old "Responses and email reach" chart drew are the Submitted tile. #}
 <section class="panel" id="response-summary" aria-labelledby="summary-heading">
 <h2 id="summary-heading">{% translate "Summary" %}</h2>
 {% if statistics %}{% if campaign.state == 'archived' %}<p class="notice">{% translate "Archived campaign: its Family information is kept as it was in the last ParishSoft data it used, not from a later campaign." %}</p>{% endif %}
 {# Without an observation every tile reads "—" with its reason, never zero. #}
-{% include "stewardship/components/stat-tiles.html" with tiles=tiles tiles_label=_("Active population") %}{% endif %}
+{% include "stewardship/components/stat-tiles.html" with tiles=tiles tiles_label=_("Population") %}{% endif %}
 {% if not invited %}<p>{% translate "No invitations have been delivered yet. The counts below fill in as the first invitations go out." %}</p>{% endif %}
 {# One stat tile per stage: response_dashboard.tiles() builds them, each bar its share of Invited (#720). #}
 {% include "stewardship/components/stat-tiles.html" with tiles=stage_tiles tiles_label=_("Families by stage") %}
@@ -30,11 +32,11 @@
 {% if statistics %}<p>{% translate "Data as of" %} <time datetime="{{ statistics.observed_at|date:'c' }}" data-local-instant>{{ statistics.observed_at|date:'c' }}</time></p>{% endif %}
 </section>
 {% else %}
-<section class="panel empty-state"><p>{% translate "This campaign has no Testing rehearsal now, so there are no Testing responses to show. Choose Production to see live responses." %}</p></section>
+<section class="panel empty-state"><p>{% translate "This campaign has no Testing rehearsal now, so there are no Testing responses to show." %}</p></section>
 {% endif %}
 {% if testing %}
 {# The statistics, the daily chart and the export count Production responses only, so a Testing view leaves them out and says why (conditional fields, #1537). #}
-<p id="production-only">{% translate "Population statistics, daily participation and the export count Production responses only. Choose Production to see them." %}</p>
+<p id="production-only">{% translate "Population statistics, daily participation and the export count Production responses only, so they are shown once this site is in Production mode." %}</p>
 {% elif participation_unavailable %}
 {# The statistics or daily facts could not be read from their inputs: the Families by stage row above still shows (#1537), and no zero is assumed. The figures status after the line keeps watching at its slow retry pace, so they appear by themselves and the page never asks for a reload (#1586). #}
 {% if participation_cause == "statistics" %}<p id="production-unavailable">{% translate "Population statistics, daily participation and the export need ParishSoft data, and none is available yet; no zero values have been assumed. They appear here by themselves after the first ParishSoft update completes." %}</p>
@@ -42,9 +44,7 @@
 {% if figures_status %}{% include 'stewardship/report-figures-status.html' %}{% endif %}
 {% else %}
 <section class="panel" id="participation-chart">
-<h2>{% translate "Daily participation" %} — {% if query.scope == 'historical' %}{% translate "Historical as of day" %}{% else %}{% translate "Current population" %}{% endif %}</h2>
-{# The Chart population changes only the daily chart, its table and the export, so it sits in this panel, under its heading (#1534). #}
-{% include "stewardship/components/segmented-choice.html" with choice_id="participation-scope" region_id="response-dashboard" label=_("Chart population") first_key="scope-historical" first_label=_("Historical as of day") first_href=scope_links.historical second_key="scope-current" second_label=_("Current population") second_href=scope_links.current chosen="scope-"|add:query.scope %}
+<h2>{% translate "Daily participation" %} — {{ scope_label }}</h2>
 {# The Updating notice, in the region that follows the newest figures by itself (#1586): its re-read redraws the whole dashboard region. #}{% include 'stewardship/report-figures-status.html' %}
 {% if chart %}
 {% if chart.days %}

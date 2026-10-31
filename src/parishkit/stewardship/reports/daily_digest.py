@@ -228,17 +228,18 @@ def source_age_line(age, timezone, *, zone=True):
 DASHBOARD_LABEL = "Open the Response dashboard"
 
 
-def response_dashboard_url(public_origin, mode):
+def response_dashboard_url(public_origin):
     """The Response dashboard's address on the public origin (#1532).
 
     The one place the daily email names the dashboard's route, so a later
-    move of the page changes only this function. A Testing digest links the
-    dashboard's Testing view, where its funnel is (``TESTING_NOTE``).
+    move of the page changes only this function. It carries no ``mode``:
+    the page shows the responses of the site's mode (#2324), so a Testing
+    digest's link opens the rehearsal's funnel (``TESTING_NOTE``) while the
+    site is in Testing mode.
     """
     from django.urls import reverse
 
-    url = report_url(public_origin, reverse("admin:response_dashboard"))
-    return url + "?mode=testing" if mode == "testing" else url
+    return report_url(public_origin, reverse("admin:response_dashboard"))
 
 
 def comparison_url(section, public_origin):

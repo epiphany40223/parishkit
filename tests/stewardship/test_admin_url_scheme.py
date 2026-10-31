@@ -652,7 +652,7 @@ def test_new_digest_emails_link_their_report_pages():
     assert path.startswith("/admin/reports/emailed/")
     assert report_url("https://parish.example", path).endswith(path)
     assert not hasattr(DailyDigestDocument, "report_path")
-    url = response_dashboard_url("https://parish.example", "production")
+    url = response_dashboard_url("https://parish.example")
     assert url == "https://parish.example/admin/reports/responses/"
     assert resolve("/admin/reports/responses/").url_name == "response_dashboard"
 

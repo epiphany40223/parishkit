@@ -254,7 +254,7 @@ def create_export(
             campaign_id=campaign_id,
             actor_id=user_id,
             correlation_id=correlation_id,
-            document=summary_capture(campaign_id),
+            document=summary_capture(campaign_id, facts.population_scope),
         )
         audit(Action.EXPORT_REQUESTED, request, user_id, outcome=Outcome.STARTED)
         return request
