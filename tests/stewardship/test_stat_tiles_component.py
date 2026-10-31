@@ -232,10 +232,11 @@ def test_the_guard_matches_both_quote_styles_and_every_tile_class(markup):
 
 
 def test_home_family_participation_tiles():
-    """Home (#1673): one population, the active Families; those with a
-    response as a share of them with its bar; the past 24 hours when given,
-    marked as Testing responses while testing; no bar against nothing."""
-    counts = {"active": 400, "active_responded": 40}
+    """Home (#1673): one population, the campaign Families (the rule's
+    ``eligible``, never the wider ``active``, #2331); those with a response
+    as a share of them with its bar; the past 24 hours when given, marked
+    as Testing responses while testing; no bar against nothing."""
+    counts = {"active": 453, "eligible": 400, "eligible_responded": 40}
     active, share = family_tiles(counts)
     assert (active.key, active.text, active.bar) == ("active", "400", None)
     assert (share.text, share.details, share.bar) == (
@@ -243,7 +244,7 @@ def test_home_family_participation_tiles():
         ("out of 400 (10%)",),
         (40, 400),
     )
-    none = family_tiles({"active": 0, "active_responded": 0})[1]
+    none = family_tiles({"active": 3, "eligible": 0, "eligible_responded": 0})[1]
     assert (none.text, none.details, none.bar) == ("0", ("out of 0 (—)",), None)
     recent = family_tiles(counts, recent=3)[2]
     assert (recent.key, recent.text, recent.details) == ("recent", "3", ())

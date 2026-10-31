@@ -24,10 +24,11 @@ from parishkit.stewardship.jobs.delivery_metadata import mode_split
 PATH = "/home-next-steps"
 # Home's Family participation counts, as admin_dashboard.summary reads them.
 FAMILIES = {
-    "active": 400,
-    "participation": Percentage(40, 400),
+    "active": 410,
+    "eligible": 400,
+    "participation": Percentage(150, 400),
     "responded": 160,
-    "active_responded": 150,
+    "eligible_responded": 150,
     "recent": 12,
 }
 CAMPAIGN = SimpleNamespace(

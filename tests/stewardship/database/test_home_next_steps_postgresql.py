@@ -158,13 +158,13 @@ def test_status_read_leaves_the_home_only_values_out(response_service):
     assert "test_email" not in home
 
 
-def test_active_families_with_a_response_leave_out_an_inactive_family(
+def test_campaign_families_with_a_response_leave_out_a_family_that_left(
     response_service,
 ):
     """Home's "Campaign Families responded" tile (#1673) counts only
-    active Families: a Family made inactive (and so no longer eligible, as
-    the table's constraint requires) keeps its response in the all-Families
-    count but leaves this one."""
+    campaign Families: a Family that left the campaign (no longer eligible,
+    and here inactive too) keeps its response in the all-Families count but
+    leaves this one."""
     from django.db.models import F
 
     from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
@@ -176,7 +176,7 @@ def test_active_families_with_a_response_leave_out_an_inactive_family(
     ).get()
     configuration.current_campaign = harness.campaign
     rows = FamilyCampaign.objects.filter(campaign=harness.campaign)
-    answered = rows.filter(active=True, first_live_submission_id__isnull=False)
+    answered = rows.filter(portal_eligible=True, first_live_submission_id__isnull=False)
     before = answered.count()
     assert before >= 1
     rows.filter(pk=answered.values("pk")[:1]).update(
@@ -185,11 +185,91 @@ def test_active_families_with_a_response_leave_out_an_inactive_family(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         home = summary(principal, configuration, database_now(), home=True)
     families = home["families"]
-    assert families["active_responded"] == before - 1
+    assert families["eligible_responded"] == before - 1
     assert (
         families["responded"]
         == rows.filter(first_live_submission_id__isnull=False).count()
     )
-    assert families["responded"] == families["active_responded"] + 1
+    assert families["responded"] == families["eligible_responded"] + 1
     tile = next(t for t in home["family_tiles"] if t.key == "responded")
     assert tile.text == str(before - 1)
+
+
+def test_home_and_go_live_count_the_rules_families_as_the_dashboard_does(
+    live_response_service,
+):
+    """Home's Campaign Families tiles and Go live's Family counts are the
+    Families the campaign's rule selects (#2331): a Family active in
+    ParishSoft but registered elsewhere is a campaign row (``active``) the
+    rule does not choose, so neither counts it, and both equal the Response
+    dashboard's Families and the directory's default count."""
+    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+    from parishkit.stewardship.campaigns.readiness_families import family_impact
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+    from parishkit.stewardship.reports.statistics import calculate_statistics
+    from parishkit.stewardship.reports.statistics_selection import (
+        capture_statistics,
+    )
+
+    from .response_builders import response_source
+    from .test_directories_postgresql import page
+    from .test_source_families_postgresql import prepare, promote
+    from .test_weekly_observation_postgresql import respond
+
+    harness = live_response_service
+    data = response_source()
+    # Family 90 is active in ParishSoft but registered elsewhere, so the
+    # campaign's (legacy) rule does not select it.
+    data.families[90] = data.families[1] | {
+        "familyDUID": 90,
+        "familyID": 190,
+        "registeredOrganizationID": 999,
+    }
+    data.members[1090] = data.members[3] | {"memberDUID": 1090, "familyDUID": 90}
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    respond(harness, "Thank you.")
+    rows = FamilyCampaign.objects.filter(campaign=harness.campaign)
+    outside = rows.get(family_duid=90)
+    assert outside.active and not outside.portal_eligible
+    assert (
+        rows.filter(active=True).count()
+        == rows.filter(portal_eligible=True).count() + 1
+    )
+
+    principal = actor(harness, ("administrator",), ())
+    configuration = SystemConfiguration.objects.select_related(
+        "active_configuration"
+    ).get()
+    configuration.current_campaign = harness.campaign
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        home = summary(principal, configuration, database_now(), home=True)
+        dashboard = calculate_statistics(capture_statistics(harness.campaign.pk))
+    families = home["families"]
+    tiles = {tile.key: tile for tile in home["family_tiles"]}
+    assert families["active"] == dashboard.active.families + 1
+    assert families["eligible"] == dashboard.active.families == 1
+    assert page(harness)["active_total"] == dashboard.active.families
+    assert tiles["active"].text == str(dashboard.active.families)
+    assert families["eligible_responded"] == dashboard.active.responses == 1
+    assert tiles["responded"].text == str(dashboard.active.responses)
+    assert (
+        tiles["responded"]
+        .details[0]
+        .startswith(f"out of {dashboard.active.families} (")
+    )
+
+    # Go live's Check, Confirm Production and ``pk-admin go-live`` counts.
+    campaign = Campaign.objects.select_related("active_configuration").get(
+        pk=harness.campaign.pk
+    )
+    with task_login(ServiceRole.WEB), work_transaction():
+        impact = family_impact(
+            campaign, cutoff=campaign.active_configuration.starts_at
+        ).counts
+    assert impact.families == rows.count()
+    assert impact.active == dashboard.active.families
+    assert impact.email_eligible == dashboard.active.eligible_email
+    assert impact.no_eligible_email == (
+        dashboard.active.families - dashboard.active.eligible_email
+    )
