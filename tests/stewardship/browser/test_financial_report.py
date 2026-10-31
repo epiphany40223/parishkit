@@ -1,12 +1,14 @@
 """Native private financial stewardship detail report and its filters."""
 
+import re
+
 import pytest
 from django.urls import reverse
 
 from .test_campaign_comparison import COLLISIONS
 from .test_charts import assert_clean, watch
 from .test_response_dashboard import AXE, FITTED
-from .waits import eventually, visible
+from .waits import eventually, recorded, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -561,8 +563,9 @@ def test_summary_charts_draw_with_tooltips_and_labelled_values(
     page.goto(component_origin + "/financial-report")
     expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(2)
     summary = page.locator("#financial-summary")
+    # The sample's search and filters leave only some responders (#2324).
     assert summary.locator(".stat-label").all_inner_texts() == [
-        "Families",
+        "Matching Families responded",
         "Total annual pledges",
         "Cannot contribute financially",
     ]
@@ -679,6 +682,29 @@ def test_applied_filters_redraw_the_summary_charts_in_place(page, component_orig
         "1 (25%)"
     )
     assert_clean(page, errors)
+
+
+@pytest.mark.parametrize("width", [320, 700, 1280])
+def test_the_responders_tile_says_matching_under_a_filter_without_moving(
+    page, component_origin, width
+):
+    """Unfiltered, the first tile is Campaign comparison's Families responded;
+    a filter names it Matching Families responded (ui-conventions "Population
+    of report figures": same label, same value, #2324). The longer label
+    leaves the tiles' row its height, so nothing below it moves."""
+    page.set_viewport_size({"width": width, "height": 900})
+    heights = {}
+    for path, label in (
+        ("/financial-unfiltered", "Families responded"),
+        ("/financial-report", "Matching Families responded"),
+    ):
+        page.goto(component_origin + path)
+        tiles = page.locator("#financial-summary .stat-tiles")
+        assert tiles.locator(".stat-label").first.inner_text() == label
+        heights[path] = tiles.bounding_box()["height"]
+    assert abs(heights["/financial-unfiltered"] - heights["/financial-report"]) < 1, (
+        heights
+    )
 
 
 def test_a_reload_after_apply_shows_the_same_view(page, component_origin):
@@ -938,3 +964,96 @@ def test_in_place_apply_refused_marks_the_kept_filter_form(page, component_origi
     assert_cleared(page)
     # The browser reports the answer's 400 itself; nothing else may appear.
     assert_clean(page, [error for error in errors if "status of 400" not in error])
+
+
+def test_families_counted_switches_in_place_and_hides_family_status(
+    page, component_origin
+):
+    """Families counted (#2324) is the Response dashboard's choice at the top.
+
+    Choosing In this campaign today posts the applied filters with
+    ``scope=current`` (never the Family status, which refines only the other
+    population), shows the shared spinner beside the choice while the read
+    is under way, in space it always keeps, then redraws the page in place:
+    the chosen segment, the summary and the address follow, and Family
+    status is hidden and not sent (conditional fields). Choosing Including
+    Families that left shows Family status again.
+    """
+    from playwright.sync_api import expect
+
+    errors = watch(page)
+    route = reverse("admin:financial_report")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    answers = {
+        path: page.request.get(component_origin + path).text()
+        for path in ("/financial-current", "/financial-historical")
+    }
+    # At its own address, which each in-place answer replaces (#1586).
+    page.goto(component_origin + route)
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(2)
+    page.evaluate("window.__financialMarker = 1")
+    held = []
+    page.route(
+        lambda url: url.endswith(route),
+        lambda sent: (
+            held.append(sent) if sent.request.method == "POST" else sent.fallback()
+        ),
+    )
+    choice = page.get_by_role("group", name="Families counted")
+    spinner = choice.locator(".spinner")
+    status = page.locator("#filter-active")
+    expect(spinner).to_be_hidden()
+    expect(choice.locator("[aria-current=page]")).to_have_text(
+        "Including Families that left"
+    )
+    visible(status)
+    options = status.locator("option").all_inner_texts()
+    assert [option.strip() for option in options] == [
+        "Every Family counted",
+        "No longer in this campaign",
+        "Status unavailable",
+    ]
+    status.select_option("inactive")
+    layout = choice.evaluate(
+        "(node) => [...node.children].map((child) => "
+        "JSON.stringify(child.getBoundingClientRect()))"
+    )
+    choice.get_by_role("button", name="In this campaign today").click()
+    recorded(page, held, 1)
+    expect(spinner).to_be_visible()
+    # No layout shift: the spinner fills space that was already kept.
+    assert (
+        choice.evaluate(
+            "(node) => [...node.children].map((child) => "
+            "JSON.stringify(child.getBoundingClientRect()))"
+        )
+        == layout
+    )
+    posted = held[0].request.post_data
+    assert "scope=current" in posted and "search=Example" in posted
+    assert "active=" not in posted
+    held.pop().fulfill(body=answers["/financial-current"], content_type="text/html")
+    expect(page.locator("[data-stat=families] .stat-value")).to_have_text("40")
+    choice = page.get_by_role("group", name="Families counted")
+    expect(choice.locator("[aria-current=page]")).to_have_text("In this campaign today")
+    expect(choice.locator(".spinner")).to_be_hidden()
+    expect(page.locator("#table-filters input[name=scope]")).to_have_value("current")
+    expect(status).to_be_hidden()
+    assert status.is_disabled()
+    # The default population leaves scope out of the address (#1586).
+    expect(page).to_have_url(re.compile(r"\?share="))
+    assert page.evaluate("window.__financialMarker") == 1
+    # Back to Including Families that left: Family status is offered again,
+    # at its default.
+    choice.get_by_role("button", name="Including Families that left").click()
+    recorded(page, held, 1)
+    assert "scope=historical" in held[0].request.post_data
+    held.pop().fulfill(body=answers["/financial-historical"], content_type="text/html")
+    expect(choice.locator("[aria-current=page]")).to_have_text(
+        "Including Families that left"
+    )
+    visible(status)
+    assert not status.is_disabled() and status.input_value() == ""
+    expect(page).to_have_url(re.compile(r"\?scope=historical&"))
+    assert page.evaluate("window.__financialMarker") == 1
+    assert_clean(page, errors)

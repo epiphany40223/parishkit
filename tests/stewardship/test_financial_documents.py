@@ -24,7 +24,8 @@ from parishkit.stewardship.source.snapshot_names import FAMILY_NAMES_FULL
 from parishkit.stewardship.web.dates import Span, csv_text
 
 MOMENT = datetime(2026, 9, 19, 15, 4, tzinfo=UTC)
-PARAMETERS = {"filters": FinancialQuery().form_values(), "proof": None}
+# A capture keeps the filters as SQL read them (#2324: no scope).
+PARAMETERS = {"filters": FinancialQuery().sql_filters(), "proof": None}
 
 NEW_YORK = ZoneInfo("America/New_York")
 
@@ -165,12 +166,38 @@ def test_rows_word_money_status_shares_and_local_instants():
     )
     assert metadata["ParishSoft contributions through"] == date(2026, 6, 30)
     assert metadata["Matching Families"] == "3"
+    # The population the figures count, in the page's words (#2324): the
+    # default, today's campaign Families.
+    assert metadata["Families counted"] == "In this campaign today"
     assert metadata["Total annual pledges"] == MoneyAmount(246900)
     # Counts are wrapped values, never keys, so a long label cannot break a PDF.
     assert "Monthly: 1" in metadata["Pledges by frequency"].split("\n")
     assert metadata["Pledges by share method"] == "Online giving: 1\nAnother way: 1"
     assert metadata["No share method chosen"] == "0"
     assert '"sort": "name"' in metadata["Filters and sort"]
+
+
+@pytest.mark.parametrize(
+    ("active", "counted"),
+    [
+        ("any", "Including Families that left"),
+        ("inactive", "Including Families that left"),
+        ("unavailable", "Including Families that left"),
+        ("active", "In this campaign today"),
+    ],
+)
+def test_a_file_names_the_population_its_capture_counted(active, counted):
+    """The capture keeps SQL's filters, whose ``active`` carries Families
+    counted (#2324), so a file names its population from them, one
+    captured before #2324 (In this campaign was ``active`` "active") too."""
+    built = financial_document(
+        result([row()]),
+        PARAMETERS | {"filters": PARAMETERS["filters"] | {"active": active}},
+        parish_name="Sample Parish",
+        requested_at=MOMENT,
+        timezone="America/New_York",
+    )
+    assert dict(built.metadata)["Families counted"] == counted
 
 
 def test_a_family_no_longer_in_parishsoft_has_a_blank_name_and_its_status():

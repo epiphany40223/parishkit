@@ -23,6 +23,7 @@ from parishkit.stewardship.source.source_status import (
 from parishkit.stewardship.web import dates
 
 from .money import MoneyAmount
+from .participation import SCOPE_CHOICE_LABEL, SCOPE_LABELS
 
 # The two comparison columns use the page's own labels (#404), so a file and
 # the page name the same figures alike; ``financial_document`` adds the
@@ -145,6 +146,19 @@ def _counts(pairs):
     return "\n".join(f"{label}: {count:,}" for label, count in pairs)
 
 
+def scope_of(filters):
+    """The Families counted population of SQL-shaped ``filters``.
+
+    ``FinancialQuery.sql_filters`` maps the page's ``scope`` into SQL's
+    ``active`` filter: "active" is the current population, any other value
+    the historical one.
+
+    An export's capture keeps the filters SQL read, so its file names its
+    population from them, for a capture made before #2324 too.
+    """
+    return "current" if filters.get("active") == "active" else "historical"
+
+
 def financial_document(result, parameters, *, parish_name, requested_at, timezone):
     """Localize instants and carry the whole-result summary as report metadata."""
     zone = ZoneInfo(timezone)
@@ -188,6 +202,12 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
         (
             "ParishSoft contributions through",
             through if isinstance(through, date) else UNPROVEN,
+        ),
+        # The population the figures count (ui-conventions "Population of
+        # report figures", #2324), in the page's words.
+        (
+            str(SCOPE_CHOICE_LABEL),
+            str(SCOPE_LABELS[scope_of(parameters["filters"])]),
         ),
         ("Matching Families", f"{result['total']:,}"),
         ("Total annual pledges", summary["annual_total"]),

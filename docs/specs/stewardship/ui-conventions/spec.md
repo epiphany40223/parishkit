@@ -3977,9 +3977,10 @@ there, so the Administrator can rename them in one edit.
   a few seconds, the [working spinner](#working-spinner) shows beside the
   choice until the page is redrawn.
 
-Status: the [Response dashboard](../reports/spec.md#response-dashboard)
-follows this rule. Financial stewardship, Campaign comparison and the
-Campaign Family directory follow in later changes of #2324.
+Status: the [Response dashboard](../reports/spec.md#response-dashboard) and
+[Financial stewardship](../reports/spec.md#financial-stewardship-detail)
+follow this rule. Campaign comparison and the Campaign Family directory
+follow in a later change of #2324.
 
 ### Overview pages
 

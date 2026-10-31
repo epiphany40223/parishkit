@@ -3786,12 +3786,31 @@ On the page the same marker is the Latest response cell's Staff chip.
 A file captured before frozen migration 0066 added the marker to
 the projection leaves the column blank, never No (#794).
 
-Filters include Family status (In this campaign, No longer in this campaign
-or Status unavailable, the same test as the Family's
+The page's figures count the Families that the shared **Families counted**
+choice names, at the top of the page under its heading, with the Response
+dashboard's labels, default and `scope` parameter
+([population of report figures](../ui-conventions/spec.md#population-of-report-figures),
+[#2324](https://github.com/epiphany40223/parishkit/issues/2324)). The
+summary, the table, Matching Families and every export follow it. The
+selection's own Family status filter (`active`) carries it, so no schema
+change was needed: the historical population is every responding Family
+(`active` "any"), and the current one the Families that are still campaign
+Families (`active` "active"), by the same test as the Family's
 [badge](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft):
 under a [Families rule](../data/spec.md#campaign-families) whether the
 Family still matches it, and for the legacy rule whether ParishSoft lists it
-as active, #1393), first/latest submission dates, pledge range,
+as active (#1393). Each export names its population in a Families counted
+metadata row, read from the filters it captured, so a file captured
+before #2324 names its population too.
+
+Filters include Family status, a refinement of Including Families that left
+only, so it is shown only while that population is chosen
+([conditional fields](../ui-conventions/spec.md#conditional-fields)): Every
+Family counted (the default), No longer in this campaign, or Status
+unavailable (a Family the current ParishSoft data no longer has), so Staff
+can still list the Families that left. Its former Any status and In this
+campaign choices are the two populations now. The other filters are
+first/latest submission dates, pledge range,
 zero/nonzero/cannot contribute, frequency, and share method (its choices,
 like the "Share methods chosen" bars below, name each method by its short
 label where one is set, else its full label). The first and
@@ -3801,8 +3820,12 @@ without a known zone is refused, never read in another zone
 (schema migration 0110). Filters without a zone, from a release before 0110
 or a retained export capture, keep their campaign-zone days. The summary of
 the matching pledges comes first, as visuals
-([#720](https://github.com/epiphany40223/parishkit/issues/720)): tiles for the
-Family count, the annual total and the number of Families that cannot
+([#720](https://github.com/epiphany40223/parishkit/issues/720)): tiles for
+Families responded (Campaign comparison's words, #2324), which a filter
+other than the population names Matching Families responded, so that label
+never shows another page's figure with a smaller value
+([same label, same value](../ui-conventions/spec.md#population-of-report-figures)),
+the annual total and the number of Families that cannot
 contribute financially (such a Family's frequency reads "Cannot contribute"),
 then two [chart engine](#chart-engine) bar charts, "Pledges by frequency"
 (each frequency and No frequency) and "Share methods chosen" (each offered
@@ -3831,15 +3854,26 @@ audit ends denied.
 A reload keeps the view's closed choices
 ([reload on a POST report](../ui-conventions/spec.md#pages-that-update-themselves),
 [#1586](https://github.com/epiphany40223/parishkit/issues/1586)): after each
-in-place answer it accepts, the address bar shows the page with Family status, Pledge
-amount, Frequency, Share method (a share option's identity, or none),
+in-place answer it accepts, the address bar shows the page with Families
+counted (`scope`), Family status, Pledge amount, Frequency, Share method (a share option's identity, or none),
 the sort and the rows per page, each only when it differs from the default,
 and the page's GET draws that view. The search, the response dates and the
 pledge range stay in the POST body, so a reload clears them and shows the
 first page. A GET with any other parameter, a repeated one or a value
 the filter's form does not take is refused (400), as a POST's would be: a
 Share method is checked for an option identity's form, so one no longer
-offered matches no Family. A POST with a query string is refused too.
+offered matches no Family. A POST with a query string is refused too. So
+is an old link's Family status (`active=active`, `active=any` or a
+refinement without `scope=historical`): its view's population is not the
+shared default's, so it is never read as either population
+([no legacy URLs](../ui-conventions/spec.md#addresses-and-legacy-urls)),
+and neither is the current population with a refinement, which the page
+never sends. The Family hub's Financial tab and [Pledges](#pledges), which
+read the same selection, are lookups and worklists rather than population
+reports, so they read every responding Family, as before.
+`pk-admin report financial --scope` prints the summary of either
+population, and `pk-admin export financial` takes `scope=` among its
+filters.
 
 This report stays the financial stream's statistics page. Reviewing each
 pledge and entering it in ParishSoft is on [Pledges](#pledges).

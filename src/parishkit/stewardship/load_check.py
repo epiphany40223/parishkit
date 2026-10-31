@@ -801,7 +801,10 @@ def measure_reports(scope, deadline):
         with _guard(campaign.pk, authorize=authorize):
             financial_page(
                 campaign.pk,
-                FinancialQuery.parse({}),
+                # Every pledge, as before #2324 made today's campaign
+                # Families the page's default: the largest selection, so
+                # the timing stays comparable with earlier load checks.
+                FinancialQuery.parse({"scope": "historical"}),
                 principal,
                 proof=giving_proof(campaign),
                 parish_name=scope.runtime.active_configuration.parish.name,
