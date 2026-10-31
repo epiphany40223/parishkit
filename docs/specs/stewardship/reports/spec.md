@@ -2566,7 +2566,10 @@ record the audit event).
 Administrator's concern and change nothing a leader does with a request, so
 only Admin/Staff see them: each Ministry's notes in By Ministry and the page
 help about them
-([#1135](https://github.com/epiphany40223/parishkit/issues/1135)).
+([#1135](https://github.com/epiphany40223/parishkit/issues/1135)). Both
+marks are retired words: they become Not in ParishSoft and Removed from
+this campaign
+([campaign Families wording](../ui-conventions/spec.md#campaign-families-wording)).
 There is no Ministry activity filter (Active, Inactive) any more
 ([#1267](https://github.com/epiphany40223/parishkit/issues/1267)): the
 page's packet, the export and the command line refuse an `activity` field
@@ -3731,7 +3734,8 @@ share-option labels with any Other text; the page uses each option's
 [short label](../admin-portal/spec.md#campaign-configuration) where one is
 set, the exports always the full label), the ParishSoft comparison pledge
 and contribution aggregates, Latest response (the time the Family last
-updated its response), First response (when it first responded),
+updated its response; to be named Submitted, as everywhere in this spec, per
+[responses and submissions](../ui-conventions/spec.md#responses-and-submissions)), First response (when it first responded),
 Entered by Staff (described below) and, as the last column, Edited on
 Pledges (the [values in force](#values-in-force-on-financial-stewardship), since
 [#2196](https://github.com/epiphany40223/parishkit/issues/2196)), in
@@ -4216,7 +4220,9 @@ with both counts), with times in the browser's zone
 ([time zones](../ui-conventions/spec.md#downloaded-files)), applying the
 Stage filter too. Each table has the columns Member, Member DUID, Family,
 ParishSoft status, Family DUID, Cannot participate in ministries, Latest
-response and Stage for Members, and Family, ParishSoft status, Family DUID,
+response (to be named Submitted, per
+[responses and submissions](../ui-conventions/spec.md#responses-and-submissions))
+and Stage for Members, and Family, ParishSoft status, Family DUID,
 Limitation, Latest response and Stage for Families, whose rows include the
 Cannot contribute financially answers the table lists, each with its
 Pledges stage. Limitation names the Family's limitation in the page's
