@@ -228,6 +228,10 @@ def test_home_and_go_live_count_the_rules_families_as_the_dashboard_does(
     promote(snapshot, claim, harness.campaign, harness.rings)
     rows = FamilyCampaign.objects.filter(campaign=harness.campaign)
     outside = rows.get(family_duid=90)
+    # Registered elsewhere, so the rule leaves out a Family whose email
+    # address would otherwise be sendable.
+    assert data.members[1090]["emailAddress"] == "valid@example.org"
+    assert not outside.email_eligible
     assert_mail_plan_leaves_out(rows, outside, harness.campaign.pk)
     respond(harness, "Thank you.")
     assert outside.active and not outside.portal_eligible
@@ -268,8 +272,11 @@ def test_home_and_go_live_count_the_rules_families_as_the_dashboard_does(
     )
 
 
-def go_live_impact(campaign_pk):
-    """Return the go-live preview's Family impact counts for one campaign."""
+def go_live_impact(campaign_pk, cutoff=None):
+    """Return the go-live preview's Family impact counts for one campaign.
+
+    ``cutoff`` defaults to the campaign's start, as Go live's Check uses.
+    """
     from parishkit.stewardship.campaigns.readiness_families import family_impact
     from parishkit.stewardship.campaigns.work_locks import work_transaction
 
@@ -278,42 +285,48 @@ def go_live_impact(campaign_pk):
     )
     with task_login(ServiceRole.WEB), work_transaction():
         return family_impact(
-            campaign, cutoff=campaign.active_configuration.starts_at
+            campaign, cutoff=cutoff or campaign.active_configuration.starts_at
         ).counts
 
 
 def assert_mail_plan_leaves_out(rows, outside, campaign_pk):
-    """Check a ParishSoft-active Family the rule does not choose changes no mail.
+    """Check the real planner and the go-live preview both leave ``outside`` out.
 
-    The mail plan is unchanged by #2331: the planner sends to rows that are
-    ``active`` with an eligible email, the go-live preview to
-    ``portal_eligible`` ones with an eligible email. They are the same
-    Families, since email eligibility already needs the rule, and
-    ``outside`` is in neither. Taking ``outside`` out of ParishSoft's active
-    Families altogether leaves the preview's messages, recipients and slots
-    exactly as they were; the row is then restored.
+    ``outside`` is active in ParishSoft, not chosen by the rule, and has a
+    valid email address; the Family the rule does choose is the same in
+    ParishSoft except for where it is registered. #2331 moved the preview
+    from the row's ``active`` to ``portal_eligible``, while the planner
+    still sends to ``active`` rows with an eligible email. At the
+    invitation's due time the preview counts one message, and the real
+    planner (``plan_family``, which reads ``active``) selects the chosen
+    Family's invitation and plans nothing for ``outside``: the same mail
+    before and after the change.
     """
-    from django.db.models import F
+    from parishkit.stewardship.campaigns.family_schedule_planning import plan_family
+    from parishkit.stewardship.campaigns.schedule_models import (
+        ScheduleDefinition,
+        ScheduleOccurrence,
+    )
+    from parishkit.stewardship.jobs.scheduler import scheduler_session
 
-    planned = set(rows.filter(active=True, email_eligible=True).values_list("pk"))
-    assert planned == set(
-        rows.filter(portal_eligible=True, email_eligible=True).values_list("pk")
+    from .campaign_builders import campaign_clock, complete_empty_catchup
+
+    due = (
+        ScheduleDefinition.objects.select_related("current_revision")
+        .get(campaign_id=campaign_pk, kind="initial")
+        .current_revision.due_at
     )
-    assert (outside.pk,) not in planned
-    names = (
-        "email_eligible",
-        "deliverable",
-        "messages",
-        "coalesced_slots",
-        "skipped_slots",
-        "blocked_families",
-    )
-    before = go_live_impact(campaign_pk)
-    assert before.deliverable >= 1
-    for active in (False, True):
-        rows.filter(pk=outside.pk).update(active=active, version=F("version") + 1)
-        after = go_live_impact(campaign_pk)
-        assert {n: getattr(after, n) for n in names} == {
-            n: getattr(before, n) for n in names
+    impact = go_live_impact(campaign_pk, cutoff=due)
+    # Activation's catch-up holds planning until it is done.
+    complete_empty_catchup(Campaign.objects.get(pk=campaign_pk), uuid4())
+    chosen = rows.get(portal_eligible=True)
+    with campaign_clock(due), scheduler_session() as guard:
+        plans = {
+            row.pk: plan_family(guard, family_id=row.pk, worker_id=uuid4())
+            for row in rows.filter(pk__in=(chosen.pk, outside.pk))
         }
-    assert after.active == before.active
+    assert plans[chosen.pk].selected is not None
+    assert (plans[outside.pk].selected, plans[outside.pk].created) == (None, 0)
+    assert not ScheduleOccurrence.objects.filter(target=f"family:{outside.pk}").exists()
+    assert impact.messages == 1
+    assert (impact.active, impact.email_eligible, impact.deliverable) == (1, 1, 1)

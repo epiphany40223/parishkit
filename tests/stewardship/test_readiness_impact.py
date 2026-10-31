@@ -11,10 +11,7 @@ from parishkit.stewardship.campaigns.readiness_impact import (
     FamilyImpactInput,
     summarize_family_impact,
 )
-from parishkit.stewardship.campaigns.schedule_recovery import (
-    RecoverySlot,
-    plan_recovery,
-)
+from parishkit.stewardship.campaigns.schedule_recovery import RecoverySlot
 
 NOW = datetime(2026, 10, 10, tzinfo=UTC)
 
@@ -83,40 +80,6 @@ def test_inactive_no_email_undeliverable_and_responded_are_distinct():
         coalesced_slots=2,
         skipped_slots=12,
     )
-
-
-def test_a_parishsoft_active_family_the_rule_leaves_out_changes_no_mail():
-    """Go live's preview counts the rule's Families (#2331), the planner sends
-    to ``active`` rows with an eligible email; both send the same mail.
-
-    A Family active in ParishSoft but not chosen by the rule is stored with
-    no portal and no email eligibility (email eligibility needs the rule),
-    so the planner's ``active and email_eligible`` and the preview's
-    ``portal_eligible and email_eligible`` both leave it out: the preview's
-    messages and slots equal the planner's decisions for every Family.
-    """
-    groups = (
-        family(1),
-        family(2, portal_eligible=False, email_eligible=False, deliverable=False),
-    )
-    impact = summarize_family_impact(groups, cutoff=NOW)
-    # Both Families are active in ParishSoft, as the planner reads them.
-    planned = [
-        plan_recovery(
-            group.slots,
-            cutoff=NOW,
-            closed=False,
-            eligible=group.email_eligible,
-            responded=group.responded,
-            deliverable=group.deliverable,
-            initial_delivered=group.initial_delivered,
-        )
-        for group in groups
-    ]
-    assert impact.messages == sum(plan.selected is not None for plan in planned) == 1
-    assert impact.coalesced_slots == sum(len(plan.coalesced) for plan in planned)
-    assert impact.skipped_slots == sum(len(plan.skipped) for plan in planned) == 3
-    assert (impact.active, impact.email_eligible, impact.deliverable) == (1, 1, 1)
 
 
 def test_prior_live_initial_coverage_and_future_reminders_do_not_inflate_counts():
