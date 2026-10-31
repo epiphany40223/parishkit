@@ -2830,7 +2830,8 @@ action's own transaction, so nothing is recorded when the action is not.
   `preparation_id`, `target_state` (`active` or `scheduled`), `starts_at`,
   `start_passed`,
   `reprepared`, `counts` (the counts the confirmation binds:
-  `active_families`, `eligible_families`, `no_email_families`,
+  `active_families` (the campaign Families, those the Families rule
+  selects, #2331), `eligible_families`, `no_email_families`,
   `family_messages`, `daily_messages`, `weekly_messages`,
   `coalesced_slots`) and `preview.token`, the dialog's own binding, signed
   without a time. It records activity as the page's post does and records
