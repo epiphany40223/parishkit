@@ -204,8 +204,6 @@ def test_home_and_go_live_count_the_rules_families_as_the_dashboard_does(
     rule does not choose, so neither counts it, and both equal the Response
     dashboard's Families and the directory's default count."""
     from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
-    from parishkit.stewardship.campaigns.readiness_families import family_impact
-    from parishkit.stewardship.campaigns.work_locks import work_transaction
     from parishkit.stewardship.reports.statistics import calculate_statistics
     from parishkit.stewardship.reports.statistics_selection import (
         capture_statistics,
@@ -228,9 +226,10 @@ def test_home_and_go_live_count_the_rules_families_as_the_dashboard_does(
     data.members[1090] = data.members[3] | {"memberDUID": 1090, "familyDUID": 90}
     snapshot, claim = prepare(data)
     promote(snapshot, claim, harness.campaign, harness.rings)
-    respond(harness, "Thank you.")
     rows = FamilyCampaign.objects.filter(campaign=harness.campaign)
     outside = rows.get(family_duid=90)
+    assert_mail_plan_leaves_out(rows, outside, harness.campaign.pk)
+    respond(harness, "Thank you.")
     assert outside.active and not outside.portal_eligible
     assert (
         rows.filter(active=True).count()
@@ -247,7 +246,7 @@ def test_home_and_go_live_count_the_rules_families_as_the_dashboard_does(
         dashboard = calculate_statistics(capture_statistics(harness.campaign.pk))
     families = home["families"]
     tiles = {tile.key: tile for tile in home["family_tiles"]}
-    assert families["active"] == dashboard.active.families + 1
+    assert families["active"] == dashboard.active.families
     assert families["eligible"] == dashboard.active.families == 1
     assert page(harness)["active_total"] == dashboard.active.families
     assert tiles["active"].text == str(dashboard.active.families)
@@ -260,16 +259,61 @@ def test_home_and_go_live_count_the_rules_families_as_the_dashboard_does(
     )
 
     # Go live's Check, Confirm Production and ``pk-admin go-live`` counts.
-    campaign = Campaign.objects.select_related("active_configuration").get(
-        pk=harness.campaign.pk
-    )
-    with task_login(ServiceRole.WEB), work_transaction():
-        impact = family_impact(
-            campaign, cutoff=campaign.active_configuration.starts_at
-        ).counts
+    impact = go_live_impact(harness.campaign.pk)
     assert impact.families == rows.count()
     assert impact.active == dashboard.active.families
     assert impact.email_eligible == dashboard.active.eligible_email
     assert impact.no_eligible_email == (
         dashboard.active.families - dashboard.active.eligible_email
     )
+
+
+def go_live_impact(campaign_pk):
+    """Return the go-live preview's Family impact counts for one campaign."""
+    from parishkit.stewardship.campaigns.readiness_families import family_impact
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+
+    campaign = Campaign.objects.select_related("active_configuration").get(
+        pk=campaign_pk
+    )
+    with task_login(ServiceRole.WEB), work_transaction():
+        return family_impact(
+            campaign, cutoff=campaign.active_configuration.starts_at
+        ).counts
+
+
+def assert_mail_plan_leaves_out(rows, outside, campaign_pk):
+    """Check a ParishSoft-active Family the rule does not choose changes no mail.
+
+    The mail plan is unchanged by #2331: the planner sends to rows that are
+    ``active`` with an eligible email, the go-live preview to
+    ``portal_eligible`` ones with an eligible email. They are the same
+    Families, since email eligibility already needs the rule, and
+    ``outside`` is in neither. Taking ``outside`` out of ParishSoft's active
+    Families altogether leaves the preview's messages, recipients and slots
+    exactly as they were; the row is then restored.
+    """
+    from django.db.models import F
+
+    planned = set(rows.filter(active=True, email_eligible=True).values_list("pk"))
+    assert planned == set(
+        rows.filter(portal_eligible=True, email_eligible=True).values_list("pk")
+    )
+    assert (outside.pk,) not in planned
+    names = (
+        "email_eligible",
+        "deliverable",
+        "messages",
+        "coalesced_slots",
+        "skipped_slots",
+        "blocked_families",
+    )
+    before = go_live_impact(campaign_pk)
+    assert before.deliverable >= 1
+    for active in (False, True):
+        rows.filter(pk=outside.pk).update(active=active, version=F("version") + 1)
+        after = go_live_impact(campaign_pk)
+        assert {n: getattr(after, n) for n in names} == {
+            n: getattr(before, n) for n in names
+        }
+    assert after.active == before.active

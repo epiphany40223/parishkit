@@ -123,13 +123,14 @@ def summary(actor, configuration, now, *, home=False):
                 recent["recent"] = Count("id", filter=Q(Exists(responded)))
             # Home's one response population (#1673) is the campaign
             # Families, the rule's ``portal_eligible`` rows: "eligible" and
-            # "eligible_responded" (#2331). The row's ``active`` is
-            # ParishSoft's active flag OR the rule, so it also holds
-            # ParishSoft-active Families the rule does not select; the
-            # command line's status read still reports it, under that name.
+            # "eligible_responded" (#2331). The command line's status read
+            # also reports "active"; it counts the same rule's Families, as
+            # ``pk-admin go-live``'s "active" does, so one key names one set.
+            # (The row's ``active`` column is ParishSoft's active flag OR the
+            # rule, so it also holds Families the rule does not select.)
             counts = FamilyCampaign.objects.filter(campaign=campaign).aggregate(
                 **recent,
-                active=Count("id", filter=Q(active=True)),
+                active=Count("id", filter=Q(portal_eligible=True)),
                 eligible=Count("id", filter=Q(portal_eligible=True)),
                 responded=Count("id", filter=Q(first_live_submission_id__isnull=False)),
                 eligible_responded=Count(
