@@ -2037,7 +2037,12 @@ export below it. Its parts:
    disclosure), on one compact row at laptop width
    ([worklist filters](../ui-conventions/spec.md#admin-tables), #1653),
    with **Stage** first (To review is the default) and the stream's own
-   filters after it.
+   filters after it. Census changes opens instead on its first choice,
+   **To review and Conflict**, which lists both stages together: the menu's
+   badge and Home count both, as each needs a person, so the page opens on
+   the number they show (the Administrator, 2026-10-31,
+   [#2331](https://github.com/epiphany40223/parishkit/issues/2331)). Each
+   stage keeps its own choice after it.
 2. The selection bar and table. Columns: the stream's identity columns in
    the shared [column order](../ui-conventions/spec.md#table-column-order),
    each name with its DUID under it; the values (Baseline where a stream
