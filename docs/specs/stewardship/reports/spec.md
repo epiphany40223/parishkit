@@ -1943,7 +1943,19 @@ the campaign's Families: those that match the campaign's [Families rule](../data
 are left out by design, and the page's name says so ("Campaign Family directory", [wording](../ui-conventions/spec.md#campaign-families-wording))
 ([#870](https://github.com/epiphany40223/parishkit/issues/870)). The page
 shows no population summary or separate code-privacy line above its filters;
-the page's About help covers code privacy. Each row has the Family's name,
+the page's About help covers code privacy. The directory is a lookup and
+mailing list, not a population report, so it has no Families counted choice;
+instead its count line names its set in the choice's words, as a
+one-population page's fixed line does
+([population of report figures](../ui-conventions/spec.md#population-of-report-figures),
+[#2324](https://github.com/epiphany40223/parishkit/issues/2324)): "Matching
+Families: 1,219. Families counted: In this campaign today." for the Response
+choices Any, Not submitted and No invitation delivered, and "Families
+counted: Including Families that left." for every other Response choice,
+whose list matches a Response dashboard tile and so also lists Families
+that left the campaign ([Response filters](#response-filters)). The line
+sits under the Filters panel and follows each in-place Apply, so a change in
+its length never moves a control. Each row has the Family's name,
 Family DUID (in its own column, headed "Family DUID"), envelope number,
 manual code, current email eligibility/deliverability, and whether the Family
 has a current live response (Responded, noting when that response is one

@@ -3979,8 +3979,12 @@ there, so the Administrator can rename them in one edit.
 
 Status: the [Response dashboard](../reports/spec.md#response-dashboard) and
 [Financial stewardship](../reports/spec.md#financial-stewardship-detail)
-follow this rule. Campaign comparison and the Campaign Family directory
-follow in a later change of #2324.
+follow this rule; so do
+[Campaign comparison](../campaign-history/spec.md#page-layout) and the
+[Campaign Family directory](../reports/spec.md#campaign-family-directory),
+each with its fixed population line. A test
+(`test_every_report_page_names_population`) checks that every Reports and
+queries menu entry offers the choice or draws the fixed line.
 
 ### Overview pages
 
