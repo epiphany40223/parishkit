@@ -1024,9 +1024,22 @@ The page follows [page help](../ui-conventions/spec.md#page-help): data
 first, explanation in the About this page panel.
 
 1. **Heading and data line** (the figures in these examples are invented):
-   "Day 12 of Stewardship 2027 · through Wednesday, October 14", with the
-   last-year and average years named ("compared with 2026 and the
-   2020–2026 average").
+   "Day 12 of Stewardship 2027", with the last-year and average years named
+   ("compared with 2026 and the 2020–2026 average").
+   **Population line.** Under it, the page's fixed
+   [population](../ui-conventions/spec.md#population-of-report-figures)
+   line names the Families it counts and the day compared: "Families
+   counted: Including Families that left, as of the end of October 14,
+   2026", then why the other report pages can differ ("This page always
+   counts them, as the past campaigns' archives do; the other report pages
+   start at In this campaign today and count up to now, so their figures
+   can differ."). The page has no Families counted choice: the past
+   campaigns' archives hold only every Family that was ever in each
+   campaign, and the comparison SQL reads only the historical fact set
+   ([#2324](https://github.com/epiphany40223/parishkit/issues/2324)). Both
+   lines are in the region Compare on day redraws in place, so the day
+   follows the day chosen; the population line is always drawn (before day
+   1 ends, without a day), so nothing appears or goes.
 2. **Headline tiles**, one per metric above, in that order, drawn as
    [stat tiles](../ui-conventions/spec.md#stat-tiles). Each shows the
    current figure large, then two lines: "Last year on day 12: 240 (↑ 12.5%
