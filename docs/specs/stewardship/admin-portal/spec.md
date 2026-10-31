@@ -4332,7 +4332,9 @@ browser's zone; the text's problems, each named by its field; or a refusal,
 such as a test already on its way. The acknowledgment of an uncertain
 earlier test shows below that line when the page is drawn with one or a send
 is refused for one. A send that gets no answer is not repeated, and the line
-says to check the Testing mailbox first. The command line has no
+says to check the Testing mailbox (to be named the Testing recipient's
+inbox, per [Testing recipient](../ui-conventions/spec.md#testing-recipient))
+first. The command line has no
 counterpart: `test sample` tests a saved email.
 
 On New, a Reminder's Sends **Repeating**
@@ -5861,8 +5863,10 @@ campaign.
 | 3. Confirm Production | `/admin/campaign/go-live/confirmation/` | Opens once the Family links are prepared on current data. |
 | 4. Activation | `/admin/campaign/production/` | Today's Production activation address; the menu entry once Production is confirmed. |
 
-**Testing submissions** (`/admin/campaign/go-live/families/`) stays a
-sub-page of Check, under the same rules as today (410 once go-live has
+**Testing submissions** (`/admin/campaign/go-live/families/`; to be named
+Testing responses, per
+[responses and submissions](../ui-conventions/spec.md#responses-and-submissions))
+stays a sub-page of Check, under the same rules as today (410 once go-live has
 started). Every step's trail is the Campaign setup group, then Go live; the
 step bar, not the trail, names the step, so the trail never grows a crumb
 per step.

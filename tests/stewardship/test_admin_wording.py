@@ -87,9 +87,12 @@ def test_admin_templates_carry_no_sensitive_data_banner():
 # row, keyed by the row's first cell, and the scan below counts each
 # pattern's matches in the user-visible Admin strings: translated template
 # text, gettext strings in Python (pages, forms, messages, errors, audit
-# descriptions and report emails), label maps, downloaded-file headings and
-# the sentences in ui-v1.js. KNOWN is the shrinking allowlist of today's
-# occurrences. Counts must match exactly: a new occurrence fails, and a
+# descriptions and report emails), the capitalized text of upper-case
+# constants (label maps, heading tuples, captions), downloaded-file
+# headings, CLI help and descriptions, and the sentences in ui-v1.js. Other
+# untranslated Python text (a plain string built inside a function, a CLI
+# command's printed output) is not scanned. KNOWN is the shrinking allowlist
+# of today's occurrences. Counts must match exactly: a new occurrence fails, and a
 # strings PR that removes one lowers or deletes its entry. The last strings
 # PR of #2330 deletes KNOWN.
 
@@ -108,15 +111,31 @@ FAMILY_TEMPLATES = {
     "family-unavailable.html",
     "hosted-file-unavailable.html",
 }
-# Removed before matching: wording kept on purpose and placeholders. The
-# sign-in and access-denied pages' reader may hold no role, so "parish staff
-# member" stays lower case (Administrator, 2026-10-31); Google's roles and a
-# shared drive's members are Google's words; {{ members }} is a variable.
+# The Family sign-in page's title, which Python builds; the Family portal
+# keeps its own wording there too.
+FAMILY_FUNCTIONS = {"family_login_title", "_login_title"}
+# Removed before matching: wording kept on purpose, CLI option names
+# (``--ministry``) and placeholders. Google's roles and a shared drive's
+# members are Google's words; {{ members }} is a variable.
 KEPT = re.compile(
-    r"parish staff members?|Google Workspace administrators?"
+    r"Google Workspace administrators?"
     r"|super administrators?|members? of that shared drive"
-    r"|{{.*?}}|{%.*?%}|%\(\w+\)s|{\w+}"
+    r"|--[\w-]+|{{.*?}}|{%.*?%}|%\(\w+\)s|{\w+}"
 )
+# The sign-in help and access-denied pages' reader may hold no role, so
+# "parish staff member" stays lower case there, and only there
+# (Administrator, 2026-10-31).
+STAFF_MEMBER = re.compile(r"parish staff members?")
+STAFF_MEMBER_PAGES = {
+    "accounts/google_account_help.py",
+    "accounts/templates/stewardship/denied.html",
+}
+# Code, not text: a lower-case identifier such as a data key
+# (``source["timezone"]``) or a field name.
+IDENTIFIER = re.compile(r"[a-z_][a-z0-9_]*")
+# Keyword arguments whose strings are CLI text: argparse help and
+# descriptions.
+CLI_KEYWORDS = {"help", "description", "epilog"}
 # A word retired only in one area, where it has other, correct senses
 # elsewhere ("unresolved refused addresses", a background task "In
 # progress"), carries a path pattern too.
@@ -130,8 +149,14 @@ RETIRED = {
     "can use the portal": re.compile(r"\bcan use the (?:Family )?portal\b"),
     "not part of this campaign's mailing": re.compile(r"\bcampaign's mailing\b"),
     "Not in ParishSoft data": re.compile(r"\bNot in ParishSoft data\b"),
+    "No longer in this campaign (a Ministry)": (
+        re.compile(r"\bNo longer in this campaign\b"),
+        MINISTRY_PATHS,
+    ),
     "publish": re.compile(r"\b[Pp]ublish(?:es|ing)?\b"),
     "update ParishSoft yourself": re.compile(r"\bParishSoft yourself\b"),
+    # The whole string is a count of waiting work: "to do" or "N to do".
+    "to do": re.compile(r"^\s*\d*\s*to do\s*$"),
     "Unresolved": (re.compile(r"\b[Uu]nresolved\b"), MINISTRY_PATHS),
     "Status: New, In progress, Resolved": (
         re.compile(r"\b(?:In progress|Resolved)\b|\bresolved and withdrawn\b"),
@@ -195,6 +220,19 @@ KNOWN = {
         "Not in ParishSoft data",
         "accounts/templates/stewardship/ministry-requests.html",
     ): 3,
+    (
+        "No longer in this campaign (a Ministry)",
+        "accounts/templates/stewardship/campaign-ministries-review.html",
+    ): 1,
+    (
+        "No longer in this campaign (a Ministry)",
+        "accounts/templates/stewardship/ministry-followup.html",
+    ): 1,
+    (
+        "No longer in this campaign (a Ministry)",
+        "accounts/templates/stewardship/ministry-requests.html",
+    ): 3,
+    ("No longer in this campaign (a Ministry)", "reports/ministries.py"): 1,
     ("publish", "accounts/templates/stewardship/data-to-fix-status.html"): 1,
     (
         "update ParishSoft yourself",
@@ -204,6 +242,7 @@ KNOWN = {
         "update ParishSoft yourself",
         "accounts/templates/stewardship/ministry-requests.html",
     ): 1,
+    ("to do", "accounts/home_steps.py"): 1,
     ("Unresolved", "accounts/templates/stewardship/ministry-counts.html"): 4,
     ("Unresolved", "accounts/templates/stewardship/ministry-requests.html"): 2,
     ("Unresolved", "reports/ministries.py"): 1,
@@ -228,6 +267,7 @@ KNOWN = {
     ): 3,
     ("Latest response", "accounts/templates/stewardship/financial-report.html"): 3,
     ("Latest response", "reports/financial_documents.py"): 1,
+    ("Latest response", "reports/limitations.py"): 2,
     ("Test recipient", "accounts/templates/stewardship/parish-settings.html"): 1,
     ("Test recipient", "accounts/templates/stewardship/setup-mail.html"): 1,
     ("Testing email address", "accounts/setup_forms.py"): 2,
@@ -259,6 +299,7 @@ KNOWN = {
     ("digest", "accounts/templates/stewardship/information.html"): 1,
     ("digest", "accounts/templates/stewardship/weekly-digest.html"): 1,
     ("digest", "audit/log_descriptions.py"): 1,
+    ("digest", "reports/digest_funnel.py"): 1,
     ("timezone", "accounts/campaign_forms.py"): 1,
     ("timezone", "accounts/campaign_preview.py"): 1,
     ("timezone", "accounts/parish_views.py"): 3,
@@ -271,14 +312,12 @@ KNOWN = {
     ("timezone", "accounts/templates/stewardship/report-export.html"): 1,
     ("timezone", "accounts/templates/stewardship/weekly-digest.html"): 1,
     ("timezone", "reports/comparison_documents.py"): 1,
-    ("timezone", "reports/financial_documents.py"): 3,
-    ("timezone", "reports/information_documents.py"): 3,
-    ("timezone", "reports/ministry_documents.py"): 3,
+    ("timezone", "reports/financial_documents.py"): 2,
+    ("timezone", "reports/information_documents.py"): 2,
+    ("timezone", "reports/ministry_documents.py"): 2,
     ("timezone", "reports/timeline_documents.py"): 1,
     ("Family login", "accounts/content_forms.py"): 1,
-    ("Family login", "accounts/family_authentication.py"): 1,
     ("Family login", "jobs/operational_content.py"): 1,
-    ("Family login", "responses/availability.py"): 2,
     ("Family timeline", "reports/export_ui.py"): 1,
     ("Family timeline", "reports/timeline_documents.py"): 2,
     ("the response dashboard", "audit/log_descriptions.py"): 3,
@@ -288,6 +327,7 @@ KNOWN = {
     ("member", "accounts/templates/stewardship/find-family.html"): 1,
     ("member", "accounts/templates/stewardship/user-timeline.html"): 3,
     ("member", "reports/timelines.py"): 1,
+    ("ministry", "accounts/ministry_activity.py"): 1,
     ("ministry", "accounts/templates/stewardship/limitations-report.html"): 1,
     ("ministry", "accounts/templates/stewardship/limitations-worklist-filters.html"): 1,
     ("ministry", "accounts/templates/stewardship/ministry-followup.html"): 2,
@@ -295,9 +335,10 @@ KNOWN = {
     ("ministry", "accounts/templates/stewardship/ministry-requests.html"): 1,
     ("ministry", "accounts/templates/stewardship/ministry-worklist-export.html"): 1,
     ("ministry", "accounts/templates/stewardship/refresh-schedule-editor.html"): 1,
+    ("ministry", "admin_cli.py"): 1,
     ("ministry", "audit/log_descriptions.py"): 1,
     ("ministry", "reports/hub_streams.py"): 1,
-    ("ministry", "reports/limitations.py"): 2,
+    ("ministry", "reports/limitations.py"): 4,
     ("staff", "accounts/setup_help.py"): 3,
     ("staff", "accounts/templates/stewardship/campaign-ministries-review.html"): 1,
     ("staff", "accounts/templates/stewardship/logs.html"): 1,
@@ -310,6 +351,7 @@ KNOWN = {
     ("administrator", "accounts/templates/stewardship/delivery-control.html"): 1,
     ("administrator", "accounts/templates/stewardship/report-export.html"): 1,
     ("administrator", "accounts/templates/stewardship/setup-step.html"): 1,
+    ("administrator", "backup_drive.py"): 1,
     ("administrator", "web/error_pages.py"): 3,
 }
 
@@ -351,51 +393,99 @@ def _strings_in(node):
     ]
 
 
+def _skipped_nodes(tree):
+    """The ids of every node inside a Family-portal function (FAMILY_FUNCTIONS)."""
+    return {
+        id(part)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name in FAMILY_FUNCTIONS
+        for part in ast.walk(node)
+    }
+
+
+def _constant_labels(tree):
+    """The capitalized text in upper-case constants at module or class level.
+
+    Choice and status labels that are not translated
+    (``STATES = {"resolved": "Resolved"}``), and heading tuples and caption
+    constants (``FAMILY_HEADINGS = ("Family", "Latest response")``). Dict
+    keys, identifiers and markup are left out; translated values are counted
+    by the gettext walk.
+    """
+    found = []
+    for scope in ast.walk(tree):
+        if not isinstance(scope, ast.Module | ast.ClassDef):
+            continue
+        for node in scope.body:
+            if not isinstance(node, ast.Assign | ast.AnnAssign) or node.value is None:
+                continue
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            if not all(
+                isinstance(target, ast.Name) and target.id.isupper()
+                for target in targets
+            ):
+                continue
+            value = node.value
+            parts = (
+                value.values
+                if isinstance(value, ast.Dict)
+                else value.elts
+                if isinstance(value, ast.Tuple | ast.List | ast.Set)
+                else [value]
+            )
+            translated = {
+                id(inner)
+                for part in parts
+                for call in ast.walk(part)
+                if isinstance(call, ast.Call)
+                for inner in ast.walk(call)
+            }
+            found.extend(
+                text.value
+                for part in parts
+                for text in ast.walk(part)
+                if isinstance(text, ast.Constant)
+                and isinstance(text.value, str)
+                and id(text) not in translated
+                and text.value[:1].isupper()
+            )
+    return found
+
+
 def _python_strings(path):
     """A module's user-visible strings.
 
-    Everywhere: the arguments of gettext calls, and the values of
-    module-level upper-case dictionaries that are capitalized text: choice
-    and status labels that are not translated
-    (``STATES = {"resolved": "Resolved"}``). In a
-    downloaded-file module (``*documents.py``) every string but docstrings
-    too, because its column headings are plain constants.
+    Everywhere: the arguments of gettext calls, CLI help and description
+    keywords (CLI_KEYWORDS), and the capitalized text of upper-case constants
+    (``_constant_labels``). In a downloaded-file module (``*documents.py``)
+    every string too, because its column headings are plain constants, except
+    docstrings and identifiers such as data keys (``source["timezone"]``).
+    Family-portal functions (FAMILY_FUNCTIONS) are skipped.
     """
     tree = ast.parse(path.read_text(encoding="utf-8"))
+    skipped = _skipped_nodes(tree)
     if path.name.endswith("documents.py"):
-        docstrings = _docstring_nodes(tree)
+        skipped |= _docstring_nodes(tree)
         return [
             node.value
             for node in ast.walk(tree)
             if isinstance(node, ast.Constant)
             and isinstance(node.value, str)
-            and id(node) not in docstrings
+            and id(node) not in skipped
+            and not IDENTIFIER.fullmatch(node.value)
         ]
-    found = []
-    for node in tree.body:
-        if (
-            isinstance(node, ast.Assign)
-            and isinstance(node.value, ast.Dict)
-            and all(
-                isinstance(target, ast.Name) and target.id.isupper()
-                for target in node.targets
-            )
-        ):
-            # Labels only: identifiers, markup and translated values (which
-            # the gettext walk below counts) are left out.
-            found.extend(
-                value.value
-                for value in node.value.values
-                if isinstance(value, ast.Constant)
-                and isinstance(value.value, str)
-                and value.value[:1].isupper()
-            )
+    found = _constant_labels(tree)
     for node in ast.walk(tree):
-        function = getattr(node, "func", None)
+        if not isinstance(node, ast.Call) or id(node) in skipped:
+            continue
+        function = node.func
         name = getattr(function, "id", None) or getattr(function, "attr", None)
-        if isinstance(node, ast.Call) and name in GETTEXT:
+        if name in GETTEXT:
             for argument in node.args:
                 found.extend(_strings_in(argument))
+        for keyword in node.keywords:
+            if keyword.arg in CLI_KEYWORDS:
+                found.extend(_strings_in(keyword.value))
     return found
 
 
@@ -442,6 +532,13 @@ def _admin_strings():
     yield UI_SCRIPT, _script_strings(UI_SCRIPT.read_text(encoding="utf-8"))
 
 
+def _kept_removed(text, name):
+    """One string with its kept wording (KEPT, STAFF_MEMBER) blanked out."""
+    if name in STAFF_MEMBER_PAGES:
+        text = STAFF_MEMBER.sub(" ", text)
+    return KEPT.sub(" ", text)
+
+
 def _occurrences():
     """Each retired term's match count, by (term, path under PACKAGE)."""
     counts = {}
@@ -451,7 +548,9 @@ def _occurrences():
             pattern, scope = rule if isinstance(rule, tuple) else (rule, None)
             if scope is not None and not scope.search(name):
                 continue
-            hits = sum(len(pattern.findall(KEPT.sub(" ", text))) for text in strings)
+            hits = sum(
+                len(pattern.findall(_kept_removed(text, name))) for text in strings
+            )
             if hits:
                 counts[term, name] = hits
     return counts
@@ -482,6 +581,43 @@ def test_the_scan_reads_every_kind_of_admin_text():
     assert counts["html"] > 4000 and counts["py"] > 3000 and counts["js"] > 250
     assert "Testing submissions" in [
         text for path, strings in _admin_strings() for text in strings
+    ]
+
+
+def test_python_scanner_reads_text_not_code(tmp_path):
+    """Constants, CLI help and documents are read; keys and Family titles not.
+
+    Heading tuples and captions are text wherever they live, a data key such
+    as ``source["timezone"]`` is code, and the Family sign-in title keeps the
+    Family portal's wording.
+    """
+    module = tmp_path / "report_documents.py"
+    module.write_text(
+        '"""Module docstring with a digest."""\n'
+        'HEADINGS = ("Family", "Latest response", _("Kept once"))\n'
+        "def write(source):\n"
+        '    return source["timezone"], "Display timezone"\n'
+    )
+    assert _python_strings(module) == [
+        "Family",
+        "Latest response",
+        "Kept once",
+        "Display timezone",
+    ]
+    module = tmp_path / "views.py"
+    module.write_text(
+        "class Form:\n"
+        '    CAPTION = "Members who cannot participate in ministries"\n'
+        'parser.add_argument("--x", help="count ministries")\n'
+        "def family_login_title(service):\n"
+        '    return _("Family login")\n'
+        'LABELS = {"key": _("Translated"), "other": "Plain label"}\n'
+    )
+    assert sorted(_python_strings(module)) == [
+        "Members who cannot participate in ministries",
+        "Plain label",
+        "Translated",
+        "count ministries",
     ]
 
 

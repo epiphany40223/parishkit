@@ -3666,10 +3666,16 @@ words came back after their renames because nothing guarded them (the
 "active-Family count" after #1393). **Guard.**
 `tests/stewardship/test_admin_wording.py` keeps one pattern per row, keyed
 by the row's first cell, and scans translated template text, gettext
-strings and label maps in Python, downloaded-file headings and the
-sentences in `ui-v1.js`. Its allowlist holds each file's known
-occurrences, with counts; a new occurrence fails, and each #2330 string
-change lowers or deletes entries until the allowlist is gone.
+strings in Python, the text of upper-case constants (label maps, heading
+tuples and captions, wherever they live), downloaded-file headings, CLI
+help and descriptions, and the sentences in `ui-v1.js`. It skips code
+(data keys, CLI option names) and the Family portal, including the Family
+sign-in page's title. It does not see other untranslated Python text,
+such as a plain string built inside a function or a CLI command's printed
+output; the #2330 string changes sweep those by hand. Its allowlist holds
+each file's known occurrences, with counts; a new occurrence fails, and
+each #2330 string change lowers or deletes entries until the allowlist is
+gone.
 **Precedent.** [#2330](https://github.com/epiphany40223/parishkit/issues/2330).
 
 | Retired | Use instead |
@@ -3679,8 +3685,10 @@ change lowers or deletes entries until the allowlist is gone.
 | can use the portal | campaign Families ("Every campaign Family can open the form") |
 | not part of this campaign's mailing | not in this campaign |
 | Not in ParishSoft data | Not in ParishSoft |
+| No longer in this campaign (a Ministry) | Removed from this campaign (a Family stays No longer in this campaign) |
 | publish | Update ParishSoft (the API write); enter in ParishSoft by hand |
 | update ParishSoft yourself | enter the change in ParishSoft by hand |
+| to do | the stage it counts ("N to review"), for a count of waiting work |
 | Unresolved | To review (Ministry requests' counts) |
 | Status: New, In progress, Resolved | Contact status: Not contacted, Contacting, Done (Ministry follow-up) |
 | Testing submissions | Testing responses |
