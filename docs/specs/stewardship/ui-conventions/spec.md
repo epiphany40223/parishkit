@@ -3947,8 +3947,10 @@ had chosen its own Families, so the same question got different answers
 differed by one Family that had left).
 **Shared code.** The labels and the default live in one place,
 `reports/participation.py` (`SCOPE_LABELS`, `SCOPE_CHOICE_LABEL`,
-`DEFAULT_SCOPE`); every page, table caption and export reads them from
-there, so the Administrator can rename them in one edit.
+`DEFAULT_SCOPE`), which translates the two populations' words spelled in
+`reports/population_words.py`; every page, table caption, export and
+pk-admin's `--help` reads them from there, so the Administrator can rename
+them in one edit.
 **Precedent.** [#2324](https://github.com/epiphany40223/parishkit/issues/2324).
 
 - **Place.** The choice sits at the top of the page, under the heading (and

@@ -67,6 +67,23 @@ def test_a_marker_inside_a_comment_does_not_count():
     assert COMMENTS.sub("", block) == "<p>y</p>"
 
 
+def test_the_cli_help_reads_the_shared_words():
+    """pk-admin's --help builds the populations' words from their one place."""
+    from parishkit.stewardship import admin_cli
+    from parishkit.stewardship.reports.participation import SCOPE_LABELS
+    from parishkit.stewardship.reports.population_words import SCOPE_WORDS
+
+    assert {key: str(label) for key, label in SCOPE_LABELS.items()} == SCOPE_WORDS
+    parser = admin_cli.argparse.ArgumentParser()
+    admin_cli._exact_create_options(parser)
+    (scope,) = [action for action in parser._actions if action.dest == "scope"]
+    assert scope.help == (
+        f'historical ("{SCOPE_WORDS["historical"]}"; the default, unlike the '
+        f'pages\' default of "{SCOPE_WORDS["current"]}") or current '
+        f'("{SCOPE_WORDS["current"]}")'
+    )
+
+
 def test_the_fixed_line_speaks_in_the_choices_words():
     """The fixed line is the choice's label and a population's, from their one place."""
     from parishkit.stewardship.accounts.templatetags.stewardship import (
