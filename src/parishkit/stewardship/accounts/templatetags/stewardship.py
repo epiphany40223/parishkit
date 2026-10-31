@@ -89,10 +89,10 @@ def scope_label(scope):
     Response dashboard does; imported here so template loading never pulls
     the reports package in at startup.
 
-    An export that counts no population (a campaign archive's parameters
-    carry no ``population_scope``, so ``scope`` is "") is named as the
-    export page's earlier ``{% else %}`` branch named every scope but
-    "historical", so its page renders as before rather than failing.
+    Any scope but "historical", including "", gets the "current" words so
+    the tag never fails; the export page shows no Population row at all
+    for an export that counts no population (a campaign archive, whose
+    parameters carry no ``population_scope``).
     """
     from parishkit.stewardship.reports.participation import SCOPE_LABELS
 
