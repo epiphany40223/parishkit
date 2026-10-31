@@ -200,7 +200,13 @@ def test_reload_returns_to_the_same_view_and_goes_on_following(page, component_o
     """After Families counted is chosen in place, the address names it, so
     a browser reload shows the same view again (drawn by the server), and
     the reloaded page goes on following its figures."""
-    opened(page, component_origin, REAL + "?timezone=America%2FLos_Angeles")
+    # From Including Families that left: an address with no scope already
+    # counts today's campaign Families (#2324).
+    opened(
+        page,
+        component_origin,
+        REAL + "?scope=historical&timezone=America%2FLos_Angeles",
+    )
     page.locator(CURRENT).click()
     heading = page.get_by_role(
         "heading", name="Daily participation — In this campaign today"

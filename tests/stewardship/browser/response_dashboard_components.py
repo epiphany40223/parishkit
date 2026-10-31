@@ -45,7 +45,10 @@ def components(context, admin):
     """The Production page, the Testing views and a campaign with nothing yet."""
     # Drawn in the test browser's zone, so report-v1.js has no zone to
     # apply and the page stays at its fixture address.
-    query = ReportQuery(timezone="America/Los_Angeles")
+    # Under Including Families that left, the population the test
+    # workbook's Summary was captured for (the page's default is In this
+    # campaign today, #2324).
+    query = ReportQuery(timezone="America/Los_Angeles", scope="historical")
     # (metrics, a site in Testing mode with a rehearsal, #2324).
     pages = {
         "/response-dashboard": (dashboard_metrics(), False),

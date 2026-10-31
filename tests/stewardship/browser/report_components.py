@@ -39,10 +39,13 @@ FIGURES_RETRY = "/figures-status-retry"
 FIGURES_RETRY_NEWER = "/figures-status-retry-newer"
 
 
-# The dashboard opened oldest first, and its Families counted answer from
-# there (#2324): that answer is slow, so a test can see the working spinner
-# beside the choice while the read is under way.
-SORTED = ReportQuery(timezone="America/Los_Angeles", sort="date_asc")
+# The dashboard opened oldest first under Including Families that left, and
+# its In this campaign today answer from there (#2324): that answer is slow,
+# so a test can see the working spinner beside the choice while the read is
+# under way.
+SORTED = ReportQuery(
+    timezone="America/Los_Angeles", sort="date_asc", scope="historical"
+)
 SORTED_CURRENT = replace(SORTED, scope="current")
 
 
@@ -258,10 +261,29 @@ def components(context, admin):
         cohort=replace(value.statistics.cohort, responses=450),
     )
     pages[REAL + "?timezone=UTC"] = ("response-dashboard", viewing(ReportQuery()))
+    # An address with no scope counts today's campaign Families (#2324); the
+    # Including Families that left page is the one the in-place tests switch
+    # from.
+    historical = ReportQuery(timezone="America/Los_Angeles", scope="historical")
+    implicit_historical = ReportQuery(timezone_explicit=False, scope="historical")
     for query in ("", "?sort=date_asc", "?scope=historical"):
-        pages[REAL + query] = ("response-dashboard", fallback)
+        left = query == "?scope=historical"
+        pages[REAL + query] = (
+            "response-dashboard",
+            viewing(implicit_historical) if left else fallback,
+        )
         zoned = (query + "&" if query else "?") + "timezone=America%2FLos_Angeles"
-        pages[canonical(REAL + zoned)] = ("response-dashboard", page)
+        pages[canonical(REAL + zoned)] = (
+            "response-dashboard",
+            viewing(historical) if left else page,
+        )
+    # That page's own address on its first page, which its Including
+    # Families that left segment and Back lead to. (Today's first page is the
+    # In this campaign today answer below.)
+    pages[canonical(REAL + "?" + options(historical))] = (
+        "response-dashboard",
+        viewing(historical),
+    )
     pages[canonical(REAL + "?" + options(los_angeles))] = ("response-dashboard", page)
     # The same page once newer figures are ready (test_report_figures.py):
     # no longer Updating, with the current-population answer's statistics.
@@ -306,12 +328,6 @@ def components(context, admin):
     pages[canonical(REAL + "?" + options(current))] = (
         "response-dashboard",
         viewing(current, **statistics_panel(refreshed, "current")),
-    )
-    # The page's own address on its first page.
-    address = urlsplit(los_angeles.url(page=1)).query
-    pages[canonical(REAL + "?" + address)] = (
-        "response-dashboard",
-        viewing(los_angeles),
     )
     # The sorted page and its slow Families counted answer (SLOW_GETS).
     pages[canonical(SORTED.url())] = ("response-dashboard", viewing(SORTED))

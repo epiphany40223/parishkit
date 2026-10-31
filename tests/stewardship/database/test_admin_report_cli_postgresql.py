@@ -144,12 +144,14 @@ def test_participation_responses_information_and_the_list(http_scenario, cli):  
     # The Response dashboard's participation read (#1537): the generation
     # the page shows, whose fact set id is what ``export create --fact-set``
     # takes, and the page's events.
+    # The fixture's chart is the historical one; the page's and the
+    # command's default is today's campaign Families (#2324).
     parity(
         "participation_viewed",
-        lambda: read(browser, f"{root}/responses/"),
-        lambda: run("report", "participation"),
+        lambda: read(browser, f"{root}/responses/?scope=historical"),
+        lambda: run("report", "participation", "--scope", "historical"),
     )
-    code, document = run("report", "participation")
+    code, document = run("report", "participation", "--scope", "historical")
     assert code == 0, document
     result = document["result"]
     assert result["fact_set_id"] == str(facts.pk)
@@ -285,7 +287,9 @@ def test_participation_responses_information_and_the_list(http_scenario, cli):  
 
     # A read-only session reads every report.
     reader = read_only_session(run.service)
-    code, document = run("report", "participation", secret=reader)
+    code, document = run(
+        "report", "participation", "--scope", "historical", secret=reader
+    )
     assert code == 0 and document["result"]["fact_set_id"] == str(facts.pk)
 
     # An ended session: exit 5, and nothing read or recorded.

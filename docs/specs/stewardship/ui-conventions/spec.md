@@ -3928,15 +3928,16 @@ one population of Families, and the page says which. Where a page can
 count either population, the reader chooses it with one shared
 [binary choice](#binary-choices), **Families counted**:
 
-- **Including Families that left** (`scope=historical`, the default):
+- **Including Families that left** (`scope=historical`):
   every Family that was ever in this campaign (its first-eligible instant is
   set), including Families that later
   [left the campaign](#campaign-families-wording) or are gone from
   ParishSoft. This is the money actually pledged.
-- **In this campaign today** (`scope=current`): the campaign Families, the
-  Families that match the campaign's
+- **In this campaign today** (`scope=current`, the default): the campaign
+  Families, the Families that match the campaign's
   [Families rule](../data/spec.md#campaign-families) in today's ParishSoft
-  data.
+  data. An address with no `scope` counts these (the Administrator,
+  2026-10-31, #2324).
 
 **Why.** The Administrator, 2026-10-31: "The numbers on all the 'Reports and
 queries' pages, particularly the infographic numbers at the tops of the

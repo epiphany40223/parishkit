@@ -137,16 +137,18 @@ def test_campaign_links_preserve_only_validated_state():
 
 
 def test_daily_table_opens_newest_first_with_five_rows():
-    """The defaults (#1534, #1537, #2324): newest first, 5 rows, the
-    historical population; the address leaves each default out, and a saved
+    """The defaults (#1534, #1537, #2324): newest first, 5 rows, today's
+    campaign Families (In this campaign today; the Administrator,
+    2026-10-31); the address leaves each default out, and a saved
     oldest-first link still opens oldest first."""
     default = ReportQuery.parse(QueryDict())
     assert (default.sort, default.size, default.scope) == (
         "date_desc",
         "5",
-        "historical",
+        "current",
     )
-    assert default.url() == "/admin/reports/responses/?scope=historical&page=1"
+    assert default.url() == "/admin/reports/responses/?scope=current&page=1"
+    assert ReportQuery.parse(QueryDict("scope=historical")).scope == "historical"
     assert ReportQuery.parse(QueryDict("sort=date_asc")).sort == "date_asc"
     # 5 is offered beside the shared sizes; the old default 50 still loads.
     for size in ("5", "25", "50", "100", "250", "all"):

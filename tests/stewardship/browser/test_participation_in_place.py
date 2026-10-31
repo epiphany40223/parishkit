@@ -39,6 +39,9 @@ PAIR_LAYOUT = """() => [...document.querySelectorAll(
   return [box.x, box.y, box.width, box.height];
 }).flat()"""
 ZONE = "timezone=America%2FLos_Angeles"
+# The page under Including Families that left, which the tests switch from:
+# an address with no scope counts today's campaign Families (#2324).
+HISTORICAL = REAL + "?scope=historical&" + ZONE
 # The current-population answer's all-Families comparison value, which the
 # first page lacks ($1,000.00 there): it shows that the Summary's Active
 # population row was swapped in place. It is wider, so on Linux fonts it
@@ -76,7 +79,7 @@ def test_options_apply_in_place(page, component_origin):
     view announced, the address replaced, the chosen segment marked, the
     pair not moved or resized, and the fresh daily chart drawn."""
     page.set_viewport_size(VIEWPORT)
-    page.goto(component_origin + REAL + "?" + ZONE)
+    page.goto(component_origin + HISTORICAL)
     page.evaluate(MARK)
     choice = page.get_by_role("group", name="Families counted")
     expect(choice.locator("a[aria-current=page]")).to_have_text(
@@ -130,7 +133,7 @@ def test_options_keep_the_panels_in_place(page, component_origin):
 
     errors = watch(page)
     page.set_viewport_size(VIEWPORT)
-    page.goto(component_origin + REAL + "?" + ZONE)
+    page.goto(component_origin + HISTORICAL)
     rendered = page.locator("[data-chart-state=rendered]")
     daily = page.locator("#participation-chart [data-chart-state=rendered]")
     expect(daily).to_have_count(1)
@@ -151,7 +154,7 @@ def test_options_keep_the_panels_in_place(page, component_origin):
 def test_daily_table_refreshes_every_panel(page, component_origin):
     """Sorting the daily table refreshes the Summary and the Chart
     population from the same answer, as the whole region is refreshed."""
-    page.goto(component_origin + REAL + "?" + ZONE)
+    page.goto(component_origin + HISTORICAL)
     page.evaluate(MARK)
     body = page.request.get(
         component_origin + REAL + f"?scope=current&page=1&{ZONE}"

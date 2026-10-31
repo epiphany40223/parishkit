@@ -349,7 +349,10 @@ submissions are excluded everywhere except the Admin views of a site in
 Testing mode, where the site's mode decides which responses are shown.
 
 The population scope (`scope`) is `historical` or `current`, labelled as the
-shared rule says. **Historical** is the default: each point of the
+shared rule says. **Current** is the pages' default (the Administrator,
+2026-10-31, [#2324](https://github.com/epiphany40223/parishkit/issues/2324));
+a report email and Campaign comparison stay historical. **Historical**: each
+point of the
 participation graph uses the ever-eligible cohort through the end of that
 local day and response versions as of that instant. A Family enters the
 cohort on its first Portal-eligible instant in the campaign and never leaves
@@ -601,7 +604,7 @@ Report selection, pinning, rendering, and drift verification use that policy's
 atomic reference/read guards; no consumer assumes an unpinned old generation
 will remain available indefinitely.
 
-The UI defaults to the historical scope and offers the shared, clearly
+The UI defaults to the current scope and offers the shared, clearly
 labelled Families counted choice. Changing scope updates every series
 together, and every other figure on the page with it. On the Response
 dashboard, pointing at or tapping anywhere in a date's column, in any panel, shows
@@ -1056,8 +1059,8 @@ as on the [Timeline](#timeline), with no alias
 ([#864](https://github.com/epiphany40223/parishkit/issues/864)).
 `pk-admin report responses --mode` keeps its Production or Testing
 choice: the command line has no site-mode view to follow.
-`scope` is the Families counted choice (`historical`, the default, or
-`current`); `page`, `sort` and `size` are the daily table's; `timezone` is
+`scope` is the Families counted choice (`current`, the default, or
+`historical`); `page`, `sort` and `size` are the daily table's; `timezone` is
 the browser's ([participation graph](#participation-graph)). The removed
 activity chart's `grain` is still accepted, and ignored, so old bookmarks
 load. Every choice is an
