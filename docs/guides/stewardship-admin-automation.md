@@ -2443,7 +2443,7 @@ pk-admin report roster --show all --ministry 9
 | `report participation` | Response dashboard (statistics and daily table) | `status` (`current`, `updating` or `unavailable`), `fact_set_id` (for `export create --fact-set`), the figures' source and dates, `statistics` (the active Families, Members, email, responses and, with Financial stewardship, pledge totals, including the comparison pledges of every Family, `comparison_pledge_all`) and `days`, the daily table |
 | `report comparison` | Campaign comparison | `day` and `date` (the comparison day: the current campaign's last complete day, or `--day`), `status`, `last_year`, `current` (the current campaign's figures at the day and so far, and its renewal of last year's Families), `years` (each imported year's figures at the day and final figures, renewal and, for a final year, its pledge distribution) and `averages` (the imported years' mean of each figure at the day); see below |
 | `report responses` | Response dashboard (Families by stage) | `metrics`: the funnel `stages`, the three figures beside it, the `activity` buckets, the `sends` and each list's length (`lists`), which the page no longer shows; null in Testing without a rehearsal |
-| `report financial` | Financial report | The summary over every pledge: `families`, `annual_total`, `frequencies`, `shares` (by share option id), `no_share`, `cannot_give` and the comparison period |
+| `report financial` | Financial report | `scope` and the summary over every pledge of its Families: `families`, `annual_total`, `frequencies`, `shares` (by share option id), `no_share`, `cannot_give` and the comparison period |
 | `report limitations` | Limitations | `cannot_serve` (Members who cannot participate in ministries) and `cannot_attend` (Families who cannot attend Mass or prayer services) at `stage`, and `stages`: every answer by stage, zeros included |
 | `report census` | Census changes | `matching`: how many changes the filters keep, split by `routes` (`automatic`, `by_hand`) and `kinds` (`contact`, `moved`, `deceased`, `new_member`), and `statuses`, every change of the campaign by status (the counts the Status filter's choices show); see below |
 | `report information` | Additional information | `matching`: how many items match the filters; with `--stage`, how many requests are at that stage, and `stages`, each stage's count (null without `--stage`) |
@@ -2452,8 +2452,8 @@ pk-admin report roster --show all --ministry 9
 The options are the pages' own, and a value the page would refuse is exit 1
 (`invalid`):
 
-- `report participation`: `--scope` (`current`, the default, as on the
-  page, or `historical`).
+- `report participation` and `report financial`: `--scope` (`current`,
+  the pages' default, or `historical`), the pages' Families counted.
 - `report comparison`: `--day` (a campaign day from 1 to the comparison
   day; a later day is `not_available`).
 - `report responses`: `--mode` (`production`, the default, or `testing`)
@@ -3053,7 +3053,7 @@ pk-admin export fetch EXPORT_ID
 - `--format` is `csv`, `xlsx` or `pdf`; `--timezone` the time zone of the
   file's times. Each takes `--request-key`, as `export create` does.
 - `--filter NAME=VALUE` (repeat for more) is one of the page's filters,
-  named as its form names it, for example `amount=nonzero`, `active=active`
+  named as its form names it, for example `amount=nonzero`, `scope=historical`
   or `frequency=monthly` for the financial export, `disposition=all` or
   `needed=yes` for the information export, and `activity=active` (or,
   with `--ministry`, `state=unresolved`) for the Ministry export. Dates
