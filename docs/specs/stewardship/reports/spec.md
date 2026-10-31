@@ -3820,8 +3820,9 @@ without a known zone is refused, never read in another zone
 (schema migration 0110). Filters without a zone, from a release before 0110
 or a retained export capture, keep their campaign-zone days. The summary of
 the matching pledges comes first, as visuals
-([#720](https://github.com/epiphany40223/parishkit/issues/720)): tiles for the
-Family count, the annual total and the number of Families that cannot
+([#720](https://github.com/epiphany40223/parishkit/issues/720)): tiles for
+Families responded (the matching Families, in Campaign comparison's
+words, #2324), the annual total and the number of Families that cannot
 contribute financially (such a Family's frequency reads "Cannot contribute"),
 then two [chart engine](#chart-engine) bar charts, "Pledges by frequency"
 (each frequency and No frequency) and "Share methods chosen" (each offered

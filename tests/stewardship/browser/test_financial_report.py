@@ -564,7 +564,7 @@ def test_summary_charts_draw_with_tooltips_and_labelled_values(
     expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(2)
     summary = page.locator("#financial-summary")
     assert summary.locator(".stat-label").all_inner_texts() == [
-        "Families",
+        "Families responded",
         "Total annual pledges",
         "Cannot contribute financially",
     ]

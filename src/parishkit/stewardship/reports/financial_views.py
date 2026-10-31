@@ -66,7 +66,10 @@ def summary_tiles(summary):
     # is left to raise rather than handled.
     total = Money(total.cents) if total.available else None
     return [
-        tile("families", _("Families"), summary["families"]),
+        # The responders matching the filters: Campaign comparison's words, so
+        # no page shows the Response dashboard's "Families" (every Family of
+        # the population) for another figure (#2324).
+        tile("families", _("Families responded"), summary["families"]),
         tile(
             "annual-total",
             _("Total annual pledges"),
