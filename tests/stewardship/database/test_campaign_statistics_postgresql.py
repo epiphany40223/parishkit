@@ -62,7 +62,10 @@ def test_single_statement_captures_current_population_and_safe_projection(
             "portal_eligible",
             "email_eligible",
             "active_head_duids",
+            "campaign_families",
         }
+        # The legacy rule's rows carry no Families rule marker (#2338).
+        and value["campaign_families"] is None
         for value in document["corpus"]["family"].values()
     )
     result = calculate_statistics(inputs)

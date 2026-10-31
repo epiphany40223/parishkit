@@ -42,6 +42,7 @@ from django.db.models import Max
 from django.urls import reverse
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.campaigns import campaign_families
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
@@ -61,13 +62,16 @@ from parishkit.stewardship.source.snapshots import (
     stage_entities,
 )
 
+from ..campaign_factory import campaign as campaign_record
 from ..test_financial_answers import CHECK, OPTIONS
 from ..test_source_corpus import TODAY
+from . import response_builders
 from .auth_builders import signed_in, unguarded
 from .campaign_builders import campaign_clock
 from .response_builders import activate_response_service, response_source
 from .source_builders import running_source_task
 from .test_background_grants_postgresql import task_login
+from .test_directories_postgresql import page
 from .test_fact_materialization_postgresql import allocation
 from .test_financial_exports_postgresql import staff_entered
 from .test_financial_report_postgresql import family_session, head, pledge
@@ -123,13 +127,7 @@ def families():
 
 def reload(harness):
     """Promote a newer full load in which Families 2 and 7 left the campaign
-    (their Family group is Inactive) and Family 6 is gone from ParishSoft.
-
-    As ``financial_source`` loads one, with its giving, but without changing
-    the campaign's configuration, which a live campaign keeps.
-    """
-    values = harness.campaign.active_configuration.values
-    definition = financial_definition(values, campaign_id=harness.campaign.pk)
+    (their Family group is Inactive) and Family 6 is gone from ParishSoft."""
     data = replace(response_source(), organization_id=12345)
     kept = {duid: row for duid, row in families().items() if duid != GONE}
     data.families.update(kept)
@@ -143,14 +141,41 @@ def reload(harness):
             family["famGroupID"] = INACTIVE_GROUP
         elif duid != 1:
             family.setdefault("famGroupID", 7)
+    promoted, rows = load(harness, data)
+    assert rows["1"]["portal_eligible"] and not rows["2"]["portal_eligible"]
+    assert not rows["7"]["portal_eligible"] and str(GONE) not in rows
+    return promoted
+
+
+def load(harness, data, rule=None):
+    """Promote ``data`` as a full load normalized under the Families ``rule``
+    (None: the legacy rule), its load recording the rule.
+
+    As ``financial_source`` loads one, with its giving, but without changing
+    the campaign's configuration, which a live campaign keeps. Returns the
+    promoted snapshot and its Family rows.
+    """
+    values = harness.campaign.active_configuration.values
+    definition = financial_definition(values, campaign_id=harness.campaign.pk)
+    for family in data.families.values():
         if family.get("registeredOrganizationID") == 5:
             family["registeredOrganizationID"] = 12345
-    corpus = normalize_core(data, as_of=TODAY)
+    corpus = normalize_core(data, as_of=TODAY, families=rule)
     claim = acquire_source(**running_source_task(), phase="full")
     snapshot = begin_snapshot(claim, organization_id=12345, admit=permit)
     for kind, entities in corpus.items():
         stage_entities(snapshot.pk, claim, kind=kind, entities=entities, admit=permit)
     as_of = snapshot.started_at.date().isoformat()
+    evidence = {
+        "schema": "source-load-v1",
+        "window_digest": definition.window.digest,
+        "as_of_date": as_of,
+        "giving_as_of_date": as_of,
+    }
+    if rule is not None:
+        evidence[campaign_families.KEY] = campaign_families.evidence(
+            rule, data.family_groups
+        )
     finish_snapshot(
         snapshot.pk,
         claim,
@@ -159,20 +184,12 @@ def reload(harness):
             snapshot_id=snapshot.pk,
             started_at=snapshot.started_at,
             window_digest=definition.window.digest,
-            evidence={
-                "schema": "source-load-v1",
-                "window_digest": definition.window.digest,
-                "as_of_date": as_of,
-                "giving_as_of_date": as_of,
-            },
+            evidence=evidence,
         ),
         admit=permit,
     )
     promoted = promote(snapshot, claim, harness.campaign, harness.rings)
-    rows = corpus["family"]
-    assert rows["1"]["portal_eligible"] and not rows["2"]["portal_eligible"]
-    assert not rows["7"]["portal_eligible"] and str(GONE) not in rows
-    return promoted
+    return promoted, corpus["family"]
 
 
 def rehearsal_only(harness, duid, template):
@@ -417,3 +434,103 @@ def test_every_page_counts_the_same_families_for_each_population(agreement):
             percent,
             historical,
         )
+
+
+# A configured Families rule that is not the legacy rule (#2338): the
+# "Active parishioners" preset leaves out the Staff Family group, which the
+# legacy rule selects as active and registered.
+RULE = campaign_families.DEFAULT
+STAFF_GROUP = 8
+# A Family that responds, then moves to the Staff group: under the rule it
+# is still active and registered in ParishSoft but out of the campaign.
+RULED = 13
+RULED_ANSWERS = {1: "1000", RULED: "500"}
+
+
+@pytest.fixture
+def families_rule(monkeypatch):
+    """Create ``response_service``'s campaign with the Families ``RULE``,
+    which can be set only when a campaign is created."""
+    create = response_builders.add_draft
+
+    def add_draft(store, version, actor, row=None):
+        """The fixture's own campaign, with the rule added."""
+        row = campaign_record(campaign_families=RULE) if row is None else row
+        return create(store, version, actor, row)
+
+    monkeypatch.setattr(response_builders, "add_draft", add_draft)
+
+
+@pytest.fixture
+def ruled(families_rule, response_service, google, monkeypatch):
+    """A financial campaign with the Families ``RULE``: Families 1 and
+    ``RULED`` respond, then a load under the rule moves ``RULED`` to the
+    Staff group, out of the campaign.
+
+    Returns (signed-in browser, harness, the instant the pages are read at).
+    """
+    harness = response_service
+    assert harness.campaign.active_configuration.values[campaign_families.KEY] == RULE
+    extra = {RULED: dict(familyDUID=RULED, registeredOrganizationID=5, lastName="Q")}
+    heads = {40 + RULED: head(40 + RULED, RULED)}
+    financial_source(
+        harness,
+        modules=["financial"],
+        options=map(asdict, OPTIONS),
+        extra_families=extra,
+        extra_members=heads,
+    )
+    harness = activate_response_service(harness)
+    opened = harness.campaign.active_configuration.starts_at
+    for hour, (duid, amount) in enumerate(RULED_ANSWERS.items(), start=1):
+        with campaign_clock(opened + timedelta(hours=hour)), web_login():
+            family = harness if duid == 1 else family_session(harness, duid)
+            pledge(
+                family,
+                load_form(family),
+                annual_pledge=amount,
+                frequency="annual",
+                shares={CHECK: ""},
+            )
+    data = replace(response_source(), organization_id=12345)
+    data.families.update(extra)
+    data.members.update(heads)
+    data.family_groups[STAFF_GROUP] = "Staff"
+    data.families[RULED]["famGroupID"] = STAFF_GROUP
+    _, rows = load(harness, data, RULE)
+    # The issue's case: active and registered, yet not in the campaign.
+    row = rows[str(RULED)]
+    assert row["active"] and row["parishioner"] and not row["portal_eligible"]
+    assert rows["1"]["portal_eligible"]
+    assert not FamilyCampaign.objects.get(
+        campaign=harness.campaign, family_duid=RULED
+    ).portal_eligible
+    with unguarded():
+        SystemConfiguration.objects.update(mode="production")
+    browser, login = signed_in()
+    assert login.status_code == 302
+    now = opened + timedelta(days=2, hours=12)
+    monkeypatch.setattr(response_dashboard, "database_now", lambda: now)
+    return browser, harness, now
+
+
+def test_pages_agree_under_a_families_rule_unlike_the_legacy_rule(ruled):
+    """Under a configured Families rule the dashboard has its statistics
+    (#2338), and it, Financial stewardship and the directory agree on the
+    Family the rule left out though it is active and registered: only the
+    historical population counts its response, and the directory, which
+    lists today's campaign Families, does not list it."""
+    browser, harness, now = ruled
+    expected = {"historical": (2, Decimal("1500")), "current": (1, Decimal("1000"))}
+    figures = {}
+    with campaign_clock(now), task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        for scope, (responded, pledges) in expected.items():
+            on_dashboard = dashboard(browser, scope)
+            on_financial = financial(browser, scope)
+            assert on_dashboard[:2] == on_financial[:2] == (responded, pledges), scope
+            figures[scope] = on_dashboard
+    assert figures["historical"][2] - figures["current"][2] == 1
+    with campaign_clock(now):
+        listed = page(harness)
+    assert {row["family_duid"] for row in listed["rows"]} == {1}
+    assert listed["total"] == figures["current"][2] == 1
