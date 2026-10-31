@@ -92,6 +92,7 @@ def chrome(admin, actor, menu_counts, stages=None):
         for entry in section["items"]:
             entry["count"] = menu_counts.get(entry["name"]) if entry["url"] else None
             entry["stages"] = stages.get(entry["name"]) if entry["url"] else None
+            entry["count_words"] = admin_context.count_words(entry["name"])
     # Staff and leaders see My review work as Review work's first entry, as
     # the context processor draws it (R39 finding 4).
     lands = review_work.lands_here(actor)

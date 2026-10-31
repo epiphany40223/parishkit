@@ -277,7 +277,7 @@ def test_the_current_pages_group_always_opens(page, component_origin):
 
 
 def test_open_counts_read_with_their_entry(page, component_origin):
-    """A queue's open count sits inside its entry and is announced with it (#585)."""
+    """A queue's count sits inside its entry and is announced with it (#585)."""
     from playwright.sync_api import expect
 
     page.set_viewport_size({"width": 1280, "height": 900})
@@ -288,7 +288,8 @@ def test_open_counts_read_with_their_entry(page, component_origin):
         ("Ministry requests", "1,250"),
     ):
         link = sidebar.locator("a", has_text=name)
-        expect(link).to_have_accessible_name(f"{name} ({count} open)")
+        # The hidden text names the stage it counts (#2331).
+        expect(link).to_have_accessible_name(f"{name} (To review: {count})")
         pill = link.locator(".admin-menu-count")
         visible(pill)
         assert pill.inner_text() == count

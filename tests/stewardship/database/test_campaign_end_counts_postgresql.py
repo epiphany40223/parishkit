@@ -135,7 +135,7 @@ def test_home_and_menu_show_the_census_count_for_an_administrator(
     response_service, google
 ):
     """Signed in, the menu and Home's Next steps carry the same Census
-    changes count, To review and Conflict, as "N to do"."""
+    changes count, named by its stages, "To review and Conflict: N" (#2331)."""
     harness = response_service
     start(harness)
     harness = activate_response_service(harness)
@@ -147,7 +147,7 @@ def test_home_and_menu_show_the_census_count_for_an_administrator(
     expected = len(worklist(harness, ADMIN, stage="to_review")["rows"])
     assert expected == 2
     assert _menu_count(body, "Census changes") == expected
-    assert f"Census changes {expected} to do" in steps(body)
+    assert f"Census changes To review and Conflict: {expected}" in steps(body)
     assert 'href="/admin/reports/census/"' in body.decode()
 
 

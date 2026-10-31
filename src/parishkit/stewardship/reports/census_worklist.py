@@ -91,7 +91,14 @@ from parishkit.stewardship.web.review_worklist import (
 )
 from parishkit.stewardship.workflows.models import RefreshCheck
 
-from .census_changes import LABELS, REOPENED, STAGES
+from .census_changes import (
+    LABELS,
+    OPEN_CHOICE,
+    OPEN_CHOICE_LABEL,
+    OPEN_STAGES,
+    REOPENED,
+    STAGES,
+)
 
 # The census stream's identity columns, in the shared column order (UX
 # conventions, "Table column order"), each sorted by ``census_change_views``'s
@@ -369,7 +376,7 @@ def history_choice(counts):
 # The filters a link may carry (R38 finding 6), with the value each takes
 # when not chosen: never the name search, which stays in POST bodies.
 LINK_DEFAULTS = {
-    "stage": Stage.TO_REVIEW.value,
+    "stage": OPEN_CHOICE,
     "route": "any",
     "kind": "any",
 }
@@ -431,6 +438,10 @@ def worklist_page(
         address=page_address(action, link_pairs(query, paging)),
     )
     worklist.stage_choices.insert(-1, history_choice(counts))
+    # The page opens on To review and Conflict together (#2331), first, so
+    # its count is the badge's and Home's.
+    both = sum(counts.get(stage.value, 0) for stage in OPEN_STAGES)
+    worklist.stage_choices.insert(0, (OPEN_CHOICE, f"{OPEN_CHOICE_LABEL} ({both:,})"))
     replacements = result.get("replacements", {})
     for row in worklist.rows:
         _added_words(row, replacements)

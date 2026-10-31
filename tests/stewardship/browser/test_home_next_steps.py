@@ -60,7 +60,7 @@ def test_next_steps_link_their_pages_and_never_shift(
         "Ministry requests to enter by hand This campaign does not include "
         "Ministry stewardship"
     )
-    expect(listed.nth(2)).to_have_text("Additional information 3 open")
+    expect(listed.nth(2)).to_have_text("Additional information To review: 3")
     expect(listed.nth(2)).to_have_class("link-card link-card-attention")
     greyed = listed.nth(3)
     expect(greyed).to_have_text(
@@ -102,10 +102,10 @@ def test_closed_campaign_lists_the_campaign_end_work_with_counts(
     panel = page.get_by_role("region", name="Next steps")
     expect(panel.locator("[data-link-card]")).to_have_text(
         [
-            "Census changes 4 to do",
+            "Census changes To review and Conflict: 4",
             "Ministry requests to enter by hand 5 to enter by hand",
-            "Additional information 3 open",
-            "Ministry requests 2 open",
+            "Additional information To review: 3",
+            "Ministry requests To review: 2",
             "Report emails",
         ]
     )
@@ -115,9 +115,11 @@ def test_closed_campaign_lists_the_campaign_end_work_with_counts(
         "Additional information": "/admin/reports/information/",
         "Ministry requests": "/admin/reports/ministries/",
     }.items():
-        # Each card's name, then its count: "Ministry requests" is also the
-        # start of "Ministry requests to enter by hand".
-        card = panel.get_by_role("link", name=re.compile(rf"^{re.escape(name)} \d"))
+        # Each card's name, then its stages or its count: "Ministry
+        # requests" is also the start of "Ministry requests to enter by hand".
+        card = panel.get_by_role(
+            "link", name=re.compile(rf"^{re.escape(name)} (\d|To review)")
+        )
         expect(card).to_have_attribute("href", href)
     before = page.evaluate(BOXES)
     for step in panel.get_by_role("link").all():

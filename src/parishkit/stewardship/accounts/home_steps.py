@@ -18,6 +18,7 @@ from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.pipeline import Stage
 
+from .admin_context import count_words
 from .admin_navigation import PAGES
 
 # Campaign states that read as "Closed or archived" in the spec's table.
@@ -43,10 +44,10 @@ _WORK = (
     "ministry_report",
 )
 _ACTIVE = (*_WORK, "mail_queue", "mail_problems")
-# What each count means, after the number: Census changes' To review and
-# Conflict rows, and Ministry requests' To enter by hand Stage.
+# What Ministry requests' To enter by hand count means, after the number.
+# A queue's own count names its stages before the number instead, as its
+# menu badge does ("To review: 10"; ``admin_context.count_words``, #2331).
 _NOTES = {
-    "census_changes": _("to do"),
     "ministry_entry": _("to enter by hand"),
 }
 STEPS = {
@@ -93,8 +94,10 @@ class Step(NamedTuple):
     """One next step: a page name, its link (None while unavailable) and extras.
 
     ``reason`` is the menu's reason while the step is greyed out; ``count``
-    an open count shown after the name, and ``note`` what the count means.
-    ``other`` is a second count with its own link (``Other``), or None.
+    an open count shown after the name, ``stage`` the stages it adds up,
+    shown before it ("To review: 10", #2331), and ``note`` what the count
+    means, after it. ``other`` is a second count with its own link
+    (``Other``), or None.
     """
 
     label: str
@@ -103,6 +106,7 @@ class Step(NamedTuple):
     count: int | None = None
     note: str | None = None
     other: Other | None = None
+    stage: str | None = None
 
 
 def campaign_state(campaign, mode, *, go_live=False):
@@ -160,15 +164,14 @@ def next_steps(state, menu, *, test_email=None, mail_unknown=None, setup_next=No
             step = _ministry_entry(menu.get("ministry_report"))
         else:
             entry = menu.get(name)
+            # The menu shows a queue's count only while it is a link.
+            counted = entry and entry["url"] and entry.get("count") is not None
             step = entry and Step(
                 str(entry["label"]),
                 entry["url"],
                 entry["reason"],
                 entry.get("count"),
-                # The menu shows a queue's count only while it is a link.
-                _NOTES.get(name, _("open"))
-                if entry["url"] and entry.get("count") is not None
-                else None,
+                stage=str(count_words(name)) if counted else None,
             )
         if step:
             steps.append(step)

@@ -38,7 +38,6 @@ from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
-from parishkit.stewardship.pipeline import Stage
 from parishkit.stewardship.responses.census_additions import AddRefusal
 from parishkit.stewardship.responses.census_resolution import InvalidMemberId
 from parishkit.stewardship.responses.census_review import (
@@ -79,6 +78,7 @@ from parishkit.stewardship.web.tables import (
 from . import census_publication
 from .census_changes import (
     KINDS,
+    OPEN_CHOICE,
     ROUTES,
     STATUSES,
     CensusQuery,
@@ -341,9 +341,10 @@ def _respond(request, campaign_id, *, export, render):
             decision = None if export else read_decision(parameters)
             extra = _choices(parameters, export=export)
             if not export and "stage" not in parameters:
-                # The worklist opens on To review (review pipeline spec,
-                # "Review worklist").
-                parameters["stage"] = Stage.TO_REVIEW.value
+                # The worklist opens on To review and Conflict together, the
+                # count the menu's badge and Home show (#2331; review
+                # pipeline spec, "Review worklist").
+                parameters["stage"] = OPEN_CHOICE
             query = CensusQuery.parse(parameters)
             extra["live"] = live
             if live is not None:
