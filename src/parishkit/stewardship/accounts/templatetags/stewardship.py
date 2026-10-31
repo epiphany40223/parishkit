@@ -89,14 +89,37 @@ def scope_label(scope):
     Response dashboard does; imported here so template loading never pulls
     the reports package in at startup.
 
-    An export that counts no population (a campaign archive's parameters
-    carry no ``population_scope``, so ``scope`` is "") is named as the
-    export page's earlier ``{% else %}`` branch named every scope but
-    "historical", so its page renders as before rather than failing.
+    Any scope but "historical", including "", gets the "current" words so
+    the tag never fails; the export page shows no Families counted row at all
+    for an export that counts no population (a campaign archive, whose
+    parameters carry no ``population_scope``).
     """
     from parishkit.stewardship.reports.participation import SCOPE_LABELS
 
     return SCOPE_LABELS["historical" if scope == "historical" else "current"]
+
+
+@register.simple_tag
+def families_counted_label():
+    """The Families counted choice's own name, from its one place (#2324)."""
+    from parishkit.stewardship.reports.participation import SCOPE_CHOICE_LABEL
+
+    return SCOPE_CHOICE_LABEL
+
+
+@register.simple_tag
+def fixed_population(scope):
+    """A one-population page's fixed line: "Families counted: <population>".
+
+    A Reports and queries page that cannot offer the Families counted
+    choice names its population in the choice's own words (ui-conventions
+    "Population of report figures", #2324), so the reader can tell it from
+    the pages that offer the choice. Both words come from their one place,
+    ``reports.participation``.
+    """
+    from parishkit.stewardship.reports.participation import SCOPE_CHOICE_LABEL
+
+    return f"{SCOPE_CHOICE_LABEL}: {scope_label(scope)}"
 
 
 @register.filter
