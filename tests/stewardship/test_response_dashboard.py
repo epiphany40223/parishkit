@@ -38,7 +38,6 @@ from parishkit.stewardship.reports.workspace import ReportQuery
 from parishkit.stewardship.reports.workspace_views import (
     daily_table,
     figures_status,
-    mode_links,
     scope_links,
     statistics_panel,
 )
@@ -54,11 +53,12 @@ PATH = reverse("admin:response_dashboard")
 REGION = "response-dashboard"
 
 
-def page_context(query=None, funnel=..., *, can_test=True, value=None):
+def page_context(query=None, funnel=..., *, testing=False, value=None):
     """The context the view gives the template, from synthetic values.
 
-    ``funnel`` is the mode's metrics (None: a Testing view with no
-    rehearsal; by default the chart tests' metrics). A Production view also
+    ``funnel`` is the mode's metrics (None: the rehearsal ended while the
+    page was read; by default the chart tests' metrics). ``testing`` is a
+    site in Testing mode with a rehearsal (#2324). A Production page also
     carries the statistics, the daily chart and table, and the export.
     """
     query = query or ReportQuery()
@@ -74,15 +74,13 @@ def page_context(query=None, funnel=..., *, can_test=True, value=None):
     context = {
         "campaign": campaign,
         "query": query,
-        "testing": query.mode == "testing",
-        "can_test": can_test,
-        "mode_links": mode_links(query),
+        "testing": testing,
         "metrics": None,
     }
     funnel = metrics() if funnel is ... else funnel
     if funnel is not None:
         context |= funnel_panels(funnel)
-    if query.mode == "testing":
+    if testing:
         return context
     presented = participation_table_context(chart)
     return context | {
@@ -277,37 +275,29 @@ def test_export_panel_is_small_with_xlsx_first():
         assert gone not in panel, gone
 
 
-def test_choices_are_in_place_links_carrying_the_view():
-    """The Production / Testing rehearsal pair (Administrators only) and the
-    Chart population pair each link to this page and land on its region; a
-    mode link keeps the population, sort and size (#1535, #1537)."""
+def test_chart_population_is_an_in_place_pair_carrying_the_view():
+    """The Chart population pair links to this page and lands on its region,
+    keeping the sort, size and zone (#1535). No Responses shown pair and no
+    mode in any link: the site's mode decides (#2324)."""
     query = ReportQuery(scope="current", sort="date_asc", size="25")
     page = render(query)
     common = "scope=current&amp;page=1&amp;sort=date_asc&amp;size=25&amp;timezone=UTC"
-    production = f'<a href="{PATH}?{common}#{REGION}" data-in-place="mode-production"'
-    assert production + ' aria-current="page">Production' in page
-    testing = (
-        f'<a href="{PATH}?scope=current&amp;page=1&amp;mode=testing&amp;sort=date_asc'
-        f'&amp;size=25&amp;timezone=UTC#{REGION}" data-in-place="mode-testing">'
-        "Testing rehearsal"
-    )
-    assert testing in page
     current = f'<a href="{PATH}?{common}#{REGION}" data-in-place="scope-current"'
     assert current + ' aria-current="page">Current population' in page
     # The Chart population sits in the Daily participation panel.
     chart = page[page.index('id="participation-chart"') :]
     assert 'id="participation-scope"' in chart
-    assert page.index('id="dashboard-mode"') < page.index('id="response-summary"')
-    # Staff are never offered Testing.
-    staff = render(can_test=False)
-    assert "Testing rehearsal" not in staff and "mode=testing" not in staff
+    region = page[page.index(f'<div id="{REGION}"') :]
+    gone = ("dashboard-mode", "Responses shown", "Testing rehearsal", "&amp;mode=")
+    for text in gone:
+        assert text not in region, text
 
 
 def test_testing_view_shows_the_rehearsal_stages_only():
     """The Summary's Families by stage row shows the rehearsal; the Active
     population row and the Production panels are left out with one line
     saying why (#1537)."""
-    page = render(ReportQuery(mode="testing"))
+    page = render(testing=True)
     assert "never counted in Production" in page
     assert 'aria-label="Families by stage"' in page and "data-chart=" not in page
     assert 'aria-label="Active population"' not in page
@@ -315,17 +305,15 @@ def test_testing_view_shows_the_rehearsal_stages_only():
     assert "Data as of" not in page
     reason = (
         '<p id="production-only">Population statistics, daily participation and '
-        "the export count Production responses only. Choose Production to see "
-        "them.</p>"
+        "the export count Production responses only, so they are shown once "
+        "this site is in Production mode.</p>"
     )
     assert reason in page
-    for gone in ("participation-chart", "export-format"):
+    for gone in ("participation-chart", "export-format", "Choose Production"):
         assert gone not in page
-    testing = f'<a href="{PATH}?scope=historical&amp;page=1&amp;mode=testing'
-    assert testing in page and 'aria-current="page">Testing rehearsal' in page
-    # With no rehearsal the view says there is nothing to show.
-    empty = render(ReportQuery(mode="testing"), None)
-    assert "no Testing responses to show" in empty and reason in empty
+    # A rehearsal that ended while the page was read: nothing to show.
+    empty = render(None, None, testing=True)
+    assert "no Testing responses to show." in empty and reason in empty
     assert "stat-tile" not in empty and "data-chart=" not in empty
     assert "never counted in Production" not in empty
     # Production never says it.
@@ -352,7 +340,7 @@ def test_no_invitations_yet_says_so_instead_of_shares():
 def test_tiles_draw_their_share_of_invited_as_bars():
     """Each stage tile's share bar runs against Invited and is hidden from
     AT (#720); with nothing invited no stage tile has a bar."""
-    page = render(ReportQuery(mode="testing"))
+    page = render(testing=True)
     bars = re.findall(
         r'<span class="stat-bar" aria-hidden="true">'
         r'<progress value="(\d+)" max="(\d+)"></progress></span></li>',
@@ -360,16 +348,17 @@ def test_tiles_draw_their_share_of_invited_as_bars():
     )
     assert bars == [("4", "4"), ("5", "4"), ("4", "4"), ("3", "4"), ("3", "4")]
     rows = tuple(replace(row, invited_at=None) for row in metrics().families)
-    uninvited = render(ReportQuery(mode="testing"), metrics(families=rows))
+    uninvited = render(None, metrics(families=rows), testing=True)
     assert "<progress" not in uninvited
 
 
-def test_daily_table_links_keep_the_mode_and_population():
-    """A daily-table navigator or heading keeps the page's view (#1537)."""
+def test_daily_table_links_keep_the_population():
+    """A daily-table navigator or heading keeps the page's population
+    (#1537); no link carries a mode, which the site decides (#2324)."""
     query = ReportQuery(scope="current", size="5")
     links = [urlsplit(href).query for href in scope_links(query).values()]
     assert all("mode" not in link for link in links)
-    assert ("mode", "testing") in ReportQuery(mode="testing").carried()
+    assert query.carried() == [("scope", "current"), ("timezone", "UTC")]
 
 
 def test_unreadable_statistics_leave_the_stages_and_say_so():
@@ -379,7 +368,7 @@ def test_unreadable_statistics_leave_the_stages_and_say_so():
     themselves: the slow figures status sits after the line, which never
     tells the reader to reload (#1586)."""
     context = (
-        page_context(ReportQuery(mode="testing"))
+        page_context(testing=True)
         | {
             "query": ReportQuery(),
             "testing": False,
@@ -514,7 +503,7 @@ def test_retry_figures_status_is_slow_and_says_nothing():
 
 def test_no_parishsoft_data_wording_differs_from_a_pending_chart():
     """No ParishSoft data yet is not a wait of a few minutes (#1537)."""
-    context = page_context(ReportQuery(mode="testing")) | {
+    context = page_context(testing=True) | {
         "query": ReportQuery(),
         "testing": False,
         "participation_unavailable": True,

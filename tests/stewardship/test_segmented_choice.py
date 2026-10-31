@@ -159,7 +159,9 @@ def test_every_pair_is_drawn_by_the_shared_component():
     """The old pill links are gone: each view choice uses the component."""
     for path in sorted(TEMPLATES.rglob("*.html")):
         assert "choice-links" not in path.read_text(), path.name
-    assert (TEMPLATES / "response-dashboard.html").read_text().count(COMPONENT) == 2
+    # The Chart population only: the site's mode replaced Responses shown
+    # (#2324).
+    assert (TEMPLATES / "response-dashboard.html").read_text().count(COMPONENT) == 1
     for name in CONVERTED:
         assert COMPONENT in (TEMPLATES / name).read_text(), name
     # The Timeline's Production / Testing pair was removed (#1570).

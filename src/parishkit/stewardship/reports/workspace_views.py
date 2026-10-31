@@ -4,10 +4,11 @@ One page (``reports/responses/``, the current campaign) shows, top to
 bottom, one Summary panel of stat tiles (the current active population
 statistics, then Families by stage from ``response_dashboard``), and the
 daily participation chart and table with their export, each read under the
-page's one campaign read guard. Production is the default; an
-Administrator's Testing rehearsal view (``mode=testing``) shows the
-rehearsal's Families by stage only, since the statistics, the daily chart
-and the export count Production responses.
+page's one campaign read guard. Whose responses are shown follows the
+site's mode (``shown_mode``): in Testing mode, with an active rehearsal, an
+Administrator sees the rehearsal's Families by stage only, since the
+statistics, the daily chart and the export count Production responses;
+every other reader sees Production (#477).
 """
 
 from contextlib import ExitStack
@@ -39,6 +40,7 @@ from parishkit.stewardship.web.tables import paginate
 
 from .chart_specs import participation_chart
 from .digest_presentation import participation_table_context
+from .directories import admit_mode
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES, _principal
 from .facts import FactUnavailable
@@ -47,8 +49,8 @@ from .models import POPULATION_SCOPES
 from .money import MoneyAmount
 from .participation_summary import population_figures
 from .read_admission import admit_report_read
-from .response_dashboard import _admit_mode, funnel_panels, read_metrics
 from .response_dashboard import _audit as _audit_funnel
+from .response_dashboard import funnel_panels, read_metrics, shown_mode
 from .selection import guarded_participation, newest_figures
 from .statistics import StatisticsUnavailable, calculate_statistics
 from .statistics_selection import capture_statistics
@@ -147,11 +149,14 @@ def _audit(principal, campaign_id, outcome, *, automatic=False):
 def dashboard(request, campaign_id):
     """The Response dashboard of one campaign, read under the campaign guard.
 
-    The query is parsed first, so only a malformed address is a 400; a
-    fault while shaping the page is the report's 503. A Testing view is
-    for Administrators only, checked before anything is read and again
-    inside the guard. Every view records ``response_dashboard_viewed`` (the
-    funnel read) when it ends; a Production view also records
+    The query is parsed first, so only a malformed address is a 400 (an
+    old link's ``mode`` included, #2324); a fault while shaping the page is
+    the report's 503. Whose responses are shown is the site's mode
+    (``shown_mode``), read once before the guard; a Testing view is for
+    Administrators only, checked before anything is read and again inside
+    the guard (#477). Every view records
+    ``response_dashboard_viewed`` (the funnel read) when it ends; a
+    Production view also records
     ``participation_viewed``, started and then succeeded or failed, since
     only it reads the statistics and the daily chart. When those cannot be
     read from their inputs, the page still shows the funnel, says the
@@ -170,8 +175,11 @@ def dashboard(request, campaign_id):
             query = ReportQuery.parse(request.GET)
         except ValueError:
             return private_response("Invalid report filters.\n", status=400)
-        production = query.mode == "production"
-        _admit_mode(principal, query)
+        mode = shown_mode(campaign_id, principal)
+        production = mode == "production"
+        # Testing responses are shown to Administrators only (#477): checked
+        # before anything is read and again inside the guard.
+        admit_mode(principal, mode)
         identities = (campaign_id,)
         admit_report_read(campaign_id)
         if production:
@@ -207,7 +215,7 @@ def dashboard(request, campaign_id):
             fresh = _principal(request, service.store, read_only=True)
             if fresh.identity != principal.identity:
                 raise PermissionError("Report access changed.")
-            _admit_mode(fresh, query)
+            admit_mode(fresh, mode)
             principal = fresh
             for identifier in identities:
                 admit_report_read(identifier)
@@ -217,7 +225,7 @@ def dashboard(request, campaign_id):
             """Prepare before headers and transfer generation protection to WSGI."""
             nonlocal participation_read
             with ExitStack() as stack:
-                metrics = read_metrics(campaign_id, query.mode)
+                metrics = read_metrics(campaign_id, mode)
                 participation, cause, shown = None, None, None
                 if production:
                     participation, cause, shown = _participation(
@@ -225,7 +233,7 @@ def dashboard(request, campaign_id):
                     )
                     participation_read = participation is not None
                 context = _page_context(
-                    campaign_id, query, participation, metrics, principal, cause, shown
+                    campaign_id, query, mode, participation, metrics, cause, shown
                 )
                 payload = render_to_string(
                     "stewardship/response-dashboard.html", context, request=request
@@ -468,25 +476,17 @@ def scope_links(query):
     return {scope: query.url(page=1, scope=scope) for scope in SCOPE_LABELS}
 
 
-def mode_links(query):
-    """Each Production / Testing rehearsal segment's address (#1537).
-
-    This page in that mode, the daily table back on its first page, its
-    population, sort, size and the zone kept.
-    """
-    return {mode: query.url(page=1, mode=mode) for mode in ("production", "testing")}
-
-
 def _page_context(
-    campaign_id, query, participation, metrics, principal, cause=None, shown=None
+    campaign_id, query, mode, participation, metrics, cause=None, shown=None
 ):
     """Format detached shared observations; never recompute money in templates.
 
-    ``metrics`` is the funnel of the mode shown (None: a Testing view with
-    no rehearsal). ``participation`` is the daily chart's selection and the
-    statistics, read in Production only: None in a Testing view, which
-    shows no statistics, daily chart or export, or when they could not be
-    read, which the page says; ``cause`` ("facts" or "statistics") picks its
+    ``mode`` is the responses shown (``shown_mode``). ``metrics`` is that
+    mode's funnel (None: the rehearsal ended while the page was read).
+    ``participation`` is the daily chart's selection and the statistics,
+    read in Production only: None in Testing, which shows no statistics,
+    daily chart or export, or when they could not be read, which the page
+    says; ``cause`` ("facts" or "statistics") picks its
     wording, and ``shown`` (the generation that read chose, if any) is what
     the unavailable line's figures status compares newer figures with, so
     the page brings them in by itself once they can be read (#1586).
@@ -497,13 +497,9 @@ def _page_context(
     context = {
         "campaign": campaign,
         "query": query,
-        "testing": query.mode == "testing",
-        # Testing responses are shown to Administrators only (#477).
-        "can_test": "administrator" in principal.roles,
-        "mode_links": mode_links(query),
+        "testing": mode == "testing",
         "metrics": None,
-        "participation_unavailable": query.mode == "production"
-        and participation is None,
+        "participation_unavailable": mode == "production" and participation is None,
         "participation_cause": cause,
     }
     if metrics is not None:

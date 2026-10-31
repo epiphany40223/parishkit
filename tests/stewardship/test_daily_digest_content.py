@@ -965,10 +965,11 @@ def test_a_testing_digest_says_where_the_funnel_is():
     for body in (visible(result.html), result.text):
         assert "Response funnel" not in body
         assert "Testing digests leave out the response funnel." in body
-    # Both dashboard links open its Testing view, where the funnel is.
-    testing = DASHBOARD + "?mode=testing"
-    assert result.html.count(f'href="{testing}"') == 2
-    assert result.text.count(f": {testing}") == 2
+    # Both dashboard links open the plain dashboard: the site's mode decides
+    # whose responses it shows (#2324), so no link carries a mode.
+    assert result.html.count(f'href="{DASHBOARD}"') == 2
+    assert result.text.count(f": {DASHBOARD}") == 2
+    assert "mode=" not in result.html and "mode=" not in result.text
     # A document with no mode (older callers) shows neither.
     plain = render(document())
     assert "Response funnel" not in plain.text and "Testing digests" not in plain.text

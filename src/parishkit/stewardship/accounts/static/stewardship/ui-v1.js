@@ -1188,12 +1188,12 @@
   //   itself a form[data-in-place] because its options reshape far more of
   //   the page than a table;
   // - a[data-in-place]: a link that shows another view of this page (the
-  //   Response dashboard's mode and Chart population pairs, #1535, #1537,
+  //   Response dashboard's Chart population pair, #1535, #1537, #2324,
   //   whose links sit in the region they refresh, so each refresh redraws
   //   them with the current sort, size and zone; a page's periodic
   //   re-read). Its value, if any, is a stable key that finds the link
   //   again in the fresh page, for focus and to announce the view now shown
-  //   ("Testing rehearsal");
+  //   ("Current population");
   // - form[data-in-place]: a form whose answer is this page again, such as a
   //   POST whose server redirects back here (Post/Redirect/Get). A POST
   //   saves a change unless the form is marked data-in-place-read (System

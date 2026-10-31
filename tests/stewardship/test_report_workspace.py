@@ -106,8 +106,11 @@ def test_read_admission_refuses_a_campaign_that_is_not_current(monkeypatch, curr
         "size=7",
         "size=1000",
         "size=",
+        # The removed Responses shown's mode is refused, whatever its
+        # value, as the Timeline refuses it (#2324, #1570).
         "mode=live",
-        "mode=testing&mode=testing",
+        "mode=testing",
+        "mode=production",
     ],
 )
 def test_queries_are_bounded_nonidentifying_and_closed(query):
@@ -119,30 +122,29 @@ def test_campaign_links_preserve_only_validated_state():
     value = ReportQuery.parse(
         QueryDict(
             "scope=current&timezone=America%2FDetroit&inactive=yes&grain=day"
-            "&page=2&sort=date_asc&mode=testing"
+            "&page=2&sort=date_asc"
         )
     )
     url = value.url(page=3)
     assert url.startswith("/admin/reports/responses/?")
-    assert "scope=current" in url and "page=3" in url and "mode=testing" in url
+    assert "scope=current" in url and "page=3" in url and "mode=" not in url
     assert "timezone=America%2FDetroit" in url and "sort=date_asc" in url
     # The removed inactive subtotal's and activity grain's parameters still
     # load, and are dropped (#728, #1537).
     assert "inactive" not in url and "grain" not in url
-    assert "mode=" not in value.url(mode="production")
     assert "timezone=" not in ReportQuery.parse(QueryDict()).url()
     assert "timezone=UTC" in ReportQuery.parse(QueryDict("timezone=UTC")).url()
 
 
 def test_daily_table_opens_newest_first_with_five_rows():
-    """The defaults (#1534, #1537): newest first, 5 rows, Production; the
-    address leaves each default out, and a saved oldest-first link still
-    opens oldest first."""
+    """The defaults (#1534, #1537, #2324): newest first, 5 rows, the
+    historical population; the address leaves each default out, and a saved
+    oldest-first link still opens oldest first."""
     default = ReportQuery.parse(QueryDict())
-    assert (default.sort, default.size, default.mode) == (
+    assert (default.sort, default.size, default.scope) == (
         "date_desc",
         "5",
-        "production",
+        "historical",
     )
     assert default.url() == "/admin/reports/responses/?scope=historical&page=1"
     assert ReportQuery.parse(QueryDict("sort=date_asc")).sort == "date_asc"

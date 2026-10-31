@@ -12,8 +12,8 @@
    temporary a[data-in-place] link marked data-in-place-quiet, so focus
    stays where it is and nothing is announced: the reader did not act. The
    report options ([data-report-options], the dashboard's region, whose
-   data-report-zone is the zone the page was drawn in) hold the Production /
-   Testing rehearsal and Chart population links (#1535, #1537); they take
+   data-report-zone is the zone the page was drawn in) hold the Chart
+   population links (#1535, #1537); they take
    the zone at once too, so a choice made before the zone's own answer
    arrives keeps it. A zone the server does not know falls
    back to UTC there, and the address then has a zone, so it is not applied

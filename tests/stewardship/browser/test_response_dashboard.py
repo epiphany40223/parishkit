@@ -7,9 +7,8 @@ import pytest
 from django.urls import reverse
 
 from ..test_directories import RESPONSE_LIST_PRESETS
-from .report_components import REAL
 from .test_charts import assert_clean, watch
-from .waits import eventually, has_text, visible
+from .waits import eventually, visible
 
 DIRECTORY = reverse("admin:family_directory")
 ZONE = "timezone=America%2FLos_Angeles"
@@ -270,16 +269,14 @@ def test_values_fit_a_phone_with_large_text(page, component_origin, width, font)
 def test_testing_view_without_a_rehearsal_is_accessible(
     page, component_origin, axe_source
 ):
-    """The empty Testing view says why it is empty and marks the mode chosen."""
+    """A Testing page whose rehearsal ended while it was read says why it is
+    empty; no choice is offered, since the site's mode decides (#2324)."""
     errors = watch(page)
     page.goto(component_origin + "/response-dashboard-testing")
     main = page.locator("main").inner_text()
     assert "no Testing responses to show" in main
     assert "count Production responses only" in main
-    current = page.get_by_role("group", name="Responses shown").locator(
-        "a[aria-current=page]"
-    )
-    assert current.all_inner_texts() == ["Testing rehearsal"]
+    assert page.locator(".segmented-choice").count() == 0
     assert page.locator("[data-chart]").count() == 0
     assert_clean(page, errors)
     page.evaluate(axe_source)
@@ -324,65 +321,6 @@ def test_empty_campaign_renders_cleanly(page, component_origin, axe_source):
     assert page.evaluate(AXE) == []
 
 
-def test_mode_choice_refreshes_the_dashboard_in_place(page, component_origin):
-    """Testing rehearsal and Production change the page without a reload or
-    a jump (#519, #1537).
-
-    The page's own marker survives (no navigation), the scroll position is
-    kept, the address follows the choice (and the region's fragment),
-    keyboard focus stays on the chosen segment, and the live region names
-    the view now shown. The Testing view leaves out the Production panels.
-    """
-    from playwright.sync_api import expect
-
-    errors = watch(page)
-    page.set_viewport_size({"width": 1000, "height": 700})
-    page.goto(component_origin + REAL + "?" + ZONE)
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
-    eventually(page, FITTED)
-    page.evaluate("window.__dashboardMarker = 1")
-    testing = page.locator('[data-in-place="mode-testing"]')
-    testing.scroll_into_view_if_needed()
-    before = page.evaluate("window.scrollY")
-    testing.focus()
-    page.keyboard.press("Enter")
-    page.wait_for_url("**mode=testing*#response-dashboard")
-    expect(page.locator("#production-only")).to_be_visible()
-    expect(page.locator(POPULATION)).to_have_count(0)
-    expect(page.locator(STAGES)).to_have_count(1)
-    expect(page.locator("[data-chart]")).to_have_count(0)
-    assert page.evaluate("window.__dashboardMarker") == 1
-    assert abs(page.evaluate("window.scrollY") - before) < 2
-    assert page.evaluate("document.activeElement.dataset.inPlace") == "mode-testing"
-    has_text(
-        page.get_by_role("status").filter(has_text="Testing rehearsal"),
-        "Testing rehearsal",
-    )
-    assert testing.get_attribute("aria-current") == "page"
-    assert_clean(page, errors)
-    # Production again: the statistics, chart and export come back.
-    page.locator('[data-in-place="mode-production"]').click()
-    expect(page.locator(POPULATION)).to_have_count(1)
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
-    assert "mode=" not in page.url
-    assert page.evaluate("window.__dashboardMarker") == 1
-    assert page.evaluate("document.activeElement.dataset.inPlace") == "mode-production"
-    assert_clean(page, errors)
-
-
-@pytest.mark.parametrize(
-    ("preset", "response", "check", "columns"),
-    [
-        ("submitted", "submitted", "any", ["Submissions"]),
-        (
-            "not-opened",
-            "never-opened",
-            "any",
-            ["Invitation delivered", "Link followed"],
-        ),
-        ("data-quality", "any", "anything", ["What to check"]),
-    ],
-)
 def test_list_presets_open_the_directory_with_their_choices(
     page, component_origin, preset, response, check, columns
 ):

@@ -79,11 +79,12 @@ def options(query):
     return urlsplit(scope_links(query)[query.scope]).query
 
 
-def viewing(query, **changes):
+def viewing(query, *, testing=False, **changes):
     """The Response dashboard's context drawn for ``query`` (#1537), its
-    daily chart updating, with ``changes`` applied."""
-    shaped = page_context(query)
-    if query.mode == "production":
+    daily chart updating, with ``changes`` applied. ``testing`` draws a site
+    in Testing mode with a rehearsal (#2324)."""
+    shaped = page_context(query, testing=testing)
+    if not testing:
         shaped["selection"] = SimpleNamespace(updating=True, expected=True)
         # The chart is Updating: its figures status (#1586) is watched fast.
         shaped |= figures_status(
@@ -290,12 +291,12 @@ def components(context, admin):
         "response-dashboard",
         viewing(current, **statistics_panel(refreshed)),
     )
-    # The Testing rehearsal view the mode choice leads to, and Production
-    # again from it (#1537).
-    testing = ReportQuery(timezone="America/Los_Angeles", mode="testing")
-    for query in (testing, los_angeles):
-        address = urlsplit(query.url(page=1)).query
-        pages[canonical(REAL + "?" + address)] = ("response-dashboard", viewing(query))
+    # The page's own address on its first page.
+    address = urlsplit(los_angeles.url(page=1)).query
+    pages[canonical(REAL + "?" + address)] = (
+        "response-dashboard",
+        viewing(los_angeles),
+    )
     # Every page's own figures status read (#1586) answers that the chart
     # shown is still the newest and is still Updating, so the watched region
     # stays as it is in every test that does not route it.
