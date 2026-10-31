@@ -90,13 +90,21 @@ def scope_label(scope):
     the reports package in at startup.
 
     Any scope but "historical", including "", gets the "current" words so
-    the tag never fails; the export page shows no Population row at all
+    the tag never fails; the export page shows no Families counted row at all
     for an export that counts no population (a campaign archive, whose
     parameters carry no ``population_scope``).
     """
     from parishkit.stewardship.reports.participation import SCOPE_LABELS
 
     return SCOPE_LABELS["historical" if scope == "historical" else "current"]
+
+
+@register.simple_tag
+def families_counted_label():
+    """The Families counted choice's own name, from its one place (#2324)."""
+    from parishkit.stewardship.reports.participation import SCOPE_CHOICE_LABEL
+
+    return SCOPE_CHOICE_LABEL
 
 
 @register.simple_tag

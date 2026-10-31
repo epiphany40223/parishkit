@@ -652,23 +652,24 @@ def render_export_page(parameters):
     ],
 )
 def test_export_page_names_its_population_in_the_shared_words(parameters, expected):
-    """The export page's Population row uses the shared words (#2324)."""
+    """The export page's Families counted row uses the shared words (#2324)."""
     from parishkit.stewardship.accounts.templatetags.stewardship import scope_label
 
     html = render_export_page(parameters)
-    assert f"<dt>Population</dt><dd>{expected}</dd>" in html
+    assert f"<dt>Families counted</dt><dd>{expected}</dd>" in html
+    assert "<dt>Population</dt>" not in html
     assert scope_label(parameters["population_scope"]) == expected
 
 
 @pytest.mark.parametrize("parameters", [{}, {"population_scope": ""}])
 def test_export_page_without_a_scope_has_no_population_row(parameters):
     """A campaign archive counts no population, so its parameters carry no
-    scope: its page renders without failing and shows no Population row,
+    scope: its page renders without failing and shows no Families counted row,
     since "In this campaign today" is wrong for a closed campaign (#2324)."""
     from parishkit.stewardship.accounts.templatetags.stewardship import scope_label
 
     html = render_export_page(parameters)
     assert "<dt>Requested at</dt>" in html
-    assert "<dt>Population</dt>" not in html
+    assert "<dt>Families counted</dt>" not in html
     # The tag itself still never fails on an empty scope.
     assert scope_label("") == "In this campaign today"
