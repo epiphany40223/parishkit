@@ -15,6 +15,7 @@ from uuid import UUID
 
 from django.db import connection, transaction
 
+from parishkit.stewardship.campaigns.campaign_families import KEY as FAMILIES_RULE
 from parishkit.stewardship.campaigns.read_guards import CampaignReadGuard
 
 from .export_services import admit_campaign, authorize
@@ -35,20 +36,27 @@ def _corpus_projection(kind, fields):
     )
 
 
-FAMILIES = _corpus_projection(
-    "family",
-    (
+# The payload fields each detached corpus row keeps: exactly what
+# ``source.families.family_recipients`` reads. A Family row keeps its
+# Families rule marker (``campaign_families``, #1393): without it a row a
+# configured rule selected differently from the legacy rule reads as a
+# contradictory legacy row, and the statistics go unavailable (#2338). A
+# legacy row has no marker, which the projection keeps as JSON null.
+PROJECTED = {
+    "family": (
         "schema_version",
         "active",
         "parishioner",
         "portal_eligible",
         "email_eligible",
         "active_head_duids",
+        FAMILIES_RULE,
     ),
-)
-MEMBERS = _corpus_projection("member", ("schema_version", "family_key", "active"))
-CONTACTS = _corpus_projection(
-    "contact", ("schema_version", "owner_kind", "owner_key", "emails")
+    "member": ("schema_version", "family_key", "active"),
+    "contact": ("schema_version", "owner_kind", "owner_key", "emails"),
+}
+FAMILIES, MEMBERS, CONTACTS = (
+    _corpus_projection(kind, fields) for kind, fields in PROJECTED.items()
 )
 
 # Archived giving cannot follow a successor's source window. Its last reconciled
