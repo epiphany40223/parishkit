@@ -416,6 +416,37 @@ def test_population_header_follows_the_response_choice(response, active):
     assert "Campaign" not in shown and "data load" not in header
 
 
+@pytest.mark.parametrize(
+    "response, population",
+    [
+        ("any", "In this campaign today"),
+        ("not-submitted", "In this campaign today"),
+        ("not-invited", "In this campaign today"),
+        ("submitted", "Including Families that left"),
+    ],
+)
+def test_count_line_names_the_families_it_counts(response, population):
+    """The count names its set in the Families counted words (#2324).
+
+    The default lists today's campaign Families; a list that matches a
+    Response dashboard tile also lists Families that left (#933).
+    """
+    from uuid import UUID
+
+    html = render_to_string(
+        "stewardship/directory.html",
+        {
+            "campaign_id": UUID(int=80),
+            "metadata": {"name": "Campaign", "source_generation": 3},
+            "total": 7,
+            "table": _table([]),
+            "query": DirectoryQuery(response=response),
+        },
+    )
+    line = html.split("<p data-report-population>")[1].split("</p>")[0]
+    assert line == f"Matching Families: 7. Families counted: {population}."
+
+
 def test_directory_headings_and_pages_post_private_filters():
     """Family and DUID headings sort through the installed selection's closed
     vocabulary; every control is a POST form, so the private search never
