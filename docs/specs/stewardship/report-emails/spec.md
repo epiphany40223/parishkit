@@ -114,6 +114,21 @@ Administrator's sign-off. Each is referred to below by its number.
     with "Here are the additional information requests that are still
     open."; an edited introduction is kept. The first Weekly after deploy
     therefore differs in that one sentence too.
+18. **A report email counts today's campaign Families** (the Administrator,
+    2026-10-31, [#2331](https://github.com/epiphany40223/parishkit/issues/2331)):
+    its fact blocks follow **In this campaign today**, the report pages'
+    default ([#2324](https://github.com/epiphany40223/parishkit/issues/2324)),
+    rather than the historical cohort (Families that left included), and the
+    [Campaign totals block](#campaign-totals-block) names the Families it
+    counts and the report day in a fixed line. The
+    [Compared with past campaigns block](#compared-with-past-campaigns-block)
+    stays like for like with the archives, as the Campaign comparison page
+    does, and says so in its own fixed line.
+19. **The requests block names its stages** (the Administrator,
+    2026-10-31, #2331): "Open" is not a stage, so its heading names the two
+    it adds up, "To review 10 · To handle 3", and it leaves out Ignored
+    requests, as the Additional information page and the menu do
+    ([UX conventions, stat tiles](../ui-conventions/spec.md#stat-tiles)).
 
 Where this document had to decide something the decisions did not cover, it
 says so in [Decisions made in this specification](#decisions-made-in-this-specification).
@@ -902,8 +917,9 @@ ignores it.
 There is no watermark, no per-recipient coverage and no corrections
 section: a request that is superseded or withdrawn simply leaves the list.
 
-Drawn as today's weekly requests section: a heading with the count ("5 open
-requests"; "1 open request"), then one table row per request, oldest
+Drawn as today's weekly requests section: a heading naming each stage's
+count, To review first ("To review 4 · To handle 1"; both stages are named, a
+zero too, decision 19), then one table row per request, oldest
 submission first, numbered 1, 2, 3 in number cells: the Family, Family DUID,
 link and submitted time (no zone) on the left and the text on the right. Text
 longer than 240 characters is shortened at a word boundary and ends with "…"
@@ -911,6 +927,14 @@ and a "Read the full request" link; complete text has neither. Each link
 goes to the request in the send's saved copy (in a test send or Preview, to
 the live request). Empty statement: "No open
 requests." Testing: the same, from the rehearsal's items.
+
+Each listed request's stage comes from
+`stewardship_report_email_requests_v2` (frozen migration 0196, #2331), which
+reads the request's latest Staff revision as the page does and leaves out an
+Ignored one; the snapshot keeps each request's stage after its text. A send
+captured before 0196 kept no stage: its saved copy and Past sends still say
+"N open requests", as its email did, and that send may have listed an
+Ignored request, since v1 never read the review decision.
 
 This block's scope is one of the converted Weekly's three changes at
 deploy ([conversion](#conversion)): the Weekly's heading said "N new
@@ -941,6 +965,20 @@ Live population figures (Members, eligible or deliverable email, comparison
 pledges) are not reported, because they cannot be stated as of the end of a
 past day. Empty statement: "No campaign day has ended yet." The text part
 gives one "label: value" line per figure.
+
+The figures count today's campaign Families (decision 18): the send's
+pinned fact generation is the `current` population scope at the send's
+recorded inputs, the Families the source the send recorded selects
+([Campaign Families wording](../ui-conventions/spec.md#campaign-families-wording)),
+counted on every day up to the report day, so a Family that left the
+campaign is in neither the responded count nor the Families it is out of.
+Under the heading a fixed line names them and the report day, in the report
+pages' Families counted words: "Families counted: In this campaign today, as
+of the end of October 30, 2026", or, for a report as of when it is made,
+"…, as of 7:00 AM, October 31, 2026". The text part gives the line first.
+The snapshot keeps the line, and the saved copy shows it above the tiles.
+Sends captured before frozen migration 0196 (#2331) pinned the historical
+scope and drew no line; their saved copies are unchanged.
 
 ### Response funnel block
 
@@ -1027,11 +1065,16 @@ options. Today's [Compared with past
 campaigns](../campaign-history/spec.md#digest-section) section
 ([#1698](https://github.com/epiphany40223/parishkit/issues/1698)): this
 campaign on its comparison day beside last year and the imported years'
-average, from the same pinned facts (the comparison day is the report day,
+average, from a historical fact generation at the send's recorded inputs,
+which the send builds beside its pinned one, since the archives count every
+Family ever in each campaign (decision 18; the comparison day is the report day,
 or, for a report as of when it is made, the last complete campaign day, as
 that section's rules say), with its own charts and link to the Campaign
 comparison report, its computed aggregates retained with the snapshot so its
-saved copy shows it unchanged. With no imported years it is left out
+saved copy shows it unchanged. Under the section a fixed line says
+whom it counts: "Families counted: Including Families that left, as the past
+campaigns' archives count them", and the saved copy shows it too. With no
+imported years it is left out
 entirely, as today, rather than drawing an empty statement, since the
 Administrator chose it knowing it compares with imports. Left out, it has no
 content for [Send only when there is something to
@@ -1606,7 +1649,9 @@ recipients, Failed, Uncertain: check Sent mail, or Sending, which also
 covers a send that [waits on an earlier
 message](#catch-up-recovery-and-holds)) with a link to its saved copy,
 and, for an Administrator, to Sent mail when it failed or is uncertain. A
-list block's count is shown under the result ("12 open requests"). The
+list block's count is shown under the result, naming the stages as the
+email's heading did ("To review 10 · To handle 3"), or "12 open requests"
+for a send captured before #2331 kept them. The
 sends of the converted Daily and Weekly made before the migration are
 listed with their report, after its report sends, linking their existing
 saved copies. `report-email sends` lists the newest 20
@@ -1674,8 +1719,9 @@ says what the email said however much later it is opened. In order:
     again by the chart engine from their stored specifications, and its
     figures as stat tiles, as the saved daily report page shows them, with
     the link to the Campaign comparison report.
-  - Open additional information requests: its heading with the count ("5
-    open requests"), then a table shown whole in the email's numbering
+  - Open additional information requests: its heading as the email had it
+    ("To review 4 · To handle 1", or "5 open requests" before #2331), then
+    a table shown whole in the email's numbering
     (1, 2, 3, oldest first): the Family (the
     [shared Family-name link](../ui-conventions/spec.md#family-and-member-names)
     to the Timeline, for the current campaign), its Family DUID, when it
