@@ -1,13 +1,15 @@
 """The Response dashboard (#1537): its Summary tiles and the daily chart.
 
 One page (``reports/responses/``, the current campaign) shows, top to
-bottom, one Summary panel of stat tiles (the current active population
-statistics, then Families by stage from ``response_dashboard``), and the
-daily participation chart and table with their export, each read under the
-page's one campaign read guard. Production is the default; an
-Administrator's Testing rehearsal view (``mode=testing``) shows the
-rehearsal's Families by stage only, since the statistics, the daily chart
-and the export count Production responses.
+bottom, its Families counted choice (#2324), one Summary panel of stat tiles
+(the Population statistics, then Families by stage from
+``response_dashboard``), and the daily participation chart and table with
+their export, each read under the page's one campaign read guard. The
+choice's population (``scope``) sets every one of those figures. Whose
+responses are shown follows the site's mode (``shown_mode``): in Testing
+mode, with an active rehearsal, an Administrator sees the rehearsal's
+Families by stage only, since the statistics, the daily chart and the export
+count Production responses; every other reader sees Production (#477).
 """
 
 from contextlib import ExitStack
@@ -39,16 +41,23 @@ from parishkit.stewardship.web.tables import paginate
 
 from .chart_specs import participation_chart
 from .digest_presentation import participation_table_context
+from .directories import admit_mode
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES, _principal
 from .facts import FactUnavailable
 from .ministries import can_report, unscoped
 from .models import POPULATION_SCOPES
 from .money import MoneyAmount
+from .participation import SCOPE_CHOICE_LABEL
 from .participation_summary import population_figures
 from .read_admission import admit_report_read
-from .response_dashboard import _admit_mode, funnel_panels, read_metrics
 from .response_dashboard import _audit as _audit_funnel
+from .response_dashboard import (
+    funnel_panels,
+    read_metrics,
+    scoped_metrics,
+    shown_mode,
+)
 from .selection import guarded_participation, newest_figures
 from .statistics import StatisticsUnavailable, calculate_statistics
 from .statistics_selection import capture_statistics
@@ -147,11 +156,14 @@ def _audit(principal, campaign_id, outcome, *, automatic=False):
 def dashboard(request, campaign_id):
     """The Response dashboard of one campaign, read under the campaign guard.
 
-    The query is parsed first, so only a malformed address is a 400; a
-    fault while shaping the page is the report's 503. A Testing view is
-    for Administrators only, checked before anything is read and again
-    inside the guard. Every view records ``response_dashboard_viewed`` (the
-    funnel read) when it ends; a Production view also records
+    The query is parsed first, so only a malformed address is a 400 (an
+    old link's ``mode`` included, #2324); a fault while shaping the page is
+    the report's 503. Whose responses are shown is the site's mode
+    (``shown_mode``), read once before the guard; a Testing view is for
+    Administrators only, checked before anything is read and again inside
+    the guard (#477). Every view records
+    ``response_dashboard_viewed`` (the funnel read) when it ends; a
+    Production view also records
     ``participation_viewed``, started and then succeeded or failed, since
     only it reads the statistics and the daily chart. When those cannot be
     read from their inputs, the page still shows the funnel, says the
@@ -170,8 +182,11 @@ def dashboard(request, campaign_id):
             query = ReportQuery.parse(request.GET)
         except ValueError:
             return private_response("Invalid report filters.\n", status=400)
-        production = query.mode == "production"
-        _admit_mode(principal, query)
+        mode = shown_mode(campaign_id, principal)
+        production = mode == "production"
+        # Testing responses are shown to Administrators only (#477): checked
+        # before anything is read and again inside the guard.
+        admit_mode(principal, mode)
         identities = (campaign_id,)
         admit_report_read(campaign_id)
         if production:
@@ -207,7 +222,7 @@ def dashboard(request, campaign_id):
             fresh = _principal(request, service.store, read_only=True)
             if fresh.identity != principal.identity:
                 raise PermissionError("Report access changed.")
-            _admit_mode(fresh, query)
+            admit_mode(fresh, mode)
             principal = fresh
             for identifier in identities:
                 admit_report_read(identifier)
@@ -217,16 +232,31 @@ def dashboard(request, campaign_id):
             """Prepare before headers and transfer generation protection to WSGI."""
             nonlocal participation_read
             with ExitStack() as stack:
-                metrics = read_metrics(campaign_id, query.mode)
+                metrics = read_metrics(campaign_id, mode)
                 participation, cause, shown = None, None, None
                 if production:
                     participation, cause, shown = _participation(
                         stack, response_guard, campaign_id, query
                     )
                     participation_read = participation is not None
+                # The stage tiles count the Families counted population, as
+                # every other figure does (#2324). When only the daily facts
+                # could not be read, the statistics still name it, so a
+                # scope in the address still counts; when they cannot be
+                # read either, the tiles count every Family and the page
+                # says so (``counted``), never silently.
+                duids = None
+                if participation is not None:
+                    duids = participation[1].duids.get(query.scope)
+                elif cause == "facts":
+                    duids = _population(campaign_id, query.scope)
+                if duids is not None:
+                    metrics = scoped_metrics(metrics, duids)
                 context = _page_context(
-                    campaign_id, query, participation, metrics, principal, cause, shown
+                    campaign_id, query, mode, participation, metrics, cause, shown
                 )
+                if participation is None and production:
+                    context["counted"] = duids is not None
                 payload = render_to_string(
                     "stewardship/response-dashboard.html", context, request=request
                 ).encode()
@@ -310,6 +340,20 @@ def _participation(stack, guard, campaign_id, query):
             # the same reason.
             shown = _newest(campaign_id, query.scope)
         return None, "statistics", shown
+
+
+def _population(campaign_id, scope):
+    """The DUIDs of ``scope``'s Families from the live statistics, or None.
+
+    Read when the daily facts could not be (#2324): the statistics need no
+    facts, so the Families by stage tiles can still count the population
+    the address names. None when the statistics cannot be read either.
+    """
+    try:
+        return calculate_statistics(capture_statistics(campaign_id)).duids.get(scope)
+    except StatisticsUnavailable:
+        debug_swallowed("population statistics unavailable")
+        return None
 
 
 def _newest(campaign_id, scope):
@@ -436,16 +480,17 @@ def daily_table(chart, presented, query):
     }
 
 
-def statistics_panel(statistics):
-    """The Summary panel's Active population row of stat tiles (#720, #1540).
+def statistics_panel(statistics, scope):
+    """The Summary panel's Population row of stat tiles (#720, #1540).
 
-    The figures are ``participation_summary.population_figures``, which the
-    export's capture also reads (#1557): the active Families and Members,
-    and with giving enabled the two pledge totals (#728), so not a subtotal
-    of these Families. Without an observation every tile reads "—" with the
-    reason, never zero. The responded and email-reach counts are not shown
-    (#1537): the Families by stage row gives the responses, and ``report
-    participation`` still reports all three.
+    The figures are ``participation_summary.population_figures`` for the
+    page's Families counted ``scope`` (#2324), which the export's capture
+    also reads (#1557): its Families and Members, and with giving enabled
+    the two pledge totals (#728), so not a subtotal of these Families.
+    Without an observation every tile reads "—" with the reason, never zero.
+    The responded and email-reach counts are not shown (#1537): the
+    Families by stage row gives the responses, and ``report participation``
+    still reports all three.
     """
     return {
         "tiles": tuple(
@@ -454,42 +499,37 @@ def statistics_panel(statistics):
                 label,
                 # A tile formats Money; the statistics hold exact cents.
                 Money(value.cents) if isinstance(value, MoneyAmount) else value,
+                details=(note,) if note and value is not None else (),
                 unknown_reason="" if value is not None else reason,
             )
-            for key, label, value, reason in population_figures(statistics)
+            for key, label, value, reason, note in population_figures(statistics, scope)
         )
     }
 
 
 def scope_links(query):
-    """Each Chart population segment's address (#1535): this page with that
-    scope, the daily table back on its first page, its sort and size and
-    the zone kept."""
+    """Each Families counted segment's address (#1535, #2324): this page with
+    that scope, the daily table back on its first page, its sort and size
+    and the zone kept."""
     return {scope: query.url(page=1, scope=scope) for scope in SCOPE_LABELS}
 
 
-def mode_links(query):
-    """Each Production / Testing rehearsal segment's address (#1537).
-
-    This page in that mode, the daily table back on its first page, its
-    population, sort, size and the zone kept.
-    """
-    return {mode: query.url(page=1, mode=mode) for mode in ("production", "testing")}
-
-
 def _page_context(
-    campaign_id, query, participation, metrics, principal, cause=None, shown=None
+    campaign_id, query, mode, participation, metrics, cause=None, shown=None
 ):
     """Format detached shared observations; never recompute money in templates.
 
-    ``metrics`` is the funnel of the mode shown (None: a Testing view with
-    no rehearsal). ``participation`` is the daily chart's selection and the
-    statistics, read in Production only: None in a Testing view, which
-    shows no statistics, daily chart or export, or when they could not be
-    read, which the page says; ``cause`` ("facts" or "statistics") picks its
-    wording, and ``shown`` (the generation that read chose, if any) is what
-    the unavailable line's figures status compares newer figures with, so
-    the page brings them in by itself once they can be read (#1586).
+    ``mode`` is the responses shown (``shown_mode``). ``metrics`` is that
+    mode's funnel, already counted over the page's population when the
+    statistics were read (None: the rehearsal ended while the page was
+    read). ``participation`` is the daily chart's selection and the
+    statistics, read in Production only: None in Testing, which shows no
+    statistics, daily chart, export or Families counted choice, or when
+    they could not be read, which the page says; ``cause`` ("facts" or
+    "statistics") picks its wording, and ``shown`` (the generation that
+    read chose, if any) is what the unavailable line's figures status
+    compares newer figures with, so the page brings them in by itself once
+    they can be read (#1586).
     """
     campaign = Campaign.objects.select_related("active_configuration").get(
         pk=campaign_id
@@ -497,14 +537,14 @@ def _page_context(
     context = {
         "campaign": campaign,
         "query": query,
-        "testing": query.mode == "testing",
-        # Testing responses are shown to Administrators only (#477).
-        "can_test": "administrator" in principal.roles,
-        "mode_links": mode_links(query),
+        "testing": mode == "testing",
         "metrics": None,
-        "participation_unavailable": query.mode == "production"
-        and participation is None,
+        "participation_unavailable": mode == "production" and participation is None,
         "participation_cause": cause,
+        # The Families counted choice's words, kept in one place (#2324).
+        "scope_choice_label": SCOPE_CHOICE_LABEL,
+        "scope_labels": SCOPE_LABELS,
+        "scope_label": SCOPE_LABELS[query.scope],
     }
     if metrics is not None:
         context.update(funnel_panels(metrics))
@@ -526,7 +566,7 @@ def _page_context(
         "scope_links": scope_links(query),
         "selection": selected,
         "statistics": statistics,
-        **statistics_panel(statistics),
+        **statistics_panel(statistics, query.scope),
         "export_key": uuid4(),
         # No list of earlier exports: exports are point-in-time (#1398).
         "export_allowed": mutable,

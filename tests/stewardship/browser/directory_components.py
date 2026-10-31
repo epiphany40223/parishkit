@@ -1,5 +1,6 @@
 """Synthetic directory data rendered with production templates and native forms."""
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from urllib.parse import urlencode
 from uuid import UUID
@@ -271,6 +272,16 @@ def components(context, admin):
     }
 
 
+# The directory as a site in Testing mode shows it (#2324): the started
+# list's preset (in the address, so the page counts as opened filtered and
+# Clear filters has something to do), and the unfiltered view Clear filters
+# asks for from there.
+TESTING_DIRECTORY = "/family-directory-testing?" + urlencode(
+    RESPONSE_LIST_PRESETS["started"]
+)
+TESTING_DIRECTORY_ALL = "/family-directory-testing-all"
+
+
 def preset_pages(values, counted):
     """The directory as each response dashboard list link opens it (#933).
 
@@ -278,22 +289,22 @@ def preset_pages(values, counted):
     in the query), so a click on the dashboard lands here. Each page is
     shaped from the preset the view would parse: its Response and data
     check choices, its response columns and one Family with those values.
-    Each preset is served in Production and, as a Testing dashboard links
-    it, with ``mode=testing``; both as an Administrator sees them while the
-    campaign has a rehearsal, with the Responses shown switch. The bare
-    Testing and Production views (``mode`` alone) are served too: Clear
-    filters' answer, which keeps the Testing choice, and the switch's
-    answer from there (#1651).
+    The started list and the unfiltered view are also served as a site in
+    Testing mode draws them (``TESTING_DIRECTORY``, ``TESTING_DIRECTORY_ALL``):
+    the site's mode decides, so no address carries a mode (#2324).
     """
     pages = {}
-    for preset in (
-        *RESPONSE_LIST_PRESETS.values(),
-        *(preset | {"mode": "testing"} for preset in RESPONSE_LIST_PRESETS.values()),
-        {"mode": "testing"},
-        {"mode": "production"},
+    for preset, testing, url in (
+        *(
+            (preset, False, reverse("admin:family_directory") + "?" + urlencode(preset))
+            for preset in RESPONSE_LIST_PRESETS.values()
+        ),
+        (RESPONSE_LIST_PRESETS["started"], True, TESTING_DIRECTORY),
+        ({}, True, TESTING_DIRECTORY_ALL),
     ):
         query = DirectoryQuery.parse(QueryDict(urlencode(preset)))
-        testing = query.mode == "testing"
+        if testing:
+            query = replace(query, mode="testing")
         dates, counts = (
             response_columns(query.response) if query.responses == "yes" else ((), ())
         )
@@ -303,7 +314,6 @@ def preset_pages(values, counted):
             "count_cells": [1 for _ in counts],
             "checks": ["Envelope number 0"] if checks else [],
         }
-        url = reverse("admin:family_directory") + "?" + urlencode(preset)
         pages[url] = values | {
             "query": query,
             "query_fields": query.form_values() | {"mailing": "no"},
@@ -315,7 +325,6 @@ def preset_pages(values, counted):
             + len(dates)
             + len(counts)
             + int(checks),
-            "can_test": True,
             "testing_responses": testing,
             "table": _table([row], 1, "no", query),
             "total": 1,

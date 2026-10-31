@@ -9,8 +9,7 @@ from parishkit.stewardship.web.contracts import PageWindow, filters
 from parishkit.stewardship.web.dates import unasked_zone
 from parishkit.stewardship.web.tables import ALL, PAGE_SIZES, Sorting
 
-from .participation import SCOPE_LABELS
-from .response_metrics import MODES
+from .participation import DEFAULT_SCOPE, SCOPE_LABELS
 
 
 def _ratio(day):
@@ -68,19 +67,19 @@ DAILY_SIZE = "5"
 class ReportQuery:
     """Only non-identifying, validated presentation state may enter report URLs.
 
-    The Response dashboard's state (#1537): ``mode`` (Production, or an
-    Administrator's Testing rehearsal view), the daily chart's population
-    ``scope``, the browser's zone, and the daily table's page, sort and size.
+    The Response dashboard's state (#1537): the page's Families counted
+    population ``scope`` (#2324), the browser's zone, and the daily table's
+    page, sort and size. Whose responses are shown is the site's mode, never
+    the address (#2324), so there is no ``mode``.
     """
 
-    scope: str = "historical"
+    scope: str = DEFAULT_SCOPE
     timezone: str = "UTC"
     page: int = 1
     sort: str = DAILY_SORTING.default
     timezone_explicit: bool = True
     # Rows per page of the daily table: one of DAILY_SIZES or "all".
     size: str = DAILY_SIZE
-    mode: str = "production"
 
     @classmethod
     def parse(cls, parameters):
@@ -90,7 +89,9 @@ class ReportQuery:
         removed inactive subtotal option existed keep loading (#728); so is
         the former Response dashboard's ``grain`` (#1537), whose activity
         chart this page does not draw. Neither is a redirect: the address
-        stays the one the reader opened.
+        stays the one the reader opened. The removed Responses shown
+        choice's ``mode`` is refused like any unknown key (#2324), as the
+        Timeline refuses it (#1570): there are no legacy aliases (#864).
         """
         values = filters(
             parameters,
@@ -102,20 +103,17 @@ class ReportQuery:
                 "page",
                 "sort",
                 "size",
-                "mode",
             },
         )
-        scope = values.get("scope", "historical")
+        scope = values.get("scope", DEFAULT_SCOPE)
         # The page asks for no zone (#1127): report-v1.js supplies the
         # browser's, and an unknown one falls back to UTC, never a refusal.
         zone = unasked_zone(values.get("timezone"), "UTC")
         page = values.get("page", "1")
         sort = values.get("sort", DAILY_SORTING.default)
         size = values.get("size", DAILY_SIZE)
-        mode = values.get("mode", "production")
         if (
             scope not in SCOPE_LABELS
-            or mode not in MODES
             or not page.isascii()
             or not page.isdecimal()
             or str(int(page)) != page
@@ -131,7 +129,6 @@ class ReportQuery:
             sort,
             "timezone" in values,
             size,
-            mode,
         )
 
     def carried(self):
@@ -140,27 +137,21 @@ class ReportQuery:
         The sort token is not listed: the shared table carries it itself.
         """
         values = [("scope", self.scope)]
-        if self.mode != "production":
-            values.append(("mode", self.mode))
         if self.timezone_explicit:
             values.append(("timezone", self.timezone))
         return values
 
-    def url(self, *, page=None, scope=None, mode=None):
+    def url(self, *, page=None, scope=None):
         """Preserve validated state on every link to the Response dashboard.
 
-        ``scope`` gives another Chart population's link (#1535), ``mode``
-        the other Production / Testing rehearsal view's (#1537), and
-        ``page`` another daily-table page; otherwise the current ones are
-        kept. The default mode, sort and size are left out.
+        ``scope`` gives the other Families counted segment's link (#1535,
+        #2324) and ``page`` another daily-table page; otherwise the current
+        ones are kept. The default sort and size are left out.
         """
-        mode = self.mode if mode is None else mode
         values = {
             "scope": self.scope if scope is None else scope,
             "page": self.page if page is None else page,
         }
-        if mode != "production":
-            values["mode"] = mode
         if self.sort != DAILY_SORTING.default:
             values["sort"] = self.sort
         if self.size != DAILY_SIZE:

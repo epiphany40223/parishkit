@@ -99,10 +99,12 @@ def test_daily_chart_is_panels_on_one_date_axis(page, chart):
     # shown, since the table below has every figure.
     view = chart.locator("[data-chart-view]")
     assert view.get_attribute("aria-label") == (
-        "Daily participation — Historical as of day"
+        "Daily participation — Including Families that left"
     )
     summary = chart.locator("#" + view.get_attribute("aria-describedby"))
-    assert summary.inner_text().startswith("Daily participation, Historical")
+    assert summary.inner_text().startswith(
+        "Daily participation, Including Families that left"
+    )
     assert "visually-hidden" in summary.get_attribute("class")
     view.focus()
     assert page.evaluate("document.activeElement.hasAttribute('data-chart-view')")

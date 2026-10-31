@@ -1,15 +1,13 @@
 """The Response dashboard draws its charts under the CSP, accessibly (#477, #1537)."""
 
-import re
 from urllib.parse import urlencode
 
 import pytest
 from django.urls import reverse
 
 from ..test_directories import RESPONSE_LIST_PRESETS
-from .report_components import REAL
 from .test_charts import assert_clean, watch
-from .waits import eventually, has_text, visible
+from .waits import visible
 
 DIRECTORY = reverse("admin:family_directory")
 ZONE = "timezone=America%2FLos_Angeles"
@@ -33,14 +31,14 @@ AXE = """async () => (await axe.run(document, {
 
 
 # The Summary's two rows of tiles (#1537).
-POPULATION = '#response-summary [aria-label="Active population"]'
+POPULATION = '#response-summary [aria-label="Population"]'
 STAGES = '#response-summary [aria-label="Families by stage"]'
 
 
 def test_dashboard_renders_one_summary_and_the_daily_chart_cleanly(
     page, component_origin, axe_source
 ):
-    """One Summary panel, its Active population row of four tiles over its
+    """One Summary panel, its Population row of four tiles over its
     Families by stage row of five, then the daily chart, all drawn with no
     policy violation or error (Administrator, 2026-10-18, #1537).
 
@@ -60,9 +58,9 @@ def test_dashboard_renders_one_summary_and_the_daily_chart_cleanly(
     assert page.locator("section.panel .stat-tiles").count() == 2
     assert summary.locator(".stat-tiles").count() == 2
     assert page.locator(POPULATION + " .stat-label").all_inner_texts() == [
-        "Campaign Families",
+        "Families",
         "Active Members",
-        "Current annual pledges",
+        "Annual pledges",
         "Last year's pledges (all Families)",
     ]
     assert page.locator(STAGES + " .stat-label").all_inner_texts() == [
@@ -150,7 +148,7 @@ def test_summary_rows_fit_and_balance(page, component_origin, width):
         "parseFloat(getComputedStyle(document.documentElement).fontSize)"
     )
     for name, expected in zip(
-        ("Active population", "Families by stage"), SUMMARY_LINES[width], strict=True
+        ("Population", "Families by stage"), SUMMARY_LINES[width], strict=True
     ):
         lines = {}
         for tile in (tile for tile in tiles if tile["row"] == name):
@@ -170,7 +168,7 @@ def test_summary_rows_fit_and_balance(page, component_origin, width):
 # and just over them: four tiles fit on one line from 52.25rem; five from
 # 65.5rem, and three of them from 39rem (#1537).
 THRESHOLDS = (
-    ("Active population", 52.25, [2, 2], [4]),
+    ("Population", 52.25, [2, 2], [4]),
     ("Families by stage", 65.5, [3, 2], [5]),
     ("Families by stage", 39, [1, 1, 1, 1, 1], [3, 2]),
 )
@@ -247,7 +245,7 @@ def test_values_fit_a_phone_with_large_text(page, component_origin, width, font)
     line of the same height, so the page never scrolls sideways (#1667).
 
     At 320px and 150% the full-size "$2,234.56" in Linux's DejaVu font made
-    the Active population tiles about 12px wider than their panel; 150% and
+    the Population tiles about 12px wider than their panel; 150% and
     200% stand in for a reader's larger default font size.
     """
     from parishkit.stewardship.web.stat_tiles import StatTile
@@ -270,16 +268,14 @@ def test_values_fit_a_phone_with_large_text(page, component_origin, width, font)
 def test_testing_view_without_a_rehearsal_is_accessible(
     page, component_origin, axe_source
 ):
-    """The empty Testing view says why it is empty and marks the mode chosen."""
+    """A Testing page whose rehearsal ended while it was read says why it is
+    empty; no choice is offered, since the site's mode decides (#2324)."""
     errors = watch(page)
     page.goto(component_origin + "/response-dashboard-testing")
     main = page.locator("main").inner_text()
     assert "no Testing responses to show" in main
     assert "count Production responses only" in main
-    current = page.get_by_role("group", name="Responses shown").locator(
-        "a[aria-current=page]"
-    )
-    assert current.all_inner_texts() == ["Testing rehearsal"]
+    assert page.locator(".segmented-choice").count() == 0
     assert page.locator("[data-chart]").count() == 0
     assert_clean(page, errors)
     page.evaluate(axe_source)
@@ -290,7 +286,7 @@ def test_testing_view_shows_the_rehearsal_stages_only(
     page, component_origin, axe_source
 ):
     """During a rehearsal the Summary's Families by stage row shows it; the
-    Active population row and the Production-only panels are left out, with
+    Population row and the Production-only panels are left out, with
     one line saying why (#1537)."""
     errors = watch(page)
     page.goto(component_origin + "/response-dashboard-rehearsal")
@@ -301,7 +297,7 @@ def test_testing_view_shows_the_rehearsal_stages_only(
     visible(page.locator("#production-only"))
     for gone in ("#participation-chart", "#participation-export form"):
         assert page.locator(gone).count() == 0
-    assert page.get_by_role("group", name="Chart population").count() == 0
+    assert page.get_by_role("group", name="Families counted").count() == 0
     assert_clean(page, errors)
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
@@ -324,49 +320,60 @@ def test_empty_campaign_renders_cleanly(page, component_origin, axe_source):
     assert page.evaluate(AXE) == []
 
 
-def test_mode_choice_refreshes_the_dashboard_in_place(page, component_origin):
-    """Testing rehearsal and Production change the page without a reload or
-    a jump (#519, #1537).
-
-    The page's own marker survives (no navigation), the scroll position is
-    kept, the address follows the choice (and the region's fragment),
-    keyboard focus stays on the chosen segment, and the live region names
-    the view now shown. The Testing view leaves out the Production panels.
-    """
+def test_families_counted_shows_the_spinner_while_it_reads(page, component_origin):
+    """Choosing In this campaign today (#2324) re-reads the page in place: the
+    shared working spinner shows beside the choice while the read is under
+    way, in space the pair always keeps (nothing moves), and the page's
+    polite status region says "Working…" for screen readers; then the
+    Summary's tiles are the current population's, with no reload or jump."""
     from playwright.sync_api import expect
+
+    from .report_components import SORTED
 
     errors = watch(page)
     page.set_viewport_size({"width": 1000, "height": 700})
-    page.goto(component_origin + REAL + "?" + ZONE)
+    page.goto(component_origin + SORTED.url())
     expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
-    eventually(page, FITTED)
     page.evaluate("window.__dashboardMarker = 1")
-    testing = page.locator('[data-in-place="mode-testing"]')
-    testing.scroll_into_view_if_needed()
+    choice = page.get_by_role("group", name="Families counted")
+    spinner = choice.locator(".spinner")
+    expect(spinner).to_be_hidden()
+    layout = choice.evaluate(
+        "(node) => [...node.children].map((child) => "
+        "JSON.stringify(child.getBoundingClientRect()))"
+    )
+    families = page.locator(POPULATION + ' [data-stat="active_families"] .stat-value')
+    expect(families).to_have_text("1,010")
     before = page.evaluate("window.scrollY")
-    testing.focus()
-    page.keyboard.press("Enter")
-    page.wait_for_url("**mode=testing*#response-dashboard")
-    expect(page.locator("#production-only")).to_be_visible()
-    expect(page.locator(POPULATION)).to_have_count(0)
-    expect(page.locator(STAGES)).to_have_count(1)
-    expect(page.locator("[data-chart]")).to_have_count(0)
+    # The answer is slow (report_components.SLOW_GETS).
+    choice.get_by_role("link", name="In this campaign today").click()
+    expect(spinner).to_be_visible()
+    expect(page.locator("#response-dashboard")).to_have_attribute("aria-busy", "true")
+    # The spinner is decorative; the words carry the state (ui-conventions
+    # Working spinner), outside the busy region.
+    working = page.get_by_role("status").filter(has_text="Working…")
+    expect(working).to_have_count(1)
+    assert working.evaluate("(node) => !node.closest('#response-dashboard')")
+    # No layout shift: the spinner fills space that was already kept.
+    assert (
+        choice.evaluate(
+            "(node) => [...node.children].map((child) => "
+            "JSON.stringify(child.getBoundingClientRect()))"
+        )
+        == layout
+    )
+    expect(families).to_have_text("1,000")
+    expect(
+        page.get_by_role("group", name="Families counted").locator(".spinner")
+    ).to_be_hidden()
+    expect(
+        page.get_by_role("group", name="Families counted").locator(
+            "a[aria-current=page]"
+        )
+    ).to_have_text("In this campaign today")
     assert page.evaluate("window.__dashboardMarker") == 1
     assert abs(page.evaluate("window.scrollY") - before) < 2
-    assert page.evaluate("document.activeElement.dataset.inPlace") == "mode-testing"
-    has_text(
-        page.get_by_role("status").filter(has_text="Testing rehearsal"),
-        "Testing rehearsal",
-    )
-    assert testing.get_attribute("aria-current") == "page"
-    assert_clean(page, errors)
-    # Production again: the statistics, chart and export come back.
-    page.locator('[data-in-place="mode-production"]').click()
-    expect(page.locator(POPULATION)).to_have_count(1)
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
-    assert "mode=" not in page.url
-    assert page.evaluate("window.__dashboardMarker") == 1
-    assert page.evaluate("document.activeElement.dataset.inPlace") == "mode-production"
+    assert "scope=current" in page.url
     assert_clean(page, errors)
 
 
@@ -425,96 +432,31 @@ def test_list_presets_open_the_directory_with_their_choices(
     assert_clean(page, errors)
 
 
-def test_testing_links_open_the_directory_testing_switch(page, component_origin):
-    """A Testing list link opens the directory in Testing rehearsal (#933).
-
-    The directory shows the Responses shown switch (a binary choice above
-    the Filters panel, #1535) set to Testing rehearsal, says so in a notice
-    and leaves out the Production-only Responded column. Choosing
-    Production posts it privately with the filters applied, with no Apply;
-    the answer replaces the table in place without moving the switch or the
-    filter bar, focus stays on Production, the address bar drops
-    ``mode=testing``, and the filter form now carries Production.
-    """
+def test_testing_site_directory_has_no_switch(page, component_origin):
+    """A site in Testing mode shows the directory's Testing responses
+    without a switch (#2324, #933): a notice says so, the Production-only
+    Responded column is left out, and Apply filters sends no mode, since
+    the site's mode decides."""
     from playwright.sync_api import expect
 
+    from .directory_components import TESTING_DIRECTORY
+
     errors = watch(page)
-    query = urlencode(RESPONSE_LIST_PRESETS["submitted"] | {"mode": "testing"})
-    page.goto(component_origin + DIRECTORY + "?" + query)
-    expect(page).to_have_url(re.compile(r"[?&]mode=testing$"))
-    switch = page.get_by_role("group", name="Responses shown", exact=True)
-    expect(switch.locator("[aria-current=page]")).to_have_text("Testing rehearsal")
+    page.goto(component_origin + TESTING_DIRECTORY)
     expect(page.locator("[data-testing-responses]")).to_be_visible()
+    assert page.get_by_role("group", name="Responses shown").count() == 0
+    assert page.locator("#directory-mode, .segmented-choice").count() == 0
     headings = page.locator("table thead th").all_inner_texts()
     assert not any(text.strip() == "Responded" for text in headings), headings
-    production = (
-        component_origin
-        + DIRECTORY
-        + ("?response=submitted&responses=yes&sort=submitted")
-    )
-    answer = page.request.get(production).text()
+    answer = page.content()
     page.route(
         "**/families/",
         lambda route: route.fulfill(body=answer, content_type="text/html"),
     )
-    # The filter bar's place on the page (not in the viewport: the answer
-    # may scroll to the table).
-    layout = """() => [...document.querySelectorAll(
-        '#table-filters, #directory-mode, #directory-mode button')].map((node) => {
-      const box = node.getBoundingClientRect();
-      return [box.x + scrollX, box.y + scrollY, box.width, box.height];
-    }).flat()"""
-    before = page.evaluate(layout)
     with page.expect_request(lambda request: request.method == "POST") as sent:
-        switch.get_by_role("button", name="Production").click()
-    body = sent.value.post_data
-    assert "mode=production" in body and body.count("mode=") == 1
-    # The segment carries the filters the page applied.
-    assert "response=submitted" in body and "responses=yes" in body
-    assert "?" not in sent.value.url
-    expect(page).to_have_url(production)
-    expect(switch.locator("[aria-current=page]")).to_have_text("Production")
-    eventually(
-        page,
-        "() => document.activeElement?.closest('form')?.dataset.inPlace"
-        " === 'mode-production'",
-    )
-    assert page.locator("#table-filters input[name=mode]").input_value() == "production"
-    expect(page.locator("[data-testing-responses]")).to_have_count(0)
-    expect(page.locator("table thead th", has_text="Responded")).to_have_count(1)
-    assert page.evaluate(layout) == pytest.approx(before, abs=1)
-    assert_clean(page, errors)
-
-
-def test_switch_sends_mode_once_after_the_rehearsal_ends(page, component_origin):
-    """An answer drawn without the switch never doubles the mode (#933).
-
-    If the rehearsal ends after the page loads, the in-place answer has no
-    Responses shown switch. The first Apply sends the page's own hidden
-    ``mode`` once (the server would refuse Testing with its 409), never
-    twice, which every later Apply would answer with a 400. The answer's
-    form has no ``mode``, and the switch is gone with it (#1535), so the
-    form follows the page now shown and the next Apply sends none:
-    Production.
-    """
-    from playwright.sync_api import expect
-
-    errors = watch(page)
-    testing = DIRECTORY + "?response=started&responses=yes&mode=testing"
-    page.goto(component_origin + testing)
-    answer = page.request.get(component_origin + "/family-directory").text()
-    assert 'id="directory-mode"' not in answer
-    page.route(
-        "**/families/",
-        lambda route: route.fulfill(body=answer, content_type="text/html"),
-    )
-    for sends in (1, 0):
-        with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Apply filters").click()
-        assert sent.value.post_data.count("mode=") == sends, sent.value.post_data
-        # The answer (no rehearsal notice) is in place before the next Apply.
-        expect(page.locator("[data-testing-responses]")).to_have_count(0)
-        expect(page.locator("#directory-mode")).to_have_count(0)
+        page.get_by_role("button", name="Apply filters").click()
+    assert "mode=" not in sent.value.post_data, sent.value.post_data
+    assert "response=started" in sent.value.post_data
     assert_clean(page, errors)
 
 

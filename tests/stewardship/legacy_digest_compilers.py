@@ -309,7 +309,7 @@ def _render_daily_digest(document, *, public_origin, charts=True):
     validator's closed set.
     """
     chart = document.participation
-    url = response_dashboard_url(public_origin, document.mode)
+    url = response_dashboard_url(public_origin)
     headings = ["Campaign date", "First submissions", "Cumulative participation"]
     if chart.financial_enabled:
         headings.append(PLEDGE_HEADING)

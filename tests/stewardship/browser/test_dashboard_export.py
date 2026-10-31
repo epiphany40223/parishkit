@@ -24,7 +24,7 @@ from .response_dashboard_components import dashboard_metrics
 pytestmark = pytest.mark.parametrize("browser_engine", ["chromium"], indirect=True)
 
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-POPULATION = '#response-summary [aria-label="Active population"] .stat-tile'
+POPULATION = '#response-summary [aria-label="Population"] .stat-tile'
 STAGES = '#response-summary [aria-label="Families by stage"] .stat-tile'
 
 
@@ -37,7 +37,7 @@ def workbook():
     from parishkit.stewardship.reports.spreadsheets import participation_xlsx
 
     value = document()
-    captured = summary_document(value.statistics, dashboard_metrics())
+    captured = summary_document(value.statistics, dashboard_metrics(), "historical")
     chart = replace(
         value.participation,
         browser_timezone="America/Los_Angeles",
@@ -105,7 +105,7 @@ def test_the_downloaded_workbook_holds_every_figure_on_the_page(
         rows = [
             [cell.value for cell in row] for row in book["Summary"].iter_rows(min_row=2)
         ]
-        population = [row for row in rows if row[0] == "Active population"]
+        population = [row for row in rows if row[0] == "Population"]
         stages = [row for row in rows if row[0] == "Families by stage"]
         shown = tiles(page, POPULATION)
         assert [row[1] for row in population] == [

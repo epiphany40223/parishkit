@@ -674,7 +674,7 @@ def test_participation_pdf_holds_the_dashboard_sections_in_page_order(monkeypatc
         ["Daily participation"],
     ]
     for number, page in enumerate(figures, 1):
-        assert "Family participation — Historical as of day" in page
+        assert "Family participation — Including Families that left" in page
         assert "EXAMPLE PARISH · ANNUAL STEWARDSHIP" in page
         assert f"Page {number} of 3" in page
         drawn += page

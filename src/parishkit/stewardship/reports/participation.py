@@ -14,6 +14,8 @@ from decimal import Decimal
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from django.utils.translation import gettext_lazy
+
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.exports import csv_cell
@@ -21,7 +23,21 @@ from parishkit.stewardship.web.presentation import out_of
 
 from .inputs import validate_day
 
-SCOPE_LABELS = {"historical": "Historical as of day", "current": "Current population"}
+# The Families counted choice (ui-conventions "Population of report
+# figures", #2324): its label, its two populations' labels and its default.
+# This is the ONE place they are spelled; every page, table caption, chart
+# title and export reads them from here, so the Administrator can rename
+# them in one edit. "historical" is every Family ever eligible in the
+# campaign (including Families that later left it or are gone from
+# ParishSoft); "current" is today's campaign Families, the pages' default
+# (the Administrator, 2026-10-31, #2324): an address with no scope counts
+# them. Report emails and Campaign comparison stay historical.
+SCOPE_CHOICE_LABEL = gettext_lazy("Families counted")
+SCOPE_LABELS = {
+    "historical": gettext_lazy("Including Families that left"),
+    "current": gettext_lazy("In this campaign today"),
+}
+DEFAULT_SCOPE = "current"
 # The CSV's and XLSX's columns: (``participation_table`` key, heading). Both
 # formats carry exactly these, in this order, under the page's plain names
 # where the page has the column (#966); no internal generation, watermark or
@@ -212,7 +228,7 @@ class ParticipationDocument:
     @property
     def scope_label(self):
         """Use the same human-readable population scope in every output format."""
-        return SCOPE_LABELS[self.population_scope]
+        return str(SCOPE_LABELS[self.population_scope])
 
     @property
     def as_of_label(self):

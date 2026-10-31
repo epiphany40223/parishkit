@@ -4624,8 +4624,8 @@ def _report_participation_options(parser):
     """Options of ``report participation``: the page's scope."""
     parser.add_argument(
         "--scope",
-        help="historical (default: each day's population as of that day) or "
-        "current (today's population)",
+        help="current (default: today's population, as on the page) or "
+        "historical (each day's population as of that day)",
     )
 
 
