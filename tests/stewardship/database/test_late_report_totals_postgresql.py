@@ -178,7 +178,7 @@ def test_late_responses_are_in_every_report_total(
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             home = summary(principal, configuration, database_now(), home=True)
         current = rows(generations["current"])[-1].cumulative_responses
-        assert home["families"]["active_responded"] == current == 2
+        assert home["families"]["eligible_responded"] == current == 2
         tile = next(t for t in home["family_tiles"] if t.key == "responded")
         assert tile.text == "2"
 

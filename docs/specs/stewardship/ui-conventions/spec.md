@@ -3909,6 +3909,21 @@ two ways of reading to a screen reader. **Precedent.**
   stewardship and Ministry requests) do not follow it yet; they pick it up
   when they move onto the component
   ([#1540](https://github.com/epiphany40223/parishkit/issues/1540)).
+- **One label, one set.** A count shown with the same label on two pages
+  counts the same records under each page's defaults, on every page, not
+  only the Reports and queries pages (whose shared "Families counted"
+  choice is the population of report figures rule of
+  [#2324](https://github.com/epiphany40223/parishkit/issues/2324)). A
+  "Campaign Families" count is always the
+  [campaign Families](#campaign-families-wording), the Families the
+  campaign's Families rule selects: Home's and Go live's equal the Response
+  dashboard's "In this campaign today" and the Campaign Family directory's
+  default count. A page that deliberately counts another set (a fixed
+  population, an earlier day, Families that left) says which in its label
+  or a fixed line, in the Campaign Families wording. **Why.** Home counted
+  ParishSoft's active Families as well, 53 more than the dashboard on the
+  same day
+  ([#2331](https://github.com/epiphany40223/parishkit/issues/2331)).
 - **Shared code.** The helper's `tile()` builds each tile and the include
   draws a row of them. Its `shown()` takes a value that is already text,
   only for figures that must read word for word as another renderer
