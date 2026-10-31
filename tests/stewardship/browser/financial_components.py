@@ -215,7 +215,7 @@ def components(context, admin):
         scope_fields=scope_fields(query, table([row])),
         summary=summary,
         # The summary's tiles and charts (#720), as the view builds them.
-        summary_tiles=summary_tiles(summary),
+        summary_tiles=summary_tiles(summary, query.narrowed),
         charts=financial_charts(summary, choices),
         metadata=dict(
             name="Sample campaign",
@@ -257,14 +257,18 @@ def components(context, admin):
         # The report as first opened, with no filter applied: its Filters
         # panel starts closed (#227).
         "/financial-unfiltered": values
-        | dict(query=FinancialQuery(), query_fields=FinancialQuery().form_values()),
+        | dict(
+            query=FinancialQuery(),
+            query_fields=FinancialQuery().form_values(),
+            summary_tiles=summary_tiles(summary),
+        ),
         "/financial-last": values | dict(table=table([row], number=2)),
         # The answer to an applied filter: a smaller summary, its charts
         # drawn again in place (#720).
         "/financial-filtered": values
         | dict(
             summary=filtered,
-            summary_tiles=summary_tiles(filtered),
+            summary_tiles=summary_tiles(filtered, narrowed=True),
             charts=financial_charts(filtered, choices),
             total=4,
             # The answer names its view's closed choices for the address bar.
@@ -318,7 +322,7 @@ def components(context, admin):
             table=table([row], shown=shown),
             scope_fields=scope_fields(shown, table([row], shown=shown)),
             summary=counted,
-            summary_tiles=summary_tiles(counted),
+            summary_tiles=summary_tiles(counted, shown.narrowed),
             charts=financial_charts(counted, choices),
             total=counted["families"],
             page_address=page_address(reverse("admin:financial_report"), shown, 50),

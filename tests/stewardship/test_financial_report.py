@@ -154,6 +154,28 @@ def test_families_counted_is_the_selections_family_status():
     assert FinancialQuery().scope == "current"
 
 
+def test_only_a_filter_narrows_the_populations_responders():
+    """``narrowed`` (the first tile's Matching label, #2324) is set by any
+    filter, the Family status refinement included, and by neither
+    population, the sort, the page nor the browser's zone."""
+    for values in (
+        {},
+        {"scope": "historical"},
+        {"sort": "pledge_desc", "page": "3", "zone": "America/New_York"},
+    ):
+        assert not FinancialQuery.parse(values).narrowed, values
+    for values in (
+        {"search": "Example"},
+        {"scope": "historical", "active": "inactive"},
+        {"pledge_min": "100"},
+        {"amount": "nonzero"},
+        {"frequency": "monthly"},
+        {"share": "none"},
+        {"first_start": "2026-03-08", "zone": "America/New_York"},
+    ):
+        assert FinancialQuery.parse(values).narrowed, values
+
+
 @pytest.mark.parametrize(
     "name", ["first_start", "first_end", "latest_start", "latest_end"]
 )

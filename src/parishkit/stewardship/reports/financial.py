@@ -215,6 +215,18 @@ class FinancialQuery:
             if key != "page"
         }
 
+    @property
+    def narrowed(self):
+        """Whether a filter narrows the chosen population's responders.
+
+        Sorting, paging and the browser's zone change no figure; anything
+        else that differs from the population alone (the search, the Family
+        status refinement, a date, pledge, amount, frequency or share
+        filter) leaves only the matching Families.
+        """
+        unfiltered = FinancialQuery(scope=self.scope)
+        return replace(self, sort=unfiltered.sort, zone="", page=1) != unfiltered
+
     def sql_filters(self):
         """The filters as ``stewardship_financial_report_v1`` takes them.
 

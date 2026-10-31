@@ -53,12 +53,14 @@ from .read_admission import admit_report_read
 from .report_paging import carried_filters, clamp_query, pop_page_size
 
 
-def summary_tiles(summary):
+def summary_tiles(summary, narrowed=False):
     """The summary of matching pledges as stat tiles (#720, #1540).
 
     The matching Families, their total annual pledges and how many said they
     cannot contribute financially. A total that cannot be added up reads "—"
-    with its reason, never zero (ui-conventions "Stat tiles").
+    with its reason, never zero (ui-conventions "Stat tiles"). ``narrowed``
+    says a filter leaves only some of the population's responders
+    (``FinancialQuery.narrowed``).
     """
     total = summary["annual_total"]
     # Money refuses totals above $999,999,999.99, which MoneyAmount does
@@ -66,10 +68,16 @@ def summary_tiles(summary):
     # is left to raise rather than handled.
     total = Money(total.cents) if total.available else None
     return [
-        # The responders matching the filters: Campaign comparison's words, so
-        # no page shows the Response dashboard's "Families" (every Family of
-        # the population) for another figure (#2324).
-        tile("families", _("Families responded"), summary["families"]),
+        # The responders matching the filters. Unfiltered they are the
+        # population's responders, in Campaign comparison's words; a filter
+        # names them Matching, so a label never shows another page's figure
+        # with a smaller value (ui-conventions "Population of report
+        # figures": same label, same value, #2324).
+        tile(
+            "families",
+            _("Matching Families responded") if narrowed else _("Families responded"),
+            summary["families"],
+        ),
         tile(
             "annual-total",
             _("Total annual pledges"),
@@ -346,7 +354,7 @@ def report(request, campaign_id):
                 "query_fields": query.form_values(),
                 "frequencies": FREQUENCY_LABELS,
                 # The summary's tiles and charts (#720), drawn by chart-v1.js.
-                "summary_tiles": summary_tiles(result["summary"]),
+                "summary_tiles": summary_tiles(result["summary"], query.narrowed),
                 "charts": financial_charts(result["summary"], result["share_choices"]),
                 "table": report_table(
                     result["rows"],
