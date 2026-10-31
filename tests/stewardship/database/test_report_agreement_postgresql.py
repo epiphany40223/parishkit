@@ -14,7 +14,14 @@ disagree:
 - 8, a Family with only a Testing submission;
 - 9, a response Staff entered through Open form;
 - 10, a Family that cannot contribute financially;
-- 11, a Family with a pledge Edit in force.
+- 11, a Family with a pledge Edit in force;
+- 12, a Family whose pledge Edit, made on its first response, a
+  resubmission with a new amount then replaced (no Edit in force).
+
+A response without a financial answer cannot exist in a financial
+campaign: the form refuses a blank pledge unless the Family says it cannot
+contribute (Family 10), so every response the dashboard counts as
+Submitted is a pledge row on Financial stewardship.
 
 Each page is read over HTTP as the restricted web login, the way an
 Administrator opens it; Campaign comparison, which counts only the
@@ -76,11 +83,12 @@ from .test_source_snapshots_postgresql import permit
 pytestmark = pytest.mark.django_db(transaction=True)
 
 # The Families beside the harness's own Family 1, each with one head.
-EXTRA = (6, 7, 8, 9, 10, 11)
+EXTRA = (6, 7, 8, 9, 10, 11, 12)
 HEADS = {40 + duid: head(40 + duid, duid) for duid in (2, *EXTRA)}
 # Each live answer, by Family DUID: whole dollars, so Campaign comparison's
 # whole-dollar Annual pledges reads the same total. Family 11's own 200 is
-# replaced by its Edit's 400.
+# replaced by its Edit's 400. Family 12's own 100 is edited to 600, which its
+# resubmission of 700 then replaces.
 ANSWERS = {
     1: "1000",
     2: "500",
@@ -88,15 +96,18 @@ ANSWERS = {
     9: "300",
     10: None,
     11: "200",
+    12: "100",
 }
 EDITED = Decimal("400")
+REPLACED_EDIT = Decimal("600")
+RESUBMITTED = "700"
 LEFT = (2, 7)
 GONE = 6
 # The expected figures: every responder under historical; under current,
 # only those still in this campaign (Families 2 and 6 are not).
 EXPECTED = {
-    "historical": (6, Decimal("2450")),
-    "current": (4, Decimal("1700")),
+    "historical": (7, Decimal("3150")),
+    "current": (5, Decimal("2400")),
 }
 # A Family group the legacy Families rule reads as inactive.
 INACTIVE_GROUP = 99
@@ -245,6 +256,34 @@ def agreement(response_service, google, monkeypatch):
         amount=str(EDITED),
         frequency="annual",
         **{f"value_share_{CHECK}": "on"},
+    )
+    # Family 12's Edit, on its first response, then a resubmission with a
+    # new amount: the Family's newer answer leaves the Edit not in force.
+    edit(
+        harness,
+        actor,
+        submissions[12],
+        amount=str(REPLACED_EDIT),
+        frequency="annual",
+        **{f"value_share_{CHECK}": "on"},
+    )
+    with (
+        campaign_clock(opened + timedelta(hours=len(ANSWERS) + 1)),
+        web_login(),
+    ):
+        family = family_session(harness, 12)
+        pledge(
+            family,
+            load_form(family),
+            annual_pledge=RESUBMITTED,
+            frequency="annual",
+            shares={CHECK: ""},
+        )
+    assert (
+        Submission.objects.filter(campaign=harness.campaign, mode="live")
+        .latest("campaign_sequence")
+        .family.family_duid
+        == 12
     )
     staff_entered(submissions[9].pk, actor)
     rehearsal_only(harness, 8, submissions[1])
