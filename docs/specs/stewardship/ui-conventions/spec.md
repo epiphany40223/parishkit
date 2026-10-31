@@ -73,6 +73,9 @@ when it lands.
   [review pipeline terms](#review-pipeline-terms),
   [campaign Families wording](#campaign-families-wording),
   [financial terminology](#financial-terminology),
+  [responses and submissions](#responses-and-submissions),
+  [Testing recipient](#testing-recipient),
+  [capitalization](#capitalization), [retired words](#retired-words),
   [shared visual style](#shared-visual-style),
   [colour scheme](#colour-scheme),
   [status indicators](#status-indicators), [stat tiles](#stat-tiles),
@@ -3480,6 +3483,26 @@ the stage each stream's stored state maps to). **Precedent.**
 move to the words as each stream moves to the shared review worklist; until
 then a page keeps its current words.
 
+**Outside the pipeline.** Text beside the pipeline uses its words too, and
+no other word that reads like a stage (Administrator, 2026-10-31,
+[#2330](https://github.com/epiphany40223/parishkit/issues/2330)):
+
+- No page tells a reader to "publish" a change. A roster change the
+  ParishSoft API cannot write is **entered in ParishSoft by hand** (the
+  To enter by hand stage), never "update ParishSoft yourself"; Update
+  ParishSoft names only the API write.
+- A count of work waiting for a decision names the stage it counts
+  ("N to review", the To review column), never "to do" or "Unresolved".
+- A work item's own progress beside its stage never uses stage-like words.
+  The Ministry follow-up request's Status is therefore **Contact status**,
+  with **Not contacted**, **Contacting** and **Done** in place of New, In
+  progress and Resolved. Closed: no response and the Outcome keep their
+  names, and the stored states are unchanged.
+
+The [retired words](#retired-words) table lists these words, and its guard
+test holds the strings that still use them until the #2330 string changes
+land.
+
 ### Campaign Families wording
 
 **Rule.** The Families a campaign is sent to are its **campaign Families**
@@ -3528,6 +3551,23 @@ A Member's "Inactive in ParishSoft" badge, "No active Family head" and
 and stay. The Family portal shows none of these words; a Family that is not
 in the campaign gets the same sign-in answer as an unknown code, as today.
 
+**Other names for campaign Families** (Administrator, 2026-10-31,
+[#2330](https://github.com/epiphany40223/parishkit/issues/2330)). Campaign
+Families are never "eligible" ("every eligible Family", "no longer
+eligible", "eligible for the portal"), "Families that can use the portal"
+or an "active-Family count" either: a Family that stopped matching the
+rule "has left the campaign", and one that never matched is "not in this
+campaign" (the Timeline's reach line too, not "not part of this campaign's
+mailing"). The defined terms Email-eligible and email-deliverable, which
+are about a campaign Family's addresses, are unaffected.
+
+**No longer in this campaign** names a Family only, as the
+[badge](#members-and-families-no-longer-in-parishsoft) does. A Ministry an
+Administrator took out of the campaign is **Removed from this campaign**,
+and a Ministry missing from the ParishSoft data is **Not in ParishSoft**,
+the badge's own words, never "Not in ParishSoft data". The
+[retired words](#retired-words) table lists these words.
+
 ### Financial terminology
 
 **Rule.** In the Admin portal, **Pledge** means the monetary amount (for
@@ -3548,6 +3588,119 @@ names for one thing (Administrator, 2026-10-26,
 built (#2256): the Family hub and Timeline tab and heading, the Timeline
 About text, the Campaign settings validation message and the Financial
 stewardship export's sheet name changed together.
+
+An Admin label that names the Family form's financial page says
+**Financial stewardship page** ("Financial stewardship page icon", "the
+Financial stewardship introduction"), never the bare "Financial page" or
+"after Financial", although the Family sees the page's own title
+(Administrator, 2026-10-31,
+[#2330](https://github.com/epiphany40223/parishkit/issues/2330)). The
+area is never "Giving" ("Financial stewardship is turned on") and its
+pagination is "Financial stewardship result pages"; "giving" stays for
+ParishSoft's contributions data ("Family codes and giving").
+
+### Responses and submissions
+
+**Rule.** A **response** is a Family's answer to the campaign: each Family
+has one current response ("Families responded", "First response",
+"Testing responses"). A **submission** is one sending of the Family form:
+its receipt, a repeat submission, and the "First submitted" and "Last
+submitted" dates of the sendings. The column that dates the answer a row
+shows is headed **Submitted** on every page and in every download, never
+"Latest response". The Testing page, its menu entry and the Go live links
+to it are **Testing responses**. **Why.** Pledges and Financial
+stewardship dated the same pledge under two headings, and the Testing page
+was "Testing submissions" while its own About and Home said "Testing
+responses" (Administrator, 2026-10-31). **Precedent.**
+[#2330](https://github.com/epiphany40223/parishkit/issues/2330). Status:
+decided; the strings change in a later #2330 pull request, and the
+[retired words](#retired-words) guard holds the strings left until then.
+
+### Testing recipient
+
+**Rule.** The one address that receives every email while the site is in
+Testing mode is **the Testing recipient** in every label, help line,
+notice, error and email, never "Test recipient", "Testing email address"
+or "the testing address". Text about its mailbox says **the Testing
+recipient's inbox** ("Check the Testing recipient's inbox"), not "the
+Testing mailbox". **Why.** Setup, Parish settings, Campaign mail and the
+restore review gave one setting four names. **Precedent.**
+[#2330](https://github.com/epiphany40223/parishkit/issues/2330) (Status:
+decided; strings change later, as for
+[responses and submissions](#responses-and-submissions)).
+
+### Capitalization
+
+**Rule.** **Family**, **Member**, **Ministry**, **Staff**,
+**Administrator**, **Ministry leader** and every Admin page's name are
+capitalized wherever they name the ParishSoft record, the portal role or
+the page, in pages, downloaded files, emails, audit descriptions and CLI
+text: "any Member's name", "until Staff close them", "ask a parish
+Administrator", "Someone opened the Response dashboard". In "a Staff
+member" only Staff is capitalized, because the member is a person, not the
+ParishSoft record. A person who is not a portal role is not called an
+administrator: the person who runs the server is "whoever runs the server".
+Exempt: the Family portal; quotations of the Family form's own wording;
+Google's words (a "Google Workspace administrator", a "super
+administrator", a shared drive's members); and "parish staff member" on the
+sign-in and access-denied pages, whose reader may hold no role
+(Administrator, 2026-10-31). **Why.** Lower-case "member", "ministries",
+"staff" and "administrator" read as everyday words where the page means
+the record or the role. **Precedent.**
+[#2330](https://github.com/epiphany40223/parishkit/issues/2330) (Status:
+decided; strings change later).
+
+### Retired words
+
+**Rule.** No Admin page, downloaded file, email, audit description or CLI
+message uses a word in this table; it uses the word beside it. The table
+gathers the words retired by
+[campaign Families wording](#campaign-families-wording),
+[review pipeline terms](#review-pipeline-terms),
+[financial terminology](#financial-terminology),
+[responses and submissions](#responses-and-submissions),
+[Testing recipient](#testing-recipient) and
+[capitalization](#capitalization), and the stale names left behind by
+renamed pages. The Family portal keeps its own wording. **Why.** Retired
+words came back after their renames because nothing guarded them (the
+"active-Family count" after #1393). **Guard.**
+`tests/stewardship/test_admin_wording.py` keeps one pattern per row, keyed
+by the row's first cell, and scans translated template text, gettext
+strings and label maps in Python, downloaded-file headings and the
+sentences in `ui-v1.js`. Its allowlist holds each file's known
+occurrences, with counts; a new occurrence fails, and each #2330 string
+change lowers or deletes entries until the allowlist is gone.
+**Precedent.** [#2330](https://github.com/epiphany40223/parishkit/issues/2330).
+
+| Retired | Use instead |
+| --- | --- |
+| active Family | campaign Family ("the campaign-Family count") |
+| eligible Family | campaign Family; "has left the campaign"; "not in this campaign" |
+| can use the portal | campaign Families ("Every campaign Family can open the form") |
+| not part of this campaign's mailing | not in this campaign |
+| Not in ParishSoft data | Not in ParishSoft |
+| publish | Update ParishSoft (the API write); enter in ParishSoft by hand |
+| update ParishSoft yourself | enter the change in ParishSoft by hand |
+| Unresolved | To review (Ministry requests' counts) |
+| Status: New, In progress, Resolved | Contact status: Not contacted, Contacting, Done (Ministry follow-up) |
+| Testing submissions | Testing responses |
+| Latest response | Submitted |
+| Test recipient | Testing recipient |
+| Testing email address | Testing recipient (also for "the testing address") |
+| Testing mailbox | the Testing recipient's inbox |
+| Giving is turned on | Financial stewardship is turned on |
+| Financial result pages | Financial stewardship result pages |
+| Financial page | Financial stewardship page (also "Financial introduction", "after Financial") |
+| Entered by Staff for the Family | Entered by Staff |
+| digest | Daily report, Weekly report (the report emails) |
+| timezone | time zone |
+| Family login | Family sign-in |
+| Family timeline | Timeline |
+| the response dashboard | the page's own name: the Response dashboard, the System logs, Campaign comparison |
+| member | Member, where it names the record ("Family Members", "any Member's name") |
+| ministry | Ministry, Ministries |
+| staff | Staff |
+| administrator | Administrator; "whoever runs the server" |
 
 ### Shared visual style
 

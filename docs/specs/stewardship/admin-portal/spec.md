@@ -5663,7 +5663,10 @@ invitation or reminder that a mail schedule selects and that is marked
 cleaned form, so they are listed without blocking. Production confirmation
 re-reads the same check.
 
-The Admin-only Family list (the **Testing submissions** page) opens only
+The Admin-only Family list (the **Testing submissions** page, to be named
+Testing responses by the
+[responses and submissions](../ui-conventions/spec.md#responses-and-submissions)
+convention) opens only
 while the campaign is the current Testing draft, as does Go live,
 the only page that links to it. It names each Family as the other Admin
 tables do, the surname then the heads ("Squyres, Tracy and Jeff"), with the
@@ -9276,6 +9279,10 @@ chosen status with no assignee; until then an explicit New filter on the
 queue does not match it, while Unresolved and Any status do. Past
 history entries keep the assignment they recorded. The data model keeps the unused column and state, as described in
 the [data specification](../data/spec.md#follow-up-records).
+The status's display name and choices become Contact status with Not
+contacted, Contacting and Done, as the
+[review pipeline terms](../ui-conventions/spec.md#review-pipeline-terms)
+convention decides ([#2330](https://github.com/epiphany40223/parishkit/issues/2330)).
 
 Requests for Members no longer in ParishSoft are left out of the Ministry
 leaders' work (Administrator, 2026-10-13,
