@@ -1,7 +1,7 @@
-"""The Response dashboard's Chart population applies in place (#519 PR 5).
+"""The Response dashboard's Families counted applies in place (#519 PR 5).
 
 The Response dashboard (#1537) is served at its real address
-(report_components.REAL), where its Chart population links (a binary
+(report_components.REAL), where its Families counted links (a binary
 choice, #1535) lead, with the answers for the choices these tests make.
 Each test sets a mark outside every region, which only a full page load
 could lose, as test_in_place.py does.
@@ -25,7 +25,7 @@ pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
 
-# The Chart population's Current population segment (#1535).
+# The Families counted's In this campaign today segment (#1535).
 CURRENT = '#participation-scope a[data-in-place="scope-current"]'
 # The binary choice's box and each segment's, in the viewport: choosing a
 # segment must change only colours, never a size or a place (#1535), and
@@ -48,7 +48,7 @@ REFRESHED = "$982,657.00"
 # The daily chart panel's top, measured from the top of the Summary
 # panel: the swapped-in Summary keeps its height (each tile value is one
 # line, #1537), so the panel below it must not move. PAIR_LAYOUT checks
-# that nothing above the Chart population moved in the viewport.
+# that nothing above the Families counted moved in the viewport.
 CHART_TOP = (
     "document.getElementById('participation-chart').getBoundingClientRect().top"
     " - document.getElementById('response-summary').getBoundingClientRect().top"
@@ -70,7 +70,7 @@ def zones(page):
 
 
 def test_options_apply_in_place(page, component_origin):
-    """Choosing Current population (a binary choice, #1535) sends one GET
+    """Choosing In this campaign today (a binary choice, #1535) sends one GET
     and swaps the dashboard's region: no reload, no Apply
     button, the reader's place kept, focus on the segment just chosen, the
     view announced, the address replaced, the chosen segment marked, the
@@ -78,8 +78,10 @@ def test_options_apply_in_place(page, component_origin):
     page.set_viewport_size(VIEWPORT)
     page.goto(component_origin + REAL + "?" + ZONE)
     page.evaluate(MARK)
-    choice = page.get_by_role("group", name="Chart population")
-    expect(choice.locator("a[aria-current=page]")).to_have_text("Historical as of day")
+    choice = page.get_by_role("group", name="Families counted")
+    expect(choice.locator("a[aria-current=page]")).to_have_text(
+        "Including Families that left"
+    )
     assert page.get_by_role("button", name="Apply report options").count() == 0
     # The inactive subtotal option was removed (#728).
     expect(page.locator("input[name=inactive]")).to_have_count(0)
@@ -88,7 +90,7 @@ def test_options_apply_in_place(page, component_origin):
     gets = count_requests(page, "GET", "scope=current")
     page.locator(CURRENT).click()
     visible(
-        page.get_by_role("heading", name="Daily participation — Current population")
+        page.get_by_role("heading", name="Daily participation — In this campaign today")
     )
     visible(page.locator("#response-summary .stat-value", has_text=REFRESHED))
     assert page.evaluate(MARKED) == "kept"
@@ -101,10 +103,12 @@ def test_options_apply_in_place(page, component_origin):
         True,
     )
     has_text(
-        page.get_by_role("status").filter(has_text="Current population"),
-        "Current population",
+        page.get_by_role("status").filter(has_text="In this campaign today"),
+        "In this campaign today",
     )
-    expect(choice.locator("a[aria-current=page]")).to_have_text("Current population")
+    expect(choice.locator("a[aria-current=page]")).to_have_text(
+        "In this campaign today"
+    )
     assert page.evaluate(PAIR_LAYOUT) == pytest.approx(layout, abs=1)
     # The default sort (newest first) is left out of the address (#1534).
     assert page.url == (
@@ -118,7 +122,7 @@ def test_options_apply_in_place(page, component_origin):
 
 
 def test_options_keep_the_panels_in_place(page, component_origin):
-    """Choosing a Chart population swaps in the Summary's fresh tiles and
+    """Choosing the Families counted choice swaps in the Summary's fresh tiles and
     redraws the daily chart, its only chart (#1537), and each keeps its
     space, so the panels below stay as far below as they were (#720, #736)."""
     from .test_charts import assert_clean, watch
@@ -160,8 +164,10 @@ def test_daily_table_refreshes_every_panel(page, component_origin):
     )
     page.locator("#table a.sort-link").first.click()
     visible(page.locator("#response-summary .stat-value", has_text=REFRESHED))
-    choice = page.get_by_role("group", name="Chart population")
-    expect(choice.locator("a[aria-current=page]")).to_have_text("Current population")
+    choice = page.get_by_role("group", name="Families counted")
+    expect(choice.locator("a[aria-current=page]")).to_have_text(
+        "In this campaign today"
+    )
     assert page.evaluate(MARKED) == "kept"
 
 
@@ -188,8 +194,11 @@ def test_browser_zone_is_applied_in_place_once(page, component_origin):
     assert documents == [component_origin + REAL]
     assert fetches == [component_origin + REAL + "?" + ZONE]
     assert page.evaluate("document.activeElement === document.body")
-    assert page.get_by_role("status").filter(has_text="Current population").count() == 0
-    # The Chart population's links carry the zone too (#1535).
+    assert (
+        page.get_by_role("status").filter(has_text="In this campaign today").count()
+        == 0
+    )
+    # The Families counted's links carry the zone too (#1535).
     for link in page.locator("#participation-scope a").all():
         assert ZONE in link.get_attribute("href")
     page.goto(component_origin + REAL + "?timezone=UTC")

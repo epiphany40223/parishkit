@@ -490,9 +490,9 @@ def test_acknowledgements_act_in_place():
 def test_response_dashboard_choices_apply_in_place():
     """The Response dashboard (#1537) is one region holding every panel, the
     report options (its zone) and its one binary choice (#519 PR 5, #1535):
-    the Chart population lands on it (#2324; the site's mode replaced
-    Responses shown), so every answer redraws the page's links with the
-    view now shown. The daily
+    Families counted lands on it (#2324; the site's mode replaced Responses
+    shown), so every answer redraws the page's links with the view now
+    shown. The daily
     table keeps its own region inside the chart panel, and no form opts out
     of the in-place filter path any more. No Apply button is left."""
     text = (TEMPLATES / "response-dashboard.html").read_text()

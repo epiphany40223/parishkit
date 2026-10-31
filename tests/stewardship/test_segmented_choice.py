@@ -4,7 +4,7 @@ A single choice between two views of an Admin page is a segmented pair
 (components/segmented-choice.html): a labelled group of two in-place links,
 the chosen one aria-current (or, on a private-POST page, two small POST
 forms). These tests render the component, check the Participation page's
-Chart population links, and guard against a new two-option menu in an
+Families counted links, and guard against a new two-option menu in an
 Admin template, including the loop-built menu the directory drew before
 #1535. Roster changes to enter's Show pair became its worklist's Stage
 filter (#1687), a row filter with more than two choices. A stored two-way
@@ -129,7 +129,7 @@ def test_a_post_pair_is_two_small_read_forms():
 
 
 def test_scope_links_keep_the_view_and_return_to_the_first_page():
-    """Each Chart population segment keeps the daily table's sort and size
+    """Each Families counted segment keeps the daily table's sort and size
     and an explicit zone, and goes back to the first page."""
     query = ReportQuery(
         scope="historical",
@@ -159,8 +159,7 @@ def test_every_pair_is_drawn_by_the_shared_component():
     """The old pill links are gone: each view choice uses the component."""
     for path in sorted(TEMPLATES.rglob("*.html")):
         assert "choice-links" not in path.read_text(), path.name
-    # The Chart population only: the site's mode replaced Responses shown
-    # (#2324).
+    # Families counted only: the site's mode replaced Responses shown (#2324).
     assert (TEMPLATES / "response-dashboard.html").read_text().count(COMPONENT) == 1
     for name in CONVERTED:
         assert COMPONENT in (TEMPLATES / name).read_text(), name

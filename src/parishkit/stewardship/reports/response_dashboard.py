@@ -15,9 +15,11 @@ Whose responses the page shows follows the site's mode (#2324,
 ``shown_mode``): for an Administrator in Testing mode, the campaign's active
 rehearsal epoch; Production otherwise, and always for every other reader
 (#477). The page has no choice of its own, and only the command line still
-takes ``--mode`` (Administrators only for Testing). The funnel holds
-counts only, never a Family's name or identifier; the directory's Response
-filters list the Families behind them (#933).
+takes ``--mode`` (Administrators only for Testing). The
+page counts the funnel over its Families counted population
+(``scoped_metrics``). The funnel holds counts only, never a Family's name
+or identifier; the directory's Response filters list the Families behind
+them (#933).
 """
 
 from collections.abc import Callable
@@ -46,6 +48,7 @@ from .response_metrics import (
     ResponseScope,
     activity_series,
     response_metrics,
+    summarize,
 )
 
 # The activity chart is hourly while everything it shows (the first activity
@@ -238,6 +241,29 @@ def read_metrics(campaign_id, mode):
     if mode == "testing" and epoch is None:
         return None
     return response_metrics(ResponseScope(campaign_id, mode, epoch), database_now())
+
+
+def scoped_metrics(metrics, duids):
+    """``metrics`` counted over only the Families whose DUIDs are in ``duids``.
+
+    The Response dashboard's Families counted population (#2324): the
+    statistics' DUIDs of the historical cohort or of today's campaign
+    Families, so the stage tiles count exactly the Families the Population
+    tiles do. Every count beside the funnel and the activity series are
+    counted again from the kept rows, by ``response_metrics``' own
+    ``summarize``, so they agree too. ``duids`` None
+    (the statistics could not be read) keeps every row, as before.
+    """
+    if duids is None:
+        return metrics
+    families = tuple(
+        family for family in metrics.families if family.family_duid in duids
+    )
+    return replace(
+        metrics,
+        families=families,
+        **summarize(families, ZoneInfo(metrics.timezone), metrics.grain),
+    )
 
 
 def funnel_panels(metrics):

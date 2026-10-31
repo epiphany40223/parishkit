@@ -489,7 +489,7 @@ def test_participation_chart_is_panels_on_one_date_axis():
     spec = chart.spec
     assert spec["$schema"] == VEGA_LITE_SCHEMA
     assert chart.key == "daily-participation"
-    assert chart.title == "Daily participation — Historical as of day"
+    assert chart.title == "Daily participation — Including Families that left"
     assert spec["resolve"] == {"scale": {"x": "shared"}}
     assert spec["autosize"] == {"type": "fit-x", "contains": "padding"}
     panels = spec["vconcat"]
@@ -595,7 +595,7 @@ def test_participation_chart_rows_tooltips_and_summary():
     }
     assert rows[0]["pledges"] == pytest.approx(1234.56)
     assert chart.summary == (
-        "Daily participation, Historical as of day, from October 31, 2026 to "
+        "Daily participation, Including Families that left, from October 31, 2026 to "
         "November 2, 2026; by the last date 3 out of 1,234 (0.2%) Families had "
         "responded, 1 of them for the first time that day, with $3,235 in "
         "effective annual pledges."

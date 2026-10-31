@@ -9,7 +9,7 @@ from parishkit.stewardship.web.contracts import PageWindow, filters
 from parishkit.stewardship.web.dates import unasked_zone
 from parishkit.stewardship.web.tables import ALL, PAGE_SIZES, Sorting
 
-from .participation import SCOPE_LABELS
+from .participation import DEFAULT_SCOPE, SCOPE_LABELS
 
 
 def _ratio(day):
@@ -67,13 +67,13 @@ DAILY_SIZE = "5"
 class ReportQuery:
     """Only non-identifying, validated presentation state may enter report URLs.
 
-    The Response dashboard's state (#1537): the daily chart's population
-    ``scope``, the browser's zone, and the daily table's page, sort and size.
-    Whose responses are shown is the site's mode, never the address (#2324),
-    so there is no ``mode``.
+    The Response dashboard's state (#1537): the page's Families counted
+    population ``scope`` (#2324), the browser's zone, and the daily table's
+    page, sort and size. Whose responses are shown is the site's mode, never
+    the address (#2324), so there is no ``mode``.
     """
 
-    scope: str = "historical"
+    scope: str = DEFAULT_SCOPE
     timezone: str = "UTC"
     page: int = 1
     sort: str = DAILY_SORTING.default
@@ -105,7 +105,7 @@ class ReportQuery:
                 "size",
             },
         )
-        scope = values.get("scope", "historical")
+        scope = values.get("scope", DEFAULT_SCOPE)
         # The page asks for no zone (#1127): report-v1.js supplies the
         # browser's, and an unknown one falls back to UTC, never a refusal.
         zone = unasked_zone(values.get("timezone"), "UTC")
@@ -144,9 +144,9 @@ class ReportQuery:
     def url(self, *, page=None, scope=None):
         """Preserve validated state on every link to the Response dashboard.
 
-        ``scope`` gives another Chart population's link (#1535) and
-        ``page`` another daily-table page; otherwise the current ones are
-        kept. The default sort and size are left out.
+        ``scope`` gives the other Families counted segment's link (#1535,
+        #2324) and ``page`` another daily-table page; otherwise the current
+        ones are kept. The default sort and size are left out.
         """
         values = {
             "scope": self.scope if scope is None else scope,

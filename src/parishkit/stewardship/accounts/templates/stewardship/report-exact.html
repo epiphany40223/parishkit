@@ -16,7 +16,7 @@
 </section></div>
 <p><a href="{{ report_url }}">{% translate "Return to Response dashboard" %}</a></p>
 <dl><dt>{% translate "Format" %}</dt><dd>{{ job.format|upper }}</dd>
-<dt>{% translate "Population" %}</dt><dd>{% if job.population_scope == 'historical' %}{% translate "Historical as of day" %}{% else %}{% translate "Current population" %}{% endif %}</dd>
+<dt>{% translate "Population" %}</dt><dd>{{ job.population_scope|scope_label }}</dd>
 <dt>{% translate "ParishSoft data as of" %}</dt><dd><time datetime="{{ source.promoted_at|date:'c' }}" data-local-instant>{{ source.promoted_at|date:'c' }}</time></dd>
 <dt>{% translate "Through campaign date" %}</dt><dd>{{ job.through_date|parish_date }}</dd>
 <dt>{% translate "Campaign timezone" %}</dt><dd>{{ job.timezone_configuration.timezone }}</dd>

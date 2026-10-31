@@ -59,6 +59,9 @@ def document():
         financial=None,
         giving=None,
         comparison_pledge_all=MoneyAmount(100000),
+        # The historical cohort's own figures (#2324): every Family ever in
+        # the campaign, so they differ from the current ones.
+        cohort=PopulationStatistics(1010, 2350, 905, 805, 3, MoneyAmount(233456)),
     )
     return DailyDigestDocument(UUID(int=5), chart, statistics, (chart.last_date,))
 

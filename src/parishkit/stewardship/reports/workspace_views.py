@@ -1,14 +1,15 @@
 """The Response dashboard (#1537): its Summary tiles and the daily chart.
 
 One page (``reports/responses/``, the current campaign) shows, top to
-bottom, one Summary panel of stat tiles (the current active population
-statistics, then Families by stage from ``response_dashboard``), and the
-daily participation chart and table with their export, each read under the
-page's one campaign read guard. Whose responses are shown follows the
-site's mode (``shown_mode``): in Testing mode, with an active rehearsal, an
-Administrator sees the rehearsal's Families by stage only, since the
-statistics, the daily chart and the export count Production responses;
-every other reader sees Production (#477).
+bottom, its Families counted choice (#2324), one Summary panel of stat tiles
+(the Population statistics, then Families by stage from
+``response_dashboard``), and the daily participation chart and table with
+their export, each read under the page's one campaign read guard. The
+choice's population (``scope``) sets every one of those figures. Whose
+responses are shown follows the site's mode (``shown_mode``): in Testing
+mode, with an active rehearsal, an Administrator sees the rehearsal's
+Families by stage only, since the statistics, the daily chart and the export
+count Production responses; every other reader sees Production (#477).
 """
 
 from contextlib import ExitStack
@@ -47,10 +48,16 @@ from .facts import FactUnavailable
 from .ministries import can_report, unscoped
 from .models import POPULATION_SCOPES
 from .money import MoneyAmount
+from .participation import SCOPE_CHOICE_LABEL
 from .participation_summary import population_figures
 from .read_admission import admit_report_read
 from .response_dashboard import _audit as _audit_funnel
-from .response_dashboard import funnel_panels, read_metrics, shown_mode
+from .response_dashboard import (
+    funnel_panels,
+    read_metrics,
+    scoped_metrics,
+    shown_mode,
+)
 from .selection import guarded_participation, newest_figures
 from .statistics import StatisticsUnavailable, calculate_statistics
 from .statistics_selection import capture_statistics
@@ -232,9 +239,24 @@ def dashboard(request, campaign_id):
                         stack, response_guard, campaign_id, query
                     )
                     participation_read = participation is not None
+                # The stage tiles count the Families counted population, as
+                # every other figure does (#2324). When only the daily facts
+                # could not be read, the statistics still name it, so a
+                # scope in the address still counts; when they cannot be
+                # read either, the tiles count every Family and the page
+                # says so (``counted``), never silently.
+                duids = None
+                if participation is not None:
+                    duids = participation[1].duids.get(query.scope)
+                elif cause == "facts":
+                    duids = _population(campaign_id, query.scope)
+                if duids is not None:
+                    metrics = scoped_metrics(metrics, duids)
                 context = _page_context(
                     campaign_id, query, mode, participation, metrics, cause, shown
                 )
+                if participation is None and production:
+                    context["counted"] = duids is not None
                 payload = render_to_string(
                     "stewardship/response-dashboard.html", context, request=request
                 ).encode()
@@ -318,6 +340,20 @@ def _participation(stack, guard, campaign_id, query):
             # the same reason.
             shown = _newest(campaign_id, query.scope)
         return None, "statistics", shown
+
+
+def _population(campaign_id, scope):
+    """The DUIDs of ``scope``'s Families from the live statistics, or None.
+
+    Read when the daily facts could not be (#2324): the statistics need no
+    facts, so the Families by stage tiles can still count the population
+    the address names. None when the statistics cannot be read either.
+    """
+    try:
+        return calculate_statistics(capture_statistics(campaign_id)).duids.get(scope)
+    except StatisticsUnavailable:
+        debug_swallowed("population statistics unavailable")
+        return None
 
 
 def _newest(campaign_id, scope):
@@ -444,16 +480,17 @@ def daily_table(chart, presented, query):
     }
 
 
-def statistics_panel(statistics):
-    """The Summary panel's Active population row of stat tiles (#720, #1540).
+def statistics_panel(statistics, scope):
+    """The Summary panel's Population row of stat tiles (#720, #1540).
 
-    The figures are ``participation_summary.population_figures``, which the
-    export's capture also reads (#1557): the active Families and Members,
-    and with giving enabled the two pledge totals (#728), so not a subtotal
-    of these Families. Without an observation every tile reads "—" with the
-    reason, never zero. The responded and email-reach counts are not shown
-    (#1537): the Families by stage row gives the responses, and ``report
-    participation`` still reports all three.
+    The figures are ``participation_summary.population_figures`` for the
+    page's Families counted ``scope`` (#2324), which the export's capture
+    also reads (#1557): its Families and Members, and with giving enabled
+    the two pledge totals (#728), so not a subtotal of these Families.
+    Without an observation every tile reads "—" with the reason, never zero.
+    The responded and email-reach counts are not shown (#1537): the
+    Families by stage row gives the responses, and ``report participation``
+    still reports all three.
     """
     return {
         "tiles": tuple(
@@ -462,17 +499,18 @@ def statistics_panel(statistics):
                 label,
                 # A tile formats Money; the statistics hold exact cents.
                 Money(value.cents) if isinstance(value, MoneyAmount) else value,
+                details=(note,) if note and value is not None else (),
                 unknown_reason="" if value is not None else reason,
             )
-            for key, label, value, reason in population_figures(statistics)
+            for key, label, value, reason, note in population_figures(statistics, scope)
         )
     }
 
 
 def scope_links(query):
-    """Each Chart population segment's address (#1535): this page with that
-    scope, the daily table back on its first page, its sort and size and
-    the zone kept."""
+    """Each Families counted segment's address (#1535, #2324): this page with
+    that scope, the daily table back on its first page, its sort and size
+    and the zone kept."""
     return {scope: query.url(page=1, scope=scope) for scope in SCOPE_LABELS}
 
 
@@ -482,14 +520,16 @@ def _page_context(
     """Format detached shared observations; never recompute money in templates.
 
     ``mode`` is the responses shown (``shown_mode``). ``metrics`` is that
-    mode's funnel (None: the rehearsal ended while the page was read).
-    ``participation`` is the daily chart's selection and the statistics,
-    read in Production only: None in Testing, which shows no statistics,
-    daily chart or export, or when they could not be read, which the page
-    says; ``cause`` ("facts" or "statistics") picks its
-    wording, and ``shown`` (the generation that read chose, if any) is what
-    the unavailable line's figures status compares newer figures with, so
-    the page brings them in by itself once they can be read (#1586).
+    mode's funnel, already counted over the page's population when the
+    statistics were read (None: the rehearsal ended while the page was
+    read). ``participation`` is the daily chart's selection and the
+    statistics, read in Production only: None in Testing, which shows no
+    statistics, daily chart, export or Families counted choice, or when
+    they could not be read, which the page says; ``cause`` ("facts" or
+    "statistics") picks its wording, and ``shown`` (the generation that
+    read chose, if any) is what the unavailable line's figures status
+    compares newer figures with, so the page brings them in by itself once
+    they can be read (#1586).
     """
     campaign = Campaign.objects.select_related("active_configuration").get(
         pk=campaign_id
@@ -501,6 +541,10 @@ def _page_context(
         "metrics": None,
         "participation_unavailable": mode == "production" and participation is None,
         "participation_cause": cause,
+        # The Families counted choice's words, kept in one place (#2324).
+        "scope_choice_label": SCOPE_CHOICE_LABEL,
+        "scope_labels": SCOPE_LABELS,
+        "scope_label": SCOPE_LABELS[query.scope],
     }
     if metrics is not None:
         context.update(funnel_panels(metrics))
@@ -522,7 +566,7 @@ def _page_context(
         "scope_links": scope_links(query),
         "selection": selected,
         "statistics": statistics,
-        **statistics_panel(statistics),
+        **statistics_panel(statistics, query.scope),
         "export_key": uuid4(),
         # No list of earlier exports: exports are point-in-time (#1398).
         "export_allowed": mutable,

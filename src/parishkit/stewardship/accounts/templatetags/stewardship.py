@@ -81,6 +81,25 @@ def underscore_breaks(text):
 
 
 @register.filter
+def scope_label(scope):
+    """A population scope's words, as the Families counted choice says them.
+
+    ``reports.participation.SCOPE_LABELS`` is their one place (#2324), so an
+    export's or a report email's page names the population exactly as the
+    Response dashboard does; imported here so template loading never pulls
+    the reports package in at startup.
+
+    An export that counts no population (a campaign archive's parameters
+    carry no ``population_scope``, so ``scope`` is "") is named as the
+    export page's earlier ``{% else %}`` branch named every scope but
+    "historical", so its page renders as before rather than failing.
+    """
+    from parishkit.stewardship.reports.participation import SCOPE_LABELS
+
+    return SCOPE_LABELS["historical" if scope == "historical" else "current"]
+
+
+@register.filter
 def share_name(share):
     """A worded share method by its short label, the full one its tooltip.
 

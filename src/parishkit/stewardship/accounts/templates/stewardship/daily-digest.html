@@ -24,7 +24,7 @@
 </section>
 {% include 'stewardship/components/digest-funnel.html' %}
 <section class="panel" data-digest-chart>
-<h2>{% translate "Daily participation — Historical as of day" %}</h2>
+<h2>{% translate "Daily participation" %} — {{ "historical"|scope_label }}</h2>
 <div class="digest-figure"><img class="digest-chart" src="{{ chart_url }}" alt="{% translate 'Daily first submissions, cumulative participating Families, and annual pledges when enabled. Exact values are in the following table.' %}" width="1440" height="840"><div class="digest-guide" data-digest-guide aria-hidden="true" hidden></div><div class="digest-tip" data-digest-tip aria-hidden="true" hidden></div></div>
 {{ chart_interaction|json_script:'digest-chart-data' }}
 <div data-digest-controls hidden>
@@ -37,7 +37,7 @@
 <div id="{{ table.anchor }}" data-table-region>
 {% translate "Daily table pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll"><table>
-<caption>{% translate "Exact saved daily values — Historical as of day" %}</caption>
+<caption>{% translate "Exact saved daily values" %} — {{ "historical"|scope_label }}</caption>
 <thead><tr>{% for key, heading in columns %}{% sort_heading table key heading %}{% endfor %}</tr></thead>
 <tbody>{% for day, row in table.rows %}<tr>{% for value in row %}<td>{{ value|keep_money }}</td>{% endfor %}</tr>{% endfor %}</tbody>
 </table></div>

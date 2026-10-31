@@ -245,19 +245,22 @@ def test_live_presentation_is_the_digest_presentation_without_population_mixing(
     for field in ("rows", "headings", "chart_interaction", "chart_last_index"):
         assert live[field] == retained[field]
     assert all(
-        "Historical as of day" in label for label in live["chart_interaction"]["labels"]
+        "Including Families that left" in label
+        for label in live["chart_interaction"]["labels"]
     )
     missing = replace(
         value.statistics, active=None, comparison_pledge_all=MoneyAmount(None)
     )
     assert all(
         tile.text == "—" and tile.unknown_reason
-        for tile in statistics_panel(missing)["tiles"]
+        for tile in statistics_panel(missing, "current")["tiles"]
     )
     # #728: one comparison figure, the parish-wide total, ends the tiles.
     whole = replace(value.statistics, comparison_pledge_all=MoneyAmount(98265700))
-    tiles = statistics_panel(whole)["tiles"]
-    assert (tiles[0].label, tiles[0].text) == ("Campaign Families", "1,000")
+    tiles = statistics_panel(whole, "current")["tiles"]
+    assert (tiles[0].label, tiles[0].text) == ("Families", "1,000")
+    # The historical cohort's own count (#2324).
+    assert statistics_panel(whole, "historical")["tiles"][0].text == "1,010"
     assert (tiles[-1].label, tiles[-1].text) == (
         "Last year's pledges (all Families)",
         "$982,657.00",
@@ -267,21 +270,22 @@ def test_live_presentation_is_the_digest_presentation_without_population_mixing(
     ]
 
 
-def test_statistics_panel_is_the_active_population_row_only():
-    """The Summary's Active population row: four tiles in order, no progress
+def test_statistics_panel_is_the_population_row_only():
+    """The Summary's Population row: four tiles in order, no progress
     chart and no responded or email-reach tiles (#1537). Without an
     observation every tile reads "—" with the reason, never zero (#1540)."""
     statistics = document().statistics
-    panel = statistics_panel(statistics)
+    panel = statistics_panel(statistics, "current")
     assert set(panel) == {"tiles"}
     assert [tile.label for tile in panel["tiles"]] == [
-        "Campaign Families",
+        "Families",
         "Active Members",
-        "Current annual pledges",
+        "Annual pledges",
         "Last year's pledges (all Families)",
     ]
     missing = statistics_panel(
-        replace(statistics, active=None, comparison_pledge_all=MoneyAmount(None))
+        replace(statistics, active=None, comparison_pledge_all=MoneyAmount(None)),
+        "current",
     )
     assert [(tile.key, tile.text) for tile in missing["tiles"]] == [
         (key, "—")
@@ -295,7 +299,9 @@ def test_statistics_panel_is_the_active_population_row_only():
     assert {tile.unknown_reason for tile in missing["tiles"]} == {
         "No ParishSoft data has been loaded for this campaign yet."
     }
-    without_giving = statistics_panel(replace(statistics, financial_enabled=False))
+    without_giving = statistics_panel(
+        replace(statistics, financial_enabled=False), "current"
+    )
     assert [tile.key for tile in without_giving["tiles"]] == [
         "active_families",
         "active_members",
@@ -314,7 +320,8 @@ def test_each_unknown_pledge_total_gives_the_reason_for_its_cause():
         comparison_pledge_all=unknown,
     )
     reasons = lambda value: {  # noqa: E731 - a tiny local reader
-        tile.key: tile.unknown_reason for tile in statistics_panel(value)["tiles"]
+        tile.key: tile.unknown_reason
+        for tile in statistics_panel(value, "current")["tiles"]
     }
     nothing = reasons(replace(statistics, financial=None))
     assert nothing["annual_pledges"] == nothing["comparison_pledges_all"]

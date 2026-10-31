@@ -8,7 +8,7 @@
   data-table-sync node of the page, so every in-place answer redraws its
   links with the page's current view state.
 
-    {% include "stewardship/components/segmented-choice.html" with choice_id="dashboard-mode" region_id="response-dashboard" label=_("Responses shown") first_key="mode-production" first_label=_("Production") first_href=production_url second_key="mode-testing" second_label=_("Testing rehearsal") second_href=testing_url chosen=testing|yesno:"mode-testing,mode-production" %}
+    {% include "stewardship/components/segmented-choice.html" with choice_id="participation-scope" region_id="response-dashboard" label=scope_choice_label first_key="scope-historical" first_label=scope_labels.historical first_href=scope_links.historical second_key="scope-current" second_label=scope_labels.current second_href=scope_links.current chosen="scope-"|add:query.scope %}
 
   - choice_id: the pair's id, and the prefix of its label's id.
   - label: the visible label that names the group.

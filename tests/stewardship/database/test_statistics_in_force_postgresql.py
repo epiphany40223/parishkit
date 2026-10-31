@@ -1,6 +1,6 @@
 """The campaign statistics count the pledge values in force (#2202).
 
-The Response dashboard's Current annual pledges, its export's Summary and
+The Response dashboard's Annual pledges, its export's Summary and
 ``pk-admin report participation`` read the campaign statistics capture. It
 counts each Family's latest response with a reviewer's Edit of the annual
 pledge while that Edit is in force on it, else the Family's own answer, as

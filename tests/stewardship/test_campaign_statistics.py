@@ -134,6 +134,58 @@ def test_formerly_eligible_family_never_changes_active_figures(reason):
     assert result.annual_pledge.canonical == "10.01"
 
 
+@pytest.mark.parametrize("reason", ["inactive", "non_parishioner", "removed"])
+def test_historical_cohort_keeps_the_family_that_left(reason):
+    """The historical population (#2324) is every Family ever eligible: a
+    Family that left, or is gone from ParishSoft, still counts with its
+    pledge; only Members still in the data are counted. Each scope's tiles
+    are its own population's, from the one capture."""
+    document = observation()
+    document["responses"] = [[1, 1, "10.01"], [2, 4, "20.02"]]
+    family = document["corpus"]["family"]["2"]
+    family.update(portal_eligible=False, email_eligible=False)
+    if reason == "inactive":
+        family.update(active=False)
+    elif reason == "non_parishioner":
+        family.update(parishioner=False)
+    else:
+        del document["corpus"]["family"]["2"]
+        del document["corpus"]["member"]["2"]
+        document["source"]["counts"].update(family=2, member=2)
+    result = calculate(document)
+    cohort = result.population("historical")
+    assert result.population("current") is result.active
+    assert cohort.families == 3 and cohort.responses == 2
+    assert cohort.annual_pledge.canonical == "30.03"
+    assert cohort.active_members == (2 if reason == "removed" else 3)
+    assert result.duids == {
+        "current": frozenset({1, 3}),
+        "historical": frozenset({1, 2, 3}),
+    }
+    with pytest.raises(ValueError):
+        result.population("everyone")
+
+    def shown(scope):
+        """The Population tiles of ``scope``, by label: value and notes."""
+        return {
+            tile.label: (tile.text, tile.details)
+            for tile in statistics_panel(result, scope)["tiles"]
+        }
+
+    historical, current = shown("historical"), shown("current")
+    assert historical["Families"] == ("3", ())
+    assert historical["Annual pledges"] == ("$30.03", ())
+    assert historical["Active Members"][1] == (
+        "Members of the Families still in ParishSoft",
+    )
+    assert current["Families"] == ("2", ())
+    assert current["Annual pledges"] == ("$10.01", ())
+    assert current["Active Members"] == (
+        "2",
+        ("Members of the Families in this campaign",),
+    )
+
+
 def test_never_eligible_nonparishioner_does_not_enter_the_population():
     document = observation()
     document["ever_eligible"].remove(3)
@@ -202,9 +254,9 @@ def test_pre_728_retained_snapshot_shape_renders_unavailable():
     result = calculate(document)
     assert result.active.annual_pledge.canonical == "10.00"
     assert not result.comparison_pledge_all.available
-    tiles = {tile.label: tile for tile in statistics_panel(result)["tiles"]}
+    tiles = {tile.label: tile for tile in statistics_panel(result, "current")["tiles"]}
     assert tiles["Last year's pledges (all Families)"].text == "—"
-    assert tiles["Current annual pledges"].text == "$10.00"
+    assert tiles["Annual pledges"].text == "$10.00"
 
 
 @pytest.mark.parametrize("count", [False, -1, 1, "missing"])

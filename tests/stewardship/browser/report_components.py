@@ -74,7 +74,7 @@ def long_campaign(chart):
 
 
 def options(query):
-    """The query string the Chart population segment for ``query``'s scope
+    """The query string the Families counted segment for ``query``'s scope
     follows (#1535), from a page drawn for ``query``."""
     return urlsplit(scope_links(query)[query.scope]).query
 
@@ -118,8 +118,10 @@ def components(context, admin):
                 replace(
                     value.statistics,
                     active=None,
+                    cohort=None,
                     comparison_pledge_all=MoneyAmount(None),
-                )
+                ),
+                "historical",
             ),
         ),
         "/participation-long": (
@@ -242,6 +244,7 @@ def components(context, admin):
         value.statistics,
         comparison_pledge_all=MoneyAmount(98265700),
         active=replace(value.statistics.active, responses=450),
+        cohort=replace(value.statistics.cohort, responses=450),
     )
     pages[REAL + "?timezone=UTC"] = ("response-dashboard", viewing(ReportQuery()))
     for query in ("", "?sort=date_asc", "?scope=historical"):
@@ -254,19 +257,21 @@ def components(context, admin):
     pages["/participation-later"] = (
         "response-dashboard",
         page
-        | statistics_panel(refreshed)
+        | statistics_panel(refreshed, "historical")
         | figures_status("dashboard", "historical", UUID(int=50), False),
     )
     # The page that could not read its figures (#1586): Families by stage
     # and the unavailable line, its figures status beside it at the slow
     # retry pace; its status answers, and the same page's re-read once
-    # figures are ready (the later page above).
+    # figures are ready (the later page above). Only the daily facts are
+    # unreadable, so the statistics still name the Families counted (#2324).
     pages[UNAVAILABLE] = (
         "response-dashboard",
         viewing(
             ReportQuery(timezone="America/Los_Angeles"),
             participation_unavailable=True,
             participation_cause="facts",
+            counted=True,
             **figures_status("dashboard", "historical", None, False, retry=True),
         ),
     )
@@ -289,7 +294,7 @@ def components(context, admin):
     )
     pages[canonical(REAL + "?" + options(current))] = (
         "response-dashboard",
-        viewing(current, **statistics_panel(refreshed)),
+        viewing(current, **statistics_panel(refreshed, "current")),
     )
     # The page's own address on its first page.
     address = urlsplit(los_angeles.url(page=1)).query

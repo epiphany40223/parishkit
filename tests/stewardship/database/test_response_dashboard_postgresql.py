@@ -9,6 +9,7 @@ site in Production and in Testing mode (#2324), with the read guard,
 """
 
 import re
+from datetime import timedelta
 from uuid import uuid4
 
 import pytest
@@ -88,15 +89,17 @@ def test_dashboard_follows_the_site_mode_for_admin_and_staff(
         # The fixture's ParishSoft inputs give no statistics, so the
         # Production view still shows Families by stage and says the other
         # rows and panels are unavailable, rather than refusing the page
-        # (#1537); the activity chart is gone, and so is the chart's
-        # population choice.
+        # (#1537); the activity chart is gone. Without the statistics'
+        # populations there is no Families counted choice either; a fixed
+        # line says the stage tiles count every Family (#2324).
         assert b'id="production-unavailable"' in body
         assert b'id="participation-scope"' not in body
+        assert b"every Family of the campaign, until" in body
         # They come back by themselves: the figures status keeps watching
         # beside the line at its slow retry pace (#1586).
         assert b"appear here by themselves" in body
         assert b'data-live-interval="60000"' in body and b"retry=1" in body
-        assert b'aria-label="Active population"' not in body
+        assert b'aria-label="Population"' not in body
         assert b'id="response-activity-spec"' not in body
         # An old link's mode is refused, whatever its value, as the
         # Timeline refuses it (#1570); no alias (#864).
@@ -111,7 +114,7 @@ def test_dashboard_follows_the_site_mode_for_admin_and_staff(
         assert b"never counted in Production" in body
         # The Production-only panels are left out, saying why.
         assert b'id="production-only"' in body
-        assert b'aria-label="Active population"' not in body
+        assert b'aria-label="Population"' not in body
         # An old bookmark's activity grain still loads, and is ignored.
         response, body = get(admin, route + "?grain=day")
         assert response.status_code == 200 and b"Response activity" not in body
@@ -171,3 +174,136 @@ def test_dashboard_follows_the_site_mode_for_admin_and_staff(
 def broken(*args, **kwargs):
     """A page builder that fails as a shaping bug would."""
     raise ValueError("A shaping fault.")
+
+
+def figures(body, label):
+    """One stat-tile row's values by tile key, as the page draws them."""
+    row = re.search(
+        rb'<ul class="stat-tiles" aria-label="' + label + rb'">.*?</ul>', body, re.S
+    )
+    assert row is not None, label
+    return {
+        key.decode(): value.decode().strip()
+        for key, value in re.findall(
+            rb'data-stat="(\w+)"><span class="stat-label">[^<]*</span> '
+            rb'<span class="stat-value[^"]*">([^<]*)',
+            row.group(0),
+        )
+    }
+
+
+def test_every_figure_counts_the_chosen_population_with_a_family_that_left(
+    response_service, google, monkeypatch
+):
+    """One Family responds with a pledge, then leaves the campaign (#2324).
+
+    For each Families counted population, the Population tiles, the Families
+    by stage tiles (the funnel's Submitted count), the daily chart's last day
+    and the export's captured stages all count the same Families: the
+    Family under Including Families that left, nobody under In this campaign
+    today. With the daily facts unreadable, a ``scope`` still filters the
+    stage tiles from the live statistics, under a fixed line; with the
+    statistics unreadable too, the line says every Family is counted.
+    """
+    from parishkit.stewardship.reports import participation_summary
+    from parishkit.stewardship.reports.facts import FactUnavailable
+    from parishkit.stewardship.reports.materialization import materialize_fact_set
+    from parishkit.stewardship.reports.statistics import StatisticsUnavailable
+
+    from .response_builders import activate_response_service, response_source
+    from .test_fact_materialization_postgresql import allocation
+    from .test_financial_source_postgresql import financial_source
+    from .test_ministry_responses_postgresql import respond as submit
+    from .test_response_http_postgresql import answers_for, load_form
+    from .test_source_families_postgresql import prepare, promote
+    from .test_source_snapshots_postgresql import permit
+
+    harness = response_service
+    financial_source(harness)
+    harness = activate_response_service(harness)
+    form = load_form(harness)
+    answers = answers_for(form)
+    answers["financial"] = {"annual_pledge": "100.01", "frequency": "monthly"}
+    answers["financial"]["shares"] = {}
+    response = submit(harness, form, answers)
+    # The form stamps the submission with the fixture's campaign clock,
+    # which runs ahead of the database's; the funnel is read at a cutoff
+    # just after it, so it counts the submission (#2324).
+    from parishkit.stewardship.reports import response_dashboard
+
+    cutoff = response.submitted_at + timedelta(minutes=1)
+    monkeypatch.setattr(response_dashboard, "database_now", lambda: cutoff)
+    # The Family's group is made inactive, so it leaves the campaign.
+    data = response_source()
+    data.family_groups[7] = "Inactive"
+    snapshot, lease = prepare(data)
+    snapshot = promote(snapshot, lease, harness.campaign, harness.rings)
+    charts = {}
+    for scope in ("historical", "current"):
+        record, claim = allocation(
+            harness,
+            population=scope,
+            watermark=response.campaign_sequence,
+            source=snapshot,
+        )
+        # Interactive, so each is published as its scope's chart.
+        charts[scope] = materialize_fact_set(
+            record.pk, claim, admit=permit, interactive=True
+        )
+    site_mode("production")
+    route = reverse("admin:response_dashboard")
+    admin, login = signed_in()
+    assert login.status_code == 302
+    expected = {"historical": 1, "current": 0}
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        for scope, families in expected.items():
+            response, body = get(admin, f"{route}?scope={scope}")
+            assert response.status_code == 200, scope
+            assert str(charts[scope].pk).encode() in body, scope
+            population = figures(body, b"Population")
+            stages = figures(body, b"Families by stage")
+            assert population["active_families"] == str(families), scope
+            # The Family's own pledge counts only while it is counted.
+            assert ("100.01" in population["annual_pledges"]) is bool(families)
+            assert stages["submitted"] == str(families), scope
+            last = charts[scope].days.order_by("local_date").last()
+            assert last.cumulative_responses == families, scope
+            summary = participation_summary.capture(harness.campaign.pk, scope)
+            submitted = [
+                row for row in summary["stages"] if row["label"] == "Submitted"
+            ]
+            assert [row["count"] for row in submitted] == [families], scope
+            population_rows = {
+                row["label"]: row["value"] for row in summary["population"]
+            }
+            assert population_rows["Families"] == families, scope
+
+        # The daily facts cannot be read: the statistics still name the
+        # population, so a scope still counts, and a fixed line says which.
+        def unreadable(*args, **kwargs):
+            """Daily facts that cannot be read, as a lost generation is."""
+            raise FactUnavailable("unreadable")
+
+        monkeypatch.setattr(workspace_views, "guarded_participation", unreadable)
+        for scope, families in expected.items():
+            response, body = get(admin, f"{route}?scope={scope}")
+            assert response.status_code == 200, scope
+            assert b'id="production-unavailable"' in body, scope
+            assert b'id="participation-scope"' not in body, scope
+            label = {"historical": "Including Families that left"}.get(
+                scope, "In this campaign today"
+            )
+            assert f"Families counted: {label}</p>".encode() in body, scope
+            stages = figures(body, b"Families by stage")
+            assert stages["submitted"] == str(families), scope
+
+        # Nor the statistics: every Family is counted, and the line says so.
+        def no_statistics(*args, **kwargs):
+            """Statistics whose inputs cannot be read."""
+            raise StatisticsUnavailable("unreadable")
+
+        monkeypatch.setattr(workspace_views, "calculate_statistics", no_statistics)
+        response, body = get(admin, f"{route}?scope=current")
+        assert response.status_code == 200
+        assert b"every Family of the campaign, until" in body
+        assert figures(body, b"Families by stage")["submitted"] == "1"

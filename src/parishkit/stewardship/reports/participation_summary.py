@@ -1,10 +1,12 @@
 """The Response dashboard's Summary, as its export captures and files it (#1557).
 
-The page's Summary panel shows two rows of stat tiles: the Active population
+The page's Summary panel shows two rows of stat tiles: the Population
 statistics (``calculate_statistics``) and Families by stage (the response
-funnel, ``response_dashboard.read_metrics``). The export carries all the data
-on the page, so when a participation export is requested its transaction
-reads both sets of figures as the page does (``capture``) and stores them,
+funnel, ``response_dashboard.read_metrics``), both counting the page's one
+Families counted population (#2324). The export carries all the data on the
+page, so when a participation export is requested its transaction reads both
+sets of figures as the page does, for the exported chart's population
+(``capture``), and stores them,
 as plain labels, values and notes, in the request's immutable
 ``ParticipationExportSnapshot`` (frozen migration 0142). The worker turns
 that document back into the Summary section of every format
@@ -33,36 +35,46 @@ DAILY = DAILY_SECTION
 # files"): the tile row a figure sits in, its label, its value, a stage's
 # share compared with Invited and the tile's note or unknown reason.
 COLUMNS = ("Group", "Figure", "Value", "Share compared with Invited", "Note")
-POPULATION = "Active population"
+POPULATION = "Population"
 STAGES = "Families by stage"
 DATA_AS_OF = "Data as of"
 
 
-def population_figures(statistics):
-    """The Active population tiles' figures: ``(key, label, value, reason)``.
+def population_figures(statistics, scope):
+    """The Population tiles' figures: ``(key, label, value, reason, note)``.
 
-    The active Families and Members, and with giving enabled two pledge
-    figures (#728): the current annual pledges, and last year's pledges of
-    every Family in the ParishSoft data, whatever its status today. A value
-    is a count, a known ``MoneyAmount`` or None when unknown, with the one
-    reason the page gives for it; a known value has no reason. The page's
-    tiles (``workspace_views.statistics_panel``) and the export's capture
-    both read these.
+    ``scope`` is the page's Families counted population (#2324):
+    "historical" (every Family ever eligible in the campaign) or "current"
+    (today's campaign Families). Its Families and their active Members, and
+    with giving enabled two pledge figures (#728): its annual pledges, and
+    last year's pledges of every Family in the ParishSoft data, whatever its
+    status today, which no population changes. A value is a count, a known
+    ``MoneyAmount`` or None when unknown, with the one reason the page gives
+    for it; a known value has no reason. ``note`` is a known value's
+    explanation line, or "". The page's tiles
+    (``workspace_views.statistics_panel``) and the export's capture both
+    read these. The keys keep their earlier names, which the page's markup
+    and tests address.
     """
-    active = statistics.active
+    active = statistics.population(scope)
     no_data = _("No ParishSoft data has been loaded for this campaign yet.")
+    # A Family gone from ParishSoft has no Members left to count, so the
+    # historical count is of the Families still in the data, and says so.
+    # The current count says whose Members it counts too, so the tile keeps
+    # one height whichever population is chosen (no layout shift).
+    members_note = (
+        _("Members of the Families still in ParishSoft")
+        if scope == "historical"
+        else _("Members of the Families in this campaign")
+    )
     figures = [
-        (
-            "active_families",
-            _("Campaign Families"),
-            active and active.families,
-            no_data,
-        ),
+        ("active_families", _("Families"), active and active.families, no_data, ""),
         (
             "active_members",
             _("Active Members"),
             active and active.active_members,
             no_data,
+            members_note,
         ),
     ]
     if statistics.financial_enabled:
@@ -89,39 +101,42 @@ def population_figures(statistics):
         figures += [
             (
                 "annual_pledges",
-                _("Current annual pledges"),
+                _("Annual pledges"),
                 pledges if pledges.available else None,
                 annual_reason,
+                "",
             ),
             (
                 "comparison_pledges_all",
                 _("Last year's pledges (all Families)"),
                 everyone if everyone.available else None,
                 everyone_reason,
+                "",
             ),
         ]
     return figures
 
 
-def summary_document(statistics, metrics):
+def summary_document(statistics, metrics, scope):
     """The capture's document: the page's Summary as plain JSON values.
 
     ``observed_at`` is the moment the statistics were counted (the page's
-    "Data as of"); each population row is a label, its value (a whole count,
-    ``{"money": "1234.50"}`` or None) and its note (the unknown value's
-    reason); each stage row is a label, its count and its note. SQL checks
-    exactly this shape (migration 0142).
+    "Data as of"); each population row, counted for ``scope``, is a label,
+    its value (a whole count, ``{"money": "1234.50"}`` or None) and its note
+    (the unknown value's reason, or a known value's note); each stage row is
+    a label, its count and its note. ``metrics`` is already counted over the
+    same population. SQL checks exactly this shape (migration 0142).
     """
     with translation.override("en"):
         population = []
-        for _key, label, value, reason in population_figures(statistics):
+        for _key, label, value, reason, note in population_figures(statistics, scope):
             if isinstance(value, MoneyAmount):
                 value = {"money": value.canonical}
             population.append(
                 {
                     "label": str(label),
                     "value": value,
-                    "note": "" if value is not None else str(reason),
+                    "note": str(note) if value is not None else str(reason),
                 }
             )
         stages = [
@@ -142,8 +157,8 @@ def summary_document(statistics, metrics):
 def unread_statistics(campaign_id):
     """A stand-in for statistics that could not be read: every figure unknown.
 
-    It has what ``population_figures`` reads: no active population (so each
-    figure is None with the page's no-data reason) and whether the
+    It has what ``population_figures`` reads: no population of either scope
+    (so each figure is None with the page's no-data reason) and whether the
     campaign's configuration enables giving (so the pledge rows are there,
     as on the page). Its Data as of is the request's instant: the moment
     the figures were found unreadable, not a count.
@@ -158,6 +173,9 @@ def unread_statistics(campaign_id):
     )
     return SimpleNamespace(
         active=None,
+        cohort=None,
+        population=lambda scope: None,
+        duids={},
         financial_enabled="financial" in modules,
         financial=None,
         comparison_pledge_all=MoneyAmount(None),
@@ -165,17 +183,19 @@ def unread_statistics(campaign_id):
     )
 
 
-def capture(campaign_id):
+def capture(campaign_id, scope):
     """Read the page's Summary now, in the caller's transaction (``create_export``).
 
-    The same reads as the page's Production view: the statistics from their
-    one-statement input capture, and the Production funnel at the
-    database's current instant. The page offers no export while the
-    statistics cannot be read; a request made as they became unreadable
-    still captures the funnel, with every Active population figure unknown
-    and the page's reason, never zero.
+    The same reads as the page's Production view, for ``scope``, the
+    exported chart's population: the statistics from their one-statement
+    input capture, and the Production funnel at the database's current
+    instant, counted over the same Families (``scoped_metrics``). The page
+    offers no export while the statistics cannot be read; a request made as
+    they became unreadable still captures the funnel, over every Family of
+    the campaign as the page then shows it, with every Population figure
+    unknown and the page's reason, never zero.
     """
-    from .response_dashboard import read_metrics
+    from .response_dashboard import read_metrics, scoped_metrics
     from .statistics import StatisticsUnavailable, calculate_statistics
     from .statistics_selection import capture_statistics
 
@@ -183,7 +203,10 @@ def capture(campaign_id):
         statistics = calculate_statistics(capture_statistics(campaign_id))
     except StatisticsUnavailable:
         statistics = unread_statistics(campaign_id)
-    return summary_document(statistics, read_metrics(campaign_id, "production"))
+    metrics = scoped_metrics(
+        read_metrics(campaign_id, "production"), statistics.duids.get(scope)
+    )
+    return summary_document(statistics, metrics, scope)
 
 
 @dataclass(frozen=True)

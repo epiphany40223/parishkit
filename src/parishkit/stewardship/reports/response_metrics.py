@@ -445,6 +445,26 @@ def _values(scope, as_of):
     }
 
 
+def summarize(families, zone, grain):
+    """Every figure ``ResponseMetrics`` counts from its per-Family rows.
+
+    The stage counts, the three counts reported beside the funnel and the
+    activity series at ``grain`` in ``zone``, as ``ResponseMetrics`` field
+    values. ``response_metrics`` and the dashboard's Families counted filter
+    (``response_dashboard.scoped_metrics``, #2324) both count through here,
+    so a figure added later is counted the same way in both.
+    """
+    return {
+        "stages": stage_counts(families),
+        "skipped_responded": sum(1 for family in families if family.skipped_responded),
+        "submitted_uninvited": sum(
+            1 for family in families if family.submitted_uninvited
+        ),
+        "submitted_again": sum(1 for family in families if family.submissions > 1),
+        "activity": activity_series(families, zone, grain),
+    }
+
+
 def response_metrics(scope, as_of, *, grain="hour"):
     """The response funnel of ``scope`` as it stood at ``as_of``.
 
@@ -472,10 +492,6 @@ def response_metrics(scope, as_of, *, grain="hour"):
         timezone=timezone,
         grain=grain,
         families=families,
-        stages=stage_counts(families),
-        skipped_responded=sum(1 for family in families if family.skipped_responded),
-        submitted_uninvited=sum(1 for family in families if family.submitted_uninvited),
-        submitted_again=sum(1 for family in families if family.submissions > 1),
-        activity=activity_series(families, ZoneInfo(timezone), grain),
+        **summarize(families, ZoneInfo(timezone), grain),
         sends=sends,
     )
