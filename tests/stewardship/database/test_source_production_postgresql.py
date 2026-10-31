@@ -1,6 +1,6 @@
 """Scheduler-owned refresh slots are atomic, replayable and scope-bound."""
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -28,6 +28,7 @@ from parishkit.stewardship.source.refresh_models import (
     SourceRefreshTick,
 )
 
+from ..test_source_cadence import next_nightly_slot
 from .campaign_builders import add_draft, change, restored_runtime
 from .test_source_attempts_postgresql import configured
 from .test_source_requests_postgresql import command
@@ -216,23 +217,22 @@ def test_raw_tick_requires_scheduler_and_no_future_due_time(tmp_path, cause):
         tick = SourceRefreshTick.objects.select_related("command__request").get()
         request = tick.command.request
         fingerprint = scope_fingerprint(request.organization_id, request.window_digest)
-        later = tick.due_at + timedelta(days=1)
-        future = (
-            due_slots(
-                now=later,
-                timezone=tick.timezone,
-                nightly_time=tick.nightly_time,
-                scope_fingerprint=fingerprint,
-            )[0]
-            if cause == "nightly"
-            else cadence._slot(
+        # The next local day's slot, not 24 hours later: on a fall-back
+        # day that would be the tick's own slot again (#2326).
+        future = next_nightly_slot(
+            tick.due_at,
+            timezone=tick.timezone,
+            nightly_time=tick.nightly_time,
+            scope_fingerprint=fingerprint,
+        )
+        if cause == "delta":
+            future = cadence._slot(
                 "delta",
-                later,
+                future.due_at,
                 None,
                 timezone=tick.timezone,
                 scope_fingerprint=fingerprint,
             )
-        )
         with (
             pytest.raises(IntegrityError, match="not due under its applied cadence"),
             work_transaction(),

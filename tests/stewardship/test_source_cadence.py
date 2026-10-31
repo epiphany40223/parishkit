@@ -1,6 +1,7 @@
 """Source slots are deterministic across restarts, DST and bounded catch-up."""
 
 from datetime import UTC, date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -9,6 +10,7 @@ from parishkit.stewardship.source.cadence import (
     catch_up_slot,
     due_slots,
     listed_due_slots,
+    local_instant,
     longest_gap,
     next_full_at,
     refresh_settings,
@@ -45,6 +47,54 @@ def test_before_nightly_time_selects_previous_local_day():
     """A restart does not produce a future nightly observation early."""
     (full,) = slots("2026-09-11T05:59:59+00:00")
     assert full.due_at == datetime(2026, 9, 10, 6, tzinfo=UTC)
+
+
+def next_nightly_slot(due_at, *, timezone, nightly_time, scope_fingerprint):
+    """The nightly slot of the local day after the one ``due_at`` fell due on.
+
+    Steps by local date, not by 24 hours: on a 25-hour fall-back day, 24
+    hours after a nightly due time is still before the next nightly time,
+    so ``due_slots`` would return the same slot again (#2326). Database
+    tests use it to build a slot that is not yet due.
+    """
+    day = due_at.astimezone(ZoneInfo(timezone)).date() + timedelta(days=1)
+    return due_slots(
+        now=local_instant(day, nightly_time, timezone),
+        timezone=timezone,
+        nightly_time=nightly_time,
+        scope_fingerprint=scope_fingerprint,
+    )[0]
+
+
+@pytest.mark.parametrize(
+    "tick_due,next_due",
+    [
+        # Ordinary day: 24 hours apart.
+        (datetime(2026, 10, 15, 6, tzinfo=UTC), datetime(2026, 10, 16, 6, tzinfo=UTC)),
+        # Spring forward (2026-03-08): 02:00 is in the gap, so 03:00 EDT.
+        (datetime(2026, 3, 7, 7, tzinfo=UTC), datetime(2026, 3, 8, 7, tzinfo=UTC)),
+        # Fall back (2026-11-01): 02:00 EST is 25 hours after 02:00 EDT.
+        (datetime(2026, 10, 31, 6, tzinfo=UTC), datetime(2026, 11, 1, 7, tzinfo=UTC)),
+    ],
+)
+def test_next_nightly_slot_steps_one_local_day(tick_due, next_due):
+    """The test helper finds the next local day's slot across DST (#2326)."""
+    (tick,) = slots(tick_due.isoformat())
+    assert tick.due_at == tick_due
+    later = next_nightly_slot(
+        tick.due_at,
+        timezone="America/New_York",
+        nightly_time="02:00",
+        scope_fingerprint="a" * 64,
+    )
+    assert later.due_at == next_due
+    assert later.slot_key != tick.slot_key
+
+
+def test_a_24_hour_step_reuses_the_slot_on_the_fall_back_day():
+    """Why the helper exists: 24 hours after 2026-10-31's tick is still its slot."""
+    (tick,) = slots("2026-10-31T06:00:00+00:00")
+    assert slots((tick.due_at + timedelta(days=1)).isoformat()) == (tick,)
 
 
 def test_gap_uses_first_real_instant_and_fold_has_one_nightly_identity():
