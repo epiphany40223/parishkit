@@ -502,9 +502,10 @@ class AboutPageNode(template.Node):
 
 # Query fields that order, page or place the results rather than filter them:
 # a report's sort, its page number and the browser's time zone.
-# The family directory's Responses shown (``mode``) is a mode of the whole
-# page, drawn as a binary choice outside its Filters panel (#1535), so it
-# is not counted as one of the panel's filters either.
+# The family directory's ``mode`` (Production or Testing rehearsal) is a
+# mode of the whole page, set by the site's mode (#2324; before it, a binary
+# choice outside its Filters panel, #1535), so it is not counted as one of
+# the panel's filters either.
 NOT_FILTERS = frozenset({"sort", "page", "zone", "mode"})
 
 

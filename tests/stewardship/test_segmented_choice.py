@@ -28,9 +28,10 @@ TEMPLATES = (
 )
 COMPONENT = "stewardship/components/segmented-choice.html"
 # Pages whose two-option menu was built from a loop, which the written-option
-# guard cannot count (#1535): each draws the shared pair instead, with no
-# menu for that choice, and its view no longer hands the template the
-# choice's options (the context name the loop read).
+# guard cannot count (#1535): no menu for that choice, and the view no
+# longer hands the template the choice's options (the context name the loop
+# read). The directory's choice then became the site's mode (#2324), so the
+# page draws no pair and sends no mode at all.
 CONVERTED = {
     "directory.html": ("mode", "modes", "reports/directory_views.py"),
 }
@@ -162,7 +163,7 @@ def test_every_pair_is_drawn_by_the_shared_component():
     # Families counted only: the site's mode replaced Responses shown (#2324).
     assert (TEMPLATES / "response-dashboard.html").read_text().count(COMPONENT) == 1
     for name in CONVERTED:
-        assert COMPONENT in (TEMPLATES / name).read_text(), name
+        assert COMPONENT not in (TEMPLATES / name).read_text(), name
     # The Timeline's Production / Testing pair was removed (#1570).
     assert COMPONENT not in (TEMPLATES / "timeline.html").read_text()
 
@@ -172,15 +173,15 @@ def test_converted_loop_menus_stay_gone():
     (#1535), which the written-option guard below cannot count, so the page
     is checked by name: no menu sends that choice, the
     template no longer reads the choice's options, and the view no longer
-    hands them over. The choice still travels with the filter form, as a
-    hidden field."""
+    hands them over. Since #2324 the site's mode decides, so the page
+    writes no such field at all."""
     for name, (field, options, view) in CONVERTED.items():
         text = (TEMPLATES / name).read_text()
         for match in SELECT.finditer(text):
             assert f'name="{field}"' not in match.group(1), name
         assert options not in text, name
         assert f'"{options}"' not in (SOURCE / view).read_text(), view
-        assert f'<input type="hidden" name="{field}"' in text, name
+        assert f'name="{field}"' not in text, name
 
 
 def test_no_admin_template_draws_a_two_option_menu():

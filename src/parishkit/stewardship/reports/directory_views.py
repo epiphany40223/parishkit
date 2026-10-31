@@ -11,6 +11,7 @@ to the page's own filters, so the reach the reader chose comes back when the
 mailing columns are turned off; the audit records the reach applied.
 """
 
+from dataclasses import replace
 from urllib.parse import urlencode
 from uuid import uuid4
 
@@ -66,7 +67,7 @@ from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .read_admission import admit_report_read
 from .report_paging import carried_filters, clamp_query, pop_page_size
-from .response_dashboard import rehearsal_epoch
+from .response_dashboard import shown_mode
 
 # The element id of the filter field a refusal can be shown at (#1332),
 # and the reserved line it is described by: the complete gate's hint row
@@ -87,13 +88,10 @@ def _principal(request, store, *, read_only=False):
 # as "no campaign mail can reach"), the mailing-columns preset and, for the
 # family directory's response presets (#933; the Response dashboard no longer
 # links them), the Response and ParishSoft data to check choices, the
-# response columns, the sort and the
-# mode (Testing links are admitted for Administrators only). Each is a
-# closed vocabulary ``DirectoryQuery.parse`` checks; search text and exact
-# codes stay POST only.
-LINK_PRESETS = frozenset(
-    {"reach", "mailing", "response", "responses", "check", "sort", "mode"}
-)
+# response columns and the sort. Each is a closed vocabulary
+# ``DirectoryQuery.parse`` checks; search text and exact codes stay POST
+# only. There is no mode: the site's mode decides (#2324).
+LINK_PRESETS = frozenset({"reach", "mailing", "response", "responses", "check", "sort"})
 
 
 def page_address(report_url, query, *, postal):
@@ -114,7 +112,7 @@ def page_address(report_url, query, *, postal):
     defaults = DirectoryQuery()
     values = {
         key: getattr(query, key)
-        for key in ("response", "responses", "check", "sort", "reach", "mode")
+        for key in ("response", "responses", "check", "sort", "reach")
         if getattr(query, key) != getattr(defaults, key)
     }
     if postal:
@@ -238,6 +236,12 @@ def directory(request, campaign_id):
             raise ValueError("Directory filters require private POST state.")
         parameters = (request.GET if request.GET else request.POST).copy()
         parameters.pop("csrfmiddlewaretoken", None)
+        # Whose responses are read follows the site's mode (#2324), for
+        # Administrators only (``shown_mode``): an old link's or form's mode
+        # is refused, as an unknown field is.
+        if "mode" in parameters:
+            raise ValueError("The directory's mode follows the site's mode.")
+        mode = shown_mode(campaign_id, principal)
         postal = mailing_option(parameters)
         # The selection pages 50 rows at a time, so that is the only size.
         pop_page_size(parameters, (PAGE_SIZE,), default=PAGE_SIZE)
@@ -245,15 +249,10 @@ def directory(request, campaign_id):
             query = DirectoryQuery.parse(parameters)
         except FilterError as error:
             # Every closed choice was accepted before the code was checked,
-            # so the sort sent is one the selection knows. The mode sent is
-            # still admitted: a reader may not ask for Testing responses
-            # even on a refused page. It is kept in the query too, so the
-            # mode choice agrees with the filter form's hidden mode field.
+            # so the sort sent is one the selection knows.
             refusal = error
-            admit_mode(principal, error.query.mode)
-            query = DirectoryQuery.parse(
-                {"sort": error.query.sort, "mode": error.query.mode}
-            )
+            query = DirectoryQuery.parse({"sort": error.query.sort})
+        query = replace(query, mode=mode)
         admit_mode(principal, query.mode)
         admit_report_read(campaign_id)
         _audit(
@@ -325,12 +324,6 @@ def directory(request, campaign_id):
             except PermissionError:
                 mutable = False
             testing = testing_codes_context(campaign_id, principal)
-            # The Production / Testing rehearsal choice (#933) is offered
-            # only to an Administrator, and only while the campaign has a
-            # rehearsal to read (or is already showing one).
-            can_test = "administrator" in principal.roles and (
-                query.mode == "testing" or rehearsal_epoch(campaign_id) is not None
-            )
             report_url = reverse("admin:family_directory")
             # The response columns the Response choice shows (#933):
             # Submissions follows the envelope number and the dates follow
@@ -359,9 +352,14 @@ def directory(request, campaign_id):
                         number=query.page,
                         size=PAGE_SIZE,
                         total=report["total"],
-                        carry=carried_filters(
-                            query, ("mailing", "yes" if postal else "no")
-                        ),
+                        # The page never sends a mode (#2324).
+                        carry=[
+                            pair
+                            for pair in carried_filters(
+                                query, ("mailing", "yes" if postal else "no")
+                            )
+                            if pair[0] != "mode"
+                        ],
                         sorting=DIRECTORY_SORTING,
                         sort=query.sort,
                         action=report_url,
@@ -371,7 +369,6 @@ def directory(request, campaign_id):
                     "reaches": REACH,
                     "responses": RESPONSES,
                     "checks": CHECKS,
-                    "can_test": can_test,
                     "testing_responses": query.mode == "testing",
                     "date_columns": dates,
                     "count_columns": counts,
@@ -389,10 +386,8 @@ def directory(request, campaign_id):
                     "staff_entered": staff_entered(
                         campaign_id, [row["family_id"] for row in report["rows"]]
                     ),
-                    # In Testing the link keeps the mode it was drawn in.
                     "unreachable_url": reverse("admin:family_directory")
-                    + "?reach=neither"
-                    + ("&mode=testing" if query.mode == "testing" else ""),
+                    + "?reach=neither",
                     "rehearsal": report.get("rehearsal"),
                     "mutable": mutable,
                     "request_key": uuid4(),

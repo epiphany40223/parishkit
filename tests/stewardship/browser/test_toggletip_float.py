@@ -9,7 +9,6 @@ or above it when only there it fits.
 """
 
 import pytest
-from django.urls import reverse
 
 from .waits import has_attribute, painted, same_place, visible
 
@@ -60,15 +59,6 @@ CASES = {
     # The Family directory's filter bar (#957, #1158): at least Email
     # availability, Campaign mail can reach and Include mailing columns.
     "filter-bar": ("/family-directory", ".filter-bar .toggletip-button:visible", 3),
-    # The directory as an Administrator sees a Testing preset, which adds the
-    # Responses shown switch (#933; a binary choice above the filter bar
-    # since #1535) and its toggletip.
-    "filter-bar-testing": (
-        reverse("admin:family_directory")
-        + "?response=submitted&responses=yes&sort=submitted&mode=testing",
-        "#directory-mode .toggletip-button, .filter-bar .toggletip-button:visible",
-        4,
-    ),
 }
 
 

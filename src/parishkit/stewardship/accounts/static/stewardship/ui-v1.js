@@ -2639,8 +2639,8 @@
   // zone, the table's sort and size, a view choice such as Production or
   // Testing), except those marked data-filter, which carry a filter (System
   // logs' submitted-form mark, a one-send view), and every visible control
-  // marked data-view: a view choice that switches the data shown (the
-  // directory's Responses shown, Production or Testing) is a view, not a
+  // marked data-view: a view choice that switches the data shown
+  // (Sent mail's Production or Testing) is a view, not a
   // filter, so Clear keeps it. No other visible field is sent, so neither
   // is a private filter. An unticked box or radio sends nothing, as in a
   // native submission.
