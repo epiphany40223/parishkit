@@ -4541,6 +4541,11 @@ def _export_ministry_packet_options(parser):
 
 def _exact_create_options(parser):
     """Options of ``export exact create``: population, format, zone and key."""
+    # The words come from their one place (#2324), untranslated, since the
+    # parser is built before Django's settings are configured.
+    from .reports.population_words import SCOPE_WORDS
+
+    historical, current = SCOPE_WORDS["historical"], SCOPE_WORDS["current"]
     parser.add_argument(
         "--scope",
         choices=("historical", "current"),
@@ -4548,9 +4553,8 @@ def _exact_create_options(parser):
         # Historical, as the stored daily facts, the report emails and
         # Campaign comparison count; unlike the Reports and queries pages,
         # whose Families counted choice starts at "current" (#2324).
-        help='historical ("Including Families that left"; the default, '
-        'unlike the pages\' default of "In this campaign today") or current '
-        '("In this campaign today")',
+        help=f'historical ("{historical}"; the default, unlike the pages\' '
+        f'default of "{current}") or current ("{current}")',
     )
     parser.add_argument("--format", required=True, choices=EXPORT_FORMATS)
     parser.add_argument(
