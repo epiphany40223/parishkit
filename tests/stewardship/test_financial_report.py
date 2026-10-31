@@ -72,8 +72,9 @@ def test_query_accepts_only_the_closed_bounded_grammar():
     assert "page" not in query.form_values()
     assert FinancialQuery.parse({}) == FinancialQuery()
     assert FinancialQuery().form_values() == {
+        "scope": "current",
         "search": "",
-        "active": "any",
+        "active": "",
         "first_start": "",
         "first_end": "",
         "latest_start": "",
@@ -98,6 +99,18 @@ def test_query_accepts_only_the_closed_bounded_grammar():
         {"latest_start": "20260201"},
         {"first_start": "2026-02-01", "first_end": "2026-01-31"},
         {"active": "yes"},
+        # The retired Any status and In this campaign choices are the two
+        # populations now, with no alias (#2324, #864); so is any other
+        # population.
+        {"active": "active"},
+        {"active": "any"},
+        # A refinement of the historical population only: the default
+        # population is today's campaign Families.
+        {"active": "inactive"},
+        {"scope": "all"},
+        {"scope": "Historical"},
+        {"scope": "current", "active": "inactive"},
+        {"scope": "current", "active": "unavailable"},
         {"amount": "all"},
         {"frequency": "biweekly"},
         {"share": "bad share!"},
@@ -113,6 +126,32 @@ def test_query_accepts_only_the_closed_bounded_grammar():
             FinancialQuery.parse(values)
     with pytest.raises(ValueError):
         FinancialQuery.parse(MultiValueDict({"sort": ["name", "newest"]}))
+
+
+def test_families_counted_is_the_selections_family_status():
+    """The Families counted population (#2324) reaches SQL as its unchanged
+    ``active`` filter: historical is "any" or the refinement chosen, current
+    is "active"; ``scope`` itself never reaches SQL, and an export's file
+    reads the population back from what it captured."""
+    from parishkit.stewardship.reports.financial_documents import scope_of
+
+    for values, active, scope in (
+        ({}, "active", "current"),
+        ({"scope": "current"}, "active", "current"),
+        ({"scope": "current", "active": ""}, "active", "current"),
+        ({"scope": "historical"}, "any", "historical"),
+        ({"scope": "historical", "active": "inactive"}, "inactive", "historical"),
+        ({"scope": "historical", "active": "unavailable"}, "unavailable", "historical"),
+    ):
+        query = FinancialQuery.parse(values)
+        filters = query.sql_filters()
+        assert "scope" not in filters and filters["active"] == active, values
+        assert set(filters) == set(query.form_values()) - {"scope"}
+        assert query.form_values()["scope"] == scope
+        assert scope_of(filters) == scope
+    # The default population is the Response dashboard's (the
+    # Administrator's decision, #2324): today's campaign Families.
+    assert FinancialQuery().scope == "current"
 
 
 @pytest.mark.parametrize(
@@ -309,7 +348,8 @@ def test_rows_are_shaped_with_exact_installments_and_honest_absence(monkeypatch)
     # SQL pages with the caller's own size, so the two can never drift apart.
     assert parameters[2:] == [2, financial.PAGE_SIZE]
     assert json.loads(parameters[1]) == {
-        "filters": FinancialQuery(search="Example").form_values(),
+        # SQL's own unchanged filters: no scope (#2324).
+        "filters": FinancialQuery(search="Example").sql_filters(),
         # The proof names what it proved; SQL alone decides whether it applies.
         "proof": PROOF,
     }
@@ -451,6 +491,7 @@ def test_page_address_keeps_only_the_closed_choices():
     query = FinancialQuery.parse(
         {
             "search": "Private name",
+            "scope": "historical",
             "active": "inactive",
             "amount": "nonzero",
             "frequency": "monthly",
@@ -464,12 +505,16 @@ def test_page_address_keeps_only_the_closed_choices():
         }
     )
     assert page_address(route, query, 100) == (
-        f"{route}?active=inactive&amount=nonzero&frequency=monthly"
+        f"{route}?scope=historical&active=inactive&amount=nonzero&frequency=monthly"
         f"&share={ONLINE}&sort=pledge_desc&size=100"
     )
     assert page_address(route, FinancialQuery(share="none"), 25) == (
         f"{route}?share=none&size=25"
     )
+    # Families counted (#2324) is the Response dashboard's ``scope``; its
+    # default, today's campaign Families, is left out like the others.
+    current = FinancialQuery(scope="current", amount="zero")
+    assert page_address(route, current, 50) == f"{route}?amount=zero"
 
 
 @pytest.mark.parametrize(
@@ -496,16 +541,24 @@ def test_a_get_draws_the_view_its_address_names(rf):
     from parishkit.stewardship.reports.financial_views import _parameters
 
     parameters = _parameters(
-        rf.get(f"/?active=active&frequency=weekly&share={ONLINE}&sort=pledge&size=25")
+        rf.get(
+            f"/?scope=historical&frequency=weekly&share={ONLINE}&sort=pledge&size=25"
+        )
     )
     assert parameters.pop("size") == ["25"]
     query = FinancialQuery.parse(parameters)
-    assert (query.active, query.frequency, query.share, query.sort) == (
-        "active",
+    assert (query.scope, query.frequency, query.share, query.sort) == (
+        "historical",
         "weekly",
         ONLINE,
         "pledge",
     )
+    # An old link's Family status is refused, never read as a population
+    # (#2324, no legacy URLs #864): In this campaign and Any status are the
+    # populations now, and a refinement needs the historical one.
+    for old in ("active=active", "active=any", "active=inactive"):
+        with pytest.raises(ValueError):
+            FinancialQuery.parse(_parameters(rf.get(f"/?{old}")))
     # A POST still carries its private filters, without its CSRF token.
     posted = _parameters(rf.post("/", {"search": "Name", "csrfmiddlewaretoken": "t"}))
     assert dict(posted) == {"search": ["Name"]}

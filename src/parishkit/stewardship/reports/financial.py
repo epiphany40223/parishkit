@@ -33,6 +33,7 @@ from parishkit.stewardship.web.tables import Sorting
 from .financial_documents import period_years
 from .information import parse_page
 from .money import MoneyAmount, source_cents
+from .participation import DEFAULT_SCOPE, SCOPE_LABELS
 
 PAGE_SIZE = 50
 # Rows per page the page offers; the selection accepts 1-200.
@@ -77,6 +78,15 @@ FREQUENCY_LABELS = {
 # The short unit after an installment on the page ("$1,000.00/mo", #1544).
 FREQUENCY_UNITS = {"weekly": "wk", "monthly": "mo", "quarterly": "qtr", "annual": "yr"}
 DATES = ("first_start", "first_end", "latest_start", "latest_end")
+# The Family status refinement (#2324): every Family the Families counted
+# population holds (blank), or only those that left the campaign
+# ("inactive") or whose status is unknown ("unavailable"). It refines the
+# historical population only: the current one holds no such Family. Its
+# old "active" and "any" choices are now the two populations, and the
+# default population changed, so an old link's ``active=active`` or
+# ``active=any`` is refused rather than read as either (no legacy alias,
+# #864); "any" is SQL's word only (``sql_filters``).
+FAMILY_STATUSES = ("", "inactive", "unavailable")
 # What each filter field the reader can fix says when the server refuses
 # it (#1332): the words of the page's own hints (data-missing-hint), which
 # the browser shows first, so the two never disagree. An end field's message
@@ -105,10 +115,17 @@ FIELD_MESSAGES = {
 
 @dataclass(frozen=True, repr=False)
 class FinancialQuery:
-    """Identifying values travel only in CSRF POST bodies, never links or logs."""
+    """Identifying values travel only in CSRF POST bodies, never links or logs.
 
+    ``scope`` is the page's Families counted population (ui-conventions
+    "Population of report figures", #2324) and ``active`` the Family
+    status refinement of the historical one (``FAMILY_STATUSES``); SQL
+    takes the two as its one ``active`` filter (``sql_filters``).
+    """
+
+    scope: str = DEFAULT_SCOPE
     search: str = ""
-    active: str = "any"
+    active: str = ""
     first_start: str = ""
     first_end: str = ""
     latest_start: str = ""
@@ -147,7 +164,12 @@ class FinancialQuery:
         query = cls(**values)
         bounded_text(query.search)
         if (
-            query.active not in {"any", "active", "inactive", "unavailable"}
+            query.scope not in SCOPE_LABELS
+            or query.active not in FAMILY_STATUSES
+            # The current population holds no Family that left or whose
+            # status is unknown, so the page never sends both; a crafted
+            # pair is refused rather than read as one or the other.
+            or (query.scope == "current" and query.active)
             or query.amount not in {"any", "zero", "nonzero", "cannot_give"}
             or query.frequency not in {"any", "none", *FREQUENCIES}
             or query.sort not in FINANCIAL_SORTING.tokens
@@ -192,6 +214,22 @@ class FinancialQuery:
             for key in self.__dataclass_fields__
             if key != "page"
         }
+
+    def sql_filters(self):
+        """The filters as ``stewardship_financial_report_v1`` takes them.
+
+        Its closed shape (unchanged, so no migration) has no ``scope``: the
+        historical population is its ``active`` "any" (every responding
+        Family, including those that left the campaign or are gone from
+        ParishSoft) or the refinement chosen, and the current one is its
+        ``active`` "active" (today's campaign Families). Every read and
+        export capture sends these, and ``financial_documents.scope_of``
+        reads the population back from them.
+        """
+        values = self.form_values()
+        scope = values.pop("scope")
+        values["active"] = "active" if scope == "current" else values["active"] or "any"
+        return values
 
 
 def parse_money(value):
@@ -326,7 +364,7 @@ def financial_page(
             "SELECT stewardship_financial_report_v1(%s,%s::jsonb,%s,%s)::text",
             [
                 campaign_id,
-                json.dumps({"filters": query.form_values(), "proof": proof}),
+                json.dumps({"filters": query.sql_filters(), "proof": proof}),
                 query.page,
                 # SQL pages with this exact size, so the caller's next-page
                 # arithmetic can never skip or repeat a Family.

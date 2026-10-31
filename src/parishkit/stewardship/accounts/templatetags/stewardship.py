@@ -505,8 +505,10 @@ class AboutPageNode(template.Node):
 # The family directory's ``mode`` (Production or Testing rehearsal) is a
 # mode of the whole page, set by the site's mode (#2324; before it, a binary
 # choice outside its Filters panel, #1535), so it is not counted as one of
-# the panel's filters either.
-NOT_FILTERS = frozenset({"sort", "page", "zone", "mode"})
+# the panel's filters either. Nor is a report's Families counted population
+# (``scope``, #2324): a binary choice at the top of the page, which Clear
+# filters keeps.
+NOT_FILTERS = frozenset({"sort", "page", "zone", "mode", "scope"})
 
 
 def applied_filters(query, ignore=()):
@@ -515,7 +517,7 @@ def applied_filters(query, ignore=()):
     A report's query is a frozen dataclass whose defaults are the page's
     unfiltered view (an Additional information default such as "Current
     actionable requests" is the page's normal list, so it does not count).
-    Sort, page, zone and mode are left out (``NOT_FILTERS``), as is any field
+    Sort, page, zone, mode and scope are left out (``NOT_FILTERS``), as is any field
     named in ``ignore``: one another choice currently overrides.
 
     As a template filter, ``ignore`` is one comma-separated string

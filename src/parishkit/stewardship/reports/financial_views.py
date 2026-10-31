@@ -48,6 +48,7 @@ from .financial import (
     financial_page,
     giving_proof,
 )
+from .participation import SCOPE_CHOICE_LABEL, SCOPE_LABELS
 from .read_admission import admit_report_read
 from .report_paging import carried_filters, clamp_query, pop_page_size
 
@@ -105,10 +106,29 @@ FIELD_LINES = {
 # The closed, non-identifying values the page's own address may carry
 # (UX conventions, "Reload on a POST report", #1586): each is a closed
 # vocabulary FinancialQuery.parse checks (a share method is an option's
-# identity, never a Family's). The search, the response dates and the
-# pledge range stay in the POST body; the page number is never kept, since
-# the list it numbered may have had a private filter.
-LINK_FIELDS = ("active", "amount", "frequency", "share", "sort")
+# identity, never a Family's). The Families counted ``scope`` is the same
+# parameter as the Response dashboard's (#2324). The search, the response
+# dates and the pledge range stay in the POST body; the page number is
+# never kept, since the list it numbered may have had a private filter.
+LINK_FIELDS = ("scope", "active", "amount", "frequency", "share", "sort")
+
+
+def scope_fields(query, table):
+    """The fields each Families counted segment posts, by name (#2324).
+
+    Each segment of the shared binary choice is a small POST form, as on
+    Sent mail (#1575): it keeps the applied filters (the search and dates
+    too, private state that never reaches a URL), the sort and the rows per
+    page, and starts again at page 1, as a new filter does. The component
+    leaves out ``scope``, which each segment's button sends. The Family
+    status refinement is left at its default: it refines only the
+    historical population, so a switch either way starts without it.
+    """
+    return {
+        key: value
+        for key, value in carried_filters(query) + table.view_fields
+        if key != "active"
+    }
 
 
 def page_address(report_url, query, size):
@@ -227,7 +247,12 @@ def report(request, campaign_id):
         except FilterError as error:
             # Every closed choice was accepted before a field rule was
             # checked, so the submitted sort is one the selection knows.
-            refusal, query = error, FinancialQuery(sort=error.query.sort)
+            # The Families counted population is a view of the page, not a
+            # filter, so it is kept too (#2324).
+            refusal, query = (
+                error,
+                FinancialQuery(sort=error.query.sort, scope=error.query.scope),
+            )
         except UnknownZone:
             return _error(campaign_id, status=400, zone=True)
         except ValueError:
@@ -332,6 +357,9 @@ def report(request, campaign_id):
                     sizes=PAGE_SIZES,
                 ),
                 "mutable": mutable,
+                # The Families counted choice (#2324), in its one place's words.
+                "scope_choice_label": SCOPE_CHOICE_LABEL,
+                "scope_labels": SCOPE_LABELS,
                 # This view's own address, for the address bar (#1586).
                 "page_address": page_address(
                     reverse("admin:financial_report"), query, size
@@ -340,6 +368,7 @@ def report(request, campaign_id):
                 # Per request, in the request's language.
                 "filter_sizes": line_sizes(FIELD_MESSAGES, FIELD_LINES),
             }
+            context["scope_fields"] = scope_fields(query, context["table"])
             if refusal is not None:
                 # The filter form shows what was sent, with the error at its
                 # field; the panel counts, and the export carries, only the
