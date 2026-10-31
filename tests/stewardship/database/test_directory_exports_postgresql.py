@@ -612,8 +612,10 @@ def test_mail_merge_always_lists_by_postal_mail_only(
     fields = filters | dict(
         format="csv", browser_timezone="UTC", request_key=str(uuid4())
     )
+    # The page never takes a mode (#2324); its export form still names it.
+    sent = {key: value for key, value in filters.items() if key != "mode"}
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response, body = search(browser, route, filters)
+        response, body = search(browser, route, sent)
         assert response.status_code == 200 and b"Matching Families: 1." in body
         assert b"<td>1 Example Street<br>" in body
         assert b'<option value="mail" selected>' in body
