@@ -321,6 +321,63 @@ def test_empty_campaign_renders_cleanly(page, component_origin, axe_source):
     assert page.evaluate(AXE) == []
 
 
+def test_families_counted_shows_the_spinner_while_it_reads(page, component_origin):
+    """Choosing In this campaign today (#2324) re-reads the page in place: the
+    shared working spinner shows beside the choice while the read is under
+    way, in space the pair always keeps (nothing moves), and the page's
+    polite status region says "Working…" for screen readers; then the
+    Summary's tiles are the current population's, with no reload or jump."""
+    from playwright.sync_api import expect
+
+    from .report_components import SORTED
+
+    errors = watch(page)
+    page.set_viewport_size({"width": 1000, "height": 700})
+    page.goto(component_origin + SORTED.url())
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
+    page.evaluate("window.__dashboardMarker = 1")
+    choice = page.get_by_role("group", name="Families counted")
+    spinner = choice.locator(".spinner")
+    expect(spinner).to_be_hidden()
+    layout = choice.evaluate(
+        "(node) => [...node.children].map((child) => "
+        "JSON.stringify(child.getBoundingClientRect()))"
+    )
+    families = page.locator(POPULATION + ' [data-stat="active_families"] .stat-value')
+    expect(families).to_have_text("1,010")
+    before = page.evaluate("window.scrollY")
+    # The answer is slow (report_components.SLOW_GETS).
+    choice.get_by_role("link", name="In this campaign today").click()
+    expect(spinner).to_be_visible()
+    expect(page.locator("#response-dashboard")).to_have_attribute("aria-busy", "true")
+    # The spinner is decorative; the words carry the state (ui-conventions
+    # Working spinner), outside the busy region.
+    working = page.get_by_role("status").filter(has_text="Working…")
+    expect(working).to_have_count(1)
+    assert working.evaluate("(node) => !node.closest('#response-dashboard')")
+    # No layout shift: the spinner fills space that was already kept.
+    assert (
+        choice.evaluate(
+            "(node) => [...node.children].map((child) => "
+            "JSON.stringify(child.getBoundingClientRect()))"
+        )
+        == layout
+    )
+    expect(families).to_have_text("1,000")
+    expect(
+        page.get_by_role("group", name="Families counted").locator(".spinner")
+    ).to_be_hidden()
+    expect(
+        page.get_by_role("group", name="Families counted").locator(
+            "a[aria-current=page]"
+        )
+    ).to_have_text("In this campaign today")
+    assert page.evaluate("window.__dashboardMarker") == 1
+    assert abs(page.evaluate("window.scrollY") - before) < 2
+    assert "scope=current" in page.url
+    assert_clean(page, errors)
+
+
 def test_list_presets_open_the_directory_with_their_choices(
     page, component_origin, preset, response, check, columns
 ):

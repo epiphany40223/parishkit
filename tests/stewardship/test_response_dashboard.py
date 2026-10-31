@@ -306,6 +306,10 @@ def test_families_counted_is_at_the_top_carrying_the_view():
     # (The fixture's chart is the historical one.)
     caption = ">Including Families that left — exact daily values</caption>"
     assert caption in render()
+    # The shared spinner, in space the pair always keeps (#2324).
+    pair = region[choice : region.index("</div>", choice)]
+    assert "data-busy-control" in pair
+    assert '<span class="spinner" aria-hidden="true"></span>' in pair
     gone = ("dashboard-mode", "Responses shown", "Testing rehearsal", "&amp;mode=")
     for text in gone:
         assert text not in region, text

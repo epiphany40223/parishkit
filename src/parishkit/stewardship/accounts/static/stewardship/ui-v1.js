@@ -1958,6 +1958,32 @@
       : anchor && heldMatches(anchor, held)[held.index];
     match?.focus({preventScroll: true});
   };
+  // A control whose re-read can take seconds (a report's Families counted,
+  // #2324) is marked data-busy-control and keeps the working spinner's space;
+  // the one the reader just used is marked data-busy-working, and
+  // ui-v1.css shows its spinner while its region is aria-busy (ui-conventions
+  // Working spinner). Every request clears the earlier mark first, so a
+  // refused or failed read, or a periodic re-read the reader did not start
+  // (null), never shows a spinner; a swap draws the control afresh, unmarked.
+  // The spinner is decorative (aria-hidden), so the page's polite status
+  // region says "Working…" too, as busy buttons do: most screen readers do
+  // not announce aria-busy, and the status region sits outside the busy
+  // region, so the words are not held back while it reads. They are said
+  // only once the read has taken a moment: a quick answer announces just the
+  // view now shown, and a swap draws the control afresh, so a pending
+  // "Working…" for a control no longer marked is dropped.
+  let workingTimer = 0;
+  const markWorking = (control) => {
+    window.clearTimeout(workingTimer);
+    document.querySelectorAll("[data-busy-working]")
+      .forEach((node) => node.removeAttribute("data-busy-working"));
+    const choice = control instanceof Element ? control.closest("[data-busy-control]") : null;
+    if (!choice) return;
+    choice.setAttribute("data-busy-working", "");
+    workingTimer = window.setTimeout(() => {
+      if (choice.isConnected && choice.hasAttribute("data-busy-working")) announce("Working…");
+    }, 400);
+  };
   const refreshRegions = async (region, control, url, init, fallback, options, controller, form) => {
     const owner = options.owner || null;
     // A periodic re-read (options.background, #1586) never hands the page
@@ -1982,6 +2008,7 @@
     const id = region.id;
     region.setAttribute("aria-busy", "true");
     busyRegion = region;
+    markWorking(background ? null : control);
     let response, text;
     try {
       response = await fetch(url, {

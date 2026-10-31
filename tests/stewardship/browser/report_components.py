@@ -39,10 +39,21 @@ FIGURES_RETRY = "/figures-status-retry"
 FIGURES_RETRY_NEWER = "/figures-status-retry-newer"
 
 
+# The dashboard opened oldest first, and its Families counted answer from
+# there (#2324): that answer is slow, so a test can see the working spinner
+# beside the choice while the read is under way.
+SORTED = ReportQuery(timezone="America/Los_Angeles", sort="date_asc")
+SORTED_CURRENT = replace(SORTED, scope="current")
+
+
 # Answered after a pause (see the server in conftest.py): applying this
 # browser's zone to the report opened at ?scope=historical, so a test can
-# follow a daily-table link while it is still in flight.
-SLOW_GETS = {canonical(REAL + "?scope=historical&timezone=America%2FLos_Angeles")}
+# follow a daily-table link while it is still in flight, and the sorted
+# page's Families counted answer.
+SLOW_GETS = {
+    canonical(REAL + "?scope=historical&timezone=America%2FLos_Angeles"),
+    canonical(SORTED_CURRENT.url()),
+}
 
 
 def long_campaign(chart):
@@ -301,6 +312,12 @@ def components(context, admin):
     pages[canonical(REAL + "?" + address)] = (
         "response-dashboard",
         viewing(los_angeles),
+    )
+    # The sorted page and its slow Families counted answer (SLOW_GETS).
+    pages[canonical(SORTED.url())] = ("response-dashboard", viewing(SORTED))
+    pages[canonical(SORTED_CURRENT.url())] = (
+        "response-dashboard",
+        viewing(SORTED_CURRENT, **statistics_panel(refreshed, "current")),
     )
     # Every page's own figures status read (#1586) answers that the chart
     # shown is still the newest and is still Updating, so the watched region
