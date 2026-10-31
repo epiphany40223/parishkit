@@ -656,12 +656,11 @@ def test_directory_tags_a_current_response_staff_entered():
     assert html.index("(entered by Staff)") < html.index(">Own<")
 
 
-def test_testing_mode_is_a_closed_link_preset_admitted_for_administrators():
-    """The Testing switch (#933): a closed value, audited, Administrators only.
-
-    ``mode`` travels in links (the dashboard's Testing presets), in the
-    address bar after an in-place answer and in the audit; any other value
-    is refused, and a Staff member asking for Testing is refused too.
+def test_testing_mode_follows_the_site_and_is_audited():
+    """The directory's mode follows the site's (#2324): no link preset or
+    page address carries it, the query still holds and audits it (the
+    export form and the command line send it), and Testing stays for
+    Administrators only (#933), whatever the site's mode.
     """
     from types import SimpleNamespace
 
@@ -671,7 +670,7 @@ def test_testing_mode_is_a_closed_link_preset_admitted_for_administrators():
         page_address,
     )
 
-    assert "mode" in LINK_PRESETS
+    assert "mode" not in LINK_PRESETS
     assert DirectoryQuery.parse(QueryDict("")).mode == "production"
     query = DirectoryQuery.parse(QueryDict("response=submitted&mode=testing"))
     assert query.mode == "testing"
@@ -684,21 +683,41 @@ def test_testing_mode_is_a_closed_link_preset_admitted_for_administrators():
     assert sanitize(ContextKind.ACTION, values)["report_mode"] == "testing"
     assert DirectoryQuery().audit_values()["report_mode"] == "production"
     route = reverse("admin:family_directory")
-    assert page_address(route, query, postal=False) == (
-        route + "?response=submitted&mode=testing"
-    )
-    assert page_address(route, DirectoryQuery(mode="testing"), postal=False) == (
-        route + "?mode=testing"
-    )
-    # Search text still makes it the bare page, mode or not.
-    private = DirectoryQuery(mode="testing", search="Adams")
-    assert page_address(route, private, postal=False) == route
+    assert page_address(route, query, postal=False) == route + "?response=submitted"
+    assert page_address(route, DirectoryQuery(mode="testing"), postal=False) == route
     administrator = SimpleNamespace(roles=frozenset({"administrator"}))
     staff = SimpleNamespace(roles=frozenset({"staff"}))
     admit_mode(administrator, "testing")
     admit_mode(staff, "production")
     with pytest.raises(PermissionError):
         admit_mode(staff, "testing")
+
+
+@pytest.mark.parametrize("site", ["production", "testing"])
+@pytest.mark.parametrize("rehearsal", [False, True])
+def test_shown_mode_is_testing_only_for_an_administrator_in_testing_mode(
+    monkeypatch, site, rehearsal
+):
+    """Whose responses the pages show (#2324): the site's mode decides, but
+    Testing rehearsal responses stay for Administrators only (#477, #933),
+    so Staff always see the live responses, as they did before."""
+    from types import SimpleNamespace
+    from uuid import UUID
+
+    from parishkit.stewardship.reports import response_dashboard
+
+    monkeypatch.setattr(response_dashboard, "site_mode", lambda: site)
+    monkeypatch.setattr(
+        response_dashboard,
+        "rehearsal_epoch",
+        lambda campaign_id: UUID(int=7) if rehearsal else None,
+    )
+    administrator = SimpleNamespace(roles=frozenset({"administrator"}))
+    staff = SimpleNamespace(roles=frozenset({"staff"}))
+    testing = site == "testing" and rehearsal
+    shown = response_dashboard.shown_mode(UUID(int=1), administrator)
+    assert shown == ("testing" if testing else "production")
+    assert response_dashboard.shown_mode(UUID(int=1), staff) == "production"
 
 
 def test_testing_selection_pins_the_active_rehearsal(monkeypatch):
@@ -749,66 +768,44 @@ def test_testing_selection_pins_the_active_rehearsal(monkeypatch):
 
 @pytest.mark.parametrize("testing", [False, True])
 def test_testing_view_is_labelled_and_leaves_out_production_responses(testing):
-    """A Testing view says so and drops Responded, which reads Production.
+    """A Testing page says so and drops Responded, which reads Production.
 
-    The switch itself (a binary choice above the Filters panel, #1535) is
-    drawn only when offered (``can_test``), and the filter form then carries
-    the mode shown as a hidden field, so Apply filters keeps it; Staff and
-    an Administrator with no rehearsal get neither.
+    There is no switch (#2324): the site's mode decides, so neither the page
+    nor its filter form draws or sends a mode; only the export form names
+    the mode the page showed.
     """
     from uuid import UUID
 
     query = DirectoryQuery(mode="testing" if testing else "production")
-
-    def page(**context):
-        """The directory page with one Family row."""
-        return render_to_string(
-            "stewardship/directory.html",
-            {
-                "campaign_id": UUID(int=80),
-                "metadata": {"source_generation": 1},
-                "total": 1,
-                "table": _table(
-                    [
-                        {
-                            "family_name": "Example",
-                            "display_name": "Example",
-                            "family_duid": 1,
-                            "responded": True,
-                        }
-                    ]
-                ),
-                "query": query,
-                "query_fields": query.form_values() | {"mailing": "no"},
-                "report_url": "/families/",
-                "testing_responses": testing,
-            }
-            | context,
-        )
-
-    offered = page(can_test=True)
-    assert '<div class="segmented-choice" id="directory-mode" role="group"' in offered
-    assert 'id="directory-mode-tip"' in offered
-    assert '<select id="directory-mode"' not in offered
-    selected = "testing" if testing else "production"
-    assert (
-        f'<button type="submit" name="mode" value="{selected}" aria-current="page">'
-        in offered
+    page = render_to_string(
+        "stewardship/directory.html",
+        {
+            "campaign_id": UUID(int=80),
+            "metadata": {"source_generation": 1},
+            "total": 1,
+            "table": _table(
+                [
+                    {
+                        "family_name": "Example",
+                        "display_name": "Example",
+                        "family_duid": 1,
+                        "responded": True,
+                    }
+                ]
+            ),
+            "query": query,
+            "query_fields": query.form_values() | {"mailing": "no"},
+            "report_url": "/families/",
+            "testing_responses": testing,
+        },
     )
-    assert offered.count('aria-current="page"') == 1
-    filters = offered.split('id="table-filters"')[1].split("</form>")[0]
-    assert filters.count('name="mode"') == 1
-    assert f'<input type="hidden" name="mode" value="{selected}">' in filters
-    hidden = page(can_test=False)
-    assert 'id="directory-mode"' not in hidden
-    # No hidden stand-in either: an in-place answer drawn after the
-    # rehearsal ended would add it next to a switch still on the page, and
-    # every later Apply would send mode twice (400). Without one the form
-    # sends nothing, which is Production.
-    filters = hidden.split('id="table-filters"')[1].split("</form>")[0]
+    for gone in ("directory-mode", "segmented-choice", "Responses shown"):
+        assert gone not in page, gone
+    filters = page.split('id="table-filters"')[1].split("</form>")[0]
     assert 'name="mode"' not in filters
-    assert ("data-testing-responses" in hidden) is testing
-    assert (">Responded</th>" in hidden) is not testing
+    assert ("data-testing-responses" in page) is testing
+    assert (">Responded</th>" in page) is not testing
+    assert ("The site is in Testing mode" in page) is testing
 
 
 @pytest.mark.parametrize("mode", [None, "production", "testing"])

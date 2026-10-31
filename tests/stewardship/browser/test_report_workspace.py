@@ -60,8 +60,8 @@ def test_report_chart_scope_export_controls_and_accessibility(
         )
 
 
-# The Summary's Active population row (#1537).
-POPULATION = '#response-summary [aria-label="Active population"]'
+# The Summary's Population row (#1537).
+POPULATION = '#response-summary [aria-label="Population"]'
 
 
 def test_statistics_are_the_summary_first_row(page, component_origin, axe_source):
@@ -73,11 +73,11 @@ def test_statistics_are_the_summary_first_row(page, component_origin, axe_source
 
     errors = watch(page)
     page.goto(component_origin + "/participation")
-    row = page.get_by_role("list", name="Active population")
+    row = page.get_by_role("list", name="Population")
     assert row.locator(".stat-label").all_inner_texts() == [
-        "Campaign Families",
+        "Families",
         "Active Members",
-        "Current annual pledges",
+        "Annual pledges",
         "Last year's pledges (all Families)",
     ]
     expect(page.locator("#response-summary [data-chart]")).to_have_count(0)
@@ -92,9 +92,9 @@ def test_report_and_export_pages_offer_their_actions(page, component_origin):
     """Scope, exact values and each export state's action are on the page."""
     page.goto(component_origin + "/participation")
     assert "$3,234.56" in page.locator("[data-table-region] table").inner_text()
-    # The Chart population is a binary choice with no Apply button (#1535).
-    choice = page.get_by_role("group", name="Chart population")
-    visible(choice.get_by_role("link", name="Current population"))
+    # The Families counted is a binary choice with no Apply button (#1535).
+    choice = page.get_by_role("group", name="Families counted")
+    visible(choice.get_by_role("link", name="In this campaign today"))
     assert page.get_by_role("button", name="Apply report options").count() == 0
     visible(page.get_by_role("button", name="Export XLSX"))
     # The latest-data export is the command line's only (#1537).
@@ -252,7 +252,7 @@ def test_unknown_statistics_read_a_dash_with_a_reason(
     page, component_origin, axe_source
 ):
     """ui-conventions "Stat tiles" (#1540): without ParishSoft data every
-    Active population tile reads "—" (never zero, never a word), its toggletip
+    Population tile reads "—" (never zero, never a word), its toggletip
     says why, its value line is as tall as a known value's (so a value
     that becomes unknown in place moves nothing), and the page passes
     axe."""
@@ -262,9 +262,9 @@ def test_unknown_statistics_read_a_dash_with_a_reason(
     page.goto(component_origin + "/participation-unknown")
     tiles = page.evaluate(TILES)
     assert [(label, text) for label, text, _height in tiles] == [
-        ("Campaign Families", "—"),
+        ("Families", "—"),
         ("Active Members", "—"),
-        ("Current annual pledges", "—"),
+        ("Annual pledges", "—"),
         ("Last year's pledges (all Families)", "—"),
     ]
     assert all(abs(height - known_height) <= 1 for _label, _text, height in tiles)
@@ -274,7 +274,7 @@ def test_unknown_statistics_read_a_dash_with_a_reason(
     visible(
         tile.get_by_text("No ParishSoft data has been loaded for this campaign yet.")
     )
-    group = page.get_by_role("list", name="Active population")
+    group = page.get_by_role("list", name="Population")
     assert group.locator(".stat-tile").count() == 4
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []

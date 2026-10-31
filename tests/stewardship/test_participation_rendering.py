@@ -68,7 +68,7 @@ def summary():
     """A captured Response dashboard Summary, as the request stores it (#1557).
 
     Built from the capture's own JSON shape, so the renderers read exactly
-    what the worker loads: four Active population figures (one unknown,
+    what the worker loads: four Population figures (one unknown,
     with its reason) and the five funnel stages with Link followed's note.
     """
     return ParticipationSummary.from_document(
@@ -78,7 +78,7 @@ def summary():
                 {"label": "Campaign Families", "value": 1234, "note": ""},
                 {"label": "Active Members", "value": 3456, "note": ""},
                 {
-                    "label": "Current annual pledges",
+                    "label": "Annual pledges",
                     "value": {"money": "123456.78"},
                     "note": "",
                 },
@@ -213,7 +213,7 @@ def test_each_panel_fits_its_series_without_drawing_provenance():
         assert dollars.get_ylim() == pytest.approx((0, 3234.56 * 1.1))
         texts = [text.get_text() for text in figure.texts]
         assert f"{RENDERER_VERSION} · Page 1" in texts
-        assert "Family participation — Historical as of day" in texts
+        assert "Family participation — Including Families that left" in texts
         # Neither the eligible total nor the source/request provenance is drawn.
         assert not any(
             word in text
@@ -615,3 +615,46 @@ def test_the_static_chart_marks_nothing_up_to_the_end_date():
         with participation_figure(value) as figure:
             assert all(closed_lines(axes) == [] for axes in figure.axes)
             assert not any(charts.CLOSED_LABEL in text for text in figure_text(figure))
+
+
+@pytest.mark.parametrize(
+    "parameters,expected",
+    [
+        ({"population_scope": "historical"}, "Including Families that left"),
+        ({"population_scope": "current"}, "In this campaign today"),
+        # A campaign archive's export counts no population, so its
+        # parameters carry no scope; its page renders as before (#2324).
+        ({}, "In this campaign today"),
+        ({"population_scope": ""}, "In this campaign today"),
+    ],
+)
+def test_export_page_names_its_population_even_without_a_scope(parameters, expected):
+    """The export page's Population row uses the shared words (#2324) and
+    never fails on an export without a scope, such as an archive."""
+    from types import SimpleNamespace
+
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.accounts.templatetags.stewardship import scope_label
+
+    job = SimpleNamespace(
+        pk=UUID(int=20),
+        format="zip",
+        requester_id=UUID(int=21),
+        parameters=parameters,
+        created_at=datetime(2026, 9, 29, 22, tzinfo=UTC),
+        browser_timezone="UTC",
+        report="campaign_archive",
+    )
+    html = render_to_string(
+        "stewardship/report-export.html",
+        {
+            "job": job,
+            "status": {"state": "queued"},
+            "mutable": True,
+            "can_cancel": True,
+            "report_url": "/archive",
+        },
+    )
+    assert f"<dt>Population</dt><dd>{expected}</dd>" in html
+    assert scope_label(parameters.get("population_scope", "")) == expected

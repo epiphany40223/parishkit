@@ -76,6 +76,7 @@ when it lands.
   [shared visual style](#shared-visual-style),
   [colour scheme](#colour-scheme),
   [status indicators](#status-indicators), [stat tiles](#stat-tiles),
+  [population of report figures](#population-of-report-figures),
   [overview pages](#overview-pages),
   [working spinner](#working-spinner),
   [stage boxes](#stage-boxes), [time entry](#time-entry),
@@ -608,8 +609,8 @@ never scrolls to show it (Administrator, pk-local review of
   refuses an in-place control whose fragment names no region there.
 - **Controls.** A link that shows another view of the page (`a[data-in-place]`:
   each segment of a [binary choice](#binary-choices), such as the
-  [Response dashboard](../reports/spec.md#response-dashboard)'s mode and
-  Chart population, each of which refreshes the page's one region; the
+  [Response dashboard](../reports/spec.md#response-dashboard)'s Families
+  counted, which refreshes the page's one region; the
   [Timeline](../reports/spec.md#timeline)'s filters and When sort,
   the page links of a mail delivery's
   evidence and attempt history, an information item's and a Ministry
@@ -627,8 +628,7 @@ never scrolls to show it (Administrator, pk-local review of
   Compare on day, which refreshes everything below it)
   names its region by its
   URL's fragment. A POST form saves a change unless it is marked
-  `data-in-place-read` (the System logs cross-links and the family
-  directory's Responses shown segments only read): a read may
+  `data-in-place-read` (the System logs cross-links only read): a read may
   be cancelled by a newer choice and, with no answer at all, falls back to
   the ordinary submission. A form or link marked `data-in-place-filters`
   sets the page's filters from outside its filter form (a System logs
@@ -2271,11 +2271,8 @@ browser tests of each page that draws one. **Precedent.**
 (Administrator, 2026-10-17), from the Response dashboard's Production |
 Testing rehearsal.
 
-- **Where.** The Response dashboard's Responses shown (Production |
-  Testing rehearsal) and Chart population (Historical as of day | Current
-  population), the
-  [family directory](../reports/spec.md#campaign-family-directory)'s Responses shown
-  (Production | Testing rehearsal), above its Filters panel, and the
+- **Where.** The Response dashboard's
+  [Families counted](#population-of-report-figures), the
   [Campaign calendar](../admin-portal/spec.md#campaign-calendar)'s
   Show (Upcoming emails | Include past emails), above Every email by date,
   and its View (Month | Week, #1808), before its Previous and Next.
@@ -2305,7 +2302,7 @@ Testing rehearsal.
 - **In place.** Choosing a segment refreshes the page's regions without a
   reload or a scroll jump ([in-place controls](#in-place-controls)); the
   address is replaced, focus stays on the segment just chosen, and the view
-  now shown is announced by its segment's text ("Current population").
+  now shown is announced by its segment's text ("In this campaign today").
 - **Look.** Both segments keep one size and weight and the pair keeps its
   place, so choosing one changes only colours
   ([no layout shift](#no-layout-shift)). The chosen segment is filled in the
@@ -2488,8 +2485,8 @@ tests of the pages it names. **Precedent.** #1651.
   Apply.
 - **A data view is not a filter.** A choice that switches the data shown
   between Production and Testing is a view, not a filter: Clear filters
-  keeps it. The family directory's Responses shown and Sent mail's
-  Production or Testing are segmented pairs, so their filter forms carry
+  keeps it. Sent mail's
+  Production or Testing is a segmented pair, so its filter form carries
   the choice as a kept hidden field; such a choice drawn as a visible
   control in a filter form is kept too, and is then marked `data-view`.
   Roster changes' Show, also a segmented pair, is kept the same way.
@@ -3924,6 +3921,66 @@ two ways of reading to a screen reader. **Precedent.**
   markup by hand, with no exceptions. Email and PDF reports
   cannot load the stylesheet and keep their own layouts.
 
+### Population of report figures
+
+**Rule.** Every Reports and queries page counts its headline numbers from
+one population of Families, and the page says which. Where a page can
+count either population, the reader chooses it with one shared
+[binary choice](#binary-choices), **Families counted**:
+
+- **Including Families that left** (`scope=historical`):
+  every Family that was ever in this campaign (its first-eligible instant is
+  set), including Families that later
+  [left the campaign](#campaign-families-wording) or are gone from
+  ParishSoft. This is the money actually pledged.
+- **In this campaign today** (`scope=current`, the default): the campaign
+  Families, the Families that match the campaign's
+  [Families rule](../data/spec.md#campaign-families) in today's ParishSoft
+  data. An address with no `scope` counts these (the Administrator,
+  2026-10-31, #2324).
+
+**Why.** The Administrator, 2026-10-31: "The numbers on all the 'Reports and
+queries' pages, particularly the infographic numbers at the tops of the
+pages, need to agree." Each page, and sometimes each panel of one page,
+had chosen its own Families, so the same question got different answers
+(the Response dashboard's pledge tile and Financial stewardship's total
+differed by one Family that had left).
+**Shared code.** The labels and the default live in one place,
+`reports/participation.py` (`SCOPE_LABELS`, `SCOPE_CHOICE_LABEL`,
+`DEFAULT_SCOPE`); every page, table caption and export reads them from
+there, so the Administrator can rename them in one edit.
+**Precedent.** [#2324](https://github.com/epiphany40223/parishkit/issues/2324).
+
+- **Place.** The choice sits at the top of the page, under the heading (and
+  any About this page panel), before every figure it controls.
+- **Every figure.** When the choice is set, every tile, chart, chart
+  summary, table total, table caption and export on that page counts the
+  same Families. A figure that cannot follow the choice is not on such a
+  page. The same URL parameter (`scope`), values and default are used on
+  every page, so a link keeps its population from page to page.
+- **One population only.** A page that can show only one population
+  (because its data holds only one) has no choice, and says which in one
+  fixed line in the same place, in the choice's words: for example
+  "Families counted: Including Families that left".
+- **Same label, same value.** For one population and one day, a figure with
+  the same label shows the same value on every page. A page that reads
+  another day than now says which day.
+- **Testing and Production.** Whether Testing rehearsal or Production
+  responses are counted follows the site's mode
+  ([Testing mode](../parishioner-portal/spec.md#testing-mode)), never a choice
+  on the page; an old link's `mode` parameter is refused, as an unknown
+  parameter is ([no legacy URLs](#addresses-and-legacy-urls)). Testing
+  rehearsal responses stay for Administrators only: other readers see the
+  Production responses in either mode.
+- **While it changes.** Choosing the other population re-reads the page in
+  place ([in-place controls](#in-place-controls)); since that read can take
+  a few seconds, the [working spinner](#working-spinner) shows beside the
+  choice until the page is redrawn.
+
+Status: the [Response dashboard](../reports/spec.md#response-dashboard)
+follows this rule. Financial stewardship, Campaign comparison and the
+Campaign Family directory follow in later changes of #2324.
+
 ### Overview pages
 
 **Rule.** An overview page (Home, and any later dashboard that sums up
@@ -4010,7 +4067,18 @@ In progress stage box), so Dark mode keeps it readable. Under reduced motion it 
 says "working", through the theme's one reduced-motion rule. A spinner's
 space is reserved, or it takes the place of a mark that was already there,
 so it never moves the content around it when it appears or goes
-([no layout shift](#no-layout-shift)). Never add another spinner class,
+([no layout shift](#no-layout-shift)). A slow in-place re-read (one
+that can take seconds, such as a report's
+[Families counted](#population-of-report-figures) choice) shows the
+spinner beside the control that started it while the region is
+`aria-busy`: the control is marked `data-busy-control` and draws the
+spinner hidden, in its reserved space, and `ui-v1.js` marks the control
+used so the spinner shows until the region is redrawn, and, once the read
+has taken a moment, says "Working…" in the page's polite status region
+(outside the busy region),
+as busy buttons do, since most screen readers do not announce
+`aria-busy`; a periodic re-read the reader did not start shows and says
+none. Never add another spinner class,
 spinning animation or keyframes: extend this one, with a placement rule
 for its context if needed. **Why.** The Administrator, 2026-10-20 (pk-local
 R40b), asking for a working spinner in an In progress stage box "like the
@@ -4837,8 +4905,8 @@ table, including none. A response the
 server refuses (a malformed filter's 400, a denial, an unavailable report) is
 shown as returned; a POST is never sent twice, since each report read is
 audited. While a request is in flight, repeating the same submission is
-ignored. The Response dashboard's Chart population reshapes its chart,
-table and export rather than one table, so it is a
+ignored. The Response dashboard's Families counted reshapes its tiles,
+chart, table and export rather than one table, so it is a
 [binary choice](#binary-choices) whose links refresh the page's region
 instead. When
 the fetch fails or returns another page (a sign-in), the ordinary page load happens and its fragment lands on the table rather than at

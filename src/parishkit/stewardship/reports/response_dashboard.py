@@ -11,10 +11,13 @@ the metrics once; the tiles are a pure function of that one result.
 activity buckets at a grain and each list's length, which the page no
 longer shows.
 
-Production is the default for everyone. Testing responses are shown only in
-explicit Admin testing views (``docs/specs/stewardship/reports/spec.md``), so
-only Administrators may choose ``mode=testing``, which reads the campaign's
-active rehearsal epoch. The funnel holds counts only, never a Family's name
+Whose responses the page shows follows the site's mode (#2324,
+``shown_mode``): for an Administrator in Testing mode, the campaign's active
+rehearsal epoch; Production otherwise, and always for every other reader
+(#477). The page has no choice of its own, and only the command line still
+takes ``--mode`` (Administrators only for Testing). The
+page counts the funnel over its Families counted population
+(``scoped_metrics``). The funnel holds counts only, never a Family's name
 or identifier; the directory's Response filters list the Families behind
 them (#933).
 """
@@ -45,6 +48,7 @@ from .response_metrics import (
     ResponseScope,
     activity_series,
     response_metrics,
+    summarize,
 )
 
 # The activity chart is hourly while everything it shows (the first activity
@@ -203,6 +207,29 @@ def rehearsal_epoch(campaign_id):
     )
 
 
+def shown_mode(campaign_id, principal):
+    """Whose responses the report pages show ``principal`` (#933, #2324).
+
+    The site's mode decides, with no choice on the page: in Testing mode,
+    while the campaign has an active rehearsal, an Administrator sees that
+    rehearsal's responses ("testing"). Every other case shows the live
+    responses ("production"): Production mode, no rehearsal to read, or a
+    reader who is not an Administrator, since Testing rehearsal responses
+    stay for Administrators only (#477, #933; Administrator, 2026-10-31).
+    The Response dashboard and the Campaign Family directory both ask here,
+    so the two always show one reader the same mode; each still admits the
+    mode (``directories.admit_mode``) before and inside its read guard.
+    """
+    if "administrator" not in principal.roles or site_mode() != "testing":
+        return "production"
+    return "testing" if rehearsal_epoch(campaign_id) is not None else "production"
+
+
+def site_mode():
+    """The site's mode now: "testing" or "production" (``SystemConfiguration``)."""
+    return SystemConfiguration.objects.values_list("mode", flat=True).get()
+
+
 def read_metrics(campaign_id, mode):
     """The funnel of ``mode`` at the database's current instant, or None.
 
@@ -214,6 +241,29 @@ def read_metrics(campaign_id, mode):
     if mode == "testing" and epoch is None:
         return None
     return response_metrics(ResponseScope(campaign_id, mode, epoch), database_now())
+
+
+def scoped_metrics(metrics, duids):
+    """``metrics`` counted over only the Families whose DUIDs are in ``duids``.
+
+    The Response dashboard's Families counted population (#2324): the
+    statistics' DUIDs of the historical cohort or of today's campaign
+    Families, so the stage tiles count exactly the Families the Population
+    tiles do. Every count beside the funnel and the activity series are
+    counted again from the kept rows, by ``response_metrics``' own
+    ``summarize``, so they agree too. ``duids`` None
+    (the statistics could not be read) keeps every row, as before.
+    """
+    if duids is None:
+        return metrics
+    families = tuple(
+        family for family in metrics.families if family.family_duid in duids
+    )
+    return replace(
+        metrics,
+        families=families,
+        **summarize(families, ZoneInfo(metrics.timezone), metrics.grain),
+    )
 
 
 def funnel_panels(metrics):
