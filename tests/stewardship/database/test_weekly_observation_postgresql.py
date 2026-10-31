@@ -37,7 +37,13 @@ def test_metadata_and_transport_roles_cannot_read_raw_requests(response_service,
     "statement",
     [
         "SELECT answers FROM stewardship_submission",
-        "SELECT follow_up_needed FROM stewardship_additional_information",
+        # The report email's requests read the follow-up flag and the latest
+        # Staff revision's decision to name each request's stage and leave
+        # Ignored ones out (v2, frozen file 0196, #2331); never what replaced
+        # a request, nor the Staff notes or who decided.
+        "SELECT replacement_id FROM stewardship_additional_information",
+        "SELECT notes FROM stewardship_information_revision",
+        "SELECT actor_id FROM stewardship_information_revision",
         "UPDATE stewardship_additional_information SET text='changed'",
         "UPDATE stewardship_additional_information SET disposition='withdrawn'",
         "DELETE FROM stewardship_additional_information",

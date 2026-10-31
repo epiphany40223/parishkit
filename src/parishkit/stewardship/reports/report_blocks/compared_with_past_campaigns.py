@@ -5,24 +5,45 @@ The Daily digest's Compared with past campaigns section (#1018 slice 7,
 document, its markup and its chart images stay in ``digest_comparison``,
 which the saved digest page shares; this module places them in the email.
 With no section (no imported year, or the schedule has it off) the block
-is left out entirely rather than drawing its empty statement.
+is left out entirely rather than drawing its empty statement. It counts
+the historical cohort, like the archives it compares with, while the rest of
+a report email counts today's campaign Families (#2331), so a fixed line
+under it says which Families it counts.
 """
 
 from parishkit.email.base import InlineImage
 
 from ..daily_digest import comparison_url
 from ..digest_comparison import HEADING, render_images, section_html, section_text
+from ..report_document import ReportDocument
+from .markup import plain, style
 from .registry import AFTER_BUTTON, STATUS, Block, Section
+
+# The fixed line naming the Families the section counts (#2331), in the
+# report pages' Families counted words (#2324).
+FAMILIES_COUNTED = (
+    "Families counted: Including Families that left, as the past campaigns' "
+    "archives count them"
+)
 
 
 def draw(document, frame, options):
-    """The section and its server-drawn charts, or nothing without a section."""
+    """The section, its Families counted line and its server-drawn charts.
+
+    Nothing without a section.
+    """
     section = document.comparison
     if section is None:
         return Section()
     link = comparison_url(section, frame.public_origin)
     images = tuple(InlineImage(data, name) for name, data in render_images(section))
-    return Section(section_html(section, link), section_text(section, link), images)
+    html, text = section_html(section, link), section_text(section, link)
+    # A retired digest's document drew no such line (and counted the
+    # historical cohort throughout).
+    if isinstance(document, ReportDocument):
+        html += f"<p{style('caption')}>{plain(FAMILIES_COUNTED)}</p>"
+        text += "\n" + FAMILIES_COUNTED
+    return Section(html, text, images)
 
 
 def capture(document, options):
@@ -40,6 +61,7 @@ def copy(data, frame):
         "comparison_line": data_line(data),
         "comparison_tiles": saved_tiles(data),
         "comparison_url": comparison_path(data),
+        "comparison_population": FAMILIES_COUNTED,
     }
 
 

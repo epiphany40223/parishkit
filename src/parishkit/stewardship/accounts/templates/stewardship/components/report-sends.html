@@ -2,7 +2,8 @@
   One report email's past sends, newest first (report-emails spec, "Past
   sends"): when each was made, how, the moment it reported, how many emails
   it made, its result and its saved copy. A list block's count follows the
-  result ("12 open requests"). `table` is the page of them shown
+  result: the stages its email named ("To review 10 · To handle 3", #2331),
+  or, for a send made before it, "12 open requests". `table` is the page of them shown
   (report_email_list.paged_sends), with the shared row navigator above and
   below (UX conventions, "Admin tables"). On Report emails the sends sit in
   the page's one table region, so the navigator re-pages them in place
@@ -23,7 +24,7 @@
     <td>{% if send.how == "manual" %}{% translate "Send now" %}{% elif send.how == "recovery" %}{% translate "Recovery" %}{% else %}{% translate "Scheduled" %}{% endif %}</td>
     <td class="nowrap">{% if send.as_of %}<time datetime="{{ send.as_of|instant }}" data-local-instant data-compact>{{ send.as_of|instant }}</time>{% elif send.through_date %}{% blocktranslate trimmed with day=send.through_date|parish_date_compact %}End of {{ day }}{% endblocktranslate %}{% else %}—{% endif %}</td>
     <td>{% if send.recipients is None %}—{% else %}{{ send.recipients|number }}{% endif %}</td>
-    <td>{% include "stewardship/components/report-result.html" %}{% if send.count is not None %}<br>{% blocktranslate trimmed count requests=send.count with shown=send.count|number %}{{ shown }} open request{% plural %}{{ shown }} open requests{% endblocktranslate %}{% endif %}</td>
+    <td>{% include "stewardship/components/report-result.html" %}{% if send.stages %}<br>{{ send.stages }}{% elif send.count is not None %}<br>{% blocktranslate trimmed count requests=send.count with shown=send.count|number %}{{ shown }} open request{% plural %}{{ shown }} open requests{% endblocktranslate %}{% endif %}</td>
   </tr>{% endfor %}</tbody>
 </table>
 </div>

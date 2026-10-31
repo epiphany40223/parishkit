@@ -13,13 +13,15 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.export_models import ExportPublication, ExportRequest
+from parishkit.stewardship.reports.models import CampaignDailyFactSet
 from parishkit.stewardship.reports.report_email_models import ReportEmailSnapshot
+from parishkit.stewardship.reports.workspace import ReportQuery
 
 from ..export_urls import export_action
 from .auth_builders import signed_in
 from .campaign_builders import campaign_clock
 from .report_builders import DAILY_INSTANT as INSTANT
-from .report_builders import allocated
+from .report_builders import add_digest, allocated
 from .test_background_grants_postgresql import task_login
 from .test_export_views_postgresql import post, restricted_download_pool
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
@@ -32,9 +34,26 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def http_scenario(family_mail, google):  # noqa: F811
     """Use a complete census capture, not the storage-only fact fixture."""
     with campaign_clock(INSTANT):
-        # A Daily report's send pins a complete fact set (#1786).
-        preparation = allocated(family_mail)
-        facts = ReportEmailSnapshot.objects.get(preparation=preparation).fact_set
+        # A Daily report's send pins a complete fact set (#1786): today's
+        # campaign Families (#2331), beside the historical one its Compared
+        # with past campaigns block reads. The scenario's generation is the
+        # one in the Response dashboard's default scope, so a page read with
+        # no scope draws it.
+        identifier = add_digest(
+            family_mail.service.store, family_mail.campaign, comparison=True
+        )
+        preparation = allocated(family_mail, identifier=identifier)
+        pinned = ReportEmailSnapshot.objects.get(preparation=preparation).fact_set
+        facts = CampaignDailyFactSet.objects.get(
+            campaign_id=pinned.campaign_id,
+            population_scope=ReportQuery().scope,
+            source_id=pinned.source_id,
+            submission_watermark=pinned.submission_watermark,
+            review_watermark=pinned.review_watermark,
+            timezone_configuration_id=pinned.timezone_configuration_id,
+            through_date=pinned.through_date,
+            state="ready",
+        )
         browser, _ = signed_in()
         yield (family_mail.service.store, None, facts, None), browser
 
