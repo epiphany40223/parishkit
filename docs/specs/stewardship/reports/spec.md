@@ -335,29 +335,35 @@ the axis names the campaign's zone.
 
 ## Population and calculation rules
 
-"Active" means current promoted ParishSoft eligibility: the Families that currently match the campaign's [Families rule](../data/spec.md#campaign-families), which pages call campaign Families ([wording](../ui-conventions/spec.md#campaign-families-wording); #1393). Current participation
-and financial cards/tables exclude Families that later left the campaign.
+"Active" means current promoted ParishSoft eligibility: the Families that currently match the campaign's [Families rule](../data/spec.md#campaign-families), which pages call campaign Families ([wording](../ui-conventions/spec.md#campaign-families-wording); #1393).
+Every report page counts its headline figures from one population, the
+historical cohort or the current campaign Families, chosen or stated as
+[population of report figures](../ui-conventions/spec.md#population-of-report-figures)
+sets out ([#2324](https://github.com/epiphany40223/parishkit/issues/2324)).
 Historical event views retain a submission made while the Family was eligible.
 
 A Family participates on the campaign-local date, resolved with the Campaign's
 immutable timezone snapshot, of its first live submission version. Repeat
 submissions never increase or move that count. Testing
-submissions are excluded everywhere except explicit Admin testing views.
+submissions are excluded everywhere except the Admin views of a site in
+Testing mode, where the site's mode decides which responses are shown.
 
-The participation graph has an explicit population scope. **Historical as of
-day** is the default: each point uses the ever-eligible cohort through the end
-of that local day and response versions as of that instant. A Family enters the
-cohort on its first Portal-eligible instant in the campaign and never leaves the
-historical cohort, even if later inactive. **Current population** applies
-today's Portal-eligible Family set consistently to every historical point.
-Current cards use current eligibility and effective versions. Monetary values
+The population scope (`scope`) is `historical` or `current`, labelled as the
+shared rule says. **Historical** is the default: each point of the
+participation graph uses the ever-eligible cohort through the end of that
+local day and response versions as of that instant. A Family enters the
+cohort on its first Portal-eligible instant in the campaign and never leaves
+the historical cohort, even if it later leaves the campaign. **Current**
+applies today's Portal-eligible Family set consistently to every historical
+point. The [campaign statistics](#campaign-statistics) follow the same scope,
+counting the whole cohort or today's campaign Families, each with its
+[value in force](#values-in-force-on-financial-stewardship). Monetary values
 never derive from rounded installment displays.
 
-The participation graph exposes only its mutually exclusive **Historical as of
-day** / **Current population** scope control. Historical scope includes every
-Family first eligible on or before each day, so neither its denominator nor
-cumulative participant count can shrink and its percentage cannot exceed 100%.
-Current-population scope excludes currently inactive Families at every point.
+Historical scope includes every Family first eligible on or before each day,
+so neither its denominator nor cumulative participant count can shrink and
+its percentage cannot exceed 100%. Current scope excludes Families that left
+the campaign at every point.
 The statistics cards have no inactive subtotal; the
 [Response dashboard](#response-dashboard) ignores the retired `inactive`
 query parameter so old bookmarks still load. Report email
@@ -419,11 +425,12 @@ export create`) carries all the data on the
 sections in page order, each with the same columns in every format:
 
 - **Summary**: Group, Figure, Value, Share compared with Invited and Note.
-  The Active population group holds Active Families, Active Members and,
-  with giving enabled, Current annual pledges and Last year's pledges (all
-  Families), then Data as of, the moment these were counted; the Families
-  by stage group holds one row per [funnel stage](#funnel-stages) with its
-  count. A stage's share compared with Invited is given once an invitation
+  The Population group holds Families, Active Members and, with giving
+  enabled, Annual pledges and Last year's pledges (all Families), then
+  Data as of, the moment these were counted; the Families by stage group
+  holds one row per [funnel stage](#funnel-stages) with its count. Both
+  groups count the export's population scope, the one its Daily
+  participation section names. A stage's share compared with Invited is given once an invitation
   has been delivered, except for Invited itself; Note is the tile's note
   (Link followed's mail-scanner prefetches) or, for an unknown figure, the
   reason the page gives for it.
@@ -445,13 +452,14 @@ which only the command line still offers, is the chart alone.
 The Summary is frozen when the export is requested: the request's own
 transaction reads the statistics and the funnel as the page does (the
 [campaign statistics](#campaign-statistics) and the Production
-[response funnel](#response-funnel) at that instant) and stores them in the
+[response funnel](#response-funnel) at that instant, in the population
+scope of the chart being exported) and stores them in the
 request's immutable capture, `stewardship_participation_export_snapshot`
 (frozen migration 0142), so a response or ParishSoft update after the
 request never changes the file, and a retried rendering writes the same
 figures. The page offers no export while the statistics cannot be read; a
 request made just as they became unreadable still captures the funnel, with
-every Active population figure unknown and the page's reason, never zero.
+every Population figure unknown and the page's reason, never zero.
 The database admits a capture only for a new participation
 request in the same transaction, from the web, by its requester, and
 requires one on every participation request but a latest-data export's
@@ -476,7 +484,10 @@ band of the shared date axis, and as many date labels under the last panel as
 fit without overlapping, in the parish's compact date style as the exports'
 ticks are. The page's daily table directly follows the chart and is its exact
 values, so the chart adds no exact-values table of its own and does not show
-its summary, which would only repeat that table. The table opens newest
+its summary, which would only repeat that table. The table's caption names
+its population in the Families counted choice's words ("Including Families
+that left — exact daily values"), as do the chart's title and the exports'
+Population column. The table opens newest
 first, five rows per page
 ([#1534](https://github.com/epiphany40223/parishkit/issues/1534),
 [#1537](https://github.com/epiphany40223/parishkit/issues/1537)): `date_desc`
@@ -489,7 +500,7 @@ from assistive technology, since their automatic names would read raw values
 (ISO dates, unrounded dollars) unlike the table's. There is no
 page image, so a page view draws nothing on the server.
 
-For **Historical as of day**, the source cutoff is the last promoted source
+For **Historical**, the source cutoff is the last promoted source
 generation at or before the resolved end instant of that local day, selected
 from permanent manifest generation/promotion metadata even if that snapshot's
 membership was later compacted. The cohort comes from durable `FamilyCampaign`
@@ -503,7 +514,7 @@ whichever version is effective today. The numerator includes cohort Families
 whose first live submission was accepted while eligible on or before that
 instant. If no source generation exists by that boundary, the point is
 unavailable rather than inferred from a later snapshot. A Family remains in the
-historical cohort after becoming inactive. For **Current population**, every
+historical cohort after leaving the campaign. For **Current**, every
 point is recomputed using the current Portal-eligible Family set; a currently
 ineligible Family is excluded from every series.
 
@@ -588,8 +599,9 @@ Report selection, pinning, rendering, and drift verification use that policy's
 atomic reference/read guards; no consumer assumes an unpinned old generation
 will remain available indefinitely.
 
-The UI defaults to Historical as of day and offers a clearly labeled scope
-toggle. Changing scope updates every series together. On the Response
+The UI defaults to the historical scope and offers the shared, clearly
+labelled Families counted choice. Changing scope updates every series
+together, and every other figure on the page with it. On the Response
 dashboard, pointing at or tapping anywhere in a date's column, in any panel, shows
 that date's tooltip, and a faint guide line crosses every panel at that date
 ([hover guide line](../ui-conventions/spec.md#charts)). The tooltip has the
@@ -610,18 +622,12 @@ population with percentage, and exact pledge. Either tooltip's pledge is whole
 dollars (halves round up, such as $760,410); everything else keeps exact
 cents. Report URLs, pinned report email inputs, equivalent data
 tables, PNG/PDF output, and structured downloads record the scope and exactly
-match the displayed values. A scope note explains why the historical endpoint
-may differ from current-statistics cards.
-On the Response dashboard the toggle is the Chart population
-[binary choice](../ui-conventions/spec.md#binary-choices), Historical as of
-day | Current population, with no Apply button
-([#1535](https://github.com/epiphany40223/parishkit/issues/1535)), directly
-under the Daily participation panel's heading, since it changes only the
-daily chart, its table and the export
-([#1534](https://github.com/epiphany40223/parishkit/issues/1534)): each
-segment links to the page with that scope, keeping the mode, the daily
-table's sort and page size and the browser's time zone (its page returns to
-the first), and choosing one refreshes the page in place.
+match the displayed values.
+On the Response dashboard the scope is the page's one
+[Families counted](../ui-conventions/spec.md#population-of-report-figures)
+choice, at the top of the page, which sets every figure on it
+([#2324](https://github.com/epiphany40223/parishkit/issues/2324); see
+[Response dashboard](#response-dashboard)).
 
 #### Pledge values in the participation facts
 
@@ -678,14 +684,20 @@ Edits in force, and the dashboard shows Updating until it is ready.
 
 **Access:** Admin and Staff.
 
-Cards show:
+The statistics are counted over one population
+([population and calculation rules](#population-and-calculation-rules)):
+the historical cohort (every Family ever eligible in the campaign) or the
+current campaign Families. One capture holds the inputs of both, so a page
+can show either without another read. Cards show, for that population:
 
-- active Families and active Members;
-- active Families with eligible email out of active Families and percentage;
-- active Families with deliverable email out of active Families and percentage;
-- active Families with first live response out of active Families and
+- its Families and their active Members (a Family no longer in the
+  ParishSoft data has no Members to count, so under the historical scope
+  only the Members of the Families still in that data are counted);
+- its Families with eligible email, out of its Families, and percentage;
+- its Families with deliverable email, out of its Families, and percentage;
+- its Families with a first live response, out of its Families, and
   percentage;
-- effective campaign annual pledge total, when enabled, with each Family's
+- its annual pledge total, when enabled, with each Family's
   [value in force](#values-in-force-on-financial-stewardship); and
 - "Last year's pledges (all Families)": every Family-linked ParishSoft pledge
   record in the mapped comparison funds and period (pledges with no Family are
@@ -701,9 +713,17 @@ source is never shown as zero: it reads Unavailable, or, in a tile, "—".
 On the [Response dashboard](#response-dashboard) the cards are the first row
 of its Summary panel's [stat tiles](../ui-conventions/spec.md#stat-tiles)
 ([#720](https://github.com/epiphany40223/parishkit/issues/720),
-[#1537](https://github.com/epiphany40223/parishkit/issues/1537)): Active
-Families, Active Members and, with giving enabled, Current annual pledges and
-Last year's pledges (all Families). The responded, eligible email and
+[#1537](https://github.com/epiphany40223/parishkit/issues/1537)), in the
+page's [Families counted](../ui-conventions/spec.md#population-of-report-figures)
+population ([#2324](https://github.com/epiphany40223/parishkit/issues/2324)):
+Families, Active Members and, with giving enabled, Annual pledges and
+Last year's pledges (all Families). The Active Members tile's note says
+whose Members it counts: under Including Families that left, the Members of
+the Families still in the ParishSoft data; under In this campaign today,
+the Members of the campaign Families. Both scopes have the note, so the
+tile keeps one height when the choice changes
+([no layout shift](../ui-conventions/spec.md#no-layout-shift)). `pk-admin report participation` reports
+the current population, as before. The responded, eligible email and
 deliverable email counts are not on the page: the Summary's
 [Families by stage](#funnel-stages) row shows the responses, so the
 "Responses and email reach" chart that drew those three counts was removed
@@ -712,7 +732,7 @@ still reports all three. Without an observation every tile reads "—", with a
 toggletip saying no ParishSoft data has been loaded yet. A pledge total that
 cannot be added up reads "—" the same way, with the reason for its cause:
 no giving definition for the campaign, an answer whose amount is not known
-(current annual pledges), or a snapshot that does not hold every pledge for
+(annual pledges), or a snapshot that does not hold every pledge for
 last year's period (last year's pledges). No reason promises that a later
 refresh will fix it. Under the tiles one line, "Data as of" the
 moment the statistics were counted, shows that time in the browser's own
@@ -722,8 +742,8 @@ zone, with no "UTC" label
 shows no other time, no pledge periods or funds, and no technical details
 (source generation, submission cutoff), which the
 [command line](../admin-automation/spec.md) still reports.
-Choosing a Chart population redraws the chart in place, keeping its space until
-it is drawn.
+Choosing the other Families counted redraws the tiles and the chart in
+place, keeping the chart's space until it is drawn.
 
 ## Response funnel
 
@@ -767,6 +787,18 @@ a Production report email's
 [response funnel block](../report-emails/spec.md#response-funnel-block)
 states the funnel at the report's as-of moment (the end of its report day,
 or its capture instant).
+
+The Response dashboard is a live view, so it counts only the rows of its
+[Families counted](../ui-conventions/spec.md#population-of-report-figures)
+population ([#2324](https://github.com/epiphany40223/parishkit/issues/2324)):
+under Including Families that left, the Families ever eligible in the
+campaign (the historical cohort, so a Family record that never matched
+the Families rule is left out); under In this campaign today, today's
+campaign Families. Both sets come from the same statistics capture as
+the page's other tiles, and the filter is a pure function of the rows, so
+every stage and the Population tiles count the same Families. The rows
+themselves are unchanged, so the report emails, the command line and the
+directory still read every row.
 
 ### Funnel stages
 
@@ -853,8 +885,7 @@ after that).
 
 ### Response dashboard
 
-**Access:** Admin and Staff (`CAMPAIGN_REPORT`); the Testing view is Admin
-only.
+**Access:** Admin and Staff (`CAMPAIGN_REPORT`).
 
 `/admin/reports/responses/` is the campaign's one response report
 ([#1537](https://github.com/epiphany40223/parishkit/issues/1537), which
@@ -868,17 +899,24 @@ heading, and the page sends `Cache-Control: no-store`. Top to bottom:
    does not repeat them in a line of links
    ([navigation rule 11](../ui-conventions/spec.md#navigation-rules),
    [#2143](https://github.com/epiphany40223/parishkit/issues/2143)).
-2. **Responses shown**, Production | Testing rehearsal, a
-   [binary choice](../ui-conventions/spec.md#binary-choices) offered to
-   Administrators only.
+2. **Families counted**, Including Families that left | In this campaign
+   today, the shared
+   [population choice](../ui-conventions/spec.md#population-of-report-figures)
+   ([#2324](https://github.com/epiphany40223/parishkit/issues/2324)). It
+   sets every figure below: the Population and Families by stage tiles,
+   the daily chart, its table and the export. While the page re-reads
+   after a choice, the [working spinner](../ui-conventions/spec.md#working-spinner)
+   shows beside it. It is drawn only where it can apply: not while Testing
+   responses are shown and not while the statistics are unavailable (both
+   below).
 3. **Summary**: one panel of
    [stat tiles](../ui-conventions/spec.md#stat-tiles) in two rows
    (Administrator, 2026-10-18,
    [#1537](https://github.com/epiphany40223/parishkit/issues/1537)), ending
    with one "Data as of" line.
-   - **Active population** (a Production view only): Active Families,
-     Active Members, Current annual pledges and Last year's pledges (all
-     Families), the last two with giving enabled
+   - **Population** (in Production mode only): Families, Active Members,
+     Annual pledges and Last year's pledges (all Families), the last two
+     with giving enabled
      ([campaign statistics](#campaign-statistics)). "Data as of" is the
      moment these were counted.
    - **Families by stage**: Invited, Link followed, Form opened, Progressed
@@ -886,7 +924,8 @@ heading, and the page sends `Cache-Control: no-store`. Top to bottom:
      [funnel stage](#funnel-stages) with its count, its share compared with
      Invited and a share bar drawing that share
      ([#720](https://github.com/epiphany40223/parishkit/issues/720)), counted
-     at the database's current instant; Link followed's tile says it
+     at the database's current instant over the chosen population
+     ([response funnel](#response-funnel)); Link followed's tile says it
      includes mail-scanner prefetches. Invited's own bar is full, as the
      reference the others are read against, and a share past 100% (a Family
      can follow its link without a delivered invitation) fills its bar.
@@ -903,8 +942,8 @@ heading, and the page sends `Cache-Control: no-store`. Top to bottom:
    funnel chart since
    [#1370](https://github.com/epiphany40223/parishkit/issues/1370), so no
    funnel chart remains anywhere; the Administrator can ask for one back.
-4. **Daily participation**: the Chart population choice, the daily chart
-   and its table ([participation graph](#participation-graph)). Before the
+4. **Daily participation**: the daily chart and its table, in the chosen
+   population ([participation graph](#participation-graph)). Before the
    chart has a day, the panel says "No campaign dates to show yet. The daily
    table starts on the Campaign start date and gains a row each day."
    ([empty tables](../ui-conventions/spec.md#empty-tables-and-lists),
@@ -914,7 +953,7 @@ heading, and the page sends `Cache-Control: no-store`. Top to bottom:
    ([export actions](../ui-conventions/spec.md#downloaded-files)), which
    export all the data on the page
    ([#1557](https://github.com/epiphany40223/parishkit/issues/1557)): the
-   Summary (every Active population and Families by stage tile, with its
+   Summary (every Population and Families by stage tile, with its
    share and note, and the Data as of time) and every daily row of the chart
    shown ([participation graph](#participation-graph);
    [file design](#file-design)). While no complete chart has
@@ -931,19 +970,33 @@ earlier Response dashboard showed are gone
 ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)); the lists'
 lengths and the activity series stay in `pk-admin report responses`.
 
-The URL carries only closed choices and the browser's zone. `mode` is
-`production` (the default) or `testing`: Production reads live responses and
-Production mail; Testing reads the campaign's active rehearsal epoch, is
-labelled as Testing, and is offered and admitted for Administrators only,
-since Testing responses appear only in explicit Admin testing views (see
-[population and calculation rules](#population-and-calculation-rules)). The
-statistics, the daily chart and the export count Production responses only,
-so a Testing view shows the Summary's Families by stage row only and,
-instead of the other rows and panels, one line: "Population statistics, daily participation and the
-export count Production responses only. Choose Production to see them."
-([conditional fields](../ui-conventions/spec.md#conditional-fields)). With
-no active rehearsal, the Testing view says there is nothing to show. `scope`,
-`page`, `sort` and `size` are the daily chart's and table's; `timezone` is
+The URL carries only closed choices and the browser's zone. Which
+responses are shown follows the site's mode, never the page
+([#2324](https://github.com/epiphany40223/parishkit/issues/2324), which
+removed the page's Responses shown choice): in Production mode the page
+reads live responses and Production mail; in Testing mode, while the
+campaign has an active rehearsal, it reads that rehearsal epoch and is
+labelled as Testing, for every reader who may open the page. Testing mode
+with no rehearsal to read shows the live responses, as Production mode
+does, and as the directory's
+[Testing responses](#response-filters) do. The statistics, the daily chart and the
+export count Production responses only, so in Testing mode the page shows
+the Summary's Families by stage row only, over every Family of the
+campaign, with no Families counted choice and, instead of the other rows
+and panels, one line: "Population statistics, daily participation and
+the export count Production responses only, so they are shown once this
+site is in Production mode."
+([conditional fields](../ui-conventions/spec.md#conditional-fields)). If
+the rehearsal ends while the page is being read, the page says there is
+nothing to show; its next view shows the live responses. A
+`mode` parameter, which links made before this change carry (Testing
+report emails among them), is refused (400) like any unknown parameter,
+as on the [Timeline](#timeline), with no alias
+([#864](https://github.com/epiphany40223/parishkit/issues/864)).
+`pk-admin report responses --mode` keeps its Production or Testing
+choice: the command line has no site-mode view to follow.
+`scope` is the Families counted choice (`historical`, the default, or
+`current`); `page`, `sort` and `size` are the daily table's; `timezone` is
 the browser's ([participation graph](#participation-graph)). The removed
 activity chart's `grain` is still accepted, and ignored, so old bookmarks
 load. Every choice is an
@@ -958,8 +1011,10 @@ Each view reads the funnel once, and a Production view the statistics and
 the daily chart's facts, all inside the report's one
 [campaign read guard](../data/spec.md#campaign-read-guards) with its role
 recheck. When the statistics or the daily facts cannot be read from their
-inputs, the Production view still shows the Summary's Families by stage
-row and, instead of the other rows and panels, one line saying they are unavailable right
+inputs, the Production page still shows the Summary's Families by stage
+row, over every Family of the campaign and with no Families counted
+choice (it needs the statistics' populations), and, instead of the other
+rows and panels, one line saying they are unavailable right
 now, with no zero assumed, and that they appear by themselves; a database or
 guard failure still answers the report's unavailable page. The line never
 tells the reader to reload the page
@@ -979,7 +1034,8 @@ already passed over for the next candidate, so what is left seldom clears
 by itself), the page waits for a different generation too, rather than
 re-reading itself, and recording an automatic view, about once a minute
 while nothing has changed. A view records `response_dashboard_viewed` with
-its outcome, and a Production view also `participation_viewed`, started and
+its outcome, and a view in Production mode also `participation_viewed`,
+started and
 then succeeded or failed (failed, too, when its panels were unavailable);
 neither copies a reported value. The browser draws the charts; a
 page view never renders an image on the server.
@@ -1130,8 +1186,7 @@ timeline table described next.
 **Records shown.** The page shows Production records only: there is no
 Production or Testing control (the Administrator's decision on #1570), and a
 `mode` in the address is refused as an invalid filter (400). While a
-rehearsal is active, an Administrator sees Testing responses with
-Responses shown set to Testing rehearsal on the
+rehearsal is active in Testing mode, Testing responses are shown on the
 [response dashboard](#response-dashboard) and, per Family, on the
 [Campaign Family directory](#response-filters). Emails,
 submissions, form opens and the engagement record carry their mode. A
@@ -2113,40 +2168,34 @@ The ParishSoft data to check link lists the directory's own population, so
 it can also include an active Family with no campaign record, which the old
 `data-quality` list left out (see
 [ParishSoft data to check](#response-filters) above); this is intended.
-A Testing dashboard's links are the same presets followed by `&mode=testing`.
 
-**Testing switch.** Administrators get **Responses shown** above the
-Filters panel: Production (the default) | Testing rehearsal, a
-[binary choice](../ui-conventions/spec.md#binary-choices) with its
-explanation in its toggletip
-([#1535](https://github.com/epiphany40223/parishkit/issues/1535)). It is
-drawn only for an Administrator and only while the campaign has an active
-rehearsal (or the page already shows one); Staff and an Administrator with
-no rehearsal never see it, as on the
-[response dashboard](#response-dashboard). Choosing a segment applies it at
-once, in place, with the filters applied (posted privately, as the table's
-own controls post them, back to the first page), and the filter form
-carries the mode as a hidden field, so Apply filters keeps it. The mode is
-not counted among the Filters panel's applied filters. `mode` is one of the
-closed link presets, so the address bar after an in-place answer includes
-`mode=testing` while Testing is shown. Testing rehearsal reads the campaign's active rehearsal
+**Testing responses.** Whose responses the directory reads follows the
+site's mode, never a choice on the page
+([#2324](https://github.com/epiphany40223/parishkit/issues/2324), which
+removed the Administrators' Responses shown switch, as on the
+[response dashboard](#response-dashboard)): in Testing mode, while the
+campaign has an active rehearsal, the page reads that rehearsal for every
+reader who may open it; otherwise (Production mode, or Testing mode with no
+rehearsal to read) it reads the live responses. A `mode` in a link or a
+form posted to the page is refused (400) like any unknown field, and the
+page's own links and forms never send one there; its export form still
+names the mode and the rehearsal it showed (below). Testing rehearsal reads the campaign's active rehearsal
 epoch for the Response choice, the response columns, their sort orders and
 Counted at; everything else (the population, Family codes, contact details,
 email availability, reach and data checks) is the same in both modes. A
 result never mixes modes: the **Responded** column, which reads live
 responses, is left out in Testing rehearsal, and a visible notice says the
-response choices use the rehearsal only. A Staff member asking for
-`mode=testing` (link or form) is refused (403), and a Testing view asked
-for after the rehearsal ended gets a refusal (409) saying there is no active
-rehearsal, never a Production view. A Testing page's export form carries
+response choices use the rehearsal only. A Testing page's export form carries
 the rehearsal epoch the page read, and the export's selection pins that
 epoch: if it is no longer the campaign's active rehearsal when the export
 is queued, the export is refused (409) and nothing is made, so the file
-never holds a later rehearsal than the page showed. The
+never holds a later rehearsal than the page showed; a page drawn without a
+rehearsal exports live responses. The
 [command line](../admin-automation/spec.md#reports-and-exports) has no page,
-so it reads the rehearsal active when it runs. A Testing export is admitted
-for Administrators only (queuing, downloading and retrying alike) and its
-columns are the Production file's. Its XLSX and PDF report
+so it reads the rehearsal active when it runs. On the command line, and in
+Production mode, a Testing export is admitted for Administrators only
+(queuing, downloading and retrying alike); in Testing mode the page's own
+readers may export what it shows. Its columns are the Production file's. Its XLSX and PDF report
 details add **Responses shown: Testing rehearsal**; a CSV has no report
 details, so the downloaded file's name says it instead
 (`family_directory-testing.csv`, `postal_outreach-testing.csv`, and the same
@@ -2174,7 +2223,7 @@ The selection is `stewardship_directory_report_v2` (migration 0050). It reads
 the funnel through `stewardship_family_response_v1`, so the directory and the
 dashboard share one definition. Version 1 stays installed and unused. The
 selection also takes an optional mode and rehearsal epoch, which the
-Testing switch above uses to read one rehearsal's funnel. An export's captured parameters keep the Response,
+Testing responses above use to read one rehearsal's funnel. An export's captured parameters keep the Response,
 data check and response columns choices, and its report details add
 **Responses counted at** and name each applied choice. Each view is audited
 with the closed values `directory_response`, `directory_data_check`,

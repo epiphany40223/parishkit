@@ -81,6 +81,20 @@ def underscore_breaks(text):
 
 
 @register.filter
+def scope_label(scope):
+    """A population scope's words, as the Families counted choice says them.
+
+    ``reports.participation.SCOPE_LABELS`` is their one place (#2324), so an
+    export's or a report email's page names the population exactly as the
+    Response dashboard does; imported here so template loading never pulls
+    the reports package in at startup.
+    """
+    from parishkit.stewardship.reports.participation import SCOPE_LABELS
+
+    return SCOPE_LABELS[scope]
+
+
+@register.filter
 def share_name(share):
     """A worded share method by its short label, the full one its tooltip.
 
@@ -483,9 +497,10 @@ class AboutPageNode(template.Node):
 
 # Query fields that order, page or place the results rather than filter them:
 # a report's sort, its page number and the browser's time zone.
-# The family directory's Responses shown (``mode``) is a mode of the whole
-# page, drawn as a binary choice outside its Filters panel (#1535), so it
-# is not counted as one of the panel's filters either.
+# The family directory's ``mode`` (Production or Testing rehearsal) is a
+# mode of the whole page, set by the site's mode (#2324; before it, a binary
+# choice outside its Filters panel, #1535), so it is not counted as one of
+# the panel's filters either.
 NOT_FILTERS = frozenset({"sort", "page", "zone", "mode"})
 
 

@@ -90,9 +90,13 @@ def authorize(store, user_id, *, request=None):
         # Codes need the directory page's own capability too, so a requester
         # who loses it can no longer download an earlier export.
         permitted = permitted and allows(principal, Capability.FAMILY_CODES)
-        # Testing rehearsal responses are for Administrators only (#933).
+        # Testing rehearsal responses are for Administrators only (#933),
+        # except while the site is in Testing mode, whose directory shows
+        # them to every reader (#2324).
         if directory_mode(request) == "testing":
-            permitted = permitted and "administrator" in principal.roles
+            from .directories import may_read_testing
+
+            permitted = permitted and may_read_testing(principal)
     elif isinstance(request, ExportRequest) and request.report == "family_test_names":
         # Real Family names from a chosen-Family test review (#817) need that
         # page's own capability, which only an Administrator holds.
@@ -254,7 +258,7 @@ def create_export(
             campaign_id=campaign_id,
             actor_id=user_id,
             correlation_id=correlation_id,
-            document=summary_capture(campaign_id),
+            document=summary_capture(campaign_id, facts.population_scope),
         )
         audit(Action.EXPORT_REQUESTED, request, user_id, outcome=Outcome.STARTED)
         return request

@@ -68,7 +68,7 @@ def summary():
     """A captured Response dashboard Summary, as the request stores it (#1557).
 
     Built from the capture's own JSON shape, so the renderers read exactly
-    what the worker loads: four Active population figures (one unknown,
+    what the worker loads: four Population figures (one unknown,
     with its reason) and the five funnel stages with Link followed's note.
     """
     return ParticipationSummary.from_document(
@@ -78,7 +78,7 @@ def summary():
                 {"label": "Campaign Families", "value": 1234, "note": ""},
                 {"label": "Active Members", "value": 3456, "note": ""},
                 {
-                    "label": "Current annual pledges",
+                    "label": "Annual pledges",
                     "value": {"money": "123456.78"},
                     "note": "",
                 },
@@ -213,7 +213,7 @@ def test_each_panel_fits_its_series_without_drawing_provenance():
         assert dollars.get_ylim() == pytest.approx((0, 3234.56 * 1.1))
         texts = [text.get_text() for text in figure.texts]
         assert f"{RENDERER_VERSION} · Page 1" in texts
-        assert "Family participation — Historical as of day" in texts
+        assert "Family participation — Including Families that left" in texts
         # Neither the eligible total nor the source/request provenance is drawn.
         assert not any(
             word in text

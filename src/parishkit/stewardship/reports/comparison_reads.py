@@ -3,7 +3,7 @@
 The page and ``pk-admin report comparison`` call ``read_comparison`` inside
 the campaign read guard their response holds. It reads:
 
-- the current campaign's ready "Historical as of day" fact set, through the
+- the current campaign's ready historical fact set, through the
   Participation page's own selection (``guarded_participation``), so a
   generation being rebuilt shows the last ready one with the Updating
   notice, and the current figures are the participation graph's;

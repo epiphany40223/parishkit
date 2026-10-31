@@ -71,6 +71,7 @@ from .test_export_views_postgresql import post
 from .test_information_followup_postgresql import search
 from .test_policy_postgresql import user
 from .test_report_workspace_postgresql import read as read_page
+from .test_response_dashboard_postgresql import site_mode
 from .test_response_metrics_postgresql import (
     dispatch_all,
     funnel,  # noqa: F401
@@ -486,6 +487,9 @@ def list_links_open_the_directory(harness, google):
     of a column the link does not show opens the page in name order.
     """
     directory = reverse("admin:family_directory")
+    # In Production mode the page reads the live responses (#2324); the
+    # fixture's rehearsal would otherwise be shown.
+    site_mode("production")
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         links = follow_list_links(browser, harness.campaign.pk)
@@ -515,16 +519,15 @@ def list_links_open_the_directory(harness, google):
 def list_links(campaign_id, mode="production"):
     """Each list's directory link (escaped, as a page draws it) and length.
 
-    The lengths are the funnel lists' (``list_counts``, as ``report
-    responses`` prints them); the data-quality list has none. A Testing
-    link adds ``mode=testing`` to the preset.
+    The lengths are the funnel lists' of ``mode`` (``list_counts``, as
+    ``report responses`` prints them); the data-quality list has none. No
+    link carries a mode: the site's mode decides (#2324).
     """
     directory = reverse("admin:family_directory")
     counts = list_counts(read_metrics(campaign_id, mode).families)
-    extra = {"mode": mode} if mode != "production" else {}
     return [
         (
-            html.escape(directory + "?" + urlencode(preset | extra)),
+            html.escape(directory + "?" + urlencode(preset)),
             str(counts[key]) if key in counts else "",
         )
         for key, preset in RESPONSE_LIST_PRESETS.items()
@@ -546,19 +549,20 @@ def follow_list_links(browser, campaign_id):
     return links
 
 
-def test_directory_testing_switch_reads_the_rehearsal(
+def test_directory_testing_mode_reads_the_rehearsal(
     quality_funnel,  # noqa: F811
     google,
 ):
-    """The directory's Testing switch reads one rehearsal, never both (#933).
+    """In Testing mode the directory reads one rehearsal, never both (#933,
+    #2324): the site's mode decides, with no switch and no mode in any
+    address.
 
-    During the rehearsal each list's Testing link opens the directory with
-    ``mode=testing`` and the list's length; the page is
-    labelled, leaves out the Production-only Responded column, keeps the
-    mode in its address, offers the switch and audits the mode. An export
-    queued in Testing pins the rehearsal epoch and records the mode.
-    Staff are refused Testing on the page and the export, and are not
-    offered the switch.
+    During the rehearsal each list's link opens the directory with the
+    Testing list's length; the page is labelled, leaves out the
+    Production-only Responded column and audits the mode, for Staff as for
+    Administrators. A mode in a link or form is refused (400). An export
+    queued in Testing pins the rehearsal epoch and records the mode; in
+    Production mode a Testing export is for Administrators only.
     """
     harness, epoch = quality_funnel
     open_form(harness)
@@ -572,6 +576,7 @@ def test_directory_testing_switch_reads_the_rehearsal(
     assert report["metadata"]["report_mode"] == "testing"
     assert page(harness, response="submitted")["total"] == 0
 
+    site_mode("testing")
     directory = reverse("admin:family_directory")
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -579,31 +584,20 @@ def test_directory_testing_switch_reads_the_rehearsal(
         assert len(links) == 5
         for href, count in links:
             href = html.unescape(href)
-            assert href.startswith(directory + "?") and href.endswith("&mode=testing")
+            assert href.startswith(directory + "?") and "mode=" not in href
             response, body = read_page(browser, href)
             assert response.status_code == 200, href
             assert f"Matching Families: {count or 2}.".encode() in body, href
             assert b"data-testing-responses" in body
             assert b">Responded</th>" not in body
-            assert (
-                b'<button type="submit" name="mode" value="testing"'
-                b' aria-current="page">' in body
-            )
+            assert b'id="directory-mode"' not in body
             assert f'href="{html.escape(href)}" data-page-address'.encode() in body
-        # The form applies the switch privately, in either direction.
-        response, body = search(
-            browser, directory, {"response": "submitted", "mode": "production"}
-        )
-        assert response.status_code == 200
-        assert b"Matching Families: 0." in body and b">Responded</th>" in body
-        assert b'<div class="segmented-choice" id="directory-mode"' in body
-        assert (
-            b'<button type="submit" name="mode" value="production"'
-            b' aria-current="page">' in body
-        )
-        assert f'href="{directory}?response=submitted" data-page-address'.encode() in (
-            body
-        )
+        # An old link's or form's mode is refused, whatever its value.
+        for refused in (
+            read_page(browser, directory + "?response=submitted&mode=testing"),
+            search(browser, directory, {"response": "submitted", "mode": "production"}),
+        ):
+            assert refused[0].status_code == 400
     modes = sorted(
         context["report_mode"]
         for context in AuditContext.objects.filter(
@@ -611,17 +605,19 @@ def test_directory_testing_switch_reads_the_rehearsal(
             context__outcome="succeeded",
         ).values_list("context", flat=True)
     )
-    assert modes == ["production"] + ["testing"] * 5
+    assert modes == ["testing"] * 5
 
-    # The page's export form names the rehearsal the page read; the view
-    # queues it, and refuses (409, nothing made) a rehearsal that is not
-    # the active one.
+    # The page's export form names the mode and the rehearsal the page read;
+    # the view queues it, and refuses (409, nothing made) a rehearsal that
+    # is not the active one.
     export = reverse("admin:family_directory_export")
     query = DirectoryQuery(response="submitted", mode="testing")
+    sent = {key: value for key, value in query.form_values().items() if key != "mode"}
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        body = search(browser, directory, query.form_values())[1].decode()
+        body = search(browser, directory, sent)[1].decode()
         shown = re.search(r'name="rehearsal" value="([^"]+)"', body).group(1)
         assert shown == str(epoch)
+        assert '<input type="hidden" name="mode" value="testing">' in body
         fields = query.form_values() | dict(
             format="csv", browser_timezone="UTC", request_key=str(uuid4())
         )
@@ -666,10 +662,24 @@ def test_directory_testing_switch_reads_the_rehearsal(
     )
     assert requested.context["report_mode"] == "testing"
 
-    # Another Administrator queues a Testing export, then becomes Staff: they
-    # can no longer retry it (authorize, before any other
-    # check), as for downloading it.
+    # Staff in Testing mode see the rehearsal, as every reader does.
     store = harness.service.store
+    staff = address("staff@example.org", roles=("staff",))
+    patch = [{"operation": "add", "section": "login_rules", **staff}]
+    assert change(store, store.active(), uuid4(), patch).state == "applied"
+    google[0].update(email="staff@example.org", sub="synthetic-staff")
+    browser, login = signed_in()
+    assert login.status_code == 302
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read_page(browser, directory)
+        assert response.status_code == 200
+        assert b"data-testing-responses" in body
+        assert b'id="directory-mode"' not in body
+
+    # In Production mode the page reads the live responses, and a Testing
+    # export (the command line's) is for Administrators only: Staff are
+    # refused, and an Administrator who became Staff can no longer retry
+    # theirs (authorize, before any other check), as for downloading it.
     second = address("second@example.org")
     patch = [{"operation": "add", "section": "login_rules", **second}]
     assert change(store, store.active(), uuid4(), patch).state == "applied"
@@ -693,29 +703,17 @@ def test_directory_testing_switch_reads_the_rehearsal(
     assert change(store, store.active(), uuid4(), patch).state == "applied"
     patch = [{"operation": "add", "section": "login_rules", **demoted}]
     assert change(store, store.active(), uuid4(), patch).state == "applied"
+    site_mode("production")
     with (
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
         pytest.raises(PermissionError),
     ):
         retry_export(store, requester, theirs.pk, request_key=uuid4())
-
-    # Staff: no switch, and Testing is refused on the page and the export.
-    staff = address("staff@example.org", roles=("staff",))
-    patch = [{"operation": "add", "section": "login_rules", **staff}]
-    assert change(store, store.active(), uuid4(), patch).state == "applied"
-    google[0].update(email="staff@example.org", sub="synthetic-staff")
-    browser, login = signed_in()
-    assert login.status_code == 302
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read_page(browser, directory)
         assert response.status_code == 200
-        assert b'id="directory-mode"' not in body
-        assert b'<input type="hidden" name="mode" value="production">' in body
-        for refused in (
-            read_page(browser, directory + "?response=submitted&mode=testing"),
-            search(browser, directory, {"mode": "testing"}),
-        ):
-            assert refused[0].status_code == 403
+        assert b"data-testing-responses" not in body
+        assert b">Responded</th>" in body
         with pytest.raises(PermissionError):
             create_directory_export(
                 store,

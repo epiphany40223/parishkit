@@ -92,8 +92,8 @@ CHECK_FLAGS = (
     ("envelope_zero", "Envelope number 0"),
 )
 # Whose responses the directory reads (#933): Production, or the campaign's
-# active Testing rehearsal, which only Administrators may choose, as on the
-# Response dashboard.
+# active Testing rehearsal. The page follows the site's mode
+# (``response_dashboard.shown_mode``, #2324); the command line chooses.
 MODES = {"production": "Production", "testing": "Testing rehearsal"}
 
 
@@ -101,14 +101,30 @@ class NoRehearsal(ValueError):
     """Testing responses were asked for, but the campaign has no active rehearsal."""
 
 
-def admit_mode(principal, mode):
-    """Testing responses are shown to Administrators only (#933).
+def may_read_testing(principal):
+    """Whether ``principal`` may read Testing rehearsal responses (#933, #2324).
 
-    Staff asking for them get the role refusal (#1924), not sign-in wording.
+    While the site is in Testing mode its pages show the rehearsal to every
+    reader who may open them (the site's mode decides, #2324), so a Testing
+    export of such a page is theirs too. Otherwise (the command line, or a
+    Testing request in Production mode) Testing is for Administrators only.
+    """
+    from . import response_dashboard
+
+    return "administrator" in principal.roles or (
+        response_dashboard.site_mode() == "testing"
+    )
+
+
+def admit_mode(principal, mode):
+    """Refuse Testing responses to a reader who may not read them (#933).
+
+    Staff asking for them in Production mode get the role refusal (#1924),
+    not sign-in wording (``may_read_testing``).
     """
     from parishkit.stewardship.accounts.role_refusal import require_role
 
-    if mode == "testing":
+    if mode == "testing" and not may_read_testing(principal):
         require_role(principal, "administrator")
 
 
@@ -218,8 +234,10 @@ class DirectoryQuery:
     responses: str = "no"
     # Whose responses the Response filter, the response columns and their
     # orders read (#933): "production" (live responses) or "testing" (the
-    # campaign's active rehearsal; Administrators only, checked by callers
-    # with ``admit_mode``). Every other column reads the same data in both.
+    # campaign's active rehearsal, checked by callers with ``admit_mode``).
+    # The page sets it from the site's mode and never accepts it (#2324);
+    # the export form and the command line still carry it. Every other
+    # column reads the same data in both.
     mode: str = "production"
     page: int = 1
 
