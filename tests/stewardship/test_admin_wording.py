@@ -345,6 +345,9 @@ KNOWN = {
     ("staff", "accounts/templates/stewardship/reminder-workgroup.html"): 2,
     ("staff", "accounts/templates/stewardship/setup-step.html"): 1,
     ("staff", "accounts/templates/stewardship/setup.html"): 1,
+    # #2321: "staff entered them in ParishSoft by hand" is a Family-facing
+    # sentence about the parish office, not an Administrator role label.
+    ("staff", "reports/hub_census.py"): 1,
     ("administrator", "accounts/role_refusal.py"): 1,
     ("administrator", "accounts/setup_help.py"): 1,
     ("administrator", "accounts/static/stewardship/ui-v1.js"): 2,

@@ -530,6 +530,13 @@ def test_pages_agree_under_a_families_rule_unlike_the_legacy_rule(ruled):
             assert on_dashboard[:2] == on_financial[:2] == (responded, pledges), scope
             figures[scope] = on_dashboard
     assert figures["historical"][2] - figures["current"][2] == 1
+    # Home's campaign tiles read the same campaign Families as the
+    # dashboard's current population (#2334).
+    with campaign_clock(now):
+        response, body = read(browser, reverse("admin:index"))
+    assert response.status_code == 200, body
+    assert count(tile(body, "active")) == figures["current"][2] == 1
+    assert count(tile(body, "responded")) == expected["current"][0]
     with campaign_clock(now):
         listed = page(harness)
     assert {row["family_duid"] for row in listed["rows"]} == {1}
