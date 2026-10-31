@@ -961,8 +961,10 @@ at the report's as-of moment: the end of the report day, or the capture
 instant. The [saved copy](#saved-copies) shows the stages the snapshot
 kept as a table, so the two always agree. A Testing send omits the funnel,
 because a rehearsal's records are cleaned up and could not be counted again,
-and says instead that the Response dashboard's Testing view has it (today's
-Testing note).
+and says instead that the Response dashboard has it while the site is in
+Testing mode (today's Testing note); its dashboard link carries no `mode`,
+since the site's mode decides
+([#2324](https://github.com/epiphany40223/parishkit/issues/2324)).
 
 ### Participation charts block
 
