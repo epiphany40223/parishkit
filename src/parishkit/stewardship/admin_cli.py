@@ -4545,7 +4545,12 @@ def _exact_create_options(parser):
         "--scope",
         choices=("historical", "current"),
         default="historical",
-        help="historical (default: each day's population then) or current",
+        # Historical, as the stored daily facts, the report emails and
+        # Campaign comparison count; unlike the Reports and queries pages,
+        # whose Families counted choice starts at "current" (#2324).
+        help='historical ("Including Families that left"; the default, '
+        'unlike the pages\' default of "In this campaign today") or current '
+        '("In this campaign today")',
     )
     parser.add_argument("--format", required=True, choices=EXPORT_FORMATS)
     parser.add_argument(
