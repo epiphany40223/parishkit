@@ -3961,7 +3961,8 @@ there, so the Administrator can rename them in one edit.
 - **One population only.** A page that can show only one population
   (because its data holds only one) has no choice, and says which in one
   fixed line in the same place, in the choice's words: for example
-  "Families counted: Including Families that left".
+  "Families counted: Including Families that left". A lookup page, such as
+  the Campaign Family directory, names it in its count line instead.
 - **Same label, same value.** For one population and one day, a figure with
   the same label shows the same value on every page. A page that reads
   another day than now says which day.
