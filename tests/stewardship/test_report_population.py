@@ -6,6 +6,8 @@ in the choice's words, so a new report page cannot leave its readers to
 guess which Families it counts.
 """
 
+import re
+
 import pytest
 from django.template.loader import get_template
 
@@ -29,6 +31,10 @@ MARKERS = {
 }
 
 
+# Django template comments, single-line and block, whose text is not markup.
+COMMENTS = re.compile(r"\{#.*?#\}|\{% comment %\}.*?\{% endcomment %\}", re.S)
+
+
 def _report_entries():
     """The Reports and queries menu entries, in menu order."""
     return [
@@ -47,9 +53,18 @@ def test_every_report_menu_entry_is_in_the_population_inventory():
 def test_every_report_page_names_population(name):
     """Each page offers the Families counted choice or a fixed population line."""
     template, way = REPORT_PAGES[name]
-    source = get_template(template).template.source
+    # A marker only mentioned in a comment does not count.
+    source = COMMENTS.sub("", get_template(template).template.source)
     missing = [marker for marker in MARKERS[way] if marker not in source]
     assert not missing, f"{name} ({template}) lacks {missing}"
+
+
+def test_a_marker_inside_a_comment_does_not_count():
+    """Comment text is stripped before the markers are looked for."""
+    source = '{# data-report-population {% fixed_population "x" %} #}<p>x</p>'
+    assert "data-report-population" not in COMMENTS.sub("", source)
+    block = "{% comment %}data-report-population{% endcomment %}<p>y</p>"
+    assert COMMENTS.sub("", block) == "<p>y</p>"
 
 
 def test_the_fixed_line_speaks_in_the_choices_words():
