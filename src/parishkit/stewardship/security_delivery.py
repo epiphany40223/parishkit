@@ -29,6 +29,13 @@ def alert_payload(alert):
         "after_roles": list(alert.after_roles),
         "timezone": alert.timezone,
         "date_format": alert.date_format,
+        "account_email": alert.account_email,
+        "replaced_account": alert.replaced_account,
+        "replaced_login_at": (
+            None
+            if alert.replaced_login_at is None
+            else alert.replaced_login_at.isoformat()
+        ),
     }
 
 
@@ -45,13 +52,18 @@ def decode_alert(value):
         "after_roles",
         "timezone",
         "date_format",
+        "account_email",
+        "replaced_account",
+        "replaced_login_at",
     }:
         raise ValueError("Invalid security alert payload.")
+    replaced_login_at = value["replaced_login_at"]
     if (
         value["kind"] not in KINDS
         or type(value["occurred_at"]) is not str
         or type(value["before_roles"]) is not list
         or type(value["after_roles"]) is not list
+        or (replaced_login_at is not None and type(replaced_login_at) is not str)
     ):
         raise ValueError("Invalid security alert payload.")
     return SecurityAlert(
@@ -65,6 +77,13 @@ def decode_alert(value):
         tuple(value["after_roles"]),
         value["timezone"],
         value["date_format"],
+        account_email=value["account_email"],
+        replaced_account=value["replaced_account"],
+        replaced_login_at=(
+            None
+            if replaced_login_at is None
+            else datetime.fromisoformat(replaced_login_at)
+        ),
     )
 
 

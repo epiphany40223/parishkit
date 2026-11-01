@@ -1,6 +1,7 @@
 """Fixed-content security alerts for high-impact policy changes.
 
-These are the login-policy expansions and a replaced backup encryption key.
+These are the login-policy expansions, a replaced backup encryption key and
+a Google account matched to a user through another verified address (#2343).
 
 The SQL twin `stewardship_security_content_v2` recompiles these exact
 alternatives from the immutable event, so every string here is closed and
@@ -31,6 +32,7 @@ KINDS = MappingProxyType(
         "domain_created": "Hosted-domain rule created",
         "domain_staff_granted": "Staff added to a hosted-domain rule",
         "backup_key_replaced": "Backup encryption key replaced",
+        "address_matched": "Google account matched through another address",
     }
 )
 INSTRUCTION = (
@@ -50,6 +52,16 @@ KEY_INSTRUCTION = (
     "it stays there until an Administrator other than the one who made the change "
     "does. If you no longer can, contact the parish or its other Administrators."
 )
+# A new verified-address match (#2343, data spec "The address_matched
+# security event"); like the key instruction it holds no HTML-special
+# character, since the SQL twin does not escape it.
+MATCH_INSTRUCTION = (
+    "A Google account signed in to the Admin portal as a user, through "
+    "another address of that account that Google confirmed belongs to it. If this "
+    "was not expected, end the match on the Edit page of that user, or delete the "
+    "user if the address itself is not safe. Acknowledge it on the Admin dashboard; "
+    "it stays there until an Administrator other than the matched person does."
+)
 
 
 @dataclass(frozen=True)
@@ -67,6 +79,13 @@ class SecurityAlert:
     # The parish profile's zone and date format code for the shown time (#967).
     timezone: str
     date_format: str
+    # A verified-address match's own facts (#2343): the matched Google
+    # account's sign-in address and, when the match took the address over
+    # from another account, that account's sign-in address and last Admin
+    # sign-in (None when it never signed in). None on every other kind.
+    account_email: str | None = None
+    replaced_account: str | None = None
+    replaced_login_at: datetime | None = None
 
     def __post_init__(self):
         """Reject untyped values, unknown kinds and non-UTC times."""
@@ -90,11 +109,46 @@ class SecurityAlert:
             len(self.after_roles) != 1 or len(self.before_roles) > 1
         ):
             raise ValueError("A key change names one key after and at most one before.")
+        self._check_match_facts()
+
+    def _check_match_facts(self):
+        """Only a match names accounts: its own, and the one it replaced."""
+
+        def address(value):
+            """Whether ``value`` is a non-empty address string."""
+            return type(value) is str and bool(value)
+
+        matched = self.kind == "address_matched"
+        replaced, login = self.replaced_account, self.replaced_login_at
+        if (
+            matched is not address(self.account_email)
+            or (replaced is not None and not (matched and address(replaced)))
+            or (login is not None and replaced is None)
+            or (
+                login is not None
+                and (
+                    not isinstance(login, datetime) or login.utcoffset() != timedelta(0)
+                )
+            )
+        ):
+            raise ValueError("Only a verified-address match names its accounts.")
 
 
 def _roles(roles):
     """Word a role list in the fixed order the Portal users page uses."""
     return ", ".join(word for role, word in ROLE_WORDS if role in roles) or "none"
+
+
+def _replaced_row(alert):
+    """The Replaced Google account row of a takeover match, or no row."""
+    if alert.replaced_account is None:
+        return ()
+    if alert.replaced_login_at is None:
+        value = f"{alert.replaced_account}, never signed in"
+    else:
+        when = alert_time(alert, alert.replaced_login_at)
+        value = f"{alert.replaced_account}, last signed in {when}"
+    return (("Replaced Google account", value),)
 
 
 def render_security_alert(alert):
@@ -109,7 +163,17 @@ def render_security_alert(alert):
         ("Deployment mode", alert.mode.value.title()),
         ("Event reference", str(alert.event_id)),
     )
-    if alert.kind == "backup_key_replaced":
+    if alert.kind == "address_matched":
+        # No By row: the matched account itself is the actor.
+        instruction = MATCH_INSTRUCTION
+        rows = (
+            ("Account", alert.account_email),
+            ("User", alert.target),
+            ("Role", _roles(alert.after_roles)),
+            *_replaced_row(alert),
+            *common[1:],
+        )
+    elif alert.kind == "backup_key_replaced":
         instruction = KEY_INSTRUCTION
         rows = (
             (

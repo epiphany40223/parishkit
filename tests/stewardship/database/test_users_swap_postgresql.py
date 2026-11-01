@@ -605,6 +605,16 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # (``CLOSURE_CREATED``) and 0106's (``CLOSURE_REPLACED_LAST``) bring back
 # without the uploader's login, so ``CLOSURE_REPLACED_ONLY`` puts 0193's
 # bodies back last.
+# 0200 (#2343) creates the verified-address match table (in CLOSURE_TABLES)
+# with its two guards and the granted in-use definer
+# (runtime_grants.CLOSURE_FUNCTIONS), adds columns its file adds again only
+# if missing (portal users' sign_in_email, the security event's match
+# columns), and replaces the portal user guards and the security content
+# compiler, which no closure file installs again. The columns stay while
+# the swap is pending, so fixtures that create portal users keep working
+# and the replaced bodies stay valid; ``before_address_match`` drops the
+# security event's constraints on them, which the file adds again, and its
+# file, whole, puts all of it back.
 # The columns 0185 (#2202) adds, by table.
 SERIES_IN_FORCE_COLUMNS = (
     ("stewardship_daily_fact_set", "pledge_edits"),
@@ -1161,6 +1171,16 @@ CLOSURE_CREATED = {
             "public.stewardship_response_ministry_held_v1(uuid,uuid,text,integer,date)",
         ),
         ("stewardship_responses", "0033_commitment_roster_date"),
+    ),
+    # 0200 (#2343): the verified-address match guards and in-use definer;
+    # see the note above.
+    **dict.fromkeys(
+        (
+            "public.stewardship_address_in_use_v1(text,uuid)",
+            "public.stewardship_address_match_mutable_v1()",
+            "public.stewardship_address_match_guard_v1()",
+        ),
+        ("stewardship_accounts", "0040_address_match"),
     ),
 }
 
@@ -2375,6 +2395,23 @@ def before_setup_source_check():
     ]
 
 
+def before_address_match():
+    """The security event constraints 0200 adds, dropped while it is pending.
+
+    #2343's 0200 adds the event's match columns only if missing, and they
+    stay (see the note above ``CLOSURE_CREATED``); its foreign key to the
+    match table goes with that table. These drop its unique constraint and
+    three checks, which its file adds again unconditionally.
+    """
+    return [
+        "ALTER TABLE public.stewardship_policy_security_event "
+        "DROP CONSTRAINT stewardship_policy_security_event_address_match_id_key, "
+        "DROP CONSTRAINT policy_security_event_source, "
+        "DROP CONSTRAINT policy_security_event_account, "
+        "DROP CONSTRAINT policy_security_event_replaced"
+    ]
+
+
 @contextmanager
 def swap_pending():
     """Put the database in the state `migrate --users-upgrade-base` leaves.
@@ -2459,6 +2496,7 @@ def swap_pending():
             *before_reviewed_form_shown_items(),
             *before_setup_source_check(),
             *before_series_in_force(),
+            *before_address_match(),
         ):
             cursor.execute(statement)
         before_report_conversion(cursor, views_before)

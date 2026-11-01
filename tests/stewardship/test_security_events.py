@@ -94,12 +94,14 @@ def test_a_recovery_with_nobody_else_is_settled_by_its_target():
 
 
 def test_every_expansion_kind_the_trigger_records_has_a_label():
-    """The dashboard words the three expansions and a replaced backup key."""
+    """The dashboard words the three expansions, a replaced backup key and a
+    verified-address match (#2343)."""
     assert set(KINDS) == {
         "administrator_granted",
         "domain_created",
         "domain_staff_granted",
         "backup_key_replaced",
+        "address_matched",
     }
 
 

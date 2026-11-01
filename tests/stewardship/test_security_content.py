@@ -177,7 +177,81 @@ def test_instructions_need_no_escaping():
     from parishkit.stewardship.jobs.security_content import (
         INSTRUCTION,
         KEY_INSTRUCTION,
+        MATCH_INSTRUCTION,
     )
 
-    for text in (INSTRUCTION, KEY_INSTRUCTION):
+    for text in (INSTRUCTION, KEY_INSTRUCTION, MATCH_INSTRUCTION):
         assert escape(text) == text
+
+
+def matched(**values):
+    """One verified-address match's event (#2343), as its guard records it."""
+    return alert(
+        **{
+            "kind": "address_matched",
+            "target": "staff@example.org",
+            "actor": "staff@example.org",
+            "before_roles": (),
+            "after_roles": ("ministry_leader", "staff"),
+            "account_email": "person@personal.example",
+        }
+        | values
+    )
+
+
+def test_a_match_names_the_account_the_user_and_the_role():
+    """A match's alert has no By row; the account itself is the actor."""
+    content = render_security_alert(matched())
+    assert content.subject == (
+        "[PRODUCTION] SECURITY: Google account matched through another address"
+    )
+    assert "end the match on the Edit page of that user" in content.text
+    assert content.text.endswith(
+        "Account: person@personal.example\nUser: staff@example.org\n"
+        "Role: Staff, Ministry leader\n"
+        "When: September 21, 2026 at 10:30 AM EDT\nDeployment mode: Production\n"
+        "Event reference: 00000000-0000-0000-0000-000000000007"
+    )
+    assert "By:" not in content.text and "Replaced" not in content.text
+
+
+def test_a_takeover_names_the_replaced_account_and_its_last_sign_in():
+    """The Replaced Google account row follows Role, with its time or never."""
+    content = render_security_alert(
+        matched(
+            replaced_account="old@personal.example",
+            replaced_login_at=datetime(2026, 8, 1, 16, tzinfo=UTC),
+        )
+    )
+    assert (
+        "Role: Staff, Ministry leader\n"
+        "Replaced Google account: old@personal.example, last signed in "
+        "August 1, 2026 at 12:00 PM EDT\nWhen:"
+    ) in content.text
+    assert "<dt>Replaced Google account</dt>" in content.html
+    never = render_security_alert(matched(replaced_account="old@personal.example"))
+    assert "Replaced Google account: old@personal.example, never signed in\n" in (
+        never.text
+    )
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"account_email": None},
+        {"account_email": ""},
+        {"kind": "administrator_granted"},
+        {"replaced_login_at": MOMENT},
+        {"replaced_account": "", "replaced_login_at": None},
+        {
+            "replaced_account": "old@personal.example",
+            "replaced_login_at": datetime(2026, 8, 1, 16),
+        },
+    ],
+)
+def test_only_a_match_names_its_accounts(values):
+    """Another kind names no account; a replaced sign-in needs its account."""
+    with pytest.raises(ValueError):
+        matched(**values)
+    with pytest.raises(ValueError):
+        alert(account_email="person@personal.example")

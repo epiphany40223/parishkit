@@ -89,6 +89,22 @@ def test_closed_facts_roundtrip_and_generated_mime():
     assert "html" not in sample.payload() and "text" not in sample.payload()
 
 
+def test_a_match_alert_crosses_the_pipe_with_its_accounts():
+    """A verified-address match's accounts and replaced sign-in round-trip."""
+    sample = alert(
+        kind="address_matched",
+        target="staff@example.org",
+        after_roles=("staff",),
+        account_email="person@personal.example",
+        replaced_account="old@personal.example",
+        replaced_login_at=datetime(2026, 8, 1, 16, tzinfo=UTC),
+    )
+    payload = alert_payload(sample)
+    assert payload["replaced_login_at"] == "2026-08-01T16:00:00+00:00"
+    assert decode_alert(payload) == sample
+    assert decode_alert(alert_payload(alert())) == alert()
+
+
 @pytest.mark.parametrize(
     "field,value",
     [
@@ -99,6 +115,9 @@ def test_closed_facts_roundtrip_and_generated_mime():
         ("occurred_at", "2026-09-21"),
         ("before_roles", "staff"),
         ("extra", "x"),
+        # Only a verified-address match names accounts (#2343).
+        ("account_email", "person@personal.example"),
+        ("replaced_login_at", 5),
     ],
 )
 def test_invalid_fact_payloads_are_rejected_without_echo(field, value):
