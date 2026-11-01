@@ -191,7 +191,7 @@ def test_authorization_url_asks_for_the_scopes_with_pkce():
         "client_id": CLIENT_ID,
         "redirect_uri": "http://127.0.0.1:5555/",
         "response_type": "code",
-        "scope": "openid email https://www.googleapis.com/auth/user.emails.read",
+        "scope": "openid email profile https://www.googleapis.com/auth/user.emails.read",
         "state": "st",
         "code_challenge": "ch",
         "code_challenge_method": "S256",

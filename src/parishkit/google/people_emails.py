@@ -2,10 +2,10 @@
 
 A human-run smoke tool (#2352). It signs you in to Google with the OAuth 2.0
 authorization-code flow and PKCE on a loopback redirect, asks for
-``openid email https://www.googleapis.com/auth/user.emails.read``, then prints
-the ID token's ``email``/``email_verified`` and, for each address the People
-API returns, its value, ``metadata.verified``, ``metadata.primary`` and
-``metadata.source.type``. It changes nothing in ParishKit or Google.
+``openid email profile https://www.googleapis.com/auth/user.emails.read``,
+then prints the ID token's ``email``/``email_verified`` and, for each address
+the People API returns, its value, ``metadata.verified``, ``metadata.primary``
+and ``metadata.source.type``. It changes nothing in ParishKit or Google.
 
 Two ways to finish the sign-in:
 
@@ -60,10 +60,17 @@ from pathlib import Path
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 REVOKE_URL = "https://oauth2.googleapis.com/revoke"
-PEOPLE_URL = (
-    "https://people.googleapis.com/v1/people/me?personFields=emailAddresses,metadata"
+# Each address carries its own metadata, so personFields needs only
+# emailAddresses; asking for the person-level ``metadata`` field as well
+# needs more than user.emails.read grants. ``people/me`` itself answers 403
+# without the basic ``profile`` scope (both found in the #2352 live test).
+PEOPLE_URL = "https://people.googleapis.com/v1/people/me?personFields=emailAddresses"
+SCOPES = (
+    "openid",
+    "email",
+    "profile",
+    "https://www.googleapis.com/auth/user.emails.read",
 )
-SCOPES = ("openid", "email", "https://www.googleapis.com/auth/user.emails.read")
 HTTP_TIMEOUT = 30
 EXIT_FAILED = 2
 
