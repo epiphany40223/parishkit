@@ -60,7 +60,10 @@ Collect, outside the runtime root and outside the repository:
   address; the ParishSoft API key and its organization; the Google Workspace
   mail account; and, optionally, a Slack bot token and channel ID. All but the
   OAuth client are entered through the setup wizard and installed by the
-  credential installers, not copied onto the host by hand.
+  credential installers, not copied onto the host by hand. The Google Cloud
+  project the OAuth client belongs to needs its audience, publishing status
+  and scopes set as the
+  [Google sign-in project](#google-sign-in-project) section below describes.
 - The **Google Workspace mail account**: a service account with a JSON key,
   authorized for domain-wide delegation with the scope
   `https://mail.google.com/`, and the real mailbox it sends as (the
@@ -76,6 +79,90 @@ Collect, outside the runtime root and outside the repository:
   Each installation, including a reinstall from scratch, gets a new UUID; a
   restore reuses the UUID of the deployment it restores.
 - A fixed Compose project name for this deployment.
+
+### Google sign-in project
+
+The Admin portal signs people in with Google through the OAuth client above.
+That client lives in a Google Cloud project, and the project's **Google Auth
+Platform** pages (Branding, Audience, Data Access) decide who may sign in and
+what Google shows them. Google changes these rules from time to time; each
+statement below cites the Google page it was checked against on November 1,
+2026, so check that page again before relying on it.
+
+- **Audience: External.** An *Internal* project admits only accounts of the
+  project's own Google Workspace organization, so a Ministry leader signing in
+  with a Gmail, AT&T or BellSouth address is refused. Stewardship needs
+  *External*, which admits any Google account; the Users page still decides
+  who gets in. (Google:
+  [Manage App Audience](https://support.google.com/cloud/answer/15549945).)
+- **Publishing status.** While the project is *Testing*, only the people
+  listed under Audience → Test users can sign in, at most 100, and Google
+  shows each of them a warning first; a test user's consent lasts seven days.
+  Add test users with **Add users** on the Audience page. Select **Publish
+  app** to move to *In production*, which admits any Google account (same
+  page as above).
+- **Pages Google requires.** An external app in production must list an
+  application home page, a privacy policy and terms of service on the Branding
+  page, on an authorized domain (the parish's top private domain, verified in
+  Google Search Console), and the home page "can not be only a login page"
+  and must link the privacy policy. Stewardship's public pages are those:
+  `<public origin>/about/` (home page), `<public origin>/privacy/` and
+  `<public origin>/terms/`; every page's footer links them (see
+  [public information pages](../specs/stewardship/architecture/spec.md#public-information-pages)).
+  Have the parish approve their wording first. (Google:
+  [Manage OAuth App Branding](https://support.google.com/cloud/answer/10311615);
+  [brand verification](https://developers.google.com/identity/protocols/oauth2/production-readiness/brand-verification).)
+- **When Google must verify the app.**
+  - Basic sign-in (`openid`, `email`, and `profile`, which Google pre-fills as
+    non-sensitive scopes) needs no scope verification. Stewardship asks for
+    `openid` and `email` only. (Google:
+    [sensitive scope verification](https://developers.google.com/identity/protocols/oauth2/production-readiness/sensitive-scope-verification).)
+  - **Brand verification** is needed before the consent screen shows the
+    app's name or logo for an external app; it typically takes two to three
+    business days. (Google: brand verification, above.)
+  - **Sensitive scopes**, such as `https://www.googleapis.com/auth/user.emails.read`
+    for the alternate-address lookup of
+    [#2343](https://github.com/epiphany40223/parishkit/issues/2343) (the Data
+    Access page lists each scope as non-sensitive, sensitive or restricted:
+    confirm it there), need Google's review, which can take up to ten days and
+    needs a demonstration video. Restricted scopes also need a security
+    assessment. (Google: sensitive scope verification, above.)
+  - Until a sensitive scope is verified, a published app shows the "unverified
+    app" screen and is limited to 100 new users in total. (Google:
+    [Unverified apps](https://support.google.com/cloud/answer/7454865).)
+- **Keep Production's project to basic scopes.** On the Production project's
+  Data Access page, list only `openid` and `email` until Google grants
+  verification for `user.emails.read`; then add it, in the same release as
+  the #2343 code that uses it and the Privacy policy text that describes it.
+  At Epiphany nearly every Ministry leader already has a Google account under
+  the address ParishSoft holds (AT&T and BellSouth addresses included), so
+  basic sign-in covers almost everyone; the lookup is for the few exceptions.
+- **A separate project for experiments.** Try new scopes in a second Cloud
+  project (External, Testing, with yourself as a test user), as the #2352
+  test did, never in Production's project.
+
+#### The "Google hasn't verified this app" page
+
+Google shows this page before its consent screen while the project is in
+Testing (to test users), or when a published app asks for a sensitive scope
+Google has not yet verified. It names the app's domain and says Google hasn't
+verified the app. To continue, the person selects **Advanced**, then **Go to
+\<domain\> (unsafe)**, and then sees Google's usual consent screen. (Check the
+exact link names against
+[Unverified apps](https://support.google.com/cloud/answer/7454865) before
+sending; Google's own page did not show them when this was written.)
+
+Text to paste into a Ministry leader's sign-in email while the warning can
+appear (adjust the parish name and address):
+
+> When you sign in with Google, Google may first show a page saying "Google
+> hasn't verified this app". That is expected: it means the parish's sign-in
+> is still waiting for Google's review, not that anything is wrong. Select
+> **Advanced**, then **Go to stewardship.example.org (unsafe)**, and continue
+> to sign in. The site asks Google only for your account's email addresses,
+> so the parish knows it is you. Once Google finishes its review, this page goes away. If
+> anything looks different, or you are unsure, reply to this email before you
+> continue.
 
 ## Commands and generated paths
 
