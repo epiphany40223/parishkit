@@ -257,9 +257,10 @@ def test_a_report_email_after_a_late_response_reports_its_day(
         assert row.phase == "complete"
         assert row.report_day == row.through_date == day
         assert row.submission_watermark == late.campaign_sequence
+        # A send counts today's campaign Families (#2331).
         facts = CampaignDailyFactSet.objects.get(
             campaign=harness.campaign,
-            population_scope="historical",
+            population_scope="current",
             submission_watermark=row.submission_watermark,
             through_date=day,
             state="ready",

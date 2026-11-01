@@ -3,12 +3,18 @@
 The Daily digest's "Campaign totals" section: the report day's end-of-day
 figures, each on one line on a desktop (its label, a table-cell bar and the
 exact value, #1844); on a phone the label moves above its bar and value, so
-four-digit counts still fit a 320px phone (#1564).
+four-digit counts still fit a 320px phone (#1564). Under its heading a
+fixed line names the Families counted and the report day (#2331): a report
+email counts today's campaign Families, as the report pages do by default.
 """
 
 from html import escape
+from zoneinfo import ZoneInfo
+
+from parishkit.stewardship.web.dates import format_date, format_time
 
 from ..daily_digest import FIRST_LABEL, RESPONDED_LABEL, report_day_cards
+from ..report_document import SEND_TIME, ReportDocument
 from .markup import TABLE, bar, plain, style
 from .registry import STATUS, Block, Section
 
@@ -51,11 +57,36 @@ def report_day_bars(document):
     )
 
 
+# The Families a report email's figures count, in the report pages'
+# Families counted words (#2324, #2331).
+FAMILIES_COUNTED = "In this campaign today"
+
+
+def families_counted(document):
+    """The fixed line naming the Families counted and the report day (#2331).
+
+    "Families counted: In this campaign today, as of the end of October 30,
+    2026" for a report as of the end of a day; a report as of when it is
+    made names that moment instead ("as of 7:00 AM, October 31, 2026").
+    None for a retired digest's document, which counted the historical
+    cohort and drew no such line.
+    """
+    if not isinstance(document, ReportDocument):
+        return None
+    if document.as_of == SEND_TIME:
+        local = document.as_of_at.astimezone(ZoneInfo(document.campaign_timezone))
+        when = f"{format_time(local)}, {format_date(local.date())}"
+    else:
+        when = f"the end of {format_date(document.report_day.local_date)}"
+    return f"Families counted: {FAMILIES_COUNTED}, as of {when}"
+
+
 def capture(document, options):
-    """The report day and its figures, as the snapshot keeps them."""
+    """The report day, its figures and its Families counted line, as kept."""
     return {
         "report_day": document.report_day.local_date.isoformat(),
         "figures": [list(figure) for figure in report_day_figures(document)],
+        "families_counted": families_counted(document) or "",
     }
 
 
@@ -97,18 +128,35 @@ def totals_html(totals):
 
 
 def draw(document, frame, options):
-    """The heading and rows in HTML; one "label: value" line per figure in text."""
+    """The heading, the Families counted line and the rows; text lines alike.
+
+    The text part gives the line, then one "label: value" line per figure.
+    """
     totals = report_day_bars(document)
-    html = f"<h2{style('heading')}>Campaign totals</h2>" + totals_html(totals)
-    text = "\n".join(f"{label}: {value}" for label, value, _bar, _note in totals)
+    line = families_counted(document)
+    html = f"<h2{style('heading')}>Campaign totals</h2>"
+    if line:
+        html += f"<p{style('caption')}>{plain(line)}</p>"
+    html += totals_html(totals)
+    text = "\n".join(
+        ([line] if line else [])
+        + [f"{label}: {value}" for label, value, _bar, _note in totals]
+    )
     return Section(html, text)
 
 
 def copy(data, frame):
-    """The saved copy's Campaign totals: stat tiles in the email's words (#1639)."""
+    """The saved copy's Campaign totals: stat tiles in the email's words (#1639).
+
+    A send captured since #2331 keeps its Families counted line, shown as
+    the email showed it; an earlier send has none.
+    """
     from ..digest_presentation import saved_total_tiles
 
-    return {"tiles": saved_total_tiles(data["figures"])}
+    return {
+        "tiles": saved_total_tiles(data["figures"]),
+        "families_counted": data.get("families_counted", ""),
+    }
 
 
 BLOCK = Block(

@@ -86,8 +86,19 @@ def add_report_email_grants(tables, columns, *, worker):
     # the Administrator's coverage decisions (#1872).
     tables.setdefault(DECISION, set()).add("SELECT")
     # The open-requests read (and the snapshot guard, which runs it with the
-    # worker's rights) tells open from followed-up requests.
-    _columns(columns, "stewardship_additional_information", {"followed_up_at"})
+    # worker's rights) tells open from followed-up requests, and, since v2
+    # (frozen file 0196, #2331), To handle from To review and Ignored by the
+    # follow-up flag and the latest Staff revision's decision.
+    _columns(
+        columns,
+        "stewardship_additional_information",
+        {"followed_up_at", "follow_up_needed"},
+    )
+    _columns(
+        columns,
+        "stewardship_information_revision",
+        {"item_id", "expected_version", "review_decision"},
+    )
 
 
 def add_report_email_dispatch_grants(tables, columns, *, private):

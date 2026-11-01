@@ -609,6 +609,12 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # it only revokes the backup login's two table INSERTs (tolerated on the
 # base through runtime_grants.CLOSURE_TABLE_REVOKES), and its revokes are
 # no-ops when run again, so nothing is registered for it.
+# 0196 (#2331) creates one plain read (``CLOSURE_CREATED``: neither granted
+# nor a definer; its file, whole, puts it back) and replaces in place the
+# report snapshot guard and the fact runtime binding, which 0185's entries
+# restore older, and the source pin guard, which 0161's rerun brings back
+# older, so its ``CLOSURE_REPLACED_ONLY`` entries restore 0196's bodies,
+# the first two in 0185's entries' places.
 # The columns 0185 (#2202) adds, by table.
 SERIES_IN_FORCE_COLUMNS = (
     ("stewardship_daily_fact_set", "pledge_edits"),
@@ -1178,6 +1184,13 @@ CLOSURE_CREATED = {
             "public.stewardship_family_heads_name_v2(text,boolean,text[])",
         ),
         ("stewardship_reports", "0054_mixed_surname_names"),
+    ),
+    # 0196 (#2331): the report email's open requests without the Ignored
+    # ones, each with its stage; its file, whole, puts it back with its
+    # replaced guards.
+    "public.stewardship_report_email_requests_v2(uuid,uuid,timestamp with time zone)": (
+        "stewardship_reports",
+        "0054_report_email_population",
     ),
 }
 
@@ -1904,6 +1917,24 @@ CLOSURE_REPLACED_ONLY = {
             "stewardship_family_heads_name_v2(r.surname,r.surname_recorded,n.parts)",
         ),
     ),
+    # 0196 (#2331) replaces 0185's snapshot guard and runtime binding (these
+    # keys' values replace 0185's entries above, in their places) and
+    # 0161's source pin guard, so the restore installs 0196's bodies: a
+    # report email counts today's campaign Families.
+    **{
+        name: (("stewardship_reports", "0054_report_email_population"), phrase)
+        for name, phrase in (
+            ("stewardship_report_email_snapshot_guard_v1", "requests_v2("),
+            (
+                "stewardship_fact_runtime_binding_v1",
+                "NEW.population_scope NOT IN ('current','historical')",
+            ),
+            (
+                "stewardship_source_pin_guard",
+                "WHERE t.task_type='report_email_prepare' AND p.phase='capture'",
+            ),
+        )
+    },
 }
 
 

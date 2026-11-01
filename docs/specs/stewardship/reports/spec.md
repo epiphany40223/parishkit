@@ -4304,8 +4304,11 @@ Staff.
 
 A report email's fact blocks use the same query/calculation service and chart
 data as the participation/statistics web reports for the report's stored as-of
-point ([as of](../report-emails/spec.md#as-of)) and default to Historical as
-of day. The report occurrence records the promoted source
+point ([as of](../report-emails/spec.md#as-of)) and count today's campaign
+Families, the current population scope, as the report pages do by default;
+its Compared with past campaigns block alone reads the historical scope
+([report-emails decision 18](../report-emails/spec.md#administrator-decisions),
+[#2331](https://github.com/epiphany40223/parishkit/issues/2331)). The report occurrence records the promoted source
 snapshot, effective-submission version cutoff, selected population scope,
 report parameters, and campaign-local day boundary. That boundary is resolved
 using the immutable campaign timezone recorded with the campaign, not the

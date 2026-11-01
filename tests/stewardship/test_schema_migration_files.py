@@ -620,6 +620,9 @@ FROZEN = {
     "0195_backup_uploader_contract.sql": (
         "83571c4f1b5e33a011a6fe193c5547e22e7cf62ddcee1b84d3f1cc8fa900b2f3"
     ),
+    "0196_report_email_population.sql": (
+        "e6fac1e1c2f2ebba2279ec9514617cd4ff70040f0d6f988dcd193da078ffd6bf"
+    ),
 }
 
 

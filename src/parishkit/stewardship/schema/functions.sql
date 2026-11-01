@@ -9924,6 +9924,15 @@ BEGIN
                 AND stewardship_export_authorized_v1(r.requester_id)
                 AND stewardship_export_admitted_v1(r.campaign_id,true)
                 AND NOT EXISTS(SELECT 1 FROM stewardship_exact_export_cancel WHERE request_id=r.id)
+        ) OR EXISTS (
+            -- A report email's capture builds its current generation from
+            -- the source its inputs recorded, by its live claim (0196,
+            -- #2331).
+            SELECT 1 FROM stewardship_report_email_preparation p
+            JOIN stewardship_task_run t ON t.root_id=p.task_id AND t.state='running'
+            WHERE t.task_type='report_email_prepare' AND p.phase='capture'
+                AND p.source_id=NEW.snapshot_id
+                AND stewardship_report_email_live_v1(p.id,t.id,t.fence,t.worker_id)
         )) OR NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
             AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
             AND mode='ExclusiveLock' AND granted) THEN

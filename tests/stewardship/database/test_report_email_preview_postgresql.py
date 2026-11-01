@@ -194,7 +194,8 @@ def test_a_preview_draws_what_a_send_drew_and_writes_nothing(family_mail, google
             # Signed, not encrypted: the readable recipe holds no free text.
             payload = signing.b64_decode(token.split(":")[0].lstrip(".").encode())
             recipe = json.loads(zlib.decompress(payload))
-            assert set(recipe) == {"c", "f", "t", "w", "a", "b"}
+            # "h" names the comparison's historical generation (#2331).
+            assert set(recipe) == {"c", "f", "h", "t", "w", "a", "b"}
             # The Preview's submission watermark, which holds its report
             # day against a response entered after the close (#2298).
             assert isinstance(recipe["w"], int)
@@ -310,7 +311,7 @@ def test_a_weekly_preview_draws_its_send_with_live_links(live_response_service, 
         answer = render_row(admin, preparation.definition_id)
         assert answer.status_code == 200, answer.content[:400]
         body = unescape(answer.content.decode())
-        assert "1 open request" in body
+        assert "To review 1 · To handle 0" in body
         assert "Please call about the parish picnic" in body
         # The page draws with the portal's own public origin.
         for target in (live, emails):
