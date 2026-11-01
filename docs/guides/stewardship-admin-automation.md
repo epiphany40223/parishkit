@@ -3118,10 +3118,13 @@ pk-admin export exact status EXACT_ID --watch 10
 pk-admin export fetch EXPORT_ID
 ```
 
-- `export exact create` freezes the current campaign's figures as the page's
-  form does: `--scope` is `historical` (the default) or `current`,
-  `--format` is `csv`, `png`, `pdf` or `xlsx`, and `--timezone` is the time
-  zone of the file's dates. It takes `--request-key`. It needs a full-scope
+- `export exact create` freezes the current campaign's figures. `--scope`
+  is `historical` ("Including Families that left") or `current` ("In this
+  campaign today"). Its default is `historical`, unlike the pages' default
+  of "In this campaign today": it counts as the stored daily facts, the
+  report emails and Campaign comparison do. Pass `--scope current` to match
+  a page's default figures. `--format` is `csv`, `png`, `pdf` or `xlsx`,
+  and `--timezone` is the time zone of the file's dates. It takes `--request-key`. It needs a full-scope
   session.
 - `EXACT_ID` is the `exact.id` that `export exact create` prints, or the
   last part of the exact status page's address. It is not an export id:

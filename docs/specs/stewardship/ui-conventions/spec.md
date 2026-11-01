@@ -3947,8 +3947,10 @@ had chosen its own Families, so the same question got different answers
 differed by one Family that had left).
 **Shared code.** The labels and the default live in one place,
 `reports/participation.py` (`SCOPE_LABELS`, `SCOPE_CHOICE_LABEL`,
-`DEFAULT_SCOPE`); every page, table caption and export reads them from
-there, so the Administrator can rename them in one edit.
+`DEFAULT_SCOPE`), which translates the two populations' words spelled in
+`reports/population_words.py`; every page, table caption, export and
+pk-admin's `--help` reads them from there, so the Administrator can rename
+them in one edit.
 **Precedent.** [#2324](https://github.com/epiphany40223/parishkit/issues/2324).
 
 - **Place.** The choice sits at the top of the page, under the heading (and
@@ -3961,7 +3963,8 @@ there, so the Administrator can rename them in one edit.
 - **One population only.** A page that can show only one population
   (because its data holds only one) has no choice, and says which in one
   fixed line in the same place, in the choice's words: for example
-  "Families counted: Including Families that left".
+  "Families counted: Including Families that left". A lookup page, such as
+  the Campaign Family directory, names it in its count line instead.
 - **Same label, same value.** For one population and one day, a figure with
   the same label shows the same value on every page. A page that reads
   another day than now says which day.
@@ -3979,8 +3982,12 @@ there, so the Administrator can rename them in one edit.
 
 Status: the [Response dashboard](../reports/spec.md#response-dashboard) and
 [Financial stewardship](../reports/spec.md#financial-stewardship-detail)
-follow this rule. Campaign comparison and the Campaign Family directory
-follow in a later change of #2324.
+follow this rule; so do
+[Campaign comparison](../campaign-history/spec.md#page-layout) and the
+[Campaign Family directory](../reports/spec.md#campaign-family-directory),
+each with its fixed population line. A test
+(`test_every_report_page_names_population`) checks that every Reports and
+queries menu entry offers the choice or draws the fixed line.
 
 ### Overview pages
 
