@@ -1267,3 +1267,32 @@ def test_the_action_row_draws_the_discard_dialog_outside_its_region():
     for current in ("go_live",):
         page = wizard.build(True, current, done={"settings"}, mail_test_url=TEST_URL)
         assert "campaign-step-discard" not in actions(page)
+
+
+def test_in_place_focus_lands_on_the_count_line_only_when_it_has_text():
+    """Focus goes to the count line when it holds text, else to the summary.
+
+    An empty count line would give a screen reader nothing to speak, so the
+    offer, failed and empty answers keep focus on the summary line.
+    """
+    from parishkit.stewardship.accounts.stages import QUEUED
+
+    task = uuid4()
+
+    def focus_on(html):
+        """Return which of the two lines carries the in-place focus target."""
+        tags = re.findall(r'<p class="campaign-load-(summary|count)"([^>]*)>', html)
+        return [name for name, attrs in tags if "data-in-place-focus" in attrs]
+
+    offer = load_region(load="offer", stages=wizard.load_stages("offer", None))
+    failed = load_region(
+        load="failed", load_task=task, stages=wizard.load_stages("failed", "staging")
+    )
+    waiting = load_region(
+        **wizard.load_status(task_values("queued", task, "unspecified"), families=0)
+    )
+    assert count_line(waiting) == str(QUEUED)
+    assert focus_on(waiting) == ["count"]
+    for html in (offer, failed):
+        assert count_line(html) == ""
+        assert focus_on(html) == ["summary"]
