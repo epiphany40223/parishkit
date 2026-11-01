@@ -203,7 +203,7 @@ def components(context, admin):
                                 "after": "Renamed Parish",
                             },
                             {
-                                "label": "Parish timezone",
+                                "label": "Parish time zone",
                                 "before": "America/New_York",
                                 "after": "America/Chicago",
                             },

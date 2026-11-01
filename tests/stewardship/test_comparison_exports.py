@@ -507,6 +507,8 @@ def test_before_day_one_the_files_hold_final_results_only():
     found = document(early)
     assert found.day is None and found.tiles == ()
     assert "Day 1 has not ended yet" in found.data_line
+    # No day, so the population line names no date.
+    assert dict(found.metadata)["Families counted"] == "Including Families that left"
     # The summary page, a page of charts, then the table.
     assert len(re.findall(rb"/Type /Page\b", render(found, "pdf"))) == 3
 
@@ -525,6 +527,23 @@ def test_cells_round_trip(value):
         assert result == date(2054, 10, 4)
     else:
         assert result == value
+
+
+def test_every_file_names_its_fixed_population_as_the_page_does(monkeypatch):
+    """The data line has no "· through"; a Families counted row names the
+    page's fixed population and day instead (#2324), on every PDF page too."""
+    found = document()
+    labels = dict(found.metadata)
+    assert "through" not in found.data_line
+    assert found.data_line.startswith("Day 3 of Stewardship 2055 · compared with")
+    assert labels["Families counted"].startswith(
+        "Including Families that left, as of the end of "
+    )
+    detail = f"Families counted: {labels['Families counted']}"
+    pages = frames(
+        monkeypatch, lambda output: render_comparison(found, output, format="pdf")
+    )
+    assert pages and all(detail in drawn for drawn in pages)
 
 
 def test_updating_figures_say_so_in_every_file(monkeypatch):

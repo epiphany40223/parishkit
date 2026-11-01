@@ -61,11 +61,11 @@ def test_by_ministry_marks_and_one_line_for_one_ministry(page, component_origin)
     section = page.locator("#by-ministry")
     rows = section.locator("tbody tr")
     assert rows.count() == 4
-    assert "Not in ParishSoft data" in rows.first.inner_text()
-    assert "No longer in this campaign" in rows.nth(1).inner_text()
+    assert "Not in ParishSoft" in rows.first.inner_text()
+    assert "Removed from this campaign" in rows.nth(1).inner_text()
     link = section.get_by_role("link", name=JOINS)
     assert link.get_attribute("href") == COUNTED + "#table"
-    # Example has no leave request and Another Ministry nothing unresolved.
+    # Example has no leave request and Another Ministry nothing to review.
     assert section.get_by_role("link", name="0 leave requests for").count() == 0
     assert section.get_by_role("link").count() == 4
     page.goto(component_origin + LEADER)
@@ -74,13 +74,13 @@ def test_by_ministry_marks_and_one_line_for_one_ministry(page, component_origin)
     assert section.locator("table").count() == 0
     line = section.locator(".by-ministry-line")
     assert " ".join(line.inner_text().split()) == (
-        "Example <Ministry>: 51 join requests · 0 leave requests · 40 unresolved"
+        "Example <Ministry>: 51 join requests · 0 leave requests · 40 to review"
     )
     visible(line.get_by_role("link", name=JOINS))
     # Neither the marks nor the help about them (the queue's own rows keep
     # their Removed badge).
     text = section.text_content() + page.locator(".about-page").text_content()
-    for hidden in ("Not in ParishSoft data", "No longer in this campaign"):
+    for hidden in ("Not in ParishSoft", "Removed from this campaign"):
         assert hidden not in text
 
 
@@ -267,7 +267,7 @@ def test_packet_request_posts_its_selection(page, component_origin):
     assert download.value.suggested_filename == "packet.pdf"
     page.goto(component_origin + REQUESTS)
     page.get_by_role("checkbox", name="Example <Ministry>", exact=True).check()
-    page.get_by_label("Also include resolved and withdrawn requests").check()
+    page.get_by_label("Also include Done and withdrawn requests").check()
     zone = page.evaluate("Intl.DateTimeFormat().resolvedOptions().timeZone")
     page.route(
         "**" + reverse("admin:ministry_packet"),

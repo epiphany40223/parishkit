@@ -124,7 +124,7 @@ def test_keep_as_is_marks_the_item_and_returns_to_the_list(auth_service, google)
     # Other pages are untouched, and no step review was stored: the item
     # mark is not the step's Continue (the saved default above completed
     # the step already, as any applied content change does).
-    assert "Family login help</a> — Empty" in listing
+    assert "Family sign-in help</a> — Empty" in listing
     assert not CampaignSetupReview.objects.filter(item="").exists()
 
 
@@ -161,7 +161,7 @@ def test_keep_as_is_refuses_an_item_the_list_does_not_show(auth_service, google)
     assert read.items == {"page:login_help"} and "content" not in read.kept
     with web():
         listing = browser.get(CATALOG).content.decode()
-    assert "Family login help</a> — Empty" in listing
+    assert "Family sign-in help</a> — Empty" in listing
 
 
 def test_keep_as_is_is_offered_only_for_a_listed_unchanged_item(auth_service, google):

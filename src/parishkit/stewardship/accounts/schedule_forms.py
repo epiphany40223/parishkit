@@ -134,7 +134,7 @@ class ScheduleWindow(AdminForm):
     """Draft dates may change together with mail; locked structural inputs are inert."""
 
     timezone = TimezoneField(
-        label=_("Campaign timezone"),
+        label=_("Campaign time zone"),
         # Send times on every page that draws this form are in the
         # browser's zone (#558); this zone decides the campaign's days.
         help_text=_(
@@ -275,7 +275,7 @@ class ScheduleWindow(AdminForm):
             interval = campaign_values(self.values())
         except ConfigError:
             raise forms.ValidationError(
-                _("Check the campaign dates and timezone."),
+                _("Check the campaign dates and time zone."),
                 code="invalid_campaign",
             ) from None
         if self.live_at is not None and interval.end <= self.live_at:

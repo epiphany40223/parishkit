@@ -1188,12 +1188,12 @@
   //   itself a form[data-in-place] because its options reshape far more of
   //   the page than a table;
   // - a[data-in-place]: a link that shows another view of this page (the
-  //   Response dashboard's mode and Chart population pairs, #1535, #1537,
+  //   Response dashboard's Families counted pair, #1535, #1537, #2324,
   //   whose links sit in the region they refresh, so each refresh redraws
   //   them with the current sort, size and zone; a page's periodic
   //   re-read). Its value, if any, is a stable key that finds the link
   //   again in the fresh page, for focus and to announce the view now shown
-  //   ("Testing rehearsal");
+  //   ("In this campaign today");
   // - form[data-in-place]: a form whose answer is this page again, such as a
   //   POST whose server redirects back here (Post/Redirect/Get). A POST
   //   saves a change unless the form is marked data-in-place-read (System
@@ -1547,8 +1547,17 @@
     });
     hidden(form).forEach((field) => {
       const source = wanted.get(field.getAttribute("name"))?.shift();
-      if (source) field.value = source.value;
-      else field.remove();
+      if (!source) {
+        field.remove();
+        return;
+      }
+      const changed = field.value !== source.value;
+      field.value = source.value;
+      // A rule that follows a hidden field (Financial stewardship's Family
+      // status, shown only under Including Families that left, #2324:
+      // data-show-when="scope=historical") hears its new value, as it
+      // would a visible field's.
+      if (changed) field.dispatchEvent(new Event("change"));
     });
     form.prepend(...[...wanted.values()].flat().map((field) => document.importNode(field)));
   };
@@ -1958,6 +1967,32 @@
       : anchor && heldMatches(anchor, held)[held.index];
     match?.focus({preventScroll: true});
   };
+  // A control whose re-read can take seconds (a report's Families counted,
+  // #2324) is marked data-busy-control and keeps the working spinner's space;
+  // the one the reader just used is marked data-busy-working, and
+  // ui-v1.css shows its spinner while a region is aria-busy (ui-conventions
+  // Working spinner). Every request clears the earlier mark first, so a
+  // refused or failed read, or a periodic re-read the reader did not start
+  // (null), never shows a spinner; a swap draws the control afresh, unmarked.
+  // The spinner is decorative (aria-hidden), so the page's polite status
+  // region says "Working…" too, as busy buttons do: most screen readers do
+  // not announce aria-busy, and the status region sits outside the busy
+  // region, so the words are not held back while it reads. They are said
+  // only once the read has taken a moment: a quick answer announces just the
+  // view now shown, and a swap draws the control afresh, so a pending
+  // "Working…" for a control no longer marked is dropped.
+  let workingTimer = 0;
+  const markWorking = (control) => {
+    window.clearTimeout(workingTimer);
+    document.querySelectorAll("[data-busy-working]")
+      .forEach((node) => node.removeAttribute("data-busy-working"));
+    const choice = control instanceof Element ? control.closest("[data-busy-control]") : null;
+    if (!choice) return;
+    choice.setAttribute("data-busy-working", "");
+    workingTimer = window.setTimeout(() => {
+      if (choice.isConnected && choice.hasAttribute("data-busy-working")) announce("Working…");
+    }, 400);
+  };
   const refreshRegions = async (region, control, url, init, fallback, options, controller, form) => {
     const owner = options.owner || null;
     // A periodic re-read (options.background, #1586) never hands the page
@@ -1982,6 +2017,7 @@
     const id = region.id;
     region.setAttribute("aria-busy", "true");
     busyRegion = region;
+    markWorking(background ? null : control);
     let response, text;
     try {
       response = await fetch(url, {
@@ -2612,8 +2648,8 @@
   // zone, the table's sort and size, a view choice such as Production or
   // Testing), except those marked data-filter, which carry a filter (System
   // logs' submitted-form mark, a one-send view), and every visible control
-  // marked data-view: a view choice that switches the data shown (the
-  // directory's Responses shown, Production or Testing) is a view, not a
+  // marked data-view: a view choice that switches the data shown
+  // (Sent mail's Production or Testing) is a view, not a
   // filter, so Clear keeps it. No other visible field is sent, so neither
   // is a private filter. An unticked box or radio sends nothing, as in a
   // native submission.
@@ -3404,11 +3440,11 @@
   const EXPORT_DOWNLOAD_TRIES = 5;
   const EXPORT_TEXT = {
     waiting: "Still working… If a ParishSoft refresh is finishing, this can take up to two minutes. Keep this page open.",
-    failed: "The file could not be created. Try again; if it fails again, check System logs or ask your system administrator.",
+    failed: "The file could not be created. Try again; if it fails again, check System logs or ask whoever runs the server.",
     gone: "This export ended before it was downloaded. Try again.",
     cancelled: "This export was cancelled. Try again.",
     signedOut: "Couldn't check on the file: your sign-in may have ended. Reload the page or sign in again.",
-    slow: "The file is taking longer than usual. Try again later; if it keeps happening, ask your system administrator.",
+    slow: "The file is taking longer than usual. Try again later; if it keeps happening, ask whoever runs the server.",
     noAnswer: "No response from the server yet. Your export may still have been started; try again in a few minutes.",
     unreachable: "The server could not be reached. Check your connection, then try again.",
     empty: "No file came back. Reload the page, then try again.",
@@ -9532,7 +9568,7 @@
       });
       if (!acknowledgment.hidden && box.checked) body.set("acknowledge_unknown", "on");
       let text = "The server could not be reached, so a test may or may not be on its way. "
-        + "Check the Testing mailbox before sending another.";
+        + "Check the Testing recipient's inbox before sending another.";
       let error = true;
       let unknown = false;
       try {
@@ -9549,9 +9585,9 @@
           // The shared clock (date-format-v1.js); without it the time is left out.
           const time = clockTime();
           text = time
-            ? fillIn("Test queued at {time} for the Testing recipient. Check the Testing mailbox.",
+            ? fillIn("Test queued at {time} for the Testing recipient. Check the Testing recipient's inbox.",
               {time})
-            : "Test queued for the Testing recipient. Check the Testing mailbox.";
+            : "Test queued for the Testing recipient. Check the Testing recipient's inbox.";
           error = false;
         } else if (response.status === 400 && problems.length) {
           text = "This text can't be sent as a test. " + problems

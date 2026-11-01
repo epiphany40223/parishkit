@@ -46,7 +46,13 @@ Production Compose contains:
   same container (see
   [worker queues and processes](../background-processing/spec.md#worker-queues-and-processes));
 - `backup-worker`: a dedicated queue/service with only database/media/config
-  read access, backup-target credentials, and the active data-backup key;
+  read access and the active data-backup key, on its own internal network
+  with no route out
+  ([#235](https://github.com/epiphany40223/parishkit/issues/235));
+- `backup-uploader`: the one-shot off-site uploader, which alone copies the
+  sealed sets to the configured Google Drive folder with the backup-target
+  credential, from its own network plus `application-egress`
+  ([operations](../operations/spec.md#logins-and-their-sources));
 - `mail-dispatch`: a dedicated Celery worker for provider submission;
 - `token-key-rotation`: an explicitly invoked maintenance profile that alone
   performs link-token private-key migration/rotation;

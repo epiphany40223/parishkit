@@ -198,7 +198,7 @@ WITH selected AS MATERIALIZED (
     SELECT x.*,s.promoted_at AS source_as_of,statement_timestamp() AS observed_at
     FROM selected x JOIN stewardship_source_snapshot s ON s.id=x.source_id
     WHERE s.state='promoted' AND s.compacted_at IS NULL
-        AND x.values->'modules' ? 'ministry'
+        AND x.values->'modules' OPERATOR(pg_catalog.?) 'ministry'
 ), ministries AS MATERIALIZED (
     -- Widen before filtering, as the Ministry report does, so an unsupported
     -- configured ID cannot become an outage through predicate reordering.
@@ -214,8 +214,9 @@ WITH selected AS MATERIALIZED (
     -- ParishSoft (#1217) does not keep one listed (#1219), as it is never
     -- counted or listed under it.
     -- Staff and Administrators still get it where they list such requests:
-    -- by id, and with the presence filters 'gone' and 'any'. The Ministry an
-    -- Edit carried forward (#1684) counts as the request's too.
+    -- by id, and with the presence filters 'gone' and 'any'. An edited
+    -- request (#1684) holds only its Ministry in force, the one the Edit
+    -- carried it to (#2331).
     CROSS JOIN LATERAL (
         SELECT n.duid,true FROM jsonb_array_elements_text(x.values->'ministry_duids') n(duid)
         UNION
@@ -223,10 +224,10 @@ WITH selected AS MATERIALIZED (
         FROM stewardship_submission s
         JOIN stewardship_ministry_request r ON r.submission_id=s.id
         JOIN stewardship_family_campaign f ON f.id=s.family_id
-        CROSS JOIN LATERAL (VALUES (r.ministry_duid),(r.reviewed_ministry_duid)) d(duid)
+        CROSS JOIN LATERAL (VALUES (coalesce(r.reviewed_ministry_duid,r.ministry_duid))) d(duid)
         WHERE s.campaign_id=x.id AND s.mode='live' AND d.duid IS NOT NULL
           AND r.state NOT IN ('cancelled','superseded')
-          AND NOT x.values->'ministry_duids' @> to_jsonb(d.duid)
+          AND NOT x.values->'ministry_duids' OPERATOR(pg_catalog.@>) to_jsonb(d.duid)
           AND (r.entity_kind<>'member'
               OR (operational AND (request_uuid IS NOT NULL
                   OR coalesce(filters->>'presence','current') IN ('gone','any')))
@@ -239,8 +240,9 @@ WITH selected AS MATERIALIZED (
     WHERE n.duid::bigint BETWEEN 1 AND 2147483647
       AND (operational OR n.duid::bigint=ANY(ministry_scope::bigint[]))
 ), requests AS MATERIALIZED (
-    -- A request is in the reader's scope by the Family's Ministry or by the
-    -- one an Edit carried forward (#1684), so the leaders of both see it.
+    -- A request is in the reader's scope by its Ministry in force: the one
+    -- an Edit carried forward (#1684), else the Family's, so only that
+    -- Ministry's leaders see it (Administrator, #2331).
     -- Its latest version is found across every request first, so scope
     -- never changes which version is latest. A Ministry outside the
     -- reader's scope is still named, from the same snapshot.
@@ -252,7 +254,7 @@ WITH selected AS MATERIALIZED (
             WHERE sm.snapshot_id=x.source_id AND sm.source_key=q.ministry_duid::text),
             'Unavailable Ministry') AS ministry_name,
         coalesce(m.in_campaign,
-            x.values->'ministry_duids' @> to_jsonb(q.ministry_duid)) AS in_campaign,
+            x.values->'ministry_duids' OPERATOR(pg_catalog.@>) to_jsonb(q.ministry_duid)) AS in_campaign,
         CASE WHEN q.reviewed_ministry_duid IS NOT NULL THEN coalesce(e.name,
             (SELECT coalesce(nullif(btrim(p.canonical::jsonb->>'name'),''),
                 'Unavailable Ministry')
@@ -272,7 +274,8 @@ WITH selected AS MATERIALIZED (
     ) q CROSS JOIN source x
     LEFT JOIN ministries m ON m.duid=q.ministry_duid
     LEFT JOIN ministries e ON e.duid=q.reviewed_ministry_duid
-    WHERE m.duid IS NOT NULL OR e.duid IS NOT NULL
+    WHERE CASE WHEN q.reviewed_ministry_duid IS NULL THEN m.duid ELSE e.duid END
+        IS NOT NULL
 ), named AS MATERIALIZED (
     -- A Member is named "Last, first" (UX conventions, "Family and Member
     -- names", #932), so the name sort orders by surname; the search also
@@ -314,8 +317,10 @@ WITH selected AS MATERIALIZED (
     WHERE CASE WHEN request_uuid IS NOT NULL THEN r.id=request_uuid ELSE
         ((filters->>'history')='all' OR (r.revision=1
             AND r.state NOT IN ('cancelled','superseded')))
-        AND ((filters->>'ministry')='' OR r.ministry_duid::text=(filters->>'ministry')
-            OR r.reviewed_ministry_duid::text=(filters->>'ministry'))
+        -- The Ministry filter finds a request under its Ministry in force
+        -- only, as By Ministry counts it (#2331).
+        AND ((filters->>'ministry')=''
+            OR coalesce(r.reviewed_ministry_duid,r.ministry_duid)::text=(filters->>'ministry'))
         AND ((filters->>'action')='any' OR r.action=(filters->>'action'))
         AND ((filters->>'state')='any' OR r.state=(filters->>'state')
             OR ((filters->>'state')='unresolved'
@@ -371,7 +376,7 @@ WITH selected AS MATERIALIZED (
         JOIN stewardship_ministry_revision v ON v.request_id=c.request_id
     ) h ON true
 )
-SELECT CASE WHEN NOT z.values->'modules' ? 'ministry'
+SELECT CASE WHEN NOT z.values->'modules' OPERATOR(pg_catalog.?) 'ministry'
     THEN jsonb_build_object('disabled',true)
     WHEN x.id IS NULL THEN jsonb_build_object('unavailable',true)
     ELSE jsonb_build_object(

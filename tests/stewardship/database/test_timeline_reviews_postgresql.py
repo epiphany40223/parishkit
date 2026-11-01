@@ -551,7 +551,7 @@ def test_limitation_decisions_reach_the_timeline(response_service, google):
         "Accepted",
     ]
     serve = [detail for _what, detail in lines[:4]] + [lines[5][1]]
-    assert all(d.startswith("Cannot participate in any ministries for ") for d in serve)
+    assert all(d.startswith("Cannot participate in any Ministries for ") for d in serve)
     assert lines[2][1].endswith("; by admin@example.org; note: Not yet")
     assert lines[4][1] == (
         "Cannot attend Mass or prayer services for the Family; by admin@example.org"

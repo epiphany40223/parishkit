@@ -183,7 +183,7 @@ def test_a_limitations_member_page(response_service, google):
     drawn = section(markup)
     own = answer_id(duid, "member", "3")
     assert f'<tr id="hub-other-limitations-row-{own}"' in drawn
-    assert "Cannot participate in ministries:" in drawn
+    assert "Cannot participate in Ministries:" in drawn
     assert "Cannot attend Mass" not in drawn and "filtered out" not in drawn
     action, _fields = dialog_fields(drawn, "hub-other-limitations-decide")
     assert action == reverse("admin:limitations_report")

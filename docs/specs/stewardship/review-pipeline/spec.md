@@ -203,10 +203,15 @@ Details the table cannot hold:
 - A leader's Edit of a Ministry request offers only Ministries that leader
   leads, so an item never leaves a leader's view by that leader's own
   decision. When Staff edit a request into another Ministry, leaders of the
-  carried-forward Ministry see it as theirs from then on, and leaders of the
-  Family's original Ministry see it read-only as Accepted (edited) into
-  that Ministry (for example "Accepted (edited) into Adult Choir", drawn
-  with the [Edited chip](../ui-conventions/spec.md#status-indicators)).
+  carried-forward Ministry see it as theirs from then on, and it is
+  counted, filtered and listed under that Ministry only, its Ministry in
+  force, so leaders of only the Family's original Ministry no longer see it
+  (Administrator decision, 2026-11-01,
+  [#2331](https://github.com/epiphany40223/parishkit/issues/2331#issuecomment-6559704860); the
+  [Ministry report](../reports/spec.md#ministry-change-summary)). Its row
+  reads Accepted (edited) into that Ministry (for example "Accepted
+  (edited) into Adult Choir", drawn with the
+  [Edited chip](../ui-conventions/spec.md#status-indicators)).
 - Leaders never Add: adding a Member to a Ministry the Family did not ask
   for is a parish decision. A leader who sees a mistaken request Ignores it
   with a note; Staff Add the right one.
@@ -2037,7 +2042,12 @@ export below it. Its parts:
    disclosure), on one compact row at laptop width
    ([worklist filters](../ui-conventions/spec.md#admin-tables), #1653),
    with **Stage** first (To review is the default) and the stream's own
-   filters after it.
+   filters after it. Census changes opens instead on its first choice,
+   **To review and Conflict**, which lists both stages together: the menu's
+   badge and Home count both, as each needs a person, so the page opens on
+   the number they show (the Administrator, 2026-10-31,
+   [#2331](https://github.com/epiphany40223/parishkit/issues/2331)). Each
+   stage keeps its own choice after it.
 2. The selection bar and table. Columns: the stream's identity columns in
    the shared [column order](../ui-conventions/spec.md#table-column-order),
    each name with its DUID under it; the values (Baseline where a stream

@@ -128,7 +128,7 @@ def test_report_and_chart_remain_exact_after_source_changes(
         ).group(1)
         assert changed_chart == chart
         # A Testing digest has no funnel, and the note its email had.
-        note = b"Testing digests leave out the response funnel."
+        note = b"Testing report emails leave out the response funnel."
         assert note in before and note in after
         assert b"data-digest-funnel" not in before + after
         assert views(seeded.snapshot_id).count() == 8
@@ -366,7 +366,7 @@ def test_a_production_saved_page_recounts_the_emails_funnel(
             panel = re.search(rb"<[^>]*data-digest-funnel.*?</section>", content, re.S)
             assert panel, "The page has no funnel panel."
             rows = re.findall(
-                rb'<th scope="row">([^<]+).*?</th><td>([^<]+)</td>',
+                rb'<th scope="row">([^<]+).*?</th><td class="numeric">([^<]+)</td>',
                 panel.group(0),
                 re.S,
             )

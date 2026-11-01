@@ -406,13 +406,13 @@ def test_family_name_sort_keys_match_the_shown_names(response_service):
         1: "Example, Member",
         2: "Empty",
         20: "Smith, Carl",
-        21: "smith, Ann and Bob Jones",
+        21: "smith / Jones, Ann / Bob",
         22: "Adams",
         23: "Zed Household",
         24: "Yolanda",
     }
     # Surname first, then the whole name: both Smiths sort by "smith".
-    assert [row["family_duid"] for row in rows] == [22, 2, 1, 21, 20, 24, 23]
+    assert [row["family_duid"] for row in rows] == [22, 2, 1, 20, 21, 24, 23]
 
 
 def test_tied_family_names_keep_each_familys_emails_together(response_service):

@@ -497,7 +497,7 @@ slot per pass, with full first so compatible delta work coalesces. Downtime
 does not replay an unbounded backlog of read-only polls. Repeated scans/restarts
 reuse ticks even if insertion hints were lost; failed terminal work is not
 silently retried by replaying its tick. Current campaign timezone governs its
-slots, and otherwise the Parish timezone applies. The shared resolver handles
+slots, and otherwise the Parish time zone applies. The shared resolver handles
 DST gaps and folds. The configurable-time input exists in the slot calculator;
 the applied configuration currently uses the documented 2:00 a.m. default until
 ADM-03 adds the versioned time editor/schema.

@@ -23,6 +23,9 @@ EMPTY_PAGES = {
     "/census-changes-none-stage": (
         "Nothing is at this stage. Choose another Stage above to see more.",
     ),
+    "/census-changes-none-open": (
+        "Nothing is at these stages. Choose another Stage above to see more.",
+    ),
     "/delivery-no-evidence": ("No Admin evidence yet. Each note or decision",),
     "/go-live-families-none": (
         "No Families have Testing responses left to delete, so cleanup has",
@@ -43,7 +46,7 @@ EMPTY_PAGES = {
     "/limitations-report-none-searched": (
         "Nothing is at this stage. Choose another Stage",
     ),
-    "/source-form-none": ("Every Family that can use the portal can open the form,",),
+    "/source-form-none": ("Every campaign Family can open the form,",),
 }
 # The Filters panel beside each empty table with one (#227): its summary and
 # whether it arrives open, from the same count the message is chosen by, so

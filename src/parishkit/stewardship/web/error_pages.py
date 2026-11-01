@@ -59,7 +59,7 @@ _GUIDANCE = {
         _("Temporarily unavailable"),
         _(
             "Wait a moment, then try again. If this keeps happening, tell your "
-            "parish's stewardship administrator."
+            "parish's stewardship Administrator."
         ),
     ),
     ErrorCode.DENIED: (
@@ -67,7 +67,7 @@ _GUIDANCE = {
         _(
             "Your session may have ended, or your access may have changed. Sign "
             "in again; if the page is still unavailable, ask a parish "
-            "administrator for access."
+            "Administrator for access."
         ),
     ),
     ErrorCode.NOT_AVAILABLE: (
@@ -91,7 +91,7 @@ _GUIDANCE = {
 _SIGNED_IN = Refusal(
     _("Your access doesn't include this page."),
     fix=_(
-        "Choose a page from the menu, or ask a parish administrator if you "
+        "Choose a page from the menu, or ask a parish Administrator if you "
         "need this one."
     ),
     sign_in=False,

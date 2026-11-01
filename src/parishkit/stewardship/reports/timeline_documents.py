@@ -1,4 +1,4 @@
-"""The Family timeline export's file contents, shared by CSV, XLSX and PDF.
+"""The Timeline export's file contents, shared by CSV, XLSX and PDF.
 
 Built by the worker from the retained capture (``timeline_exports.capture``)
 inside the export's campaign read guard, and rendered by
@@ -43,7 +43,7 @@ class TimelineDocument:
     item_count: int
     requested_at: datetime
     headings: ClassVar[tuple[str, ...]] = HEADINGS
-    title: ClassVar[str] = "Family timeline"
+    title: ClassVar[str] = "Timeline"
     sheet_name: ClassVar[str] = "Timeline"
     # The details the XLSX's Timeline sheet repeats above its table (#1841).
     TITLE_FIELDS: ClassVar[tuple[str, ...]] = (
@@ -137,7 +137,7 @@ def timeline_document(
     workgroup = family.get("reminder_workgroup")
     status = source_status_label(family_status(family["name"]))
     metadata = (
-        ("Report", "Family timeline"),
+        ("Report", "Timeline"),
         ("Parish", parish_name),
         *((("Campaign", campaign_name),) if campaign_name else ()),
         # A Family the data no longer has: no name, and the page's badge
@@ -185,7 +185,7 @@ def timeline_document(
         ),
         ("Last seen", maybe(summary["last_seen_at"], "Never")),
         ("Requested at", instant(requested_at)),
-        ("Display timezone", timezone),
+        ("Display time zone", timezone),
         ("Timeline lines", f"{len(events):,}, oldest first"),
         (
             "Privacy",

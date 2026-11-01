@@ -1048,7 +1048,7 @@ def go_live_cancel(args, preamble, runtime, context):
 
 
 def go_live_families(args, preamble, runtime, context):
-    """The Testing submissions list, streamed as CSV."""
+    """The Testing responses list, streamed as CSV."""
     from .admin_go_live import export_families
 
     return export_families(context["caller"], runtime, context=context)
@@ -2707,7 +2707,7 @@ def export_family_timeline(args, preamble, runtime, context):
 
     confirm(
         context,
-        ("Create a Family timeline export, which can hold the Family's code.",),
+        ("Create a Timeline export, which can hold the Family's code.",),
     )
     return request(
         context["caller"],
@@ -2800,7 +2800,7 @@ def report_financial(args, preamble, runtime, context):
     """The financial detail report's summary, without its rows (PR 8c)."""
     from .admin_report_reads import read_financial
 
-    return read_financial(context["caller"], runtime)
+    return read_financial(context["caller"], runtime, scope=args.scope)
 
 
 def report_limitations(args, preamble, runtime, context):
@@ -4541,11 +4541,20 @@ def _export_ministry_packet_options(parser):
 
 def _exact_create_options(parser):
     """Options of ``export exact create``: population, format, zone and key."""
+    # The words come from their one place (#2324), untranslated, since the
+    # parser is built before Django's settings are configured.
+    from .reports.population_words import SCOPE_WORDS
+
+    historical, current = SCOPE_WORDS["historical"], SCOPE_WORDS["current"]
     parser.add_argument(
         "--scope",
         choices=("historical", "current"),
         default="historical",
-        help="historical (default: each day's population then) or current",
+        # Historical, as the stored daily facts, the report emails and
+        # Campaign comparison count; unlike the Reports and queries pages,
+        # whose Families counted choice starts at "current" (#2324).
+        help=f'historical ("{historical}"; the default, unlike the pages\' '
+        f'default of "{current}") or current ("{current}")',
     )
     parser.add_argument("--format", required=True, choices=EXPORT_FORMATS)
     parser.add_argument(
@@ -4624,8 +4633,17 @@ def _report_participation_options(parser):
     """Options of ``report participation``: the page's scope."""
     parser.add_argument(
         "--scope",
-        help="historical (default: each day's population as of that day) or "
-        "current (today's population)",
+        help="current (default: today's population, as on the page) or "
+        "historical (each day's population as of that day)",
+    )
+
+
+def _report_financial_options(parser):
+    """Options of ``report financial``: the page's Families counted (#2324)."""
+    parser.add_argument(
+        "--scope",
+        help="current (default: today's campaign Families) or historical "
+        "(every responding Family, including those that left the campaign)",
     )
 
 
@@ -4765,7 +4783,7 @@ def _export_limitations_options(parser):
         "--show",
         choices=("any", "cannot_serve", "cannot_attend"),
         default="any",
-        help="any (default), cannot_serve (cannot participate in ministries) "
+        help="any (default), cannot_serve (cannot participate in Ministries) "
         "or cannot_attend (cannot attend Mass or prayer services)",
     )
     _limitation_stage_option(parser)
@@ -5744,7 +5762,7 @@ def _go_live_specs():
         ),
         CommandSpec(
             "go-live families",
-            "Write the Testing submissions list (CSV) to standard output.",
+            "Write the Testing responses list (CSV) to standard output.",
             go_live_families,
             "read_only",
             False,
@@ -7275,6 +7293,7 @@ def _report_specs():
             False,
             FinancialReport.field_names(),
             8,
+            options=(_report_financial_options,),
             audit_event="financial_report_viewed",
         ),
         CommandSpec(
@@ -7769,9 +7788,9 @@ def followup_bulk(args, preamble, runtime, context):
         context,
         (
             f"Mark {len(versions)} Ministry request(s) as "
-            f"{outcome_label(outcome, kind)}. Each request is resolved, with "
-            "its own entry in its follow-up history.",
-            "A resolved request leaves the open queue and cannot be edited again.",
+            f"{outcome_label(outcome, kind)}. Each request's Contact status "
+            "becomes Done, with its own entry in its follow-up history.",
+            "A Done request leaves the open queue and cannot be edited again.",
         ),
     )
     return admin_followup.bulk_followup(
@@ -7795,7 +7814,7 @@ def _followup_list_options(parser):
     parser.add_argument(
         "--state",
         choices=FOLLOWUP_STATES,
-        help="default unresolved (New or In progress)",
+        help="default unresolved (Not contacted or Contacting)",
     )
     parser.add_argument("--outcome", choices=FOLLOWUP_OUTCOMES)
     parser.add_argument(
@@ -8379,7 +8398,7 @@ def _followup_export_options(parser):
     parser.add_argument(
         "--state",
         choices=FOLLOWUP_EXPORT_STATES,
-        help="default unresolved (New or In progress)",
+        help="default unresolved (Not contacted or Contacting)",
     )
     parser.add_argument("--outcome", choices=FOLLOWUP_OUTCOMES)
     parser.add_argument(

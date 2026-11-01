@@ -111,7 +111,7 @@ def test_weekly_list_page_recounts_the_emails_funnel(
             )
             assert panel, "The list page has no funnel panel."
             return re.findall(
-                rb'<th scope="row">([^<]+).*?</th><td>([^<]+)</td>',
+                rb'<th scope="row">([^<]+).*?</th><td class="numeric">([^<]+)</td>',
                 panel.group(0),
                 re.S,
             )
@@ -146,7 +146,7 @@ def test_a_testing_weekly_page_shows_the_testing_note(
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             _, content = read(browser, path)
     assert b"This report was generated in Testing mode." in content
-    assert b"Testing digests leave out the response funnel." in content
+    assert b"Testing report emails leave out the response funnel." in content
     assert b"data-digest-funnel" not in content
 
 

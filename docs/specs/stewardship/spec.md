@@ -88,7 +88,11 @@ Implementation tracking: [plans](../../plans/stewardship/README.md) and
   upstream Family, Member, Ministry, roster, fund, pledge, and contribution
   data. A promoted snapshot is the application's current upstream truth.
 - **Family** and **Member**: records identified by their ParishSoft DUIDs.
-- **Portal-eligible Family**: an active, registered Parishioner Family. Email is
+- **Portal-eligible Family**: a campaign Family, one the campaign's
+  [Families rule](data/spec.md#campaign-families) selects (since
+  [#1393](https://github.com/epiphany40223/parishkit/issues/1393); Admin text
+  calls it a campaign Family, per the
+  [wording rule](ui-conventions/spec.md#campaign-families-wording)). Email is
   not required; every such Family receives a campaign identity and manual code.
 - **Email-eligible Family**: a Portal-eligible Family with at least one valid
   email address among the active Members returned by `get_family_heads()`.
@@ -105,7 +109,7 @@ Implementation tracking: [plans](../../plans/stewardship/README.md) and
   version was started.
 - **Campaign-local day**: midnight through the instant before the following
   midnight in the Campaign's IANA timezone snapshot. Timestamps remain UTC in
-  storage. The mutable Parish timezone is used for non-campaign presentation
+  storage. The mutable Parish time zone is used for non-campaign presentation
   and is only the fallback zone for a new draft when the browser reports none
   it can use.
 - **Admin**: a user with the Administrator role. Administrator implies every
@@ -232,7 +236,7 @@ when creating it, starting on the browser's zone (see the admin portal's
 Admins may edit that campaign value while it remains `draft`. Production
 readiness resolves boundaries and future schedule instants from it and locks it
 for the remainder of the campaign's life, including closed, archived, and
-historical reporting. Changing the Parish timezone later affects only general
+historical reporting. Changing the Parish time zone later affects only general
 presentation and subsequently created drafts; it never rebuckets or reschedules
 an existing campaign. A `scheduled` campaign must use Cancel go-live
 to return to `draft` before its timezone can change.

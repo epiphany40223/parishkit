@@ -146,7 +146,7 @@ def test_queue_cells_hold_one_short_value(page, component_origin):
     assert cells.nth(3).inner_text() == "Leave (cannot participate)"
     marker = cells.nth(3).locator("span[title]")
     assert marker.get_attribute("title") == (
-        "Cannot participate in any ministries (physical limitations)"
+        "Cannot participate in any Ministries (physical limitations)"
     )
     stages = [
         " ".join(text.split())
@@ -167,10 +167,10 @@ def test_queue_cells_hold_one_short_value(page, component_origin):
     # The tooltip is on the visible word, which screen readers skip, so the
     # sentence is announced once.
     assert badge.locator("[aria-hidden=true]").get_attribute("title") == (
-        "No longer in this campaign"
+        "Removed from this campaign"
     )
     assert badge.locator(".visually-hidden").text_content() == (
-        "No longer in this campaign"
+        "Removed from this campaign"
     )
     # Last contact uses the compact form: no "at" and no time zone name.
     contact = (
@@ -254,7 +254,7 @@ def test_queue_request_page_states_the_whole_reason(page, component_origin):
     page.goto(component_origin + "/followup-item-leave")
     visible(
         page.get_by_text(
-            "Asked to leave (cannot participate in any ministries "
+            "Asked to leave (cannot participate in any Ministries "
             "(physical limitations))",
             exact=False,
         )

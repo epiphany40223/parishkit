@@ -57,16 +57,16 @@ DETAIL_SORTING = Sorting(
 )
 STATES = {
     "any": "All states",
-    "unresolved": "Unresolved",
-    "new": "New",
-    "in_progress": "In progress",
-    "resolved": "Resolved",
-    "closed_no_response": "Closed without response",
+    "unresolved": "Not done",
+    "new": "Not contacted",
+    "in_progress": "Contacting",
+    "resolved": "Done",
+    "closed_no_response": "Closed: no response",
     "cancelled": "Cancelled",
     "superseded": "Superseded",
 }
 # Row labels. Follow-up has no assignee (#552); a request still stored as
-# `assigned` from before then reads as New, because that state only ever
+# `assigned` from before then reads as Not contacted, because that state only ever
 # meant "has an assignee". Screens, exports and packets share these labels.
 # The frozen report selection (stewardship_ministry_report_v3) still returns each
 # row's assignee email; nothing renders it any more.
@@ -80,7 +80,7 @@ ZONE_MESSAGE = (
 )
 # A Ministry an Administrator removed from a live campaign whose requests are
 # kept (#342); SQL marks it in_campaign false.
-NOT_IN_CAMPAIGN = "No longer in this campaign"
+NOT_IN_CAMPAIGN = "Removed from this campaign"
 # Outcome labels by request kind (#1132), shared by every screen, export and
 # packet, so they always agree. The stored code never changes: a leave
 # request's `declined` means the Member did not leave, so it reads "Stayed in
@@ -291,12 +291,14 @@ def campaign_ids(principal):
                         AND n::bigint=ANY(p.ministries))
                     -- A Ministry removed from a live campaign keeps its
                     -- current (not withdrawn) requests in the report, as the
-                    -- report SQL does (#342).
+                    -- report SQL does (#342), by each request's Ministry in
+                    -- force: the one an Edit carried it into (#2331).
                     OR EXISTS(SELECT 1 FROM stewardship_submission s
                     JOIN stewardship_ministry_request r ON r.submission_id=s.id
                     WHERE s.campaign_id=c.id AND s.mode='live'
                         AND r.state NOT IN ('cancelled','superseded')
-                        AND r.ministry_duid=ANY(p.ministries)))
+                        AND coalesce(r.reviewed_ministry_duid,r.ministry_duid)
+                            =ANY(p.ministries)))
             ORDER BY c.created_at DESC,c.id""",
             [
                 allows(principal, Capability.MINISTRY_REPORT),

@@ -1881,7 +1881,7 @@ signatures:
   (`go_live_prepare_views._retry`, `_again`, `_stop`), Check's retry of a
   failed stop (`go_live_views._retry_stop`) and the Production preparation
   retry (`confirmation_progress.retry_shown`, which now takes a caller)
-  already took one. The Testing submissions list reads
+  already took one. The Testing responses list reads
   `cleanup_preview.cleanup_families`, as its page does.
 
 ### Read models
@@ -2830,7 +2830,8 @@ action's own transaction, so nothing is recorded when the action is not.
   `preparation_id`, `target_state` (`active` or `scheduled`), `starts_at`,
   `start_passed`,
   `reprepared`, `counts` (the counts the confirmation binds:
-  `active_families`, `eligible_families`, `no_email_families`,
+  `active_families` (the campaign Families, those the Families rule
+  selects, #2331), `eligible_families`, `no_email_families`,
   `family_messages`, `daily_messages`, `weekly_messages`,
   `coalesced_slots`) and `preview.token`, the dialog's own binding, signed
   without a time. It records activity as the page's post does and records
@@ -2870,7 +2871,7 @@ action's own transaction, so nothing is recorded when the action is not.
   through its `record` hook. It prints `created`, `withdrawal_id` and
   `campaign_id`; the campaign is a Testing draft again, and Check starts
   over from readiness.
-- **`go-live families`** streams the Testing submissions list (each
+- **`go-live families`** streams the Testing responses list (each
   Testing Family's `duid` and `name`, by DUID) as CSV to standard output,
   with its document (`campaign_id`, `count`, `file_name`, `content_type`,
   `size`, `sha256`) on standard error, as other streamed files are. Only
@@ -3410,12 +3411,13 @@ are [fresh-gated](#fresh-gated-actions-from-the-command-line), as
 `export financial` is: each asks at the prompt, then calls `sign_in_instant`
 inside its export lock, for a repeated key too, as the page does.
 `--filter mode=testing` exports the campaign's Testing rehearsal, as the
-directory's [Testing switch](../reports/spec.md#response-filters) does
+directory does in Testing mode ([Testing responses](../reports/spec.md#response-filters))
 ([#933](https://github.com/epiphany40223/parishkit/issues/933)): the
 Response choice and response columns read the rehearsal active when the
 command runs, since there is no page whose rehearsal it could pin, and the
 file and its audit say Testing. Testing is for Administrators only, as on
-the page. Command-line sessions are Administrator sessions, so a user who is
+the page, which shows it to Administrators while the site is in Testing
+mode. Command-line sessions are Administrator sessions, so a user who is
 no longer an Administrator has no usable session (exit 5); the export
 service also refuses a non-Administrator, so a Staff member could not
 export Testing through it even if one could reach it. With no active
@@ -4093,7 +4095,13 @@ filters) and history (`followup_history`), and its services
   default) and `followup show REQUEST_ID [--page N]` admit passively, so
   any session scope reads, and record the page's
   `ministry_followup_viewed` (started, then succeeded or failed, naming
-  the request's Ministry for `followup show`).
+  the request's Ministry for `followup show`). A row's `ministry` and
+  `ministry_name`, and the Ministry `followup show` records, are its
+  Ministry in force, the one an Edit carried it into, which `--ministry`
+  filters by
+  ([#2331](https://github.com/epiphany40223/parishkit/issues/2331#issuecomment-6559704860));
+  `family_ministry` is the Family's own Ministry, and `in_campaign` says
+  whether that one is still in the campaign.
 - **Save.** `followup update REQUEST_ID --expected-version N --state S
   [--outcome O] [--notes TEXT|-] [--contact-channel C --contact-at INSTANT
   [--contact-notes TEXT|-]]` is a request page's Save: the notes are kept
@@ -5065,7 +5073,7 @@ exactly the commands that exist.
   retry, refresh-again and stop, Confirm Production, the Production
   preparation retry and Cancel go-live
   ([#1809](https://github.com/epiphany40223/parishkit/issues/1809)), and
-  the Testing submissions list as a streamed file.
+  the Testing responses list as a streamed file.
 
 ## Decisions
 

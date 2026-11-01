@@ -28,6 +28,22 @@ from parishkit.stewardship.reports.participation import (
 )
 from parishkit.stewardship.reports.participation_summary import ParticipationSummary
 
+# The CSV's header block (R59 on #2324): its Report, Families counted and
+# Source as of rows, then a blank row, before the table.
+HEADER_LINES = 4
+
+
+def csv_table(data):
+    """A participation CSV's text after its header block: the table."""
+    lines = data.decode().split("\r\n")
+    assert [line.split(",")[0] for line in lines[:3]] == [
+        "Report",
+        "Families counted",
+        "Source as of",
+    ]
+    assert lines[3] == ""
+    return "\r\n".join(lines[HEADER_LINES:])
+
 
 def document():
     """Fixed identities and a DST weekend make accidental clock/zone changes visible."""
@@ -68,7 +84,7 @@ def summary():
     """A captured Response dashboard Summary, as the request stores it (#1557).
 
     Built from the capture's own JSON shape, so the renderers read exactly
-    what the worker loads: four Active population figures (one unknown,
+    what the worker loads: four Population figures (one unknown,
     with its reason) and the five funnel stages with Link followed's note.
     """
     return ParticipationSummary.from_document(
@@ -78,7 +94,7 @@ def summary():
                 {"label": "Campaign Families", "value": 1234, "note": ""},
                 {"label": "Active Members", "value": 3456, "note": ""},
                 {
-                    "label": "Current annual pledges",
+                    "label": "Annual pledges",
                     "value": {"money": "123456.78"},
                     "note": "",
                 },
@@ -126,8 +142,9 @@ def test_table_and_csv_keep_exact_money_counts_without_internal_ids():
     assert rows[0]["participation"] == "1 out of 1,234 (0.1%)"
     assert rows[-1]["date"] == "2026-11-02"
     data = stream.getvalue()
-    assert data.count(b"\r\n") == 4
-    reader = csv.DictReader(io.StringIO(data.decode()))
+    table = csv_table(data)
+    assert table.count("\r\n") == 4
+    reader = csv.DictReader(io.StringIO(table))
     exported = list(reader)
     # The Section column and the Summary's columns lead (#1557); this
     # document has no captured Summary, so every row is a daily one.
@@ -213,7 +230,7 @@ def test_each_panel_fits_its_series_without_drawing_provenance():
         assert dollars.get_ylim() == pytest.approx((0, 3234.56 * 1.1))
         texts = [text.get_text() for text in figure.texts]
         assert f"{RENDERER_VERSION} · Page 1" in texts
-        assert "Family participation — Historical as of day" in texts
+        assert "Family participation — Including Families that left" in texts
         # Neither the eligible total nor the source/request provenance is drawn.
         assert not any(
             word in text
@@ -432,7 +449,7 @@ def test_unavailable_is_gap_but_observed_zero_and_empty_are_distinct():
         assert "No campaign days" in figure.axes[0].texts[0].get_text()
     stream = io.BytesIO()
     participation_csv(empty, stream)
-    assert stream.getvalue().count(b"\r\n") == 1
+    assert csv_table(stream.getvalue()).count("\r\n") == 1
 
 
 @pytest.mark.parametrize(
@@ -615,3 +632,61 @@ def test_the_static_chart_marks_nothing_up_to_the_end_date():
         with participation_figure(value) as figure:
             assert all(closed_lines(axes) == [] for axes in figure.axes)
             assert not any(charts.CLOSED_LABEL in text for text in figure_text(figure))
+
+
+def render_export_page(parameters):
+    """The export status page of a queued archive export with ``parameters``."""
+    from types import SimpleNamespace
+
+    from django.template.loader import render_to_string
+
+    job = SimpleNamespace(
+        pk=UUID(int=20),
+        format="zip",
+        requester_id=UUID(int=21),
+        parameters=parameters,
+        created_at=datetime(2026, 9, 29, 22, tzinfo=UTC),
+        browser_timezone="UTC",
+        report="campaign_archive",
+    )
+    return render_to_string(
+        "stewardship/report-export.html",
+        {
+            "job": job,
+            "status": {"state": "queued"},
+            "mutable": True,
+            "can_cancel": True,
+            "report_url": "/archive",
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "parameters,expected",
+    [
+        ({"population_scope": "historical"}, "Including Families that left"),
+        ({"population_scope": "current"}, "In this campaign today"),
+    ],
+)
+def test_export_page_names_its_population_in_the_shared_words(parameters, expected):
+    """The export page's Families counted row uses the shared words (#2324)."""
+    from parishkit.stewardship.accounts.templatetags.stewardship import scope_label
+
+    html = render_export_page(parameters)
+    assert f"<dt>Families counted</dt><dd>{expected}</dd>" in html
+    assert "<dt>Population</dt>" not in html
+    assert scope_label(parameters["population_scope"]) == expected
+
+
+@pytest.mark.parametrize("parameters", [{}, {"population_scope": ""}])
+def test_export_page_without_a_scope_has_no_population_row(parameters):
+    """A campaign archive counts no population, so its parameters carry no
+    scope: its page renders without failing and shows no Families counted row,
+    since "In this campaign today" is wrong for a closed campaign (#2324)."""
+    from parishkit.stewardship.accounts.templatetags.stewardship import scope_label
+
+    html = render_export_page(parameters)
+    assert "<dt>Requested at</dt>" in html
+    assert "<dt>Families counted</dt>" not in html
+    # The tag itself still never fails on an empty scope.
+    assert scope_label("") == "In this campaign today"

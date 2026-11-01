@@ -3,9 +3,9 @@
 Operations specification, "Dedicated off-site uploader": the one-shot
 ``backup-uploader`` profile copies finished, sealed backup sets to the
 configured Google Drive folder, so the backup profile, which reads every
-tree, need not reach the internet once the contract release removes its own
-copy. The copy itself is ``backup_offsite``'s (the same budgets, retries,
-deadline, outcome rows, alert and Drive retention); what is the uploader's
+tree, has no route out (since the contract release it never copies). The
+copy itself is ``backup_offsite``'s (the same budgets, retries, deadline,
+outcome rows, alert and Drive retention); what is the uploader's
 own is the order in which it acts, which follows request mode's idle
 pattern so a five-minute cron line leaves no trace when there is nothing to
 do ("Scheduling"):
@@ -275,8 +275,9 @@ def _upload_pass(
 
     explicit = wait_seconds is not None or require_digest is not None
     try:
-        # As copy_offsite (#1399): where a real Workspace key may not be
-        # used, nothing is read and nothing is copied.
+        # Where a real Workspace key may not be used (#1399, in LOCAL
+        # without a mail redirect, or under the fake clock), nothing is read
+        # and nothing is copied.
         admit_real_workspace(configuration.profile, configuration.mail_redirect)
     except ConfigError:
         result = {"state": "not_configured"}
@@ -284,9 +285,7 @@ def _upload_pass(
             result["required_copy"] = "not_configured"
         return result if explicit else None
     backups = private_directory(explicit_path(configuration.paths["backups"]))
-    lock = _copy_lock(
-        backups, create=False, wait_seconds=wait_seconds, clock=clock, sleep=sleep
-    )
+    lock = _copy_lock(backups, wait_seconds=wait_seconds, clock=clock, sleep=sleep)
     try:
         with lock as held:
             if not held:
@@ -342,8 +341,8 @@ def _locked_pass(
     _read_quietly(_schema_current)
     target = _read_quietly(destination)
     if target is None:
-        # Record once that copies stopped on purpose, as copy_offsite does,
-        # so an old failure no longer alerts once the destination is gone.
+        # Record once that copies stopped on purpose, so an old failure no
+        # longer alerts once the destination is gone.
         record_disabled = _read_quietly(_newest_state) not in {None, "disabled"}
         pending = []
     else:
@@ -398,8 +397,9 @@ def _locked_pass(
             key=configuration.secrets["google_workspace"],
         )
     except Exception as error:
-        # As copy_offsite: anything outside the Drive categories still
-        # records a failure, so the alert fires.
+        # Anything outside the Drive categories (an unreadable local file, a
+        # malformed provider reply) still records a failure, so the alert
+        # fires and the pages stop showing the previous success.
         emit_failure(error, event=Event.TASK_FAILED)
         result = _failed(folder_id, None, None, "unexpected")
     if future:

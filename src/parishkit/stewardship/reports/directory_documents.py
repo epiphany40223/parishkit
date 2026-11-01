@@ -152,10 +152,11 @@ def mailable(address):
     )
 
 
-def head_names(heads):
+def head_names(heads, surname=""):
     """The Family heads' names as one natural phrase ("Aaron and Isabelle
-    Williams"), or "" without heads; see ``heads_salutation_name``."""
-    return heads_salutation_name(heads)
+    Williams"), or "" without heads; see ``heads_salutation_name``. Heads of
+    the Family ``surname`` come first (#2320)."""
+    return heads_salutation_name(heads, surname=surname or "")
 
 
 def _zip(address):
@@ -240,7 +241,11 @@ def _family_cells(item):
     name = item["family_name"]
     status = family_status(name, active=item.get("active", True))
     return (
-        "" if name is None else family_heads_name(name, item["heads"]),
+        ""
+        if name is None
+        else family_heads_name(
+            name, item["heads"], recorded=item.get("surname_recorded", True)
+        ),
         source_status_label(status),
     )
 
@@ -282,7 +287,7 @@ def directory_document(
         headings = POSTAL_HEADINGS
         for item in payload["rows"]:
             address = item["address"]
-            heads = head_names(item["heads"])
+            heads = head_names(item["heads"], item["family_name"])
             if item.get("mailable", mailable(address)):
                 lines = [
                     _clean(address.get(f"primaryAddress{index}")) for index in (1, 2, 3)

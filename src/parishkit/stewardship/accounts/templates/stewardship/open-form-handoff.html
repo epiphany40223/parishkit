@@ -11,7 +11,7 @@
 <h1>{% translate "Opening the Family form" %}</h1>
 <form method="post" action="{{ action }}" data-open-form-handoff data-return="{{ return_url }}">
 <input type="hidden" name="handoff" value="{{ secret }}">
-<p>{% translate "The Family form opens in this tab. Responses you submit there are marked as entered by Staff for the Family." %}</p>
+<p>{% translate "The Family form opens in this tab. Responses you submit there are marked as entered by Staff." %}</p>
 {% button type="submit" %}{% translate "Open the Family form" %}{% endbutton %}
 </form>
 {% endblock %}

@@ -1,5 +1,6 @@
 """The financial detail report reuses the shared browser server and templates."""
 
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from uuid import UUID
 
@@ -18,9 +19,14 @@ from parishkit.stewardship.reports.financial_views import (
     FIELD_IDS,
     FIELD_LINES,
     page_address,
+    scope_fields,
     summary_tiles,
 )
 from parishkit.stewardship.reports.money import MoneyAmount
+from parishkit.stewardship.reports.participation import (
+    SCOPE_CHOICE_LABEL,
+    SCOPE_LABELS,
+)
 from parishkit.stewardship.web.filter_errors import (
     FilterError,
     error_context,
@@ -38,9 +44,13 @@ def refused_values(name="pledge_max", pair="pledge_min", **sent_fields):
     By default At most below At least; ``name`` and ``pair`` name another
     range's ends, and ``sent_fields`` the values sent.
     """
-    sent = FinancialQuery(**(sent_fields or dict(pledge_min="500", pledge_max="100")))
+    # Under the sample's population (#2324), which a refusal keeps.
+    sent = FinancialQuery(
+        scope="historical",
+        **(sent_fields or dict(pledge_min="500", pledge_max="100")),
+    )
     error = FilterError(name, FIELD_MESSAGES[name], sent, pair=pair)
-    shown = FinancialQuery()
+    shown = FinancialQuery(scope="historical")
     return error_context(error, FIELD_IDS, FIELD_LINES) | dict(
         query=sent, applied=shown, query_fields=shown.form_values()
     )
@@ -121,8 +131,10 @@ def components(context, admin):
     ]
     # Share methods are stable option identities, as the closed grammar requires.
     online, other = str(UUID(int=98)), str(UUID(int=99))
+    # Under Including Families that left (#2324), where Family status is
+    # offered.
     query = FinancialQuery.parse(
-        dict(search="Example", pledge_min="100.00", share=online)
+        dict(scope="historical", search="Example", pledge_min="100.00", share=online)
     )
     # What Apply returns for response days in the browser's zone (#558).
     dated = FinancialQuery.parse(
@@ -134,7 +146,7 @@ def components(context, admin):
         )
     )
 
-    def table(rows, *, number=1, total=51):
+    def table(rows, *, number=1, total=51, shown=query):
         """The shared POST report table the view builds around one SQL page."""
         return report_table(
             rows,
@@ -143,7 +155,7 @@ def components(context, admin):
             total=total,
             carry=[
                 (key, value)
-                for key, value in query.form_values().items()
+                for key, value in shown.form_values().items()
                 if key != "sort"
             ],
             sorting=FINANCIAL_SORTING,
@@ -197,9 +209,13 @@ def components(context, admin):
         request_key=UUID(int=100),
         # The filters' reserved message lines (#1332), as the view sizes them.
         filter_sizes=line_sizes(FIELD_MESSAGES, FIELD_LINES),
+        # The Families counted choice (#2324), as the view passes it.
+        scope_choice_label=SCOPE_CHOICE_LABEL,
+        scope_labels=SCOPE_LABELS,
+        scope_fields=scope_fields(query, table([row])),
         summary=summary,
         # The summary's tiles and charts (#720), as the view builds them.
-        summary_tiles=summary_tiles(summary),
+        summary_tiles=summary_tiles(summary, query.narrowed),
         charts=financial_charts(summary, choices),
         metadata=dict(
             name="Sample campaign",
@@ -241,14 +257,18 @@ def components(context, admin):
         # The report as first opened, with no filter applied: its Filters
         # panel starts closed (#227).
         "/financial-unfiltered": values
-        | dict(query=FinancialQuery(), query_fields=FinancialQuery().form_values()),
+        | dict(
+            query=FinancialQuery(),
+            query_fields=FinancialQuery().form_values(),
+            summary_tiles=summary_tiles(summary),
+        ),
         "/financial-last": values | dict(table=table([row], number=2)),
         # The answer to an applied filter: a smaller summary, its charts
         # drawn again in place (#720).
         "/financial-filtered": values
         | dict(
             summary=filtered,
-            summary_tiles=summary_tiles(filtered),
+            summary_tiles=summary_tiles(filtered, narrowed=True),
             charts=financial_charts(filtered, choices),
             total=4,
             # The answer names its view's closed choices for the address bar.
@@ -286,6 +306,27 @@ def components(context, admin):
         "/financial-dated": values
         | dict(query=dated, query_fields=dated.form_values()),
     }
+    # The answer to In this campaign today (#2324): the sample's filters
+    # under the current population, whose Family status is not offered,
+    # and a smaller summary; and the answer back to Including Families that
+    # left, with the Family status refinement at its default.
+    current = replace(query, scope="current")
+    historical = replace(query, active="")
+    for path, shown, counted in (
+        ("/financial-current", current, filtered | dict(families=40)),
+        ("/financial-historical", historical, summary),
+    ):
+        pages[path] = values | dict(
+            query=shown,
+            query_fields=shown.form_values(),
+            table=table([row], shown=shown),
+            scope_fields=scope_fields(shown, table([row], shown=shown)),
+            summary=counted,
+            summary_tiles=summary_tiles(counted, shown.narrowed),
+            charts=financial_charts(counted, choices),
+            total=counted["families"],
+            page_address=page_address(reverse("admin:financial_report"), shown, 50),
+        )
     # The report at its own address, and at the address an applied filter's
     # answer names (#1586), so a reload of that address draws its view.
     route = reverse("admin:financial_report")

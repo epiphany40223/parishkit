@@ -249,7 +249,7 @@ def test_the_charts_sentence_names_only_the_drawn_charts():
     frame = CopyFrame(SEND, participation=participation())
     block = REGISTRY["participation_charts"]
     span = (
-        "Daily participation, Historical as of day, from October 31, 2026 to "
+        "Daily participation, Including Families that left, from October 31, 2026 to "
         "November 2, 2026; "
     )
     sentences = {

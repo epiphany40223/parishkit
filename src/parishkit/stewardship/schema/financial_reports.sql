@@ -212,16 +212,18 @@ WITH selected AS MATERIALIZED (
         -- own trim for the returned rows.
         stewardship_family_surname_v1(p.canonical::jsonb,
             CASE WHEN p.id IS NOT NULL THEN 'Name not recorded in ParishSoft' END) AS surname,
+        -- Whether surname is the Family's own lastName, not a stand-in for
+        -- a blank one (family_names.family_last_name): without one, the
+        -- heads' own surnames lead the shown name (#2320).
+        stewardship_family_last_name_v1(p.canonical::jsonb)<>'' AS surname_recorded,
         -- Whether the Family is still one of the campaign's Families (NULL
         -- when it is not in the data), for its status badge and the Active
-        -- filter (#1393). A row loaded under a Families rule names the rule
-        -- (campaign_families) and its portal_eligible is "matches the rule";
-        -- a legacy row names none and keeps ParishSoft's active.
-        CASE WHEN p.canonical::jsonb OPERATOR(pg_catalog.?) 'campaign_families'
-                AND jsonb_typeof(p.canonical::jsonb->'portal_eligible')='boolean'
-            THEN (p.canonical::jsonb->'portal_eligible')::boolean
-            WHEN jsonb_typeof(p.canonical::jsonb->'active')='boolean'
-            THEN (p.canonical::jsonb->'active')::boolean END AS active,
+        -- filter (#1393): its portal_eligible, the eligibility the Response
+        -- dashboard counts (#2335). Under a Families rule that is "matches
+        -- the rule"; under the legacy rule, ParishSoft's active and
+        -- registered at the parish.
+        CASE WHEN jsonb_typeof(p.canonical::jsonb->'portal_eligible')='boolean'
+            THEN (p.canonical::jsonb->'portal_eligible')::boolean END AS active,
         CASE WHEN jsonb_typeof(p.canonical::jsonb->'active_head_duids')='array'
             THEN p.canonical::jsonb->'active_head_duids' END AS head_duids,
         -- Whether Staff entered this effective response for the Family
@@ -254,12 +256,16 @@ WITH selected AS MATERIALIZED (
     GROUP BY r.family_duid
 ), named AS MATERIALIZED (
     -- "Surname, A and B" (family_names.family_heads_name).
-    SELECT r.*,stewardship_family_heads_name_v1(r.surname,n.parts) AS display_name
+    SELECT r.*,stewardship_family_heads_name_v2(r.surname,r.surname_recorded,n.parts)
+        AS display_name
     FROM responses r LEFT JOIN head_names n ON n.family_duid=r.family_duid
 ), filtered AS MATERIALIZED (
     SELECT r.*,nullif(r.financial->>'frequency','') AS frequency
     FROM named r CROSS JOIN source x
+    -- Search matches the shown name, which names every head's surname,
+    -- and the Family surname (or its stand-in), which it may not (#2320).
     WHERE (f->>'search'='' OR position(lower(f->>'search') IN lower(r.display_name))>0
+            OR position(lower(f->>'search') IN lower(r.surname))>0
             OR position(f->>'search' IN r.family_duid::text)>0)
         AND (f->>'active'='any' OR (f->>'active'='active' AND r.active IS TRUE)
             OR (f->>'active'='inactive' AND r.active IS FALSE)

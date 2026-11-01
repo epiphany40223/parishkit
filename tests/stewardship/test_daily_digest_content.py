@@ -59,6 +59,9 @@ def document():
         financial=None,
         giving=None,
         comparison_pledge_all=MoneyAmount(100000),
+        # The historical cohort's own figures (#2324): every Family ever in
+        # the campaign, so they differ from the current ones.
+        cohort=PopulationStatistics(1010, 2350, 905, 805, 3, MoneyAmount(233456)),
     )
     return DailyDigestDocument(UUID(int=5), chart, statistics, (chart.last_date,))
 
@@ -964,14 +967,18 @@ def test_a_testing_digest_says_where_the_funnel_is():
     result = render(replace(document(), mode="testing"))
     for body in (visible(result.html), result.text):
         assert "Response funnel" not in body
-        assert "Testing digests leave out the response funnel." in body
-    # Both dashboard links open its Testing view, where the funnel is.
-    testing = DASHBOARD + "?mode=testing"
-    assert result.html.count(f'href="{testing}"') == 2
-    assert result.text.count(f": {testing}") == 2
+        assert "Testing report emails leave out the response funnel." in body
+    # Both dashboard links open the plain dashboard: the site's mode decides
+    # whose responses it shows (#2324), so no link carries a mode.
+    assert result.html.count(f'href="{DASHBOARD}"') == 2
+    assert result.text.count(f": {DASHBOARD}") == 2
+    assert "mode=" not in result.html and "mode=" not in result.text
     # A document with no mode (older callers) shows neither.
     plain = render(document())
-    assert "Response funnel" not in plain.text and "Testing digests" not in plain.text
+    assert (
+        "Response funnel" not in plain.text
+        and "Testing report emails" not in plain.text
+    )
 
 
 def test_the_saved_page_shows_the_same_funnel():
@@ -999,7 +1006,7 @@ def test_the_saved_page_shows_the_same_funnel():
         download_url="/download",
     )
     assert testing["funnel_stages"] == ()
-    assert "Testing digests" in testing["funnel_testing_note"]
+    assert "Testing report emails" in testing["funnel_testing_note"]
 
 
 def charted_digest():

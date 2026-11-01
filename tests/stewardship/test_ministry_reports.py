@@ -225,5 +225,5 @@ def test_one_ministry_reads_as_one_line():
     assert "<table" not in section
     assert (
         '<p class="by-ministry-line">Choir: 1 join request · 2 leave requests'
-        " · 3 unresolved"
+        " · 3 to review"
     ) in " ".join(section.split())

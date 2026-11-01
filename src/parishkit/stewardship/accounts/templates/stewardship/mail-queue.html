@@ -19,7 +19,7 @@
 <dt>{% translate "Failed" %}</dt><dd>{% url 'admin:deliveries' as outgoing_url %}{% url 'admin:background' as background_url %}{% blocktranslate %}The email could not be sent. Review it on the <a href="{{ outgoing_url }}">Sent mail</a> page, or on <a href="{{ background_url }}">Background work</a> if it failed before it was prepared.{% endblocktranslate %}</dd>
 <dt>{% translate "Not sure it arrived" %}</dt><dd>{% url 'admin:deliveries' as outgoing_url %}{% blocktranslate %}The mail service did not confirm either way. These are never retried automatically; resolve them on the <a href="{{ outgoing_url }}">Sent mail</a> page.{% endblocktranslate %}</dd>
 <dt>{% translate "Held: invitation failed or not sure it arrived" %}</dt><dd>{% translate "A reminder is not sent to a Family whose invitation failed or may not have arrived. It waits until that invitation is resolved, and is not in the total." %}</dd>
-<dt>{% translate "Couldn't be emailed" %}</dt><dd>{% translate "The Family has no deliverable email address, or is no longer eligible. Not in the total." %}</dd>
+<dt>{% translate "Couldn't be emailed" %}</dt><dd>{% translate "The Family has no deliverable email address, or has left the campaign. Not in the total." %}</dd>
 <dt>{% translate "Not needed" %}</dt><dd>{% translate "The Family already responded, a later email replaced this one, or the campaign closed. Not in the total." %}</dd>
 <dt>{% translate "Held" %}</dt><dd>{% translate "No new emails are being prepared for now, for example while a campaign change is applied. The panel says so instead of showing the send as sending." %}</dd></dl>
 <p>{% translate "The rate counts emails finished in the last five minutes. The finish time assumes that rate continues, so it is an estimate." %}</p>

@@ -841,7 +841,7 @@ after a clean reconciliation or preparation that keeps failing cancels it, so
 no test message is left unfinished. A scheduler sweep settles tickets whose
 task ended.
 Those messages have routing class `testing_override`; the envelope has only the
-single configured Testing address, and the subject and both body alternatives
+single configured Testing recipient, and the subject and both body alternatives
 prominently identify Testing and safely name the intended recipients. Production
 applies none of these overrides.
 [Ministry leader emails](#ministry-leader-emails) are routed the same way,
@@ -1764,8 +1764,8 @@ SQL guard when it commits "submitting":
 - It ends `cancelled`, unsent, when the campaign is no longer the current
   open Production one or its production cycle changed; when the Family's
   token generation or link epoch changed or its token is gone (it never
-  sends a link that no longer works); when the Family is no longer eligible
-  or deliverable, or an address still to send is no longer one of its
+  sends a link that no longer works); when the Family has left the campaign
+  or is not deliverable, or an address still to send is no longer one of its
   current, unrefused addresses; when a later invitation or reminder to the
   Family has been accepted since (superseded); and when it was restored
   from a backup. A restore keeps the Family's credentials (see

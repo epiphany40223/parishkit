@@ -121,18 +121,16 @@ def summary(actor, configuration, now, *, home=False):
                     submitted_at__gte=now - timedelta(hours=24),
                 )
                 recent["recent"] = Count("id", filter=Q(Exists(responded)))
+            # Home's one response population (#1673) is the campaign
+            # Families, the rule's ``portal_eligible`` rows: "eligible" and
+            # "eligible_responded" (#2331). The command line's status read
+            # also reports "active"; it counts the same rule's Families, as
+            # ``pk-admin go-live``'s "active" does, so one key names one set.
+            # (The row's ``active`` column is ParishSoft's active flag OR the
+            # rule, so it also holds Families the rule does not select.)
             counts = FamilyCampaign.objects.filter(campaign=campaign).aggregate(
                 **recent,
-                # Home's one response population (#1673): the active
-                # Families with a response, a filter on this same statement.
-                # It comes before the "active" count, whose alias would
-                # otherwise shadow the field in this filter (Django's
-                # FieldError: "'active' is an aggregate").
-                active_responded=Count(
-                    "id",
-                    filter=Q(active=True, first_live_submission_id__isnull=False),
-                ),
-                active=Count("id", filter=Q(active=True)),
+                active=Count("id", filter=Q(portal_eligible=True)),
                 eligible=Count("id", filter=Q(portal_eligible=True)),
                 responded=Count("id", filter=Q(first_live_submission_id__isnull=False)),
                 eligible_responded=Count(
@@ -341,34 +339,38 @@ def leads_ministries(actor):
 def family_tiles(counts, *, recent=None, testing=False):
     """Home's Responses tiles in the campaign panel (#720, #1540, #1673).
 
-    One population, the campaign's active Families: how many there are; how
-    many of them have a response, not counting Testing, with its share bar;
+    One population, the campaign Families (the Families rule's
+    ``eligible`` count, the Response dashboard's "In this campaign today",
+    #2331): how many there are; how many of them have a response
+    (``eligible_responded``), not counting Testing, with its share bar;
     and, when ``recent`` is given, the Families who responded in the past
     24 hours (Testing responses while ``testing``, as its explanation says).
     """
     tiles = [
-        tile("active", _("Campaign Families"), counts["active"]),
+        tile("active", _("Campaign Families"), counts["eligible"]),
         tile(
             "responded",
             _("Campaign Families responded"),
-            counts["active_responded"],
+            counts["eligible_responded"],
             details=(
                 _("out of %(total)s (%(share)s)")
                 % {
-                    "total": number(counts["active"]),
+                    "total": number(counts["eligible"]),
                     "share": percentage(
-                        Percentage(counts["active_responded"], counts["active"])
+                        Percentage(counts["eligible_responded"], counts["eligible"])
                     ),
                 },
             ),
-            share=(counts["active_responded"], counts["active"]),
+            share=(counts["eligible_responded"], counts["eligible"]),
         ),
     ]
     if recent is not None:
         tiles.append(
             tile(
                 "recent",
-                _("Responded in the past 24 hours"),
+                # Every Family with any submission in the rolling 24 hours,
+                # a resubmission too, so the label says submitted (#2331).
+                _("Families who submitted in the past 24 hours"),
                 recent,
                 details=(_("Testing responses, while in Testing mode"),)
                 if testing

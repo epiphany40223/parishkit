@@ -106,8 +106,11 @@ def test_read_admission_refuses_a_campaign_that_is_not_current(monkeypatch, curr
         "size=7",
         "size=1000",
         "size=",
+        # The removed Responses shown's mode is refused, whatever its
+        # value, as the Timeline refuses it (#2324, #1570).
         "mode=live",
-        "mode=testing&mode=testing",
+        "mode=testing",
+        "mode=production",
     ],
 )
 def test_queries_are_bounded_nonidentifying_and_closed(query):
@@ -119,32 +122,33 @@ def test_campaign_links_preserve_only_validated_state():
     value = ReportQuery.parse(
         QueryDict(
             "scope=current&timezone=America%2FDetroit&inactive=yes&grain=day"
-            "&page=2&sort=date_asc&mode=testing"
+            "&page=2&sort=date_asc"
         )
     )
     url = value.url(page=3)
     assert url.startswith("/admin/reports/responses/?")
-    assert "scope=current" in url and "page=3" in url and "mode=testing" in url
+    assert "scope=current" in url and "page=3" in url and "mode=" not in url
     assert "timezone=America%2FDetroit" in url and "sort=date_asc" in url
     # The removed inactive subtotal's and activity grain's parameters still
     # load, and are dropped (#728, #1537).
     assert "inactive" not in url and "grain" not in url
-    assert "mode=" not in value.url(mode="production")
     assert "timezone=" not in ReportQuery.parse(QueryDict()).url()
     assert "timezone=UTC" in ReportQuery.parse(QueryDict("timezone=UTC")).url()
 
 
 def test_daily_table_opens_newest_first_with_five_rows():
-    """The defaults (#1534, #1537): newest first, 5 rows, Production; the
-    address leaves each default out, and a saved oldest-first link still
-    opens oldest first."""
+    """The defaults (#1534, #1537, #2324): newest first, 5 rows, today's
+    campaign Families (In this campaign today; the Administrator,
+    2026-10-31); the address leaves each default out, and a saved
+    oldest-first link still opens oldest first."""
     default = ReportQuery.parse(QueryDict())
-    assert (default.sort, default.size, default.mode) == (
+    assert (default.sort, default.size, default.scope) == (
         "date_desc",
         "5",
-        "production",
+        "current",
     )
-    assert default.url() == "/admin/reports/responses/?scope=historical&page=1"
+    assert default.url() == "/admin/reports/responses/?scope=current&page=1"
+    assert ReportQuery.parse(QueryDict("scope=historical")).scope == "historical"
     assert ReportQuery.parse(QueryDict("sort=date_asc")).sort == "date_asc"
     # 5 is offered beside the shared sizes; the old default 50 still loads.
     for size in ("5", "25", "50", "100", "250", "all"):
@@ -243,19 +247,22 @@ def test_live_presentation_is_the_digest_presentation_without_population_mixing(
     for field in ("rows", "headings", "chart_interaction", "chart_last_index"):
         assert live[field] == retained[field]
     assert all(
-        "Historical as of day" in label for label in live["chart_interaction"]["labels"]
+        "Including Families that left" in label
+        for label in live["chart_interaction"]["labels"]
     )
     missing = replace(
         value.statistics, active=None, comparison_pledge_all=MoneyAmount(None)
     )
     assert all(
         tile.text == "—" and tile.unknown_reason
-        for tile in statistics_panel(missing)["tiles"]
+        for tile in statistics_panel(missing, "current")["tiles"]
     )
     # #728: one comparison figure, the parish-wide total, ends the tiles.
     whole = replace(value.statistics, comparison_pledge_all=MoneyAmount(98265700))
-    tiles = statistics_panel(whole)["tiles"]
-    assert (tiles[0].label, tiles[0].text) == ("Campaign Families", "1,000")
+    tiles = statistics_panel(whole, "current")["tiles"]
+    assert (tiles[0].label, tiles[0].text) == ("Families", "1,000")
+    # The historical cohort's own count (#2324).
+    assert statistics_panel(whole, "historical")["tiles"][0].text == "1,010"
     assert (tiles[-1].label, tiles[-1].text) == (
         "Last year's pledges (all Families)",
         "$982,657.00",
@@ -265,21 +272,22 @@ def test_live_presentation_is_the_digest_presentation_without_population_mixing(
     ]
 
 
-def test_statistics_panel_is_the_active_population_row_only():
-    """The Summary's Active population row: four tiles in order, no progress
+def test_statistics_panel_is_the_population_row_only():
+    """The Summary's Population row: four tiles in order, no progress
     chart and no responded or email-reach tiles (#1537). Without an
     observation every tile reads "—" with the reason, never zero (#1540)."""
     statistics = document().statistics
-    panel = statistics_panel(statistics)
+    panel = statistics_panel(statistics, "current")
     assert set(panel) == {"tiles"}
     assert [tile.label for tile in panel["tiles"]] == [
-        "Campaign Families",
+        "Families",
         "Active Members",
-        "Current annual pledges",
+        "Annual pledges",
         "Last year's pledges (all Families)",
     ]
     missing = statistics_panel(
-        replace(statistics, active=None, comparison_pledge_all=MoneyAmount(None))
+        replace(statistics, active=None, comparison_pledge_all=MoneyAmount(None)),
+        "current",
     )
     assert [(tile.key, tile.text) for tile in missing["tiles"]] == [
         (key, "—")
@@ -293,7 +301,9 @@ def test_statistics_panel_is_the_active_population_row_only():
     assert {tile.unknown_reason for tile in missing["tiles"]} == {
         "No ParishSoft data has been loaded for this campaign yet."
     }
-    without_giving = statistics_panel(replace(statistics, financial_enabled=False))
+    without_giving = statistics_panel(
+        replace(statistics, financial_enabled=False), "current"
+    )
     assert [tile.key for tile in without_giving["tiles"]] == [
         "active_families",
         "active_members",
@@ -312,7 +322,8 @@ def test_each_unknown_pledge_total_gives_the_reason_for_its_cause():
         comparison_pledge_all=unknown,
     )
     reasons = lambda value: {  # noqa: E731 - a tiny local reader
-        tile.key: tile.unknown_reason for tile in statistics_panel(value)["tiles"]
+        tile.key: tile.unknown_reason
+        for tile in statistics_panel(value, "current")["tiles"]
     }
     nothing = reasons(replace(statistics, financial=None))
     assert nothing["annual_pledges"] == nothing["comparison_pledges_all"]
@@ -333,12 +344,14 @@ def test_xlsx_is_complete_typed_formula_safe_and_keeps_original_request():
     stream.seek(0)
     book = load_workbook(stream)
     sheet = book["Daily participation"]
-    assert sheet.max_row == len(value.days) + 1
-    assert sheet["C2"].data_type == "n" and sheet["C2"].value == 1
-    assert sheet["H2"].data_type == "n" and sheet["H2"].value == 1234.56
-    assert sheet["A2"].is_date
-    assert sheet.freeze_panes == "A2" and sheet.auto_filter.ref == "A1:H4"
-    assert sheet.print_title_rows == "$1:$1"
+    # The header block's three rows and a blank row, then the table (R59
+    # on #2324).
+    assert sheet.max_row == len(value.days) + 5
+    assert sheet["C6"].data_type == "n" and sheet["C6"].value == 1
+    assert sheet["H6"].data_type == "n" and sheet["H6"].value == 1234.56
+    assert sheet["A6"].is_date
+    assert sheet.freeze_panes == "A6" and sheet.auto_filter.ref == "A5:H8"
+    assert sheet.print_title_rows == "$5:$5"
     metadata = book["Report information"]
     assert metadata["B1"].value == "=HYPERLINK(1)" and metadata["B1"].data_type == "s"
     assert value.as_of_label == metadata["B6"].value
@@ -358,8 +371,8 @@ def test_large_money_stays_exact_instead_of_excel_rounding():
     participation_xlsx(replace(value, days=(day, *value.days[1:])), stream)
     stream.seek(0)
     book = load_workbook(stream)
-    assert book["Daily participation"]["H2"].value == "1234567890123456.78"
-    assert book["Daily participation"]["H2"].data_type == "s"
+    assert book["Daily participation"]["H6"].value == "1234567890123456.78"
+    assert book["Daily participation"]["H6"].data_type == "s"
     book.close()
 
 
@@ -371,7 +384,7 @@ def test_zero_pledge_total_is_a_number_not_text():
     participation_xlsx(replace(value, days=(day, *value.days[1:])), stream)
     stream.seek(0)
     book = load_workbook(stream)
-    cell = book["Daily participation"]["H2"]
+    cell = book["Daily participation"]["H6"]
     assert cell.data_type == "n" and cell.value == 0
     assert cell.number_format == '"$"#,##0.00'
     book.close()

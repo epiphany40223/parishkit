@@ -15,10 +15,16 @@ from .schedule_recovery import RecoveryPlan, RecoverySlot, plan_recovery
 
 @dataclass(frozen=True)
 class FamilyImpactInput:
-    """One complete Family group; no name, address or code is needed for counts."""
+    """One complete Family group; no name, address or code is needed for counts.
+
+    ``portal_eligible`` is whether the campaign's Families rule selects the
+    Family (a campaign Family), not the row's ``active`` (ParishSoft's
+    active flag OR the rule), so Go live counts the Families Home and the
+    Response dashboard count (#2331).
+    """
 
     family_id: UUID
-    active: bool
+    portal_eligible: bool
     email_eligible: bool
     deliverable: bool
     responded: bool
@@ -33,7 +39,7 @@ class FamilyImpactInput:
             or any(
                 type(value) is not bool
                 for value in (
-                    self.active,
+                    self.portal_eligible,
                     self.email_eligible,
                     self.deliverable,
                     self.responded,
@@ -58,7 +64,10 @@ class FamilyImpactInput:
 class FamilyImpact:
     """Messages and coalesced semantic slots are deliberately separate units.
 
-    No-email counts describe eligibility, not transient provider deliverability.
+    ``active`` is the campaign Families (the Families rule's, #2331); the
+    name stays because the confirmation, its SQL checks and the command
+    line bind it. No-email counts describe eligibility, not transient
+    provider deliverability.
     Held groups remain visible instead of looking like a verified empty queue.
     Testing responses must not appear as Production response suppression.
     """
@@ -98,7 +107,7 @@ def summarize_family_impact(groups, *, cutoff, closed=False):
             group.slots,
             cutoff=cutoff,
             closed=closed,
-            eligible=group.active and group.email_eligible,
+            eligible=group.portal_eligible and group.email_eligible,
             responded=group.responded,
             deliverable=group.deliverable,
             initial_delivered=group.initial_delivered,
@@ -111,11 +120,13 @@ def summarize_family_impact(groups, *, cutoff, closed=False):
             # not ineligible/responded/closed skips or unrelated held reminders.
             decision = RecoveryPlan(blocked=True, reason="restore_delivery_unresolved")
         totals["families"] += 1
-        totals["active"] += group.active
-        totals["email_eligible"] += group.active and group.email_eligible
-        totals["no_eligible_email"] += group.active and not group.email_eligible
+        totals["active"] += group.portal_eligible
+        totals["email_eligible"] += group.portal_eligible and group.email_eligible
+        totals["no_eligible_email"] += (
+            group.portal_eligible and not group.email_eligible
+        )
         totals["deliverable"] += (
-            group.active and group.email_eligible and group.deliverable
+            group.portal_eligible and group.email_eligible and group.deliverable
         )
         totals["messages"] += decision.selected is not None
         totals["coalesced_slots"] += len(decision.coalesced)

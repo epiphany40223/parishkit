@@ -59,7 +59,7 @@ def test_the_last_tab_lists_items_and_hides_the_rest(page, component_origin):
     assert "Please call about the choir" in information.inner_text()
     visible(information.locator(".stage-chip", has_text="To handle"))
     visible(
-        table.get_by_role("row", name="Cannot participate in ministries: Adams, Zed")
+        table.get_by_role("row", name="Cannot participate in Ministries: Adams, Zed")
     )
     summary = panel.locator("details.hub-unchanged > summary")
     # In view first, so the click scrolls nothing and only the disclosure
@@ -69,7 +69,7 @@ def test_the_last_tab_lists_items_and_hides_the_rest(page, component_origin):
     summary.click()
     unchanged = panel.get_by_role("table", name="Unchanged fields: nothing to handle")
     visible(
-        unchanged.get_by_role("row", name="Cannot participate in ministries: Adams, Bo")
+        unchanged.get_by_role("row", name="Cannot participate in Ministries: Adams, Bo")
     )
     assert summary.bounding_box()["y"] == pytest.approx(before["y"], abs=0.5)
     visible(panel.get_by_role("link", name="Open this Additional information request"))

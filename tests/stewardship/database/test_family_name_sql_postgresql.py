@@ -14,6 +14,7 @@ from django.db.models.functions import Cast
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.delivery_metadata import with_name_keys
+from parishkit.stewardship.source.family_names import family_display_name
 from parishkit.stewardship.source.models import SourceCurrent
 from parishkit.stewardship.source.snapshot_name_sql import SnapshotFamilyName
 from parishkit.stewardship.source.snapshot_names import snapshot_family_names
@@ -95,10 +96,12 @@ def test_outgoing_mail_name_keys_match_every_edge_case(response_service):
             ).values_list("duid", "family_sort_surname", "family_sort_name")
         }
     labels = {BASE + 1000 + offset: case[0] for offset, case in enumerate(NAME_CASES)}
+    families = {BASE + 1000 + offset: case[1] for offset, case in enumerate(NAME_CASES)}
     for duid, name in expected.items():
         name = NAME_NOT_RECORDED if name == DEFAULT else name
-        # No surname in these cases holds a comma, so it ends at the first.
-        surname = name.split(", ")[0]
+        # The Family's own surname, which a mixed-surname name may not lead
+        # with (#2320).
+        surname = family_display_name(families[duid], NAME_NOT_RECORDED)
         assert (labels[duid], keys[duid]) == (
             labels[duid],
             (surname.lower(), name.lower()),

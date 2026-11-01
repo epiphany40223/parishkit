@@ -5,7 +5,7 @@ from django.utils.translation import gettext_lazy as _
 LABELS = {
     "name": _("Campaign name"),
     "year_label": _("Stewardship year label"),
-    "timezone": _("Campaign timezone"),
+    "timezone": _("Campaign time zone"),
     "start_date": _("Campaign start date"),
     "end_date": _("Campaign end date"),
     "modules": _("Enabled modules"),

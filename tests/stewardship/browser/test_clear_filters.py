@@ -231,43 +231,22 @@ def test_panel_holds_both_buttons_in_one_cell(page, component_origin):
 
 
 def test_directory_clear_keeps_the_testing_view(page, component_origin):
-    """The directory's Responses shown choice is a view, not a filter: a
-    segmented pair (#1535) whose choice the filter form carries as a kept
-    hidden field. Clear filters posts it with the kept fields, the answer
-    is the unfiltered Testing rehearsal view, and the pair still shows
-    Testing. Switching the view alone changes no filter, so Clear stays
-    unavailable."""
-    from django.urls import reverse
+    """In Testing mode the directory's Testing responses follow the site's
+    mode, not a choice (#2324): Clear filters posts no mode, and the
+    unfiltered answer is still the Testing view."""
     from playwright.sync_api import expect
 
-    directory = reverse("admin:family_directory")
-    page.goto(
-        component_origin + directory + "?response=started&responses=yes&mode=testing"
-    )
-    switch = page.get_by_role("group", name="Responses shown", exact=True)
-    chosen = switch.locator("[aria-current=page]")
-    expect(chosen).to_have_text("Testing rehearsal")
+    from .directory_components import TESTING_DIRECTORY, TESTING_DIRECTORY_ALL
+
+    page.goto(component_origin + TESTING_DIRECTORY)
     expect(page.get_by_label("Response", exact=True)).to_have_value("started")
     page.evaluate(MARK)
     available(page)
-    answers = {
-        mode: page.request.get(component_origin + directory + query).text()
-        for mode, query in (
-            ("testing", "?mode=testing"),
-            ("production", "?mode=production"),
-        )
-    }
+    answer = page.request.get(component_origin + TESTING_DIRECTORY_ALL).text()
     page.route(
         "**/families/",
         lambda route: (
-            route.fulfill(
-                body=answers[
-                    "production"
-                    if "mode=production" in (route.request.post_data or "")
-                    else "testing"
-                ],
-                content_type="text/html",
-            )
+            route.fulfill(body=answer, content_type="text/html")
             if route.request.method == "POST"
             else route.continue_()
         ),
@@ -275,16 +254,10 @@ def test_directory_clear_keeps_the_testing_view(page, component_origin):
     with page.expect_request(lambda request: request.method == "POST") as sent:
         page.get_by_role("button", name="Clear filters").click()
     fields = posted(sent.value)
-    assert fields.get("mode") == ["testing"], fields
+    assert "mode" not in fields, fields
     assert not {"response", "check", "reach", "q"} & set(fields), fields
     expect(page.get_by_label("Response", exact=True)).to_have_value("any")
-    expect(chosen).to_have_text("Testing rehearsal")
     expect(page.locator("[data-testing-responses]")).to_be_visible()
-    assert page.evaluate(MARKED) == "kept"
-    unavailable(page)
-    switch.get_by_role("button", name="Production").click()
-    expect(chosen).to_have_text("Production")
-    expect(page.locator("#table-filters input[name=mode]")).to_have_value("production")
     assert page.evaluate(MARKED) == "kept"
     unavailable(page)
 

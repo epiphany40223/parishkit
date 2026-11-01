@@ -1,12 +1,11 @@
 """Three-engine private native directories and accessible contacts."""
 
-from urllib.parse import urlencode
 from uuid import UUID
 
 import pytest
 from django.urls import reverse
 
-from .waits import eventually, has_text, same_place, visible
+from .waits import same_place, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -73,7 +72,7 @@ def test_directories_are_accessible_and_keep_filters_in_post(
     visible(page.get_by_role("link", name="head@example.org", exact=True))
     visible(page.get_by_text("1 Example Street", exact=False))
     search = page.get_by_label(
-        "Search by Family name, any member's name, DUID, envelope number or address"
+        "Search by Family name, any Member's name, DUID, envelope number or address"
     )
     search.fill("Private name")
     search.focus()
@@ -182,11 +181,11 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
         # The export row (#1679) is shown below the table, with no format
         # menu and no zone question: the browser's zone is sent unasked.
         assert page.get_by_label("Export format").count() == 0
-        assert page.get_by_label("Export timezone").count() == 0
+        assert page.get_by_label("Export time zone").count() == 0
         # No count line above the buttons (R37).
         assert page.get_by_text("estimated matching", exact=False).count() == 0
         page.get_by_label(
-            "Search by Family name, any member's name, DUID, envelope number or address"
+            "Search by Family name, any Member's name, DUID, envelope number or address"
         ).fill("Unsaved private edit")
         page.route(
             "**" + reverse("admin:family_directory_export"),
@@ -425,7 +424,7 @@ def test_the_export_row_never_asks_for_a_zone(page, component_origin):
     page.get_by_label("Include response columns").check()
     page.get_by_role("button", name="Apply filters").click()
     expect(page.locator("#table-export input[name=responses]")).to_have_value("yes")
-    assert page.get_by_label("Export timezone").count() == 0
+    assert page.get_by_label("Export time zone").count() == 0
     assert boxes() == pytest.approx(before, abs=0.5)
     hidden = page.locator("#table-export input[name=browser_timezone]")
     assert hidden.count() == 1 and hidden.input_value() == page.evaluate(
@@ -508,62 +507,3 @@ def test_filter_bar_tips_sit_beside_their_labels(page, component_origin, width):
     # Linux Firefox may report the same place a ten-thousandth of a pixel apart.
     assert same_place(boxes(), before)
     page.keyboard.press("Escape")
-
-
-def test_responses_shown_carries_the_applied_filters(page, component_origin):
-    """The Responses shown segments (#1535) carry the filters the page shows.
-
-    An in-place Apply filters redraws them with the filters it applied;
-    choosing Production then posts those filters privately with the mode
-    once, back on the first page, without a reload, and the filter form
-    shows what that answer applied and carries Production.
-    """
-    directory = reverse("admin:family_directory")
-
-    # The directory presets the Response dashboard used to link (#1561
-    # removed them from the page with its Lists of Families panel).
-    presets = {
-        "submitted": {"response": "submitted", "responses": "yes", "sort": "submitted"},
-        "started": {"response": "started", "responses": "yes"},
-    }
-
-    def preset(key, **extra):
-        """A directory preset's address, as the response dashboard links it."""
-        return f"{directory}?{urlencode(presets[key] | extra)}"
-
-    answers = [
-        page.request.get(component_origin + preset("started", mode="testing")).text(),
-        page.request.get(component_origin + preset("started")).text(),
-    ]
-    posts = []
-
-    def answer(route):
-        """Answer each POST with the next page, in order."""
-        posts.append(route.request.post_data)
-        route.fulfill(body=answers[len(posts) - 1], content_type="text/html")
-
-    page.goto(component_origin + preset("submitted", mode="testing"))
-    page.evaluate("document.querySelector('h1').dataset.mark = 'kept'")
-    page.route("**/families/", answer)
-    production = "#directory-mode form[data-in-place=mode-production]"
-    assert page.locator(f"{production} input[name=response]").input_value() == (
-        "submitted"
-    )
-    page.get_by_label("Response", exact=True).select_option("started")
-    page.get_by_role("button", name="Apply filters").click()
-    eventually(
-        page,
-        f"() => document.querySelector('{production} input[name=response]')"
-        ".value === 'started'",
-    )
-    page.get_by_role("group", name="Responses shown", exact=True).get_by_role(
-        "button", name="Production"
-    ).click()
-    has_text(page.locator("#directory-mode [aria-current=page]"), "Production")
-    assert len(posts) == 2
-    sent = dict(pair.split("=", 1) for pair in posts[1].split("&"))
-    assert posts[1].count("mode=") == 1 and sent["mode"] == "production"
-    assert sent["response"] == "started" and "page" not in sent
-    assert page.locator("#table-filters input[name=mode]").input_value() == "production"
-    assert page.get_by_label("Response", exact=True).input_value() == "started"
-    assert page.evaluate("document.querySelector('h1').dataset.mark") == "kept"

@@ -29,8 +29,9 @@ RENDERER_VERSION = "participation-v3"
 # saved report page can tell which drawing a retained digest holds.
 EMAIL_RENDERER_VERSION = "participation-email-v2"
 # The PDF's drawing: the plot inside the shared report page frame (#926),
-# among the Response dashboard's sections since version 3 (#1557).
-PDF_RENDERER_VERSION = "participation-pdf-v3"
+# among the Response dashboard's sections since version 3 (#1557), with the
+# Families counted line on every page since version 4 (R59, #2324).
+PDF_RENDERER_VERSION = "participation-pdf-v4"
 # The PDF section the chart page and the daily table hold (#1557).
 DAILY_SECTION = "Daily participation"
 # The plot box (figure fractions) spans every panel, from the top of the
@@ -141,16 +142,20 @@ def _fit_to_margins(figure):
 def pdf_frame(document, section=None):
     """The shared report page frame for the participation PDF (#926).
 
-    It names the parish, campaign and population scope like the page PNG,
-    and ``section``, the Response dashboard section the page holds (#1557),
-    under the title. Unlike the other report PDFs it states no capture or
-    request time: the chart's provenance travels in the file's metadata
-    instead (#575).
+    It names the parish, campaign and population scope like the page PNG.
+    Under the title, the "Families counted: …" line says the population
+    the request captured (R59 on #2324), then ``section`` names the
+    Response dashboard section the page holds (#1557). Unlike the other
+    report PDFs it states no capture or request time: the chart's
+    provenance travels in the file's metadata instead (#575).
     """
+    from .participation import families_counted_line
+
     return pdf_design.PdfFrame(
         title=f"Family participation — {document.scope_label}",
         eyebrow=f"{document.parish_name} · {document.campaign_name}",
-        details=(section,) if section else (),
+        details=(families_counted_line(document.population_scope),)
+        + ((section,) if section else ()),
     )
 
 

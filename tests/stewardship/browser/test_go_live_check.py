@@ -211,7 +211,7 @@ def test_start_go_live_reviews_in_the_dialog_then_opens_the_step(
     expect(dialog).to_contain_text("Nothing reaches Families until you confirm.")
     expect(dialog).to_contain_text("Deleted Testing data cannot be restored")
     expect(dialog).to_contain_text("1,234")
-    visible(dialog.get_by_role("link", name="View Testing submissions"))
+    visible(dialog.get_by_role("link", name="View Testing responses"))
     dialog.get_by_role("button", name="Cancel").click()
     hidden(dialog)
     focused(start)

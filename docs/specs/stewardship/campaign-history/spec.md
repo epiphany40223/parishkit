@@ -544,7 +544,7 @@ Adding a file follows the [review dialog](../ui-conventions/spec.md#review-dialo
 1. **Review** uploads the file and validates it (below), without a page
    load, and opens the dialog with a card: the year, campaign name, final
    or partial, day-1 date,
-   last day, Families responded, annual pledges, the active-Family count with
+   last day, Families responded, annual pledges, the campaign-Family count with
    its provenance, the metadata notes that the report's data notes will show,
    and what Apply will do (Add, Replace year N, or Already imported); the
    dialog's title asks it ("Add 2025?", "Replace 2025?"), or, when Apply is
@@ -750,7 +750,7 @@ The SHA-256 of the uploaded bytes identifies the file:
   does) and stores the new one in the same transaction. A partial file never
   replaces a final one; Review refuses that with the reason.
 - Replace is also how an archive is corrected: for example, when a better
-  measurement of a year's active-Family count is found, the Administrator
+  measurement of a year's campaign-Family count is found, the Administrator
   corrects `active_families` and `active_families_provenance` in the
   file's `metadata` sheet (and the `cumulative_pct_of_active` column that
   follows from it) and imports it again. The new checksum makes
@@ -1024,9 +1024,22 @@ The page follows [page help](../ui-conventions/spec.md#page-help): data
 first, explanation in the About this page panel.
 
 1. **Heading and data line** (the figures in these examples are invented):
-   "Day 12 of Stewardship 2027 · through Wednesday, October 14", with the
-   last-year and average years named ("compared with 2026 and the
-   2020–2026 average").
+   "Day 12 of Stewardship 2027", with the last-year and average years named
+   ("compared with 2026 and the 2020–2026 average").
+   **Population line.** Under it, the page's fixed
+   [population](../ui-conventions/spec.md#population-of-report-figures)
+   line names the Families it counts and the day compared: "Families
+   counted: Including Families that left, as of the end of October 14,
+   2026", then why the other report pages can differ ("This page always
+   counts them, as the past campaigns' archives do; the other report pages
+   start at In this campaign today and count up to now, so their figures
+   can differ."). The page has no Families counted choice: the past
+   campaigns' archives hold only every Family that was ever in each
+   campaign, and the comparison SQL reads only the historical fact set
+   ([#2324](https://github.com/epiphany40223/parishkit/issues/2324)). Both
+   lines are in the region Compare on day redraws in place, so the day
+   follows the day chosen; the population line is always drawn (before day
+   1 ends, without a day), so nothing appears or goes.
 2. **Headline tiles**, one per metric above, in that order, drawn as
    [stat tiles](../ui-conventions/spec.md#stat-tiles). Each shows the
    current figure large, then two lines: "Last year on day 12: 240 (↑ 12.5%
@@ -1611,7 +1624,7 @@ The Administrator accepted every proposed default on October 11, 2026
    current campaign live.
 6. **Day 1 of the current campaign:** the campaign's local start date, which
    is the first invitation day.
-7. **Prior-years average:** every imported year. A measured active-Family
+7. **Prior-years average:** every imported year. A measured campaign-Family
    count is required in every archive and its provenance records the
    source; estimates are not supported (Administrator direction, 2026-10-11,
    after firm counts were found for every year, 2020–2022 from database

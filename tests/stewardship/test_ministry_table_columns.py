@@ -113,7 +113,7 @@ def test_by_ministry_names_each_ministry_without_its_duid():
     html = ministry_page(summaries=[summary, other])
     start = html.index('id="by-ministry"')
     table = html[start : html.index("</table>", start)]
-    assert in_order(table, ">Ministry</th>", ">Join requests</th>", ">Unresolved</th>")
+    assert in_order(table, ">Ministry</th>", ">Join requests</th>", ">To review</th>")
     # A Ministry ParishSoft lists has no mark: there is no Active or
     # Inactive any more (#1267).
     assert '<th scope="row">Food pantry</th>' in table
@@ -137,7 +137,10 @@ def test_campaign_ministries_review_names_ministries_without_duids():
     )
     assert in_order(html, ">Ministry</th>", ">Submitted answers")
     assert "<li>Choir</li>" in html
-    row = '<th scope="row">Food pantry</th><td>1</td><td>1</td>'
+    row = (
+        '<th scope="row">Food pantry</th>'
+        '<td class="numeric">1</td><td class="numeric">1</td>'
+    )
     assert row in html
     assert "DUID" not in html
 

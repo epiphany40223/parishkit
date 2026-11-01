@@ -498,7 +498,7 @@ def test_a_limitations_member_page_draws_the_members_answer(monkeypatch):
     (part,) = section.parts
     assert part.kind == "answers"
     assert [row.label for row in part.rows] == [
-        "Cannot participate in ministries: Adams, Requested"
+        "Cannot participate in Ministries: Adams, Requested"
     ]
     assert section.count == 1
     section = member_page(monkeypatch, "limitations", "member", "3", ["other"])

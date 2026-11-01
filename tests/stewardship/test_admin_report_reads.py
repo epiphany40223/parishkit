@@ -165,6 +165,7 @@ def financial():
             "rows": [{"family_name": "Private Family"}],
             "total": 4,
         },
+        "current",
     )
 
 
@@ -464,6 +465,8 @@ GOLDEN = {
         financial,
         {
             "campaign_id": str(CAMPAIGN),
+            # The page's Families counted population (#2324).
+            "scope": "current",
             "source_generation": 7,
             "source_as_of": ISO,
             "comparison_start": "2053-07-01",

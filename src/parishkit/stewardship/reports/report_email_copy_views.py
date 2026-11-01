@@ -282,7 +282,8 @@ def item_context(snapshot, preparation, item_id):
     key = str(item_id)
     if key not in listed_requests(snapshot):
         raise ObjectDoesNotExist("The send did not list this request.")
-    ((_, duid, name, submitted, text),) = [
+    # A send captured since #2331 keeps each request's stage last.
+    ((_, duid, name, submitted, text, *_stage),) = [
         item
         for entry in snapshot.blocks
         if entry["block"] == "additional_information" and entry.get("data")

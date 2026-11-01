@@ -156,7 +156,7 @@ SLOT_LABELS = {
     "banner": _("Banner (top of the Family emails only)"),
     "welcome": _("Welcome page icon"),
     "member": _("Member pages icon"),
-    "financial": _("Financial page icon"),
+    "financial": _("Financial stewardship page icon"),
     "closing": _("Closing page icon"),
 }
 
@@ -164,7 +164,7 @@ SLOT_LABELS = {
 # a Family page only some campaign modules show (#563).
 UNAVAILABLE = {
     "financial": _(
-        "Families see no Financial page while Financial stewardship is off "
+        "Families see no Financial stewardship page while Financial stewardship is off "
         "for this campaign, so this icon cannot be uploaded."
     ),
     "member": _(

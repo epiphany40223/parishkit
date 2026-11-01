@@ -26,7 +26,7 @@ from .waits import has_text, hidden, recorded, visible
 
 # The no-match hint names what can be searched; check its key words, not the
 # whole sentence, so rewording it does not break the keyboard tests.
-NO_MATCH = re.compile(r"^No Family matches\..*member's name.*DUID.*envelope number")
+NO_MATCH = re.compile(r"^No Family matches\..*Member's name.*DUID.*envelope number")
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "webkit"], indirect=True
@@ -195,13 +195,13 @@ SIGNED_IN_DENIAL = {
     ],
     "refusal": {
         "message": "Your access doesn't include this page.",
-        "fix": "Choose a page from the menu, or ask a parish administrator if "
+        "fix": "Choose a page from the menu, or ask a parish Administrator if "
         "you need this one.",
         "link": None,
     },
 }
 FIXED = "Couldn't search. Refresh the page or sign in again."
-FIX = "Choose a page from the menu, or ask a parish administrator if you need this one."
+FIX = "Choose a page from the menu, or ask a parish Administrator if you need this one."
 
 
 @pytest.mark.parametrize(

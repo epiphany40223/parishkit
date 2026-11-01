@@ -26,7 +26,6 @@ from dataclasses import dataclass
 
 from django.db import DatabaseError, connection, transaction
 from django.utils.translation import gettext_lazy as _
-from django.utils.translation import ngettext
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.observability import current_correlation
@@ -40,8 +39,6 @@ from .users_upgrade import default_name
 # Every imported user's role (Administrator decision, 2026-10-10): import
 # never grants more than Ministry leader.
 IMPORT_ROLE = "ministry_leader"
-# Ministries a table cell names before "and N more".
-SHOWN_MINISTRIES = 2
 
 # The leaders table's sort (admin-portal "ParishSoft Ministry leaders without
 # a user"): Name by default, then Member DUID or Email.
@@ -139,17 +136,6 @@ def read_leaders(session_key):
     return Leaders(rows=rows, unreachable=int(answer.get("unreachable", 0)))
 
 
-def ministries_label(names):
-    """A short list of Ministry names, such as "Choir, Ushers and 3 more"."""
-    shown = ", ".join(names[:SHOWN_MINISTRIES])
-    rest = len(names) - SHOWN_MINISTRIES
-    if rest <= 0:
-        return shown
-    return ngettext(
-        "%(shown)s and %(count)d more", "%(shown)s and %(count)d more", rest
-    ) % {"shown": shown, "count": rest}
-
-
 def ministry_names(duids):
     """Each Ministry DUID's display name in the current promoted catalog.
 
@@ -178,8 +164,8 @@ def ministry_names(duids):
 def table_rows(leaders):
     """The leaders' rows with their Ministries named, for the page and CLI.
 
-    ``ministry_names`` lists every name in order (the cell's tooltip and the
-    command line); ``ministries_label`` is the cell's short form.
+    ``ministry_names`` lists every name in alphabetical order; the page's
+    Ministries led cell and the command line both show the whole list (#2342).
     """
     names = ministry_names({duid for row in leaders.rows for duid in row["ministries"]})
     shaped = []
@@ -188,10 +174,7 @@ def table_rows(leaders):
             (names[duid] for duid in row["ministries"]),
             key=lambda name: name.casefold(),
         )
-        shaped.append(
-            row
-            | {"ministry_names": listed, "ministries_label": ministries_label(listed)}
-        )
+        shaped.append(row | {"ministry_names": listed})
     return shaped
 
 

@@ -605,6 +605,23 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # (``CLOSURE_CREATED``) and 0106's (``CLOSURE_REPLACED_LAST``) bring back
 # without the uploader's login, so ``CLOSURE_REPLACED_ONLY`` puts 0193's
 # bodies back last.
+# 0195 (#235, contract) creates and replaces nothing and alters no table:
+# it only revokes the backup login's two table INSERTs (tolerated on the
+# base through runtime_grants.CLOSURE_TABLE_REVOKES), and its revokes are
+# no-ops when run again, so nothing is registered for it.
+# 0196 (#2331) creates one plain read (``CLOSURE_CREATED``: neither granted
+# nor a definer; its file, whole, puts it back) and replaces in place the
+# report snapshot guard and the fact runtime binding, which 0185's entries
+# restore older, and the source pin guard, which 0161's rerun brings back
+# older, so its ``CLOSURE_REPLACED_ONLY`` entries restore 0196's bodies,
+# the first two in 0185's entries' places.
+# 0197 (#2335) creates nothing: it replaces 0194's Financial and both
+# Additional information selections in place, so its ``CLOSURE_REPLACED_ONLY``
+# entries restore 0197's bodies instead, in the place of those 0175 began.
+# 0198 (#2331) creates nothing: it replaces the follow-up, packet and
+# Ministry report selections in place, which 0131's and 0141's entries
+# (and the earlier files' reruns) bring back older, so its
+# ``CLOSURE_REPLACED_ONLY`` entries restore 0198's bodies in their place.
 # The columns 0185 (#2202) adds, by table.
 SERIES_IN_FORCE_COLUMNS = (
     ("stewardship_daily_fact_set", "pledge_edits"),
@@ -1161,6 +1178,26 @@ CLOSURE_CREATED = {
             "public.stewardship_response_ministry_held_v1(uuid,uuid,text,integer,date)",
         ),
         ("stewardship_responses", "0033_commitment_roster_date"),
+    ),
+    # 0194 (#2320) creates the name series, last name and two-surname
+    # name helpers; its file's other statements replace in place, so
+    # running it whole again is safe. It comes last: it replaces the
+    # Additional information selection v2, which 0064's file (above)
+    # makes again, and records the grants of what it replaces first.
+    **dict.fromkeys(
+        (
+            "public.stewardship_name_series_v1(text[])",
+            "public.stewardship_family_last_name_v1(jsonb)",
+            "public.stewardship_family_heads_name_v2(text,boolean,text[])",
+        ),
+        ("stewardship_reports", "0054_mixed_surname_names"),
+    ),
+    # 0196 (#2331): the report email's open requests without the Ignored
+    # ones, each with its stage; its file, whole, puts it back with its
+    # replaced guards.
+    "public.stewardship_report_email_requests_v2(uuid,uuid,timestamp with time zone)": (
+        "stewardship_reports",
+        "0055_report_email_population",
     ),
 }
 
@@ -1858,6 +1895,80 @@ CLOSURE_REPLACED_ONLY = {
         (
             ("stewardship_jobs", "0041_backup_uploader_preparation"),
             "pk_stewardship_backup_uploader",
+        ),
+    ),
+    # 0194 (#2320) replaces both directory selections last, on 0094's
+    # bodies, so they build the shown Family name with the shared function;
+    # 0094's rerun (CLOSURE_REPLACED) puts the inline name back, so only
+    # 0194's replacements run again. It also replaces the Financial and both
+    # Additional information selections last, on 0182's and 0175's bodies
+    # (these keys' values replace those entries above, in their place), so
+    # they name a Family with a blank lastName by its heads and search the
+    # Family surname. The name functions it also replaces come from 0045,
+    # which no closure reruns.
+    **dict.fromkeys(
+        ("stewardship_directory_report_v1", "stewardship_directory_report_v2"),
+        (
+            ("stewardship_reports", "0054_mixed_surname_names"),
+            "stewardship_family_heads_name_v2(family_name,surname_recorded,n.parts)",
+        ),
+    ),
+    **dict.fromkeys(
+        (
+            "stewardship_financial_report_v1",
+            "stewardship_information_report_v1",
+            "stewardship_information_report_v2",
+        ),
+        (
+            ("stewardship_reports", "0054_mixed_surname_names"),
+            "stewardship_family_heads_name_v2(r.surname,r.surname_recorded,n.parts)",
+        ),
+    ),
+    # 0196 (#2331) replaces 0185's snapshot guard and runtime binding (these
+    # keys' values replace 0185's entries above, in their places) and
+    # 0161's source pin guard, so the restore installs 0196's bodies: a
+    # report email counts today's campaign Families.
+    **{
+        name: (("stewardship_reports", "0055_report_email_population"), phrase)
+        for name, phrase in (
+            ("stewardship_report_email_snapshot_guard_v1", "requests_v2("),
+            (
+                "stewardship_fact_runtime_binding_v1",
+                "NEW.population_scope NOT IN ('current','historical')",
+            ),
+            (
+                "stewardship_source_pin_guard",
+                "WHERE t.task_type='report_email_prepare' AND p.phase='capture'",
+            ),
+        )
+    },
+    # 0197 (#2335) replaces the same three selections last, on 0194's
+    # bodies (these keys' values replace 0194's entries, in their place), so
+    # each Family's status reads its portal_eligible under every rule.
+    **dict.fromkeys(
+        (
+            "stewardship_financial_report_v1",
+            "stewardship_information_report_v1",
+            "stewardship_information_report_v2",
+        ),
+        (
+            ("stewardship_reports", "0056_financial_eligibility"),
+            "THEN (p.canonical::jsonb->'portal_eligible')::boolean END AS active,",
+        ),
+    ),
+    # 0198 (#2331) replaces the three Ministry selections last, on 0131's
+    # and 0141's bodies, so an edited request belongs to its Ministry in
+    # force alone: these keys' values replace the 0141 and 0131 entries
+    # above (in their places), so the restore installs 0198's bodies.
+    **dict.fromkeys(
+        (
+            "stewardship_ministry_followup_v1",
+            "stewardship_ministry_packet_v1",
+            "stewardship_ministry_report_v3",
+        ),
+        (
+            ("stewardship_reports", "0057_ministry_edit_once"),
+            "(VALUES (coalesce(r.reviewed_ministry_duid,r.ministry_duid))) d(duid)",
         ),
     ),
 }
@@ -2677,7 +2788,10 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
     and the digest ready row's comparison column (#1018). Mail dispatch
     still holds the earlier release's ciphertext reads on the base, which
     database-grants admits there; the full migration's 0073 revokes them
-    (#389 L1), and after it the same reads would be refused as excess.
+    (#389 L1), and after it the same reads would be refused as excess. The
+    backup login's earlier table INSERTs on its run row and the off-site
+    copy outcomes are the same case for 0195 (#235, contract): admitted on
+    the base, revoked by the full migration, refused as excess after it.
     """
     from django.core.management import call_command
 
@@ -2708,8 +2822,10 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
             )
         with connection.cursor() as cursor:
             cursor.execute(EARLIER_MAIL_TOKEN_READS)
+            cursor.execute(EARLIER_BACKUP_INSERTS)
         assert grants() == {"database_grants_provisioned": True}
         assert mail_reads_ciphertext()
+        assert backup_inserts() == (True, True, True)
         with connection.cursor() as cursor:
             cursor.execute("SET SESSION AUTHORIZATION pk_stewardship_admin_recovery")
         result = operator_commands.upgrade_users_command(
@@ -2814,7 +2930,22 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
             "'EXECUTE')",
             [f"public.{DISPATCH_TOKEN_FUNCTION}"],
         )
+        # Only the run row's other columns (the registry's column grant).
+        assert backup_inserts() == (False, False, False)
+        assert scalar(
+            "SELECT has_column_privilege('pk_stewardship_backup_worker', "
+            "'public.stewardship_backup_run', 'started_at', 'INSERT')"
+        )
         with connection.cursor() as cursor:
+            cursor.execute(EARLIER_BACKUP_INSERTS)
+        with pytest.raises(ConfigError, match="grants exceed initial provisioning"):
+            grants()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                EARLIER_BACKUP_INSERTS.replace("GRANT", "REVOKE").replace(
+                    " TO ", " FROM "
+                )
+            )
             cursor.execute(EARLIER_MAIL_TOKEN_READS)
         with pytest.raises(ConfigError, match="column grants exceed"):
             grants()
@@ -2828,6 +2959,28 @@ EARLIER_MAIL_TOKEN_READS = (
     "GRANT SELECT (token_ciphertext) ON public.stewardship_rehearsal_credential "
     "TO pk_stewardship_mail_dispatch"
 )
+
+
+# The earlier release's backup-login table INSERTs on its run row and the
+# off-site copy outcomes, which migration 0195 revokes (#235, contract).
+EARLIER_BACKUP_INSERTS = (
+    "GRANT INSERT ON public.stewardship_backup_run TO pk_stewardship_backup_worker; "
+    "GRANT INSERT ON public.stewardship_backup_upload TO pk_stewardship_backup_worker"
+)
+
+
+def backup_inserts():
+    """The backup login's table INSERTs and its INSERT on completed_at."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT has_table_privilege('pk_stewardship_backup_worker', "
+            "'public.stewardship_backup_run', 'INSERT'), "
+            "has_table_privilege('pk_stewardship_backup_worker', "
+            "'public.stewardship_backup_upload', 'INSERT'), "
+            "has_column_privilege('pk_stewardship_backup_worker', "
+            "'public.stewardship_backup_run', 'completed_at', 'INSERT')"
+        )
+        return cursor.fetchone()
 
 
 def mail_reads_ciphertext():
@@ -3166,7 +3319,6 @@ def backup_command(monkeypatch, run_backup):
     monkeypatch.setattr(backup_commands, "configure_logging", lambda: None)
     monkeypatch.setattr(backup_commands, "load_deployment", lambda path: None)
     monkeypatch.setattr(backup_commands, "_admit_backup_identity", lambda: None)
-    monkeypatch.setattr(backup_commands, "_copy_offsite", lambda c: {"state": "x"})
     monkeypatch.setattr(backup_boundaries, "admit_backup_service", lambda c: None)
     monkeypatch.setattr(
         operator_commands, "configure_operator_database", lambda c: None
@@ -3442,7 +3594,6 @@ def test_a_resumed_users_upgrade_reuses_the_earlier_runs_backup(
     from datetime import timedelta
 
     from parishkit.stewardship.cli import main
-    from parishkit.stewardship.jobs.backup_models import BackupUpload
 
     from .test_backup_postgresql import FACTS, recorded
 
@@ -3481,16 +3632,8 @@ def test_a_resumed_users_upgrade_reuses_the_earlier_runs_backup(
         assert report["backup_reused"] is True
         assert report["reused_backup"]["manifest_digest"] == "e" * 64
         assert report["pending_base_migrations"] == 1
-        # No off-site destination in this configuration and no copy row.
-        assert report["offsite"] == {"state": "not_configured"}
-        with transaction.atomic():
-            BackupUpload.objects.create(
-                state="uploaded",
-                set_name="20261010T000000Z",
-                manifest_digest="e" * 64,
-                folder_id="f" * 20,
-            )
-        assert backup(resume)[1]["offsite"] == {"state": "uploaded"}
+        # Whether it was copied is the uploader's answer (#235, contract).
+        assert "offsite" not in report
         assert taken == []
     with swap_pending():
         # Only the swap pending: a fresh backup, flag or not.

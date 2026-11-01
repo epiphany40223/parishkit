@@ -500,9 +500,12 @@ def test_postal_mail_merge_leaves_out_families_without_a_mailing_address(
             "lastName": "Unmailable",
             "primaryCity": "",
         }
+        # The head shares the Family surname: a head with another surname
+        # would lead the staff-list name with that surname instead (#2320).
         data.members[1000 + duid] = data.members[3] | {
             "memberDUID": 1000 + duid,
             "familyDUID": duid,
+            "lastName": "Unmailable",
             "emailAddress": "",
         }
     snapshot, claim = prepare(data)
@@ -612,8 +615,10 @@ def test_mail_merge_always_lists_by_postal_mail_only(
     fields = filters | dict(
         format="csv", browser_timezone="UTC", request_key=str(uuid4())
     )
+    # The page never takes a mode (#2324); its export form still names it.
+    sent = {key: value for key, value in filters.items() if key != "mode"}
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response, body = search(browser, route, filters)
+        response, body = search(browser, route, sent)
         assert response.status_code == 200 and b"Matching Families: 1." in body
         assert b"<td>1 Example Street<br>" in body
         assert b'<option value="mail" selected>' in body

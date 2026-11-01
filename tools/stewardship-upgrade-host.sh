@@ -23,6 +23,9 @@
 #     already; nothing is pulled and no registry digest is checked;
 #   - the backup is still required, but LOCAL has no off-host target, so
 #     an off-site state of not_configured is accepted alongside uploaded;
+#   - the off-site uploader's contract checks (#235: the backup profile's
+#     route out, the Engine version, the INPUT drop, the uploader's cron
+#     line, a running release with `upload`) only report, never refuse;
 #   - the services keep the deployment's clock mode (the faketime override
 #     is added when the marker says fake, and the derived fake-clock image
 #     of the new application image is built after the retarget);
@@ -611,11 +614,18 @@ uploader_cron_lines() {
     # ends the command (the shell's comment), so a name in a trailing
     # comment is not a match; nor is any other command, wrapper or service
     # that merely contains the name, nor `--entrypoint` (another command in
-    # the uploader's image). Lines are printed as the crontabs hold them.
+    # the uploader's image). Also never a match, since the uploader would not
+    # run (#235): a line with a `%` anywhere (cron ends the command there and
+    # feeds the rest as input), compose's `--dry-run`, and a `run` option
+    # this does not know, so that an option's value (`--network
+    # backup-uploader`) is never taken for the service; a known option that
+    # takes a value consumes the next word, so a service must still follow.
+    # Lines are printed as the crontabs hold them.
     cron_tagged | awk '
         function docker(word) { return word == "docker" || word ~ /\/docker$/ }
         {
             line = substr($0, 3)
+            if (index(line, "%")) next
             command = line
             sub(/^[ \t]+/, "", command)
             sub(/[ \t]#.*/, "", command)
@@ -623,12 +633,15 @@ uploader_cron_lines() {
             at = (word[1] ~ /^@/) ? 2 : 6
             if (substr($0, 1, 1) == "s") at++
             if (!docker(word[at]) || word[at + 1] != "compose") next
-            for (i = at + 2; i <= n && word[i] ~ /^-/; i++)
+            for (i = at + 2; i <= n && word[i] ~ /^-/; i++) {
+                if (word[i] ~ /^--dry-run(=|$)/) next
                 if (word[i] ~ /^(-f|-p|--file|--project-name|--project-directory|--env-file|--profile|--ansi|--progress|--parallel)$/) i++
+            }
             if (word[i] != "run") next
             for (i++; i <= n && word[i] ~ /^-/; i++) {
-                if (word[i] ~ /^--entrypoint/) next
+                if (word[i] ~ /^(--entrypoint|--dry-run)/) next
                 if (word[i] ~ /^(-e|--env|--env-from-file|--name|-u|--user|-w|--workdir|-l|--label|-v|--volume|-p|--publish|--cap-add|--cap-drop|--pull)$/) i++
+                else if (word[i] !~ /^(--rm|-T|--no-TTY|-d|--detach|-i|--interactive|--no-deps|--build|-P|--service-ports|--use-aliases|--remove-orphans|--quiet|--quiet-build|--quiet-pull|--(env|env-from-file|name|user|workdir|label|volume|publish|cap-add|cap-drop|pull)=.*)$/) next
             }
             if (word[i] != "backup-uploader") next
             i++
@@ -652,83 +665,44 @@ copy_lock_take() {
     # copy_lock_take DIR SECONDS: hold this host's off-site copy lock on the
     # backups directory DIR for the rest of the run (operations
     # specification, "Offline work"), so an upload still running finishes
-    # first and a cron uploader exits at the lock. Taken as every copier
-    # takes it, in the expand release's order: the legacy file lock (an
-    # old-release copy holds only that one), then the directory lock, each
-    # with `flock -w` on a descriptor (8 and 9) this shell keeps open until
-    # it exits.
+    # first and a cron uploader exits at the lock. Since the contract
+    # release every copier takes the directory lock alone (the expand
+    # release's legacy .offsite-copy.lock file is no longer locked, and a
+    # leftover one is ignored), so this takes it with `flock -w` on a
+    # descriptor (9) this shell keeps open until it exits.
     #
-    # The backup worker can write DIR, so anything at the lock file's name
-    # may change between a check and an open. A missing legacy file is
-    # made beside it (mktemp: O_EXCL, mode 0600), owned like DIR, and
-    # linked into place: link(2) neither follows nor replaces whatever is
-    # at the name by then, and that is checked like any existing file. A
-    # link or anything but a regular file there refuses before the open.
-    # The file is opened read-write (`<>`, nothing is written), which never
-    # blocks on a FIFO as a read-only open would, and the open descriptors
-    # must then be the regular file and the directory at those names, by
-    # device and inode, so a link or a FIFO swapped in after the checks
-    # refuses instead of being locked or hanging the run.
+    # The name may still change between the check and the open, so the
+    # open descriptor must be the directory at that name, by device and
+    # inode: a link or anything else swapped in meanwhile refuses instead
+    # of being locked.
     #
-    # A wait longer than SECONDS in all is logged with what, the limit and
-    # the elapsed time (flock's exit 75); any other flock failure is logged
-    # as a failure with its status. Either returns non-zero, as does every
-    # other refusal.
-    local dir=$1 limit=$2 file uid gid started left fd tmp mask rc
-    file=$dir/.offsite-copy.lock
+    # A wait longer than SECONDS is logged with what, the limit and the
+    # elapsed time (flock's exit 75); any other flock failure is logged as a
+    # failure with its status. Either returns non-zero, as does every other
+    # refusal.
+    local dir=$1 limit=$2 started rc
     command -v flock >/dev/null || { echo "flock is not installed; cannot take the off-site copy lock." >&2; return 1; }
     { [ -d "$dir" ] && [ ! -L "$dir" ]; } ||
         { echo "The backups directory $dir is not a directory." >&2; return 1; }
-    if [ ! -e "$file" ] && [ ! -L "$file" ]; then
-        read -r _ _ uid gid _ < <(ls -ldn "$dir") ||
-            { echo "Could not read the owner of $dir." >&2; return 1; }
-        if ! tmp=$(mktemp "$file.XXXXXX" 2>/dev/null) || ! chown -h "$uid:$gid" "$tmp"; then
-            [ -z "${tmp:-}" ] || rm -f -- "$tmp"
-            echo "Could not create the copy lock file $file." >&2
-            return 1
-        fi
-        # A failed link is fine when something else now has the name (the
-        # backup profile made the file meanwhile): it is checked below. -T
-        # never links into a directory that took the name meanwhile.
-        ln -T -- "$tmp" "$file" 2>/dev/null || [ -e "$file" ] || [ -L "$file" ] ||
-            { rm -f -- "$tmp"; echo "Could not create the copy lock file $file." >&2; return 1; }
-        rm -f -- "$tmp"
-    fi
-    { [ -f "$file" ] && [ ! -L "$file" ]; } ||
-        { echo "The copy lock file $file is not a regular file." >&2; return 1; }
-    # Owner-only, should a name removed meanwhile make the open create it.
-    mask=$(umask)
-    umask 077
-    if ! exec 8<>"$file" 9<"$dir"; then
-        umask "$mask"
+    if ! exec 9<"$dir"; then
         echo "Could not open the copy lock on $dir." >&2
         return 1
     fi
-    umask "$mask"
-    if ! { [ -f /dev/fd/8 ] && copy_lock_same 8 "$file"; }; then
-        exec 8<&- 9<&-
-        echo "The copy lock file $file is not a regular file." >&2
-        return 1
-    fi
     if ! { [ -d /dev/fd/9 ] && copy_lock_same 9 "$dir"; }; then
-        exec 8<&- 9<&-
+        exec 9<&-
         echo "The backups directory $dir is not a directory." >&2
         return 1
     fi
     started=$(date -u +%s)
-    for fd in 8 9; do
-        left=$((limit - ($(date -u +%s) - started)))
-        [ "$left" -ge 1 ] || left=1
-        rc=0
-        flock -E 75 -w "$left" "$fd" || rc=$?
-        if [ "$rc" -eq 75 ]; then
-            echo "TIMEOUT: waiting for the off-site copy lock on $dir gave up after $(($(date -u +%s) - started))s (limit ${limit}s)" >&2
-            return 1
-        elif [ "$rc" -ne 0 ]; then
-            echo "FAILED: flock on the off-site copy lock on $dir exited with status $rc after $(($(date -u +%s) - started))s" >&2
-            return 1
-        fi
-    done
+    rc=0
+    flock -E 75 -w "$limit" 9 || rc=$?
+    if [ "$rc" -eq 75 ]; then
+        echo "TIMEOUT: waiting for the off-site copy lock on $dir gave up after $(($(date -u +%s) - started))s (limit ${limit}s)" >&2
+        return 1
+    elif [ "$rc" -ne 0 ]; then
+        echo "FAILED: flock on the off-site copy lock on $dir exited with status $rc after $(($(date -u +%s) - started))s" >&2
+        return 1
+    fi
 }
 # END off-site copy lock (#235).
 
@@ -1156,6 +1130,229 @@ if ! has_command "$new_commands" upload; then
         echo "(docs/guides/stewardship-backup-runbook.md#rolling-back-the-expand-release)," >&2
         echo "then repeat." >&2
         exit 1
+    fi
+fi
+
+# The backup profile's route out (#235, operations specification, "No route
+# out"). From the contract release on (the new image lists egress-probe) the
+# backup worker, which reads every tree and all database data, is on its own
+# internal network alone and the off-site uploader alone copies. Before
+# anything stops, every such upgrade or rollback checks on Production:
+# - the running image has the uploader's `upload` (the expand release), so
+#   no copier still running holds only the expand release's legacy file
+#   lock, which this release no longer takes;
+# - this host's cron runs the uploader: the shared crontab block's
+#   uploader_cron_lines prints at least one line that runs the
+#   `backup-uploader` service through `docker compose ... run` (its strict
+#   match: no wrapper, comment, other command or file cron skips counts),
+#   or copies would stop with this release. The lines are logged as
+#   evidence;
+# - Docker Engine has the embedded-DNS fix for internal networks
+#   (CVE-2024-29018: 26.0.0, 25.0.5 or 23.0.11 and later; any 24.x refused);
+# - the host INPUT drop for runtime_network.offline is in place AHEAD of
+#   every rule that could admit that block (iptables -S INPUT), and its
+#   systemd unit (the backup runbook's one persistence procedure) is
+#   enabled for that block: the gateway of every one-shot network is the
+#   host, and Caddy's published 80/443 listen on its wildcard address, as
+#   may sshd and any UDP service, whose silence alone proves nothing;
+# - the new image's egress-probe, in a container joined only to the
+#   existing backup-worker network, reaches nothing: external TCP, DNS
+#   through the embedded resolver and straight to a public one, every
+#   port the host listens on at a wildcard address or that gateway, and
+#   TCP 80 and 443 there always.
+# Every failure to ask refuses too. LOCAL (pk-local) has no off-site target
+# and no host firewall rule, so there the same checks only report.
+engine_fixed() {
+    # Whether Docker Engine version $1 has the CVE-2024-29018 fix: 26.0.0
+    # or later, 25.0.5 or a later 25, 23.0.11 or a later 23. Only a `+`
+    # suffix (build metadata, such as a distribution's `+dfsg1`) may follow
+    # the three numbers: a `-` suffix is a pre-release in semantic
+    # versioning (-rc1, -RC1, -beta.1, -dev) and `~` is how Debian packages
+    # spell one (~rc1, ~beta), so either refuses, whatever its case.
+    local major minor patch
+    [[ $1 =~ ^([0-9]{1,4})\.([0-9]{1,4})\.([0-9]{1,4})(\+[0-9A-Za-z.+]*)?$ ]] || return 1
+    major=$((10#${BASH_REMATCH[1]})) minor=$((10#${BASH_REMATCH[2]})) patch=$((10#${BASH_REMATCH[3]}))
+    if [ "$major" -ge 26 ]; then return 0; fi
+    case "$major" in
+        25) [ "$minor" -gt 0 ] || [ "$patch" -ge 5 ] ;;
+        23) [ "$minor" -gt 0 ] || [ "$patch" -ge 11 ] ;;
+        *) return 1 ;;
+    esac
+}
+input_drop_unit=stewardship-offline-input-drop.service
+input_drop_first() {
+    # input_drop_first BLOCK: whether `iptables -S INPUT` on stdin has the
+    # one-shot networks' drop, exactly `-A INPUT -s BLOCK -j DROP`, ahead of
+    # every rule that could admit traffic from BLOCK. A drop in the filter
+    # table's INPUT chain is final for that packet whatever other tables or
+    # nftables chains do, so only the rules before it matter. An earlier
+    # rule cannot admit BLOCK when it drops or rejects, has no target (it
+    # only counts), matches loopback only (-i lo) or a source that does not
+    # overlap BLOCK. Anything else before it (an ACCEPT, a jump to ufw's or
+    # another chain, a RETURN, a negated match) is printed and fails, since
+    # proving what such a rule admits would mean following chains: insert
+    # the drop first instead (the runbook's unit does). Quoted strings (rule
+    # comments) are blanked first, so a comment cannot look like a match.
+    awk -v block="$1" '
+        function ip(a,   p) { split(a, p, "."); return ((p[1] * 256 + p[2]) * 256 + p[3]) * 256 + p[4] }
+        function overlaps(cidr,   c, len, size) {
+            split(cidr, c, "/")
+            len = (c[2] == "" ? 32 : c[2] + 0)
+            if (len > blen) len = blen
+            size = 2 ^ (32 - len)
+            return int(ip(c[1]) / size) == int(start / size)
+        }
+        BEGIN { split(block, b, "/"); blen = b[2] + 0; start = ip(b[1]) }
+        $1 != "-A" || $2 != "INPUT" { next }
+        $0 == "-A INPUT -s " block " -j DROP" { found = 1; exit }
+        {
+            rule = $0
+            gsub(/"[^"]*"/, "\"\"")
+            target = ""
+            harmless = 0
+            for (i = 3; i <= NF; i++) {
+                negated = ($(i - 1) == "!")
+                if ($i == "-j" || $i == "-g") target = $(i + 1)
+                if ($i == "-i" && $(i + 1) == "lo" && !negated) harmless = 1
+                if ($i == "-s" && !negated && !overlaps($(i + 1))) harmless = 1
+            }
+            if (target == "" || target == "DROP" || target == "REJECT") harmless = 1
+            if (!harmless) { print rule; admits = 1 }
+        }
+        END { exit !(found && !admits) }
+    '
+}
+input_drop_persisted() {
+    # Whether the runbook's unit is enabled and its ExecStart inserts the
+    # drop for BLOCK ($1, already checked to be digits, dots and a prefix
+    # length) first, so the rule comes back ahead of ufw's at every boot.
+    local unit
+    layout_limited 30 "asking systemd whether $input_drop_unit is enabled" \
+        systemctl is-enabled --quiet "$input_drop_unit" || return 1
+    unit=$(layout_limited 30 "reading $input_drop_unit" systemctl cat "$input_drop_unit") || return 1
+    grep -qE "^ExecStart=[^#]* -I INPUT 1 -s ${1//./\\.} -j DROP\$" <<<"$unit"
+}
+gateway_listeners() {
+    # gateway_listeners GATEWAY: the host's listening TCP and UDP ports at a
+    # wildcard address or at GATEWAY, from `ss -Htlnu` on stdin, as one
+    # comma-separated tcp:PORT,udp:PORT list. TCP 80 and 443 are always in
+    # it: Caddy's ports are published there, and with Docker's userland
+    # proxy turned off a published port has no listener for `ss` to show
+    # (Docker forwards it by NAT instead, which the INPUT drop does not see).
+    awk -v gw="$1" '
+        BEGIN { seen["tcp:80"] = 1; seen["tcp:443"] = 1 }
+        {
+            listening = $5
+            n = split(listening, part, ":")
+            port = part[n]
+            address = substr(listening, 1, length(listening) - length(port) - 1)
+            sub(/%.*/, "", address)
+            if (port !~ /^[0-9]+$/) next
+            if (address == "0.0.0.0" || address == "*" || address == "[::]" || address == gw)
+                seen[$1 ":" port] = 1
+        }
+        END { for (item in seen) print item }
+    ' | sort -u | paste -sd, -
+}
+if has_command "$new_commands" egress-probe; then
+    step "1. Checking that the backup profile has no route out"
+    contract_problems=()
+    if ! has_command "$running_commands" upload; then
+        contract_problems+=("The running image ${previous:-unknown} has no off-site uploader: deploy the expand release (the one that adds 'upload') first, prove the uploader and install its cron line (docs/guides/stewardship-backup-runbook.md#the-uploaders-cron-line), then this one.")
+    fi
+    uploader_cron=$(uploader_cron_lines)
+    if [ -z "$uploader_cron" ]; then
+        contract_problems+=("This host's cron runs no off-site uploader line, so off-site copies would stop with this release: install it first, in the form the runbook gives (docs/guides/stewardship-backup-runbook.md#the-uploaders-cron-line).")
+    else
+        echo "    this host's cron runs the off-site uploader:"
+        while read -r line; do echo "    | $line"; done <<<"$uploader_cron"
+    fi
+    # Every question below is bounded and an expired limit logged (what,
+    # the limit, the elapsed time) by layout_limited; a failure to answer
+    # refuses like a wrong answer.
+    engine=$(layout_limited 30 "asking Docker Engine for its version" \
+        docker version --format '{{.Server.Version}}') || engine=""
+    if engine_fixed "$engine"; then
+        echo "    Docker Engine ${engine} has the embedded-DNS fix for internal networks"
+    else
+        contract_problems+=("Docker Engine '${engine:-unknown}' lacks the embedded-DNS fix for internal networks (CVE-2024-29018): upgrade it to 26.0.0 or later (or 25.0.5 / 23.0.11), with the Administrator's approval (docs/guides/stewardship-backup-runbook.md#upgrading-docker-engine).")
+    fi
+    offline=$(jq -r '.deployment.runtime_network.offline // "172.29.242.0/24"' "$services/web.yaml")
+    [[ $offline =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}/(24|25)$ ]] ||
+        { echo "Could not read runtime_network.offline ($offline); refusing." >&2; exit 1; }
+    drop_help="install it with the runbook's unit, with the Administrator's approval (docs/guides/stewardship-backup-runbook.md#the-hosts-input-drop)"
+    if ! input_chain=$(layout_limited 30 "listing the host's INPUT chain" iptables -w 5 -S INPUT); then
+        contract_problems+=("Could not list the host's INPUT chain (iptables -S INPUT) to find the one-shot networks' drop ($offline).")
+    elif ! admitting=$(input_drop_first "$offline" <<<"$input_chain"); then
+        if [ -n "$admitting" ]; then
+            contract_problems+=("The host's INPUT drop for the one-shot networks ($offline) is missing or comes after a rule that could admit them: $(paste -sd';' - <<<"$admitting"). Put it first: sudo systemctl restart $input_drop_unit, or $drop_help.")
+        else
+            contract_problems+=("The host has no INPUT drop for the one-shot networks ($offline): $drop_help.")
+        fi
+    elif ! input_drop_persisted "$offline"; then
+        contract_problems+=("The host's INPUT drop for the one-shot networks ($offline) is not persisted: $input_drop_unit is not enabled or does not insert that block first; $drop_help.")
+    else
+        echo "    the host drops traffic from the one-shot networks ($offline) to itself, ahead of any rule that could admit them, and $input_drop_unit keeps it"
+    fi
+    probe_network="${project}_offline-backup-worker"
+    internal=$(layout_limited 30 "inspecting $probe_network" \
+        docker network inspect --format '{{.Internal}}' "$probe_network") || internal=""
+    gateway=$(layout_limited 30 "reading the gateway of $probe_network" docker network inspect \
+        --format '{{range .IPAM.Config}}{{.Gateway}}{{end}}' "$probe_network") || gateway=""
+    google=$(layout_limited 30 "resolving www.googleapis.com" getent ahostsv4 www.googleapis.com |
+        awk 'NR == 1 { print $1 }') || google=""
+    if sockets=$(layout_limited 30 "listing the host's listening ports" ss -Htlnu); then
+        listeners=$(gateway_listeners "$gateway" <<<"$sockets")
+    else
+        listeners="unreadable"
+    fi
+    if [ "$internal" != true ] || ! [[ $gateway =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+        contract_problems+=("Could not read the backup worker's internal network $probe_network (internal: ${internal:-unknown}, gateway: ${gateway:-unknown}); run one backup on the current release, then repeat.")
+    elif ! [[ $google =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+        contract_problems+=("The host could not resolve www.googleapis.com for the egress probe.")
+    elif [ "$listeners" = unreadable ]; then
+        contract_problems+=("Could not list the host's listening ports (ss -Htlnu) for the egress probe.")
+    else
+        oneoff_name=$oneoff_prefix-egress-probe
+        started=$(date -u +%s)
+        probe_rc=0
+        # shellcheck disable=SC2054 # the tmpfs options are one comma-separated word
+        probed=$(timeout --kill-after=10 120 docker run --rm --init --name "$oneoff_name" \
+            --network "$probe_network" --user 10001:10001 --read-only --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --tmpfs /tmp:rw,nosuid,nodev,noexec,mode=1777 \
+            "$image" egress-probe --gateway "$gateway" --google-address "$google" \
+            --listen "$listeners" --engine-version "${engine:-0.0.0}" </dev/null \
+            2>"$work/egress-probe.err") || probe_rc=$?
+        if [ "$probe_rc" -eq 124 ] || [ "$probe_rc" -eq 137 ]; then
+            echo "TIMEOUT: the egress probe killed after $(( $(date -u +%s) - started ))s (limit 120s)" >&3
+            stop_oneoff "time limit" >&3
+        fi
+        oneoff_name=""
+        # Its error output (a refused argument, Docker's own complaint) goes
+        # into the log: the probe prints nothing secret, only its arguments.
+        if [ -s "$work/egress-probe.err" ]; then
+            echo "    egress probe's error output:" >&2
+            sed 's/^/    | /' "$work/egress-probe.err" >&2
+        fi
+        echo "    egress probe: ${probed:-no result}"
+        echo "$(date -u +%FT%TZ) egress probe: ${probed:-no result}" >>"$logdir/stewardship-backup.log"
+        closed=$(jq -r '.closed' <<<"$probed" 2>/dev/null || true)
+        if [ "$probe_rc" -eq 3 ] || [ "$closed" = false ]; then
+            contract_problems+=("The egress probe reached $(jq -r '.reached | join(", ")' <<<"$probed" 2>/dev/null || echo 'something') from the backup worker's network: close that route (docs/guides/stewardship-backup-runbook.md#no-route-out-for-the-backup-profile).")
+        elif [ "$probe_rc" -ne 0 ] || [ "$closed" != true ]; then
+            contract_problems+=("The egress probe did not answer (exit $probe_rc).")
+        else
+            echo "    the backup worker's network reaches nothing outside"
+        fi
+    fi
+    if [ "${#contract_problems[@]}" -gt 0 ]; then
+        for problem in "${contract_problems[@]}"; do echo "$problem" >&2; done
+        if [ "$profile" = production ]; then
+            echo "Nothing was stopped or changed; refusing." >&2
+            exit 1
+        fi
+        echo "    LOCAL: the checks above only report here; continuing" >&2
     fi
 fi
 

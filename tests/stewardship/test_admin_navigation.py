@@ -14,6 +14,7 @@ import pytest
 from django.template.loader import render_to_string
 from django.urls import get_resolver, reverse
 
+from parishkit.stewardship.accounts import admin_context
 from parishkit.stewardship.accounts import admin_navigation as navigation
 
 
@@ -1367,14 +1368,13 @@ def test_open_counts_read_pledge_stages_once():
 
 
 def test_open_counts_are_plain_numbers_with_screen_reader_words():
-    """A count shows after the name, read as "(N open)"; zero shows none (#585)."""
+    """A count shows after the name, read with the stages it adds up, "(To
+    review: N)" (#2331); zero shows none (#585)."""
     campaign = _campaign("active")
     items = _menu("staff", campaign, "production")
     sections, _trail = navigation.build(None, items)
     counts = {"information_queue": 1234, "ministry_report": 0}
-    for section in sections:
-        for entry in section["items"]:
-            entry["count"] = counts.get(entry["name"])
+    admin_context.attach_counts(sections, counts)
     html = render_to_string(
         "stewardship/admin-navigation.html",
         {"admin_chrome": {"home_url": "/admin/", "sections": sections}},
@@ -1383,8 +1383,8 @@ def test_open_counts_are_plain_numbers_with_screen_reader_words():
     assert (
         f'<a href="{information}">Additional information '
         '<span class="admin-menu-count" aria-hidden="true"'
-        ' title="Open items to handle: 1,234">1,234</span>'
-        '<span class="visually-hidden">(1,234 open)</span></a>'
+        ' title="To review: 1,234">1,234</span>'
+        '<span class="visually-hidden">(To review: 1,234)</span></a>'
     ) in html
     assert html.count("admin-menu-count") == 1
 

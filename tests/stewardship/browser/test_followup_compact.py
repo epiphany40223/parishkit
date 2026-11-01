@@ -93,7 +93,7 @@ def test_followup_form_moves_nothing_while_editing(page, component_origin):
 
     def resolve():
         """Choose Resolved."""
-        page.get_by_label("Status").select_option("resolved")
+        page.get_by_label("Contact status").select_option("resolved")
 
     def choose_outcome():
         """Choose an outcome."""

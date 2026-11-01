@@ -408,3 +408,22 @@ def test_only_past_sends_keys_are_navigator_choices():
     a = rows.sends_prefix(A)
     keys = {f"{a}page", f"{a}size", f"{a}sort", "requested", "sx_page", f"{a}page2"}
     assert rows.sends_parameters(keys) == {f"{a}page", f"{a}size"}
+
+
+def test_a_past_sends_requests_line_is_what_its_email_said():
+    """Stages for a send that kept them, "N open requests" before (#2331).
+
+    A send that listed no request kept no list (its block drew the empty
+    statement), so it shows no count and no stages, never "0 open
+    requests"; one captured before 0196 kept no stages, so its count is
+    shown as its email said it.
+    """
+    item = [ID, 1234, "A", "2026-10-20T16:00:00+00:00", "Call me"]
+    staged = [
+        {"block": "additional_information", "data": {"items": [item + ["to_handle"]]}}
+    ]
+    older = [{"block": "additional_information", "data": {"items": [item]}}]
+    empty = [{"block": "additional_information", "data": None}]
+    assert rows._list_stages(staged) == "To review 0 · To handle 1"
+    assert (rows._list_stages(older), rows._list_count(older)) == (None, 1)
+    assert (rows._list_stages(empty), rows._list_count(empty)) == (None, None)

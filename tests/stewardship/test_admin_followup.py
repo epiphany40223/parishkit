@@ -52,6 +52,7 @@ ALLOWED = {
     "id",
     "version",
     "ministry_name",
+    "family_ministry",
     "in_campaign",
     "kind",
     "open",
@@ -115,6 +116,7 @@ ROW = {
     "version": 3,
     "ministry": 9,
     "ministry_name": "Choir",
+    "family_ministry": 9,
     "in_campaign": True,
     "kind": "member",
     "action": "join",
@@ -231,6 +233,19 @@ def test_a_member_no_longer_in_parishsoft_prints_its_status():
     """The queue's mark for a Member ParishSoft no longer lists (#1217)."""
     assert admin_followup._row(page_row(member_status="moved"))["member_status"] == (
         "moved"
+    )
+
+
+def test_an_edited_request_prints_its_ministry_in_force():
+    """An Edit's Ministry is the row's ``ministry``, as ``--ministry`` filters
+    by it (#2331); the Family's own stays as ``family_ministry``."""
+    row = admin_followup._row(
+        page_row(reviewed_ministry_duid=4, reviewed_ministry_name="Food pantry")
+    )
+    assert (row["ministry"], row["ministry_name"], row["family_ministry"]) == (
+        4,
+        "Food pantry",
+        9,
     )
 
 

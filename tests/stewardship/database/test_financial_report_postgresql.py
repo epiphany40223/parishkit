@@ -64,6 +64,8 @@ pytestmark = pytest.mark.django_db(transaction=True)
 STAFF = Principal(uuid4(), frozenset({"staff"}), frozenset())
 # The fixture campaign's zone, which the date filter cases below send.
 NY = "America/New_York"
+# The Family status refinements of the historical population (#2324).
+REFINEMENTS = ("inactive", "unavailable")
 
 
 def pledge(harness, form, **financial):
@@ -86,14 +88,20 @@ PROVE = object()
 
 
 def report(harness, *, principal=STAFF, proof=PROVE, page_size=PAGE_SIZE, **values):
-    """Read through actual restricted SQL grants, not the migration owner."""
+    """Read through actual restricted SQL grants, not the migration owner.
+
+    Every responding Family is read (Including Families that left, #2324)
+    unless ``values`` names another population: these cases test the
+    selection over Families whatever their status, while the page's own
+    default is today's campaign Families.
+    """
     campaign = Campaign.objects.select_related("active_configuration").get(
         pk=harness.campaign.pk
     )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True), transaction.atomic():
         return financial_page(
             campaign.pk,
-            FinancialQuery.parse(values),
+            FinancialQuery.parse({"scope": "historical"} | values),
             principal,
             proof=giving_proof(campaign) if proof is PROVE else proof,
             parish_name="Sample Parish",
@@ -222,7 +230,7 @@ def test_unproven_giving_and_closed_parameters(response_service):
     assert not row["source_contributions"].available
     assert report(harness)["metadata"]["giving_through"] is None
 
-    neutral = {"filters": FinancialQuery().form_values(), "proof": None}
+    neutral = {"filters": FinancialQuery().sql_filters(), "proof": None}
     identity = str(uuid4())
     invalid = (
         # Wrong containers: the closed refusal, never a container operator's own
@@ -549,8 +557,11 @@ def test_several_families_summary_order_and_pages(response_service, google):
     # Positive pledges must name a share method, so only the zero pledge has none.
     assert summary["no_share"] == 1 and sum(dict(summary["shares"]).values()) == 2
 
+    # The name sort orders by each Family's own surname, then the shown name.
+    # These heads all have another surname, which leads the shown name
+    # (#2320), so the shown names alone are not in alphabetical order.
     names = [row["family_name"] for row in page["rows"]]
-    assert names == sorted(names, key=str.lower)
+    assert names == ["Of2, Head", "Example, Member", "Of6, Head"]
     by_name = [row["family_duid"] for row in page["rows"]]
     for sort, expected in (
         ("name", by_name),
@@ -574,6 +585,9 @@ def test_several_families_summary_order_and_pages(response_service, google):
         ({"share": CHECK}, {1}),
         ({"share": "none"}, {6}),
         ({"pledge_min": "500", "pledge_max": "500.00"}, {2}),
+        # Family 6 (Zeta) is shown under its head's surname, "Of6, Head";
+        # search matches both that and the Family surname (#2320).
+        ({"search": "oF6"}, {6}),
         ({"search": "zETa"}, {6}),
         ({"search": "6"}, {6}),
         # Dates are days in the browser's zone (#558), here the campaign's:
@@ -594,9 +608,11 @@ def test_several_families_summary_order_and_pages(response_service, google):
         assert {row["family_duid"] for row in filtered["rows"]} == expected, values
         # A filtered summary describes exactly the filtered Families.
         assert filtered["summary"]["families"] == filtered["total"] == len(expected)
+    # Today's campaign Families (Families counted's current population,
+    # #2324) and the two refinements of the historical one split them.
     statuses = [
-        report(harness, active=value)["total"]
-        for value in ("active", "inactive", "unavailable")
+        report(harness, scope="current")["total"],
+        *(report(harness, active=value)["total"] for value in REFINEMENTS),
     ]
     assert sum(statuses) == 3
 
@@ -627,7 +643,7 @@ def test_several_families_summary_order_and_pages(response_service, google):
     assert beyond["rows"] == [] and beyond["total"] == 3
     assert beyond["summary"] == summary
     # The complete, unpaged mode that a later capture depends on.
-    neutral = {"filters": FinancialQuery().form_values(), "proof": None}
+    neutral = {"filters": FinancialQuery().sql_filters(), "proof": None}
     with (
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
         connection.cursor() as cursor,
@@ -670,7 +686,7 @@ def test_several_families_summary_order_and_pages(response_service, google):
         ]
 
     every, all_rows = counted({"sort": "name"})
-    one, one_row = counted({"search": "zETa"})
+    one, one_row = counted({"search": "oF6"})
     assert (every, one) == (3, 1)
     assert len(link_reads(all_rows)) == len(link_reads(one_row)) == 1
 
@@ -740,7 +756,7 @@ def test_native_page_filters_privately_and_denies_leaders(
             "ParishSoft",
             "Pledged",
             "Contributed",
-            "Latest response",
+            "Submitted",
         ]
         assert head.count(b"<tr>") == 1 and head.count(b'scope="col"') == 7
         assert b"First response" not in head and b"Entered by Staff" not in head
@@ -960,9 +976,11 @@ def test_sql_shown_name_matches_snapshot_family_names(response_service):
     """The selection's shown name is snapshot_family_names' name, edge cases too.
 
     Search by the whole name Python builds finds exactly that Family, so the
-    SQL string equals it, for: three heads; a head of another surname; a
-    blank first name; an inactive head; a head missing from the snapshot;
-    and names padded with a no-break space, tab or ideographic space, which
+    SQL string equals it, for: three heads; a head of another surname under
+    a blank lastName whose stand-in (the mailing name) is that head's
+    surname, so the heads' own surnames lead in head order (#2320); a blank
+    first name; an inactive head; a head missing from the snapshot; and
+    names padded with a no-break space, tab or ideographic space, which
     Python's str.strip() removes and plain btrim does not. The returned
     family_name keeps its own trim (#960).
     """
@@ -1001,7 +1019,14 @@ def test_sql_shown_name_matches_snapshot_family_names(response_service):
     _rewrite_payload("member", snapshot, 35, {"firstName": " "})
     _rewrite_payload("member", snapshot, 36, {"active": False})
     _rewrite_payload(
-        "family", snapshot, 7, {"active_head_duids": [33, 34, 35, 36, 99999]}
+        "family",
+        snapshot,
+        7,
+        {
+            "active_head_duids": [33, 34, 35, 36, 99999],
+            "lastName": "",
+            "mailingName": "Smith",
+        },
     )
     # Family 8: Unicode whitespace around the surname and the head's names.
     _rewrite_payload("family", snapshot, 8, {"lastName": "\u00a0Charlie\t"})
@@ -1014,7 +1039,7 @@ def test_sql_shown_name_matches_snapshot_family_names(response_service):
     shown = snapshot_family_names(snapshot, {6, 7, 8})
     assert shown == {
         6: "Alpha, Ann, Bea and Cy",
-        7: "Bravo, Dan and Eve Smith",
+        7: "Bravo / Smith, Dan / Eve",
         8: "Charlie, Jo",
     }
     for duid, name in shown.items():
@@ -1025,13 +1050,14 @@ def test_sql_shown_name_matches_snapshot_family_names(response_service):
     # shows the same name the selection searched and sorted by.
     rows = {row["family_duid"]: row for row in report(harness)["rows"]}
     assert rows[8]["family_name"] == "Charlie, Jo"
-    # The name sort follows the trimmed surname, not the padded text.
+    # The name sort follows the trimmed surname, not the padded text, and
+    # Family 7's stand-in surname, "Smith".
     ordered = [
         row["family_duid"]
         for row in report(harness, sort="name")["rows"]
         if row["family_duid"] in shown
     ]
-    assert ordered == [6, 7, 8]
+    assert ordered == [6, 8, 7]
 
 
 def test_a_family_no_longer_in_parishsoft_has_no_name(response_service):
@@ -1063,7 +1089,17 @@ def test_a_family_no_longer_in_parishsoft_has_no_name(response_service):
     snapshot = SourceCurrent.objects.get().snapshot_id
     blank = {"lastName": "", "mailingName": "", "firstName": ""}
     _rewrite_payload("family", snapshot, 6, blank)
-    _rewrite_payload("family", snapshot, 8, {"active": False})
+    # Its head has no surname either: a head's own surname would lead the
+    # shown name instead, since it is not the Family's (#2320).
+    _rewrite_payload("member", snapshot, 36, {"lastName": ""})
+    # Inactive, so no longer one of the campaign's Families: the flag reads
+    # its eligibility, as the dashboard does (#2335).
+    _rewrite_payload(
+        "family",
+        snapshot,
+        8,
+        {"active": False, "portal_eligible": False, "email_eligible": False},
+    )
     with unguarded(), connection.cursor() as cursor:
         cursor.execute(
             "DELETE FROM stewardship_snapshot_family "

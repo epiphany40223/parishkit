@@ -260,7 +260,7 @@ def test_bulk_decisions_are_all_or_none(response_service):
 
 def test_edit_moves_the_request_into_another_leaders_scope(response_service):
     """Staff edit a join into Ministry 4: its leaders now see and decide it;
-    the Food pantry leader still sees it, read only."""
+    the Food pantry leader no longer sees it (#2331)."""
     harness = setup(response_service)
     staff = actor(harness, {"staff"}, ())
     pantry = actor(harness, {"ministry_leader"}, (9,))
@@ -300,7 +300,8 @@ def test_edit_moves_the_request_into_another_leaders_scope(response_service):
     assert edited["placement"].decision is Decision.ACCEPTED_EDITED
     assert edited["stage"] == "accepted"
     assert edited["stage_label"] == "Accepted (edited)"
-    assert str(join.pk) in view(harness, pantry)
+    # It belongs to Ministry 4 alone now, its Ministry in force (#2331).
+    assert str(join.pk) not in view(harness, pantry)
     # The edited request still holds Food pantry, so no second request
     # about it can be added (Back to review would return it there).
     added = {

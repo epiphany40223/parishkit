@@ -81,6 +81,48 @@ def underscore_breaks(text):
 
 
 @register.filter
+def scope_label(scope):
+    """A population scope's words, as the Families counted choice says them.
+
+    ``reports.participation.SCOPE_LABELS`` is their one place (#2324), so an
+    export's or a report email's page names the population exactly as the
+    Response dashboard does; imported here so template loading never pulls
+    the reports package in at startup.
+
+    Any scope but "historical", including "", gets the "current" words so
+    the tag never fails; the export page shows no Families counted row at all
+    for an export that counts no population (a campaign archive, whose
+    parameters carry no ``population_scope``).
+    """
+    from parishkit.stewardship.reports.participation import SCOPE_LABELS
+
+    return SCOPE_LABELS["historical" if scope == "historical" else "current"]
+
+
+@register.simple_tag
+def families_counted_label():
+    """The Families counted choice's own name, from its one place (#2324)."""
+    from parishkit.stewardship.reports.participation import SCOPE_CHOICE_LABEL
+
+    return SCOPE_CHOICE_LABEL
+
+
+@register.simple_tag
+def fixed_population(scope):
+    """A one-population page's fixed line: "Families counted: <population>".
+
+    A Reports and queries page that cannot offer the Families counted
+    choice names its population in the choice's own words (ui-conventions
+    "Population of report figures", #2324), so the reader can tell it from
+    the pages that offer the choice. Both words come from their one place,
+    ``reports.participation``.
+    """
+    from parishkit.stewardship.reports.participation import SCOPE_CHOICE_LABEL
+
+    return f"{SCOPE_CHOICE_LABEL}: {scope_label(scope)}"
+
+
+@register.filter
 def share_name(share):
     """A worded share method by its short label, the full one its tooltip.
 
@@ -483,10 +525,13 @@ class AboutPageNode(template.Node):
 
 # Query fields that order, page or place the results rather than filter them:
 # a report's sort, its page number and the browser's time zone.
-# The family directory's Responses shown (``mode``) is a mode of the whole
-# page, drawn as a binary choice outside its Filters panel (#1535), so it
-# is not counted as one of the panel's filters either.
-NOT_FILTERS = frozenset({"sort", "page", "zone", "mode"})
+# The family directory's ``mode`` (Production or Testing rehearsal) is a
+# mode of the whole page, set by the site's mode (#2324; before it, a binary
+# choice outside its Filters panel, #1535), so it is not counted as one of
+# the panel's filters either. Nor is a report's Families counted population
+# (``scope``, #2324): a binary choice at the top of the page, which Clear
+# filters keeps.
+NOT_FILTERS = frozenset({"sort", "page", "zone", "mode", "scope"})
 
 
 def applied_filters(query, ignore=()):
@@ -495,7 +540,7 @@ def applied_filters(query, ignore=()):
     A report's query is a frozen dataclass whose defaults are the page's
     unfiltered view (an Additional information default such as "Current
     actionable requests" is the page's normal list, so it does not count).
-    Sort, page, zone and mode are left out (``NOT_FILTERS``), as is any field
+    Sort, page, zone, mode and scope are left out (``NOT_FILTERS``), as is any field
     named in ``ignore``: one another choice currently overrides.
 
     As a template filter, ``ignore`` is one comma-separated string
@@ -647,6 +692,34 @@ def keep_money(value):
     """
     text = conditional_escape(value)
     return mark_safe(MONEY_AMOUNT.sub(r'<span class="money">\g<0></span>', text))
+
+
+# A markup tag or HTML character entity (left as it is, so digits in an
+# attribute or in an entity such as "&#x27;" are never wrapped), or one
+# shown number: a count, a decimal or a percentage as the number,
+# percentage and out_of filters write them ("9,999", "12.5%"), with any
+# minus and "$" kept with it.
+NUMBER_OR_TAG = re.compile(r"(<[^>]*>|&#?\w+;)|-?\$?\d[\d,]*(?:\.\d+)?%?")
+
+
+@register.filter
+def keep_numbers(value):
+    """Text with each number in it kept on one line (#2342).
+
+    Usage: ``shown=row.delivered|number|keep_numbers`` in a blocktranslate,
+    or ``{{ task.progress.display|out_of|keep_numbers }}``. Each number is
+    wrapped in ``<span class="num">`` (``white-space: nowrap`` in ui-v1.css),
+    so main's ``overflow-wrap: anywhere`` never breaks a count in a squeezed
+    table cell's mixed text, while the words around it still wrap
+    (ui-conventions "Numbers on one line"). Plain text is escaped first;
+    text already marked safe keeps its markup untouched.
+    """
+    return mark_safe(
+        NUMBER_OR_TAG.sub(
+            lambda m: m[1] or f'<span class="num">{m[0]}</span>',
+            str(conditional_escape(value)),
+        )
+    )
 
 
 @register.filter

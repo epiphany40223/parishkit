@@ -67,13 +67,13 @@
 <dt>{% translate "Weekly reports skipped (nothing new to report)" %}</dt><dd>{{ preview.digests.empty_weekly_reports|number }}</dd>
 <dt>{% translate "Admin report groups that are blocked" %}</dt><dd>{{ preview.digests.blocked_groups|number }}</dd></dl>
 <h3>{% translate "Testing data to delete" %}</h3>
-<dl><dt>{% translate "Testing submissions" %}</dt><dd>{{ preview.cleanup.submissions|number }}</dd>
-<dt>{% translate "Families with Testing submissions" %}</dt><dd>{{ preview.cleanup.families|number }}</dd>
+<dl><dt>{% translate "Form submissions in Testing" %}</dt><dd>{{ preview.cleanup.submissions|number }}</dd>
+<dt>{% translate "Families with Testing responses" %}</dt><dd>{{ preview.cleanup.families|number }}</dd>
 <dt>{% translate "Testing messages" %}</dt><dd>{{ preview.cleanup.messages|number }}</dd>
 <dt>{% translate "Unresolved Testing deliveries" %}</dt><dd>{{ preview.cleanup.unresolved|number }}</dd>
 <dt>{% translate "Total Testing records to delete" %}</dt><dd>{{ preview.cleanup.inventory.total|number }}</dd></dl>
 {% if inventory %}<dl>{% for category,count in inventory %}<dt>{{ category }}</dt><dd>{{ count|number }}</dd>{% endfor %}</dl>{% endif %}
-<p><a href="{% url 'admin:go_live_families' %}">{% translate "View Testing submissions" %}</a></p>
+<p><a href="{% url 'admin:go_live_families' %}">{% translate "View Testing responses" %}</a></p>
 </details>
 {% endif %}
 </section>

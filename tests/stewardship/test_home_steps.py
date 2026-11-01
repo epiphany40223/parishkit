@@ -173,18 +173,21 @@ def test_active_and_paused_steps_carry_the_open_counts():
     )
     active = home_steps.next_steps("active", entries, mail_unknown=split(2, 0))
     assert labels(active) == [*WORK, "Mail queue", "Sent mail"]
-    assert (active[0].url, active[0].count, str(active[0].note)) == (
+    # A queue's count names the stages it adds up, before the number
+    # (#2331): Census changes' To review and Conflict, the others To review.
+    assert (active[0].url, active[0].count, active[0].stage, active[0].note) == (
         "/census_changes/",
         4,
-        "to do",
+        "To review and Conflict",
+        None,
     )
     assert (active[1].url, active[1].count, str(active[1].note)) == (
         "/ministry_report/?stage=to_enter_by_hand",
         6,
         "to enter by hand",
     )
-    assert (active[2].count, str(active[2].note)) == (3, "open")
-    assert (active[3].count, str(active[3].note)) == (0, "open")
+    assert (active[2].count, active[2].stage, active[2].note) == (3, "To review", None)
+    assert (active[3].count, active[3].stage, active[3].note) == (0, "To review", None)
     assert active[5].url == "/deliveries/?state=needs_review&mode=production"
     assert (active[5].count, str(active[5].note)) == (2, "may not have arrived")
     assert active[5].other is None
@@ -249,11 +252,11 @@ def test_closed_and_activating_steps():
     )
     closed = home_steps.next_steps("closed", entries)
     assert labels(closed) == [*WORK, "Report emails"]
-    assert [(step.count, str(step.note)) for step in closed[0:4]] == [
-        (2, "to do"),
+    assert [(step.count, str(step.stage or step.note)) for step in closed[0:4]] == [
+        (2, "To review and Conflict"),
         (0, "to enter by hand"),
-        (1, "open"),
-        (5, "open"),
+        (1, "To review"),
+        (5, "To review"),
     ]
     assert labels(home_steps.next_steps("activating", menu())) == [
         "Production activation",
@@ -333,18 +336,20 @@ def test_template_links_available_steps_and_names_greyed_ones():
             f'<span class="link-card-note">{note}</span></a></li>'
         )
 
-    assert (
-        card(
-            "/information_queue/",
-            "Additional information",
-            5,
-            "open",
-            "link-card-attention",
+    def staged(url, label, stage, count):
+        """A queue's card, its stages named before its count (#2331)."""
+        return (
+            f'<li class="link-card link-card-attention" data-link-card><a href="{url}">'
+            f'<span class="link-card-label">{label}</span> '
+            f'<span class="link-card-note">{stage}:</span> '
+            f'<span class="link-card-count">{count}</span></a></li>'
         )
-        in html
+
+    assert (
+        staged("/information_queue/", "Additional information", "To review", 5) in html
     )
     assert (
-        card("/census_changes/", "Census changes", 2, "to do", "link-card-attention")
+        staged("/census_changes/", "Census changes", "To review and Conflict", 2)
         in html
     )
     # Ministry requests to enter by hand is greyed with Ministry requests'

@@ -188,7 +188,13 @@ def test_a_financial_export_is_the_pages(
     render(run.service, reports_root, made.pk)
     code, body, streamed = download(made.pk, run.secret)
     assert code == 0, streamed
-    assert body.startswith(b"Family,") and streamed["result"]["size"] == len(body)
+    # The header block names the population (R59 on #2324): the command
+    # line's default, In this campaign today, as the page's.
+    assert body.startswith(
+        b"Report,Financial stewardship detail\r\n"
+        b"Families counted,In this campaign today\r\n"
+    )
+    assert b"\r\n\r\nFamily," in body and streamed["result"]["size"] == len(body)
     with restricted_download_pool(settings):
         job_route = reverse("admin:report_export_download", args=[made.pk])
         response, page_body = search(browser, job_route, {})

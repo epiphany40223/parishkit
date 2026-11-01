@@ -110,7 +110,7 @@ def _preview(
         form.add_error(
             "timezone",
             ValidationError(
-                "A new campaign must start in the Parish timezone.",
+                "A new campaign must start in the Parish time zone.",
                 code="not_parish_zone",
             ),
         )

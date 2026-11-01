@@ -357,7 +357,7 @@ def test_family_resubmission_retains_staff_work(response_service):
     assert (row["id"], row["state"], row["state_label"]) == (
         str(successor.pk),
         "new",
-        "New",
+        "Not contacted",
     )
     assert "assignee_id" not in row
     for stale in (join, leave):
@@ -382,7 +382,11 @@ def test_legacy_assignment_reads_as_new_and_next_edit_clears_it(
     assert (join.state, join.assignee_id, join.version) == ("assigned", head, 2)
     staff = Principal(admin, frozenset({"staff"}), frozenset())
     (row,) = read(harness, staff, ministry="9")["rows"]
-    assert (row["state"], row["state_label"], row["open"]) == ("new", "New", True)
+    assert (row["state"], row["state_label"], row["open"]) == (
+        "new",
+        "Not contacted",
+        True,
+    )
     assert "assignee_id" not in row
     # The default Unresolved filter and Any status keep it in the queue. The
     # frozen selection filters on the stored state, so an explicit New filter
@@ -390,7 +394,7 @@ def test_legacy_assignment_reads_as_new_and_next_edit_clears_it(
     assert read(harness, staff, ministry="9", state="any")["total"] == 1
     assert read(harness, staff, ministry="9", state="new")["total"] == 0
     # The Ministry report, its exports and packets share the same label.
-    assert report_page(harness, ministry=9)["rows"][0]["state_label"] == "New"
+    assert report_page(harness, ministry=9)["rows"][0]["state_label"] == "Not contacted"
     edit(harness, head, join, state="new", notes="Old hand-off")
     join.refresh_from_db()
     assert (join.state, join.assignee_id, join.version) == ("new", None, 3)
@@ -804,7 +808,7 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         _, body = get(browser, detail)
         assert b"can no longer follow up this Ministry" not in body
-        assert b"Status: New" in body
+        assert b"Contact status: Not contacted" in body
         assert b'<option value="new" selected>' in body
         assert b"assigned to admin@example.org" in body  # Past history only.
         assert b'name="assignee"' not in body
@@ -952,7 +956,7 @@ def test_refused_save_resubmits_and_a_stale_refusal_is_a_conflict(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = search(browser, update, refused)
         assert response.status_code == 400
-        assert b"Choose an outcome for Resolved." in body
+        assert b"Choose an outcome for Done." in body
         assert b'name="expected_version" value="1"' in body
         # The outcome is marked in error, its message beside it (#592).
         assert (
@@ -961,7 +965,7 @@ def test_refused_save_resubmits_and_a_stale_refusal_is_a_conflict(
         ) in body
         assert (
             b'<ul class="errorlist" id="followup-outcome-error">'
-            b"<li>Choose an outcome for Resolved.</li></ul>"
+            b"<li>Choose an outcome for Done.</li></ul>"
         ) in body
     assert MinistryWorkflowRevision.objects.count() == 0
     # Someone else saves; A's refused form is now stale.

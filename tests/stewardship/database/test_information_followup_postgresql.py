@@ -135,9 +135,11 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
         assert page["rows"][0]["notes"] == "Called the Family"
         # The Family DUID sorts both ways, and search matches the name the
         # page shows, "Surname, heads", built in SQL as snapshot_names builds
-        # it; the rows keep their shape (#960).
+        # it, and the Family surname, which that name may not hold (#2320);
+        # the rows keep their shape (#960).
         row = page["rows"][0]
-        assert not {"display_name", "head_duids", "surname"} & row.keys()
+        hidden = {"display_name", "head_duids", "surname", "surname_recorded"}
+        assert not hidden & row.keys()
         for sort in ("duid", "duid_desc"):
             sorted_page = information_page(
                 harness.campaign.pk, InformationQuery(sort=sort)
@@ -146,7 +148,7 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
         duid = row["family_duid"]
         shown = snapshot_family_names(page["metadata"]["source_id"], {duid})[duid]
         assert ", " in shown, shown
-        for text in (shown.upper(), shown.split(", ", 1)[1]):
+        for text in (shown.upper(), shown.split(", ", 1)[1], row["family_name"]):
             found = information_page(harness.campaign.pk, InformationQuery(search=text))
             assert [match["id"] for match in found["rows"]] == [row["id"]], text
         # Direct SQL cannot rewrite history or alter checkboxes without a receipt.

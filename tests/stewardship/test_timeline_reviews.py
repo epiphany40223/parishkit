@@ -592,7 +592,7 @@ def test_limitation_lines_read_as_their_decision():
         "Accepted",
     ]
     by = "; by staff@example.org"
-    serve = "Cannot participate in any ministries for Smith, Anne" + by
+    serve = "Cannot participate in any Ministries for Smith, Anne" + by
     attend = "Cannot attend Mass or prayer services for the Family" + by
     assert details(rows, reader("staff")) == [
         serve,
@@ -611,7 +611,7 @@ def test_limitation_lines_read_as_their_decision():
         "limitation", "proposed_member:p1", 0, "accepted", d="false", **proposed
     )
     assert details([added], reader("staff")) == [
-        "Cannot participate in any ministries for Smith, Anne (proposed)"
+        "Cannot participate in any Ministries for Smith, Anne (proposed)"
         "; by staff@example.org"
     ]
 

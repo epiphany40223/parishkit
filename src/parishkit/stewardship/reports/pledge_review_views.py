@@ -309,11 +309,13 @@ def pledge_rows(campaign_id, principal, search=""):
     campaign's current wording (``wording``) and its offered methods
     (``options``).
     """
-    query = FinancialQuery(search=search)
+    # Every pledge, whatever its Family's status today (historical, #2324):
+    # Pledges is a worklist, not a population report.
+    query = FinancialQuery(scope="historical", search=search)
     with connection.cursor() as cursor:
         cursor.execute(
             SELECTION,
-            [campaign_id, json.dumps({"filters": query.form_values(), "proof": None})],
+            [campaign_id, json.dumps({"filters": query.sql_filters(), "proof": None})],
         )
         value = cursor.fetchone()
     if value is None or value[0] is None:

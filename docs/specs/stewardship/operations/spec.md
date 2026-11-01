@@ -340,9 +340,15 @@ source address is the identity, and the renderer makes it fixed:
   block (`offline`, default `172.29.242.0/24`, a /24 or /25 so it holds
   every profile's slice, private and disjoint from `backend` and `proxy`
   like them). None of these profiles uses Valkey or
-  another backend service; the backup worker keeps
-  `application-egress`. A side effect is that the backup worker, which
-  reads the Valkey ACL, can no longer reach Valkey.
+  another backend service. Since the off-site uploader's contract release
+  ([#235](https://github.com/epiphany40223/parishkit/issues/235)) the backup
+  worker is on its own network alone, with no route out (the
+  `backup-uploader` profile alone joins `application-egress` among them),
+  and every upgrade proves it on the real Docker Engine before anything
+  stops (backup runbook,
+  [No route out for the backup profile](../../../guides/stewardship-backup-runbook.md#no-route-out-for-the-backup-profile)).
+  A side effect is that the backup worker, which reads the Valkey ACL, can
+  no longer reach Valkey.
 - **No spoofing.** A container can claim another address only by changing
   its interface (`NET_ADMIN`) or crafting packets (`NET_RAW`). Every
   container on `backend` or a one-shot network already drops all
@@ -1760,9 +1766,10 @@ trees to a human-held key, records each completed run, raises the overdue
 incident below, and admits configured upgrades behind a recent run; the
 off-host copy is the operator's own job or the optional
 [copy to Google Drive](../../../guides/stewardship-backup-runbook.md#off-site-copies-to-google-drive)
-an Administrator configures in the portal (for which the backup profile, which
-reads the whole credentials tree and all database data, has application
-egress, a wider exfiltration surface the v1 scope accepts), and the
+an Administrator configures in the portal (made by the dedicated off-site
+uploader since its contract release, #235, so the backup profile, which
+reads the whole credentials tree and all database data, no longer has the
+application egress v1 accepted for it), and the
 consistent manifests, isolated
 backup-worker routing, purge-triggered backup, revalidation, escrow workflow
 and key rotation described here are deferred past the launch. In their
@@ -2994,7 +3001,7 @@ At minimum, end-to-end tests demonstrate:
    guarded pre-start withdrawal cancels future live work, returns atomically to
    Testing/draft, and unlocks structural settings, while an active campaign and
    unresolved provider-submitting/delivery-unknown work cannot be withdrawn.
-   Production readiness locks the Campaign timezone snapshot; later Parish
+   Production readiness locks the Campaign time zone snapshot; later Parish
    timezone changes do not alter its boundaries, schedules, report emails, or
    historical report buckets.
 4. Full refresh success, interrupted/invalid load retaining prior truth,

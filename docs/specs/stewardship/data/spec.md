@@ -1800,7 +1800,7 @@ mark By hand items resolved externally; only an Administrator publishes
 ### Content and email templates
 
 Named campaign content slots have immutable versions. Required slots include
-Family login help, pre-start, post-end, Family census introduction, Member
+Family sign-in help, pre-start, post-end, Family census introduction, Member
 census introduction, Ministry introduction, financial introduction,
 additional-information prompt, review/attestation introduction, Thank You page,
 access-denied contact help, and submission-confirmation text. Empty optional
@@ -1911,7 +1911,9 @@ Family names, code, secure link, generic URL, parish fields, dates, and
 campaign fields. A name placeholder means the same people in a Family email
 and on a Family page: `head_salutation` is the Family's active heads of
 household (every one of them, not only those with an eligible email address),
-grouped by surname as a salutation ("Andrew and Betty Test");
+grouped by surname as a salutation ("Andrew and Betty Test"), the heads of
+the Family's surname first ("Maureen Kelly and Linda Thieneman" for the Kelly
+Family, #2320);
 `all_family_member_names` is every active, listed Member, grouped the same
 way ("Andrew, Betty and Cy Test"); `family_member_names` is the older name
 for `head_salutation`, kept because stored templates use it; and

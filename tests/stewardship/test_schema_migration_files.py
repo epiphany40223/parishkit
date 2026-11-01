@@ -614,6 +614,24 @@ FROZEN = {
     "0193_backup_uploader_preparation.sql": (
         "87ea2cc43e207120ce25b853ea3ebc82a4a1a0bf5741f3cfbe1315b4398b68c3"
     ),
+    "0194_mixed_surname_names.sql": (
+        "a24ef906f36473f703de5b673388b8fa22cc23798e6c8666d0fd3e058c1ed054"
+    ),
+    "0195_backup_uploader_contract.sql": (
+        "83571c4f1b5e33a011a6fe193c5547e22e7cf62ddcee1b84d3f1cc8fa900b2f3"
+    ),
+    "0196_report_email_population.sql": (
+        "e6fac1e1c2f2ebba2279ec9514617cd4ff70040f0d6f988dcd193da078ffd6bf"
+    ),
+    "0197_financial_eligibility.sql": (
+        "556d6af1e6e0097f24ecae59a2160aef9dcc77ce27441037c11380b215cc35c3"
+    ),
+    "0198_ministry_edit_once.sql": (
+        "9c20943c05c4f17a5564c76418d5af40661ce2d410aa0eb30b7d1e85796ef129"
+    ),
+    "0202_family_signin_abuse_title.sql": (
+        "4df6bf626a3b6bc7f22630c13ac2fc3f876530e8a4d1b6d2f253ac198873337e"
+    ),
 }
 
 

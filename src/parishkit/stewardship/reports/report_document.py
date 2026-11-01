@@ -13,11 +13,12 @@ block with nothing to show (``drawable``), and the additional information
 block's "N open requests" heading.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from uuid import UUID
 from zoneinfo import ZoneInfo
 
+from parishkit.stewardship.pipeline import Stage
 from parishkit.stewardship.web.dates import format_date, format_time
 
 from .participation import ParticipationDocument
@@ -25,6 +26,27 @@ from .response_metrics import ResponseMetrics
 from .weekly_digest import WeeklyInformation
 
 PREVIOUS_DAY_END, SEND_TIME = "previous_day_end", "send_time"
+
+# The stages a report email lists, in the Additional information page's
+# order: an open request is one of these two (report-emails decision 15).
+STAGES = (Stage.TO_REVIEW, Stage.TO_HANDLE)
+
+
+@dataclass(frozen=True, repr=False)
+class OpenRequest(WeeklyInformation):
+    """One request a report email lists, with its stage (#2331).
+
+    ``stage`` is ``to_review`` or ``to_handle``, as frozen function
+    ``stewardship_report_email_requests_v2`` places it.
+    """
+
+    stage: str = field(default=Stage.TO_REVIEW.value, kw_only=True)
+
+    def __post_init__(self):
+        """The Weekly row's checks, and a stage the email lists."""
+        super().__post_init__()
+        if self.stage not in {stage.value for stage in STAGES}:
+            raise ValueError("A report email lists requests to review or to handle.")
 
 
 def send_path(send_id):
@@ -51,7 +73,8 @@ class ReportDocument:
     block or no campaign day has ended. ``funnel`` is counted at
     ``as_of_at`` in Production only; ``comparison`` is the Compared with
     past campaigns section, None when it is left out; ``information`` the
-    open additional information requests, oldest first.
+    open additional information requests, oldest first, each with its stage
+    (#2331).
     """
 
     send_id: UUID
@@ -64,7 +87,7 @@ class ReportDocument:
     participation: ParticipationDocument | None = None
     funnel: ResponseMetrics | None = None
     comparison: dict | None = None
-    information: tuple[WeeklyInformation, ...] = ()
+    information: tuple[OpenRequest, ...] = ()
     manual: bool = False
     recovery: bool = False
     held: bool = False
@@ -82,7 +105,7 @@ class ReportDocument:
             or type(self.covered_dates) is not tuple
             or tuple(sorted(set(self.covered_dates))) != self.covered_dates
             or type(self.information) is not tuple
-            or any(type(row) is not WeeklyInformation for row in self.information)
+            or any(type(row) is not OpenRequest for row in self.information)
             or not all(
                 type(flag) is bool for flag in (self.manual, self.recovery, self.held)
             )

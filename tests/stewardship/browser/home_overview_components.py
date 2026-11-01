@@ -36,10 +36,11 @@ CAMPAIGN = SimpleNamespace(
 )
 # Home's Family participation counts, as admin_dashboard.summary reads them.
 FAMILIES = {
-    "active": 1031,
-    "participation": Percentage(402, 1012),
+    "active": 1084,
+    "eligible": 1031,
+    "participation": Percentage(412, 1031),
     "responded": 418,
-    "active_responded": 412,
+    "eligible_responded": 412,
     "recent": 12,
 }
 # The menu's open counts, as the chrome reads them.

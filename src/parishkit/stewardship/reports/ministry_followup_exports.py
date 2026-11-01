@@ -260,7 +260,7 @@ def queue_document(
         ("Campaign", result["metadata"]["name"]),
         ("Source as of", instant(result["metadata"]["source_as_of"])),
         ("Requested at", instant(requested_at)),
-        ("Display timezone", zone.key),
+        ("Display time zone", zone.key),
         *(
             (("Age reference date", date.fromisoformat(min(report_dates))),)
             if report_dates
@@ -278,7 +278,7 @@ def queue_document(
             "as of the source time above. Ministry leaders receive the email "
             "and phones of each Member who asked to join or leave their "
             "Ministry, except a Member who cannot participate in any "
-            "ministries, and otherwise only published values.",
+            "Ministries, and otherwise only published values.",
         ),
         (
             "Addresses",

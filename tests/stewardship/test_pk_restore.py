@@ -2114,18 +2114,12 @@ def flock_calls(host):
 
 
 def assert_lock_waits(calls, limit):
-    """Both locks, file then directory, within one shared limit.
-
-    The directory lock waits for what is left of the limit, so a second
-    boundary between the two calls can take one second off its wait.
-    """
-    assert len(calls) == 2, calls
-    assert calls[0] == f"-E 75 -w {limit} 8"
-    assert calls[1] in (f"-E 75 -w {limit} 9", f"-E 75 -w {limit - 1} 9")
+    """The directory lock alone (since the contract release, #235), bounded."""
+    assert calls == [f"-E 75 -w {limit} 9"], calls
 
 
 def test_the_run_holds_the_copy_lock_before_anything_stops(host):
-    """Both locks, file then directory, at most 60 seconds, before step 1's stop."""
+    """The directory lock, at most 60 seconds, before step 1's stop."""
     result, calls = restore(host)
     assert result.returncode == 0, output(result)
     assert_lock_waits(flock_calls(host), 60)
@@ -2134,8 +2128,8 @@ def test_the_run_holds_the_copy_lock_before_anything_stops(host):
     assert text.index("1. Stopping every online service") < text.index(
         "holding the off-site copy lock on"
     )
-    lock = host["root"] / "backups" / ".offsite-copy.lock"
-    assert lock.is_file() and (lock.stat().st_mode & 0o777) == 0o600
+    # The expand release's legacy lock file is neither created nor locked.
+    assert not (host["root"] / "backups" / ".offsite-copy.lock").exists()
 
 
 def test_a_copy_still_running_refuses_before_anything_stops(host):
@@ -2150,22 +2144,15 @@ def test_a_copy_still_running_refuses_before_anything_stops(host):
     assert not stopped(calls)
 
 
-@pytest.mark.parametrize("plant", ["link", "fifo"])
-def test_a_planted_lock_file_refuses_before_anything_stops(host, plant):
-    """A link or a FIFO where the legacy lock file belongs is never locked.
+def test_a_leftover_or_planted_legacy_lock_file_is_ignored(host):
+    """Since the contract (#235) the file at the legacy name is never opened.
 
-    A FIFO is refused at once, never waited on.
+    A FIFO there could hang an open; it is never touched at all.
     """
-    lock = host["root"] / "backups" / ".offsite-copy.lock"
-    if plant == "link":
-        lock.symlink_to(host["tmp"] / "x")
-    else:
-        os.mkfifo(lock)
+    os.mkfifo(host["root"] / "backups" / ".offsite-copy.lock")
     result, calls = restore(host)
-    assert result.returncode == 1
-    assert "is not a regular file" in output(result)
-    assert not stopped(calls)
-    assert not (host["tmp"] / "x").exists()
+    assert result.returncode == 0, output(result)
+    assert_lock_waits(flock_calls(host), 60)
 
 
 def test_a_failed_copy_lock_call_is_not_logged_as_a_timeout(host):

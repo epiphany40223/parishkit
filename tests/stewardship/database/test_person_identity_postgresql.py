@@ -192,7 +192,7 @@ def test_a_family_member_sees_the_familys_records_on_their_timeline(member):
     message = family_email(harness, MEMBER)
     status, page = get(browser, timeline_path(record))
     assert status == 200, page
-    assert "Family member of" in page
+    assert "Family Member of" in page
     assert f'href="/admin/reports/families/{family}/"' in page
     assert "Not found in ParishSoft as a Family member" not in page
     for shown in (
@@ -231,10 +231,10 @@ def test_a_user_with_no_family_says_so(member):
     status, page = get(browser, timeline_path(administrator_record))
     assert status == 200, page
     assert (
-        "Not found in ParishSoft as a Family member, so there are no Family form "
+        "Not found in ParishSoft as a Family Member, so there are no Family form "
         "records." in page
     )
-    assert "Family member of" not in page and 'value="form"' not in page
+    assert "Family Member of" not in page and 'value="form"' not in page
     assert not AuditEvent.objects.filter(event_type="family_timeline_viewed").exists()
 
 

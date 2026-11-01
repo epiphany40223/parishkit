@@ -519,8 +519,9 @@ DESCRIPTIONS = {
         "command line, keeping every Administrator."
     ),
     "operator_reports_converted": _(
-        "The upgrade turned the Daily and Weekly digests into report emails "
-        "(Daily report and Weekly report), keeping their sends' history."
+        "The upgrade replaced the old daily and weekly summary emails with "
+        "the Daily report and Weekly report emails, keeping their sends' "
+        "history."
     ),
     # Access-policy changes the settings activation records.
     "policy_security_event": _(
@@ -581,7 +582,7 @@ DESCRIPTIONS = {
         "Someone opened the participation statistics and daily chart."
     ),
     "campaign_comparison_viewed": _(
-        "Someone opened the campaign comparison report (or ran report comparison)."
+        "Someone opened Campaign comparison (or ran report comparison)."
     ),
     "campaign_archive_exported": _(
         "Someone requested a campaign archive workbook (or ran export archive)."
@@ -1022,7 +1023,7 @@ DESCRIPTIONS = {
         "Someone opened Update ParishSoft, which shows the latest check of "
         "Ready to update census changes against ParishSoft."
     ),
-    "response_dashboard_viewed": _("Someone opened the response dashboard."),
+    "response_dashboard_viewed": _("Someone opened the Response dashboard."),
     "response_submitted_list_viewed": _(
         "Someone opened the list of Families that submitted."
     ),
@@ -1079,7 +1080,7 @@ DESCRIPTIONS = {
     "user_leader_emails_requested": _(
         "An Administrator asked to email Ministry leaders that they can sign in."
     ),
-    "system_logs_exported": _("An Administrator downloaded the system logs."),
+    "system_logs_exported": _("An Administrator downloaded the System logs."),
     "export_cancelled": _("A report download was cancelled."),
     "chair_review_decided": _(
         "An Administrator decided on a Ministry chairperson change."
@@ -1450,7 +1451,7 @@ VALUE_LABELS = {
         "unfollowed": _("Link not followed"),
         "mailing-name": _("Blank mailing name"),
         "envelope": _("Envelope number 0"),
-        "cannot_serve": _("Cannot participate in ministries"),
+        "cannot_serve": _("Cannot participate in Ministries"),
         "cannot_attend": _("Families that cannot attend Mass"),
         "option": _("One talent"),
     },

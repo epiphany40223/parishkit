@@ -221,14 +221,16 @@ PREVIEW_IMAGE = "/admin/mail/report-emails/previews/synthetic/participation.png"
 
 
 def _weekly_email(mode):
-    """A Weekly-shaped email: one open request and the Response funnel.
+    """A Weekly-shaped email: one request to review and the Response funnel.
 
     Its request row and closing button link where a preview links them (the
     live request, the Report emails page), as ``preview_report`` draws them.
     """
     from parishkit.stewardship.reports.report_blocks.compiler import compile_report
-    from parishkit.stewardship.reports.report_document import ReportDocument
-    from parishkit.stewardship.reports.weekly_digest import WeeklyInformation
+    from parishkit.stewardship.reports.report_document import (
+        OpenRequest,
+        ReportDocument,
+    )
 
     from ..test_daily_digest_content import funnel_metrics
 
@@ -242,9 +244,7 @@ def _weekly_email(mode):
         covered_dates=(date(2054, 10, 20),),
         # The sample funnel is Production's; a Testing report draws none.
         funnel=funnel_metrics() if mode == "production" else None,
-        information=(
-            WeeklyInformation(UUID(int=3), 1234, "A & B", NOW, "Please call us."),
-        ),
+        information=(OpenRequest(UUID(int=3), 1234, "A & B", NOW, "Please call us."),),
     )
     report = compile_report(
         document,

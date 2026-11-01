@@ -37,8 +37,9 @@ FILTER_FORMS = {
 # table's sort and size (a TablePage's view_fields, drawn by a loop), the
 # browser's time zone, and a segmented pair's view choice carried in the
 # form (Sent mail's Production or Testing, #1562; Roster changes' Show,
-# #1535), which Clear filters keeps by rule.
-KEPT_NAMES = {"{{ name }}", "zone", "mode", "show"}
+# #1535; Financial stewardship's Families counted, #2324), which Clear
+# filters keeps by rule.
+KEPT_NAMES = {"{{ name }}", "zone", "mode", "show", "scope"}
 # Visible fields that switch the data shown between Production and Testing:
 # a view, not a filter, so Clear filters keeps them (data-view).
 VIEW_NAMES = {"mode"}
@@ -110,13 +111,12 @@ def test_every_hidden_field_of_a_filter_form_is_kept_or_a_filter():
         assert unmarked_fields(form) == [], name
 
 
-def test_the_directory_keeps_its_responses_shown_choice():
-    """The directory's Production or Testing choice is a view: its segmented
-    pair's choice travels in the filter form as a kept hidden field, never
-    marked data-filter."""
+def test_the_directory_filter_form_sends_no_mode():
+    """The directory's Production or Testing view is the site's mode
+    (#2324), so its filter form carries no mode for Clear filters to keep
+    or drop."""
     form = filter_forms()["directory.html"]
-    field = re.search(r'<input type="hidden" name="mode"[^>]*>', form)
-    assert field and "data-filter" not in field.group(0)
+    assert not re.search(r'name="mode"', form)
 
 
 def test_the_guard_finds_forms_and_fields_in_any_attribute_order(tmp_path):

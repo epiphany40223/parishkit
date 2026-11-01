@@ -16,7 +16,7 @@ function is pure, so a unit test drives it from plain values.
 
 import json
 import logging
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from django.db import connection
 from django.utils.translation import gettext_lazy as _
@@ -206,7 +206,10 @@ def read_hub_financial(campaign, family_duid, *, parish_name):
     share methods.
     """
     proof = giving_proof(campaign)
-    filters = replace(FinancialQuery(), search=str(family_duid)).form_values()
+    # The Family's own row whatever its status today (historical, #2324):
+    # the hub is a lookup, not a population report.
+    query = FinancialQuery(scope="historical", search=str(family_duid))
+    filters = query.sql_filters()
     with connection.cursor() as cursor:
         cursor.execute(
             "SELECT stewardship_financial_report_v1(%s,%s::jsonb,NULL,NULL)::text",
@@ -415,7 +418,7 @@ def other_tab(row, members, *, ministry, information, family_duid=None):
             name = labels.get(entity) or str(NAME_NOT_RECORDED)
             rows.append(
                 cannot_row(
-                    _("Cannot participate in ministries: %(name)s") % {"name": name},
+                    _("Cannot participate in Ministries: %(name)s") % {"name": name},
                     (entry or {}).get("cannot_serve") is True,
                     item(*entity),
                 )

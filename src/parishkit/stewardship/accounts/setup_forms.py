@@ -365,8 +365,8 @@ class SetupTestingForm(AdminForm):
     """One destination applies to all test mail; no Production switch exists here."""
 
     testing_recipient = EmailRuleField(
-        EMAIL.worded(_("Enter a valid Testing email address.")),
-        label=_("Testing email address"),
+        EMAIL.worded(_("Enter a valid Testing recipient address.")),
+        label=_("Testing recipient"),
         max_length=254,
     )
 

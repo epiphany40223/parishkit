@@ -92,8 +92,9 @@ CHECK_FLAGS = (
     ("envelope_zero", "Envelope number 0"),
 )
 # Whose responses the directory reads (#933): Production, or the campaign's
-# active Testing rehearsal, which only Administrators may choose, as on the
-# Response dashboard.
+# active Testing rehearsal, which only Administrators may read, as on the
+# Response dashboard. The page follows the site's mode
+# (``response_dashboard.shown_mode``, #2324); the command line chooses.
 MODES = {"production": "Production", "testing": "Testing rehearsal"}
 
 
@@ -219,7 +220,10 @@ class DirectoryQuery:
     # Whose responses the Response filter, the response columns and their
     # orders read (#933): "production" (live responses) or "testing" (the
     # campaign's active rehearsal; Administrators only, checked by callers
-    # with ``admit_mode``). Every other column reads the same data in both.
+    # with ``admit_mode``). The page sets it from the site's mode
+    # (``shown_mode``) and never accepts it (#2324); the export form and
+    # the command line still carry it. Every other column reads the same
+    # data in both.
     mode: str = "production"
     page: int = 1
 
@@ -487,11 +491,15 @@ def row_name(row):
     """The Family as shown: surname and heads, or why there is no name.
 
     A Family the Response filter lists after the current ParishSoft data
-    dropped it entirely has no name (``family_name`` None, #933).
+    dropped it entirely has no name (``family_name`` None, #933). The
+    selection's ``surname_recorded`` says whether ``family_name`` is the
+    Family's own surname (#2320); a capture made before it existed lacks it.
     """
     if row["family_name"] is None:
         return MISSING_NAME
-    return family_heads_name(row["family_name"], row["heads"])
+    return family_heads_name(
+        row["family_name"], row["heads"], recorded=row.get("surname_recorded", True)
+    )
 
 
 def add_responses(rows):

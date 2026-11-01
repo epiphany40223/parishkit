@@ -739,7 +739,7 @@ def test_parish_editor_retains_native_form_validation_and_timezone_scope(
 ):
     """Profile forms retain native validation and prospective timezone guidance."""
     page.goto(component_origin + "/parish-settings")
-    assert "Existing campaign timezones" in page.locator("main").inner_text()
+    assert "Existing campaign time zones" in page.locator("main").inner_text()
     name = page.get_by_label("Parish name")
     name.fill("")
     assert not name.evaluate("field => field.checkValidity()")

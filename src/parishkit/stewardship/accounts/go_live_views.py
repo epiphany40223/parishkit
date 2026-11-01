@@ -1,4 +1,4 @@
-"""The Go live page's Check step and Testing submissions.
+"""The Go live page's Check step and Testing responses.
 
 Check (#1585 slice 2) shows passive readiness evidence and starts go-live
 from the shared review dialog: the irreversible Testing cleanup and attempt
@@ -698,7 +698,7 @@ def testing_families(request, campaign_id):
 def testing_scope(caller, service, campaign_id):
     """Admit passively and find the Testing draft's scope and source snapshot.
 
-    Shared by Testing submissions and ``pk-admin go-live families``
+    Shared by Testing responses and ``pk-admin go-live families``
     (#1809), inside the caller's work transaction (passive admission and
     the cleanup inventory refuse under a read-only snapshot). Returns
     ``(scope, source_id)``: the source snapshot whose names the list shows,
@@ -719,9 +719,9 @@ def testing_scope(caller, service, campaign_id):
         # again" page (#867). Go live's Check step, the only page that links
         # here, itself renders only for the Testing draft.
         raise UserFacingGone(
-            _("Testing submissions are only available before go-live."),
+            _("Testing responses are only available before go-live."),
             fix=_(
-                "Going live removes the Testing submissions. Live "
+                "Going live removes the Testing responses. Live "
                 "responses are under Review work and Reports and queries."
             ),
         )
