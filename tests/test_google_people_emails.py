@@ -593,6 +593,30 @@ def test_two_step_both_steps_ok_lists_the_addresses(client_file):
         assert secret not in text
 
 
+def test_two_step_redact_warns_before_the_url_with_the_login_hint(client_file):
+    """--redact cannot hide login_hint in step 2's URL, so a warning precedes it."""
+    shown = []
+
+    def paste(_prompt):
+        """Answer with Google's redirect for the latest printed URL."""
+        url = [line for line in shown if line.startswith(pe.AUTH_URL)][-1]
+        query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query))
+        return f"{query['redirect_uri']}?state={query['state']}&code=c"
+
+    def show(*items):
+        """Collect printed text line by line."""
+        for item in items:
+            shown.extend(str(item).splitlines())
+
+    args = _args(client_file, manual=True, two_step=True, redact=True)
+    assert pe.run(args, opener=TwoStepGoogle(), input_fn=paste, print_fn=show) == 0
+    warnings = [i for i, line in enumerate(shown) if line.startswith("Warning:")]
+    urls = [i for i, line in enumerate(shown) if line.startswith(pe.AUTH_URL)]
+    assert len(warnings) == 1  # step 2 only; step 1's URL has no login_hint
+    assert len(urls) == 2 and urls[0] < warnings[0] < urls[1]
+    assert "login_hint=me%40example.org" in shown[urls[1]]
+
+
 def test_two_step_unchecked_box_is_not_granted(client_file):
     """Without user.emails.read in the grant, no People call: the no-access page."""
     google = TwoStepGoogle(scope=IDENTITY)

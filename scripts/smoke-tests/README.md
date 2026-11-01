@@ -158,6 +158,8 @@ Run it three times, once per case:
 
 Google may show a lone permission without a checkbox, only **Allow** and **Cancel**; if so, the unticked case cannot happen: report that, and use **Cancel** instead. Cancelling step 2 prints `Step 2 cancelled (Google answered access_denied): ParishKit would show the normal no-access page.` For the different-account case, the other account must be allowed by the project (a test user, if the audience is External and in Testing); if Google blocks it, report the message Google shows.
 
+With `--redact`, step 2's sign-in URL (printed with `--manual` or `--no-browser`) still contains your full email address as `login_hint`; the tool prints a warning before it, so do not paste that URL into the issue.
+
 For each case, report the printed `Step 1` and `Step 2` lines (the `Step 2` line says in parentheses whether the account id came from the ID token or from tokeninfo), the outcome line or table, and what Google's screens looked like in step 2 (whether it showed the account chooser or went straight to consent, and how the checkbox was worded).
 
 ### What to report back

@@ -551,9 +551,20 @@ def sign_in(args, client, hooks: Hooks, scopes, extra=None) -> dict:
         port = server.server_address[1]
     redirect = redirect_uri(port)
     url = authorization_url(client[0], redirect, state, challenge, scopes, extra)
+
+    def print_url() -> None:
+        """Print the sign-in URL, first warning if --redact cannot hide the address."""
+        if args.redact and "login_hint" in (extra or {}):
+            # The URL carries the step 1 address as login_hint, in full.
+            print_fn(
+                "Warning: --redact does not apply to the URL below; "
+                "it contains your full email address."
+            )
+        print_fn("Open this URL in a browser and sign in:\n\n" + url + "\n")
+
     try:
         if args.manual:
-            print_fn("Open this URL in a browser and sign in:\n\n" + url + "\n")
+            print_url()
             print_fn(
                 f"Google then sends the browser to {redirect}?... and the page "
                 "fails to load. That is expected: copy the whole address from "
@@ -564,7 +575,7 @@ def sign_in(args, client, hooks: Hooks, scopes, extra=None) -> dict:
                 print_fn("Note: a bare code cannot be state-checked; PKCE still is.")
         else:
             if args.no_browser or not hooks.open_browser(url):
-                print_fn("Open this URL in a browser and sign in:\n\n" + url + "\n")
+                print_url()
             else:
                 print_fn("Opened your browser; finish signing in there.")
             code = wait_for_code(server, state, args.timeout)
