@@ -29,8 +29,9 @@ RENDERER_VERSION = "participation-v3"
 # saved report page can tell which drawing a retained digest holds.
 EMAIL_RENDERER_VERSION = "participation-email-v2"
 # The PDF's drawing: the plot inside the shared report page frame (#926),
-# among the Response dashboard's sections since version 3 (#1557).
-PDF_RENDERER_VERSION = "participation-pdf-v3"
+# among the Response dashboard's sections since version 3 (#1557), with the
+# Families counted line on every page since version 4 (R59, #2324).
+PDF_RENDERER_VERSION = "participation-pdf-v4"
 # The PDF section the chart page and the daily table hold (#1557).
 DAILY_SECTION = "Daily participation"
 # The plot box (figure fractions) spans every panel, from the top of the

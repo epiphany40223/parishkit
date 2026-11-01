@@ -26,6 +26,10 @@ pytestmark = pytest.mark.parametrize("browser_engine", ["chromium"], indirect=Tr
 XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 POPULATION = '#response-summary [aria-label="Population"] .stat-tile'
 STAGES = '#response-summary [aria-label="Families by stage"] .stat-tile'
+# Each table sheet opens with the three-row header block (Report, Families
+# counted, Source as of), a blank row and the heading row (R59, #2324), so
+# the data starts on row 6.
+FIRST_DATA_ROW = 6
 
 
 def workbook():
@@ -103,7 +107,8 @@ def test_the_downloaded_workbook_holds_every_figure_on_the_page(
             "Report information",
         ]
         rows = [
-            [cell.value for cell in row] for row in book["Summary"].iter_rows(min_row=2)
+            [cell.value for cell in row]
+            for row in book["Summary"].iter_rows(min_row=FIRST_DATA_ROW)
         ]
         population = [row for row in rows if row[0] == "Population"]
         stages = [row for row in rows if row[0] == "Families by stage"]
@@ -131,7 +136,7 @@ def test_the_downloaded_workbook_holds_every_figure_on_the_page(
             if note:
                 assert note.rstrip(".") in full
         table = page.locator("[data-table-region] tbody tr")
-        daily = list(book["Daily participation"].iter_rows(min_row=2))
+        daily = list(book["Daily participation"].iter_rows(min_row=FIRST_DATA_ROW))
         assert len(daily) == table.count()
     finally:
         book.close()

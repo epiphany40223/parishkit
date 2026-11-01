@@ -242,7 +242,7 @@ R59 on [#2324](https://github.com/epiphany40223/parishkit/issues/2324)):
 
 - **PDF:** on every page, the first line under the title reads "Families
   counted: In this campaign today" (or "Including Families that left"),
-  across from the frame's time line.
+  below the title's capture-time line where the report has one.
 - **CSV and XLSX:** the CSV, and each XLSX table sheet, opens with three
   label/value rows: Report (the report's title), Families counted (the
   population) and Source as of (the source data's time, in the display time
