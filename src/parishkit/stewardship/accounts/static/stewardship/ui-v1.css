@@ -1158,6 +1158,11 @@ td > :last-child { margin-bottom: 0; }
 .data-table td[rowspan] { vertical-align: top; }
 .data-table td > form, .data-table td > button { margin: 0; }
 .data-table button { margin-block: 0; padding: .35rem .85rem; min-height: 36px; }
+/* The held-email table's Actions cell (components/held-email-groups.html,
+   #2342) stacks two text-button forms: they keep the full 44px target and
+   a gap between them, as the table-actions pairs do, so neither touches. */
+.data-table [data-restore-group] td > form + form { margin-block-start: .5rem; }
+.data-table [data-restore-group] button { min-height: var(--button-min-height); }
 .data-table .select-col { width: 2.75rem; }
 .data-table input[type=checkbox] { width: 1.2rem; height: 1.2rem; vertical-align: middle; }
 .data-table .numeric { text-align: end; }
