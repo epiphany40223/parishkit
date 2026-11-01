@@ -10,6 +10,7 @@ from parishkit.stewardship.source import family_names
 from parishkit.stewardship.source.family_names import (
     family_display_name,
     family_heads_name,
+    family_last_name,
     heads_salutation_name,
     name_placeholders,
     name_series,
@@ -52,11 +53,24 @@ def test_family_display_name_default():
         ),
         (
             [{"first": "Tracy", "last": "Squyres"}, {"first": "Jeff", "last": "Smith"}],
-            "Squyres, Tracy and Jeff Smith",
+            "Squyres / Smith, Tracy / Jeff",
         ),
         (
             [{"first": first, "last": "Squyres"} for first in "ABC"],
             "Squyres, A, B and C",
+        ),
+        # Letter case never makes another surname: the name is unchanged.
+        (
+            [
+                {"first": "Tracy", "last": "Squyres"},
+                {"first": "Jeff", "last": "SQUYRES"},
+            ],
+            "Squyres, Tracy and Jeff",
+        ),
+        # Heads without a last name, beside heads who share the surname.
+        (
+            [{"first": "Pat", "last": ""}, {"first": "Tracy", "last": "Squyres"}],
+            "Squyres, Pat and Tracy",
         ),
         # Captures made before first and last names were kept separately.
         (
@@ -68,8 +82,114 @@ def test_family_display_name_default():
     ],
 )
 def test_family_heads_name_leads_with_the_surname(heads, expected):
-    """Surname, then first names; a head of another surname in full."""
+    """Surname, then first names, when every head shares the surname."""
     assert family_heads_name("Squyres", heads) == expected
+
+
+def head(first, last):
+    """One head as family_heads_name reads it."""
+    return {"first": first, "last": last}
+
+
+# The mixed-surname cases of #2320, each (Family surname, heads, staff-list
+# name, greeting). The PostgreSQL name function tests hold SQL to the same
+# staff-list names (MIXED_SURNAME_CASES in database/family_name_cases.py).
+MIXED_SURNAMES = [
+    # Two surnames: the Family surname's head first, wherever it is listed.
+    (
+        "Kelly",
+        [head("Linda", "Thieneman"), head("Maureen", "Kelly")],
+        "Kelly / Thieneman, Maureen / Linda",
+        "Maureen Kelly and Linda Thieneman",
+    ),
+    # Three heads in two groups.
+    (
+        "Kelly",
+        [head("Maureen", "Kelly"), head("Linda", "Thieneman"), head("Bob", "Kelly")],
+        "Kelly / Thieneman, Maureen and Bob / Linda",
+        "Maureen and Bob Kelly and Linda Thieneman",
+    ),
+    # A head without a last name follows the groups, in full.
+    (
+        "Kelly",
+        [head("Pat", ""), head("Linda", "Thieneman"), head("Maureen", "Kelly")],
+        "Kelly / Thieneman, Maureen / Linda / Pat",
+        "Maureen Kelly, Linda Thieneman and Pat",
+    ),
+    (
+        "Kelly",
+        [{"name": "Old Capture"}, head("Linda", "Thieneman")],
+        "Thieneman, Linda / Old Capture",
+        "Linda Thieneman and Old Capture",
+    ),
+    # No head shares the Family surname: only the heads' own surnames.
+    (
+        "Kelly",
+        [head("Ann", "Lee"), head("Bo", "Fox")],
+        "Lee / Fox, Ann / Bo",
+        "Ann Lee and Bo Fox",
+    ),
+    # Surnames group ignoring letter case; the first spelling is kept (the
+    # Family's own spelling for its surname).
+    (
+        "Kelly",
+        [head("Ann", "LEE"), head("Bob", "kelly"), head("Cy", "Lee")],
+        "Kelly / LEE, Bob / Ann and Cy",
+        "Bob kelly and Ann and Cy LEE",
+    ),
+    # A surname whose heads have no first names leaves no empty part.
+    (
+        "Kelly",
+        [head("Maureen", "Kelly"), head(" ", "Thieneman")],
+        "Kelly / Thieneman, Maureen",
+        "Maureen Kelly and Thieneman",
+    ),
+    # Every head shares the surname: unchanged.
+    (
+        "Squyres",
+        [head("Tracy", "Squyres"), head("Jeff", "Squyres")],
+        "Squyres, Tracy and Jeff",
+        "Tracy and Jeff Squyres",
+    ),
+]
+
+
+@pytest.mark.parametrize(("surname", "heads", "staff", "greeting"), MIXED_SURNAMES)
+def test_mixed_surnames_lead_the_staff_list_and_follow_in_the_greeting(
+    surname, heads, staff, greeting
+):
+    """The staff-list form and the greeting for heads of different surnames
+    (#2320); family_heads_name's natural order is the greeting."""
+    assert family_heads_name(surname, heads) == staff
+    assert heads_salutation_name(heads, surname=surname) == greeting
+    assert family_heads_name(surname, heads, surname_first=False) == greeting
+
+
+# A Family with a blank lastName (#2320, Administrator 2026-10-31), each
+# (stand-in surname, heads, staff-list name): the heads' own surnames lead,
+# as when no head shares the Family surname, even when the stand-in equals
+# a head's surname. Only without any head surname does the stand-in lead.
+BLANK_LAST_NAME = [
+    ("The Lees", [head("Ann", "Lee"), head("Bo", "Lee")], "Lee, Ann and Bo"),
+    ("The Lees", [head("Ann", "Lee"), head("Bo", "Fox")], "Lee / Fox, Ann / Bo"),
+    ("Fox", [head("Ann", "Lee"), head("Bo", "fox")], "Lee / fox, Ann / Bo"),
+    ("Lee", [head("Ann", "Lee"), head("Cher", "")], "Lee, Ann / Cher"),
+    ("The Lees", [head("Ann", ""), {"name": "Bo"}], "The Lees, Ann and Bo"),
+    ("Pat", [], "Pat"),
+]
+
+
+@pytest.mark.parametrize(("surname", "heads", "staff"), BLANK_LAST_NAME)
+def test_a_blank_last_name_lets_the_heads_surnames_lead(surname, heads, staff):
+    """Without a recorded lastName the stand-in matches no head (#2320)."""
+    assert family_heads_name(surname, heads, recorded=False) == staff
+
+
+def test_family_last_name_reads_only_a_recorded_last_name():
+    """family_last_name is the stripped lastName, else "" (never a stand-in)."""
+    assert family_last_name({"lastName": " Lee\u00a0", "mailingName": "X"}) == "Lee"
+    assert family_last_name({"lastName": 7, "mailingName": "Lee"}) == ""
+    assert family_last_name({"mailingName": "The Lees"}) == ""
 
 
 @pytest.mark.parametrize(
@@ -226,6 +346,17 @@ def test_name_placeholders_fall_back_to_the_family_name():
         "family_member_names": "Example",
         "all_family_member_names": "Andrew, Betty and Cy Test",
     }
+
+
+def test_name_placeholders_greet_the_family_surname_first():
+    """Email and Family pages greet the heads of the Family surname first
+    (#2320), heads and Members alike."""
+    heads = [head("Linda", "Thieneman"), head("Maureen", "Kelly")]
+    values = name_placeholders("Kelly", heads, [*heads, head("Cy", "Kelly")])
+    assert values["head_salutation"] == "Maureen Kelly and Linda Thieneman"
+    assert (
+        values["all_family_member_names"] == "Maureen and Cy Kelly and Linda Thieneman"
+    )
 
 
 def test_directory_sql_trims_exactly_what_python_strips():

@@ -1715,8 +1715,10 @@ range not useful (2026-10-20,
 a Stage choice of its own after the stages, lists requests a later answer from the Family replaced
 (superseded) or cleared (withdrawn); Every stage counts the current
 requests only. The installed SQL selection searches the shown name (surname,
-then heads), as the directory does; the table sorts by Family (surname, then
-that name), Family DUID and Submitted
+then heads), as the directory does, and the Family surname, which that name
+leaves out when no head shares it, so either surname finds the Family
+([#2320](https://github.com/epiphany40223/parishkit/issues/2320)); the table
+sorts by Family (surname, then that name), Family DUID and Submitted
 ([#960](https://github.com/epiphany40223/parishkit/issues/960)). A Family
 the data no longer has has no name: the page shows the
 [ParishSoft status](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
@@ -3648,8 +3650,9 @@ format (CSV, XLSX, PDF) has, in the Admin table
 [column order](../admin-portal/spec.md#table-column-order), the
 Family name first (surname, then heads, as on the
 [Campaign Family directory](#campaign-family-directory);
-search matches that name and the Family sort orders by surname, then that
-name), Family DUID in its own sortable column
+search matches that name and the Family surname, which that name leaves out
+when no head shares it (#2320), and the Family sort orders by surname, then
+that name), Family DUID in its own sortable column
 ([#960](https://github.com/epiphany40223/parishkit/issues/960)), Annual
 pledge, Frequency, Approximate installment, Share methods (selected
 share-option labels with any Other text; the page uses each option's
