@@ -662,7 +662,8 @@ def run_two_step(args, client, hooks: Hooks) -> int:
         consenting = token_subject(second, client[0], hooks.opener)
         granted = second.get("scope", "")
         print_fn(
-            f"Step 2: consent from account {account_hash(consenting)}; "
+            f"Step 2: consent from account {account_hash(consenting)} "
+            f"({'ID token' if second.get('id_token') else 'tokeninfo: no ID token'}); "
             f"granted scopes: {granted or '-'}"
         )
         if consenting != subject:

@@ -581,6 +581,7 @@ def test_two_step_both_steps_ok_lists_the_addresses(client_file):
     (people,) = google.people_calls()
     assert people.get_header("Authorization") == f"Bearer {STEP2}"
     assert f"(account {pe.account_hash(SUB)})" in text
+    assert f"{pe.account_hash(SUB)} (ID token);" in text
     assert SUB not in text
     assert ["alt@other.example", "true", "-", "ACCOUNT"] in [
         row.split() for row in text.splitlines()
@@ -638,6 +639,7 @@ def test_two_step_without_a_step_2_id_token_asks_tokeninfo(client_file):
     (info,) = [r for r in google.requests if r.full_url.startswith(pe.TOKENINFO_URL)]
     query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(info.full_url).query))
     assert query == {"access_token": STEP2}
+    assert f"{pe.account_hash(SUB)} (tokeninfo: no ID token);" in text
     assert len(google.people_calls()) == 1
     assert STEP2 not in text
 
