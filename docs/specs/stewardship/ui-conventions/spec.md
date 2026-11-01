@@ -73,9 +73,13 @@ when it lands.
   [review pipeline terms](#review-pipeline-terms),
   [campaign Families wording](#campaign-families-wording),
   [financial terminology](#financial-terminology),
+  [responses and submissions](#responses-and-submissions),
+  [Testing recipient](#testing-recipient),
+  [capitalization](#capitalization), [retired words](#retired-words),
   [shared visual style](#shared-visual-style),
   [colour scheme](#colour-scheme),
   [status indicators](#status-indicators), [stat tiles](#stat-tiles),
+  [population of report figures](#population-of-report-figures),
   [overview pages](#overview-pages),
   [working spinner](#working-spinner),
   [stage boxes](#stage-boxes), [time entry](#time-entry),
@@ -608,8 +612,8 @@ never scrolls to show it (Administrator, pk-local review of
   refuses an in-place control whose fragment names no region there.
 - **Controls.** A link that shows another view of the page (`a[data-in-place]`:
   each segment of a [binary choice](#binary-choices), such as the
-  [Response dashboard](../reports/spec.md#response-dashboard)'s mode and
-  Chart population, each of which refreshes the page's one region; the
+  [Response dashboard](../reports/spec.md#response-dashboard)'s Families
+  counted, which refreshes the page's one region; the
   [Timeline](../reports/spec.md#timeline)'s filters and When sort,
   the page links of a mail delivery's
   evidence and attempt history, an information item's and a Ministry
@@ -627,8 +631,7 @@ never scrolls to show it (Administrator, pk-local review of
   Compare on day, which refreshes everything below it)
   names its region by its
   URL's fragment. A POST form saves a change unless it is marked
-  `data-in-place-read` (the System logs cross-links and the family
-  directory's Responses shown segments only read): a read may
+  `data-in-place-read` (the System logs cross-links only read): a read may
   be cancelled by a newer choice and, with no answer at all, falls back to
   the ordinary submission. A form or link marked `data-in-place-filters`
   sets the page's filters from outside its filter form (a System logs
@@ -2271,11 +2274,8 @@ browser tests of each page that draws one. **Precedent.**
 (Administrator, 2026-10-17), from the Response dashboard's Production |
 Testing rehearsal.
 
-- **Where.** The Response dashboard's Responses shown (Production |
-  Testing rehearsal) and Chart population (Historical as of day | Current
-  population), the
-  [family directory](../reports/spec.md#campaign-family-directory)'s Responses shown
-  (Production | Testing rehearsal), above its Filters panel, and the
+- **Where.** The Response dashboard's
+  [Families counted](#population-of-report-figures), the
   [Campaign calendar](../admin-portal/spec.md#campaign-calendar)'s
   Show (Upcoming emails | Include past emails), above Every email by date,
   and its View (Month | Week, #1808), before its Previous and Next.
@@ -2305,7 +2305,7 @@ Testing rehearsal.
 - **In place.** Choosing a segment refreshes the page's regions without a
   reload or a scroll jump ([in-place controls](#in-place-controls)); the
   address is replaced, focus stays on the segment just chosen, and the view
-  now shown is announced by its segment's text ("Current population").
+  now shown is announced by its segment's text ("In this campaign today").
 - **Look.** Both segments keep one size and weight and the pair keeps its
   place, so choosing one changes only colours
   ([no layout shift](#no-layout-shift)). The chosen segment is filled in the
@@ -2488,8 +2488,8 @@ tests of the pages it names. **Precedent.** #1651.
   Apply.
 - **A data view is not a filter.** A choice that switches the data shown
   between Production and Testing is a view, not a filter: Clear filters
-  keeps it. The family directory's Responses shown and Sent mail's
-  Production or Testing are segmented pairs, so their filter forms carry
+  keeps it. Sent mail's
+  Production or Testing is a segmented pair, so its filter form carries
   the choice as a kept hidden field; such a choice drawn as a visible
   control in a filter form is kept too, and is then marked `data-view`.
   Roster changes' Show, also a segmented pair, is kept the same way.
@@ -3480,6 +3480,26 @@ the stage each stream's stored state maps to). **Precedent.**
 move to the words as each stream moves to the shared review worklist; until
 then a page keeps its current words.
 
+**Outside the pipeline.** Text beside the pipeline uses its words too, and
+no other word that reads like a stage (Administrator, 2026-10-31,
+[#2330](https://github.com/epiphany40223/parishkit/issues/2330)):
+
+- No page tells a reader to "publish" a change. A roster change the
+  ParishSoft API cannot write is **entered in ParishSoft by hand** (the
+  To enter by hand stage), never "update ParishSoft yourself"; Update
+  ParishSoft names only the API write.
+- A count of work waiting for a decision names the stage it counts
+  ("N to review", the To review column), never "to do" or "Unresolved".
+- A work item's own progress beside its stage never uses stage-like words.
+  The Ministry follow-up request's Status is therefore **Contact status**,
+  with **Not contacted**, **Contacting** and **Done** in place of New, In
+  progress and Resolved. Closed: no response and the Outcome keep their
+  names, and the stored states are unchanged.
+
+The [retired words](#retired-words) table lists these words, and its guard
+test holds the strings that still use them until the #2330 string changes
+land.
+
 ### Campaign Families wording
 
 **Rule.** The Families a campaign is sent to are its **campaign Families**
@@ -3528,6 +3548,23 @@ A Member's "Inactive in ParishSoft" badge, "No active Family head" and
 and stay. The Family portal shows none of these words; a Family that is not
 in the campaign gets the same sign-in answer as an unknown code, as today.
 
+**Other names for campaign Families** (Administrator, 2026-10-31,
+[#2330](https://github.com/epiphany40223/parishkit/issues/2330)). Campaign
+Families are never "eligible" ("every eligible Family", "no longer
+eligible", "eligible for the portal"), "Families that can use the portal"
+or an "active-Family count" either: a Family that stopped matching the
+rule "has left the campaign", and one that never matched is "not in this
+campaign" (the Timeline's reach line too, not "not part of this campaign's
+mailing"). The defined terms Email-eligible and email-deliverable, which
+are about a campaign Family's addresses, are unaffected.
+
+**No longer in this campaign** names a Family only, as the
+[badge](#members-and-families-no-longer-in-parishsoft) does. A Ministry an
+Administrator took out of the campaign is **Removed from this campaign**,
+and a Ministry missing from the ParishSoft data is **Not in ParishSoft**,
+the badge's own words, never "Not in ParishSoft data". The
+[retired words](#retired-words) table lists these words.
+
 ### Financial terminology
 
 **Rule.** In the Admin portal, **Pledge** means the monetary amount (for
@@ -3548,6 +3585,127 @@ names for one thing (Administrator, 2026-10-26,
 built (#2256): the Family hub and Timeline tab and heading, the Timeline
 About text, the Campaign settings validation message and the Financial
 stewardship export's sheet name changed together.
+
+An Admin label that names the Family form's financial page says
+**Financial stewardship page** ("Financial stewardship page icon", "the
+Financial stewardship introduction"), never the bare "Financial page" or
+"after Financial", although the Family sees the page's own title
+(Administrator, 2026-10-31,
+[#2330](https://github.com/epiphany40223/parishkit/issues/2330)). The
+area is never "Giving" ("Financial stewardship is turned on") and its
+pagination is "Financial stewardship result pages"; "giving" stays for
+ParishSoft's contributions data ("Family codes and giving").
+
+### Responses and submissions
+
+**Rule.** A **response** is a Family's answer to the campaign: each Family
+has one current response ("Families responded", "First response",
+"Testing responses"). A **submission** is one sending of the Family form:
+its receipt, a repeat submission, and the "First submitted" and "Last
+submitted" dates of the sendings. The column that dates the answer a row
+shows is headed **Submitted** on every page and in every download, never
+"Latest response". The Testing page, its menu entry and the Go live links
+to it are **Testing responses**. **Why.** Pledges and Financial
+stewardship dated the same pledge under two headings, and the Testing page
+was "Testing submissions" while its own About and Home said "Testing
+responses" (Administrator, 2026-10-31). **Precedent.**
+[#2330](https://github.com/epiphany40223/parishkit/issues/2330). Status:
+decided; the strings change in a later #2330 pull request, and the
+[retired words](#retired-words) guard holds the strings left until then.
+
+### Testing recipient
+
+**Rule.** The one address that receives every email while the site is in
+Testing mode is **the Testing recipient** in every label, help line,
+notice, error and email, never "Test recipient", "Testing email address"
+or "the testing address". Text about its mailbox says **the Testing
+recipient's inbox** ("Check the Testing recipient's inbox"), not "the
+Testing mailbox". **Why.** Setup, Parish settings, Campaign mail and the
+restore review gave one setting four names. **Precedent.**
+[#2330](https://github.com/epiphany40223/parishkit/issues/2330) (Status:
+decided; strings change later, as for
+[responses and submissions](#responses-and-submissions)).
+
+### Capitalization
+
+**Rule.** **Family**, **Member**, **Ministry**, **Staff**,
+**Administrator**, **Ministry leader** and every Admin page's name are
+capitalized wherever they name the ParishSoft record, the portal role or
+the page, in pages, downloaded files, emails, audit descriptions and CLI
+text: "any Member's name", "until Staff close them", "ask a parish
+Administrator", "Someone opened the Response dashboard". In "a Staff
+member" only Staff is capitalized, because the member is a person, not the
+ParishSoft record. A person who is not a portal role is not called an
+administrator: the person who runs the server is "whoever runs the server".
+Exempt: the Family portal; quotations of the Family form's own wording;
+Google's words (a "Google Workspace administrator", a "super
+administrator", a shared drive's members); and "parish staff member" on the
+sign-in and access-denied pages, whose reader may hold no role
+(Administrator, 2026-10-31). **Why.** Lower-case "member", "ministries",
+"staff" and "administrator" read as everyday words where the page means
+the record or the role. **Precedent.**
+[#2330](https://github.com/epiphany40223/parishkit/issues/2330) (Status:
+decided; strings change later).
+
+### Retired words
+
+**Rule.** No Admin page, downloaded file, email, audit description or CLI
+message uses a word in this table; it uses the word beside it. The table
+gathers the words retired by
+[campaign Families wording](#campaign-families-wording),
+[review pipeline terms](#review-pipeline-terms),
+[financial terminology](#financial-terminology),
+[responses and submissions](#responses-and-submissions),
+[Testing recipient](#testing-recipient) and
+[capitalization](#capitalization), and the stale names left behind by
+renamed pages. The Family portal keeps its own wording. **Why.** Retired
+words came back after their renames because nothing guarded them (the
+"active-Family count" after #1393). **Guard.**
+`tests/stewardship/test_admin_wording.py` keeps one pattern per row, keyed
+by the row's first cell, and scans translated template text, gettext
+strings in Python, the text of upper-case constants (label maps, heading
+tuples and captions, wherever they live), downloaded-file headings, CLI
+help and descriptions, and the sentences in `ui-v1.js`. It skips code
+(data keys, CLI option names) and the Family portal, including the Family
+sign-in page's title. It does not see other untranslated Python text,
+such as a plain string built inside a function or a CLI command's printed
+output; the #2330 string changes sweep those by hand. Its allowlist holds
+each file's known occurrences, with counts; a new occurrence fails, and
+each #2330 string change lowers or deletes entries until the allowlist is
+gone.
+**Precedent.** [#2330](https://github.com/epiphany40223/parishkit/issues/2330).
+
+| Retired | Use instead |
+| --- | --- |
+| active Family | campaign Family ("the campaign-Family count") |
+| eligible Family | campaign Family; "has left the campaign"; "not in this campaign" |
+| can use the portal | campaign Families ("Every campaign Family can open the form") |
+| not part of this campaign's mailing | not in this campaign |
+| Not in ParishSoft data | Not in ParishSoft |
+| No longer in this campaign (a Ministry) | Removed from this campaign (a Family stays No longer in this campaign) |
+| publish | Update ParishSoft (the API write); enter in ParishSoft by hand |
+| update ParishSoft yourself | enter the change in ParishSoft by hand |
+| to do | the stage it counts ("N to review"), for a count of waiting work |
+| Unresolved | To review (Ministry requests' counts) |
+| Status: New, In progress, Resolved | Contact status: Not contacted, Contacting, Done (Ministry follow-up) |
+| Testing submissions | Testing responses |
+| Latest response | Submitted |
+| Test recipient | Testing recipient |
+| Testing email address | Testing recipient (also for "the testing address") |
+| Testing mailbox | the Testing recipient's inbox |
+| Giving is turned on | Financial stewardship is turned on |
+| Financial result pages | Financial stewardship result pages |
+| Financial page | Financial stewardship page (also "Financial introduction", "after Financial") |
+| Entered by Staff for the Family | Entered by Staff |
+| digest | Daily report, Weekly report (the report emails) |
+| timezone | time zone |
+| Family login | Family sign-in |
+| Family timeline | Timeline |
+| the response dashboard | the page's own name: the Response dashboard, the System logs, Campaign comparison |
+| member | Member, where it names the record ("Family Members", "any Member's name") |
+| ministry | Ministry, Ministries |
+| staff | Staff |
+| administrator | Administrator; "whoever runs the server" |
 
 ### Shared visual style
 
@@ -3912,6 +4070,21 @@ two ways of reading to a screen reader. **Precedent.**
   stewardship and Ministry requests) do not follow it yet; they pick it up
   when they move onto the component
   ([#1540](https://github.com/epiphany40223/parishkit/issues/1540)).
+- **One label, one set.** A count shown with the same label on two pages
+  counts the same records under each page's defaults, on every page, not
+  only the Reports and queries pages (whose shared "Families counted"
+  choice is the population of report figures rule of
+  [#2324](https://github.com/epiphany40223/parishkit/issues/2324)). A
+  "Campaign Families" count is always the
+  [campaign Families](#campaign-families-wording), the Families the
+  campaign's Families rule selects: Home's and Go live's equal the Response
+  dashboard's "In this campaign today" and the Campaign Family directory's
+  default count. A page that deliberately counts another set (a fixed
+  population, an earlier day, Families that left) says which in its label
+  or a fixed line, in the Campaign Families wording. **Why.** Home counted
+  ParishSoft's active Families as well, 53 more than the dashboard on the
+  same day
+  ([#2331](https://github.com/epiphany40223/parishkit/issues/2331)).
 - **Shared code.** The helper's `tile()` builds each tile and the include
   draws a row of them. Its `shown()` takes a value that is already text,
   only for figures that must read word for word as another renderer
@@ -3923,6 +4096,80 @@ two ways of reading to a screen reader. **Precedent.**
   guard test fails when a template outside `components/` draws stat-tile
   markup by hand, with no exceptions. Email and PDF reports
   cannot load the stylesheet and keep their own layouts.
+
+### Population of report figures
+
+**Rule.** Every Reports and queries page counts its headline numbers from
+one population of Families, and the page says which. Where a page can
+count either population, the reader chooses it with one shared
+[binary choice](#binary-choices), **Families counted**:
+
+- **Including Families that left** (`scope=historical`):
+  every Family that was ever in this campaign (its first-eligible instant is
+  set), including Families that later
+  [left the campaign](#campaign-families-wording) or are gone from
+  ParishSoft. This is the money actually pledged.
+- **In this campaign today** (`scope=current`, the default): the campaign
+  Families, the Families that match the campaign's
+  [Families rule](../data/spec.md#campaign-families) in today's ParishSoft
+  data. An address with no `scope` counts these (the Administrator,
+  2026-10-31, #2324).
+
+**Why.** The Administrator, 2026-10-31: "The numbers on all the 'Reports and
+queries' pages, particularly the infographic numbers at the tops of the
+pages, need to agree." Each page, and sometimes each panel of one page,
+had chosen its own Families, so the same question got different answers
+(the Response dashboard's pledge tile and Financial stewardship's total
+differed by one Family that had left).
+**Shared code.** The labels and the default live in one place,
+`reports/participation.py` (`SCOPE_LABELS`, `SCOPE_CHOICE_LABEL`,
+`DEFAULT_SCOPE`), which translates the two populations' words spelled in
+`reports/population_words.py`; every page, table caption, export and
+pk-admin's `--help` reads them from there, so the Administrator can rename
+them in one edit.
+**Precedent.** [#2324](https://github.com/epiphany40223/parishkit/issues/2324).
+
+- **Place.** The choice sits at the top of the page, under the heading (and
+  any About this page panel), before every figure it controls.
+- **Every figure.** When the choice is set, every tile, chart, chart
+  summary, table total, table caption and export on that page counts the
+  same Families. A figure that cannot follow the choice is not on such a
+  page. The same URL parameter (`scope`), values and default are used on
+  every page, so a link keeps its population from page to page.
+- **Every file.** Each downloaded file of such a page (CSV, XLSX and PDF)
+  says which population it counts, "Families counted: …" in the choice's
+  words, in the file's header block under the report title, from the
+  population its request captured
+  ([file design](../reports/spec.md#file-design); the Administrator, R59
+  on [#2324](https://github.com/epiphany40223/parishkit/issues/2324)).
+- **One population only.** A page that can show only one population
+  (because its data holds only one) has no choice, and says which in one
+  fixed line in the same place, in the choice's words: for example
+  "Families counted: Including Families that left". A lookup page, such as
+  the Campaign Family directory, names it in its count line instead.
+- **Same label, same value.** For one population and one day, a figure with
+  the same label shows the same value on every page. A page that reads
+  another day than now says which day.
+- **Testing and Production.** Whether Testing rehearsal or Production
+  responses are counted follows the site's mode
+  ([Testing mode](../parishioner-portal/spec.md#testing-mode)), never a choice
+  on the page; an old link's `mode` parameter is refused, as an unknown
+  parameter is ([no legacy URLs](#addresses-and-legacy-urls)). Testing
+  rehearsal responses stay for Administrators only: other readers see the
+  Production responses in either mode.
+- **While it changes.** Choosing the other population re-reads the page in
+  place ([in-place controls](#in-place-controls)); since that read can take
+  a few seconds, the [working spinner](#working-spinner) shows beside the
+  choice until the page is redrawn.
+
+Status: the [Response dashboard](../reports/spec.md#response-dashboard) and
+[Financial stewardship](../reports/spec.md#financial-stewardship-detail)
+follow this rule; so do
+[Campaign comparison](../campaign-history/spec.md#page-layout) and the
+[Campaign Family directory](../reports/spec.md#campaign-family-directory),
+each with its fixed population line. A test
+(`test_every_report_page_names_population`) checks that every Reports and
+queries menu entry offers the choice or draws the fixed line.
 
 ### Overview pages
 
@@ -4010,7 +4257,18 @@ In progress stage box), so Dark mode keeps it readable. Under reduced motion it 
 says "working", through the theme's one reduced-motion rule. A spinner's
 space is reserved, or it takes the place of a mark that was already there,
 so it never moves the content around it when it appears or goes
-([no layout shift](#no-layout-shift)). Never add another spinner class,
+([no layout shift](#no-layout-shift)). A slow in-place re-read (one
+that can take seconds, such as a report's
+[Families counted](#population-of-report-figures) choice) shows the
+spinner beside the control that started it while the region is
+`aria-busy`: the control is marked `data-busy-control` and draws the
+spinner hidden, in its reserved space, and `ui-v1.js` marks the control
+used so the spinner shows until the region is redrawn, and, once the read
+has taken a moment, says "Working…" in the page's polite status region
+(outside the busy region),
+as busy buttons do, since most screen readers do not announce
+`aria-busy`; a periodic re-read the reader did not start shows and says
+none. Never add another spinner class,
 spinning animation or keyframes: extend this one, with a placement rule
 for its context if needed. **Why.** The Administrator, 2026-10-20 (pk-local
 R40b), asking for a working spinner in an In progress stage box "like the
@@ -4837,8 +5095,8 @@ table, including none. A response the
 server refuses (a malformed filter's 400, a denial, an unavailable report) is
 shown as returned; a POST is never sent twice, since each report read is
 audited. While a request is in flight, repeating the same submission is
-ignored. The Response dashboard's Chart population reshapes its chart,
-table and export rather than one table, so it is a
+ignored. The Response dashboard's Families counted reshapes its tiles,
+chart, table and export rather than one table, so it is a
 [binary choice](#binary-choices) whose links refresh the page's region
 instead. When
 the fetch fails or returns another page (a sign-in), the ordinary page load happens and its fragment lands on the table rather than at
@@ -5487,7 +5745,7 @@ Family, or marks one inactive or deceased:
 - **Not in ParishSoft**: the data has no such Member or Family (deleted or
   merged there), or the Member now belongs to another Family.
 - **Inactive in ParishSoft**: a Member present, but marked inactive. For a
-  Family the words are **No longer in this campaign**: present, but no longer matching the campaign's [Families rule](../data/spec.md#campaign-families) (its status key is `left`, #1393). Under the legacy rule (a campaign created before #1393) the test stays ParishSoft's active flag, exactly as before.
+  Family the words are **No longer in this campaign**: present, but no longer matching the campaign's [Families rule](../data/spec.md#campaign-families) (its status key is `left`, #1393). Under the legacy rule (a campaign created before #1393) the test is ParishSoft's active flag and registration at the parish, as the dashboard counts it (#2335).
 - **Deceased in ParishSoft**: present, but marked deceased.
 - **Name not recorded in ParishSoft**: present, but with no usable name. This
   is a gap in the data, not a removal, so it is worded as the name and has

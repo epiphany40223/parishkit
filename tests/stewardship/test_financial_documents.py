@@ -2,6 +2,7 @@
 
 import csv
 import io
+import re
 from datetime import UTC, date, datetime
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -24,9 +25,32 @@ from parishkit.stewardship.source.snapshot_names import FAMILY_NAMES_FULL
 from parishkit.stewardship.web.dates import Span, csv_text
 
 MOMENT = datetime(2026, 9, 19, 15, 4, tzinfo=UTC)
-PARAMETERS = {"filters": FinancialQuery().form_values(), "proof": None}
+# A capture keeps the filters as SQL read them (#2324: no scope).
+PARAMETERS = {"filters": FinancialQuery().sql_filters(), "proof": None}
 
 NEW_YORK = ZoneInfo("America/New_York")
+# The header block above the CSV's and XLSX sheet's table (R59 on #2324):
+# Report, Families counted and Source as of, then a blank row, so the
+# table's heading row is row 5.
+HEAD = 5
+
+
+def csv_table(output):
+    """The CSV's table (heading row first), after its header block."""
+    records = list(csv.reader(io.StringIO(output.getvalue().decode())))
+    assert [row[0] for row in records[:3]] == [
+        "Report",
+        "Families counted",
+        "Source as of",
+    ]
+    assert records[3] == []
+    return records[HEAD - 1 :]
+
+
+def shift(reference):
+    """An XLSX cell reference written for a heading in row 1, under the block."""
+    column, number = re.fullmatch(r"([A-Z]+)(\d+)", reference).groups()
+    return f"{column}{int(number) + HEAD - 1}"
 
 
 def row(**changes):
@@ -165,12 +189,123 @@ def test_rows_word_money_status_shares_and_local_instants():
     )
     assert metadata["ParishSoft contributions through"] == date(2026, 6, 30)
     assert metadata["Matching Families"] == "3"
+    # The population the figures count, in the page's words (#2324): the
+    # default, today's campaign Families.
+    assert metadata["Families counted"] == "In this campaign today"
     assert metadata["Total annual pledges"] == MoneyAmount(246900)
     # Counts are wrapped values, never keys, so a long label cannot break a PDF.
     assert "Monthly: 1" in metadata["Pledges by frequency"].split("\n")
     assert metadata["Pledges by share method"] == "Online giving: 1\nAnother way: 1"
     assert metadata["No share method chosen"] == "0"
     assert '"sort": "name"' in metadata["Filters and sort"]
+
+
+@pytest.mark.parametrize(
+    ("active", "counted"),
+    [
+        ("any", "Including Families that left"),
+        ("inactive", "Including Families that left"),
+        ("unavailable", "Including Families that left"),
+        ("active", "In this campaign today"),
+    ],
+)
+def test_a_file_names_the_population_its_capture_counted(active, counted):
+    """The capture keeps SQL's filters, whose ``active`` carries Families
+    counted (#2324), so a file names its population from them, one
+    captured before #2324 (In this campaign was ``active`` "active") too."""
+    built = financial_document(
+        result([row()]),
+        PARAMETERS | {"filters": PARAMETERS["filters"] | {"active": active}},
+        parish_name="Sample Parish",
+        requested_at=MOMENT,
+        timezone="America/New_York",
+    )
+    assert dict(built.metadata)["Families counted"] == counted
+
+
+def drawn_pdf_text(render, monkeypatch):
+    """Every text line ``render`` draws on its PDF pages, with the PDF's bytes.
+
+    Spies on the shared page canvas, so the real renderer still writes the
+    file; matplotlib's embedded fonts keep the text out of plain reach in
+    the PDF's bytes.
+    """
+    from parishkit.stewardship.reports import pdf_design
+
+    lines, draw = [], pdf_design.Canvas.text
+
+    def spy(self, x, y, text, *args, **kwargs):
+        """Record one drawn line, then draw it."""
+        lines.append(text)
+        return draw(self, x, y, text, *args, **kwargs)
+
+    monkeypatch.setattr(pdf_design.Canvas, "text", spy)
+    output = io.BytesIO()
+    render(output)
+    return lines, output.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("active", "counted"),
+    [("any", "Including Families that left"), ("active", "In this campaign today")],
+)
+def test_every_format_heads_its_file_with_the_captured_population(
+    active, counted, monkeypatch
+):
+    """R59 on #2324: CSV, XLSX and PDF say "Families counted: …" in the
+    header block under the title, beside Source as of, from the capture's
+    own filters; the report information keeps its Families counted row."""
+    from openpyxl import load_workbook
+
+    built = financial_document(
+        result([row()]),
+        PARAMETERS | {"filters": PARAMETERS["filters"] | {"active": active}},
+        parish_name="Sample Parish",
+        requested_at=MOMENT,
+        timezone="America/New_York",
+    )
+    source_as_of = dict(built.metadata)["Source as of"]
+    output = io.BytesIO()
+    render_information(built, output, format="csv")
+    records = list(csv.reader(io.StringIO(output.getvalue().decode())))
+    assert records[:4] == [
+        ["Report", "Financial stewardship detail"],
+        ["Families counted", counted],
+        ["Source as of", csv_text(source_as_of)],
+        [],
+    ]
+    assert tuple(records[4]) == built.headings
+    output = io.BytesIO()
+    render_information(built, output, format="xlsx")
+    book = load_workbook(io.BytesIO(output.getvalue()))
+    sheet = book["Financial stewardship detail"]
+    assert [(sheet.cell(r, 1).value, sheet.cell(r, 2).value) for r in (1, 2)] == [
+        ("Report", "Financial stewardship detail"),
+        ("Families counted", counted),
+    ]
+    assert sheet["A3"].value == "Source as of"
+    assert sheet["B3"].value == source_as_of.replace(tzinfo=None)
+    assert sheet["A4"].value is None and sheet["A5"].value == "Family"
+    # The heading row stays the frozen and printed one.
+    assert sheet.freeze_panes == "B6" and sheet.print_title_rows == "$5:$5"
+    information = dict(
+        (cells[0].value, cells[1].value)
+        for cells in book["Report information"].iter_rows()
+    )
+    assert information["Families counted"] == counted
+    book.close()
+    lines, body = drawn_pdf_text(
+        lambda stream: render_information(built, stream, format="pdf"), monkeypatch
+    )
+    assert body.startswith(b"%PDF")
+    title = lines.index("Financial stewardship detail")
+    # The frame's capture line sits across from the title, then the
+    # population is the first line under it.
+    assert lines[title + 1].startswith("Captured September 19, 2026")
+    assert lines[title + 2] == f"Families counted: {counted}"
+    assert lines.count(f"Families counted: {counted}") == lines.count(
+        "Financial stewardship detail"
+    )
 
 
 def test_a_family_no_longer_in_parishsoft_has_a_blank_name_and_its_status():
@@ -212,14 +347,14 @@ def test_share_wording_beyond_a_spreadsheet_cell_continues_in_later_rows():
     output = io.BytesIO()
     render_information(built, output, format="xlsx")
     sheet = load_workbook(io.BytesIO(output.getvalue()))["Financial stewardship detail"]
-    cells = [str(sheet.cell(index, 7).value) for index in range(2, 7)]
+    cells = [str(sheet.cell(index, 7).value) for index in range(HEAD + 1, HEAD + 6)]
     assert all(len(cell) <= 32_767 for cell in cells)
     assert "; ".join(cell.removeprefix("(continued) ") for cell in cells) == expected
     # The CSV lays out the same six rows, with the continuation cells in the
     # share column and nothing in the money columns.
     output = io.BytesIO()
     render_information(built, output, format="csv")
-    records = list(csv.reader(io.StringIO(output.getvalue().decode())))
+    records = csv_table(output)
     assert tuple(records[0]) == built.headings
     data = records[1:]
     assert len(data) == 6 and [item[2] for item in data] == [c[2] for c in built.rows]
@@ -279,14 +414,19 @@ def test_every_format_renders_from_one_document(format):
     output = io.BytesIO()
     render_information(document([row()]), output, format=format)
     body = output.getvalue()
-    assert body.startswith({"csv": b"Family,", "xlsx": b"PK", "pdf": b"%PDF"}[format])
+    assert body.startswith({"csv": b"Report,", "xlsx": b"PK", "pdf": b"%PDF"}[format])
     if format == "csv":
         text = body.decode()
         # CSV money is the canonical amount (#388 L5).
         assert "Example <Family>" in text and ",1234.50," in text
         assert ",1200.00," in text
-        # Exactly the table: the report information is not in the CSV (#966).
-        assert "Financial stewardship detail" not in text
+        # The table, under the header block (R59 on #2324): no other report
+        # information is in the CSV (#966).
+        assert text.startswith(
+            "Report,Financial stewardship detail\r\n"
+            "Families counted,In this campaign today\r\n"
+        )
+        assert "Total annual pledges" not in text
         assert "$" not in text
 
 
@@ -318,12 +458,12 @@ def test_comparison_headings_match_the_page():
     assert headings("", "") is HEADINGS
     output = io.BytesIO()
     render_information(document([row()]), output, format="csv")
-    header = next(csv.reader(io.StringIO(output.getvalue().decode())))
+    header = csv_table(output)[0]
     assert header[7:9] == expected
     output = io.BytesIO()
     render_information(document([row()]), output, format="xlsx")
     sheet = load_workbook(io.BytesIO(output.getvalue()))["Financial stewardship detail"]
-    assert [sheet["H1"].value, sheet["I1"].value] == expected
+    assert [sheet["H5"].value, sheet["I5"].value] == expected
     template = (
         Path(accounts.__file__).parent / "templates/stewardship/financial-report.html"
     ).read_text(encoding="utf-8")
@@ -383,16 +523,16 @@ def test_xlsx_money_cells_are_exact_summable_numbers():
         "D4": "0.01",
         "F4": "0.01",
     }.items():
-        cell = sheet[reference]
+        cell = sheet[shift(reference)]
         assert cell.data_type == "n", reference
         assert cell.number_format == '"$"#,##0.00', reference
         assert Decimal(str(round(float(cell.value), 2))) == Decimal(expected), reference
     # Unavailable stays the word; a missing installment stays blank, never 0;
     # an amount beyond Excel's precision stays exact text.
-    assert sheet["I3"].value == "Unavailable" and sheet["I3"].data_type == "s"
-    assert sheet["F3"].value is None
-    assert sheet["H4"].value == "$123,456,789,012,345.67"
-    assert sheet["H4"].data_type == "s"
+    assert sheet["I7"].value == "Unavailable" and sheet["I7"].data_type == "s"
+    assert sheet["F7"].value is None
+    assert sheet["H8"].value == "$123,456,789,012,345.67"
+    assert sheet["H8"].data_type == "s"
     metadata = book["Report information"]
     total = next(
         cells[1]
@@ -415,7 +555,7 @@ def test_csv_money_is_the_canonical_amount_and_pdf_keeps_the_page_text():
     built = money_document()
     output = io.BytesIO()
     render_information(built, output, format="csv")
-    records = list(csv.reader(io.StringIO(output.getvalue().decode())))
+    records = csv_table(output)
     first, second, third = records[1:]
     assert first[3:9] == [
         "1234.50",
@@ -471,7 +611,7 @@ def test_xlsx_money_is_accurate_to_the_cent_despite_doubles():
     book = load_workbook(io.BytesIO(output.getvalue()))
     sheet = book["Financial stewardship detail"]
     for reference, cents in amounts.items():
-        cell = sheet[reference]
+        cell = sheet[shift(reference)]
         exact = MoneyAmount(cents).decimal
         assert cell.data_type == "n", reference
         # Read back, the stored double rounds to the exact cent.

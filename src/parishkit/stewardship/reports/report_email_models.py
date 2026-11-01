@@ -84,9 +84,12 @@ class ReportEmailPreparation(MutableRecord):
     timezone_configuration_id = models.UUIDField(null=True)
     through_date = models.DateField(null=True)
 
-    # The fact inputs (``facts.fact_inputs``) of a report are always the
-    # historical population, as a digest's are.
-    population_scope = "historical"
+    # The fact inputs (``facts.fact_inputs``) of a report count today's
+    # campaign Families, as the report pages do by default (the
+    # Administrator, 2026-10-31, #2331; frozen file 0196). Its Compared with
+    # past campaigns block reads the historical scope at the same inputs
+    # (``report_email_capture.COMPARISON_SCOPE``).
+    population_scope = "current"
 
     class Meta(MutableRecord.Meta):
         db_table = "stewardship_report_email_preparation"

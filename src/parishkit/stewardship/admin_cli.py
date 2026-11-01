@@ -2800,7 +2800,7 @@ def report_financial(args, preamble, runtime, context):
     """The financial detail report's summary, without its rows (PR 8c)."""
     from .admin_report_reads import read_financial
 
-    return read_financial(context["caller"], runtime)
+    return read_financial(context["caller"], runtime, scope=args.scope)
 
 
 def report_limitations(args, preamble, runtime, context):
@@ -4541,11 +4541,20 @@ def _export_ministry_packet_options(parser):
 
 def _exact_create_options(parser):
     """Options of ``export exact create``: population, format, zone and key."""
+    # The words come from their one place (#2324), untranslated, since the
+    # parser is built before Django's settings are configured.
+    from .reports.population_words import SCOPE_WORDS
+
+    historical, current = SCOPE_WORDS["historical"], SCOPE_WORDS["current"]
     parser.add_argument(
         "--scope",
         choices=("historical", "current"),
         default="historical",
-        help="historical (default: each day's population then) or current",
+        # Historical, as the stored daily facts, the report emails and
+        # Campaign comparison count; unlike the Reports and queries pages,
+        # whose Families counted choice starts at "current" (#2324).
+        help=f'historical ("{historical}"; the default, unlike the pages\' '
+        f'default of "{current}") or current ("{current}")',
     )
     parser.add_argument("--format", required=True, choices=EXPORT_FORMATS)
     parser.add_argument(
@@ -4624,8 +4633,17 @@ def _report_participation_options(parser):
     """Options of ``report participation``: the page's scope."""
     parser.add_argument(
         "--scope",
-        help="historical (default: each day's population as of that day) or "
-        "current (today's population)",
+        help="current (default: today's population, as on the page) or "
+        "historical (each day's population as of that day)",
+    )
+
+
+def _report_financial_options(parser):
+    """Options of ``report financial``: the page's Families counted (#2324)."""
+    parser.add_argument(
+        "--scope",
+        help="current (default: today's campaign Families) or historical "
+        "(every responding Family, including those that left the campaign)",
     )
 
 
@@ -7275,6 +7293,7 @@ def _report_specs():
             False,
             FinancialReport.field_names(),
             8,
+            options=(_report_financial_options,),
             audit_event="financial_report_viewed",
         ),
         CommandSpec(

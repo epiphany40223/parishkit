@@ -88,7 +88,11 @@ Implementation tracking: [plans](../../plans/stewardship/README.md) and
   upstream Family, Member, Ministry, roster, fund, pledge, and contribution
   data. A promoted snapshot is the application's current upstream truth.
 - **Family** and **Member**: records identified by their ParishSoft DUIDs.
-- **Portal-eligible Family**: an active, registered Parishioner Family. Email is
+- **Portal-eligible Family**: a campaign Family, one the campaign's
+  [Families rule](data/spec.md#campaign-families) selects (since
+  [#1393](https://github.com/epiphany40223/parishkit/issues/1393); Admin text
+  calls it a campaign Family, per the
+  [wording rule](ui-conventions/spec.md#campaign-families-wording)). Email is
   not required; every such Family receives a campaign identity and manual code.
 - **Email-eligible Family**: a Portal-eligible Family with at least one valid
   email address among the active Members returned by `get_family_heads()`.

@@ -218,14 +218,12 @@ WITH selected AS MATERIALIZED (
         stewardship_family_last_name_v1(p.canonical::jsonb)<>'' AS surname_recorded,
         -- Whether the Family is still one of the campaign's Families (NULL
         -- when it is not in the data), for its status badge and the Active
-        -- filter (#1393). A row loaded under a Families rule names the rule
-        -- (campaign_families) and its portal_eligible is "matches the rule";
-        -- a legacy row names none and keeps ParishSoft's active.
-        CASE WHEN p.canonical::jsonb OPERATOR(pg_catalog.?) 'campaign_families'
-                AND jsonb_typeof(p.canonical::jsonb->'portal_eligible')='boolean'
-            THEN (p.canonical::jsonb->'portal_eligible')::boolean
-            WHEN jsonb_typeof(p.canonical::jsonb->'active')='boolean'
-            THEN (p.canonical::jsonb->'active')::boolean END AS active,
+        -- filter (#1393): its portal_eligible, the eligibility the Response
+        -- dashboard counts (#2335). Under a Families rule that is "matches
+        -- the rule"; under the legacy rule, ParishSoft's active and
+        -- registered at the parish.
+        CASE WHEN jsonb_typeof(p.canonical::jsonb->'portal_eligible')='boolean'
+            THEN (p.canonical::jsonb->'portal_eligible')::boolean END AS active,
         CASE WHEN jsonb_typeof(p.canonical::jsonb->'active_head_duids')='array'
             THEN p.canonical::jsonb->'active_head_duids' END AS head_duids,
         -- Whether Staff entered this effective response for the Family

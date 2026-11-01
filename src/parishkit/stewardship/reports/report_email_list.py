@@ -294,13 +294,34 @@ def _how(slot):
     return "scheduled"
 
 
-def _list_count(blocks):
-    """A list block's item count in a snapshot's block data, or None."""
+def _list_items(blocks):
+    """A list block's kept items in a snapshot's block data, or None."""
     for entry in blocks or ():
         block = REGISTRY.get(entry.get("block"))
         if block is not None and block.kind == LIST and entry.get("data"):
-            return len(entry["data"].get("items", ()))
+            return entry["data"].get("items", [])
     return None
+
+
+def _list_count(blocks):
+    """A list block's item count in a snapshot's block data, or None."""
+    items = _list_items(blocks)
+    return None if items is None else len(items)
+
+
+def _list_stages(blocks):
+    """The email's requests heading for a send that kept their stages, or None.
+
+    A send captured since #2331 keeps each request's stage, and its email
+    named them ("To review 10 · To handle 3"); an earlier send's count is
+    shown as its email said it ("N open requests").
+    """
+    from .report_blocks.additional_information import stage_heading
+
+    items = _list_items(blocks)
+    if not items or any(len(item) != 6 for item in items):
+        return None
+    return stage_heading([item[5] for item in items])
 
 
 def _result(phase, task_state, skipped, messages):
@@ -327,13 +348,15 @@ def report_sends(campaign_id, mode, definition_ids=None, *, limit=SENDS_SHOWN):
 
     ``definition_ids`` limits the reports read (None: every report of the
     campaign). A send is ``{"id", "kind", "made_at", "how", "as_of",
-    "recipients", "result", "count", "name"}``: ``kind`` is ``report`` for
+    "recipients", "result", "count", "stages", "name"}``: ``kind`` is ``report`` for
     a report email send (``id`` its preparation's, which names its saved
     copy) and ``daily``/``weekly`` for a digest the report was converted
     from (``id`` the digest snapshot's); ``recipients`` counts the
     messages made; ``count`` is a list block's item count (None without
-    one); ``name`` is the report's name as the send's revision had it. A
-    cancelled preparation is no send and is left out. Only ``mode``'s
+    one) and ``stages`` its email's heading naming their stages (None for
+    a send made before #2331 kept them); ``name`` is the report's name as
+    the send's revision had it. A cancelled preparation is no send and is
+    left out. Only ``mode``'s
     sends are listed: a Testing rehearsal's are not Production history.
     """
     listed = _listed(campaign_id, mode, definition_ids)
@@ -528,6 +551,7 @@ def _send(row, snapshot, states):
             states,
         ),
         "count": _list_count(snapshot["blocks"]) if snapshot else None,
+        "stages": _list_stages(snapshot["blocks"]) if snapshot else None,
         "name": row["name"],
         "copy": snapshot is not None and bool(states),
     }
@@ -569,6 +593,7 @@ def _digest_sends(campaign_id, definition_ids):
                 "recipients": None,
                 "result": SENT,
                 "count": None,
+                "stages": None,
                 "name": None,
                 "copy": True,
             },
@@ -592,6 +617,7 @@ def _digest_sends(campaign_id, definition_ids):
                 "recipients": None,
                 "result": SENT,
                 "count": None,
+                "stages": None,
                 "name": None,
                 "copy": True,
             },

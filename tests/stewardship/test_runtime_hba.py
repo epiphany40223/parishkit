@@ -197,7 +197,7 @@ def test_every_container_is_unprivileged_and_on_fixed_or_one_shot_addresses(
                 f"offline-{name}"
             }
             assert ("application-egress" in service["networks"]) is (
-                name in {"backup-worker", "backup-uploader"}
+                name == "backup-uploader"
             )
     if "x-local-seeder" in compose:
         addresses.append(ip_address(compose["x-local-seeder"]["ipv4_address"]))

@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 
+from parishkit.stewardship.campaigns import campaign_families
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.responses.financial_inputs import financial_definition
 from parishkit.stewardship.responses.source_inputs import load_financial_inputs
@@ -48,7 +49,8 @@ def financial_source(
 
     `extra_families` and `extra_members` can make more households eligible, and
     `giving_as_of` backdates the recorded giving cutoff so a test does not
-    depend on today.
+    depend on today. The load is normalized under the campaign's own Families
+    rule (#1393; none is the legacy rule) and records it, as a refresh does.
     """
     financial = configuration()["financial"] | {
         "fund_duids": [9],
@@ -88,7 +90,8 @@ def financial_source(
             family.setdefault("famGroupID", 7)
         if family.get("registeredOrganizationID") == 5:
             family["registeredOrganizationID"] = 12345
-    corpus = normalize_core(data, as_of=TODAY)
+    rule = campaign_families.stored_rule(values)
+    corpus = normalize_core(data, as_of=TODAY, families=rule)
     if not empty:
         corpus["pledge"] = {
             "201": record("1200.00", effective_date="2026-01-01"),
@@ -119,7 +122,16 @@ def financial_source(
                 "window_digest": definition.window.digest,
                 "as_of_date": as_of,
                 "giving_as_of_date": giving_as_of or as_of,
-            },
+            }
+            | (
+                {}
+                if rule is None
+                else {
+                    campaign_families.KEY: campaign_families.evidence(
+                        rule, data.family_groups
+                    )
+                }
+            ),
         )
         if covered
         else {},

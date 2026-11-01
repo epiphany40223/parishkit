@@ -28,7 +28,7 @@ from parishkit.stewardship import (
     uploader_boundaries,
     uploader_commands,
 )
-from parishkit.stewardship.backup_offsite import COPY_LOCK, _copy_lock
+from parishkit.stewardship.backup_offsite import _copy_lock
 from parishkit.stewardship.deployment import DeploymentProfile
 from parishkit.stewardship.uploader_commands import binds, run_upload
 
@@ -224,27 +224,21 @@ def test_a_held_copy_lock_is_silent_from_cron_and_busy_when_asked(uploader):
     assert uploader.calls == []
 
 
-def test_an_old_release_copy_holding_only_the_file_lock_excludes_the_uploader(
-    uploader,
-):
-    """The expand transition's double lock: file first, then the directory."""
-    lock = uploader.backups / COPY_LOCK
+def test_a_leftover_legacy_lock_file_is_ignored(uploader):
+    """The contract drops the expand release's file lock: only the directory counts."""
+    lock = uploader.backups / ".offsite-copy.lock"
     lock.touch(mode=0o600)
     with held(lock):
         assert run_upload(uploader.configuration) is None
-    assert uploader.calls == []
-    assert run_upload(uploader.configuration) is None
     assert uploader.calls == ["schema", "destination", "pending"]
 
 
-def test_the_uploader_never_creates_the_legacy_lock_file(uploader):
-    """Its backups mount is read-only: without the file it takes the directory lock."""
+def test_the_copy_lock_writes_nothing_on_the_host(uploader):
+    """Its backups mount is read-only: the directory lock creates no file."""
     run_upload(uploader.configuration)
-    assert not (uploader.backups / COPY_LOCK).exists()
-    # The backup profile still creates it, as before.
     with _copy_lock(uploader.backups) as taken:
         assert taken
-    assert (uploader.backups / COPY_LOCK).is_file()
+    assert list(uploader.backups.iterdir()) == []
 
 
 def test_an_expired_lock_wait_is_logged_and_reported_busy(uploader, monkeypatch):

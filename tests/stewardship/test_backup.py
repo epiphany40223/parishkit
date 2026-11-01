@@ -368,6 +368,87 @@ def test_a_normal_gap_does_not_pause_retention(deployment, no_floor):
     assert not set(old[1:]) & {p.name for p in backups.iterdir()}
 
 
+def hold_copy_lock(backups):
+    """Hold the copy lock (an exclusive flock on the directory), as a copy does."""
+    import fcntl
+    import os
+
+    descriptor = os.open(backups, os.O_RDONLY | os.O_DIRECTORY)
+    fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    return descriptor
+
+
+@pytest.mark.parametrize(("past", "level"), [(3, "INFO"), (4, "WARNING")])
+def test_a_held_copy_lock_pauses_host_retention(
+    deployment, no_floor, caplog, past, level
+):
+    """A copy mid-upload: nothing pruned; INFO, or WARNING from four sets past.
+
+    Retention only tries the lock (#235, "Retention"), so the backup is not
+    held up; the next prune, with the lock free, goes ahead.
+    """
+    import logging
+    import os
+
+    caplog.set_level(logging.INFO)
+    backups = deployment.paths["backups"]
+    old = [name(NOW - timedelta(days=40, hours=n)) for n in range(past + 1)]
+    put_sets(backups, old + [name(NOW - timedelta(hours=12)), name(NOW)])
+    descriptor = hold_copy_lock(backups)
+    try:
+        backup._prune(backups, NOW)
+    finally:
+        os.close(descriptor)
+    assert set(old) <= {p.name for p in backups.iterdir()}
+    paused = [
+        record.levelname
+        for record in caplog.records
+        if getattr(record, "extra", {}).get("failure_kind")
+        == "backup_retention_paused_copy"
+    ]
+    assert paused == [level]
+    backup._prune(backups, NOW)
+    assert not set(old[1:]) & {p.name for p in backups.iterdir()}
+
+
+def test_retention_holds_the_copy_lock_while_it_prunes(
+    deployment, no_floor, monkeypatch
+):
+    """No copy can start on a set while retention removes it."""
+    import fcntl
+    import os
+
+    backups = deployment.paths["backups"]
+    old = [name(NOW - timedelta(days=40, hours=n)) for n in range(3)]
+    put_sets(backups, old + [name(NOW - timedelta(hours=12)), name(NOW)])
+    seen, remove = [], backup.shutil.rmtree
+
+    def removing(path):
+        descriptor = os.open(backups, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            seen.append("free")
+        except BlockingIOError:
+            seen.append("held")
+        finally:
+            os.close(descriptor)
+        remove(path)
+
+    monkeypatch.setattr(backup.shutil, "rmtree", removing)
+    backup._prune(backups, NOW)
+    assert seen == ["held", "held"]
+
+
+def test_a_backups_link_is_never_locked_or_pruned(deployment, tmp_path):
+    """The lock opens the directory without following a link."""
+    real = tmp_path / "real-backups"
+    real.mkdir(mode=0o700)
+    link = tmp_path / "linked-backups"
+    link.symlink_to(real)
+    with pytest.raises(OSError):
+        backup._prune(link, NOW)
+
+
 def test_refusals_leave_no_record(deployment, tmp_path):
     """A symlink in a tree, a missing key and a failed dump record nothing."""
     records = []

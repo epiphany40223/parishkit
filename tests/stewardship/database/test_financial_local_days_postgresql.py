@@ -148,7 +148,7 @@ def test_filters_without_a_zone_keep_the_campaign_days(response_service):
     exactly as the same filters with the campaign's zone now select them."""
     harness = families(response_service)
     for filters, _london, new_york in CASES:
-        legacy = FinancialQuery().form_values() | filters
+        legacy = FinancialQuery().sql_filters() | filters
         del legacy["zone"]
         assert selection(harness, legacy) == new_york, filters
         zoned = legacy | {"zone": CAMPAIGN}
@@ -161,7 +161,7 @@ def test_filters_without_a_zone_keep_the_campaign_days(response_service):
 @pytest.mark.parametrize("zone", ["", "Mars/Base", "+05:00"])
 def test_sql_refuses_a_date_without_a_known_zone(response_service, name, zone):
     """The selection repeats Python's rule for any direct caller."""
-    filters = FinancialQuery().form_values() | {name: DAY, "zone": zone}
+    filters = FinancialQuery().sql_filters() | {name: DAY, "zone": zone}
     with (
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
         pytest.raises(DatabaseError, match="Invalid financial report parameters"),
@@ -176,7 +176,7 @@ def test_sql_refuses_a_date_without_a_known_zone(response_service, name, zone):
 def test_sql_refuses_an_unknown_zone_even_without_dates(response_service):
     """A zone the catalog lacks is refused, never carried; a blank one with no
     dates (the page's first view) is read as before."""
-    neutral = FinancialQuery().form_values()
+    neutral = FinancialQuery().sql_filters()
     with (
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
         connection.cursor() as cursor,

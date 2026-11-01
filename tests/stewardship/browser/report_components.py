@@ -39,10 +39,24 @@ FIGURES_RETRY = "/figures-status-retry"
 FIGURES_RETRY_NEWER = "/figures-status-retry-newer"
 
 
+# The dashboard opened oldest first under Including Families that left, and
+# its In this campaign today answer from there (#2324): that answer is slow,
+# so a test can see the working spinner beside the choice while the read is
+# under way.
+SORTED = ReportQuery(
+    timezone="America/Los_Angeles", sort="date_asc", scope="historical"
+)
+SORTED_CURRENT = replace(SORTED, scope="current")
+
+
 # Answered after a pause (see the server in conftest.py): applying this
 # browser's zone to the report opened at ?scope=historical, so a test can
-# follow a daily-table link while it is still in flight.
-SLOW_GETS = {canonical(REAL + "?scope=historical&timezone=America%2FLos_Angeles")}
+# follow a daily-table link while it is still in flight, and the sorted
+# page's Families counted answer.
+SLOW_GETS = {
+    canonical(REAL + "?scope=historical&timezone=America%2FLos_Angeles"),
+    canonical(SORTED_CURRENT.url()),
+}
 
 
 def long_campaign(chart):
@@ -74,16 +88,17 @@ def long_campaign(chart):
 
 
 def options(query):
-    """The query string the Chart population segment for ``query``'s scope
+    """The query string the Families counted segment for ``query``'s scope
     follows (#1535), from a page drawn for ``query``."""
     return urlsplit(scope_links(query)[query.scope]).query
 
 
-def viewing(query, **changes):
+def viewing(query, *, testing=False, **changes):
     """The Response dashboard's context drawn for ``query`` (#1537), its
-    daily chart updating, with ``changes`` applied."""
-    shaped = page_context(query)
-    if query.mode == "production":
+    daily chart updating, with ``changes`` applied. ``testing`` draws a site
+    in Testing mode with a rehearsal (#2324)."""
+    shaped = page_context(query, testing=testing)
+    if not testing:
         shaped["selection"] = SimpleNamespace(updating=True, expected=True)
         # The chart is Updating: its figures status (#1586) is watched fast.
         shaped |= figures_status(
@@ -117,8 +132,10 @@ def components(context, admin):
                 replace(
                     value.statistics,
                     active=None,
+                    cohort=None,
                     comparison_pledge_all=MoneyAmount(None),
-                )
+                ),
+                "historical",
             ),
         ),
         "/participation-long": (
@@ -241,31 +258,53 @@ def components(context, admin):
         value.statistics,
         comparison_pledge_all=MoneyAmount(98265700),
         active=replace(value.statistics.active, responses=450),
+        cohort=replace(value.statistics.cohort, responses=450),
     )
     pages[REAL + "?timezone=UTC"] = ("response-dashboard", viewing(ReportQuery()))
+    # An address with no scope counts today's campaign Families (#2324); the
+    # Including Families that left page is the one the in-place tests switch
+    # from.
+    historical = ReportQuery(timezone="America/Los_Angeles", scope="historical")
+    implicit_historical = ReportQuery(timezone_explicit=False, scope="historical")
     for query in ("", "?sort=date_asc", "?scope=historical"):
-        pages[REAL + query] = ("response-dashboard", fallback)
+        left = query == "?scope=historical"
+        pages[REAL + query] = (
+            "response-dashboard",
+            viewing(implicit_historical) if left else fallback,
+        )
         zoned = (query + "&" if query else "?") + "timezone=America%2FLos_Angeles"
-        pages[canonical(REAL + zoned)] = ("response-dashboard", page)
+        pages[canonical(REAL + zoned)] = (
+            "response-dashboard",
+            viewing(historical) if left else page,
+        )
+    # That page's own address on its first page, which its Including
+    # Families that left segment and Back lead to. (Today's first page is the
+    # In this campaign today answer below.)
+    pages[canonical(REAL + "?" + options(historical))] = (
+        "response-dashboard",
+        viewing(historical),
+    )
     pages[canonical(REAL + "?" + options(los_angeles))] = ("response-dashboard", page)
     # The same page once newer figures are ready (test_report_figures.py):
     # no longer Updating, with the current-population answer's statistics.
     pages["/participation-later"] = (
         "response-dashboard",
         page
-        | statistics_panel(refreshed)
+        | statistics_panel(refreshed, "historical")
         | figures_status("dashboard", "historical", UUID(int=50), False),
     )
     # The page that could not read its figures (#1586): Families by stage
     # and the unavailable line, its figures status beside it at the slow
     # retry pace; its status answers, and the same page's re-read once
-    # figures are ready (the later page above).
+    # figures are ready (the later page above). Only the daily facts are
+    # unreadable, so the statistics still name the Families counted (#2324).
     pages[UNAVAILABLE] = (
         "response-dashboard",
         viewing(
             ReportQuery(timezone="America/Los_Angeles"),
             participation_unavailable=True,
             participation_cause="facts",
+            counted=True,
             **figures_status("dashboard", "historical", None, False, retry=True),
         ),
     )
@@ -288,14 +327,14 @@ def components(context, admin):
     )
     pages[canonical(REAL + "?" + options(current))] = (
         "response-dashboard",
-        viewing(current, **statistics_panel(refreshed)),
+        viewing(current, **statistics_panel(refreshed, "current")),
     )
-    # The Testing rehearsal view the mode choice leads to, and Production
-    # again from it (#1537).
-    testing = ReportQuery(timezone="America/Los_Angeles", mode="testing")
-    for query in (testing, los_angeles):
-        address = urlsplit(query.url(page=1)).query
-        pages[canonical(REAL + "?" + address)] = ("response-dashboard", viewing(query))
+    # The sorted page and its slow Families counted answer (SLOW_GETS).
+    pages[canonical(SORTED.url())] = ("response-dashboard", viewing(SORTED))
+    pages[canonical(SORTED_CURRENT.url())] = (
+        "response-dashboard",
+        viewing(SORTED_CURRENT, **statistics_panel(refreshed, "current")),
+    )
     # Every page's own figures status read (#1586) answers that the chart
     # shown is still the newest and is still Updating, so the watched region
     # stays as it is in every test that does not route it.

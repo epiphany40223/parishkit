@@ -71,17 +71,21 @@ DECLARE demand stewardship_fact_demand%ROWTYPE;
 BEGIN
     IF current_user<>'pk_stewardship_worker' THEN RETURN NEW; END IF;
     SELECT * INTO owned_task FROM stewardship_task_run WHERE id=NEW.task_id;
-    -- A report email's capture (#1786) builds exactly its recorded inputs.
+    -- A report email's capture (#1786) builds exactly its recorded inputs:
+    -- the generation its snapshot pins counts today's campaign Families
+    -- (current), and its Compared with past campaigns block reads a
+    -- historical one at the same inputs (0196, #2331).
     IF owned_task.task_type='report_email_prepare' THEN
         SELECT p.* INTO exact_request FROM stewardship_report_email_preparation p
             WHERE p.id=owned_task.domain_request_id AND p.task_id=owned_task.root_id
               AND p.phase='capture';
         -- A send whose inputs were recorded before 0185 (#2202) has no
         -- pledge review watermark; it pinned a generation of watermark 0.
-        IF NOT FOUND OR ROW(NEW.campaign_id,NEW.population_scope,NEW.source_id,
+        IF NOT FOUND OR NEW.population_scope NOT IN ('current','historical')
+            OR ROW(NEW.campaign_id,NEW.source_id,
             NEW.submission_watermark,NEW.review_watermark,
             NEW.timezone_configuration_id,NEW.through_date)
-            IS DISTINCT FROM ROW(exact_request.campaign_id,'historical'::varchar,
+            IS DISTINCT FROM ROW(exact_request.campaign_id,
                 exact_request.source_id,exact_request.submission_watermark,
                 coalesce(exact_request.review_watermark,0),
                 exact_request.timezone_configuration_id,exact_request.through_date)
@@ -178,7 +182,8 @@ BEGIN
             JOIN stewardship_task_run t ON t.id=f.task_id
             WHERE f.id=NEW.parent_id AND f.source_id=NEW.snapshot_id
                 AND f.population_scope='current' AND f.state='building'
-                AND t.task_type IN ('report_facts','report_exact_export')
+                AND t.task_type IN ('report_facts','report_exact_export',
+                    'report_email_prepare')
                 AND stewardship_fact_live(f.task_id,f.task_fence,f.worker_id)) THEN
         RAISE EXCEPTION 'Worker fact input pin requires its exact retained builder'
             USING ERRCODE='23514';

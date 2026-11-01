@@ -23,6 +23,9 @@ EMPTY_PAGES = {
     "/census-changes-none-stage": (
         "Nothing is at this stage. Choose another Stage above to see more.",
     ),
+    "/census-changes-none-open": (
+        "Nothing is at these stages. Choose another Stage above to see more.",
+    ),
     "/delivery-no-evidence": ("No Admin evidence yet. Each note or decision",),
     "/go-live-families-none": (
         "No Families have Testing responses left to delete, so cleanup has",

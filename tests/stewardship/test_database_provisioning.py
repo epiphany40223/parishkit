@@ -527,6 +527,106 @@ def test_pending_revokes_name_only_their_role_and_pending_migration():
     assert CLOSURE_FUNCTIONS[DISPATCH_TOKEN_FUNCTION] == migration
 
 
+def test_pending_table_revokes_tolerate_the_backup_logins_old_inserts():
+    """0195 (#235): the backup's two table INSERTs, until 0195 is applied."""
+    from parishkit.stewardship.runtime_grants import (
+        BACKUP_RUN_INSERT_COLUMNS,
+        CLOSURE_TABLE_REVOKES,
+        pending_table_revokes,
+        runtime_grants,
+    )
+
+    (migration,) = CLOSURE_TABLE_REVOKES
+    assert migration == ("stewardship_jobs", "0042_backup_uploader_contract")
+    assert pending_table_revokes(ServiceRole.BACKUP_WORKER, set()) == {
+        "stewardship_backup_run": {"INSERT"},
+        "stewardship_backup_upload": {"INSERT"},
+    }
+    assert pending_table_revokes(ServiceRole.BACKUP_WORKER, {migration}) == {}
+    assert pending_table_revokes(ServiceRole.WEB, set()) == {}
+    # What the registry declares instead: no INSERT on either table, and the
+    # run row's INSERT on every column but completed_at.
+    tables, columns = runtime_grants(ServiceRole.BACKUP_WORKER)
+    assert "INSERT" not in tables["stewardship_backup_run"]
+    assert "INSERT" not in tables["stewardship_backup_upload"]
+    assert columns["stewardship_backup_run"] == {
+        "INSERT": set(BACKUP_RUN_INSERT_COLUMNS)
+    }
+    assert "completed_at" not in BACKUP_RUN_INSERT_COLUMNS
+
+
+CONTRACT_TABLES = {
+    "stewardship_backup_run": {"SELECT"},
+    "stewardship_backup_upload": {"SELECT"},
+}
+CONTRACT_COLUMNS = {"stewardship_backup_run": {"INSERT": {"id", "started_at"}}}
+
+
+@pytest.mark.parametrize(
+    ("tolerated", "privileges", "columns", "accepted"),
+    [
+        # Before 0195: the old table INSERTs, on the table and every column.
+        (
+            {
+                "stewardship_backup_run": {"INSERT"},
+                "stewardship_backup_upload": {"INSERT"},
+            },
+            [
+                ("public", "stewardship_backup_run", "INSERT"),
+                ("public", "stewardship_backup_upload", "INSERT"),
+            ],
+            [
+                ("public", "stewardship_backup_run", "completed_at", "INSERT"),
+                ("public", "stewardship_backup_upload", "state", "INSERT"),
+            ],
+            True,
+        ),
+        # After 0195 nothing is tolerated: the same grants are excess.
+        (
+            {},
+            [("public", "stewardship_backup_upload", "INSERT")],
+            [],
+            False,
+        ),
+        (
+            {},
+            [],
+            [("public", "stewardship_backup_run", "completed_at", "INSERT")],
+            False,
+        ),
+        # The declared column grant passes with nothing tolerated.
+        ({}, [], [("public", "stewardship_backup_run", "started_at", "INSERT")], True),
+        # Tolerance is for its own tables and privileges only.
+        (
+            {"stewardship_backup_run": {"INSERT"}},
+            [("public", "stewardship_backup_run", "UPDATE")],
+            [],
+            False,
+        ),
+        (
+            {"stewardship_backup_run": {"INSERT"}},
+            [("public", "stewardship_backup_request", "INSERT")],
+            [],
+            False,
+        ),
+    ],
+)
+def test_reader_admission_tolerates_only_the_pending_table_revokes(
+    tolerated, privileges, columns, accepted
+):
+    """The backup login's two old INSERTs pass only while 0195 is pending (#235)."""
+    cursor = Cursor([(True,)])
+    sweeps = iter([privileges, columns])
+    cursor.fetchall = lambda: next(sweeps)
+    login = "pk_stewardship_backup_worker"
+    admit = provisioning._admit_reader
+    if accepted:
+        admit(cursor, login, CONTRACT_TABLES, CONTRACT_COLUMNS, tolerated)
+    else:
+        with pytest.raises(ConfigError):
+            admit(cursor, login, CONTRACT_TABLES, CONTRACT_COLUMNS, tolerated)
+
+
 @pytest.mark.parametrize("installed", ["current", "older", "missing"])
 def test_grants_wait_for_the_operational_log_writer_guard(installed):
     """Timeout-only log writers get INSERT only once this release's guard exists."""

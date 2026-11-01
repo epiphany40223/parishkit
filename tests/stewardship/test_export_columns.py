@@ -209,6 +209,10 @@ def csv_headers(body, first=None):
     for each Ministry, so its header rows are those starting with ``first``.
     """
     rows = list(csv.reader(io.StringIO(body.decode())))
+    # A report with the Families counted choice opens with its header block
+    # (R59 on #2324): label/value rows, then a blank row, then the table.
+    if rows and rows[0][:1] == ["Report"] and [] in rows:
+        rows = rows[rows.index([]) + 1 :]
     if first is not None:
         return [row for row in rows if row[:1] == [first]]
     return [row for row in rows if row == rows[0]] if rows else []

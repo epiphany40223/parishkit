@@ -1560,7 +1560,13 @@ Notes on the groups:
   ([review pipeline, role views](../review-pipeline/spec.md#role-views),
   [#2101](https://github.com/epiphany40223/parishkit/issues/2101)). Each is a
   plain number after the entry's
-  name that screen readers announce as "(N open)". No number shows at zero,
+  name whose hover title and screen-reader text name the stages it adds up
+  (the Administrator, 2026-10-31,
+  [#2331](https://github.com/epiphany40223/parishkit/issues/2331)): "To
+  review: N" ("(To review: N)" when read aloud), and for Census changes "To
+  review and Conflict: N"; "open" is not a stage
+  ([stat tiles](../ui-conventions/spec.md#stat-tiles)), so no count says
+  it. No number shows at zero,
   nor on a greyed-out entry. The counts are read when a page loads, never
   updated in place, so a number never appears or disappears under the
   pointer; a save that updates a page in place changes them on the next page
@@ -1834,9 +1840,17 @@ the next one cannot be created here yet.
 The Responses tiles are a row of
 [stat tiles](../ui-conventions/spec.md#stat-tiles)
 ([#720](https://github.com/epiphany40223/parishkit/issues/720), #1673) for
-one population, the campaign's active Families: the active Families; the
-active Families with a response, as the count, "out of 1,031 (40%)" and a
-share bar; and the Families who responded in the past 24 hours (Testing
+one population, the
+[campaign Families](../data/spec.md#campaign-families) (the Families the
+campaign's Families rule selects, never ParishSoft's own active flag, so
+the figure equals the Response dashboard's "In this campaign today";
+[one label, one set](../ui-conventions/spec.md#stat-tiles), #2331): the
+Campaign Families; the Campaign Families responded, as the count, "out of
+1,031 (40%)" and a share bar; and **Families who submitted in the past 24
+hours**: every Family with a submission in that rolling window, a
+resubmission too, so it is not the daily chart's first responses since
+local midnight, and its label says submitted
+([#2331](https://github.com/epiphany40223/parishkit/issues/2331); Testing
 responses while in Testing mode, as the tile's explanation then says).
 The second tile does not count Testing responses; while in Testing mode a
 line under the tiles says so. The Response dashboard keeps the choice
@@ -1846,7 +1860,7 @@ dashboard, shown as the viewer's menu entry is.
 
 The Next steps panel comes after the campaign panel and Review work. Home
 has no Today line ([decision 29](#navigation-decisions)): the Families who
-responded in the past 24 hours are the Responses tiles' third tile (#1673).
+submitted in the past 24 hours are the Responses tiles' third tile (#1673).
 
 Each next step is a link card for the viewer's own menu entry: a card
 linking the page while the menu offers it, the page's name and the menu's
@@ -1872,13 +1886,15 @@ the card keeps its two lines; each count is exactly the list its link opens
 At campaign end the Staff work through four lists, so an active, paused,
 closed or archived campaign offers each of them with its count
 ([#1590](https://github.com/epiphany40223/parishkit/issues/1590)), and each
-count is the menu's: Census changes as "N to do" (its To review and
-Conflict rows; its link opens on To review), and for the others the number
-of rows its link opens by default; Ministry requests to enter by hand as
+count is the menu's, named by the stages it adds up before the number,
+as the menu's badge names them (#2331): Census changes as "To review and
+Conflict: N" (its link opens on the page's To review and Conflict Stage,
+which lists exactly those rows), and for the others "To review: N", the
+rows its link opens by default; Ministry requests to enter by hand as
 "N to enter by hand" (Ministry requests at its Stage To enter by hand,
 `?stage=to_enter_by_hand`, counted with that Stage's own selection, only
 past go-live: a draft has no accepted request to enter); Additional
-information and Ministry requests as "N open". The to-enter card follows
+information and Ministry requests as "To review: N". The to-enter card follows
 Ministry requests' menu entry, offered and greyed with its reason as that
 entry is ([roster entry](#roster-entry-on-ministry-requests)); when its
 count cannot be read (the follow-up is turned off or unavailable) the card
@@ -2893,9 +2909,9 @@ credential file, and only the one-shot `backup-worker` profile reads it
   `backup_data` file stays the install-time key: a backup seals to the
   configured key when one is applied, and to the file otherwise.
 - **Pick-up.** Each `backup-worker` run reads the active configuration when
-  it starts, as it already does for the off-site folder, so the next backup
-  after the change is applied uses the new key. No service restarts and no
-  file changes.
+  it starts (as each off-site uploader run reads the applied off-site
+  folder), so the next backup after the change is applied uses the new key.
+  No service restarts and no file changes.
 - **Validation.** The key must be exactly one standard base64 line of 32
   bytes that is a canonical, usable X25519 public key: below 2^255 - 19
   (so never with the top bit set, which about half of all private keys
@@ -4332,7 +4348,9 @@ browser's zone; the text's problems, each named by its field; or a refusal,
 such as a test already on its way. The acknowledgment of an uncertain
 earlier test shows below that line when the page is drawn with one or a send
 is refused for one. A send that gets no answer is not repeated, and the line
-says to check the Testing mailbox first. The command line has no
+says to check the Testing mailbox (to be named the Testing recipient's
+inbox, per [Testing recipient](../ui-conventions/spec.md#testing-recipient))
+first. The command line has no
 counterpart: `test sample` tests a saved email.
 
 On New, a Reminder's Sends **Repeating**
@@ -5663,7 +5681,10 @@ invitation or reminder that a mail schedule selects and that is marked
 cleaned form, so they are listed without blocking. Production confirmation
 re-reads the same check.
 
-The Admin-only Family list (the **Testing submissions** page) opens only
+The Admin-only Family list (the **Testing submissions** page, to be named
+Testing responses by the
+[responses and submissions](../ui-conventions/spec.md#responses-and-submissions)
+convention) opens only
 while the campaign is the current Testing draft, as does Go live,
 the only page that links to it. It names each Family as the other Admin
 tables do, the surname then the heads ("Squyres, Tracy and Jeff"), with the
@@ -5858,8 +5879,10 @@ campaign.
 | 3. Confirm Production | `/admin/campaign/go-live/confirmation/` | Opens once the Family links are prepared on current data. |
 | 4. Activation | `/admin/campaign/production/` | Today's Production activation address; the menu entry once Production is confirmed. |
 
-**Testing submissions** (`/admin/campaign/go-live/families/`) stays a
-sub-page of Check, under the same rules as today (410 once go-live has
+**Testing submissions** (`/admin/campaign/go-live/families/`; to be named
+Testing responses, per
+[responses and submissions](../ui-conventions/spec.md#responses-and-submissions))
+stays a sub-page of Check, under the same rules as today (410 once go-live has
 started). Every step's trail is the Campaign setup group, then Go live; the
 step bar, not the trail, names the step, so the trail never grows a crumb
 per step.
@@ -6042,7 +6065,10 @@ outcome.
 3. **Confirm Production.** One impact preview, built once the links are
    prepared and labelled with its browser-local as-of time: whether the
    campaign becomes active now or is scheduled (with its start time), the
-   Families with and without an eligible email, the Family emails due at
+   [campaign Families](../data/spec.md#campaign-families) and those of them
+   with and without an eligible email (the Families rule's Families, as on
+   Home and the Response dashboard, #2331; the Check step's counts and the
+   confirmation progress count the same set), the Family emails due at
    once and the report emails due at once; combined and skipped counts are
    in a disclosure. It updates itself when its inputs change, with a line
    naming what changed since go-live started: "The campaign start time has
@@ -9276,6 +9302,10 @@ chosen status with no assignee; until then an explicit New filter on the
 queue does not match it, while Unresolved and Any status do. Past
 history entries keep the assignment they recorded. The data model keeps the unused column and state, as described in
 the [data specification](../data/spec.md#follow-up-records).
+The status's display name and choices become Contact status with Not
+contacted, Contacting and Done, as the
+[review pipeline terms](../ui-conventions/spec.md#review-pipeline-terms)
+convention decides ([#2330](https://github.com/epiphany40223/parishkit/issues/2330)).
 
 Requests for Members no longer in ParishSoft are left out of the Ministry
 leaders' work (Administrator, 2026-10-13,
@@ -11316,8 +11346,10 @@ checks.
 #### Take a backup now
 
 **What it does.** It asks the server to run one backup soon, of the same
-kind as the scheduled backups: the same sealed files, record, off-site copy
-and [retention](../../../guides/stewardship-backup-runbook.md#retention).
+kind as the scheduled backups: the same sealed files, record and
+[retention](../../../guides/stewardship-backup-runbook.md#retention), and the
+same off-site copy, which the off-site uploader's own five-minute cron line
+makes once the set is recorded.
 
 **How it reaches the server.** The web process cannot start a backup: it
 has no Docker access, does not read the credentials tree and does not hold
@@ -11339,7 +11371,8 @@ the backup login. Instead:
    exits quietly and leaves the request waiting. It then tries once,
    without waiting, to take the backup lock that every backup run now
    takes. The lock is a PostgreSQL session advisory lock, held while a run
-   makes its backup set (the off-site upload that follows is not covered);
+   makes its backup set (the off-site uploader copies the set later, on its
+   own five-minute schedule, and is not covered);
    any database login could take its key and stall backups, which the
    scheduled run's timeout and the overdue-backup alert would then show (a
    lock file would need a new mount on every host). If another backup holds

@@ -34,6 +34,7 @@ from parishkit.stewardship.web.presentation import number
 
 from .comparison import PAGE_ONLY, WITHHELD
 from .money import MoneyAmount
+from .participation import SCOPE_CHOICE_LABEL, SCOPE_LABELS
 
 TITLE = "Campaign comparison"
 PRIVACY = "Parish giving figures, aggregates only. Share only with parish leadership."
@@ -63,7 +64,8 @@ class ComparisonDocument:
     ``headings`` and ``rows`` are the Every number table (cells are ints,
     ``MoneyAmount``, dates, text or None); ``tiles`` and ``charts`` are the
     PDF summary's, as captured; ``data_line`` is the page's "Day N of …"
-    line and ``day`` the comparison day the charts mark (None before day 1
+    line, ``population`` its fixed Families counted value (``population()``)
+    and ``day`` the comparison day the charts mark (None before day 1
     has ended).
     """
 
@@ -73,6 +75,7 @@ class ComparisonDocument:
     item_count: int
     requested_at: datetime
     data_line: str
+    population: str = ""
     day: int | None = None
     tiles: tuple = ()
     charts: tuple = ()
@@ -94,21 +97,39 @@ def cell(value):
 
 
 def data_line(payload):
-    """The page's data line: "Day 12 of Stewardship 2027 · through …".
+    """The page's data line: "Day 12 of Stewardship 2027 · compared with …".
 
-    Its date is in the parish's date format (``dates.using`` around the
-    worker's load), as the page shows it.
+    The day's date is not in it: the page names it in its fixed population
+    line instead (``population``).
     """
     if payload["day"] is None:
         return (
             f"{payload['campaign']} · Day 1 has not ended yet, so the past "
             "campaigns' final results are shown."
         )
-    through = dates.format_date(date.fromisoformat(payload["report_date"]))
-    line = f"Day {number(payload['day'])} of {payload['campaign']} · through {through}"
+    line = f"Day {number(payload['day'])} of {payload['campaign']}"
     if payload["compared_with"]:
         line += f" · compared with {payload['compared_with']}"
     return line
+
+
+def population(payload):
+    """The page's fixed population: "Including Families that left, as of …".
+
+    Campaign comparison always counts every Family that was ever in each
+    campaign (ui-conventions "Population of report figures", #2324), so the
+    file names that population, in the shared words of
+    ``reports.participation``, beside its "Families counted" label. It is
+    built from the constant population at render time, so older captures
+    get it too. The date is in the parish's date format (``dates.using``
+    around the worker's load), as the page shows it; before day 1 has ended
+    there is no day, so no date.
+    """
+    label = str(SCOPE_LABELS["historical"])
+    if payload["day"] is None:
+        return label
+    through = dates.format_date(date.fromisoformat(payload["report_date"]))
+    return f"{label}, as of the end of {through}"
 
 
 def comparison_document(payload, *, parish_name, requested_at, timezone):
@@ -125,11 +146,13 @@ def comparison_document(payload, *, parish_name, requested_at, timezone):
     if PAGE_ONLY in shown:
         notes.append(PAGE_ONLY_NOTE)
     line = data_line(payload)
+    counted = population(payload)
     metadata = (
         ("Report", TITLE),
         ("Parish", parish_name),
         ("Campaign", payload["campaign"]),
         ("Compared", line),
+        (str(SCOPE_CHOICE_LABEL), counted),
         *(
             (
                 (
@@ -154,6 +177,7 @@ def comparison_document(payload, *, parish_name, requested_at, timezone):
         item_count=len(rows),
         requested_at=requested_at,
         data_line=line,
+        population=counted,
         day=payload["day"],
         tiles=tuple(payload["tiles"]),
         charts=tuple(payload["charts"]),
@@ -543,11 +567,12 @@ def comparison_pdf(document, output):
     """
     from . import pdf_design
 
-    # The data line, and the Updating notice when the page showed it, head
-    # every page, as they head the report on the page.
-    details = (document.data_line,) + tuple(
-        value for label, value in document.metadata if label == "Figures"
-    )
+    # The data line, the population line, and the Updating notice when the
+    # page showed it, head every page, as they head the report on the page.
+    details = (
+        document.data_line,
+        f"{SCOPE_CHOICE_LABEL}: {document.population}",
+    ) + tuple(value for label, value in document.metadata if label == "Figures")
     frame = pdf_design.PdfFrame.for_document(document, details=details)
     rows = [[page_text(value) for value in row] for row in document.rows]
     table = fitted_table(document.headings, rows)

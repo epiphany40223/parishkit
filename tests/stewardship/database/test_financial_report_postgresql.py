@@ -64,6 +64,8 @@ pytestmark = pytest.mark.django_db(transaction=True)
 STAFF = Principal(uuid4(), frozenset({"staff"}), frozenset())
 # The fixture campaign's zone, which the date filter cases below send.
 NY = "America/New_York"
+# The Family status refinements of the historical population (#2324).
+REFINEMENTS = ("inactive", "unavailable")
 
 
 def pledge(harness, form, **financial):
@@ -86,14 +88,20 @@ PROVE = object()
 
 
 def report(harness, *, principal=STAFF, proof=PROVE, page_size=PAGE_SIZE, **values):
-    """Read through actual restricted SQL grants, not the migration owner."""
+    """Read through actual restricted SQL grants, not the migration owner.
+
+    Every responding Family is read (Including Families that left, #2324)
+    unless ``values`` names another population: these cases test the
+    selection over Families whatever their status, while the page's own
+    default is today's campaign Families.
+    """
     campaign = Campaign.objects.select_related("active_configuration").get(
         pk=harness.campaign.pk
     )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True), transaction.atomic():
         return financial_page(
             campaign.pk,
-            FinancialQuery.parse(values),
+            FinancialQuery.parse({"scope": "historical"} | values),
             principal,
             proof=giving_proof(campaign) if proof is PROVE else proof,
             parish_name="Sample Parish",
@@ -222,7 +230,7 @@ def test_unproven_giving_and_closed_parameters(response_service):
     assert not row["source_contributions"].available
     assert report(harness)["metadata"]["giving_through"] is None
 
-    neutral = {"filters": FinancialQuery().form_values(), "proof": None}
+    neutral = {"filters": FinancialQuery().sql_filters(), "proof": None}
     identity = str(uuid4())
     invalid = (
         # Wrong containers: the closed refusal, never a container operator's own
@@ -600,9 +608,11 @@ def test_several_families_summary_order_and_pages(response_service, google):
         assert {row["family_duid"] for row in filtered["rows"]} == expected, values
         # A filtered summary describes exactly the filtered Families.
         assert filtered["summary"]["families"] == filtered["total"] == len(expected)
+    # Today's campaign Families (Families counted's current population,
+    # #2324) and the two refinements of the historical one split them.
     statuses = [
-        report(harness, active=value)["total"]
-        for value in ("active", "inactive", "unavailable")
+        report(harness, scope="current")["total"],
+        *(report(harness, active=value)["total"] for value in REFINEMENTS),
     ]
     assert sum(statuses) == 3
 
@@ -633,7 +643,7 @@ def test_several_families_summary_order_and_pages(response_service, google):
     assert beyond["rows"] == [] and beyond["total"] == 3
     assert beyond["summary"] == summary
     # The complete, unpaged mode that a later capture depends on.
-    neutral = {"filters": FinancialQuery().form_values(), "proof": None}
+    neutral = {"filters": FinancialQuery().sql_filters(), "proof": None}
     with (
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
         connection.cursor() as cursor,
@@ -1082,7 +1092,14 @@ def test_a_family_no_longer_in_parishsoft_has_no_name(response_service):
     # Its head has no surname either: a head's own surname would lead the
     # shown name instead, since it is not the Family's (#2320).
     _rewrite_payload("member", snapshot, 36, {"lastName": ""})
-    _rewrite_payload("family", snapshot, 8, {"active": False})
+    # Inactive, so no longer one of the campaign's Families: the flag reads
+    # its eligibility, as the dashboard does (#2335).
+    _rewrite_payload(
+        "family",
+        snapshot,
+        8,
+        {"active": False, "portal_eligible": False, "email_eligible": False},
+    )
     with unguarded(), connection.cursor() as cursor:
         cursor.execute(
             "DELETE FROM stewardship_snapshot_family "

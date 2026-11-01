@@ -79,7 +79,12 @@ def post(browser, url, data=None, **extra):
 
 
 def create(http_scenario, *, format="csv"):
-    """Select a complete pinned generation through the export page's form."""
+    """Select the scenario's complete generation through the export page's form.
+
+    It is the generation in the Response dashboard's default scope that
+    ``http_scenario``'s report email send built: its pinned one or its
+    comparison's, whichever that scope is.
+    """
     setup, browser = http_scenario
     facts = setup[2]
     key = str(uuid4())
@@ -192,7 +197,7 @@ def test_complete_download_holds_guard_and_streams_with_private_headers(
             assert "X-Accel-Redirect" not in response
             assert b"".join(response.streaming_content).startswith(
                 {
-                    "csv": b"Section,Group,Figure,",
+                    "csv": b"Report,Family participation\r\nFamilies counted,",
                     "png": b"\x89PNG",
                     "pdf": b"%PDF",
                 }[format]

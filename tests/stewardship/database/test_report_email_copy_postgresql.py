@@ -281,7 +281,7 @@ def test_a_listed_request_has_its_own_page_and_the_copy_never_changes(
         first = open_copy(path)
         assert first.status_code == 200
         before = blocks_region(unescape(first.content.decode()))
-        assert "1 open request" in before
+        assert "To review 1 · To handle 0" in before
         assert "Please call about the parish picnic" in before
         assert f"{path}items/{listed}/" in before
         # The Family answers again, replacing the request; the copy does not.

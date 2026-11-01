@@ -9,6 +9,7 @@ import pytest
 from django.db import connections, transaction
 
 from parishkit.stewardship.accounts.cryptography import CryptographicError
+from parishkit.stewardship.campaigns import campaign_families
 from parishkit.stewardship.campaigns.credential_keys import key_set_lock
 from parishkit.stewardship.campaigns.credential_models import (
     CampaignCredentialState,
@@ -56,18 +57,23 @@ def setup(tmp_path):
     return campaign, keys()
 
 
-def prepare(data=None, *, as_of=None):
+def prepare(data=None, *, as_of=None, families=None):
     """Stage actual normalized output for the configured synthetic tenant.
 
     ``as_of`` normalizes the data as of that day and records it as the
     load's ``as_of_date``, as a refresh made that day does; by default the
     data is read as of ``TODAY`` and the cursor records no load.
+    ``families`` is the campaign's Families rule (#1393; ``None`` is the
+    legacy rule): the rows are normalized under it and the load records it,
+    as a refresh for that campaign does.
     """
     data = replace(source() if data is None else data, organization_id=12345)
     for family in data.families.values():
         if family.get("registeredOrganizationID") == 5:
             family["registeredOrganizationID"] = 12345
-    corpus = normalize_core(data, as_of=TODAY if as_of is None else as_of)
+    corpus = normalize_core(
+        data, as_of=TODAY if as_of is None else as_of, families=families
+    )
     claim = acquire_source(**running_source_task(), phase="full")
     snapshot = begin_snapshot(claim, organization_id=12345, admit=permit)
     for kind, values in corpus.items():
@@ -84,10 +90,20 @@ def prepare(data=None, *, as_of=None):
         snapshot.pk,
         claim,
         expected_counts={kind: len(rows) for kind, rows in corpus.items()},
-        cursor={} if as_of is None else {"load": {"as_of_date": as_of.isoformat()}},
+        cursor=_cursor(as_of, families, data.family_groups),
         admit=permit,
     )
     return snapshot, claim
+
+
+def _cursor(as_of, families, family_groups):
+    """``prepare``'s cursor: its load's day and Families rule, when given."""
+    load = {} if as_of is None else {"as_of_date": as_of.isoformat()}
+    if families is not None:
+        load[campaign_families.KEY] = campaign_families.evidence(
+            families, family_groups
+        )
+    return {"load": load} if load else {}
 
 
 def reconcile(snapshot, claim, campaign, ring, **overrides):

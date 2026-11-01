@@ -193,15 +193,23 @@ def require_restore_loaded(cursor, set_name):
         )
 
 
-def _admit_reader(cursor, login, tables, columns):
+def _admit_reader(cursor, login, tables, columns, tolerated=None):
     """The backup login reads everything by membership and writes only its rows.
 
     `pg_read_all_data` makes every table readable, so the ordinary grant
     comparison cannot apply; instead the membership must be present and no
     privilege other than SELECT may exist beyond the registry: its table
     grants, or for a column write, its column grants (the request columns
-    request mode settles, ADM-13 PR 3).
+    request mode settles, ADM-13 PR 3, and its run row's columns, #235).
+    ``tolerated`` (table -> privileges) adds the table grants a pending
+    closure migration revokes (``runtime_grants.pending_table_revokes``):
+    each is admitted as a table grant, and so for each of its columns.
     """
+    if tolerated:
+        tables = {
+            table: set(tables.get(table, ())) | set(tolerated.get(table, ()))
+            for table in set(tables) | set(tolerated)
+        }
     cursor.execute("SELECT pg_has_role(%s,'pg_read_all_data','MEMBER')", [login])
     if cursor.fetchone() != (True,):
         raise ConfigError("The backup login lacks its read-all membership.")
@@ -602,12 +610,14 @@ def provision_grants(configuration, deployment_id, *, after_restore=None):
     ``pending_tables``, ``pending_columns``); the grants after the full
     migration add it. A column grant one of those migrations revokes is
     still held there, so it is tolerated, never granted, until then
-    (``pending_revokes``).
+    (``pending_revokes``), as is a backup login table grant one of them
+    revokes (``pending_table_revokes``).
     """
     from .runtime_grants import (
         pending_columns,
         pending_functions,
         pending_revokes,
+        pending_table_revokes,
         pending_tables,
         runtime_functions,
         runtime_grants,
@@ -662,7 +672,13 @@ def provision_grants(configuration, deployment_id, *, after_restore=None):
                 if name not in absent
             }
             if role is ServiceRole.BACKUP_WORKER:
-                _admit_reader(cursor, login, tables, columns)
+                _admit_reader(
+                    cursor,
+                    login,
+                    tables,
+                    columns,
+                    pending_table_revokes(role, applied),
+                )
             else:
                 _admit_existing_grants(
                     cursor,

@@ -30,6 +30,7 @@ from parishkit.stewardship.reports.export_services import TASK_TYPE, export_stat
 from parishkit.stewardship.reports.export_tasks import export_handler
 from parishkit.stewardship.reports.financial import FinancialQuery
 from parishkit.stewardship.reports.financial_exports import create_financial_export
+from parishkit.stewardship.reports.participation import SCOPE_LABELS
 
 from ..export_urls import export_action
 from ..test_financial_answers import CHECK, OPTIONS
@@ -196,9 +197,16 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
     settings.STEWARDSHIP_REPORTS_ROOT = root
     settings.STEWARDSHIP_DOWNLOAD_POOL = DownloadPool(ReadLimits(process_pool_size=1))
     route = reverse("admin:financial_report")
-    query = FinancialQuery()
     first = None
-    for format in ("csv", "xlsx", "pdf"):
+    # The XLSX is requested for the other population, so the files prove
+    # each names the population its own request captured (R59 on #2324).
+    for format, scope in (
+        ("csv", "current"),
+        ("xlsx", "historical"),
+        ("pdf", "current"),
+    ):
+        query = FinancialQuery(scope=scope)
+        counted = str(SCOPE_LABELS[scope])
         fields = query.form_values() | dict(
             format=format, browser_timezone="UTC", request_key=str(uuid4())
         )
@@ -269,7 +277,7 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
             response, body = search(browser, export_action(job_route, "download"), {})
             assert response.status_code == 200
             assert body.startswith(
-                {"csv": b"Family,", "xlsx": b"PK", "pdf": b"%PDF"}[format]
+                {"csv": b"Report,", "xlsx": b"PK", "pdf": b"%PDF"}[format]
             )
             assert "financial." + format in response["Content-Disposition"]
             if format == "csv":
@@ -279,8 +287,16 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
                 # CSV money is the canonical amount (#388 L5).
                 assert b",1234.50," in body and b",1200.00," in body
                 assert b"$" not in body
-                # Exactly the table: no report-information columns (#966).
-                assert b"Financial stewardship detail" not in body
+                # The header block names the captured population (R59 on
+                # #2324); then exactly the table, with no report-information
+                # columns (#966).
+                assert body.startswith(
+                    b"Report,Financial stewardship detail\r\n"
+                    + f"Families counted,{counted}\r\n".encode()
+                    + b"Source as of,"
+                )
+                assert b"\r\n\r\nFamily,ParishSoft status," in body
+                assert b"Total annual pledges" not in body
                 # The comparison columns carry the page's labels (#404) and
                 # its comparison years (#932).
                 assert (
@@ -292,12 +308,18 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
                 # in the page's columns, with ParishSoft status split out of
                 # the Family cell (#1216), blank for a current Family.
                 sheet = load_workbook(BytesIO(body))["Financial stewardship detail"]
-                assert sheet.cell(1, 2).value == "ParishSoft status"
-                assert sheet.cell(2, 2).value is None
-                assert sheet.cell(1, 8).value == f"ParishSoft pledged ({years})"
-                assert sheet.cell(2, 1).value == name.decode()
+                # The header block above the table (R59 on #2324).
+                assert (sheet["A2"].value, sheet["B2"].value) == (
+                    "Families counted",
+                    counted,
+                )
+                assert sheet["A3"].value == "Source as of"
+                assert sheet.cell(5, 2).value == "ParishSoft status"
+                assert sheet.cell(6, 2).value is None
+                assert sheet.cell(5, 8).value == f"ParishSoft pledged ({years})"
+                assert sheet.cell(6, 1).value == name.decode()
                 for column, expected in ((4, 1234.5), (8, 1200)):
-                    cell = sheet.cell(2, column)
+                    cell = sheet.cell(6, column)
                     assert (cell.data_type, cell.value) == ("n", expected)
                     assert cell.number_format == '"$"#,##0.00'
     # The fixture's Choir Chairperson never captures money: this campaign does

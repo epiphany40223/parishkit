@@ -157,12 +157,16 @@ class ResponseReport(ReadModel):
 class FinancialReport(ReadModel):
     """The financial detail report's summary over every pledge, without rows.
 
-    ``frequencies`` and ``shares`` count by stored key (a share method by
-    its option id, as the campaign's share settings list it, including an
-    option no longer offered); ``annual_total`` is a decimal string.
+    ``scope`` is the page's Families counted population (#2324):
+    "historical" (every responding Family, including those that left the
+    campaign) or "current" (today's campaign Families). ``frequencies`` and
+    ``shares`` count by stored key (a share method by its option id, as the
+    campaign's share settings list it, including an option no longer
+    offered); ``annual_total`` is a decimal string.
     """
 
     campaign_id: UUID
+    scope: str
     source_generation: int
     source_as_of: str
     comparison_start: str | None
@@ -778,11 +782,12 @@ def read_responses(caller, service, *, mode, grain):
 # ----------------------------------------------------------- financial
 
 
-def financial_model(campaign_id, result):
-    """The command's projection of ``financial_page``'s summary."""
+def financial_model(campaign_id, result, scope):
+    """The command's projection of ``financial_page``'s summary for ``scope``."""
     summary, metadata = result["summary"], result["metadata"]
     return FinancialReport(
         campaign_id=campaign_id,
+        scope=scope,
         source_generation=metadata["source_generation"],
         source_as_of=_instant(metadata["source_as_of"]),
         comparison_start=metadata.get("comparison_start"),
@@ -800,18 +805,23 @@ def financial_model(campaign_id, result):
     )
 
 
-def read_financial(caller, service):
+def read_financial(caller, service, *, scope=None):
     """``report financial``: the financial detail report's summary.
 
     Reads the page's ``financial_page`` without filters (one row per page,
-    which is never printed) for its summary over every pledge. Records the
-    page's ``financial_report_viewed``, started and then succeeded with
-    ``count`` 0 (no row displayed) and the page's ``matching_count``.
+    which is never printed) for its summary over every pledge of the
+    Families counted ``scope`` (#2324; None is the page's default),
+    parsed by the page's ``FinancialQuery`` (a refusal is ``invalid``).
+    Records the page's ``financial_report_viewed``, started
+    and then succeeded with ``count`` 0 (no row displayed) and the page's
+    ``matching_count``.
     """
     from .accounts.runtime_models import SystemConfiguration
     from .campaigns.models import Campaign
     from .reports.financial import FinancialQuery, financial_page, giving_proof
     from .reports.financial_views import _audit, _principal
+
+    query = FinancialQuery.parse({} if scope is None else {"scope": scope})
 
     def read(guard, actor, campaign_id):
         """The page's read of its first page, for the summary it carries.
@@ -829,14 +839,15 @@ def read_financial(caller, service):
         ).get()
         result = financial_page(
             campaign_id,
-            FinancialQuery(),
+            query,
             actor,
             proof=giving_proof(campaign),
             parish_name=system.active_configuration.parish.name,
             configuration=campaign.active_configuration.values,
             page_size=1,
         )
-        return financial_model(campaign_id, result), {"total": result["total"]}
+        model = financial_model(campaign_id, result, query.scope)
+        return model, {"total": result["total"]}
 
     def audit(actor, campaign_id, outcome, values):
         """The page's audit: rows displayed (none) and the matching count."""

@@ -45,24 +45,29 @@ def components(context, admin):
     """The Production page, the Testing views and a campaign with nothing yet."""
     # Drawn in the test browser's zone, so report-v1.js has no zone to
     # apply and the page stays at its fixture address.
-    production = ReportQuery(timezone="America/Los_Angeles")
-    testing = ReportQuery(timezone="America/Los_Angeles", mode="testing")
+    # Under Including Families that left, the population the test
+    # workbook's Summary was captured for (the page's default is In this
+    # campaign today, #2324).
+    query = ReportQuery(timezone="America/Los_Angeles", scope="historical")
+    # (metrics, a site in Testing mode with a rehearsal, #2324).
     pages = {
-        "/response-dashboard": (production, dashboard_metrics()),
-        # The Testing view with no rehearsal, and during one.
-        "/response-dashboard-testing": (testing, None),
-        "/response-dashboard-rehearsal": (testing, dashboard_metrics()),
+        "/response-dashboard": (dashboard_metrics(), False),
+        # Testing mode: a rehearsal that ended while the page was read, and
+        # one under way.
+        "/response-dashboard-testing": (None, True),
+        "/response-dashboard-rehearsal": (dashboard_metrics(), True),
         # A campaign with nothing invited or followed yet.
-        "/response-dashboard-empty": (production, metrics(families=(), sends=False)),
+        "/response-dashboard-empty": (metrics(families=(), sends=False), False),
     }
     responses = {}
     with using("us_long"):
-        for path, (query, value) in pages.items():
+        for path, (value, testing) in pages.items():
+            shaped = page_context(query, value, testing=testing)
             responses[path] = (
                 "text/html",
                 render_to_string(
                     "stewardship/response-dashboard.html",
-                    context | {"admin_chrome": admin} | page_context(query, value),
+                    context | {"admin_chrome": admin} | shaped,
                 ),
             )
     return responses

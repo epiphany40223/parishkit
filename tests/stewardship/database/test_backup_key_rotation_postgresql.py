@@ -166,7 +166,6 @@ def test_the_backup_command_seals_to_the_configured_key(rotated, monkeypatch, ca
     monkeypatch.setattr(backup_commands, "configure_logging", lambda: None)
     monkeypatch.setattr(backup_commands, "load_deployment", lambda path: None)
     monkeypatch.setattr(backup_commands, "_admit_backup_identity", lambda: None)
-    monkeypatch.setattr(backup_commands, "_copy_offsite", lambda c: {"state": "x"})
     monkeypatch.setattr(backup_boundaries, "admit_backup_service", lambda c: None)
     monkeypatch.setattr(
         operator_commands, "configure_operator_database", lambda c: None

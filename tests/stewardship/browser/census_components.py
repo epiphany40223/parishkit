@@ -355,4 +355,6 @@ def components(context, admin):
         # No changes at all, and none at the stage chosen.
         "/census-changes-none": page(size, rows=0),
         "/census-changes-none-stage": page(size, rows=0, stage="to_review"),
+        # The page's default two-stage choice, empty (#2331).
+        "/census-changes-none-open": page(size, rows=0, stage="to_review_conflict"),
     }

@@ -13,6 +13,7 @@ calls are stood in.
 
 import base64
 import json
+from contextlib import contextmanager
 from dataclasses import replace
 
 import pytest
@@ -260,27 +261,33 @@ def test_drive_session_opens_in_local_only_beside_a_redirect(monkeypatch, normal
 def test_drive_copy_runs_in_local_only_beside_a_redirect(
     monkeypatch, normal_clock, tmp_path
 ):
-    """With a redirect the LOCAL copy goes on to read its destination (and
-    binds the session to the redirect); without one, or under the fake clock,
-    it is ``not_configured`` with nothing read."""
-    from parishkit.stewardship import backup_offsite
+    """With a redirect the LOCAL uploader goes on to take its copy lock (#235);
+    without one, or under the fake clock, it is ``not_configured`` with
+    nothing read."""
+    from parishkit.stewardship import runtime_paths, uploader_commands
 
     read = []
 
-    def destination():
+    @contextmanager
+    def lock(backups, **options):
         read.append(True)
-        return None
+        yield False
 
-    monkeypatch.setattr(backup_offsite, "destination", destination)
-    monkeypatch.setattr(backup_offsite, "_newest_state", lambda: None)
+    monkeypatch.setattr(runtime_paths, "private_directory", lambda path: path)
+    monkeypatch.setattr(uploader_commands, "_copy_lock", lock)
     local = configuration_for(LOCAL, tmp_path)
-    assert backup_offsite.copy_offsite(local) == {"state": "not_configured"}
+    explicit = {"wait_seconds": 1}
+    assert uploader_commands.run_upload(local, **explicit) == {
+        "state": "not_configured"
+    }
     assert read == []
     redirected = replace(local, mail_redirect=REDIRECT)
-    assert backup_offsite.copy_offsite(redirected) == {"state": "not_configured"}
+    assert uploader_commands.run_upload(redirected, **explicit) == {"state": "busy"}
     assert read == [True]
     faked(monkeypatch)
-    assert backup_offsite.copy_offsite(redirected) == {"state": "not_configured"}
+    assert uploader_commands.run_upload(redirected, **explicit) == {
+        "state": "not_configured"
+    }
     assert read == [True]
 
 
@@ -308,10 +315,11 @@ def test_drive_smoke_runs_in_local_only_beside_a_redirect(
 ):
     """With a redirect the LOCAL check goes on to the folder link; without
     one, or under the fake clock, it is refused before anything is read."""
-    from parishkit.stewardship import smoke
+    from parishkit.stewardship import smoke, uploader_boundaries
 
+    monkeypatch.setattr(uploader_boundaries, "admit_uploader_service", lambda c: None)
     local = replace(
-        configuration_for(LOCAL, tmp_path), service_role=ServiceRole.BACKUP_WORKER
+        configuration_for(LOCAL, tmp_path), service_role=ServiceRole.BACKUP_UPLOADER
     )
     options = dict(delegated_email="mail@example.org", folder_link="")
     with pytest.raises(ConfigError, match="only with a mail redirect"):

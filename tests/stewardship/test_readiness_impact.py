@@ -22,7 +22,7 @@ def family(number, **changes):
     return replace(
         FamilyImpactInput(
             family_id=key,
-            active=True,
+            portal_eligible=True,
             email_eligible=True,
             deliverable=True,
             responded=False,
@@ -62,7 +62,7 @@ def test_inactive_no_email_undeliverable_and_responded_are_distinct():
     """Counts retain the difference between contact eligibility and suppression."""
     impact = summarize_family_impact(
         (
-            family(1, active=False),
+            family(1, portal_eligible=False),
             family(2, email_eligible=False),
             family(3, deliverable=False),
             family(4, responded=True),
@@ -142,7 +142,7 @@ def test_reader_failure_never_returns_partial_success():
     "changes",
     [
         {"family_id": "1"},
-        {"active": 1},
+        {"portal_eligible": 1},
         {"initial_unreviewed": 1},
         {"slots": []},
         {"slots": (None,)},
@@ -172,7 +172,7 @@ def test_empty_population_does_not_bypass_clock_validation(options):
         ({}, False, 1, 0),
         ({"initial_delivered": True}, False, 1, 0),
         ({"responded": True}, False, 0, 2),
-        ({"active": False}, False, 0, 2),
+        ({"portal_eligible": False}, False, 0, 2),
         ({"email_eligible": False}, False, 0, 2),
         ({"deliverable": False}, False, 0, 2),
         ({}, True, 0, 2),

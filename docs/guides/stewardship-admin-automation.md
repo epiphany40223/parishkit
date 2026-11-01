@@ -216,7 +216,7 @@ your roles would not show on the page is `null`.
 | `campaign` | The current campaign's `id`, `name`, `state`, `version`, `starts_at`, `ends_at` and `delivery_paused`, or `null` |
 | `source` | The last ParishSoft refresh: `refreshed_at` (when the current snapshot was promoted), the last full refresh's success, failure (with `full_failed_task_id`) and `full_running`, `frequency`, `next_full_at`; the [data age and connection](../specs/stewardship/operations/spec.md#parishsoft-data-age-and-connection): `full_started_at`, `data_as_of`, `connection` (`failing`, `not_checked`, `working` or `unknown`) with `connection_at`; `overdue_full_at`, the due time of the first scheduled full refresh since the last one started that has not yet run (`null` when none is due), `out_of_date` when it is more than `source_stale_seconds` late with `late_minutes`, and `held_for_send` when a bulk Family send is holding it within the send's allowance, with `resume_at` (when it runs at the latest) or `catching_up` (the send ended or the resume point passed) |
 | `next_mail` | The next Family mail's `kind` and `due_at` |
-| `families` | Counts: `active`, `eligible`, `responded`, `eligible_responded` |
+| `families` | Counts: `active` and `eligible`, both the campaign Families (those the campaign's Families rule selects; `active` is the same set `go-live` reports under that key, #2331), `responded` (every campaign row with a response, including Families that have since left the campaign) and `eligible_responded` (the campaign Families with a response) |
 | `unreachable_families` | Families no mail can reach (a count) |
 | `offsite_backup` | The off-site copy's `state` (`uploaded`, `failed`, `disabled`, `none` or `unset`), `at`, `last_copy_at` and `set_name` |
 | `unfinished_keys` | Integrations with a new key not yet switched to, by `target` |
@@ -293,7 +293,7 @@ current Testing draft, without its public web address check:
 | `checks_passed`, `problems` | Whether the settings and data checks passed, and the codes of those that did not (for example `full_refresh_required`, `family_test_mail_required`), which the page explains in words |
 | `family_templates` | The selected Family mail templates, by record id |
 | `source` | The full ParishSoft refresh the preview relies on: `state` (`ready` or why not; `full_refresh_stale` does not block, since Start go-live queues its own refresh), `current_id`, `full_id`, `observed_at`, `expires_at` |
-| `families` | Family mail impact counts: `families`, `active`, `eligible` and `not_eligible` (with and without an eligible email address), `deliverable`, `messages` due at once, `coalesced_slots`, `skipped_slots`, `blocked_families` |
+| `families` | Family mail impact counts: `families` (every campaign row), `active` (the campaign Families, those the Families rule selects, as in `status`, #2331), `eligible` and `not_eligible` (campaign Families with and without an eligible email address), `deliverable`, `messages` due at once, `coalesced_slots`, `skipped_slots`, `blocked_families` |
 | `admin_reports` | Admin report mail impact counts: `daily_messages`, `weekly_messages`, `coalesced_slots`, `empty_weekly_reports`, `blocked_groups` |
 | `cleanup` | The Testing data cleanup would delete: `submissions`, `families`, `messages`, `unresolved`, `total`, `inventory` (`category`, `count`) and `message_states` (`state`, `count`) |
 | `mail_test_id` | The successful Family test email that counts, or `null` |
@@ -2443,7 +2443,7 @@ pk-admin report roster --show all --ministry 9
 | `report participation` | Response dashboard (statistics and daily table) | `status` (`current`, `updating` or `unavailable`), `fact_set_id` (for `export create --fact-set`), the figures' source and dates, `statistics` (the active Families, Members, email, responses and, with Financial stewardship, pledge totals, including the comparison pledges of every Family, `comparison_pledge_all`) and `days`, the daily table |
 | `report comparison` | Campaign comparison | `day` and `date` (the comparison day: the current campaign's last complete day, or `--day`), `status`, `last_year`, `current` (the current campaign's figures at the day and so far, and its renewal of last year's Families), `years` (each imported year's figures at the day and final figures, renewal and, for a final year, its pledge distribution) and `averages` (the imported years' mean of each figure at the day); see below |
 | `report responses` | Response dashboard (Families by stage) | `metrics`: the funnel `stages`, the three figures beside it, the `activity` buckets, the `sends` and each list's length (`lists`), which the page no longer shows; null in Testing without a rehearsal |
-| `report financial` | Financial report | The summary over every pledge: `families`, `annual_total`, `frequencies`, `shares` (by share option id), `no_share`, `cannot_give` and the comparison period |
+| `report financial` | Financial report | `scope` and the summary over every pledge of its Families: `families`, `annual_total`, `frequencies`, `shares` (by share option id), `no_share`, `cannot_give` and the comparison period |
 | `report limitations` | Limitations | `cannot_serve` (Members who cannot participate in ministries) and `cannot_attend` (Families who cannot attend Mass or prayer services) at `stage`, and `stages`: every answer by stage, zeros included |
 | `report census` | Census changes | `matching`: how many changes the filters keep, split by `routes` (`automatic`, `by_hand`) and `kinds` (`contact`, `moved`, `deceased`, `new_member`), and `statuses`, every change of the campaign by status (the counts the Status filter's choices show); see below |
 | `report information` | Additional information | `matching`: how many items match the filters; with `--stage`, how many requests are at that stage, and `stages`, each stage's count (null without `--stage`) |
@@ -2452,8 +2452,8 @@ pk-admin report roster --show all --ministry 9
 The options are the pages' own, and a value the page would refuse is exit 1
 (`invalid`):
 
-- `report participation`: `--scope` (`historical`, the default, or
-  `current`).
+- `report participation` and `report financial`: `--scope` (`current`,
+  the pages' default, or `historical`), the pages' Families counted.
 - `report comparison`: `--day` (a campaign day from 1 to the comparison
   day; a later day is `not_available`).
 - `report responses`: `--mode` (`production`, the default, or `testing`)
@@ -3053,7 +3053,7 @@ pk-admin export fetch EXPORT_ID
 - `--format` is `csv`, `xlsx` or `pdf`; `--timezone` the time zone of the
   file's times. Each takes `--request-key`, as `export create` does.
 - `--filter NAME=VALUE` (repeat for more) is one of the page's filters,
-  named as its form names it, for example `amount=nonzero`, `active=active`
+  named as its form names it, for example `amount=nonzero`, `scope=historical`
   or `frequency=monthly` for the financial export, `disposition=all` or
   `needed=yes` for the information export, and `activity=active` (or,
   with `--ministry`, `state=unresolved`) for the Ministry export. Dates
@@ -3118,10 +3118,13 @@ pk-admin export exact status EXACT_ID --watch 10
 pk-admin export fetch EXPORT_ID
 ```
 
-- `export exact create` freezes the current campaign's figures as the page's
-  form does: `--scope` is `historical` (the default) or `current`,
-  `--format` is `csv`, `png`, `pdf` or `xlsx`, and `--timezone` is the time
-  zone of the file's dates. It takes `--request-key`. It needs a full-scope
+- `export exact create` freezes the current campaign's figures. `--scope`
+  is `historical` ("Including Families that left") or `current` ("In this
+  campaign today"). Its default is `historical`, unlike the pages' default
+  of "In this campaign today": it counts as the stored daily facts, the
+  report emails and Campaign comparison do. Pass `--scope current` to match
+  a page's default figures. `--format` is `csv`, `png`, `pdf` or `xlsx`,
+  and `--timezone` is the time zone of the file's dates. It takes `--request-key`. It needs a full-scope
   session.
 - `EXACT_ID` is the `exact.id` that `export exact create` prints, or the
   last part of the exact status page's address. It is not an export id:

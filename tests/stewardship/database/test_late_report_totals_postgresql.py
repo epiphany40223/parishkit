@@ -178,7 +178,7 @@ def test_late_responses_are_in_every_report_total(
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             home = summary(principal, configuration, database_now(), home=True)
         current = rows(generations["current"])[-1].cumulative_responses
-        assert home["families"]["active_responded"] == current == 2
+        assert home["families"]["eligible_responded"] == current == 2
         tile = next(t for t in home["family_tiles"] if t.key == "responded")
         assert tile.text == "2"
 
@@ -257,9 +257,10 @@ def test_a_report_email_after_a_late_response_reports_its_day(
         assert row.phase == "complete"
         assert row.report_day == row.through_date == day
         assert row.submission_watermark == late.campaign_sequence
+        # A send counts today's campaign Families (#2331).
         facts = CampaignDailyFactSet.objects.get(
             campaign=harness.campaign,
-            population_scope="historical",
+            population_scope="current",
             submission_watermark=row.submission_watermark,
             through_date=day,
             state="ready",

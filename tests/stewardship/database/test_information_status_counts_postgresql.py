@@ -51,6 +51,10 @@ NAME = "stewardship_information_report_v2"
 EARLIER = definition(
     (MIGRATIONS / "0094_source_status_names.sql").read_text(encoding="utf-8"), NAME
 )
+# 0100's own body: 0197 (#2335) has replaced the selection since, without
+# the legacy active branch 0100's check names, so its check tests put this
+# back first, rolled back with the test's transaction.
+OWN = definition(MIGRATION, NAME)
 STATES = ("completed", "needed_open", "not_needed_open")
 
 
@@ -145,14 +149,16 @@ def check_refuses(statement, message):
     ):
         cursor.execute("SET LOCAL check_function_bodies = false")
         cursor.execute(ACL)
+        cursor.execute(OWN)
         cursor.execute(statement)
         cursor.execute(CHECK)
 
 
 def test_the_closing_check_passes_on_the_installed_schema():
-    """The check is the one the migration ran; it still holds afterwards."""
+    """The check is the one the migration ran; it holds for 0100's body."""
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(ACL)
+        cursor.execute(OWN)
         cursor.execute(CHECK)
         transaction.set_rollback(True)
 

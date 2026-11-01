@@ -816,14 +816,12 @@ def test_testing_notice_links_the_test_page_only_for_administrators(
         assert b"ask an Administrator for a test invitation" in body
 
 
-def test_staff_testing_mode_with_a_bad_code_is_refused_without_echo(
-    response_service, google
-):
-    """Staff sending Testing mode with a bad Exact Family code get a bare 403.
+def test_a_sent_mode_with_a_bad_code_is_refused_without_echo(response_service, google):
+    """A mode sent to the page is refused (400) before the code is checked.
 
-    The mode is admitted before the code refusal is drawn (#1332), so the
-    refused-code page (400) never reaches a principal who may not see
-    Testing, and nothing they sent is echoed.
+    The site's mode decides (#2324), so a form's ``mode`` is an unknown
+    field: the bare refusal answers, never the refused-code page (#1332),
+    and nothing that was sent is echoed, for Staff as for Administrators.
     """
     harness = response_service
     store = harness.service.store
@@ -842,37 +840,23 @@ def test_staff_testing_mode_with_a_bad_code_is_refused_without_echo(
         response, body = search(
             browser, route, {"exact_code": "private!<b>", "mode": "testing"}
         )
-        assert response.status_code == 403
+        assert response.status_code == 400
         assert b"private!" not in body and b"exact-code" not in body
 
 
-def test_refused_code_page_in_testing_keeps_the_mode_choice_and_form_in_step(
-    response_service, google
-):
-    """The refused Exact Family code page shows one mode in both places (#1535).
-
-    An Administrator in Testing sends a malformed code. The segmented
-    Responses-shown pair is drawn from the page's query and the filter form's
-    hidden ``mode`` from what was sent; both must say Testing.
-    """
+def test_refused_code_page_sends_no_mode(response_service, google):
+    """The refused Exact Family code page (#1332) draws no mode anywhere in
+    its filter form: the site's mode decides (#2324)."""
     browser, _ = signed_in()
     route = reverse("admin:family_directory")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response, body = search(
-            browser, route, {"exact_code": "private!<b>", "mode": "testing"}
-        )
+        response, body = search(browser, route, {"exact_code": "private!<b>"})
     assert response.status_code == 400
     body = body.decode()
-    assert (
-        '<button type="submit" name="mode" value="testing" aria-current="page">' in body
-    )
-    assert (
-        '<button type="submit" name="mode" value="production" aria-current="page">'
-        not in body
-    )
+    assert 'id="directory-mode"' not in body
     form = body[body.index('<form id="table-filters"') :]
     form = form[: form.index("</form>")]
-    assert '<input type="hidden" name="mode" value="testing">' in form
+    assert 'name="mode"' not in form
 
 
 def test_family_name_is_the_surname_not_a_first_name_mailing_name(
@@ -1424,15 +1408,16 @@ def test_find_a_family_lists_exact_envelope_or_duid_matches_first(response_servi
     assert found["total"] == page(harness, search="13")["total"]
 
 
-def test_testing_without_a_rehearsal_is_refused_not_shown_as_production(
+def test_old_mode_links_are_refused_and_a_stale_testing_export_too(
     live_response_service, google
 ):
-    """With no active rehearsal, Testing is a 409, never Production (#933).
+    """The site's mode decides (#2324): an old link's or form's mode is
+    refused (400), and with no active rehearsal a Testing export is a 409,
+    never Production (#933).
 
-    The live campaign's rehearsal ended at go-live. An Administrator is not
-    offered the switch; an old Testing link and a Testing export (whatever
-    rehearsal its form names) get the "no longer active" page, and nothing
-    is queued.
+    The live campaign's rehearsal ended at go-live. There is no switch; a
+    Testing export (whatever rehearsal its form names) gets the "no longer
+    active" page, and nothing is queued.
     """
     from parishkit.stewardship.reports.export_models import ExportRequest
 
@@ -1448,12 +1433,12 @@ def test_testing_without_a_rehearsal_is_refused_not_shown_as_production(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read(browser, route)
         assert response.status_code == 200 and b'id="directory-mode"' not in body
-        for response, body in (
+        for response, _body in (
             read(browser, route + "?response=submitted&mode=testing"),
             search(browser, route, {"mode": "testing"}),
+            search(browser, route, {"mode": "production"}),
         ):
-            assert response.status_code == 409
-            assert b"That Testing rehearsal is no longer active" in body
+            assert response.status_code == 400
         response = post(browser, export, fields | {"rehearsal": str(uuid4())})
         assert response.status_code == 409
         assert b"That Testing rehearsal is no longer active" in response.content

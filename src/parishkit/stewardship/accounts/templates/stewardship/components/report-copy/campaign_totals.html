@@ -1,3 +1,4 @@
-{% load i18n %}{# A report email's saved copy: its Campaign totals block (#1946) as stat tiles in the email's own words (report_blocks.campaign_totals.copy, #1639). #}<section class="panel" aria-labelledby="copy-totals-heading" data-copy-block="campaign_totals"><h2 id="copy-totals-heading">{{ block.label }}</h2>
+{% load i18n %}{# A report email's saved copy: its Campaign totals block (#1946) as stat tiles in the email's own words (report_blocks.campaign_totals.copy, #1639), under the Families counted line the email showed (#2331; none on a send captured before it). #}<section class="panel" aria-labelledby="copy-totals-heading" data-copy-block="campaign_totals"><h2 id="copy-totals-heading">{{ block.label }}</h2>
+{% if data.families_counted %}<p data-report-population>{{ data.families_counted }}</p>{% endif %}
 {% include "stewardship/components/stat-tiles.html" with tiles=data.tiles tiles_labelledby="copy-totals-heading" %}
 </section>

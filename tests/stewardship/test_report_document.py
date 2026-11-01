@@ -21,14 +21,22 @@ from parishkit.stewardship.reports.daily_digest import (
     DAILY_BLOCKS,
     render_daily_digest,
 )
+from parishkit.stewardship.reports.report_blocks.campaign_totals import (
+    families_counted,
+)
+from parishkit.stewardship.reports.report_blocks.compared_with_past_campaigns import (
+    FAMILIES_COUNTED as COMPARISON_COUNTED,
+)
 from parishkit.stewardship.reports.report_blocks.compiler import (
     capture_report,
     compile_report,
     has_content,
 )
+from parishkit.stewardship.reports.report_blocks.markup import plain, style
 from parishkit.stewardship.reports.report_document import (
     PREVIOUS_DAY_END,
     SEND_TIME,
+    OpenRequest,
     ReportDocument,
     report_subject,
     send_path,
@@ -37,6 +45,7 @@ from parishkit.stewardship.reports.weekly_digest import (
     WEEKLY_BLOCKS,
     render_weekly_digest,
 )
+from parishkit.stewardship.web import dates
 
 from .test_daily_digest_content import document as daily_document
 from .test_daily_digest_content import funnel_metrics
@@ -86,7 +95,18 @@ def from_weekly(weekly, **changes):
         campaign_timezone=weekly.campaign_timezone,
         mode=weekly.mode or "production",
         funnel=weekly.funnel,
-        information=weekly.information,
+        # A report email's rows carry their stage (#2331): these are To
+        # review, as a Weekly's actionable requests were.
+        information=tuple(
+            OpenRequest(
+                row.item_id,
+                row.family_duid,
+                row.family_name,
+                row.submitted_at,
+                row.text,
+            )
+            for row in weekly.information
+        ),
         manual=weekly.manual,
         date_format=weekly.date_format,
     )
@@ -106,13 +126,35 @@ DAILY_CASES = {
 }
 
 
+def without_families_counted(report, compiled):
+    """``compiled``'s HTML and text without its Families counted lines.
+
+    A report email names the Families its Campaign totals and its Compared
+    with past campaigns block count (#2331), which a Daily digest never
+    did; each line is required once and then taken out.
+    """
+    html, text = compiled.html, compiled.text
+    with dates.using(report.date_format):
+        lines = [families_counted(report)]
+    if report.comparison is not None:
+        lines.append(COMPARISON_COUNTED)
+    for line in lines:
+        drawn = f"<p{style('caption')}>{plain(line)}</p>"
+        assert html.count(drawn) == 1 and text.count(line) == 1
+        html = html.replace(drawn, "")
+        text = text.replace(f"{line}\n", "").replace(f"\n{line}", "")
+    return html, text
+
+
 @pytest.mark.parametrize("case", DAILY_CASES)
 def test_a_daily_report_draws_the_daily_digests_bytes(case, renderer):  # noqa: F811
-    """The converted Daily's blocks draw today's Daily body, byte for byte."""
+    """The converted Daily's blocks draw today's Daily body, byte for byte,
+    but for the Families counted lines a report email adds (#2331)."""
     daily = DAILY_CASES[case]()
     digest = render_daily_digest(daily, public_origin=ORIGIN)
-    compiled = compile_report(from_daily(daily), DAILY_BLOCKS, public_origin=ORIGIN)
-    assert (compiled.html, compiled.text) == (digest.html, digest.text)
+    report = from_daily(daily)
+    compiled = compile_report(report, DAILY_BLOCKS, public_origin=ORIGIN)
+    assert without_families_counted(report, compiled) == (digest.html, digest.text)
     images = [(image.content_id, image.data) for image in compiled.images]
     assert images == [(digest.chart.content_id, digest.chart.data)] + [
         (image.content_id, image.data) for image in digest.comparison
@@ -121,10 +163,11 @@ def test_a_daily_report_draws_the_daily_digests_bytes(case, renderer):  # noqa: 
 
 @pytest.mark.parametrize("manual", [False, True])
 def test_a_weekly_report_changes_only_the_documented_scope(manual):
-    """The converted Weekly's body is the digest's with "N open requests".
+    """The converted Weekly's body is the digest's with its stages named.
 
-    The corrections section is gone and the heading counts open requests
-    (decisions 14 and 15); every other byte is the Weekly digest's.
+    The corrections section is gone and the heading counts the requests to
+    review and to handle (decisions 14 and 15, #2331); every other byte is
+    the Weekly digest's.
     """
     weekly = replace(weekly_document(), manual=manual)
     expected = render_weekly_digest(
@@ -136,10 +179,11 @@ def test_a_weekly_report_changes_only_the_documented_scope(manual):
     )
     old = "1 current actionable request" if manual else "1 new actionable request"
     path = weekly.report_path
-    assert compiled.html == expected.html.replace(old, "1 open request").replace(
+    new = "To review 1 · To handle 0"
+    assert compiled.html == expected.html.replace(old, new).replace(
         path, send_path(SEND)
     )
-    assert compiled.text == expected.text.replace(old, "1 open request").replace(
+    assert compiled.text == expected.text.replace(old, new).replace(
         path, send_path(SEND)
     )
 
@@ -266,3 +310,24 @@ def test_other_names_and_a_test_send():
         "campaign, Example Parish)"
     )
     assert INSTANT.date().isoformat() == "2026-11-02"
+
+
+def test_a_saved_comparison_shows_only_the_line_its_email_drew():
+    """A report email's comparison keeps its Families counted line (#2331).
+
+    The saved copy shows the kept line; a section captured before 0196
+    kept none, and its copy shows none, as its email did.
+    """
+    from parishkit.stewardship.reports.report_blocks import REGISTRY
+
+    report = from_daily(with_comparison())
+    (captured,) = capture_report(
+        report, [{"block": "compared_with_past_campaigns", "version": 1, "options": {}}]
+    )
+    data = json.loads(json.dumps(captured["data"]))
+    assert data["families_counted"] == COMPARISON_COUNTED
+    older = {key: value for key, value in data.items() if key != "families_counted"}
+    assert older == json.loads(json.dumps(report.comparison))
+    copy = REGISTRY["compared_with_past_campaigns"].copy
+    assert copy(data, None)["comparison_population"] == COMPARISON_COUNTED
+    assert copy(older, None)["comparison_population"] == ""

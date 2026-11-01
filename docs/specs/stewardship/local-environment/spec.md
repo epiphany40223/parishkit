@@ -241,7 +241,8 @@ The LOCAL rendering differs from Production only as follows:
 - **Networks.** `backend` and `proxy` are already `internal: true` in every
   profile, and outbound traffic leaves through the non-internal
   `application-egress` network (web, worker, mail-dispatch, the ParishSoft,
-  Workspace and Slack installers, and the backup worker). LOCAL renders
+  Workspace and Slack installers, and the off-site uploader; since the
+  uploader's contract release, #235, not the backup worker). LOCAL renders
   `application-egress` with exactly the same members as Production
   ([#1399](https://github.com/epiphany40223/parishkit/issues/1399)), so its
   integrations run through Production's code; what a LOCAL service may reach
@@ -328,7 +329,7 @@ Production in either direction.
   beside `profile` only when it is set, so the environment-free helper
   applies the same rule. The clock term is checked at the intakes and in the
   faked processes that use the key in-process (web, the CLI, smoke and the
-  backup worker's Drive copies and Test access). The mail helpers start
+  off-site uploader's Drive copies and Test access). The mail helpers start
   with an empty environment and so always run on real time: a key installed
   on the normal clock keeps sending, only to the redirect, if the
   deployment later runs under the fake clock. That is correct, since the
@@ -553,7 +554,7 @@ Production in either direction.
   target is refused, at the Backup destination page and `pk-admin
   integration` (reason `drive_not_in_local`, with what is missing), and again
   at use, whatever the configuration or the credentials tree holds: the
-  backup's off-site copy (`backup_offsite.copy_offsite`) reports
+  off-site uploader's copy (`uploader_commands.run_upload`) reports
   `not_configured` without reading its destination or key, the Drive session
   (`backup_drive.workspace_session`, which every copy, Test access check and
   smoke check builds with the caller's profile and redirect) refuses before
@@ -2000,6 +2001,12 @@ the upload and that invocation. Local mode differs in exactly these ways:
 - it requires the pre-upgrade backup to succeed (not best effort), accepting
   an off-site copy state of `not_configured` (LOCAL copies off site only
   beside a mail redirect on the normal clock) alongside `uploaded`;
+- it runs the off-site uploader's contract checks (the backup profile's
+  [route out](../../../guides/stewardship-backup-runbook.md#no-route-out-for-the-backup-profile),
+  the Docker Engine version, the host `INPUT` drop, the uploader's cron line
+  and a running release with `upload`) but only reports them: pk-local has
+  no off-site folder by default and no host firewall rule, so a refusal
+  there would only block local deploys;
 - it keeps the services in the mode recorded by the
   [clock-mode marker](#fake-clock): the fake-clock override is applied when
   the marker says `fake`, and the derived fake-clock image of the new

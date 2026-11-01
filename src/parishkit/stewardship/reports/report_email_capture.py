@@ -8,7 +8,10 @@ The report pipeline's ``inputs`` and ``capture`` phases (report-emails spec,
    them (``report_email_inputs``), the promoted source (pinned to the
    preparation) and the submission watermark.
 2. ``begin_report_facts`` builds or reuses the exact fact generation those
-   inputs name, when the report has a fact block and a report day.
+   inputs name, when the report has a fact block and a report day: the
+   current one (today's campaign Families, #2331) its snapshot pins, and,
+   for the Compared with past campaigns block, a historical one at the same
+   inputs, since that block stays like for like with the archives.
 3. ``load_report_document`` reads everything the blocks draw, in one owned
    effect: the facts, the funnel at the as-of moment, the comparison
    section and the open requests.
@@ -53,7 +56,7 @@ from .facts import FactUnavailable, begin_fact_set, fact_inputs
 from .models import CampaignDailyFactSet
 from .recovery import recover_fact_set
 from .report_blocks.compiler import capture_report, compile_report, has_content
-from .report_document import ReportDocument, report_subject
+from .report_document import OpenRequest, ReportDocument, report_subject
 from .report_email_cohort import frozen_cohort
 from .report_email_inputs import report_days, send_inputs
 from .report_email_models import ReportEmailSnapshot
@@ -64,13 +67,18 @@ from .report_email_ownership import (
     current_preparation,
 )
 from .retention import pin_facts
-from .weekly_digest import WeeklyInformation
 
 # The other owners whose exact fact generation a report send may reuse.
 FACT_OWNERS = frozenset({TASK_TYPE, "daily_digest_prepare", "report_exact_export"})
 # The source and fact pins of a report send name its preparation, under the
 # digests' parent kind (frozen file 0156's retention triggers).
 PIN_KIND = "digest"
+# The population the Compared with past campaigns block counts: the
+# historical cohort, like the past campaigns' archives and the Campaign
+# comparison page (#2324 decision 4), whatever the email's own figures
+# count (``ReportEmailPreparation.population_scope``, #2331).
+COMPARISON_SCOPE = "historical"
+COMPARISON_BLOCK = "compared_with_past_campaigns"
 
 OBSERVE = """SELECT stewardship_campaign_now_v1(), c.snapshot_id,
     coalesce((SELECT max(campaign_sequence) FROM stewardship_submission
@@ -151,27 +159,48 @@ def record_inputs(claim):
     )
 
 
+def report_fact_inputs(row):
+    """The fact inputs a send may build: its own, and its comparison's.
+
+    The first is the generation the snapshot pins (``fact_inputs``, today's
+    campaign Families since #2331); the second the same inputs in the
+    historical scope, which only the Compared with past campaigns block
+    reads.
+    """
+    own = fact_inputs(row)
+    return own, replace(own, population_scope=COMPARISON_SCOPE)
+
+
 def admit_report_facts(claim, action, inputs):
     """Recheck the same recorded inputs at every calculation chunk boundary."""
     row = bound_preparation(_status(lock_task_claim(claim)))
     current_preparation(row)
-    return row.phase == "capture" and inputs == fact_inputs(row)
+    return row.phase == "capture" and inputs in report_fact_inputs(row)
 
 
-def begin_report_facts(claim):
+def compares(row):
+    """Whether the send's report draws the Compared with past campaigns block."""
+    return any(entry["block"] == COMPARISON_BLOCK for entry in _values(row)["blocks"])
+
+
+def begin_report_facts(claim, *, comparison=False):
     """The send's exact fact generation, built or reused; None without one.
 
-    An incomplete generation another live owner is building is left to it.
+    ``comparison`` asks for the historical generation the Compared with
+    past campaigns block reads instead of the one the snapshot pins; it is
+    None too when the report has no such block. An incomplete generation
+    another live owner is building is left to it.
     """
     row, _scope = _bound(claim, "capture")
-    if row.through_date is None:
+    if row.through_date is None or (comparison and not compares(row)):
         return None
+    inputs = report_fact_inputs(row)[1 if comparison else 0]
 
     def admit(action, inputs):
         """Bind every calculation primitive to this send's recorded inputs."""
         return admit_report_facts(claim, action, inputs)
 
-    facts = begin_fact_set(fact_inputs(row), claim, admit=admit)
+    facts = begin_fact_set(inputs, claim, admit=admit)
     if facts.state == "ready":
         return facts
     owner = TaskRun.objects.get(pk=facts.task_id)
@@ -192,22 +221,27 @@ def begin_report_facts(claim):
 
 
 def open_requests(campaign_id, source_id, as_of):
-    """The open additional information requests at ``as_of``, oldest first."""
+    """The requests to review or to handle at ``as_of``, oldest first.
+
+    Ignored requests are left out and each carries its stage (frozen
+    function v2, #2331), as the Additional information page places it.
+    """
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT stewardship_report_email_requests_v1(%s,%s,%s)::text",
+            "SELECT stewardship_report_email_requests_v2(%s,%s,%s)::text",
             [campaign_id, source_id, as_of],
         )
         rows = json.loads(cursor.fetchone()[0])
     return tuple(
-        WeeklyInformation(
+        OpenRequest(
             UUID(identifier),
             duid,
             name,
             datetime.fromisoformat(submitted).astimezone(UTC),
             text,
+            stage=stage,
         )
-        for identifier, duid, name, submitted, text in rows
+        for identifier, duid, name, submitted, text, stage in rows
     )
 
 
@@ -239,11 +273,13 @@ def comparison_for(document, projection, values, as_of_day):
     return section(found) if found.imported else None
 
 
-def load_report_document(claim, fact_set):
+def load_report_document(claim, fact_set, comparison_set=None):
     """Read everything the report's blocks draw, from the recorded inputs only.
 
     Runs in one owned effect. ``fact_set`` is the ready generation from
-    ``begin_report_facts`` (None without one).
+    ``begin_report_facts`` (None without one); ``comparison_set`` the
+    historical one its ``comparison`` call gave, which only the Compared
+    with past campaigns block reads (None without that block).
     """
     row, scope = _bound(claim, "capture")
     values = _values(row)
@@ -293,11 +329,22 @@ def load_report_document(claim, fact_set):
         held=inputs.held,
         date_format=version.parish.date_format,
     )
-    if "compared_with_past_campaigns" in keys and participation is not None:
+    if COMPARISON_BLOCK in keys and comparison_set is not None:
+        historical = CampaignDailyFactSet.objects.get(
+            pk=comparison_set.pk, state="ready"
+        )
+        if fact_inputs(historical) != report_fact_inputs(row)[1]:
+            raise FactUnavailable("Comparison facts differ from their recorded inputs.")
+        cohort = participation_document(
+            historical,
+            parish_name=version.parish.name,
+            browser_timezone=projection.timezone,
+            requested_at=row.captured_at,
+        )
         local_day = row.as_of.astimezone(ZoneInfo(projection.timezone)).date()
         document = replace(
             document,
-            comparison=comparison_for(participation, projection, values, local_day),
+            comparison=comparison_for(cohort, projection, values, local_day),
         )
     return document
 

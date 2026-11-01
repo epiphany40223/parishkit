@@ -14,7 +14,7 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs import backup_health
-from parishkit.stewardship.jobs.backup_models import BackupRun
+from parishkit.stewardship.jobs.backup_models import BackupRun, BackupUpload
 from parishkit.stewardship.jobs.operational_content import IncidentKind
 from parishkit.stewardship.jobs.operational_models import OperationalIncident
 from parishkit.stewardship.jobs.ownership import database_now
@@ -81,30 +81,57 @@ def backup_login():
         yield
 
 
+def sqlstate(error):
+    """The SQLSTATE behind a Django database error."""
+    return getattr(error.value.__cause__, "sqlstate", None)
+
+
 def test_the_backup_login_writes_one_row_and_nothing_edits_it():
-    """Insert under the real backup identity; update and delete are refused."""
-    instant = now()
+    """The real backup login under the contract's grants (#235, frozen 0195).
+
+    Its fixed INSERT records a run whose completed_at the database's own
+    clock sets; Django's ``create()``, which names every column, and any
+    insert naming completed_at are refused with 42501, as are an update and
+    a delete. The table's checks still hold for its insert.
+    """
     with task_login(ServiceRole.BACKUP_WORKER, exact=True):
         with transaction.atomic():
-            row = BackupRun.objects.create(
-                started_at=instant, completed_at=instant, **FACTS
+            started = database_now()
+            run_id = backup_commands.record_run(started_at=started, **FACTS)
+        row = BackupRun.objects.get(pk=run_id)
+        assert row.started_at == started
+        assert started <= row.completed_at <= now()
+        with pytest.raises(DatabaseError) as refused, transaction.atomic():
+            BackupRun.objects.create(started_at=started, **FACTS)
+        assert sqlstate(refused) == "42501"
+        with (
+            pytest.raises(DatabaseError) as refused,
+            transaction.atomic(),
+            connection.cursor() as cursor,
+        ):
+            cursor.execute(
+                "INSERT INTO public.stewardship_backup_run (id,started_at,"
+                "completed_at,database_bytes,files_bytes,manifest_digest,"
+                "recipient_fingerprint,application_version) "
+                "VALUES (%s,%s,%s,1,1,%s,%s,'x')",
+                [uuid4(), started, started, "a" * 64, "b" * 16],
             )
+        assert sqlstate(refused) == "42501"
         with pytest.raises(DatabaseError), transaction.atomic():
-            BackupRun.objects.filter(pk=row.pk).update(database_bytes=1)
+            BackupRun.objects.filter(pk=run_id).update(database_bytes=1)
         with pytest.raises(DatabaseError), transaction.atomic():
-            BackupRun.objects.filter(pk=row.pk).delete()
+            BackupRun.objects.filter(pk=run_id).delete()
         with pytest.raises(DatabaseError), transaction.atomic():
-            BackupRun.objects.create(
-                started_at=instant,
-                completed_at=instant - timedelta(seconds=1),
-                **FACTS,
+            backup_commands.record_run(
+                started_at=started, **{**FACTS, "manifest_digest": "short"}
             )
+        # A start after the database's own completion time is refused too.
         with pytest.raises(DatabaseError), transaction.atomic():
-            BackupRun.objects.create(
-                started_at=instant,
-                completed_at=instant,
-                **{**FACTS, "manifest_digest": "short"},
-            )
+            backup_commands.record_run(started_at=now() + timedelta(hours=1), **FACTS)
+        # And it can no longer record an off-site copy outcome at all.
+        with pytest.raises(DatabaseError) as refused, transaction.atomic():
+            BackupUpload.objects.create(state="disabled")
+        assert sqlstate(refused) == "42501"
     assert BackupRun.objects.count() == 1
 
 
@@ -301,7 +328,6 @@ def test_the_backup_command_says_when_the_key_changed(monkeypatch, capsys):
     monkeypatch.setattr(backup_commands, "configure_logging", lambda: None)
     monkeypatch.setattr(backup_commands, "load_deployment", lambda path: None)
     monkeypatch.setattr(backup_commands, "_admit_backup_identity", lambda: None)
-    monkeypatch.setattr(backup_commands, "_copy_offsite", lambda c: {"state": "x"})
     monkeypatch.setattr(backup_boundaries, "admit_backup_service", lambda c: None)
     monkeypatch.setattr(
         operator_commands, "configure_operator_database", lambda c: None

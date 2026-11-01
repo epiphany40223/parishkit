@@ -26,6 +26,7 @@ from parishkit.stewardship.reports.export_models import (
     ExportRequest,
     ParticipationExportSnapshot,
 )
+from parishkit.stewardship.reports.participation import SCOPE_LABELS
 
 from .test_export_jobs_postgresql import (  # noqa: F401
     request_export,
@@ -46,7 +47,12 @@ def published_csv(scenario, request):  # noqa: F811
         ArtifactReceipt(publication.attempt_id, publication.size, publication.sha256),
     ) as stream:
         body = stream.read().decode()
-    return list(csv.DictReader(io.StringIO(body)))
+    # The file's header block (R59 on #2324) names the population the
+    # request captured; the table follows its blank row.
+    header, table = body.split("\r\n\r\n", 1)
+    counted = str(SCOPE_LABELS[request.parameters["population_scope"]])
+    assert header.split("\r\n")[1] == f"Families counted,{counted}"
+    return list(csv.DictReader(io.StringIO(table)))
 
 
 def test_the_request_freezes_the_summary_and_the_file_reads_only_it(
@@ -71,7 +77,7 @@ def test_the_request_freezes_the_summary_and_the_file_reads_only_it(
         "Submitted",
     ]
     assert [row["label"] for row in document["population"]][:2] == [
-        "Campaign Families",
+        "Families",
         "Active Members",
     ]
     assert str(request.campaign_id) not in str(document)
@@ -158,7 +164,7 @@ def valid():
     return {
         "observed_at": "2054-10-02T12:00:00+00:00",
         "population": [
-            {"label": "Campaign Families", "value": 3, "note": ""},
+            {"label": "Families", "value": 3, "note": ""},
             {"label": "Active Members", "value": None, "note": "Unknown."},
         ],
         "stages": [{"label": "Invited", "count": 2, "note": ""}],
@@ -206,9 +212,9 @@ def valid():
 def test_the_capture_shape_is_closed(scenario, monkeypatch, change):  # noqa: F811
     """SQL refuses any document but the closed shape, so the request too;
     the valid document itself is admitted, so each refusal is the change."""
-    monkeypatch.setattr(export_services, "summary_capture", lambda _: valid())
+    monkeypatch.setattr(export_services, "summary_capture", lambda *_: valid())
     assert request_export(scenario)
-    monkeypatch.setattr(export_services, "summary_capture", lambda _: change(valid()))
+    monkeypatch.setattr(export_services, "summary_capture", lambda *_: change(valid()))
     with pytest.raises(IntegrityError, match="Invalid participation export summary"):
         request_export(scenario)
     assert ExportRequest.objects.count() == 1
@@ -277,7 +283,7 @@ def test_unreadable_statistics_still_capture_the_funnel(
     monkeypatch,
 ):
     """A request made as the statistics became unreadable commits with the
-    funnel and every Active population figure unknown, with its reason."""
+    funnel and every Population figure unknown, with its reason."""
     from parishkit.stewardship.reports.statistics import StatisticsUnavailable
 
     def unreadable(campaign_id):
