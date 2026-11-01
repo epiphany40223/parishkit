@@ -9,6 +9,7 @@ import re
 from types import SimpleNamespace
 
 import pytest
+from django.db import DatabaseError
 from django.template.loader import render_to_string
 from django.urls import resolve, reverse
 
@@ -283,3 +284,90 @@ def test_the_pages_name_and_link_the_software(client, url):
         note = html.index("<h2>About this software</h2>")
         assert note < html.index("<h2>Contact the parish</h2>")
         assert note > html.index("<h2>Correcting your information</h2>")
+
+
+def _fake_system(monkeypatch, first):
+    """Replace the SystemConfiguration ORM boundary; ``first`` runs for .first()."""
+    queryset = SimpleNamespace(first=first)
+    manager = SimpleNamespace(select_related=lambda *paths: queryset)
+    monkeypatch.setattr(
+        public_pages, "SystemConfiguration", SimpleNamespace(objects=manager)
+    )
+
+
+def test_current_campaign_values_reads_the_current_campaigns_values(monkeypatch):
+    """The normal case: the values of the current campaign's configuration."""
+    values = {"modules": ["census"]}
+    campaign = SimpleNamespace(active_configuration=SimpleNamespace(values=values))
+    _fake_system(monkeypatch, lambda: SimpleNamespace(current_campaign=campaign))
+    assert public_pages.current_campaign_values() is values
+
+
+def test_current_campaign_values_is_none_without_a_system_row(monkeypatch):
+    """No SystemConfiguration row (before setup) reads as no campaign."""
+    _fake_system(monkeypatch, lambda: None)
+    assert public_pages.current_campaign_values() is None
+
+
+def test_current_campaign_values_is_none_without_a_campaign(monkeypatch):
+    """A system row with no current campaign reads as no campaign."""
+    _fake_system(monkeypatch, lambda: SimpleNamespace(current_campaign=None))
+    assert public_pages.current_campaign_values() is None
+
+
+def test_a_database_error_makes_the_privacy_policy_general(client, monkeypatch):
+    """The query failing renders the general page instead of an error."""
+
+    def fail():
+        raise DatabaseError("down")
+
+    _fake_system(monkeypatch, fail)
+    assert public_pages.current_campaign_values() is None
+    parish = SimpleNamespace(
+        name="St. Example Parish", website="", phone="", configuration_id="c"
+    )
+    monkeypatch.setattr(public_pages, "display_parish", lambda request: parish)
+    monkeypatch.setattr(
+        "parishkit.stewardship.responses.page_content.reply_to", lambda c: ""
+    )
+    html = _html(client.get("/privacy/"))
+    assert GENERAL in html
+    assert INTRO_ALL in html
+
+
+INTRO_ALL = (
+    "Families use it to look over their household's information, to choose "
+    "ministries and to make a pledge."
+)
+
+
+@pytest.mark.parametrize(
+    ("modules", "intro"),
+    [
+        (["census", "ministry", "financial"], INTRO_ALL),
+        (
+            ["census", "ministry"],
+            "Families use it to look over their household's information and to "
+            "choose ministries.",
+        ),
+        (
+            ["census", "financial"],
+            "Families use it to look over their household's information and to "
+            "make a pledge.",
+        ),
+        (
+            ["ministry", "financial"],
+            "Families use it to choose ministries and to make a pledge.",
+        ),
+        (["census"], "Families use it to look over their household's information."),
+        (["ministry"], "Families use it to choose ministries."),
+        (["financial"], "Families use it to make a pledge."),
+    ],
+)
+def test_the_privacy_intro_names_the_campaigns_modules(
+    client, monkeypatch, modules, intro
+):
+    """Exactly one "Families use it to ..." sentence, for the module mix."""
+    html = " ".join(_privacy(client, monkeypatch, {"modules": modules}).split())
+    assert html.count("Families use it to") == 1
+    assert intro in html
