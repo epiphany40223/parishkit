@@ -615,6 +615,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # restore older, and the source pin guard, which 0161's rerun brings back
 # older, so its ``CLOSURE_REPLACED_ONLY`` entries restore 0196's bodies,
 # the first two in 0185's entries' places.
+# 0197 (#2335) creates nothing: it replaces 0194's Financial and both
+# Additional information selections in place, so its ``CLOSURE_REPLACED_ONLY``
+# entries restore 0197's bodies instead, in the place of those 0175 began.
 # The columns 0185 (#2202) adds, by table.
 SERIES_IN_FORCE_COLUMNS = (
     ("stewardship_daily_fact_set", "pledge_edits"),
@@ -1935,6 +1938,20 @@ CLOSURE_REPLACED_ONLY = {
             ),
         )
     },
+    # 0197 (#2335) replaces the same three selections last, on 0194's
+    # bodies (these keys' values replace 0194's entries, in their place), so
+    # each Family's status reads its portal_eligible under every rule.
+    **dict.fromkeys(
+        (
+            "stewardship_financial_report_v1",
+            "stewardship_information_report_v1",
+            "stewardship_information_report_v2",
+        ),
+        (
+            ("stewardship_reports", "0055_financial_eligibility"),
+            "THEN (p.canonical::jsonb->'portal_eligible')::boolean END AS active,",
+        ),
+    ),
 }
 
 

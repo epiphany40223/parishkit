@@ -16,7 +16,18 @@ disagree:
 - 10, a Family that cannot contribute financially;
 - 11, a Family with a pledge Edit in force;
 - 12, a Family whose pledge Edit, made on its first response, a
-  resubmission with a new amount then replaced (no Edit in force).
+  resubmission with a new amount then replaced (no Edit in force);
+- 13, a responder that moved its registration to another parish but is
+  still active in ParishSoft (#2335).
+
+The campaign runs once on the legacy Families rule, the path Production's
+campaign uses, which made Family 13 disagree (Financial stewardship read
+ParishSoft's active flag alone, the dashboard the legacy rule itself), and
+once on a configured rule (Active parishioners). Each rule leaves Families
+2, 7 and 13 out of today's campaign Families, so the figures are the same.
+Active parishioners selects the same Families as the legacy rule, so the
+configured case cannot catch a rule that differs from it; a rule that does
+is #2338's.
 
 A response without a financial answer cannot exist in a financial
 campaign: the form refuses a blank pledge unless the Family says it cannot
@@ -63,6 +74,7 @@ from parishkit.stewardship.source.snapshots import (
 )
 
 from ..campaign_factory import campaign as campaign_record
+from ..test_campaign_families import ACTIVE
 from ..test_financial_answers import CHECK, OPTIONS
 from ..test_source_corpus import TODAY
 from . import response_builders
@@ -87,7 +99,7 @@ from .test_source_snapshots_postgresql import permit
 pytestmark = pytest.mark.django_db(transaction=True)
 
 # The Families beside the harness's own Family 1, each with one head.
-EXTRA = (6, 7, 8, 9, 10, 11, 12)
+EXTRA = (6, 7, 8, 9, 10, 11, 12, 13)
 HEADS = {40 + duid: head(40 + duid, duid) for duid in (2, *EXTRA)}
 # Each live answer, by Family DUID: whole dollars, so Campaign comparison's
 # whole-dollar Annual pledges reads the same total. Family 11's own 200 is
@@ -101,18 +113,33 @@ ANSWERS = {
     10: None,
     11: "200",
     12: "100",
+    13: "50",
 }
 EDITED = Decimal("400")
 REPLACED_EDIT = Decimal("600")
 RESUBMITTED = "700"
 LEFT = (2, 7)
 GONE = 6
+# Active in ParishSoft, but registered at another parish since the reload.
+MOVED = 13
+ELSEWHERE = 54321
 # The expected figures: every responder under historical; under current,
-# only those still in this campaign (Families 2 and 6 are not).
+# only those still in this campaign (Families 2, 6 and 13 are not).
 EXPECTED = {
-    "historical": (7, Decimal("3150")),
+    "historical": (8, Decimal("3200")),
     "current": (5, Decimal("2400")),
 }
+# Under historical, the "No longer in this campaign" refinement: the
+# responders still in ParishSoft that left (2, and 13 under every rule).
+LEFT_RESPONDERS = (2, Decimal("550"))
+# The two rules the campaign runs on: the legacy one, and Active
+# parishioners.
+RULES = pytest.mark.parametrize(
+    "response_service",
+    [None, ACTIVE],
+    ids=["legacy-rule", "configured-rule"],
+    indirect=True,
+)
 # A Family group the legacy Families rule reads as inactive.
 INACTIVE_GROUP = 99
 
@@ -127,7 +154,10 @@ def families():
 
 def reload(harness):
     """Promote a newer full load in which Families 2 and 7 left the campaign
-    (their Family group is Inactive) and Family 6 is gone from ParishSoft."""
+    (their Family group is Inactive), Family 13 registered at another parish
+    and Family 6 is gone from ParishSoft, under the campaign's own Families
+    rule (a live campaign keeps its configuration)."""
+    rule = campaign_families.stored_rule(harness.campaign.active_configuration.values)
     data = replace(response_source(), organization_id=12345)
     kept = {duid: row for duid, row in families().items() if duid != GONE}
     data.families.update(kept)
@@ -141,9 +171,16 @@ def reload(harness):
             family["famGroupID"] = INACTIVE_GROUP
         elif duid != 1:
             family.setdefault("famGroupID", 7)
-    promoted, rows = load(harness, data)
+    data.families[MOVED]["registeredOrganizationID"] = ELSEWHERE
+    promoted, rows = load(harness, data, rule)
     assert rows["1"]["portal_eligible"] and not rows["2"]["portal_eligible"]
     assert not rows["7"]["portal_eligible"] and str(GONE) not in rows
+    # Family 13 is still active in ParishSoft, which the legacy branch of
+    # Financial stewardship's selection read before 0197 (#2335).
+    assert rows[str(MOVED)]["active"] and not rows[str(MOVED)]["portal_eligible"]
+    assert all(
+        (campaign_families.KEY in row) is (rule is not None) for row in rows.values()
+    )
     return promoted
 
 
@@ -377,9 +414,21 @@ def dashboard(browser, scope):
     )
 
 
-def financial(browser, scope):
-    """Financial stewardship's figures: (responded, pledges, label)."""
-    route = reverse("admin:financial_report") + (f"?scope={scope}" if scope else "")
+def financial(browser, scope, refinement=""):
+    """Financial stewardship's figures: (responded, pledges, label).
+
+    ``refinement`` is the Family status refinement of the historical
+    population ("" for none).
+    """
+    query = "&".join(
+        part
+        for part in (
+            f"scope={scope}" if scope else "",
+            f"active={refinement}" if refinement else "",
+        )
+        if part
+    )
+    route = reverse("admin:financial_report") + (f"?{query}" if query else "")
     response, body = read(browser, route)
     assert response.status_code == 200, body
     return (
@@ -402,10 +451,14 @@ def comparison(browser, day):
     )
 
 
+@RULES
 def test_every_page_counts_the_same_families_for_each_population(agreement):
     """The dashboard and Financial stewardship agree under each population,
     and Campaign comparison agrees with them under historical, on the fact
-    set's last day; each page names the population it counts."""
+    set's last day; each page names the population it counts. So do they
+    under the legacy Families rule and a configured one, and Financial
+    stewardship's "No longer in this campaign" lists the responders the
+    dashboard's current population leaves out (but the one gone)."""
     browser, last_day, now = agreement
     figures = {}
     with campaign_clock(now), task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -417,14 +470,23 @@ def test_every_page_counts_the_same_families_for_each_population(agreement):
             assert on_dashboard[3] == on_financial[2] == label, scope
             figures[scope] = on_dashboard
         # Campaign Families: under historical every Family ever in this
-        # campaign, so the three that left or are gone (2, 6, 7) too, and
+        # campaign, so the four that left or are gone (2, 6, 7, 13) too, and
         # the Testing-only Family 8 either way.
-        assert figures["historical"][2] - figures["current"][2] == len((*LEFT, GONE))
+        assert figures["historical"][2] - figures["current"][2] == len(
+            (*LEFT, GONE, MOVED)
+        )
         # Without a scope both pages show the shared default, today's
         # campaign Families (the Administrator's decision, #2324).
         assert dashboard(browser, "")[:2] == financial(browser, "")[:2]
         assert financial(browser, "")[:2] == EXPECTED["current"]
         assert financial(browser, "")[2] == str(SCOPE_LABELS["current"])
+        # The refinement reads the same eligibility (#2335): the
+        # historical responders less the current ones, less the one gone
+        # from ParishSoft (Status unavailable).
+        assert financial(browser, "historical", "inactive")[:2] == LEFT_RESPONDERS
+        assert (
+            EXPECTED["historical"][0] - EXPECTED["current"][0] - 1 == LEFT_RESPONDERS[0]
+        )
         responded, pledges, percent = comparison(browser, last_day)
         historical = figures["historical"]
         assert (responded, pledges) == EXPECTED["historical"]

@@ -15,6 +15,7 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.rehearsals import code_context, prepare_rehearsals
 from parishkit.stewardship.source.models import SourceCurrent, SourceMutationLease
 
+from ..campaign_factory import campaign as campaign_record
 from ..test_source_corpus import source
 from .campaign_builders import add_draft, campaign_clock, change
 from .credential_builders import keys
@@ -109,11 +110,22 @@ def activate_response_service(harness):
 
 
 @pytest.fixture
-def response_service(auth_service, settings):
-    """Promote coherent eligibility before issuing rehearsal credentials."""
+def response_service(auth_service, settings, request):
+    """Promote coherent eligibility before issuing rehearsal credentials.
+
+    A test may parametrize this fixture indirectly with a campaign Families
+    rule (#1393): the campaign is created with it and its source is loaded
+    under it. Without one, the campaign has the legacy rule, as always.
+    """
+    rule = getattr(request, "param", None)
     SourceMutationLease.objects.get_or_create(singleton=True)
     SourceCurrent.objects.get_or_create(singleton=True)
-    _, row, _ = add_draft(auth_service.store, auth_service.store.active(), uuid4())
+    _, row, _ = add_draft(
+        auth_service.store,
+        auth_service.store.active(),
+        uuid4(),
+        None if rule is None else campaign_record(campaign_families=rule),
+    )
     campaign = Campaign.objects.get(pk=UUID(row["id"]))
     if not any(
         item["values"]["kind"] == "email"
@@ -142,7 +154,7 @@ def response_service(auth_service, settings):
         assert result.state == "applied"
         campaign.refresh_from_db()
     rings = keys()
-    snapshot, claim = prepare(response_source())
+    snapshot, claim = prepare(response_source(), families=rule)
     snapshot = promote(snapshot, claim, campaign, rings)
     service = FamilyRuntime(
         auth_service.store, auth_service.limiter, rings.general, rings.mac, rings.public

@@ -1092,7 +1092,14 @@ def test_a_family_no_longer_in_parishsoft_has_no_name(response_service):
     # Its head has no surname either: a head's own surname would lead the
     # shown name instead, since it is not the Family's (#2320).
     _rewrite_payload("member", snapshot, 36, {"lastName": ""})
-    _rewrite_payload("family", snapshot, 8, {"active": False})
+    # Inactive, so no longer one of the campaign's Families: the flag reads
+    # its eligibility, as the dashboard does (#2335).
+    _rewrite_payload(
+        "family",
+        snapshot,
+        8,
+        {"active": False, "portal_eligible": False, "email_eligible": False},
+    )
     with unguarded(), connection.cursor() as cursor:
         cursor.execute(
             "DELETE FROM stewardship_snapshot_family "

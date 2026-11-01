@@ -278,9 +278,19 @@ def check():
     return recorded + text[text.index("DO $check$") :]
 
 
+def own_body(cursor):
+    """Put 0182's own body back, rolled back with the test's transaction.
+
+    0197 (#2335) has replaced the selection since, so its body is what a
+    fresh install holds; 0182's check is of what 0182 installed.
+    """
+    cursor.execute(statement(FROZEN.read_text(encoding="utf-8")))
+
+
 def test_the_check_passes_as_installed():
-    """A fresh install has 0182's body, and the whole selection runs."""
+    """0182's body, as 0182 installed it, passes, and the selection runs."""
     with pytest.raises(Rollback), transaction.atomic(), connection.cursor() as cursor:
+        own_body(cursor)
         cursor.execute(check())
         raise Rollback
 
@@ -305,6 +315,7 @@ def test_the_check_refuses_changed_grants():
         transaction.atomic(),
         connection.cursor() as cursor,
     ):
+        own_body(cursor)
         cursor.execute(recorded)
         cursor.execute(
             f"REVOKE EXECUTE ON FUNCTION public.{NAME}(uuid,jsonb,integer,integer)"
@@ -321,6 +332,7 @@ def test_the_check_runs_the_selection_so_a_missing_column_fails():
         transaction.atomic(),
         connection.cursor() as cursor,
     ):
+        own_body(cursor)
         cursor.execute(
             "ALTER TABLE stewardship_pledge_review DROP COLUMN reviewed_shares"
         )
