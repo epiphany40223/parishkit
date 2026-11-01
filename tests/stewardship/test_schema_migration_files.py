@@ -635,6 +635,9 @@ FROZEN = {
     "0200_address_match.sql": (
         "2b14157352491014fed30f0967ad49a8491260b54834f608f8998f4e985930f2"
     ),
+    "0201_archive_settles_mail.sql": (
+        "71b11617b87a5bf9ded3e273c7c7ff377acf5ebfbf909189c2d30a5c09412e9d"
+    ),
 }
 
 
