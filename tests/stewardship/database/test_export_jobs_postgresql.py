@@ -30,6 +30,7 @@ from parishkit.stewardship.reports.export_services import (
 from parishkit.stewardship.reports.export_tasks import export_handler
 from parishkit.stewardship.reports.facts import FactUnavailable, publish_fact_set
 from parishkit.stewardship.reports.models import CampaignFactPin
+from parishkit.stewardship.reports.participation import SCOPE_LABELS
 
 from ..test_request_patch import parish_patch
 from .campaign_builders import change
@@ -142,9 +143,18 @@ def test_real_worker_publishes_complete_artifact_then_one_use_download(
     ) as stream:
         value = stream.read()
     assert value.startswith(
-        {"csv": b"Section,Group,Figure,", "png": b"\x89PNG", "pdf": b"%PDF"}[format]
+        {"csv": b"Report,", "png": b"\x89PNG", "pdf": b"%PDF"}[format]
     )
     if format == "csv":
+        # The header block names the population the request pinned (R59 on
+        # #2324), then the table follows a blank row.
+        counted = str(SCOPE_LABELS[request.parameters["population_scope"]])
+        assert value.startswith(
+            b"Report,Family participation\r\n"
+            + f"Families counted,{counted}\r\n".encode()
+            + b"Source as of,"
+        )
+        assert b"\r\n\r\nSection,Group,Figure," in value
         # The Response dashboard's Summary leads, then the daily rows (#1557).
         assert b"\r\nSummary,Families by stage,Invited," in value
         assert b"\r\nDaily participation,,,,,,2054-10-02," in value

@@ -102,7 +102,9 @@ XLSX table and the PDF
 details (parish, campaign, capture and request times, filters, counts and
 notes) are in the XLSX "Report information" sheet and the PDF's header,
 footer and report card, never repeated as CSV columns or rows; the CSV's
-timestamps carry their UTC offset. The Ministry follow-up packet's CSV is
+timestamps carry their UTC offset. A report whose page has the Families
+counted choice is the exception: its CSV opens with the file's
+[header block](#file-design), then a blank row, then the table. The Ministry follow-up packet's CSV is
 the one multi-section file: its report details and each Ministry's details
 head the sections, as on the packet's XLSX sheets. Cells beginning with
 formula-significant characters are neutralized, except canonical money
@@ -148,7 +150,8 @@ with each phone number and each head's emails on its own line; each response
 list and the Census changes list is the same table; the postal mail merge is a
 grid of address cards. The [participation export](#participation-graph)'s
 PDF, titled with the population scope, holds the Response dashboard's
-sections in page order, each page naming its section under the title: the
+sections in page order, each page naming its population (the
+[header block](#file-design) line below) and its section under the title: the
 Summary table, one page with the chart in the frame's body, then the daily
 table; like its picture it states no request or capture time. The
 [Campaign comparison](../campaign-history/spec.md#downloads-and-sharing)
@@ -228,6 +231,30 @@ states the same time; System logs, which has no PDF, also states its
 download time. The
 [past-campaign archive workbook](../campaign-history/spec.md#archive-workbook-format) is not a
 report download and is not covered.
+
+A report whose page has the
+[Families counted](../ui-conventions/spec.md#population-of-report-figures)
+choice (the Response dashboard's participation export and Financial
+stewardship) names the population it counts in the header block of every
+file, in the choice's words, from the population its request captured,
+never re-read when the file is rendered (the Administrator's pk-local check
+R59 on [#2324](https://github.com/epiphany40223/parishkit/issues/2324)):
+
+- **PDF:** on every page, the first line under the title reads "Families
+  counted: In this campaign today" (or "Including Families that left"),
+  below the title's capture-time line where the report has one.
+- **CSV and XLSX:** the CSV, and each XLSX table sheet, opens with three
+  label/value rows: Report (the report's title), Families counted (the
+  population) and Source as of (the source data's time, in the display time
+  zone; ISO 8601 with its offset in the CSV). A blank row follows, then the
+  table, whose heading row stays the frozen and printed one, as on a sheet
+  with title rows.
+
+Each file's report details keep their own population row as well (Financial
+stewardship's Families counted, the participation export's Population row
+and column). Campaign comparison and the Response lists count one fixed
+population and their pages have no Families counted line, so their files
+add none.
 
 Charts follow the [chart conventions](../ui-conventions/spec.md#charts).
 
@@ -3811,9 +3838,10 @@ Families (`active` "active"), by the same test as the Family's
 [badge](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft):
 under a [Families rule](../data/spec.md#campaign-families) whether the
 Family still matches it, and for the legacy rule whether ParishSoft lists it
-as active (#1393). Each export names its population in a Families counted
-metadata row, read from the filters it captured, so a file captured
-before #2324 names its population too.
+as active (#1393). Each export names its population in its
+[header block](#file-design) and in a Families counted metadata row, both
+read from the filters it captured, so a file captured before #2324 names its
+population too.
 
 Filters include Family status, a refinement of Including Families that left
 only, so it is shown only while that population is chosen

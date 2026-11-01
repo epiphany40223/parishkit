@@ -28,6 +28,22 @@ from parishkit.stewardship.reports.participation import (
 )
 from parishkit.stewardship.reports.participation_summary import ParticipationSummary
 
+# The CSV's header block (R59 on #2324): its Report, Families counted and
+# Source as of rows, then a blank row, before the table.
+HEADER_LINES = 4
+
+
+def csv_table(data):
+    """A participation CSV's text after its header block: the table."""
+    lines = data.decode().split("\r\n")
+    assert [line.split(",")[0] for line in lines[:3]] == [
+        "Report",
+        "Families counted",
+        "Source as of",
+    ]
+    assert lines[3] == ""
+    return "\r\n".join(lines[HEADER_LINES:])
+
 
 def document():
     """Fixed identities and a DST weekend make accidental clock/zone changes visible."""
@@ -126,8 +142,9 @@ def test_table_and_csv_keep_exact_money_counts_without_internal_ids():
     assert rows[0]["participation"] == "1 out of 1,234 (0.1%)"
     assert rows[-1]["date"] == "2026-11-02"
     data = stream.getvalue()
-    assert data.count(b"\r\n") == 4
-    reader = csv.DictReader(io.StringIO(data.decode()))
+    table = csv_table(data)
+    assert table.count("\r\n") == 4
+    reader = csv.DictReader(io.StringIO(table))
     exported = list(reader)
     # The Section column and the Summary's columns lead (#1557); this
     # document has no captured Summary, so every row is a daily one.
@@ -432,7 +449,7 @@ def test_unavailable_is_gap_but_observed_zero_and_empty_are_distinct():
         assert "No campaign days" in figure.axes[0].texts[0].get_text()
     stream = io.BytesIO()
     participation_csv(empty, stream)
-    assert stream.getvalue().count(b"\r\n") == 1
+    assert csv_table(stream.getvalue()).count("\r\n") == 1
 
 
 @pytest.mark.parametrize(

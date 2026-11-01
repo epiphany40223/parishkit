@@ -38,6 +38,8 @@ SCOPE_CHOICE_LABEL = gettext_lazy("Families counted")
 # pk-admin's --help can read them before Django's settings exist).
 SCOPE_LABELS = {scope: gettext_lazy(words) for scope, words in SCOPE_WORDS.items()}
 DEFAULT_SCOPE = "current"
+# The as-of row of a file's header block, beside its Families counted row.
+SOURCE_AS_OF = "Source as of"
 # The CSV's and XLSX's columns: (``participation_table`` key, heading). Both
 # formats carry exactly these, in this order, under the page's plain names
 # where the page has the column (#966); no internal generation, watermark or
@@ -52,6 +54,30 @@ COLUMNS = (
     ("source_as_of", "Source as of"),
 )
 PLEDGE_COLUMN = ("pledge_usd", "Cumulative annual pledges (USD)")
+
+
+def families_counted_line(scope):
+    """The PDF header's population line: "Families counted: In this campaign today".
+
+    The Administrator's R59 on #2324: every file of a report with the
+    Families counted choice says which population it counts, under its
+    title (reports spec, "File design").
+    """
+    return f"{SCOPE_CHOICE_LABEL}: {SCOPE_LABELS[scope]}"
+
+
+def header_rows(title, scope, source_as_of):
+    """A CSV's or XLSX table sheet's opening (label, value) rows (R59, #2324).
+
+    The report's title, the population ``scope`` the request captured, in
+    the Families counted choice's words, and the source data's time (an
+    aware instant already in the display time zone, or "" when unknown).
+    """
+    return (
+        ("Report", title),
+        (str(SCOPE_CHOICE_LABEL), str(SCOPE_LABELS[scope])),
+        (SOURCE_AS_OF, source_as_of),
+    )
 
 
 def _label(value):
@@ -231,6 +257,19 @@ class ParticipationDocument:
         return str(SCOPE_LABELS[self.population_scope])
 
     @property
+    def header_rows(self):
+        """The CSV's and each XLSX table sheet's header block (R59, #2324).
+
+        Its population is the request's captured scope and its as-of the
+        exported generation's source time, in the requester's time zone.
+        """
+        return header_rows(
+            "Family participation",
+            self.population_scope,
+            self.source_as_of.astimezone(ZoneInfo(self.browser_timezone)),
+        )
+
+    @property
     def as_of_label(self):
         """Localize instants only; graph calendar dates stay in campaign time."""
         source = dates.format_instant(self.source_as_of, self.browser_timezone)
@@ -308,9 +347,11 @@ def participation_csv(document, output):
     conventions, "Downloaded files"): a Section column, then the Summary's
     columns, then the daily columns, each row filling only its own
     section's. A document without a captured Summary has daily rows only.
-    Report details live in the XLSX "Report information" sheet, never as
-    repeated CSV columns (#966). Times are ISO 8601 with their offset, in
-    the requester's display time zone.
+    The file opens with its header block (report, Families counted and
+    Source as of rows, then a blank row; R59 on #2324); every other report
+    detail lives in the XLSX "Report information" sheet, never as repeated
+    CSV columns (#966). Times are ISO 8601 with their offset, in the
+    requester's display time zone.
     """
     from .participation_summary import COLUMNS as SUMMARY_COLUMNS
     from .participation_summary import DAILY, SUMMARY
@@ -323,6 +364,9 @@ def participation_csv(document, output):
     wrapper = io.TextIOWrapper(output, encoding="utf-8", newline="", write_through=True)
     try:
         writer = csv.writer(wrapper, lineterminator="\r\n")
+        for label, value in document.header_rows:
+            writer.writerow([label, csv_cell(value)])
+        writer.writerow([])
         writer.writerow(
             ["Section", *SUMMARY_COLUMNS, *(heading for _, heading in columns)]
         )
