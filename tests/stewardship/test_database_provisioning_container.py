@@ -34,6 +34,7 @@ from parishkit.stewardship.inspect_login import (
     REVIEWED_VIEWS,
     expected_selects,
 )
+from parishkit.stewardship.runtime_grants import BACKUP_RUN_INSERT_COLUMNS
 from parishkit.stewardship.runtime_identities import database_identities
 from parishkit.stewardship.runtime_paths import RuntimeLayout
 from parishkit.stewardship.runtime_topology import POSTGRES_IMAGE
@@ -335,13 +336,20 @@ def test_migration_owner_and_narrow_runtime_grants(empty_operator_database, tmp_
                 cursor.execute("SELECT COUNT(*) FROM stewardship_secret_request")
                 assert cursor.fetchone() == (0,)
                 cursor.execute("RESET row_security")
+                # Since the uploader contract (0195) its run-row INSERT is a
+                # column grant without completed_at, which only the database
+                # sets, so the table-level INSERT is gone.
                 cursor.execute(
                     "SELECT pg_has_role(current_user,'pg_read_all_data','USAGE'),"
                     "has_table_privilege(current_user,"
                     "'stewardship_backup_run','INSERT'),"
+                    "has_column_privilege(current_user,"
+                    "'stewardship_backup_run','manifest_digest','INSERT'),"
+                    "has_column_privilege(current_user,"
+                    "'stewardship_backup_run','completed_at','INSERT'),"
                     "has_table_privilege(current_user,'stewardship_campaign','INSERT')"
                 )
-                assert cursor.fetchone() == (True, True, False)
+                assert cursor.fetchone() == (True, False, True, False, False)
     from parishkit.stewardship.bootstrap import provision_initial_files
 
     bootstrap = replace(
@@ -700,9 +708,12 @@ def test_upgrade_check_proves_migration_and_grants_are_no_ops(
             "GRANT SELECT ON upgrade_check_extra.extra TO pk_stewardship_worker",
             "DROP SCHEMA upgrade_check_extra CASCADE",
         ),
+        # A table-level REVOKE also drops the column INSERT grant (0195), so
+        # the undo restores that column grant, not a table-level INSERT.
         (
             "REVOKE INSERT ON stewardship_backup_run FROM pk_stewardship_backup_worker",
-            "GRANT INSERT ON stewardship_backup_run TO pk_stewardship_backup_worker",
+            "GRANT INSERT (" + ",".join(BACKUP_RUN_INSERT_COLUMNS) + ") "
+            "ON stewardship_backup_run TO pk_stewardship_backup_worker",
         ),
         (
             "REVOKE SELECT ON stewardship_campaign FROM pk_stewardship_web",
