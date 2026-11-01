@@ -22,6 +22,7 @@ from parishkit.stewardship.quality_pytest import (
     BROWSER_DISCOVERY,
     BrowserSelection,
     failures_path,
+    progress_path,
     running_path,
 )
 from parishkit.stewardship.quality_sharding import (
@@ -498,7 +499,7 @@ def test_browser_workflow_contract():
         f'echo "{quality_browser.JOB_STARTED_ENV}=$(date +%s)" >> "$GITHUB_ENV"'
     )
     assert job["timeout-minutes"] * 60 == quality_browser.JOB_LIMIT_SECONDS
-    install, run = job["steps"][-2:]
+    install, run, name, upload = job["steps"][-4:]
     assert 'read -ra runs <<<"$BROWSER_RUNS"' in install["run"]
     # The container image has the OS packages, so nothing installs them (#2053).
     assert 'python -m playwright install "${runs[@]%%:*}"' in install["run"]
@@ -507,6 +508,11 @@ def test_browser_workflow_contract():
     assert run["run"] == (
         'python -m parishkit.stewardship.quality_browser --runs "$BROWSER_RUNS"'
     )
+    # A failed job keeps each partition's progress log as an artifact (#2355).
+    assert run["env"]["BROWSER_PROGRESS_DIR"] == ("${{ runner.temp }}/browser-progress")
+    assert name["if"] == upload["if"] == "${{ failure() }}"
+    assert upload["uses"].startswith("actions/upload-artifact@")
+    assert upload["with"]["path"] == "${{ runner.temp }}/browser-progress/"
     gate = jobs["stewardship-browser"]
     assert gate["needs"] == ["validate", "stewardship-browser-engine"]
     assert gate["if"] == "${{ always() && github.event_name != 'push' }}"
@@ -1154,6 +1160,7 @@ def test_plugin_records_failed_phases_beside_the_receipt(
                 when=when,
                 passed=outcome == "passed",
                 failed=outcome == "failed",
+                duration=0.1,
             )
         )
     assert failures_path(receipt).read_text() == "b\nc\n"
@@ -1231,3 +1238,115 @@ def test_kill_group_tolerates_an_exited_group(monkeypatch):
     process = Mock()
     quality_browser.kill_group(process)
     process.wait.assert_called_once_with()
+
+
+PROGRESS = [
+    "START tests/a.py::one",
+    "END tests/a.py::one elapsed=1.500s",
+    "START tests/a.py::two",
+    "END tests/a.py::two elapsed=2.000s",
+    "START tests/b.py::three",
+]
+
+
+def test_progress_state_separates_running_from_completed():
+    """A started test with no end is running; ends keep their order."""
+    running, done = quality_browser.progress_state(PROGRESS)
+    assert running == ["tests/b.py::three"]
+    assert done == [("tests/a.py::one", "1.500s"), ("tests/a.py::two", "2.000s")]
+
+
+def test_kill_report_names_what_limit_elapsed_running_and_last_ten():
+    """The report says what was killed, the limit and elapsed, and the tests."""
+    done = [f"END tests/t.py::n{i} elapsed={i}.000s" for i in range(15)]
+    report = quality_browser.kill_report(
+        "firefox 4/4", "partition budget ran out", 3000, 2999.6, [*done, *PROGRESS[-1:]]
+    )
+    assert report.splitlines()[0] == (
+        "CI_BROWSER_KILL_REPORT firefox 4/4: partition budget ran out; killed "
+        "pytest and its process group after 3,000 s (limit 3,000 s); "
+        "15 test(s) had completed"
+    )
+    assert "  running: tests/b.py::three" in report
+    assert "  last 10 completed:" in report
+    assert "    tests/t.py::n14 14.000s" in report
+    assert "    tests/t.py::n5 5.000s" in report and "n4 " not in report
+
+
+def test_a_budget_kill_prints_the_report_and_keeps_the_log(
+    probe, monkeypatch, capfd, tmp_path
+):
+    """A fake hung child that logged progress yields a report and an artifact."""
+
+    def log_progress(command):
+        """Write progress the way the child plugin does."""
+        receipt = Path(
+            next(a for a in command if a.startswith("--ci-browser-evidence=")).split(
+                "=", 1
+            )[1]
+        )
+        progress_path(receipt).write_text("\n".join(PROGRESS) + "\n")
+
+    monkeypatch.setenv(quality_browser.PROGRESS_DIR_ENV, str(tmp_path / "kept"))
+    monkeypatch.setattr(
+        quality_browser.subprocess,
+        "Popen",
+        lambda command, **kwargs: HungPytest(command, log_progress),
+    )
+    monkeypatch.setattr(quality_browser.os, "killpg", Mock())
+    with pytest.raises(quality_browser.BudgetExhausted):
+        quality_browser.run_engine(probe, "firefox", 4, 4, 900)
+    out = capfd.readouterr().out
+    assert "CI_BROWSER_KILL_REPORT firefox 4/4: partition budget ran out" in out
+    assert "(limit 900 s)" in out and "  running: tests/b.py::three" in out
+    assert "    tests/a.py::two 2.000s" in out
+    kept = tmp_path / "kept" / "firefox-4-4.progress.log"
+    assert kept.read_text().splitlines() == PROGRESS
+
+
+def test_an_interrupt_prints_the_report(probe, monkeypatch, capfd):
+    """A cancel (KeyboardInterrupt) during the wait is also logged by name."""
+
+    class Interrupted(HungPytest):
+        """A child whose bounded wait is interrupted."""
+
+        def wait(self, timeout=None):
+            """Interrupt the bounded wait; the reap succeeds."""
+            if timeout is None:
+                return -9
+            raise KeyboardInterrupt
+
+    monkeypatch.delenv(quality_browser.PROGRESS_DIR_ENV, raising=False)
+    monkeypatch.setattr(
+        quality_browser.subprocess,
+        "Popen",
+        lambda command, **kwargs: Interrupted(command),
+    )
+    monkeypatch.setattr(quality_browser.os, "killpg", Mock())
+    with pytest.raises(KeyboardInterrupt):
+        quality_browser.run_engine(probe, "chromium", 1, 2, 900)
+    out = capfd.readouterr().out
+    assert "CI_BROWSER_KILL_REPORT chromium 1/2: interrupted or cancelled" in out
+    assert "  running: none" in out
+
+
+def test_the_plugin_logs_each_tests_start_and_end(selection_config, tmp_path_factory):
+    """The child plugin appends START and END lines with total seconds."""
+    receipt = tmp_path_factory.mktemp("receipt") / "receipt.json"
+    selection_config.options["--ci-browser-evidence"] = str(receipt)
+    plugin = BrowserSelection(selection_config)
+    plugin.pytest_runtest_logstart("tests/x.py::t", None)
+    for when, duration in (("setup", 1.0), ("call", 2.0), ("teardown", 0.5)):
+        plugin.pytest_runtest_logreport(
+            SimpleNamespace(
+                nodeid="tests/x.py::t",
+                when=when,
+                passed=True,
+                failed=False,
+                duration=duration,
+            )
+        )
+    assert progress_path(plugin.evidence).read_text().splitlines() == [
+        "START tests/x.py::t",
+        "END tests/x.py::t elapsed=3.500s",
+    ]
