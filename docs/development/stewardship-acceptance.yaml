@@ -43,6 +43,7 @@ sections:
     "Family campaign identity": [DAT-04]
     "Family engagement": [DAT-04, RPT-03]
     "Administration user and policy": [DAT-05]
+    "Verified-address match records": [DAT-05, ADM-01]
     "Ministry leaders": [DAT-05, ADM-07]
     "Ministry leader changes": [DAT-05, DAT-07]
     "Person identity reads": [DAT-05, ADM-07]
@@ -62,6 +63,9 @@ sections:
     "Retention and deletion": [DAT-09, OPS-07]
   admin-portal/spec.md:
     "Login and denial behavior": [ADM-01]
+    "Sign-in through another verified address": [ADM-01]
+    "Verified-address outcomes": [ADM-01]
+    "Verified-address matches": [ADM-01, ADM-07]
     "Bootstrap and first-Admin wizard": [ADM-02]
     "ParishSoft organization choice": [ADM-02]
     "Checking the parish data during setup": [ADM-02]

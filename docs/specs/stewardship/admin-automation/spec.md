@@ -598,7 +598,15 @@ longer an Administrator.
   approval) or until it ends. Use does not extend it, nothing renews it, and
   there is no idle limit on the automation session itself. Every command
   whose session has less than 72 hours left writes a warning to standard
-  error.
+  error. A session approved by a Google account that signs in through a
+  [verified-address match](../admin-portal/spec.md#verified-address-matches)
+  ([#2343](https://github.com/epiphany40223/parishkit/issues/2343)) gets an
+  `expires_at` no later than that match's `confirmed_at` plus 30 days,
+  whatever lifetime was asked for, and approval says the shorter end
+  date. Every command also ends it at once when the match stops being
+  usable (the deployment setting turned off, the match ended, its 30 days
+  passed, or its user deleted), because the principal then has no role
+  ([administration user and policy](../data/spec.md#administration-user-and-policy)).
 - **Role loss, removal, recovery and restore.** A session ends as soon as its
   principal is no longer an Administrator, is disabled or removed, or an
   offline Admin-access recovery is recorded. Every command checks this before
@@ -1584,7 +1592,8 @@ waiting for it once the command has finished. A command declares that it prompts
 command that accepts only `--yes` is left out of it by name. PR 6b's
 `test sample`, PR 6c's `test families`, PR 9c's `delivery resend` and
 `delivery refusal-clear`, PR 7a's `portal maintenance set`, PR 7b's `send
-confirm` and #463's `files delete` are prompting commands.
+confirm`, #463's `files delete` and #2343's `users end-match` are prompting
+commands.
 
 A prompting or confirming command checks its page's capability first,
 renewing nothing, before it reads an input, looks anything up or prompts
@@ -2019,7 +2028,7 @@ checks that every other ledger route is named here.
 | `index`, `background_counts` | `status` (PR 3a) |
 | `presence`, `presence_count` | `status`, its `presence.count` (PR 3a; see below) |
 | `campaign_root`, `mail_root`, `parish_root` | Permanent: a menu group's root URL, which only redirects to the group's first open entry; that entry covers it |
-| `login`, `logout`, `session_status`, `session_renew` | Permanent: browser sign-in and session chrome; `login start`, `login wait`, `logout`, `whoami`, `sessions` and `commands` cover the automation side (PR 2) |
+| `login`, `login_addresses` (the [second sign-in step](../admin-portal/spec.md#sign-in-through-another-verified-address), #2343), `logout`, `session_status`, `session_renew` | Permanent: browser sign-in and session chrome; `login start`, `login wait`, `logout`, `whoami`, `sessions` and `commands` cover the automation side (PR 2) |
 | `signed_in_sessions` (list and Sign out, new, #953) | Permanent: browser session chrome; the operator's offline recovery signs everyone out |
 | `maintenance` | Permanent: the status page the access gate shows |
 | `campaign_step_continue` ([#1404](https://github.com/epiphany40223/parishkit/issues/1404)) | Permanent: the browser [Campaign setup stepper](../admin-portal/spec.md#create-the-campaign)'s own progress (a step kept as is, then the next step page, or one Pages and emails item kept as is, then Pages and emails, #1404 PR 6b); the command line applies settings directly and has no stepper |
@@ -3958,6 +3967,7 @@ unknown email `not_available`, and a key used with another intent `invalid`.
 | `user_leader_import`, `user_leaders_status` (the leaders section's passive status, [#1863](https://github.com/epiphany40223/parishkit/issues/1863)) | `users import-leaders --preview`, `users import-leaders --confirm` (#952 leaders slice) |
 | `user_leader_emails` | `users email-leaders --preview`, `users email-leaders --confirm` ([#1622](https://github.com/epiphany40223/parishkit/issues/1622)) |
 | `user_timeline` | `users timeline --user ID [--kind K] [--from DAY] [--to DAY] [--zone ZONE]` ([#1866](https://github.com/epiphany40223/parishkit/issues/1866)); see below |
+| `user_match_end` | `users end-match --user ID --match MATCH_ID [--yes]` ([#2343](https://github.com/epiphany40223/parishkit/issues/2343)); see below |
 | `user_rules`, `rule_apply`, `rule_base`, `rule_request` | Retired by #952: removed with the rule tables and autosave when the users commands land; no rule commands are built |
 | `chair_confirmations`, `chair_reviews`, `assignments` | Retired by #922: removed with Ministry assignments and Chairperson flows; no commands are built |
 | `security_event_acknowledge`, `critical_events_acknowledge` | `events list`, `events acknowledge` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); see below |
@@ -3974,7 +3984,10 @@ The users commands (#952) call the same service functions as the
 checks, audit and alerts:
 
 - `users list` prints each user's ID, email, Name, role, last successful
-  sign-in and recorded identities, with the page's sort (`--sort`), and the
+  sign-in, recorded identities and `address_match` (null, or the standing
+  [verified-address match](../admin-portal/spec.md#verified-address-matches)'s
+  `match_id`, the Google account's `id` and `sign_in_email`, `matched_at`
+  and `confirmed_at`), with the page's sort (`--sort`), and the
   applied configuration's `version`, which `users preview` takes; it is
   read-only and needs only a read-only session. Before the users upgrade, its `form` is
   `sign_in_rules` and its users are the exact-address rules that grant a
@@ -4064,8 +4077,23 @@ checks, audit and alerts:
   Family whose lines the filters all leave out was not looked at and is not
   recorded.
 
+- `users end-match --user ID --match MATCH_ID` is Edit user's End match:
+  it prompts as the page's confirmation dialog asks (as `files delete`
+  does), showing the user's record ID and the match ID, never an address,
+  and `--yes` answers it (it declares `prompts` in the catalog and is
+  `users_end_match` in the wrapper's `PROMPTING` list). It ends the match,
+  puts the account's address back and ends the account's Admin and
+  automation sessions in one transaction, through the page's own function,
+  and records `admin_cmd_users_end_match` beside the guard's
+  `admin_address_match_ended`. `MATCH_ID` is `address_match.match_id` as
+  `users list` prints it, so it never ends a newer match; one already ended
+  is `stale_version`, an unknown user `not_available`, and the match the
+  command session itself signs in through `invalid` with
+  `match_own_account`, checked before the prompt.
+
 These need a full-scope session, except `users list`,
-`users preview-upgrade` and `users timeline`; none is fresh-gated, as the page asks for no fresh
+`users preview-upgrade` and `users timeline`; none is fresh-gated (`users
+end-match` included), as the page asks for no fresh
 sign-in. The command shapes are defaults, pending Administrator confirmation.
 
 `users list` and `users preview-upgrade` record the page's view event,
