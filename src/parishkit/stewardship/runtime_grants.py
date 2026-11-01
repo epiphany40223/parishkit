@@ -552,6 +552,25 @@ SETUP_BACKUP_CHECK_FUNCTION = "stewardship_setup_backup_check_v1()"
 FAMILY_ASSISTED_LOGIN_FUNCTION = (
     "stewardship_family_assisted_login_v1(character varying, uuid, uuid, jsonb, uuid)"
 )
+# Whether a Google account other than the one named uses an address (0200,
+# #2343): the verified-address sign-in's outcome check and its match guard
+# ask this one definer. Web learns only true or false, never which account
+# or session; the guard reads the sessions and audit as the owner.
+ADDRESS_IN_USE_FUNCTION = "stewardship_address_in_use_v1(text, uuid)"
+# What web may change on a verified-address match (0200, #2343): its
+# re-check time and its end; the match guard decides which moves are valid.
+ADDRESS_MATCH_UPDATE_COLUMNS = frozenset(
+    {
+        "confirmed_at",
+        "ended_at",
+        "end_reason",
+        "ended_by_id",
+        "ended_session_id",
+        "version",
+        "updated_at",
+        "correlation_id",
+    }
+)
 # Publication plans and outcomes (#528, DAT-09.01, migration 0087): the
 # worker writes a preflight's plan and each write attempt's outcome; web
 # reads them all and writes only an Administrator's confirmation.
@@ -700,6 +719,8 @@ CLOSURE_FUNCTIONS = {
         (FAMILY_SESSION_PURGE_FUNCTION, ANONYMOUS_SESSION_PURGE_FUNCTION),
         ("stewardship_accounts", "0040_family_session_purge"),
     ),
+    # Verified-address sign-in's in-use check (0200, #2343).
+    ADDRESS_IN_USE_FUNCTION: ("stewardship_accounts", "0041_address_match"),
 }
 
 
@@ -873,6 +894,9 @@ CLOSURE_TABLES = {
         "stewardship_accounts",
         "0038_setup_source_check",
     ),
+    # Verified-address matches (0200, #2343), which web records, re-checks
+    # and ends.
+    "stewardship_address_match": ("stewardship_accounts", "0041_address_match"),
 }
 
 
@@ -1073,7 +1097,9 @@ def runtime_functions(role, *, target=None):
     the addresses of a Sent mail page's reports and notices (#1562), the
     Families an address belongs to and a Family's users (#1867), the
     report sends waiting on an earlier email (#1872), and the Ministries
-    one user's address leads, for that user's Timeline (#1925).
+    one user's address leads, for that user's Timeline (#1925), and asks
+    whether another Google account uses an address, for verified-address
+    sign-in (#2343).
     The general worker asks whether a publication plan's or outcome's audit
     event is recorded (#528), since it cannot read audit rows itself, and
     which added Member links a promoted snapshot supports (#1670).
@@ -1128,6 +1154,7 @@ def runtime_functions(role, *, target=None):
                 DEBUG_OFF_FUNCTION,
                 EDITS_IN_FORCE_FUNCTION,
                 REVIEW_WATERMARK_FUNCTION,
+                ADDRESS_IN_USE_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {
                 MINISTRY_CATALOG_FUNCTION,
@@ -1558,6 +1585,14 @@ def runtime_grants(role, *, target=None):
         # finishes and discards a reader's own runs; its guard keeps a
         # started run's sequence fixed.
         tables["stewardship_review_run"] = {"SELECT", "INSERT", "UPDATE", "DELETE"}
+        # Verified-address matches (0200, #2343): web records a match, its
+        # re-check and its end; the match guard admits each move, and only
+        # the owner may delete or truncate. Its existing table-level UPDATE
+        # on portal users covers their new sign_in_email.
+        tables["stewardship_address_match"] = {"SELECT", "INSERT"}
+        columns["stewardship_address_match"] = {
+            "UPDATE": set(ADDRESS_MATCH_UPDATE_COLUMNS)
+        }
 
         columns["stewardship_outbox_message"] = {
             "SELECT": set(METADATA_FIELDS) | {"created_at", "updated_at", "finished_at"}

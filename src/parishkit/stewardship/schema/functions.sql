@@ -4506,6 +4506,7 @@ CREATE FUNCTION public.stewardship_portal_session_mutable_v1() RETURNS trigger
 -- FUNCTION: stewardship_portal_user_mutable_v1()
 CREATE FUNCTION public.stewardship_portal_user_mutable_v1() RETURNS trigger
     LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
             BEGIN
                 IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."google_subject" IS DISTINCT FROM OLD."google_subject" THEN
@@ -4518,16 +4519,40 @@ CREATE FUNCTION public.stewardship_portal_user_mutable_v1() RETURNS trigger
                     RAISE EXCEPTION 'A disabled portal user cannot be re-enabled'
                         USING ERRCODE = '23514';
                 END IF;
-                -- #306 M2: the email and hosted-domain claims change only with
-                -- a re-verification stamped in this same transaction, as the
-                -- Google sign-in callback does; verified_at only advances.
-                IF (NEW."email", NEW."hosted_domain", NEW."verified_at")
-                   IS DISTINCT FROM (OLD."email", OLD."hosted_domain", OLD."verified_at")
+                -- #306 M2: the sign-in address and hosted-domain claims
+                -- change only with a re-verification stamped in this same
+                -- transaction, as the Google sign-in callback does;
+                -- verified_at only advances. The acted-as email (#2343)
+                -- needs one too, except a return to the sign-in address,
+                -- which only lowers what the account may do and is how every
+                -- end of a match puts the account back.
+                IF ((NEW."sign_in_email", NEW."hosted_domain", NEW."verified_at")
+                    IS DISTINCT FROM (OLD."sign_in_email", OLD."hosted_domain", OLD."verified_at")
+                    OR (NEW."email" IS DISTINCT FROM OLD."email"
+                        AND NEW."email" IS DISTINCT FROM NEW."sign_in_email"))
                    AND (NEW."verified_at" <= OLD."verified_at"
                         OR NEW."verified_at" < transaction_timestamp()
                         OR NEW."verified_at" > statement_timestamp()) THEN
                     RAISE EXCEPTION 'Identity claims change only with a fresh verification'
                         USING ERRCODE = '23514';
+                END IF;
+                -- #2343: the account acts as another address than its
+                -- sign-in address only while a standing verified-address
+                -- match of the account names that address and was confirmed
+                -- less than 30 days ago. The nested IF keeps the match table
+                -- out of every other update's plan, so a login that updates
+                -- portal users without matching needs no grant on it.
+                IF NEW."email" IS DISTINCT FROM NEW."sign_in_email"
+                   AND (NEW."email", NEW."sign_in_email")
+                       IS DISTINCT FROM (OLD."email", OLD."sign_in_email") THEN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM public.stewardship_address_match m
+                        WHERE m.portal_user_id = NEW."id" AND m.ended_at IS NULL
+                          AND m.email = NEW."email"
+                          AND m.confirmed_at > statement_timestamp() - interval '30 days') THEN
+                        RAISE EXCEPTION 'An account acts as another address only through a confirmed match'
+                            USING ERRCODE = '23514';
+                    END IF;
                 END IF;
                 IF NEW.version IS DISTINCT FROM OLD.version + 1 THEN
                     RAISE EXCEPTION 'Every update must advance the record version'

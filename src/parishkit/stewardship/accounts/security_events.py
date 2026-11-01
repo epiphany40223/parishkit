@@ -33,6 +33,8 @@ KINDS = {
     "domain_staff_granted": "Staff added to a hosted-domain rule",
     # A replaced backup encryption key (#198): before and after hold key IDs.
     "backup_key_replaced": "Backup encryption key replaced",
+    # A new verified-address match (#2343): target is the user's address.
+    "address_matched": "Google account matched through another address",
 }
 
 

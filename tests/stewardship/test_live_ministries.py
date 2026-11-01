@@ -82,7 +82,8 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     # for Staff and Administrators, Ministry requests' count-only leader
     # coverage (#1594), and the statistics capture's pledge Edits in force
     # and review watermark (0184, 0185, #2202), and Open form's sign-in
-    # (0188, #2294).
+    # (0188, #2294), and whether another Google account uses an address
+    # (0200, #2343).
     assert runtime_functions(ServiceRole.WEB) == {
         FAMILY_LOGIN_FUNCTION,
         FAMILY_ASSISTED_LOGIN_FUNCTION,
@@ -108,6 +109,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         "stewardship_address_people_v1(text, uuid)",
         "stewardship_family_users_v1(bigint, uuid)",
         "stewardship_report_email_waiting_v1(uuid)",
+        "stewardship_address_in_use_v1(text, uuid)",
         "stewardship_address_leader_scope_v1(text, uuid)",
         DEBUG_OFF_FUNCTION,
         EDITS_IN_FORCE_FUNCTION,

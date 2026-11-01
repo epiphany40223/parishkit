@@ -47,6 +47,9 @@ def event_alert(event_id, mode, configuration_id):
         tuple(event.before_roles),
         tuple(event.after_roles),
         *parish_clock(configuration_id),
+        account_email=event.account_email,
+        replaced_account=event.replaced_account_email,
+        replaced_login_at=event.replaced_login_at,
     )
 
 

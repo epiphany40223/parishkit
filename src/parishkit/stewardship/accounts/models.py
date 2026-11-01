@@ -36,6 +36,7 @@ from .content_models import ContentVersion  # noqa: F401
 from .handoff_models import PublicCredentialHandoff  # noqa: F401
 from .hosted_file_models import HostedFile  # noqa: F401
 from .policy_models import (  # noqa: F401
+    AddressMatch,
     AddressRoleGrant,
     AddressRule,
     AdminRevocation,
