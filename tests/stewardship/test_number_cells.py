@@ -14,12 +14,17 @@ STATIC = Path(__file__).parents[2] / "src/parishkit/stewardship/accounts"
 TEMPLATES = STATIC / "templates/stewardship"
 CSS = STATIC / "static/stewardship/ui-v1.css"
 
-# A table cell whose shown value is a DUID: its opening tag, then (after
-# any template tags) the value through the shared ``duid`` filter or a
-# Member DUID shown with a blank default.
-DUID_CELL = re.compile(
+# A table cell that shows one number and nothing else: its opening tag,
+# then (after any template tags) one value that is a DUID (through the
+# shared ``duid`` filter or raw, any ``*_duid``), an envelope number, or a
+# count through ``number`` or ``intcomma``, then only template tags and
+# punctuation (a "—" for none) up to ``</td>``. A count followed by words is
+# mixed text (keep_numbers), so the closing ``</td>`` keeps those cells
+# out.
+NUMBER_CELL = re.compile(
     r"<td(?P<attrs>[^>]*)>(?:\{%[^%]*%\})*"
-    r"\{\{ [^}]*(?:\|duid|member_duid\|default_if_none:\"\") \}\}"
+    r"\{\{ [^}]*?(?:\|duid|_duid|\benvelope|\|number|\|intcomma)\b[^}]* \}\}"
+    r"(?:\{%[^%]*%\}|[^<{\w]+)*</td>"
 )
 
 
@@ -32,21 +37,38 @@ def test_a_numeric_cell_never_wraps_in_any_table():
     assert "table tbody th.numeric" in rule.group(0)
 
 
-def test_every_duid_cell_is_numeric_or_nowrap():
-    """A DUID cell carries the shared class, never a copy of the rule."""
+def test_every_number_cell_is_numeric_or_nowrap():
+    """A DUID, envelope or count cell carries the shared class, never a
+    copy of the rule."""
     cells, missing = 0, []
     for path in sorted(TEMPLATES.rglob("*.html")):
-        for match in DUID_CELL.finditer(path.read_text(encoding="utf-8")):
+        for match in NUMBER_CELL.finditer(path.read_text(encoding="utf-8")):
             cells += 1
             classes = re.search(r'class="([^"]*)"', match["attrs"])
-            if not {"numeric", "nowrap"} & set(
-                classes.group(1).split() if classes else []
-            ):
+            # Words only, so a class set inside a template tag
+            # ("numeric{% if not count %} mail-queue-zero{% endif %}") counts.
+            words = re.findall(r"[\w-]+", classes.group(1)) if classes else []
+            if not {"numeric", "nowrap"} & set(words):
                 missing.append(f"{path.relative_to(TEMPLATES)}: {match.group(0)}")
     assert missing == []
     # The pattern still finds the cells it guards (Users' leaders table,
-    # the directory, Sent mail, the System health examples, and more).
-    assert cells >= 10
+    # the directory's DUID and envelope, Sent mail, the System health
+    # examples, Pause delivery's counts, and more).
+    assert cells >= 30
+
+
+def test_the_number_cell_pattern_has_no_false_positives():
+    """Mixed text and other values are not number cells."""
+    assert NUMBER_CELL.search('<td class="numeric">{{ row.member_duid }}</td>')
+    assert NUMBER_CELL.search("<td>{{ row.envelope|default_if_none:'' }}</td>")
+    assert NUMBER_CELL.search("<td>{% if x %}{{ count|intcomma }}{% endif %}</td>")
+    for text in (
+        "<td>{{ x|number }} emails</td>",
+        "<td>{{ row.name }}</td>",
+        "<td>{{ row.numbered_label }}</td>",
+        "<td>{{ row.duidish }}</td>",
+    ):
+        assert NUMBER_CELL.search(text) is None, text
 
 
 def test_a_duid_under_a_name_is_one_unit():
