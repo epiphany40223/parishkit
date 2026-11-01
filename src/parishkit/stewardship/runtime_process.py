@@ -473,25 +473,29 @@ def installer_pending(installer, target):
     target's setup or access-check steps has something to do, admitting the
     installer first (its full grant check runs here too once its interval
     is up, even while full passes are backed off).
+
+    Each target imports only its own step modules: the setup steps pull in
+    forms, views and provider libraries, and loading every target's steps
+    in every installer cost each idle process about 13 MB (#2347).
     """
-    from . import backup_probes
-    from .accounts import (
-        setup_checks,
-        setup_lookups,
-        setup_mail_exchange,
-        setup_notifications,
-    )
     from .accounts import setup_credential_installation as initial
 
     checks = [installer.pending]
     if target == "parishsoft":
+        from .accounts import setup_checks, setup_lookups
+
         checks += [
             setup_lookups.has_pending,
             setup_checks.has_pending,
         ]
     elif target == "google_workspace":
+        from . import backup_probes
+        from .accounts import setup_mail_exchange
+
         checks += [setup_mail_exchange.has_pending, backup_probes.has_pending]
     elif target == "slack":
+        from .accounts import setup_notifications
+
         checks.append(setup_notifications.has_pending)
     if target in initial.TARGETS:
         checks.append(lambda: initial.has_pending(target))
