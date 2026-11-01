@@ -163,6 +163,31 @@ def test_the_stage_filter_lists_one_stage_and_counts_them_all():
     assert [row["id"] for row in worklist.rows] == ["1", "2"]
 
 
+def test_the_page_opens_on_the_stages_its_badge_counts():
+    """Census changes opens on To review and Conflict together (#2331): its
+    first Stage choice lists both, with the count the menu's badge and
+    Home's card show (``census_changes.OPEN_STAGES`` over the same stage
+    counts, as ``admin_context`` adds them up), and an address without a
+    Stage carries none."""
+    from parishkit.stewardship.accounts.admin_context import _open, count_words
+    from parishkit.stewardship.reports.census_changes import OPEN_STAGES
+
+    rows = [
+        shaped(id="1"),
+        shaped(id="2", execution="conflict"),
+        shaped(id="3", decision="approved"),
+        shaped(id="4", execution="superseded"),
+    ]
+    worklist, html = page(rows, stage="to_review_conflict")
+    assert sorted(row["id"] for row in worklist.rows) == ["1", "2"]
+    first, *_rest = worklist.stage_choices
+    assert first == ("to_review_conflict", "To review and Conflict (2)")
+    counts = select(rows, CensusQuery(stage="all"), administrator=False)
+    badge = _open(counts["stage_counts"], OPEN_STAGES)
+    assert badge == 2 and count_words("census_changes") == "To review and Conflict"
+    assert 'value="to_review_conflict" selected' in html
+
+
 def test_staff_review_by_hand_and_automatic_rows():
     """Staff get Accept, Edit and Ignore on every To review row, By hand or
     not, and Entered by hand only once a By hand one is accepted (strict
@@ -898,8 +923,11 @@ def test_link_pairs_carry_only_the_link_safe_choices():
     from parishkit.stewardship.reports.census_worklist import link_pairs
     from parishkit.stewardship.web.review_worklist import page_address
 
-    plain = CensusQuery(stage="to_review", search="Smith", zone="UTC")
+    # The default Stage, To review and Conflict (#2331), is left out.
+    plain = CensusQuery(stage="to_review_conflict", search="Smith", zone="UTC")
     assert page_address("/c", link_pairs(plain)) == "/c"
+    to_review = CensusQuery(stage="to_review", zone="UTC")
+    assert page_address("/c", link_pairs(to_review)) == "/c?stage=to_review"
     chosen = CensusQuery(
         stage="all", route="automatic", start="2054-10-01", zone="UTC", search="Smith"
     )

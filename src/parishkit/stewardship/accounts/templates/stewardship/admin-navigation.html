@@ -27,10 +27,11 @@
   changes to enter and Limitations show how many open items their queue
   holds (#585; admin_context.COUNTED and _open_counts) as a plain number
   after the name. The pill is hidden from screen readers, which read the
-  visually hidden "(N open)" instead: a pill's own box would otherwise split
-  the entry's name ("( 3 open)"). None shows at zero, so the menu stays
-  quiet when there is no work. The pill's title says what the number counts
-  when a sighted user hovers over it.
+  visually hidden "(To review: N)" instead: a pill's own box would otherwise
+  split the entry's name. None shows at zero, so the menu stays quiet when
+  there is no work. The pill's title says what the number counts when a
+  sighted user hovers over it: the stages it adds up (item.count_words,
+  admin_context.count_words, #2331), never "open".
 
   Home is the first entry, except for Staff and Ministry leaders, whose
   /admin/ is My review work: admin_context lists it first in Review work
@@ -55,7 +56,7 @@
         <details class="admin-group" data-menu-group="{{ section.key }}"{% if section.current %} data-menu-current{% endif %} open>
           <summary class="admin-section-title" id="admin-section-{{ section.key }}">{{ section.label }}</summary>
           <ul aria-labelledby="admin-section-{{ section.key }}">
-            {% for item in section.items %}<li>{% if item.url %}<a href="{{ item.url }}"{% if item.current %} aria-current="{{ item.current }}"{% endif %}>{{ item.label }}{% if item.count %} <span class="admin-menu-count" aria-hidden="true" title="{% blocktranslate with count=item.count|number %}Open items to handle: {{ count }}{% endblocktranslate %}">{{ item.count|number }}</span><span class="visually-hidden">({% blocktranslate with count=item.count|number %}{{ count }} open{% endblocktranslate %})</span>{% endif %}</a>{% else %}<a class="admin-unavailable" role="link" aria-disabled="true" tabindex="0" aria-describedby="admin-tip-{{ item.name }}" data-menu-tip{% if item.current %} aria-current="{{ item.current }}"{% endif %}>{{ item.label }}</a><span class="admin-tip" id="admin-tip-{{ item.name }}" role="tooltip">{{ item.reason }}</span>{% endif %}</li>{% endfor %}
+            {% for item in section.items %}<li>{% if item.url %}<a href="{{ item.url }}"{% if item.current %} aria-current="{{ item.current }}"{% endif %}>{{ item.label }}{% if item.count %} <span class="admin-menu-count" aria-hidden="true" title="{% blocktranslate with words=item.count_words count=item.count|number %}{{ words }}: {{ count }}{% endblocktranslate %}">{{ item.count|number }}</span><span class="visually-hidden">({% blocktranslate with words=item.count_words count=item.count|number %}{{ words }}: {{ count }}{% endblocktranslate %})</span>{% endif %}</a>{% else %}<a class="admin-unavailable" role="link" aria-disabled="true" tabindex="0" aria-describedby="admin-tip-{{ item.name }}" data-menu-tip{% if item.current %} aria-current="{{ item.current }}"{% endif %}>{{ item.label }}</a><span class="admin-tip" id="admin-tip-{{ item.name }}" role="tooltip">{{ item.reason }}</span>{% endif %}</li>{% endfor %}
           </ul>
         </details>
       </li>

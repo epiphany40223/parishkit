@@ -1560,7 +1560,13 @@ Notes on the groups:
   ([review pipeline, role views](../review-pipeline/spec.md#role-views),
   [#2101](https://github.com/epiphany40223/parishkit/issues/2101)). Each is a
   plain number after the entry's
-  name that screen readers announce as "(N open)". No number shows at zero,
+  name whose hover title and screen-reader text name the stages it adds up
+  (the Administrator, 2026-10-31,
+  [#2331](https://github.com/epiphany40223/parishkit/issues/2331)): "To
+  review: N" ("(To review: N)" when read aloud), and for Census changes "To
+  review and Conflict: N"; "open" is not a stage
+  ([stat tiles](../ui-conventions/spec.md#stat-tiles)), so no count says
+  it. No number shows at zero,
   nor on a greyed-out entry. The counts are read when a page loads, never
   updated in place, so a number never appears or disappears under the
   pointer; a save that updates a page in place changes them on the next page
@@ -1840,9 +1846,12 @@ campaign's Families rule selects, never ParishSoft's own active flag, so
 the figure equals the Response dashboard's "In this campaign today";
 [one label, one set](../ui-conventions/spec.md#stat-tiles), #2331): the
 Campaign Families; the Campaign Families responded, as the count, "out of
-1,031 (40%)" and a share bar; and the Families who responded in the past
-24 hours (Testing responses while in Testing mode, as the tile's
-explanation then says).
+1,031 (40%)" and a share bar; and **Families who submitted in the past 24
+hours**: every Family with a submission in that rolling window, a
+resubmission too, so it is not the daily chart's first responses since
+local midnight, and its label says submitted
+([#2331](https://github.com/epiphany40223/parishkit/issues/2331); Testing
+responses while in Testing mode, as the tile's explanation then says).
 The second tile does not count Testing responses; while in Testing mode a
 line under the tiles says so. The Response dashboard keeps the choice
 between all Families and those who can use the Family form now; Home does
@@ -1851,7 +1860,7 @@ dashboard, shown as the viewer's menu entry is.
 
 The Next steps panel comes after the campaign panel and Review work. Home
 has no Today line ([decision 29](#navigation-decisions)): the Families who
-responded in the past 24 hours are the Responses tiles' third tile (#1673).
+submitted in the past 24 hours are the Responses tiles' third tile (#1673).
 
 Each next step is a link card for the viewer's own menu entry: a card
 linking the page while the menu offers it, the page's name and the menu's
@@ -1877,13 +1886,15 @@ the card keeps its two lines; each count is exactly the list its link opens
 At campaign end the Staff work through four lists, so an active, paused,
 closed or archived campaign offers each of them with its count
 ([#1590](https://github.com/epiphany40223/parishkit/issues/1590)), and each
-count is the menu's: Census changes as "N to do" (its To review and
-Conflict rows; its link opens on To review), and for the others the number
-of rows its link opens by default; Ministry requests to enter by hand as
+count is the menu's, named by the stages it adds up before the number,
+as the menu's badge names them (#2331): Census changes as "To review and
+Conflict: N" (its link opens on the page's To review and Conflict Stage,
+which lists exactly those rows), and for the others "To review: N", the
+rows its link opens by default; Ministry requests to enter by hand as
 "N to enter by hand" (Ministry requests at its Stage To enter by hand,
 `?stage=to_enter_by_hand`, counted with that Stage's own selection, only
 past go-live: a draft has no accepted request to enter); Additional
-information and Ministry requests as "N open". The to-enter card follows
+information and Ministry requests as "To review: N". The to-enter card follows
 Ministry requests' menu entry, offered and greyed with its reason as that
 entry is ([roster entry](#roster-entry-on-ministry-requests)); when its
 count cannot be read (the follow-up is turned off or unavailable) the card

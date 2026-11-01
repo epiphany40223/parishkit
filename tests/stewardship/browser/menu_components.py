@@ -108,10 +108,9 @@ def components(context, admin):
             url_name=url_name, namespace=admin_navigation.NAMESPACE, kwargs=kwargs
         )
         sections, breadcrumbs = admin_navigation.build(match, items)
-        # The follow-up queues' open counts, as portal_chrome adds them (#585).
-        for section in sections:
-            for entry in section["items"]:
-                entry["count"] = COUNTS.get(entry["name"])
+        # The follow-up queues' open counts, as portal_chrome adds them
+        # (#585), with the stages each adds up (#2331).
+        admin_context.attach_counts(sections, COUNTS)
         chrome = admin | {"sections": sections, "breadcrumbs": breadcrumbs}
         html = render_to_string(
             "stewardship/home.html",
