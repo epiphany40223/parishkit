@@ -459,11 +459,23 @@ def test_financial_summary_without_rows(response_service, google, cli):
     code, document = run("report", "financial")
     assert code == 0, document
     result = document["result"]
+    assert result["scope"] == "current"
     assert result["families"] == 1 and result["annual_total"] == "1234.50"
     assert result["frequencies"] == {"monthly": 1}
     assert result["shares"] == [{"id": str(CHECK), "count": 1}]
     assert result["no_share"] == 0 and result["cannot_give"] == 0
     assert "1200.00" not in str(document) and "Example" not in str(document)
+    # The page's Families counted (#2324), today's campaign Families by
+    # default: the Family is still in this campaign, so the historical
+    # population counts it too.
+    code, document = run("report", "financial", "--scope", "historical")
+    assert code == 0, document
+    assert document["result"]["scope"] == "historical"
+    assert document["result"]["families"] == 1
+    # A population the page does not offer is the page's refusal, before
+    # anything is read or recorded.
+    code, document = run("report", "financial", "--scope", "active")
+    assert code == 1 and document["error"]["code"] == "invalid"
     # The page records the rows it displayed; the command displays none.
     succeeded = [
         context
@@ -473,6 +485,7 @@ def test_financial_summary_without_rows(response_service, google, cli):
         if context["outcome"] == "succeeded"
     ]
     assert sorted((item["count"], item["matching_count"]) for item in succeeded) == [
+        (0, 1),
         (0, 1),
         (0, 1),
         (1, 1),

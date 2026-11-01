@@ -81,8 +81,10 @@ def create_financial_export(
         admit_campaign(campaign_id, mutating=True)
         return True
 
-    # Re-parsed, so only the closed grammar's own values are retained.
-    filters = FinancialQuery.parse(query.form_values()).form_values()
+    # Re-parsed, so only the closed grammar's own values are retained, and
+    # kept as SQL reads them: the capture's insert trigger runs the report
+    # with them, and the file names its population from them (``scope_of``).
+    filters = FinancialQuery.parse(query.form_values()).sql_filters()
 
     with export_transaction(campaign_id):
         admit()
