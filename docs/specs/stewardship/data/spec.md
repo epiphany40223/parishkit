@@ -1506,22 +1506,27 @@ portal asks the People API for `emailAddresses` only.
 sign-in guide come from
 [#2360](https://github.com/epiphany40223/parishkit/pull/2360) (for
 [#2354](https://github.com/epiphany40223/parishkit/issues/2354)), whose
-rule is that the page describes this check only once it ships. The
-implementation that turns the check on updates the page's Google sign-in
-paragraph in the same change, which today says the site does not ask
-Google for the person's name or photo. It then says, in these terms: "If
-your Google account's main address is not one the parish knows, the site
-may ask your permission to see the other email addresses Google has
-verified for your account. To show them, Google also asks you to share
-your basic profile (name and photo); the site reads nothing from it and
-keeps nothing from it. The site uses the addresses once, to find your
-access, and keeps only the one address that gave you access, which the
-parish already has, beside the address you signed in with." The same
-change updates the unit test of #2360 that pins the sign-in's scope list
-(`openid`, `email`) so that it pins the second step's scopes too, and the
-deployment runbook advice of #2360 to keep Production's Google project to
-basic scopes, which then reads "until Google verifies `user.emails.read`
-and the parish turns on `alternate_address_sign_in`".
+rule is that the page describes this check only once it ships. It
+follows the deployment's configuration: while `alternate_address_sign_in`
+is on, and only then, its Google sign-in section says that the site may,
+with the person's permission, ask Google once for the account's verified
+email addresses, that Google then also shares the basic profile, of which
+nothing is used or kept, that the list is used only to find the one
+matched address and is not kept beyond the match record (the matched
+address, beside the sign-in address, and when Google last confirmed it),
+that the permission is given up at once, and that the check is repeated
+every 30 days; and both sentences that limit what the site asks Google
+for (only the email address and whether it is verified; never a name or
+photo) then except that check. The template holds the exact words,
+which the Administrator approved
+([#2343](https://github.com/epiphany40223/parishkit/issues/2343)). A unit
+test pins both sign-in steps' scope lists (`openid`, `email`; and
+`openid`, `profile`, `user.emails.read`), so a sign-in that asks Google for
+more fails until this page says so. The deployment runbook keeps
+Production's sign-in to basic scopes "until Google verifies
+`user.emails.read` and the parish turns on `alternate_address_sign_in`",
+while the scope is listed on the Production project's Data Access page for
+Google's verification.
 
 **How access reads it.** No access check reads this table except
 `current_principal`'s usable-match check

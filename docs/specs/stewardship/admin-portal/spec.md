@@ -201,8 +201,20 @@ public pages and the sign-in guide it needs are
 [#2360](https://github.com/epiphany40223/parishkit/pull/2360), and the
 [data specification](../data/spec.md#verified-address-match-records) says
 what changes there when this ships), Google shows an "unverified app"
-warning, or refuses people who are not the project's test users. The
-Administrator turns the setting on after that verification. Like
+warning, or refuses people who are not the project's test users.
+**Production gate:** the setting stays off in Production until Google has
+verified the Production OAuth app's `user.emails.read` scope (#2354) and
+the release with the last slice of #2343 is deployed: the Administrator's
+End match, the fix that lets only another Administrator settle the
+dashboard alert of a match (`security_events.cleared()`), and the Privacy
+policy paragraph about the check. Only then does the Administrator turn it
+on. The scripted upgrade's host half carries it over, and turns it on or
+off with `PARISHKIT_STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN=1` or `0` in its
+own environment (a rollback renders it off); the laptop half does not pass
+that variable over ssh, so a Production deployment turns it on with
+`retarget-image` on the host, as the
+[deployment runbook](../../../guides/stewardship-deployment-runbook.md#google-sign-in-project)
+says. Like
 `parishsoft_publication`, it is checked at startup: the deployment YAML
 takes `true` or `false` and the environment variable `1` or `0`, and any
 other value refuses to start with a configuration error. Only the web
@@ -445,6 +457,12 @@ whose sign-in address matches no user, while the setting is on:
   same address as a new record) ends (`user_gone`), and the page is
   offered as for a first check.
 
+A match belongs to the sign-in address it was made through. If the Google
+account's sign-in address changes, the match keeps working until its
+30-day check. That check then makes a new match for the new sign-in
+address, which sends a new security notice, and ends the old match as not
+confirmed.
+
 The 30 days are a hard bound, not only a sign-in rule: every request
 re-checks that the match is usable, so a browser or command-line session
 whose match passes 30 days is cut at its next request, and a command-line
@@ -533,10 +551,16 @@ is its command); the line then leaves
 status line that takes its place, and the status line says "Ended the
 match for _sign-in address_." A match that had already
 ended changes nothing, and the status line says "This match had already
-ended; the page is up to date." An Administrator cannot end the match their
+ended; the page is up to date." (which the confirmation dialog announces
+instead of its own words); when a newer match now stands, its line is drawn
+again and the status line follows it, so focus stays where the reader was.
+An Administrator cannot end the match their
 own session signs in through (`match_own_account`: "You can't end the
 match you are signed in through; another Administrator does that."), as the
-own-Administrator guard does for a demotion. Ending a match whose owner
+own-Administrator guard does for a demotion: on that reader's Edit user,
+End match stays drawn but unavailable, with that sentence under it
+([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)), and
+the server refuses it anyway (403). Ending a match whose owner
 still controls the address only makes them check again; when the address
 itself is not safe, delete the user.
 
