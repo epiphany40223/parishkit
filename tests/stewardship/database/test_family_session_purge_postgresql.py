@@ -54,6 +54,18 @@ def lapse(session_id):
         )
 
 
+def past_deadline(session_id):
+    """Give one session recent activity but a four-hour deadline in the past."""
+    with unguarded(), connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE stewardship_family_session SET "
+            "authenticated_at=statement_timestamp()-interval '5 hours', "
+            "last_activity_at=statement_timestamp()-interval '10 minutes', "
+            "expires_at=statement_timestamp()-interval '1 minute' WHERE id=%s",
+            [session_id],
+        )
+
+
 def signed_in(code):
     """Sign the Family in from a new browser; return it and the new session row."""
     before = set(FamilySession.objects.values_list("pk", flat=True))
@@ -71,8 +83,14 @@ def expired_anonymous_session():
     return store.session_key
 
 
-def test_the_worker_deletes_ended_family_and_anonymous_sessions(response_service):
-    """Lapsed and signed-out sessions, expired anonymous ones and receipts go.
+@pytest.mark.parametrize("batch_size", [500, 1])
+def test_the_worker_deletes_ended_family_and_anonymous_sessions(
+    response_service, batch_size
+):
+    """Lapsed, past-deadline and signed-out sessions, expired anonymous ones go.
+
+    The totals are the same with one row per batch, which runs the batch loop
+    and sums the anonymous cleanup's (sessions, receipts) pair across batches.
 
     The live session, an unexpired anonymous session and an unexpired receipt
     stay; the lapsed session's open form is cancelled and its source pin
@@ -82,6 +100,9 @@ def test_the_worker_deletes_ended_family_and_anonymous_sessions(response_service
     lapsed = response_service.request.family_session
     lapse(lapsed.pk)
     live = signed_in(response_service.code)[1]
+    # Active ten minutes ago, but past its four-hour deadline: ended too.
+    late = signed_in(response_service.code)[1]
+    past_deadline(late.pk)
     out_client, signed_out = signed_in(response_service.code)
     response = out_client.post(
         "/family/logout",
@@ -102,14 +123,14 @@ def test_the_worker_deletes_ended_family_and_anonymous_sessions(response_service
     events = AuditEvent.objects.count()
 
     with task_login(ServiceRole.WORKER):
-        totals = automation.maintain()
+        totals = automation.maintain(batch_size=batch_size)
 
-    assert totals["family_sessions_removed"] == 2
+    assert totals["family_sessions_removed"] == 3
     assert totals["anonymous_sessions_removed"] == 1
     assert totals["oauth_receipts_removed"] == 1
     assert set(FamilySession.objects.values_list("pk", flat=True)) == {live.pk}
     assert not Session.objects.filter(
-        pk__in=[lapsed.session_id, signed_out.session_id, expired]
+        pk__in=[lapsed.session_id, late.session_id, signed_out.session_id, expired]
     ).exists()
     assert Session.objects.filter(pk=live.session_id).exists()
     assert Session.objects.filter(pk=current.session_key).exists()
@@ -126,7 +147,7 @@ def test_the_worker_deletes_ended_family_and_anonymous_sessions(response_service
 
     # A second pass finds nothing more.
     with task_login(ServiceRole.WORKER):
-        totals = automation.maintain()
+        totals = automation.maintain(batch_size=batch_size)
     assert totals["family_sessions_removed"] == 0
     assert totals["anonymous_sessions_removed"] == 0
     assert totals["oauth_receipts_removed"] == 0
@@ -167,6 +188,64 @@ def test_only_the_worker_may_purge(auth_service, call):
         connection.cursor() as cursor,
     ):
         cursor.execute(call)
+
+
+@pytest.mark.parametrize(
+    "call, message",
+    [
+        (
+            "SELECT public.stewardship_family_session_purge_v1(ARRAY[]::uuid[])",
+            "Only the maintenance task purges Family sessions",
+        ),
+        (
+            "SELECT public.stewardship_anonymous_session_purge_v1(10)",
+            "Only the maintenance task purges anonymous sessions",
+        ),
+    ],
+)
+def test_the_body_refuses_any_other_login_even_with_execute(
+    auth_service, call, message
+):
+    """A login granted EXECUTE still gets 42501 from the caller check.
+
+    The grant is the only thing that lets the call start; the body's
+    session_user check, not the missing privilege, is what refuses it.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("CREATE ROLE test_purge_scratch LOGIN NOINHERIT")
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"GRANT EXECUTE ON FUNCTION {FAMILY_PURGE}, {ANONYMOUS_PURGE} "
+                "TO test_purge_scratch"
+            )
+            cursor.execute("SET SESSION AUTHORIZATION test_purge_scratch")
+        with (
+            pytest.raises(DatabaseError, match=message) as refused,
+            transaction.atomic(),
+            connection.cursor() as cursor,
+        ):
+            cursor.execute(call)
+        assert refused.value.__cause__.sqlstate == "42501"
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("RESET SESSION AUTHORIZATION")
+            cursor.execute("DROP OWNED BY test_purge_scratch")
+            cursor.execute("DROP ROLE test_purge_scratch")
+
+
+def test_the_family_purge_requires_the_work_order_lock(response_service):
+    """Without the lock the definer refuses, even for a session with no form."""
+    session = signed_in(response_service.code)[1]
+    lapse(session.pk)
+    with (
+        task_login(ServiceRole.WORKER),
+        pytest.raises(DatabaseError, match="ordered admission"),
+        transaction.atomic(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(PURGE_CALL, [[session.pk]])
+    assert FamilySession.objects.filter(pk=session.pk).exists()
 
 
 @pytest.mark.parametrize("batch", [0, 1001, None])

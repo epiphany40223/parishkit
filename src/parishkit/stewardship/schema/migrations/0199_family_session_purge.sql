@@ -29,8 +29,11 @@
 -- Both refuse any session login other than the general worker or a member
 -- of the schema owner, pin their search_path and have no EXECUTE for
 -- PUBLIC; database-grants grants both to the general worker only
--- (runtime_grants.runtime_functions). The definer cancels the forms itself
--- because the source pin guard admits no worker release of a form's pin.
+-- (runtime_grants.runtime_functions). The Family definer also refuses to
+-- run unless the caller holds the work-order lock (the check the form
+-- guard makes), even when no named session has an open form. It cancels
+-- the forms itself because the source pin guard admits no worker release
+-- of a form's pin.
 -- A session that simply lapsed is deleted without a revocation and
 -- without a back-dated family_session_ended audit event; a revoked one
 -- already has its event.
@@ -50,6 +53,13 @@ BEGIN
     IF session_user<>'pk_stewardship_worker' AND NOT pg_has_role(session_user,
         (SELECT nspowner FROM pg_namespace WHERE nspname='public'),'USAGE') THEN
         RAISE EXCEPTION 'Only the maintenance task purges Family sessions' USING ERRCODE='42501';
+    END IF;
+    -- Ordered admission, as the form guard requires it: the caller holds
+    -- the work-order lock whether or not any named session has an open form.
+    IF NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+        AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
+        AND mode='ExclusiveLock' AND granted) THEN
+        RAISE EXCEPTION 'Family session cleanup requires ordered admission' USING ERRCODE='23514';
     END IF;
     -- The named rows that have ended, as accounts/session_policy.py's
     -- FAMILY_IDLE and the deadline decide it, locked in id order. A Testing
@@ -151,7 +161,8 @@ BEGIN
              AND p.prosrc LIKE '%SET state=''cancelled'', ended_at=statement_timestamp(), version=b.version+1%'
              AND p.prosrc LIKE '%DELETE FROM public.stewardship_source_pin p USING cancelled%'
              AND p.prosrc LIKE '%DELETE FROM public.stewardship_family_session f WHERE f.id=ANY(ended)%'
-             AND p.prosrc LIKE '%AND NOT (f.mode=''testing'' AND EXISTS (%')
+             AND p.prosrc LIKE '%AND NOT (f.mode=''testing'' AND EXISTS (%'
+             AND p.prosrc LIKE '%classid=736220 AND objid=1 AND objsubid=2%')
        OR NOT EXISTS (SELECT 1 FROM pg_proc p
            WHERE p.oid='public.stewardship_anonymous_session_purge_v1(integer)'::regprocedure
              AND p.prosrc LIKE '%IF batch IS NULL OR batch<1 OR batch>1000 THEN%'
