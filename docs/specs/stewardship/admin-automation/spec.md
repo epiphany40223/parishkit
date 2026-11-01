@@ -1555,7 +1555,9 @@ waiting for it once the command has finished. A command declares that it prompts
 command that accepts only `--yes` is left out of it by name. PR 6b's
 `test sample`, PR 6c's `test families`, PR 9c's `delivery resend` and
 `delivery refusal-clear`, PR 7a's `portal maintenance set`, PR 7b's `send
-confirm` and #463's `files delete` are prompting commands.
+confirm`, #463's `files delete` and #2343's `users unlink` are prompting
+commands; #2343's `users link --confirm` deliberately is not, as `users
+confirm` is not.
 
 A prompting or confirming command checks its page's capability first,
 renewing nothing, before it reads an input, looks anything up or prompts
@@ -4017,27 +4019,37 @@ checks, audit and alerts:
   page's checks and prints the review (`user` with `id`, `email`, `name`
   and `role`; `account` with `id`, `email` and `last_attempt`; `grants`
   with `role` and, for a Ministry leader, `ministries` as DUID and name;
-  `administrator_warning`; `token` and `expires_at`). `users link
+  `administrator_warning`; `other_accounts`, the number of other recorded
+  accounts with the address; `stale_attempt`, true when the account's last
+  attempt is more than 30 days old; `own_address_account`, null or the
+  `last_sign_in` of an enabled account of the user's own address that the
+  link takes the user from; `token` and `expires_at`). The token carries
+  IDs and the configuration version only, never an address. `users link
   --confirm --token …` is its Apply, through the page's own functions, so
   either channel applies the other's review; it records
   `admin_cmd_users_link` with the page's `user_account_linked` and
   security event, once: applying the same review again returns the first
   link. A refusal is `invalid` with `error.fields` `["account"]` and the
   page's stable code as `error.reason` (`link_not_recorded`,
-  `link_account_linked` and the rest); an unknown user is
-  `not_available`; a review whose user, link or account changed since, or
+  `link_account_linked`, `link_own_account` and the rest); an unknown user
+  is `not_available`; a review whose user, link or account changed since, or
   that expired, is `stale_version`; a non-Administrator is `denied`.
-  `--confirm` prompts, showing the user's record ID and role (never an
-  address), since a link grants access on the Administrator's word alone;
-  `--yes` answers it.
+  `--confirm` does not prompt, as `users confirm` (which can grant
+  Administrator) does not: the page's Apply asks for no typed value, and
+  the signed review is the confirmation.
 - `users unlink --user ID --link LINK_ID [--yes]` is the section's
-  Unlink: it prompts as the page's confirmation does, ends the link and
+  Unlink: it prompts as the page's confirmation dialog asks (as
+  `files delete` does), showing the user's record ID and the link ID,
+  never an address, and `--yes` answers it (it declares `prompts` in the
+  catalog and is `users_unlink` in the wrapper's `PROMPTING` list); it ends
+  the link and
   the account's Admin and automation sessions in one transaction, and
   records `admin_cmd_users_unlink` with the page's `user_account_unlinked`.
   `LINK_ID` is the `linked_account`'s link as `users list` prints it
   (`linked_account.link_id`), so an unlink never ends a newer link; one
   already ended is `stale_version`. Unlinking the command session's own
-  account is `invalid`, as on the page.
+  user or own Google account is `invalid` with `link_own_account`, as on the
+  page, checked before the prompt.
 - `users timeline --user ID` prints one user's
   [Timeline](../admin-portal/spec.md#user-timeline): the summary (Name,
   role or when the user was removed, address, Ministries led, last sign-in
@@ -4062,11 +4074,9 @@ checks, audit and alerts:
   Family whose lines the filters all leave out was not looked at and is not
   recorded.
 
-`users link` and `users unlink` need a full-scope session and are not
-fresh-gated, as the page asks for no recent sign-in.
-
 These need a full-scope session, except `users list`,
-`users preview-upgrade` and `users timeline`; none is fresh-gated, as the page asks for no fresh
+`users preview-upgrade` and `users timeline`; none is fresh-gated (`users
+link` and `users unlink` included), as the page asks for no fresh
 sign-in. The command shapes are defaults, pending Administrator confirmation.
 
 `users list` and `users preview-upgrade` record the page's view event,

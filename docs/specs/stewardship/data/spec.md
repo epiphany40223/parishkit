@@ -1360,8 +1360,10 @@ Activation materializes each user as one row of the `AddressRule` projection
 `["staff", "ministry_leader"]` and `ministry_leader` is
 `["ministry_leader"]`. A check constraint ties `roles` to `role`, so the two
 never disagree, and every SQL check that tests `roles` with `?` or `?|` keeps
-its meaning without restating the ladder. Python resolves an address to its
-one user's role, or to nothing, and treats the roles as levels. The session
+its meaning without restating the ladder. Python resolves a Google account
+to its one user's role (through its own address or a
+[link](#linked-google-account-records)), or to nothing, and treats the roles
+as levels. The session
 admission, Ministry scope, export authorization and policy projection and
 completeness functions read only this projection, plus the
 [linked Google accounts](#linked-google-account-records) that say which
@@ -1402,68 +1404,139 @@ reference. Frozen migration 0199 (renumbered at train time if needed) adds
 - `portal_user_id`, a protected foreign key to `stewardship_portal_user`;
 - `user_record_id`, the user's stable record ID
   (`stewardship_address_rule.record_id`, kept across configuration versions
-  and never reused), and `user_email`, that user's normalized address when
-  linked;
-- `linked_at` and `linked_by_id` (the Administrator's `PortalUser`), and
-  `ended_at`, `ended_by_id` and `end_reason` (`unlinked`, or `user_gone` for
-  a link whose user was deleted, ended when its account is linked again),
-  null while the link stands.
+  and never reused);
+- `user_email` and `account_email`, the user's address and the account's
+  own address when linked, normalized and never changed: they are what the
+  audit, the security notice and the Timeline show "as linked", and no
+  check ever matches on them;
+- `linked_at`, `linked_by_id` (the Administrator's `PortalUser`) and
+  `session_id` (that Administrator's `stewardship_portal_session`);
+- `ended_at`, `ended_by_id`, `ended_session_id` and `end_reason`
+  (`unlinked`, or `user_gone` for a link whose user a configuration
+  activation removed), null while the link stands.
 
-Constraints: partial unique indexes on `portal_user_id`, on
-`user_record_id` and on `user_email`, each `WHERE ended_at IS NULL` (one
-account per user, one user per account, one account per address); a check
-that `user_email` is trimmed lower case; a check that the three end columns
-are all null or all set, with `end_reason` in the closed list; and an index
-on `(user_record_id, linked_at)` for the Timeline. Rows are never deleted,
-and the only update is the one end of a standing link, so the table keeps
-the whole history.
+Constraints: partial unique indexes on `portal_user_id` and on
+`user_record_id`, each `WHERE ended_at IS NULL` (one account per user, one
+user per account; one account per address follows, since a configuration
+has one user per address and a deleted user's link is ended with the
+deletion); a check that `user_email` and `account_email` are trimmed lower
+case; a check that `ended_at` and `end_reason` are both null or both set,
+with `end_reason` in the closed list, `ended_by_id` and `ended_session_id`
+set for `unlinked` and null for `user_gone`; and an index on
+`(user_record_id, linked_at)` for the Timeline. There is deliberately no
+unique index on `user_email`: links match users by record ID only.
 
-The web login writes the table, and only through the SECURITY DEFINER
-guard trigger `stewardship_user_account_link_guard_v1`, which refuses
-(SQLSTATE `23514`, or `42501` for the wrong login or actor) anything but:
+The web login writes the table, and only through the guard trigger
+`stewardship_user_account_link_guard_v1` (SECURITY DEFINER, `SET
+search_path TO pg_catalog, public, pg_temp`, schema-qualified names and
+`OPERATOR(pg_catalog.…)` forms, `REVOKE ALL ... FROM PUBLIC`). It fires
+`BEFORE INSERT OR UPDATE OR DELETE` for each row, and a statement-level
+`BEFORE TRUNCATE` trigger refuses a truncate. Column grants do not bind the
+table's owner, so the guard checks every rule for every login, the owner
+included. It refuses (SQLSTATE `23514`, or `42501` for a delete, a
+truncate, or the wrong login, actor or session) anything but:
 
-- an insert or an end by the web login, whose actor is an enabled
-  Administrator now (`stewardship_export_authorized_v1(actor, true)`) with
-  a live Admin session (interactive or command session, issued after the
-  latest Admin-access recovery), and who is not the link's account;
+- an insert or an `unlinked` end by the web login, whose actor
+  (`linked_by_id`, or `ended_by_id`) is an enabled Administrator now
+  (`stewardship_export_authorized_v1(actor, true)`) and whose session
+  (`session_id`, or `ended_session_id`) is a live Admin session of that
+  actor: `login.id = NEW.session_id AND login.principal_id = actor`, not
+  revoked, not expired, active within the idle limit and issued after the
+  latest Admin-access recovery, as the backup request guard of 0062 checks
+  (a command session is its automation session's portal session row);
+- the [own-user rule](../admin-portal/spec.md#link-and-unlink): the actor
+  is not the link's account, and `stewardship_account_user_v1(actor)` is
+  not the link's user;
 - while setup is complete and no restore review is required, holding the
   users' ordering lock (`pg_advisory_xact_lock(736220, 1)`, which
   configuration activation also takes), so a link and a user change are
   decided one at a time;
-- for an insert: an enabled account whose own address is not the user's
-  address, is not any active-configuration user's address, and is not a
-  first-Administrator address; a user record in the active configuration
-  whose address is `user_email` and is not a first-Administrator address;
-  and no enabled `PortalUser` whose own address is `user_email`. A
-  **first-Administrator address** is one the root configuration (the
-  version with no predecessor) gives the Administrator role;
-- for an end: a standing link, ended by an Administrator (`unlinked`) or,
-  just before its account is linked again, because its user is gone
-  (`user_gone`).
+- for an insert: an enabled account whose current address is
+  `account_email`, is not the user's address, is not any
+  active-configuration user's address, and is not a first-Administrator
+  address; a user record in the active configuration whose address is
+  `user_email` and is not a first-Administrator address; and no standing
+  link of the account or of the user record. A **first-Administrator
+  address** is one the root configuration (the version with no
+  predecessor) gives the Administrator role;
+- for an end: a standing link, of which only `ended_at`, `ended_by_id`,
+  `ended_session_id`, `end_reason` and the `version` increment change, once.
+  A `user_gone` end is admitted, from any caller, only when the link's
+  `user_record_id` is not in the active configuration (re-derived from the
+  tables), which is how the activation path below ends it.
 
-The guard records `user_account_linked` or `user_account_unlinked` itself,
-and for a link the durable `account_linked` security event
-(`stewardship_policy_security_event`, whose `activation_id` becomes
-nullable and gains a nullable `user_account_link_id`, with a check that
-exactly one is set and a unique index on the link), with the active
-configuration's Administrator addresses as its recipients. An end also
-revokes, in the same statement, every live `stewardship_portal_session` of
-the account (each with its `admin_revoked` audit row) and ends its live
-automation sessions (`revoked_by_administrator`).
+The guard records `user_account_linked` or `user_account_unlinked` itself
+(only IDs and the end reason in the context), and for a link the durable
+`account_linked` security event below. A link also revokes, in the same
+statement, every live `stewardship_portal_session` of an enabled account
+whose own address is the user's address (each with its `admin_revoked`
+audit row) and ends that account's live automation sessions
+(`revoked_by_administrator`), since the link takes the user from it. An
+end revokes the linked account's sessions the same way.
 
-Which user a Google account signs in as is defined once, in SQL.
-`stewardship_account_user_v1(account)`, a STABLE SECURITY DEFINER function,
-returns the one active-configuration user (record ID, address, roles) whose
-address is the enabled account's own address, unless a standing link joins
-that user to another account, or that a standing link joins the account
-to; it returns nothing for zero or two such users.
+**Ending a deleted user's link.** `stewardship_policy_activation_v1` (the
+activation trigger; latest definition 0052, owned by the baseline's
+`functions.sql`) calls the new definer
+`stewardship_user_account_links_activate_v1(configuration uuid)` in the
+activation's own transaction. It ends as `user_gone` every standing link
+whose `user_record_id` the activated configuration no longer has, recording
+`user_account_unlinked` with the activation's actor, and returns each
+remaining standing link's `user_record_id` and `account_email`, which the
+activation copies into the Administrator-grant events it records. A
+standing link therefore always names a user of the active configuration.
+
+**The `account_linked` security event.** `stewardship_policy_security_event`
+changes: `activation_id` becomes nullable; a nullable
+`user_account_link_id` foreign key is added with a unique index; a check
+requires `num_nonnulls(activation_id, user_account_link_id) = 1`; and a
+nullable, trimmed lower-case `account_email` is added. The existing
+`policy_security_event_identity UNIQUE (activation_id, rule_record_id)`
+does not apply to rows whose `activation_id` is null (nulls are distinct),
+so a link records at most one event because of the unique index on
+`user_account_link_id`. An `account_linked` row has `target` = the link's
+`user_email`, `rule_record_id` = its `user_record_id`, `before_roles` =
+`[]`, `after_roles` = the user's roles when linked, the linking
+Administrator as actor, and `account_email` = the link's `account_email`.
+Its recipients are the active configuration's Administrator addresses when
+the link was made, as for an Administrator grant. An `administrator_granted`
+row gets `account_email` when its user had a standing link at activation,
+and null otherwise; the other kinds leave it null.
+
+Both twins of the content compiler, `stewardship_security_content_v2` and
+`jobs/security_content.py` (its `KINDS`, instructions and `SecurityAlert`,
+which gains `account_email`, required for `account_linked`), render it:
+
+- title (`KINDS`): "Google account linked to a user";
+- instruction, with no HTML-special character as the SQL twin requires: "An
+  Administrator linked a Google account to a user. That account now signs
+  in as the user, with the user's role. If this was not planned, unlink it
+  on the user's Edit page. Acknowledge it on the Admin dashboard; it stays
+  there until an Administrator other than the one who made the change
+  does.";
+- rows: Account (`account_email`), User (`target`), Role (`after_roles`,
+  worded as for the other kinds), By, When, Deployment mode and Event
+  reference;
+- an `administrator_granted` alert with an `account_email` adds a "Linked
+  Google account" row after Target.
+
+**Which user a Google account signs in as** is defined once, in SQL.
+`stewardship_account_user_v1(account)` returns the one active-configuration
+user (record ID, address, roles) of an enabled account: the candidates are
+the user whose record ID a standing link of the account names, and the user
+whose address is the account's own address unless a standing link names
+that user's record ID for another account. It counts distinct record IDs
+and returns nothing for zero or two.
 `stewardship_account_addresses_v1(account)` returns the account's
-addresses: its own address and its linked user's address, nothing for a
-disabled account. Every check that today joins a portal user's address to
-`stewardship_address_rule` or to the leaders definition uses them instead;
-the migration replaces each (its latest frozen file named), re-asserting
-`SECURITY DEFINER` where the function has it and its `REVOKE ALL ... FROM
-PUBLIC`:
+addresses: its own address and its linked user's address as the active
+configuration has it (by record ID, never the link's `user_email`), and
+nothing for a disabled account. Both are STABLE SECURITY DEFINER functions
+with `SET search_path TO pg_catalog, public, pg_temp`, schema-qualified
+names and `OPERATOR(pg_catalog.…)` forms. Every check that today joins a
+portal user's address to `stewardship_address_rule` or to the leaders
+definition uses them instead; the migration replaces each (its latest
+frozen file named), re-asserting `SECURITY DEFINER`, the pinned
+`search_path` and the `REVOKE ALL ... FROM PUBLIC` where the function has
+them:
 
 | Function | Latest definition | Change |
 | --- | --- | --- |
@@ -1471,13 +1544,14 @@ PUBLIC`:
 | `stewardship_export_authorized_v1` | 0052 | roles from the account's user |
 | `stewardship_ministry_scope_v1` | 0052 | roles from the account's user |
 | `stewardship_ministry_leader_scope_v1` | 0179 (definer) | leaders matched on every address of the account |
+| `stewardship_policy_activation_v1` | 0052 | ends deleted users' links; names the linked account in a grant event |
 | `stewardship_campaign_mail_live_v1` | baseline `functions.sql` | Administrator from the account's user |
 | `stewardship_family_test_scope_v1` | baseline `family_mail_tests.sql` | Administrator from the account's user |
 | `stewardship_go_live_admin_v1` | baseline `go_live.sql` | Administrator from the account's user |
 | `stewardship_leaders_without_user_v1` | 0179 (definer) | leaves out the own address of an account linked to a user |
 | `stewardship_ministry_leader_coverage_v1` | 0179 (definer) | a linked account's own address counts as a user, and its sign-ins count |
 | `stewardship_leader_email_facts_v1` | 0179 (definer) | a Ministry leader user's Ministries include its linked account's own address |
-| `stewardship_security_content_v2` | 0043 | renders the `account_linked` kind |
+| `stewardship_security_content_v2` | 0043 | renders the `account_linked` kind and the grant's linked account |
 
 Deliberately unchanged: the setup functions
 (`stewardship_setup_*`, which run only before setup is complete, when no
@@ -1495,12 +1569,38 @@ Python reads the same answer: `current_principal()` asks
 `stewardship_account_user_v1` for the account's user record and takes its
 role from the coherent canonical document, and the leader scope from
 `stewardship_ministry_leader_scope_v1` as today, so Python never restates
-which user an account is and can never grant more than SQL. The two
-helpers are definers with no PUBLIC EXECUTE; database-grants gives EXECUTE
-to every login that may execute `stewardship_export_authorized_v1`, and a
-test pins the two lists equal. The web login gets `SELECT` and `INSERT` on
-the table and `UPDATE` of the end columns only; no other login may read
-it except through the helpers.
+which user an account is and can never grant more than SQL. Python's
+"addresses of this account" (an automation pairing's expected address,
+both at approval and at `login wait`) is `stewardship_account_addresses_v1`.
+
+**Grants.** `export_authorized_v1` and `ministry_scope_v1` are invoker
+functions that any login may execute; today what limits them is SELECT on
+`stewardship_portal_user` and `stewardship_address_rule`. The new helpers
+are definers, so PUBLIC must not execute them: `REVOKE ALL ... FROM PUBLIC`,
+and database-grants (`runtime_functions`) gives EXECUTE on both to exactly
+the logins that `runtime_grants` gives SELECT (table or column) on both of
+those tables. Today those are the web, download, worker, scheduler and
+mail-dispatch logins, the configuration installer, the offline bootstrap
+and admin-recovery logins, and the credential installers for the Google
+Workspace, ParishSoft and Slack targets. A test derives that set from
+`runtime_grants` for every service role and installer target and pins the
+helpers' EXECUTE set equal to it, so a login added later cannot silently
+lose access (a login left off fails closed, with `permission denied`).
+`stewardship_user_account_links_activate_v1` gets the same treatment,
+pinned to the logins that may insert a policy activation. The web login
+gets `SELECT` and `INSERT` on the table and `UPDATE` of the end columns
+only. No other runtime login is granted the table; they read links only
+through the helpers. The backup reads it as it reads every table (through
+its `pg_read_all_data` membership), a restore brings it back with the
+rest, and the database-grants inventory tests list it.
+
+**The frozen file's `DO` block** raises unless the table, its indexes and
+checks, the guard and truncate triggers, the three new functions and every
+replaced function are installed; each definer (the three new functions, the
+guard and the four 0179 definers) has `prosecdef` and a `proconfig` of
+exactly `search_path=pg_catalog, public, pg_temp`; no new function or guard
+has a PUBLIC EXECUTE entry in `proacl`; and each replaced body names the
+helper it now uses. It is tested against the old definitions.
 
 ### Ministry leaders
 

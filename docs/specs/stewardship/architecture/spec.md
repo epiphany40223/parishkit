@@ -276,8 +276,9 @@ the [Open form](../reports/spec.md#open-form) hand-off at
 Administration authentication uses Google through django-allauth with OAuth
 authorization code flow, state, nonce, and PKCE. Only a Google-verified email is
 accepted. The stable Google `sub` identifies the external account; normalized
-email is re-evaluated against the current Admin portal users on every login
-and privileged request. Password, recovery, signup, and non-Google authentication endpoints
+email and any [link](../admin-portal/spec.md#linked-google-accounts) of the
+account to a user are re-evaluated against the current Admin portal users on
+every login and privileged request. Password, recovery, signup, and non-Google authentication endpoints
 are disabled. The only exception is the
 [local test sign-in](../local-environment/spec.md#local-test-sign-in), which
 exists only in the LOCAL deployment profile. An
@@ -295,8 +296,11 @@ not authenticate anyone, migrate a Google `sub` binding, or add a web recovery
 endpoint. The replacement account must complete ordinary Google login and
 current-user authorization. First-time bootstrap is not a recovery mechanism.
 
-A user matches the verified normalized email exactly. Authorization is by
-email address only (#952): there are no hosted-domain rules, and the signed
+A user matches the verified normalized email exactly, or through a link
+that names the recorded Google account (`sub`) and the user's record ID
+([#2343](https://github.com/epiphany40223/parishkit/issues/2343)).
+Authorization is by email address or link only (#952): there are no
+hosted-domain rules, and the signed
 Google ID-token `hd` claim, an OAuth request hint, an email suffix, DNS/MX
 records and client-supplied values never grant a role.
 
@@ -316,9 +320,10 @@ they are, and only the "No access with this account" page names an address,
 the one Google verified on that callback
 ([login and denial behavior](../admin-portal/spec.md#login-and-denial-behavior)). No identity receives a permanent
 or global account lock; a successful authorized login clears only its identity
-failure counter. Adding a user or raising a user's role atomically increments a
-denial-counter namespace version, invalidating existing identity-denial counters
-so a newly authorized user is not held by earlier denials; it audits the reset
+failure counter. Adding a user, raising a user's role or linking a Google
+account to a user atomically increments a denial-counter namespace version, invalidating existing identity-denial counters
+so a newly authorized user (or a newly linked account, whose person was
+asked to try signing in first) is not held by earlier denials; it audits the reset
 without clearing per-IP abuse counters. Counter keys and logs never store raw
 callback tokens or an email solely for throttling. Deployment YAML may tune
 thresholds, but production startup warns about values weaker than the defaults.
@@ -474,7 +479,11 @@ security notice to every Administrator, the guard's one-account-per-user
 and first-Administrator rules, and an unlink that revokes the account's
 sessions at once. Google's `sub` stays the only identity key: a link names
 a recorded account, so an address that a different Google account later
-claims gains nothing from it.
+claims gains nothing from it. Like the backup request guard, the link's
+database guard proves a live Administrator session row named on the link,
+not that a real Google round trip happened: a compromised web login can
+link while some Administrator's session is live, but cannot link while none
+is, and cannot avoid the audit row and the Home notice.
 
 Cookies are `Secure` in production, `HttpOnly`, `SameSite=Lax`, narrowly
 scoped, and rotated at login/privilege transition. Family and administration
