@@ -477,17 +477,28 @@ def _admitted(actor, store, campaign_id, versions, replayed):
       ``stale_version``, unless its revision for this key was already
       recorded (``replayed``): a repeat returns that revision instead.
     """
+    from django.db.models import IntegerField
+    from django.db.models.functions import Coalesce
+
     from .accounts.policy import Capability, allows
     from .storage import StaleRecordError
     from .workflows.followup import authorize_ministry
     from .workflows.models import OPEN_STATES, MinistryRequest
 
+    # Scope is the Ministry in force, the one an Edit carried the request
+    # into, as the update's own check reads it (#2331).
     rows = list(
         MinistryRequest.objects.filter(
             pk__in=list(versions),
             submission__campaign_id=campaign_id,
             submission__mode="live",
-        ).values_list("pk", "version", "state", "ministry_duid")
+        )
+        .annotate(
+            held=Coalesce(
+                "reviewed_ministry_duid", "ministry_duid", output_field=IntegerField()
+            )
+        )
+        .values_list("pk", "version", "state", "held")
     )
     if len(rows) != len(versions):
         raise NotAvailable("No such Ministry request.")

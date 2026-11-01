@@ -11,13 +11,26 @@ check statement runs in a transaction that is rolled back.
 """
 
 import re
+from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection, transaction
+from django.urls import reverse
 
+from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.workflows.models import (
+    MinistryRequest,
+    MinistryWorkflowRevision,
+)
+
+from .test_background_grants_postgresql import task_login
 from .test_hide_gone_members_postgresql import SCHEMA_FILES, definition
+from .test_information_followup_postgresql import search
+from .test_ministry_exports_postgresql import leader
 from .test_ministry_reports_postgresql import actor, page, setup
+from .test_ministry_responses_postgresql import respond, revisit
 from .test_ministry_review_postgresql import decide, view, withdraw_leave
+from .test_response_http_postgresql import answers_for
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -105,6 +118,47 @@ def test_an_edited_request_is_counted_and_listed_once(response_service):
         state="any",
     )["rows"]
     assert str(join.pk) not in {row["id"] for row in listed}
+
+
+@pytest.mark.parametrize("into_pantry", [False, True])
+def test_a_refused_update_is_scoped_by_the_ministry_in_force(
+    response_service, google, into_pantry
+):
+    """A refused follow-up save checks scope before its conflict, by the
+    Ministry in force. Food pantry's (9) leader posts a refused save for an
+    edited (so resolved, no longer open) request. Edited out of Food pantry,
+    it is the same denial as an unknown request (403), not a 409 that
+    would show it exists; edited into Food pantry, it is theirs, so the
+    stale form is the conflict (409)."""
+    harness = setup(response_service)
+    browser, _, _, _ = leader(harness, google)
+    staff = actor(harness, {"staff"}, ())
+    if into_pantry:
+        form = revisit(harness)
+        answers = answers_for(form)
+        answers["ministries"]["members"]["3"] = {"join": [], "leave": [4]}
+        respond(harness, form, answers)
+        target = MinistryRequest.objects.get(
+            ministry_duid=4, action="leave", state="new"
+        )
+        decide(harness, staff, "edit", target, fields={"value": ["9"]})
+    else:
+        target = withdraw_leave(harness)
+        decide(harness, staff, "edit", target, fields={"value": ["4"]})
+    revisions = MinistryWorkflowRevision.objects.count()
+    refused = {
+        "expected_version": str(target.version),
+        "request_key": str(uuid4()),
+        "state": "resolved",
+        "notes": "",
+        "contact_channel": "",
+    }
+    update = reverse("admin:ministry_followup_update", args=[target.pk])
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = search(browser, update, refused)
+    assert response.status_code == (409 if into_pantry else 403)
+    assert (b"This request changed" in body) is into_pantry
+    assert MinistryWorkflowRevision.objects.count() == revisions
 
 
 def test_an_unedited_request_is_unchanged(response_service):

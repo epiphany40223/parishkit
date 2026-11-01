@@ -12,6 +12,8 @@ from uuid import UUID, uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
+from django.db.models import IntegerField
+from django.db.models.functions import Coalesce
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
@@ -1099,9 +1101,11 @@ def _refused(request, campaign_id, request_id, refusal, store, principal):
     version, so a later change still reads as a conflict.
 
     These refusals can come before the edit's own scope check, so the
-    caller's current authority for the request's Ministry is checked first:
-    a request outside it gets the same denial as an unknown one, never a
-    conflict that would reveal it exists or what version it is at.
+    caller's current authority for the request's Ministry in force (the one
+    an Edit carried it into, as the edit's own check reads it, #2331) is
+    checked first: a request outside it gets the same denial as an unknown
+    one, never a conflict that would reveal it exists or what version it is
+    at.
     """
     try:
         current = (
@@ -1110,7 +1114,14 @@ def _refused(request, campaign_id, request_id, refusal, store, principal):
                 submission__campaign_id=campaign_id,
                 submission__mode="live",
             )
-            .values_list("version", "state", "ministry_duid")
+            .annotate(
+                held=Coalesce(
+                    "reviewed_ministry_duid",
+                    "ministry_duid",
+                    output_field=IntegerField(),
+                )
+            )
+            .values_list("version", "state", "held")
             .first()
         )
         if current is None:
