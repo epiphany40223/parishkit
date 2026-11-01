@@ -340,6 +340,32 @@ def lacks_match_grant():
     return login in {login_name(role) for role in NO_MATCH_GRANT_LOGINS}
 
 
+def session_limit(user_id):
+    """The latest end an automation session approved by ``user_id`` may have.
+
+    None for an account that acts as its own sign-in address. An account
+    that acts through a verified-address match may not approve a session
+    that outlives the match's 30 days (admin-automation specification,
+    "Session rules"): the limit is the match's ``confirmed_at`` plus 30
+    days. An account that acts as another address without a standing match
+    of it (which ``current_principal`` has already refused) gets the
+    database's present time, so no session can be approved.
+    """
+    user = PortalUser.objects.only("email", "sign_in_email").get(pk=user_id)
+    if user.email == user.sign_in_email:
+        return None
+    match = (
+        AddressMatch.objects.filter(
+            portal_user_id=user_id, ended_at__isnull=True, email=user.email
+        )
+        .only("confirmed_at")
+        .first()
+    )
+    if match is None:
+        return now()
+    return match.confirmed_at + timedelta(days=CONFIRMATION_DAYS)
+
+
 def put_back(user_id):
     """Make an account act as its own sign-in address again.
 

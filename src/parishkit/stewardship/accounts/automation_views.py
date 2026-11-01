@@ -21,6 +21,7 @@ the dashboard, whose regions are swapped in place. Revoke is a row action
 session to the collection and then redraws both session tables in place.
 """
 
+from datetime import timedelta
 from urllib.parse import urlencode
 from uuid import UUID
 
@@ -43,6 +44,7 @@ from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import refused_in_place, unexpected_fields
 from parishkit.stewardship.web.tables import whole_table
 
+from .address_matching import now, session_limit
 from .admin_editing import error_response, principal
 from .authentication import runtime
 from .automation_models import AutomationSession
@@ -116,6 +118,20 @@ def _expected(actor, pending):
     return normalized_email(email) == pending["expect_email"]
 
 
+def shorter_limit(actor, days):
+    """The end-date limit the review says before Approve (#2343), or None.
+
+    ``session_limit`` caps a matched Administrator's session at the match's
+    30 days; the review says that limit only when it ends the session
+    sooner than the ``days`` the command line asked for, since otherwise
+    the requested lifetime ends first and the line would only be noise.
+    """
+    limit = session_limit(actor.identity)
+    if limit is None or limit >= now() + timedelta(days=days):
+        return None
+    return limit
+
+
 def _approval_page(request, context):
     """Render the approval page; it is never cached."""
     context.setdefault("back", reverse("admin:automation_access"))
@@ -165,6 +181,9 @@ def approval_view(request):
                     pending=pending,
                     scope_label=SCOPES[pending["scope"]],
                     host=pending["host_digest"][:12],
+                    # The shorter end a matched Administrator's session gets
+                    # (#2343), said before Approve.
+                    limit=shorter_limit(actor, pending["days"]),
                     scope_choices=[
                         (value, SCOPES[value])
                         for value in ("full", "read_only")
