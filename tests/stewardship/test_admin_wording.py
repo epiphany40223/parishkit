@@ -91,9 +91,9 @@ def test_admin_templates_carry_no_sensitive_data_banner():
 # constants (label maps, heading tuples, captions), downloaded-file
 # headings, CLI help and descriptions, and the sentences in ui-v1.js. Other
 # untranslated Python text (a plain string built inside a function, a CLI
-# command's printed output) is not scanned. KNOWN lists the occurrences the
-# #2330 string changes could not remove, with exact counts: a new occurrence
-# fails, and a change that removes one lowers or deletes its entry.
+# command's printed output) is not scanned. KNOWN, now empty, listed the
+# occurrences the #2330 string changes could not remove at first, with exact
+# counts: a new occurrence fails.
 
 ROOT = TEMPLATES.parents[5]
 PACKAGE = ROOT / "src/parishkit/stewardship"
@@ -194,13 +194,10 @@ TEMPLATE_STRINGS = re.compile(
 # A "/" after one of these (or after "return") starts a regular expression
 # literal in JavaScript, not a division.
 REGEX_BEFORE = tuple("(,=:[!&|?{};") + ("return",)
-# Today's occurrences, by (term, path under PACKAGE): the shrinking
-# allowlist. Never add an entry or raise a count; use the replacement.
-KNOWN = {
-    # The operational alert's title is also rendered by frozen SQL
-    # (schema/operational_render.sql); it changes with a later migration.
-    ("Family login", "jobs/operational_content.py"): 1,
-}
+# Today's occurrences, by (term, path under PACKAGE): the allowlist, empty
+# since frozen migration 0202 renamed the last one (the Family sign-in abuse
+# alert's title). Never add an entry; use the replacement.
+KNOWN = {}
 
 
 def _template_strings():
