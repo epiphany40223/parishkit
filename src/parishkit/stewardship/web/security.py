@@ -118,12 +118,75 @@ def private_response(message, *, status=200):
 # The Admin sign-in kinds (#2116) say what kind of refusal it was, because
 # Google does the authentication: "no_access" (Google verified the account
 # but it has no Admin access), "unfinished" (Google sign-in didn't complete)
-# and "rate_limited" (too many attempts). The empty default keeps the
+# and "rate_limited" (too many attempts). "address_check" is the Check your
+# other email addresses page (#2343), shown in place of "no_access" when the
+# deployment lets a Google account sign in through another address Google
+# verified for it. The empty default keeps the
 # original generic text used by signed-in Admin refusals and by Family fetch
 # endpoints whose bodies are never displayed.
 DENIAL_KINDS = frozenset(
-    {"", "code", "link", "unavailable", "no_access", "unfinished", "rate_limited"}
+    {
+        "",
+        "code",
+        "link",
+        "unavailable",
+        "no_access",
+        "unfinished",
+        "rate_limited",
+        "address_check",
+        "address_check_again",
+    }
 )
+# The one line a verified-address check's outcome adds to "no_access"
+# (#2343; admin-portal spec "Verified-address outcomes").
+ADDRESS_CHECK_LINES = frozenset(
+    {"declined", "none", "several", "own_account_only", "taken"}
+)
+
+
+def address_check_line(line, account):
+    """The one sentence a verified-address check's outcome adds (#2343).
+
+    Built here rather than in the template, so the page's kind chain keeps
+    one branch per kind with no nested conditions; empty for no outcome.
+    """
+    from django.utils.html import format_html
+    from django.utils.translation import gettext
+
+    if line is None:
+        return ""
+    if line == "declined":
+        return format_html(
+            "<p>{}</p>",
+            format_html(
+                gettext(
+                    "Google didn't share your other addresses, so only "
+                    "<strong>{address}</strong> was checked."
+                ),
+                address=account,
+            ),
+        )
+    text = {
+        "none": gettext(
+            "None of the other addresses Google has confirmed for this account "
+            "has access either."
+        ),
+        "several": gettext(
+            "More than one of your Google Account's addresses has access, so the "
+            "portal can't tell which one to use. Ask the parish staff member who "
+            "manages access to this portal."
+        ),
+        "own_account_only": gettext(
+            "One of your other addresses has access, but it can only be used with "
+            "its own Google account. Sign in with that account."
+        ),
+        "taken": gettext(
+            "One of your other addresses already signs in through a different "
+            "Google account. Ask the parish staff member who manages access to "
+            "end that match, then sign in again."
+        ),
+    }[line]
+    return format_html("<p>{}</p>", text)
 
 
 def login_denial(
@@ -134,6 +197,8 @@ def login_denial(
     kind="",
     account="",
     csrf_token=None,
+    due=None,
+    line=None,
 ):
     """Accessible error with a fixed retry route, never an input redirect.
 
@@ -143,11 +208,24 @@ def login_denial(
     callback, and a CSRF-protected "Sign in with a different account" form,
     so it needs the request's ``csrf_token``; the address is rendered into
     this response only, never into a URL, query string or cookie (#2116).
+    ``address_check`` shows the same address on the Check your other email
+    addresses page, in its 30-day form when ``due`` (a standing
+    verified-address match) is given; ``line`` (``ADDRESS_CHECK_LINES``) adds
+    a check's outcome line to ``no_access`` (#2343).
     """
     if kind not in DENIAL_KINDS:
         raise ValueError("Unsupported denial kind.")
-    if kind == "no_access" and not (admin and account and csrf_token):
+    if kind in {"no_access", "address_check", "address_check_again"} and not (
+        admin and account and csrf_token
+    ):
         raise ValueError("A no-access denial needs its verified account.")
+    if (
+        line is not None and (kind != "no_access" or line not in ADDRESS_CHECK_LINES)
+    ) or (due is not None and kind != "address_check"):
+        raise ValueError("Unsupported verified-address page.")
+    if kind == "address_check" and due is not None:
+        # The 30-day form is its own branch of the page.
+        kind = "address_check_again"
     response = HttpResponse(
         render_to_string(
             "stewardship/denied.html",
@@ -158,7 +236,11 @@ def login_denial(
                 "retry_path": "/admin/login" if admin else "/",
                 "public_content": public_content,
                 "kind": kind,
-                "account": account if kind == "no_access" else "",
+                "account": account
+                if kind in {"no_access", "address_check", "address_check_again"}
+                else "",
+                "due": due,
+                "line": address_check_line(line, account),
                 # Rendering without the request keeps the context
                 # processors (and their queries) off this page; the
                 # {% csrf_token %} tag reads this value directly.

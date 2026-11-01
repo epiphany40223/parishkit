@@ -617,6 +617,9 @@ FROZEN = {
     "0200_address_match.sql": (
         "2b14157352491014fed30f0967ad49a8491260b54834f608f8998f4e985930f2"
     ),
+    "0203_address_check_context.sql": (
+        "a23004b8e4c5356532a9ced933f5e25cb050f6e6d5da431e52066d9226049111"
+    ),
 }
 
 

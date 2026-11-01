@@ -34,15 +34,16 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @contextmanager
-def task_login(service, *, reconnect=False, exact=True):
+def task_login(service, *, reconnect=False, exact=True, name=None):
     """Create a fresh fixture role; exact-name probes never adopt existing roles.
 
     SQL binds task claims and transitions to the provisioned login names
     (stewardship_task_type_login_v1), so the exact name is the default. A
     random name (exact=False) models an unrecognized login. The "download"
-    stream login writes no tasks and keeps its random name.
+    stream login writes no tasks and keeps its random name unless ``name``
+    gives the login's name (code that tells logins apart by name needs it).
     """
-    name = (
+    name = name or (
         ("pk_stewardship_" + service.value.replace("-", "_"))
         if exact and isinstance(service, ServiceRole)
         else "test_background_" + uuid4().hex

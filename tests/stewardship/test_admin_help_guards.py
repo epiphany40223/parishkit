@@ -96,9 +96,13 @@ INTRO_WORDS = 15
 # The pre-#2116 kinds keep their old sizes (31 words together, as the whole
 # page was once counted); the Admin sign-in refusal kinds (#2116) carry the
 # Administrator-approved text that is the error itself. "" is the
-# ``{% else %}`` (generic) kind.
+# ``{% else %}`` (generic) kind. The Check your other email addresses kinds
+# (#2343) carry the reviewed text of the design (#2361), which is the
+# sign-in page itself: what the check asks Google for and what is kept.
 INTRO_ALLOWED = {
     "denied.html": {
+        "address_check": 101,
+        "address_check_again": 36,
         "code": 8,
         "link": 9,
         "unavailable": 8,

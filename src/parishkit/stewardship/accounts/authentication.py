@@ -41,6 +41,8 @@ from django.views.decorators.http import (
 )
 
 from parishkit.config import ConfigError
+from parishkit.stewardship.audit.schemas import Action, ActorKind
+from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import debug_swallowed
 from parishkit.stewardship.web.contracts import (
     ErrorCode,
@@ -57,8 +59,9 @@ from parishkit.stewardship.web.refusals import (
     mark_recorded,
     with_reason,
 )
-from parishkit.stewardship.web.security import login_denial
+from parishkit.stewardship.web.security import ADDRESS_CHECK_LINES, login_denial
 
+from . import address_matching
 from .admin_session_store import SessionStore as AdminSessionStore
 from .auth_incidents import record_account_refusal, record_login_rejection
 from .limiting import Counter, Limiter, LimiterUnavailable
@@ -104,7 +107,16 @@ def runtime():
     return value
 
 
-def denial(*, status=403, retry=None, admin=True, sign_in=False, account=None):
+def denial(
+    *,
+    status=403,
+    retry=None,
+    admin=True,
+    sign_in=False,
+    account=None,
+    check=None,
+    line=None,
+):
     """Retryable response, with no provider details, naming its refusal kind.
 
     The kind follows the status first: an outage (503) uses the
@@ -131,6 +143,13 @@ def denial(*, status=403, retry=None, admin=True, sign_in=False, account=None):
     ``denied`` JSON with that wording (``web.error_pages.GENERIC_DENIAL``,
     #2165, #2172).
 
+    With ``account``, ``check`` shows the Check your other email addresses
+    page instead (#2343): ``{"due": match}`` is its 30-day "again" form for
+    that standing match, an empty dict its first-check form. ``line`` adds
+    one verified-address outcome's line to "No access with this account"
+    (``declined``, ``none``, ``several``, ``own_account_only`` or
+    ``taken``).
+
     Every report view sends a ``PermissionError`` here, including the
     ``UserFacingGone`` refusal of a campaign that is not the current one
     (navigation rule 10, raised by ``reports.read_admission``). That one is
@@ -145,6 +164,8 @@ def denial(*, status=403, retry=None, admin=True, sign_in=False, account=None):
         # The address page answers only the sign-in that just verified it;
         # a signed-in refusal naming an address would be a caller's mistake.
         raise ValueError("account is only for a sign-in refusal")
+    if (check is not None or line is not None) and account is None:
+        raise ValueError("a verified-address page needs its verified account")
     error = sys.exception()
     if isinstance(error, UserFacingGone):
         debug_swallowed("admin request refused")
@@ -168,8 +189,12 @@ def denial(*, status=403, retry=None, admin=True, sign_in=False, account=None):
         kind = "rate_limited"
     elif account is not None:
         request, address = account
-        kind = "no_access"
+        kind = "no_access" if check is None else "address_check"
         extra = {"account": address, "csrf_token": get_token(request)}
+        if check is not None:
+            extra["due"] = check.get("due")
+        if line is not None:
+            extra["line"] = line
     elif sign_in:
         kind = "unfinished"
     else:
@@ -234,6 +259,7 @@ class AuthLimitMiddleware:
         callback = request.path_info == "/admin/oauth/callback"
         admin = request.path_info in {
             "/admin/login",
+            "/admin/login/addresses/",
             "/admin/oauth/start",
             "/admin/oauth/callback",
         }
@@ -278,7 +304,18 @@ class GoogleBoundary(DefaultSocialAccountAdapter):
         raise ImmediateHttpResponse(denial(sign_in=True))
 
     def on_authentication_error(self, request, provider, **kwargs):
-        """Discard provider exceptions, raw callback parameters and identity hints."""
+        """Discard provider exceptions, raw callback parameters and identity hints.
+
+        A cancel at Google during the second sign-in step (#2343: the
+        person said no to sharing their addresses) is that check's Declined
+        outcome, when its pending step is still this browser's.
+        """
+        state = getattr(request, "stewardship_oauth_state", None) or {}
+        if (
+            kwargs.get("error") == AuthError.CANCELLED
+            and state.get("data", {}).get("step") == SECOND_STEP
+        ):
+            raise ImmediateHttpResponse(declined_at_google(request, state))
         if kwargs.get("error") == AuthError.CANCELLED:
             raise ImmediateHttpResponse(denial(sign_in=True))
         try:
@@ -293,41 +330,63 @@ class SignedGoogleAdapter(GoogleOAuth2Adapter):
     """Require signed OIDC claims even after a direct TLS-protected token exchange."""
 
     def complete_login(self, request, app, token, **kwargs):
-        """A userinfo-only response cannot establish signed hosted-domain evidence."""
-        credential = kwargs["response"].get("id_token")
-        if type(credential) is not str or not 0 < len(credential) <= 16384:
-            raise OAuth2Error("Verified identity is unavailable.")
-        try:
-            if jwt.get_unverified_header(credential).get("alg") != "RS256":
-                raise OAuth2Error("Verified identity is unavailable.")
-            claims = _verify_and_decode(app, credential, verify_signature=True)
-        except (jwt.PyJWTError, ValueError, KeyError, TypeError):
-            raise OAuth2Error("Verified identity is unavailable.") from None
+        """A userinfo-only response cannot establish signed hosted-domain evidence.
+
+        The one-use state record says which sign-in step this callback
+        answers (#2343); the response's shape never decides it.
+        """
         state = request.stewardship_oauth_state
-        nonce = claims.get("nonce")
-        if (
-            type(nonce) is not str
-            or len(nonce) > 128
-            or not nonce.isascii()
-            or not secrets.compare_digest(nonce, state["data"]["nonce"])
-            or claims.get("email_verified") is not True
-            or type(claims.get("sub")) is not str
-            or not 0 < len(claims["sub"]) <= 255
-            or type(claims.get("exp")) is not int
-            or type(claims.get("iat")) is not int
-        ):
-            raise OAuth2Error("Verified identity is unavailable.")
-        try:
-            email = normalized_email(claims.get("email"))
-            hosted = normalized_domain(claims["hd"]) if "hd" in claims else None
-        except ConfigError:
-            raise OAuth2Error("Verified identity is unavailable.") from None
-        authenticated_at = verified_authentication_time(claims, state)
+        if state.get("data", {}).get("step") == SECOND_STEP:
+            raise ImmediateHttpResponse(
+                complete_address_check(request, app, kwargs["response"], state)
+            )
+        subject, email, hosted, authenticated_at = verified_claims(
+            app, kwargs["response"], state
+        )
         raise ImmediateHttpResponse(
             complete_identity(
-                request, claims["sub"], email, hosted, authenticated_at=authenticated_at
+                request, subject, email, hosted, authenticated_at=authenticated_at
             )
         )
+
+
+def verified_claims(app, response, state):
+    """The signed identity of a token response, checked against its state.
+
+    Returns ``(sub, email, hosted, authenticated_at)``. Both sign-in steps
+    check the ID token the same way: RS256 signature, audience, the state's
+    own nonce, ``email_verified``, and the claim shapes. Anything else
+    raises ``OAuth2Error``.
+    """
+    credential = response.get("id_token")
+    if type(credential) is not str or not 0 < len(credential) <= 16384:
+        raise OAuth2Error("Verified identity is unavailable.")
+    try:
+        if jwt.get_unverified_header(credential).get("alg") != "RS256":
+            raise OAuth2Error("Verified identity is unavailable.")
+        claims = _verify_and_decode(app, credential, verify_signature=True)
+    except (jwt.PyJWTError, ValueError, KeyError, TypeError):
+        raise OAuth2Error("Verified identity is unavailable.") from None
+    nonce = claims.get("nonce")
+    if (
+        type(nonce) is not str
+        or len(nonce) > 128
+        or not nonce.isascii()
+        or not secrets.compare_digest(nonce, state["data"]["nonce"])
+        or claims.get("email_verified") is not True
+        or type(claims.get("sub")) is not str
+        or not 0 < len(claims["sub"]) <= 255
+        or type(claims.get("exp")) is not int
+        or type(claims.get("iat")) is not int
+    ):
+        raise OAuth2Error("Verified identity is unavailable.")
+    try:
+        email = normalized_email(claims.get("email"))
+        hosted = normalized_domain(claims["hd"]) if "hd" in claims else None
+    except ConfigError:
+        raise OAuth2Error("Verified identity is unavailable.") from None
+    authenticated_at = verified_authentication_time(claims, state)
+    return claims["sub"], email, hosted, authenticated_at
 
 
 def verified_authentication_time(claims, state):
@@ -385,6 +444,9 @@ class GoogleCallback(OAuth2CallbackView):
 
 LOGGER = logging.getLogger(__name__)
 
+# The second sign-in step's name in its one-use state record (#2343).
+SECOND_STEP = "addresses"
+
 # The message and SQLSTATE of stewardship_portal_session_admission_v1's
 # refusal (schema/functions.sql); only that refusal becomes a sign-in denial.
 _ADMISSION_REFUSAL = "Admin session requires a current authorized principal"
@@ -404,7 +466,9 @@ def complete_identity(request, subject, email, hosted, *, authenticated_at):
 
     The recovery epoch comes from the one-use OAuth state the callback
     admitted; everything after that is the shared identity core,
-    ``establish_identity``, which the LOCAL test sign-in also calls.
+    ``establish_identity``, which the LOCAL test sign-in also calls. Only
+    this Google path may offer the check of the account's other verified
+    addresses (#2343).
     """
     data = request.stewardship_oauth_state["data"]
     return establish_identity(
@@ -416,7 +480,124 @@ def complete_identity(request, subject, email, hosted, *, authenticated_at):
         recovery_epoch=data["recovery_epoch"],
         # Checked again here, though the sign-in stored only a checked path.
         destination=admin_return_path(data.get("next")),
+        offers_check=True,
     )
+
+
+def _identity_counter(service, subject, email):
+    """The verified-identity limiter counter of one account and address."""
+    epoch = (
+        PolicyEpoch.objects.order_by("-sequence")
+        .values_list("sequence", flat=True)
+        .first()
+    )
+    if epoch is None:
+        raise ConfigError("Authentication policy is unavailable.")
+    fingerprint = service.limiter.fingerprint("identity", subject + "\x00" + email)
+    return fingerprint, Counter(
+        f"admin_identity_{epoch}",
+        fingerprint,
+        service.limiter.limits.admin_identity,
+        900,
+    )
+
+
+def _issue(request, service, user_id, *, authenticated_at, match=None):
+    """Issue the Admin session of an authorized account; False when SQL refuses.
+
+    ``match`` is the verified-address match the account signs in through,
+    whose ID its ``admin_login`` records (#2343).
+    """
+    # A session this browser let go idle, expire or lose its authority ends
+    # with that reason first, as admission records it; issue_admin then ends
+    # a live one as admin_reauthenticated.
+    authenticated_admin(request, store=service.store)
+    try:
+        issue_admin(
+            request,
+            user_id,
+            store=service.store,
+            authenticated_at=authenticated_at,
+            match_id=None if match is None else match.pk,
+        )
+    except IntegrityError as error:
+        # The SQL session guard (#306) re-checks the Admin rule at the
+        # insert. A policy activation that removed it after
+        # current_principal ends in the ordinary denial, not a 500; the
+        # insert's savepoint has already rolled back. Any other integrity
+        # violation is a bug and still fails loudly.
+        if not _session_admission_refused(error):
+            LOGGER.warning("Admin sign-in failed an unexpected database invariant")
+            raise
+        LOGGER.warning(
+            "Admin sign-in denied: the SQL session guard found no current Admin rule"
+        )
+        request.session = AdminSessionStore()
+        return False
+    rotate_token(request)
+    return True
+
+
+def _pend(request, user, subject, destination, *, counted):
+    """Keep the pending second sign-in step in the pre-sign-in session only.
+
+    It holds the account's ``PortalUser`` ID and ``sub``, the checked
+    ``next``, when the offer ends (15 minutes on) and whether the first
+    step already counted this check against the identity limiter
+    (``counted``), never in a URL, cookie value or form field (#2343).
+    """
+    request.session[address_matching.PENDING_KEY] = {
+        "user": str(user.pk),
+        "sub": subject,
+        "next": destination,
+        "until": int(database_now().timestamp()) + address_matching.PENDING_SECONDS,
+        "counted": counted,
+    }
+
+
+def _check_counter(pending, counter):
+    """The identity counter a second step's refusal counts against, or None.
+
+    One failed check counts once against the identity limiter (#2374): the
+    first-check page was already counted as the first step's refusal, so
+    its second step's refusal counts only per source. The 30-day "again"
+    page counts nothing, so its second step's refusal is the one count.
+    """
+    return None if pending.get("counted") is True else counter
+
+
+def _take_pending(request, data):
+    """Remove and return this browser's pending second step for ``data``.
+
+    The step is offered once per sign-in, so it is removed whatever comes
+    next. None when there is none, it expired, or its account and ``sub``
+    are not the ones the state record (``data``) names.
+    """
+    pending = request.session.pop(address_matching.PENDING_KEY, None)
+    if (
+        not isinstance(pending, dict)
+        or type(pending.get("until")) is not int
+        or pending["until"] < database_now().timestamp()
+        or not isinstance(data.get("user"), str)
+        or not isinstance(data.get("sub"), str)
+        or pending.get("user") != data["user"]
+        or not secrets.compare_digest(str(pending.get("sub")), data["sub"])
+    ):
+        return None
+    return pending
+
+
+def _check_page(request, email, due):
+    """The 30-day "again" form, which records and counts nothing (#2343)."""
+    response = login_denial(
+        admin=True,
+        status=200,
+        kind="address_check",
+        account=email,
+        csrf_token=get_token(request),
+        due=due,
+    )
+    return response
 
 
 def establish_identity(
@@ -428,6 +609,7 @@ def establish_identity(
     authenticated_at,
     recovery_epoch,
     destination=ADMIN_HOME,
+    offers_check=False,
 ):
     """The post-verification identity core shared by every Admin sign-in path.
 
@@ -447,29 +629,31 @@ def establish_identity(
     the Admin page an ended session was sent to sign in from (#2058),
     which the caller has passed through ``admin_return_path``. There is no
     step-up sign-in that keeps a session (#1547).
+
+    ``offers_check`` (the Google callback only) applies sign-in through
+    another verified address while the deployment allows it (#2343): the
+    refresh then follows ``address_matching.refresh``, under the users'
+    ordering lock taken before the portal user row's lock, and a sign-in
+    address with no user shows the Check your other email addresses page
+    instead of "No access with this account". With the setting off this is
+    exactly the sign-in it always was.
     """
     service = runtime()
-    epoch = (
-        PolicyEpoch.objects.order_by("-sequence")
-        .values_list("sequence", flat=True)
-        .first()
-    )
-    if epoch is None:
-        raise ConfigError("Authentication policy is unavailable.")
-    fingerprint = service.limiter.fingerprint("identity", subject + "\x00" + email)
-    counter = Counter(
-        f"admin_identity_{epoch}",
-        fingerprint,
-        service.limiter.limits.admin_identity,
-        900,
-    )
+    fingerprint, counter = _identity_counter(service, subject, email)
     delay = service.limiter.counters([counter])
     if delay:
         record_failure(request, identity=fingerprint, counter=counter)
         return denial(status=429, retry=delay)
+    check = offers_check and address_matching.enabled()
+    refreshed = address_matching.Refresh()
+    if check:
+        # A new first step replaces any earlier pending second step.
+        request.session.pop(address_matching.PENDING_KEY, None)
     with transaction.atomic():
         if recovery_epoch != revocation_epoch():
             return denial(sign_in=True)
+        if check:
+            address_matching.take_users_lock()
         user, created = PortalUser.objects.select_for_update().get_or_create(
             google_subject=subject,
             defaults=dict(
@@ -479,9 +663,13 @@ def establish_identity(
                 verified_at=database_now(),
             ),
         )
-        if not created:
-            # The account acts as its own sign-in address: no
-            # verified-address match is ever made yet (#2343).
+        if check:
+            refreshed = address_matching.refresh(
+                service.store, user, created=created, email=email, hosted=hosted
+            )
+        elif not created:
+            # The account acts as its own sign-in address: with the setting
+            # off no verified-address match is used (#2343).
             PortalUser.objects.filter(pk=user.pk).update(
                 email=email,
                 sign_in_email=email,
@@ -490,38 +678,23 @@ def establish_identity(
                 version=F("version") + 1,
             )
         principal = None if user.disabled else current_principal(service.store, user.pk)
-        if principal is not None and principal.roles:
-            # A session this browser let go idle, expire or lose its
-            # authority ends with that reason first, as admission records
-            # it; issue_admin then ends a live one as admin_reauthenticated.
-            authenticated_admin(request, store=service.store)
-            try:
-                issue_admin(
-                    request,
-                    user.pk,
-                    store=service.store,
-                    authenticated_at=authenticated_at,
-                )
-            except IntegrityError as error:
-                # The SQL session guard (#306) re-checks the Admin rule at the
-                # insert. A policy activation that removed it after
-                # current_principal ends in the ordinary denial, not a 500;
-                # the insert's savepoint has already rolled back. Any other
-                # integrity violation is a bug and still fails loudly.
-                if not _session_admission_refused(error):
-                    LOGGER.warning(
-                        "Admin sign-in failed an unexpected database invariant"
-                    )
-                    raise
-                LOGGER.warning(
-                    "Admin sign-in denied: the SQL session guard found no "
-                    "current Admin rule"
-                )
-                request.session = AdminSessionStore()
-                principal = None
-            else:
-                rotate_token(request)
+        if (
+            principal is not None
+            and principal.roles
+            and not _issue(
+                request,
+                service,
+                user.pk,
+                authenticated_at=authenticated_at,
+                match=refreshed.match,
+            )
+        ):
+            principal = None
     if principal is None or not principal.roles:
+        if refreshed.offer == "again":
+            # A match it routinely re-checks: not a refusal.
+            _pend(request, user, subject, destination, counted=False)
+            return _check_page(request, email, refreshed.due)
         # Google verified this account and policy refused it, so the audit
         # entry names the account, bounded per account and deployment-wide
         # (#953), in place of the anonymous sample. Limiter accounting runs
@@ -530,6 +703,8 @@ def establish_identity(
             request, identity=fingerprint, counter=counter, sampled=False
         )
         record_account_refusal(user.pk)
+        if refreshed.offer == "first":
+            _pend(request, user, subject, destination, counted=True)
         # Only this branch names the address: Google verified it on this
         # callback, so the person seeing it is the one who controls it.
         return denial(
@@ -537,9 +712,195 @@ def establish_identity(
             retry=delay,
             sign_in=True,
             account=(request, email),
+            check={} if refreshed.offer == "first" else None,
         )
     service.limiter.clear(counter)
     return HttpResponseRedirect(destination)
+
+
+def complete_address_check(request, app, response, state):
+    """The second sign-in step's callback (#2343): check, revoke, then decide.
+
+    The state record names the second step, so this browser's pre-sign-in
+    session must hold the pending step for the same account and ``sub``.
+    The ID token is verified as the first step's is and must carry the same
+    ``sub``; the granted scopes must include the address and profile
+    scopes, or the person declined; the People API is asked once. The
+    access token is revoked whatever happened, before anything is decided.
+    Any failure here (no pending step, the setting turned off, no ID token,
+    another ``sub``, a timeout or error from Google) raises ``OAuth2Error``,
+    which allauth hands to ``GoogleBoundary.on_authentication_error``:
+    "Sign-in didn't finish", leaving a standing match as it was.
+    """
+    data = state["data"]
+    pending = _take_pending(request, data)
+    access = response.get("access_token")
+    try:
+        if pending is None or not address_matching.enabled():
+            raise OAuth2Error("The address check is not pending.")
+        subject, email, hosted, authenticated_at = verified_claims(app, response, state)
+        if not secrets.compare_digest(subject, pending["sub"]):
+            # The person chose another Google account at Google.
+            raise OAuth2Error("Verified identity is unavailable.")
+        addresses = (
+            address_matching.fetch_addresses(access)
+            if address_matching.granted(response.get("scope"))
+            else None
+        )
+    except address_matching.GoogleUnavailable:
+        raise OAuth2Error("Google is unavailable.") from None
+    finally:
+        address_matching.revoke(access)
+    return _decide_check(
+        request,
+        pending,
+        subject,
+        email,
+        hosted,
+        authenticated_at=authenticated_at,
+        addresses=addresses,
+        recovery_epoch=data["recovery_epoch"],
+    )
+
+
+def declined_at_google(request, state):
+    """A cancel at Google's second-step consent screen: the Declined outcome.
+
+    Without its pending step this is an ordinary cancelled sign-in. The
+    account was verified on the first callback of this same pending step,
+    in this browser, at most 15 minutes ago, so its page names that
+    sign-in address.
+    """
+    try:
+        pending = _take_pending(request, state.get("data", {}))
+        if pending is None or not address_matching.enabled():
+            return denial(sign_in=True)
+        service = runtime()
+        user = PortalUser.objects.filter(
+            pk=pending["user"], google_subject=pending["sub"], disabled=False
+        ).first()
+        if user is None:
+            return denial(sign_in=True)
+        fingerprint, counter = _identity_counter(
+            service, pending["sub"], user.sign_in_email
+        )
+        return _refused_check(
+            request,
+            user.pk,
+            user.sign_in_email,
+            "declined",
+            fingerprint,
+            _check_counter(pending, counter),
+        )
+    except (LimiterUnavailable, ConfigError):
+        return denial(status=503, retry=5)
+
+
+def _refused_check(request, user_id, email, kind, fingerprint, counter):
+    """A check that gave no access: counted, named within bounds, and its line."""
+    delay = record_failure(
+        request, identity=fingerprint, counter=counter, sampled=False
+    )
+    record_account_refusal(user_id, check=kind)
+    return denial(
+        status=429 if delay else 403,
+        retry=delay,
+        sign_in=True,
+        account=(request, email),
+        line=kind,
+    )
+
+
+def _decide_check(
+    request,
+    pending,
+    subject,
+    email,
+    hosted,
+    *,
+    authenticated_at,
+    addresses,
+    recovery_epoch,
+):
+    """Record a completed check's outcome and sign the account in if it may.
+
+    One transaction: the users' ordering lock, then the account's row lock,
+    the refresh from the second ID token, the outcome's match writes
+    (``address_matching.decide``) and, for a successful one, the session.
+    A re-check records ``admin_address_checked`` with the match's ID beside
+    it; a refusing outcome records it within the sign-in refusal bounds
+    after the transaction, as the first step's refusal is.
+    """
+    service = runtime()
+    fingerprint, counter = _identity_counter(service, subject, email)
+    delay = service.limiter.counters([counter])
+    if delay:
+        record_failure(request, identity=fingerprint, counter=counter)
+        return denial(status=429, retry=delay)
+    signed_in = False
+    with transaction.atomic():
+        if recovery_epoch != revocation_epoch():
+            return denial(sign_in=True)
+        address_matching.take_users_lock()
+        user = (
+            PortalUser.objects.select_for_update()
+            .filter(pk=pending["user"], google_subject=subject)
+            .first()
+        )
+        if user is None:
+            return denial(sign_in=True)
+        address_matching.refresh_second(user, email=email, hosted=hosted)
+        outcome = (
+            # A disabled account is refreshed and offered nothing.
+            address_matching.Outcome("disabled")
+            if user.disabled
+            else address_matching.decide(
+                service.store, user, email=email, addresses=addresses
+            )
+        )
+        if outcome.kind == "rechecked":
+            record_action(
+                Action.ADMIN_ADDRESS_CHECKED,
+                actor_kind=ActorKind.PORTAL_USER,
+                actor_id=user.pk,
+                subject_id=outcome.match.pk,
+                context={"address_check": "rechecked", "match_id": outcome.match.pk},
+            )
+        if outcome.signs_in:
+            principal = current_principal(service.store, user.pk)
+            signed_in = bool(principal.roles) and _issue(
+                request,
+                service,
+                user.pk,
+                authenticated_at=authenticated_at,
+                match=outcome.match,
+            )
+    if signed_in:
+        service.limiter.clear(counter)
+        return HttpResponseRedirect(admin_return_path(pending.get("next")))
+    if outcome.kind in ADDRESS_CHECK_LINES:
+        return _refused_check(
+            request,
+            user.pk,
+            email,
+            outcome.kind,
+            fingerprint,
+            _check_counter(pending, counter),
+        )
+    # Signed in but refused afterwards (the SQL session guard), or disabled.
+    delay = record_failure(
+        request,
+        identity=fingerprint,
+        counter=_check_counter(pending, counter),
+        sampled=False,
+    )
+    record_account_refusal(user.pk)
+    return denial(
+        status=429 if delay else 403,
+        retry=delay,
+        sign_in=True,
+        account=(request, email),
+    )
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
@@ -601,6 +962,69 @@ def login(request):
             },
         )
     except (LimiterUnavailable, ConfigError):
+        return denial(status=503, retry=5)
+
+
+@require_POST
+def login_addresses(request):
+    """Check my other addresses: send the browser to Google a second time.
+
+    The CSRF-protected POST of the Check your other email addresses page
+    (#2343). It needs this browser's pending second step, within its 15
+    minutes, and the setting on; otherwise "Sign-in didn't finish". It is
+    limited as an OAuth initiation, and its one-use state, nonce and PKCE
+    pair are its own, with the same callback URL. Google is asked for the
+    email-address scope with ``include_granted_scopes``, the account's
+    sign-in address as ``login_hint`` and ``prompt=consent``; ``openid`` so
+    an ID token binds the answer to the first step's account, and
+    ``profile`` because people/me needs it. The pending step stays in the
+    session until the callback takes it.
+    """
+    try:
+        service = runtime()
+        pending = request.session.get(address_matching.PENDING_KEY)
+        if (
+            not address_matching.enabled()
+            or not isinstance(pending, dict)
+            or type(pending.get("until")) is not int
+            or pending["until"] < database_now().timestamp()
+        ):
+            return denial(sign_in=True)
+        limiter = service.limiter
+        counter = ip_counter(limiter, request.client_address, initiation=True)
+        delay = limiter.counters([counter])
+        if delay:
+            return denial(status=429, retry=delay)
+        limiter.counters([counter], failure=True)
+        user = PortalUser.objects.filter(
+            pk=pending.get("user"), google_subject=pending.get("sub"), disabled=False
+        ).first()
+        if user is None:
+            return denial(sign_in=True)
+        nonce = secrets.token_urlsafe(32)
+        provider = get_adapter(request).get_provider(request, "google")
+        return provider.redirect(
+            request,
+            process="login",
+            next_url=ADMIN_HOME,
+            data={
+                "nonce": nonce,
+                "recovery_epoch": revocation_epoch(),
+                "initiated_at": int(database_now().timestamp()),
+                "next": admin_return_path(pending.get("next")),
+                "step": SECOND_STEP,
+                "user": str(user.pk),
+                "sub": user.google_subject,
+            },
+            scope=list(address_matching.SECOND_STEP_SCOPES),
+            auth_params={
+                "nonce": nonce,
+                "include_granted_scopes": "true",
+                "login_hint": user.sign_in_email,
+                "prompt": "consent",
+            },
+        )
+    except (LimiterUnavailable, ConfigError, ValueError):
         return denial(status=503, retry=5)
 
 

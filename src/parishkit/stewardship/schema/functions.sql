@@ -5775,7 +5775,11 @@ BEGIN
             -- organizations the key reached, held no Families or were
             -- unknown, integers as every unlisted key.
             'organization','organizations_reached','organizations_without_families',
-            'organizations_unknown']
+            'organizations_unknown',
+            -- A check of a Google account's other verified addresses
+            -- (#2343; audit.schemas): its closed outcome word, and the
+            -- verified-address match a re-check or a matched sign-in used.
+            'address_check','match_id']
         WHEN 'boundary' THEN ARRAY['occurrence_id','kind','intended_unix_microseconds','actual_unix_microseconds','lag_microseconds','before_state','after_state']
         WHEN 'schedule' THEN ARRAY['definition_id','previous_revision_id','selected_revision_id','cancelled_messages','skipped_occurrences','failed_occurrences','delivered_slots']
         WHEN 'timeout' THEN ARRAY['task_id','task_type','attempt','limit_seconds','elapsed_seconds','what','helper','count','outcome']
@@ -5801,14 +5805,14 @@ BEGIN
             'reason','exception_class','expected','actual','unexpected_count','mode','capped']
         ELSE NULL END;
     IF allowed IS NULL OR jsonb_typeof(payload) IS DISTINCT FROM 'object' THEN RETURN false; END IF;
-    IF schema_name IN ('member_source','boundary') AND NOT payload ?& allowed THEN RETURN false; END IF;
+    IF schema_name IN ('member_source','boundary') AND NOT payload OPERATOR(pg_catalog.?&) allowed THEN RETURN false; END IF;
     -- A refusal always says why and names exactly one of its page and its
     -- command; an exception class and an unexpected-field count belong
     -- only to their own reasons.
-    IF schema_name='refusal' AND (NOT payload ? 'reason'
-        OR (payload ? 'route')=(payload ? 'command')
-        OR (payload ? 'exception_class' AND payload->>'reason' IS DISTINCT FROM 'unclassified')
-        OR (payload ? 'unexpected_count' AND payload->>'reason' IS DISTINCT FROM 'unexpected_fields')) THEN
+    IF schema_name='refusal' AND (NOT payload OPERATOR(pg_catalog.?) 'reason'
+        OR (payload OPERATOR(pg_catalog.?) 'route')=(payload OPERATOR(pg_catalog.?) 'command')
+        OR (payload OPERATOR(pg_catalog.?) 'exception_class' AND payload->>'reason' IS DISTINCT FROM 'unclassified')
+        OR (payload OPERATOR(pg_catalog.?) 'unexpected_count' AND payload->>'reason' IS DISTINCT FROM 'unexpected_fields')) THEN
         RETURN false;
     END IF;
     FOR key,value IN SELECT * FROM jsonb_each(payload) LOOP
@@ -5918,6 +5922,11 @@ BEGIN
         -- load had ended (audit.schemas.VOID_REASONS, VOIDED_TASK_STATES).
         ELSIF key='void_reason' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('key_changed','organization_changed','reload') THEN RETURN false; END IF;
+        -- A verified-address check's outcome (#2343;
+        -- audit.schemas.ADDRESS_CHECKS).
+        ELSIF key='address_check' THEN
+            IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('rechecked','declined','none',
+                'several','own_account_only','taken') THEN RETURN false; END IF;
         ELSIF key='task_state' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('succeeded','failed') THEN RETURN false; END IF;
         -- An export's report kind and file format (#1398): the closed sets

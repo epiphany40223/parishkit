@@ -75,6 +75,11 @@ def deployment_document(configuration, *, switches=True):
         # Likewise written only while census publication (#528, BG-09) is
         # on, so a deployment with it off renders what it rendered before.
         result["parishsoft_publication"] = True
+    if configuration.alternate_address_sign_in and switches:
+        # Likewise written only while sign-in through another verified
+        # address (#2343) is on, so a deployment with it off renders what it
+        # rendered before.
+        result["alternate_address_sign_in"] = True
     if configuration.export_download_window_minutes != DEFAULT_MINUTES and switches:
         # An operational switch like the bulk send's (#1398): it can change
         # after provisioning (the upgrade script carries it over), and a

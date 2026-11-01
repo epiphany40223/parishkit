@@ -178,6 +178,12 @@ admin_patterns = [
     path("maintenance", restore_review_views.restore_review, name="maintenance"),
     path("", authentication.index, name="index"),
     path("login", authentication.login, name="login"),
+    # The second sign-in step of a verified-address check (#2343).
+    path(
+        "login/addresses/",
+        authentication.login_addresses,
+        name="login_addresses",
+    ),
     path("logout", authentication.logout, name="logout"),
 ]
 internal_patterns = [

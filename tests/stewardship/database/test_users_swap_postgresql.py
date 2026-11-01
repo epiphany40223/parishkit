@@ -615,6 +615,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # and the replaced bodies stay valid; ``before_address_match`` drops the
 # security event's constraints on them, which the file adds again, and its
 # file, whole, puts all of it back.
+# 0203 (#2343) creates nothing: it widens 0174's safe context in place, which
+# the reruns above bring back older, so its ``CLOSURE_REPLACED_ONLY`` entry
+# takes the place of 0174's and restores 0203's body instead.
 # The columns 0185 (#2202) adds, by table.
 SERIES_IN_FORCE_COLUMNS = (
     ("stewardship_daily_fact_set", "pledge_edits"),
@@ -1619,10 +1622,11 @@ CLOSURE_REPLACED_ONLY = {
     # key; the reruns above bring back 0106's, so 0122's replacement, whose
     # body holds both, runs alone (0109's discard table cannot be made twice).
     # 0174 (#1554) widens 0122's with the organization choice's four keys,
-    # so its replacement, whose body holds every earlier key, runs alone.
+    # and 0203 (#2343) widens 0174's with the verified-address check's two,
+    # so 0203's replacement, whose body holds every earlier key, runs alone.
     "stewardship_safe_context_v1": (
-        ("stewardship_accounts", "0035_parishsoft_organization_choice"),
-        "'organizations_unknown']",
+        ("stewardship_accounts", "0041_address_check_context"),
+        "'address_check','match_id']",
     ),
     # 0109 also lets each capture trigger, the export history trigger and
     # the request guard admit the discard; the reruns of the files that made
@@ -2395,6 +2399,12 @@ def before_setup_source_check():
     ]
 
 
+# Closure columns that stay while the swap is pending: 0200's portal user
+# sign_in_email (see the 0200 note above), which the worker and scheduler
+# are granted only once 0200 is applied (runtime_grants.CLOSURE_COLUMNS).
+KEPT_WHILE_PENDING = {("stewardship_portal_user", "sign_in_email")}
+
+
 def before_address_match():
     """The security event constraints 0200 adds, dropped while it is pending.
 
@@ -2738,7 +2748,7 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
         assert scalar("SELECT to_regprocedure(%s)", [lookup]) is None
         for table in CLOSURE_TABLES:
             assert scalar("SELECT to_regclass(%s)", [f"public.{table}"]) is None
-        for table, column in CLOSURE_COLUMNS:
+        for table, column in set(CLOSURE_COLUMNS) - KEPT_WHILE_PENDING:
             assert not scalar(
                 "SELECT count(*) FROM pg_attribute WHERE attrelid=%s::regclass "
                 "AND attname=%s AND NOT attisdropped",

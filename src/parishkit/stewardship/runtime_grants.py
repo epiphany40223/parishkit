@@ -910,6 +910,12 @@ CLOSURE_COLUMNS = {
         "stewardship_reports",
         "0052_series_in_force",
     ),
+    # The portal user's sign-in address (0200, #2343): the worker and the
+    # scheduler read it in current_principal.
+    ("stewardship_portal_user", "sign_in_email"): (
+        "stewardship_accounts",
+        "0040_address_match",
+    ),
 }
 
 
