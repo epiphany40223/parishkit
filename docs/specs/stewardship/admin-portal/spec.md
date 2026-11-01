@@ -4337,7 +4337,9 @@ browser's zone; the text's problems, each named by its field; or a refusal,
 such as a test already on its way. The acknowledgment of an uncertain
 earlier test shows below that line when the page is drawn with one or a send
 is refused for one. A send that gets no answer is not repeated, and the line
-says to check the Testing mailbox first. The command line has no
+says to check the Testing mailbox (to be named the Testing recipient's
+inbox, per [Testing recipient](../ui-conventions/spec.md#testing-recipient))
+first. The command line has no
 counterpart: `test sample` tests a saved email.
 
 On New, a Reminder's Sends **Repeating**
@@ -5668,7 +5670,10 @@ invitation or reminder that a mail schedule selects and that is marked
 cleaned form, so they are listed without blocking. Production confirmation
 re-reads the same check.
 
-The Admin-only Family list (the **Testing submissions** page) opens only
+The Admin-only Family list (the **Testing submissions** page, to be named
+Testing responses by the
+[responses and submissions](../ui-conventions/spec.md#responses-and-submissions)
+convention) opens only
 while the campaign is the current Testing draft, as does Go live,
 the only page that links to it. It names each Family as the other Admin
 tables do, the surname then the heads ("Squyres, Tracy and Jeff"), with the
@@ -5863,8 +5868,10 @@ campaign.
 | 3. Confirm Production | `/admin/campaign/go-live/confirmation/` | Opens once the Family links are prepared on current data. |
 | 4. Activation | `/admin/campaign/production/` | Today's Production activation address; the menu entry once Production is confirmed. |
 
-**Testing submissions** (`/admin/campaign/go-live/families/`) stays a
-sub-page of Check, under the same rules as today (410 once go-live has
+**Testing submissions** (`/admin/campaign/go-live/families/`; to be named
+Testing responses, per
+[responses and submissions](../ui-conventions/spec.md#responses-and-submissions))
+stays a sub-page of Check, under the same rules as today (410 once go-live has
 started). Every step's trail is the Campaign setup group, then Go live; the
 step bar, not the trail, names the step, so the trail never grows a crumb
 per step.
@@ -9284,6 +9291,10 @@ chosen status with no assignee; until then an explicit New filter on the
 queue does not match it, while Unresolved and Any status do. Past
 history entries keep the assignment they recorded. The data model keeps the unused column and state, as described in
 the [data specification](../data/spec.md#follow-up-records).
+The status's display name and choices become Contact status with Not
+contacted, Contacting and Done, as the
+[review pipeline terms](../ui-conventions/spec.md#review-pipeline-terms)
+convention decides ([#2330](https://github.com/epiphany40223/parishkit/issues/2330)).
 
 Requests for Members no longer in ParishSoft are left out of the Ministry
 leaders' work (Administrator, 2026-10-13,
