@@ -116,11 +116,13 @@ scripts/smoke-tests/google-people-emails.py --client-file ~/client_secret.json
 On a headless host over ssh, copy the one file and the client JSON there, and use `--manual`:
 
 ```sh
-scp src/parishkit/google/people_emails.py ~/client_secret.json root@HOST:/root/
+scp -p src/parishkit/google/people_emails.py ~/client_secret.json root@HOST:/root/
 ssh -t root@HOST python3 /root/people_emails.py --manual \
     --client-file /root/client_secret.json
 ssh root@HOST rm /root/people_emails.py /root/client_secret.json
 ```
+
+`scp -p` keeps the client file's `600` mode on the host; without `-p` the copy gets the host's umask (usually `644`). Alternatively: `ssh root@HOST 'umask 077; cat > /root/client_secret.json' < ~/client_secret.json`.
 
 `--manual` prints a URL. Open it in your laptop's browser and sign in with your Google account. After the consent screen the browser goes to `http://127.0.0.1:<port>/?state=…&code=…` and the page fails to load: that is expected. Copy the whole address from the address bar and paste it at the tool's prompt (pasting only the `code` value also works, but then the `state` check is skipped). The code is single-use and expires within minutes.
 

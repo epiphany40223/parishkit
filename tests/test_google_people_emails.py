@@ -221,6 +221,29 @@ def test_parse_redirect_refuses_bad_answers(text, message):
         pe.parse_redirect(text, "st")
 
 
+def test_state_is_checked_before_googles_error():
+    """A foreign request's ``error`` never reaches the terminal: state fails first."""
+    params = {"error": ["\x1b]0;evil\x07owned"], "state": ["other"]}
+    with pytest.raises(pe.StateMismatch) as error:
+        pe.code_from_params(params, "st")
+    assert "owned" not in str(error.value)
+    with pytest.raises(pe.StateMismatch):
+        pe.code_from_params({"state": ["é"], "code": ["c"]}, "st")
+
+
+def test_googles_error_is_printed_without_control_characters():
+    """With the right state, Google's error shows with non-printables stripped."""
+    params = {"error": ["access_denied\x1b[2J\n"], "state": ["st"]}
+    with pytest.raises(pe.SmokeError) as error:
+        pe.code_from_params(params, "st")
+    assert str(error.value) == "Google refused the sign-in: access_denied[2J."
+
+
+def test_redirect_handler_has_a_socket_timeout():
+    """An idle accepted connection cannot block handle_request() forever."""
+    assert pe._RedirectHandler.timeout == 10
+
+
 def test_email_rows_and_render_show_each_flag_and_the_id_token():
     """The table lists every address; an omitted flag prints as '-', not false."""
     rows = pe.email_rows(_person())
@@ -324,6 +347,9 @@ def test_loopback_run_reads_the_redirect_itself(client_file):
             base = query["redirect_uri"]
             with pytest.raises(urllib.error.HTTPError):
                 urllib.request.urlopen(base + "favicon.ico", timeout=5)
+            # A request with Google's shape but a foreign state is ignored.
+            stray = f"{base}?state=guess&error=owned"
+            urllib.request.urlopen(stray, timeout=5).close()
             target = f"{base}?state={query['state']}&code={CODE}"
             with urllib.request.urlopen(target, timeout=5) as response:
                 assert b"close this tab" in response.read()

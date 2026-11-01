@@ -79,6 +79,10 @@ class SmokeError(Exception):
     """A plain-language failure; its message never holds a secret or token."""
 
 
+class StateMismatch(SmokeError):
+    """The redirect's ``state`` is not this run's, so it is not Google's answer."""
+
+
 def load_client(path: Path) -> tuple[str, str]:
     """Return ``(client_id, client_secret)`` from one of the accepted shapes.
 
@@ -155,12 +159,22 @@ def parse_redirect(text: str, state: str) -> tuple[str, bool]:
 
 
 def code_from_params(params: dict[str, list[str]], state: str) -> str:
-    """Check Google's redirect parameters and return the authorization code."""
-    if "error" in params:
-        raise SmokeError(f"Google refused the sign-in: {params['error'][0]}.")
-    if params.get("state", [""])[0] != state:
-        raise SmokeError(
+    """Check Google's redirect parameters and return the authorization code.
+
+    State is checked first, in constant time, so a stray local request (or a
+    web page guessing the loopback port) cannot end the run with an ``error``
+    of its choosing. Google's ``error`` text is printed through ``printable``
+    so it cannot carry terminal escape sequences.
+    """
+    # compare_digest refuses non-ASCII str, so compare the UTF-8 bytes.
+    received = params.get("state", [""])[0].encode("utf-8")
+    if not secrets.compare_digest(received, state.encode("utf-8")):
+        raise StateMismatch(
             "The redirect's state does not match this run; start the tool again."
+        )
+    if "error" in params:
+        raise SmokeError(
+            f"Google refused the sign-in: {printable(params['error'][0])}."
         )
     code = params.get("code", [""])[0]
     if not code:
@@ -168,25 +182,41 @@ def code_from_params(params: dict[str, list[str]], state: str) -> str:
     return code
 
 
+def printable(text: str) -> str:
+    """Return ``text`` with control and other non-printable characters removed."""
+    return "".join(ch for ch in text if ch.isprintable())
+
+
 def wait_for_code(server, state: str, timeout: float, clock=time.monotonic) -> str:
     """Serve the loopback redirect until one request carries Google's answer.
 
-    Other requests (a browser's favicon fetch) are answered and ignored.
+    Other requests (a browser's favicon fetch) are answered and ignored, and
+    so is an answer whose ``state`` is not this run's: only Google's redirect
+    for this run knows it, so anything else on the port is not Google.
     ``server`` is an ``http.server.HTTPServer`` whose handler stores the
     request's query parameters in ``server.params``.
     """
     deadline = clock() + timeout
     server.timeout = 1
     server.params = None
-    while server.params is None:
+    while True:
         if clock() > deadline:
             raise SmokeError(f"No sign-in arrived within {int(timeout)} seconds.")
         server.handle_request()
-    return code_from_params(server.params, state)
+        if server.params is not None:
+            try:
+                return code_from_params(server.params, state)
+            except StateMismatch:
+                server.params = None
 
 
 class _RedirectHandler(http.server.BaseHTTPRequestHandler):
     """Record Google's redirect parameters; never log the request line."""
+
+    # Socket timeout per connection: without it, a connection that is opened
+    # but never sends a request (a browser's speculative preconnect) blocks
+    # handle_request() forever, past --timeout.
+    timeout = 10
 
     def do_GET(self):  # noqa: N802 - http.server's method name
         """Store the query if it is Google's answer and reply with plain text."""
