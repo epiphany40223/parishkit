@@ -1337,7 +1337,7 @@ before policy decides, whether or not policy then admits it, so a named refusal
 ([sign-in activity](../admin-portal/spec.md#sign-in-activity)) can show the
 address.
 
-From migration 0199 ([#2343](https://github.com/epiphany40223/parishkit/issues/2343))
+From migration 0200 ([#2343](https://github.com/epiphany40223/parishkit/issues/2343))
 `PortalUser` holds two addresses. `sign_in_email` is Google's `email` claim
 from the account's latest verified sign-in. `email` is the address the
 account **acts as**: its `sign_in_email`, or, while a
@@ -1377,13 +1377,22 @@ principal who is no longer an Administrator
 ([session rules](../admin-automation/spec.md#session-rules)). So turning
 the setting off (which takes effect when the web service restarts with it)
 cuts every open matched session at its next request, and the 30 days are a
-hard bound on every session, not only on sign-in. SQL functions that read
-`PortalUser.email` run only inside a request that `current_principal` has
-just admitted, except an export download grant re-checked through
-`stewardship_export_authorized_v1`, which is bounded by its short, single-use
-grant inside the download window (at most 240 minutes,
-[point-in-time exports](../operations/spec.md#point-in-time-exports)); the next sign-in's refresh
-then puts `email` back as the table says. A matched account's automation
+hard bound on every session, not only on sign-in. When `current_principal`
+finds the match unusable it returns no role (before it calls
+`leader_scope`, whose SQL reads the matched `email`) and also writes
+`email = sign_in_email`, which the mutable guard always allows; this
+happens at most once, because the account then no longer differs. Worker
+paths that re-check a requester in SQL with no request in between, namely
+`recover_exact` and the retry re-check in `reports/exact_tasks.py` (through
+`stewardship_export_authorized_v1`) and the automation maintenance in
+`accounts/automation_grants.py` (through `stewardship_automation_live_v1`
+and `export_authorized_v1`), therefore agree with Python from the first
+refused request. Only the window in which no request has arrived since the
+bound passed is left: there those worker checks still see the matched
+address until the account's next request or sign-in, which is bounded by the
+export retry limit (under about an hour) and by the next command ending the
+session anyway. The next sign-in's refresh puts `email` back as the table
+says if nothing else has. A matched account's automation
 session never outlives its match's window: approval caps its `expires_at`
 at the match's `confirmed_at` plus 30 days
 ([session rules](../admin-automation/spec.md#session-rules)).
@@ -1444,7 +1453,7 @@ A [verified-address match](../admin-portal/spec.md#verified-address-matches)
 ([#2343](https://github.com/epiphany40223/parishkit/issues/2343)) is runtime
 identity state, like `PortalUser`, not parish configuration: it is made by
 a person's own Google sign-in, never by an Administrator, and names a
-recorded Google account, which YAML cannot reference. Frozen migration 0199
+recorded Google account, which YAML cannot reference. Frozen migration 0200
 (renumbered at train time if the sequence moved) adds
 `stewardship_address_match` (model `AddressMatch`):
 
@@ -1555,10 +1564,15 @@ page, the command line and the match guard alike, so they cannot disagree
 `stewardship_address_in_use_v1(address text, excluding uuid)` (SECURITY
 DEFINER, `SET search_path TO pg_catalog, public, pg_temp`, `REVOKE ALL ...
 FROM PUBLIC`, `EXECUTE` granted to the web login) is true when an enabled
-portal user other than `excluding` is one of the address's accounts and
+portal user other than `excluding` (written `id IS DISTINCT FROM excluding`,
+never `id <> excluding`, because the `replaced` path passes `NULL`, for which
+`<>` is NULL on every row and would make the function return false) is one of the address's accounts and
 has a live `stewardship_portal_session` (not revoked, `expires_at` and the
 60-minute idle limit not passed, `authenticated_at` not in the future), a
-live automation session, or a `stewardship_audit_event` of type
+live automation session (the conditions of `stewardship_automation_live_v1`:
+not revoked, `expires_at` not passed, the principal still authorized as an
+Administrator by `stewardship_export_authorized_v1`, and no Admin-access
+recovery recorded after the session's creation), or a `stewardship_audit_event` of type
 `admin_login` with it as actor less than 30 days before the statement's
 time (read through the `(actor_id, created_at)` index; session rows alone
 cannot serve, since `cleanup_admin_sessions` deletes them within hours of
@@ -1568,7 +1582,11 @@ is at the moment, so a person who signs in only through a match is
 protected exactly as one who signs in with the address itself. The Python
 pre-check of the [outcomes](../admin-portal/spec.md#verified-address-outcomes)
 calls this function rather than restating it; the Users page's Last signed
-in reads the same accounts' `admin_login` events.
+in reads the same accounts' `admin_login` events. A PostgreSQL test calls
+`replaced` with `excluding` `NULL` while the old matched account signed in
+less than 30 days ago, and proves it is refused (this exercises the `NULL`
+call); a companion case with no sign-in for 30 days and no live session
+proves it is allowed.
 
 **The match guard.** `stewardship_address_match_guard_v1` (SECURITY
 DEFINER, `SET search_path TO pg_catalog, public, pg_temp`, schema-qualified

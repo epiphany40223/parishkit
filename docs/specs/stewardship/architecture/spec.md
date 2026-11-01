@@ -330,7 +330,8 @@ no token is stored. What it allows and what bounds it:
   no access; one Google account per user (a unique standing match per
   address) keeps a second account from quietly joining a user, and a newer
   account takes a match over only after the old one's 30-day check lapsed
-  and it has not signed in for 30 days; the takeover ends the old
+  and neither the old matched account nor the address's own account has
+  signed in for 30 days or holds a live session; the takeover ends the old
   account's sessions and the security notice names the replaced account.
 - *Staying power.* Every request, browser or command line, re-checks that
   the match is usable (the deployment setting on, Google's confirmation
