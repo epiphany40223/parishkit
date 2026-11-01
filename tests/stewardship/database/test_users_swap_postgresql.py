@@ -1948,7 +1948,7 @@ CLOSURE_REPLACED_ONLY = {
             "stewardship_information_report_v2",
         ),
         (
-            ("stewardship_reports", "0055_financial_eligibility"),
+            ("stewardship_reports", "0056_financial_eligibility"),
             "THEN (p.canonical::jsonb->'portal_eligible')::boolean END AS active,",
         ),
     ),

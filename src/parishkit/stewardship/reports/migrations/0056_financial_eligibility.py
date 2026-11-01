@@ -14,9 +14,9 @@ dashboard. It ends with a DO block that refuses to commit unless the bodies
 are installed as declared and the selections run. No model state changes.
 Reversing needs its own forward migration.
 
-Numbering: frozen 0197 follows the files reserved before it (0195 and 0196),
-so the files apply in prefix order once those land; a renumbering changes
-only the number.
+Numbering: frozen 0197 follows 0196 (report email population, #2331,
+reports 0055), the previous file in the repository-wide sequence, so the
+files apply in prefix order.
 """
 
 from pathlib import Path
@@ -34,10 +34,10 @@ FROZEN_SQL = (
 class Migration(migrations.Migration):
     dependencies = [
         # The reports app's previous migration, which installs the previous
-        # frozen file on this base (0194, #2320, whose bodies this replaces),
-        # so the app keeps one leaf and the files apply in prefix order. A
-        # train that lands 0195 and 0196 first adds their migrations here.
-        ("stewardship_reports", "0054_mixed_surname_names"),
+        # frozen file (0196, #2331), so the app keeps one leaf and the files
+        # apply in prefix order. It follows reports 0054 (0194, #2320, whose
+        # bodies this replaces) and jobs 0042 (0195).
+        ("stewardship_reports", "0055_report_email_population"),
     ]
 
     operations = [migrations.RunSQL(FROZEN_SQL.read_text(encoding="utf-8"))]
