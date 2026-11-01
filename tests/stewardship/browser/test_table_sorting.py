@@ -320,7 +320,7 @@ def test_packet_choices_keep_their_ticks_while_the_queue_is_resorted(
     assert choices.count() == 2
     other = page.get_by_role("checkbox", name="Another Ministry")
     other.check()
-    history = page.get_by_role("checkbox", name="Also include resolved")
+    history = page.get_by_role("checkbox", name="Also include Done and withdrawn")
     history.check()
     # The packet asks for no zone (#1127): its hidden field holds the browser's.
     packet_zone = page.locator("form[action$='/packets/'] input[name=browser_timezone]")
