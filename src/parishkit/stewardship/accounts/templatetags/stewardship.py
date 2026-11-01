@@ -649,11 +649,12 @@ def keep_money(value):
     return mark_safe(MONEY_AMOUNT.sub(r'<span class="money">\g<0></span>', text))
 
 
-# A markup tag (left as it is, so digits in an attribute are never wrapped),
-# or one shown number: a count, a decimal or a percentage as the number,
+# A markup tag or HTML character entity (left as it is, so digits in an
+# attribute or in an entity such as "&#x27;" are never wrapped), or one
+# shown number: a count, a decimal or a percentage as the number,
 # percentage and out_of filters write them ("9,999", "12.5%"), with any
 # minus and "$" kept with it.
-NUMBER_OR_TAG = re.compile(r"(<[^>]*>)|-?\$?\d[\d,]*(?:\.\d+)?%?")
+NUMBER_OR_TAG = re.compile(r"(<[^>]*>|&#?\w+;)|-?\$?\d[\d,]*(?:\.\d+)?%?")
 
 
 @register.filter

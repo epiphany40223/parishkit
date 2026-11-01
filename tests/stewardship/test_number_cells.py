@@ -22,7 +22,7 @@ CSS = STATIC / "static/stewardship/ui-v1.css"
 # mixed text (keep_numbers), so the closing ``</td>`` keeps those cells
 # out.
 NUMBER_CELL = re.compile(
-    r"<td(?P<attrs>[^>]*)>(?:\{%[^%]*%\})*"
+    r"<td(?P<attrs>[^>]*)>(?:\{%[^%]*%\}|[^<{\w]+)*"
     r"\{\{ [^}]*?(?:\|duid|_duid|\benvelope|\|number|\|intcomma)\b[^}]* \}\}"
     r"(?:\{%[^%]*%\}|[^<{\w]+)*</td>"
 )
@@ -114,6 +114,11 @@ def test_keep_numbers_wraps_each_number_and_escapes_the_rest():
     assert keep_numbers(mark_safe('<a href="/x?page=22">9,999</a>')) == (
         f'<a href="/x?page=22">{span("9,999")}</a>'
     )
+    # A character entity is neither wrapped nor split: the digits in
+    # "&#x27;" and "&#8212;" are not numbers.
+    assert keep_numbers("it's 5") == f"it&#x27;s {span('5')}"
+    assert keep_numbers(mark_safe("x &#8212; 5")) == f"x &#8212; {span('5')}"
+    assert keep_numbers(mark_safe("&nbsp;12")) == f"&nbsp;{span('12')}"
     css = CSS.read_text(encoding="utf-8")
     assert re.search(r"^\.num \{ white-space: nowrap; \}", css, re.M)
 
@@ -125,7 +130,7 @@ MIXED_TEXT_COUNTS = {
     "schedule-settings.html": 2,
     "background.html": 1,
     "background-task.html": 1,
-    "components/report-sends.html": 2,
+    "components/report-sends.html": 1,
 }
 
 
