@@ -9,7 +9,7 @@
 {% if ministries.removed %}<section><h3>{% translate "Ministries to remove" %}</h3>
 <p>{% translate "These leave the Family form. Nothing already answered is deleted: requests stay in Ministry requests until staff close them, and reports mark them No longer in this campaign." %}</p>
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Ministries to remove' %}"><table class="data-table"><thead><tr><th scope="col">{% translate "Ministry" %}</th><th scope="col">{% translate "Submitted answers" %}</th><th scope="col">{% translate "Open follow-up requests" %}</th></tr></thead>
-<tbody>{% for ministry in ministries.removed %}<tr><th scope="row">{{ ministry.name }}</th><td>{{ ministry.answers|number }}</td><td>{{ ministry.open|number }}</td></tr>{% endfor %}</tbody></table></div></section>{% endif %}
+<tbody>{% for ministry in ministries.removed %}<tr><th scope="row">{{ ministry.name }}</th><td class="numeric">{{ ministry.answers|number }}</td><td class="numeric">{{ ministry.open|number }}</td></tr>{% endfor %}</tbody></table></div></section>{% endif %}
 <section><h3>{% translate "Families with a form open now" %}</h3>
 <p>{{ ministries.open_forms|number }}</p>
 <p>{% translate "Every open form lists every Ministry, so each of these Families is asked to review the updated form before submitting. No email is sent." %}</p></section>

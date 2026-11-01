@@ -334,7 +334,9 @@ def test_the_page_draws_the_worklist_columns_and_the_download_below():
         "Actions",
     ]
     # Each name's DUID on the line under it.
-    detail = '<span class="stack-line cell-detail"><span class="visually-hidden">'
+    detail = (
+        '<span class="stack-line cell-detail nowrap"><span class="visually-hidden">'
+    )
     assert f"{detail}Member DUID </span>41</span>" in html
     assert f"{detail}Member DUID </span>New Member</span>" in html
     assert 'data-source-status="missing"' in html

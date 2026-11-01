@@ -36,7 +36,7 @@
 <tbody>{% for row in table.rows %}<tr>
 {# The shared Family-name link (#1570): a Family the current ParishSoft data no longer has shows only the shared mark; one it marks inactive shows its name and the mark (ui-conventions, #1216); the name opens its Timeline. #}<th scope="row">{% if row.family_name is None %}{% family_link row.family_id None %}{% else %}{% family_link row.family_id row.display_name active=row.active %}{% endif %}</th>
 <td class="numeric">{{ row.family_duid|duid }}</td>
-<td>{{ row.envelope|default_if_none:'' }}</td>
+<td class="numeric">{{ row.envelope|default_if_none:'' }}</td>
 <td class="family-code">{% if row.code %}<code>{{ row.code }}</code>{% if not testing_codes and row.active is not False and row.family_id %}<form class="open-form" method="post" action="{% url 'admin:family_open_form' row.family_id %}" target="_blank" rel="noopener" data-open-form data-submit-repeatable>{% csrf_token %}<input type="hidden" name="next" value="{{ page_path }}">{% button type="submit" variant="secondary" %}{% translate "Open form" %}<span class="visually-hidden"> {% translate "for" %} {{ row.display_name }}</span>{% endbutton %}</form>{% endif %}{% else %}{% translate "Unavailable for this campaign" %}{% endif %}</td>
 {% for value in row.count_cells %}<td class="numeric">{{ value|number }}</td>{% endfor %}
 {% if query.check != 'any' %}<td>{{ row.checks|join:"; " }}</td>{% endif %}

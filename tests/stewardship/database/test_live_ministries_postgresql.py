@@ -304,7 +304,10 @@ def test_campaign_settings_reviews_a_ministry_change_with_its_impact(
     # One submitted join request for Ministry 9, still awaiting follow-up.
     # The Ministry is named, with no DUID column (#1123).
     row = '<th scope="row">Food pantry</th>'
-    assert row + "<td>1</td><td>1</td>" in body and "DUID" not in body
+    assert (
+        row + '<td class="numeric">1</td><td class="numeric">1</td>' in body
+        and "DUID" not in body
+    )
     assert "Families with a form open now" in body
     token = re.search(r'name="preview" value="([^"]+)"', review.content.decode())
     before = set(ConfigurationChangeRequest.objects.values_list("pk", flat=True))

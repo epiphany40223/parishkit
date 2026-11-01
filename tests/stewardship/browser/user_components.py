@@ -36,6 +36,9 @@ The browser checks need no database:
   from ``EMAILED``, where the never-emailed leader's email is queued;
   ``EMAILS_UNAVAILABLE`` has no current campaign with Ministries, so the
   section says so in place of the table.
+- ``LEADERS_WIDE``: ``LIST`` whose leaders table holds ``WIDE_LEADERS``
+  (#2342): seven-digit Member DUIDs, and a leader of every Ministry in
+  ``MANY_MINISTRIES``, whose whole list wraps within the row.
 - ``NEW``: New user. Its Email lookup posts to ``NAMES``, which answers two
   ParishSoft names; ``NEW_TAKEN``'s posts to ``NAMES_TAKEN``, which answers
   that the address is already a user. Review posts to ``REVIEW_POST``, which
@@ -77,7 +80,6 @@ from parishkit.stewardship.accounts.leader_emails import (
 from parishkit.stewardship.accounts.leader_import import (
     LEADER_SORTING,
     SKIP_REASONS,
-    ministries_label,
 )
 from parishkit.stewardship.accounts.leader_import_views import LEADERS as UNREAD
 from parishkit.stewardship.accounts.leader_import_views import PREFIX as LEADER_PREFIX
@@ -144,6 +146,7 @@ EMAILS = "/users/leader-emails"
 LIST_EMAILS = "/users-emails"
 EMAILED = "/users-emailed"
 EMAILS_UNAVAILABLE = "/users-emails-unavailable"
+LEADERS_WIDE = "/users-leaders-wide"
 LONG_EMAIL = "a-very-long-address-for-the-parish-office-staff@stewardship.example.org"
 LONG_NAME = "Montgomery-Fitzwilliam, Bartholomew Alexander Christopher"
 SUGGESTED = ["Smith, Ann", "Smith, Bob"]
@@ -164,9 +167,31 @@ def leader_row(email, name, duid, ministries):
         "member_duid": duid,
         "ministries": list(range(1, len(ministries) + 1)),
         "ministry_names": ministries,
-        "ministries_label": ministries_label(ministries),
     }
 
+
+# A leader of many Ministries, in table_rows' alphabetical order (#2342):
+# the Ministries led cell lists all of them, so its row grows taller.
+MANY_MINISTRIES = [
+    "Altar servers",
+    "Bereavement ministry",
+    "Catechists",
+    "Choir",
+    "Food pantry",
+    "Greeters",
+    "Homebound visitors",
+    "Hospitality",
+    "Lectors",
+    "Marriage preparation",
+    "Prayer shawl ministry",
+    "St. Vincent de Paul",
+    "Ushers",
+    "Youth ministry",
+]
+WIDE_LEADERS = [
+    leader_row("ana@example.org", "Garcia, Ana", 1234567, ["Choir"]),
+    leader_row("many@example.org", "Many, Mary", 7654321, MANY_MINISTRIES),
+]
 
 LEADERS = [
     leader_row("ann.jones@example.org", "Jones, Ann", 901, ["Choir"]),
@@ -487,6 +512,9 @@ def components(context, admin):
         PENDING: ("text/html", pending),
         LIST_PENDING: _list(values, records, delete=DELETE_PENDING),
         LIST_CONFIRM: _list(values, records, import_url=IMPORT_CONFIRM),
+        LEADERS_WIDE: _list(
+            values, records, refresh=LEADERS_WIDE, leaders=WIDE_LEADERS
+        ),
         LEADERS_UNREAD: _list(
             values,
             records,

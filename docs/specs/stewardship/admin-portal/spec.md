@@ -8447,9 +8447,18 @@ counts them, since they cannot sign in.
 
 The columns, in the [shared order](../ui-conventions/spec.md#table-column-order),
 are the selection checkbox, Member (the Member's name, worded as the
-default Name the new user gets), Member DUID, Email, Ministries led (a short
-list cut off with a count, such as "Choir, Ushers and 3 more") and Role,
-which is always Ministry leader. The import review's table heads the same
+default Name the new user gets), Member DUID, Email, Ministries led and
+Role, which is always Ministry leader. Ministries led shows every Ministry
+the leader leads, by name in alphabetical order and comma-separated, with
+no ellipsis or clamp: a long list wraps onto as many lines as it needs, so
+the row grows taller, breaking only between names (a name never breaks
+inside itself), in a column wide enough that it never shrinks to one name a
+line. This is an intended exception to the
+[cut-short values](../ui-conventions/spec.md#table-fit-and-row-height)
+guideline: the full list is the point of the column (Administrator,
+2026-11-01, [#2342](https://github.com/epiphany40223/parishkit/issues/2342)).
+The Member DUID stays on one line, as every
+[number](../ui-conventions/spec.md#numbers-and-money) does. The import review's table heads the same
 column Member too, so each Member DUID follows its Member. Member, Member
 DUID and Email sort; Member is the default order. The Member DUID stays here
 at the Administrator's request (2026-10-12, pk-local batch 12,

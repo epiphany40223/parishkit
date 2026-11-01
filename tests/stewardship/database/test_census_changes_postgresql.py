@@ -175,7 +175,8 @@ def test_native_page_and_downloads(response_service, google, settings):
         name = escape(directory_name(duid))
         clamped = f'<span class="cell-clamp name-clamp" data-clip-tip>{name}</span>'
         link = link.replace(f">{name}<", f">{clamped}<")
-        cell = f'<th scope="row">{link}<span class="stack-line cell-detail">'.encode()
+        detail = '<span class="stack-line cell-detail nowrap">'
+        cell = f'<th scope="row">{link}{detail}'.encode()
         assert len(rows) == body.count(cell) == 2
         assert len(link_reads(queries)) == 1
         assert get(browser, route + "?search=x")[0].status_code == 400

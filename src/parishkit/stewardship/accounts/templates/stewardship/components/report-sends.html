@@ -23,8 +23,8 @@
     <td class="nowrap"><time datetime="{{ send.made_at|instant }}" data-local-instant data-compact>{{ send.made_at|instant }}</time></td>
     <td>{% if send.how == "manual" %}{% translate "Send now" %}{% elif send.how == "recovery" %}{% translate "Recovery" %}{% else %}{% translate "Scheduled" %}{% endif %}</td>
     <td class="nowrap">{% if send.as_of %}<time datetime="{{ send.as_of|instant }}" data-local-instant data-compact>{{ send.as_of|instant }}</time>{% elif send.through_date %}{% blocktranslate trimmed with day=send.through_date|parish_date_compact %}End of {{ day }}{% endblocktranslate %}{% else %}—{% endif %}</td>
-    <td>{% if send.recipients is None %}—{% else %}{{ send.recipients|number }}{% endif %}</td>
-    <td>{% include "stewardship/components/report-result.html" %}{% if send.stages %}<br>{{ send.stages }}{% elif send.count is not None %}<br>{% blocktranslate trimmed count requests=send.count with shown=send.count|number %}{{ shown }} open request{% plural %}{{ shown }} open requests{% endblocktranslate %}{% endif %}</td>
+    <td class="numeric">{% if send.recipients is None %}—{% else %}{{ send.recipients|number }}{% endif %}</td>
+    <td>{% include "stewardship/components/report-result.html" %}{% if send.stages %}<br>{{ send.stages }}{% elif send.count is not None %}<br>{% blocktranslate trimmed count requests=send.count with shown=send.count|number|keep_numbers %}{{ shown }} open request{% plural %}{{ shown }} open requests{% endblocktranslate %}{% endif %}</td>
   </tr>{% endfor %}</tbody>
 </table>
 </div>

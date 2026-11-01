@@ -1168,6 +1168,11 @@ td > :last-child { margin-bottom: 0; }
 .data-table td[rowspan] { vertical-align: top; }
 .data-table td > form, .data-table td > button { margin: 0; }
 .data-table button { margin-block: 0; padding: .35rem .85rem; min-height: 36px; }
+/* The held-email table's Actions cell (components/held-email-groups.html,
+   #2342) stacks two text-button forms: they keep the full 44px target and
+   a gap between them, so neither touches. */
+.data-table [data-restore-group] td > form + form { margin-block-start: .5rem; }
+.data-table [data-restore-group] button { min-height: var(--button-min-height); }
 .data-table .select-col { width: 2.75rem; }
 .data-table input[type=checkbox] { width: 1.2rem; height: 1.2rem; vertical-align: middle; }
 .data-table .numeric { text-align: end; }
@@ -1196,6 +1201,20 @@ table .nowrap, .data-table .cell-line { white-space: nowrap; }
    and names around it wrap first; a table too wide for a phone scrolls in
    its own table-scroll box, never the page. */
 .money { white-space: nowrap; }
+/* Every shown number stays on one line (ui-conventions "Numbers on one
+   line", #2342): main's overflow-wrap: anywhere broke a seven-digit Member
+   DUID six digits and one in the Users page's leaders table. A numeric cell
+   holds one number (money, a count, a percentage, a DUID), so it never
+   wraps in any table, data-table or plain; its heading may still wrap
+   between words. A muted aside in the same cell (held mail's "(and 2 that
+   would not be sent now)") and a toggletip bubble wrap as ordinary text.
+   A DUID on its own line under a name is a .nowrap stack-line instead. A
+   count in a cell's mixed text ("1,234 emails delivered", "3 out of 10
+   (30%)") goes through the keep_numbers template filter, which puts each
+   number in .num, so the words around it wrap first. */
+table td.numeric, table tbody th.numeric, table tfoot th.numeric { white-space: nowrap; }
+table td.numeric :is(.help, .toggletip-bubble) { white-space: normal; }
+.num { white-space: nowrap; }
 .data-table .cell-line { display: block; }
 .data-table .cell-detail { display: block; color: var(--muted); font-size: .875rem; font-weight: 400; }
 .data-table dl.cell-pairs { display: grid; grid-template-columns: auto max-content; gap: .1rem .6rem; margin: 0; }
@@ -1238,6 +1257,13 @@ table .nowrap, .data-table .cell-line { white-space: nowrap; }
    (for screen readers and copying). The Users page shows it whole in its
    title; the queue in the clipped-name tip (admin-menu-v1.js). */
 .cell-ellipsis { display: block; max-width: 18rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A list of names shown whole (the Users page's Ministries led, #2342):
+   every name, comma-separated, wrapping only between names, so the row grows
+   taller rather than cutting the list short. Each name is one .nowrap unit
+   (its comma inside it, so no line starts with one); the minimum width keeps
+   a squeezed table from wrapping it to one name a line. */
+.name-list { display: block; min-width: 12rem; }
+.name-list > .nowrap { white-space: nowrap; }
 /* A name a reader scans to tell rows apart (the queue's Ministry, #1136)
    wraps instead, between words, to at most two lines; only a name too long
    for two lines ends in "…", whole in the clipped-name tip. The minimum

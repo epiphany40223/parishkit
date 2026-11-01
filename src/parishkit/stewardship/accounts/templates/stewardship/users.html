@@ -99,7 +99,9 @@ line gives the empty-table reason (empty_hint), which Import all names
 (hint_id). If the leaders cannot be read, the section says so instead and the
 users table above stays usable, and the notice brings the leaders in by
 itself (#1863, components/part-status.html). Leaders with no usable email
-are only counted, in a muted line.
+are only counted, in a muted line. Ministries led lists every Ministry
+whole (#2342), each name one nowrap unit in the shared name-list, so the
+list wraps only between names; the numeric Member DUID never wraps.
 {% endcomment %}
 {% translate "Leader pages" as leader_navigator_label %}
 {% include "stewardship/components/review-outcome.html" with outcome_id="leaders-outcome" %}
@@ -131,7 +133,7 @@ are only counted, in a muted line.
       <th scope="row"><span class="cell-ellipsis" title="{{ row.name }}">{{ row.name }}</span></th>
       <td class="numeric">{{ row.member_duid|default_if_none:"" }}</td>
       <td><span class="cell-ellipsis" title="{{ row.email }}">{{ row.email }}</span></td>
-      <td><span class="cell-ellipsis" title="{{ row.ministry_names|join:', ' }}">{{ row.ministries_label }}</span></td>
+      <td><span class="name-list">{% for name in row.ministry_names %}<span class="nowrap">{{ name }}{% if not forloop.last %},{% endif %}</span>{% if not forloop.last %} {% endif %}{% endfor %}</span></td>
       <td class="nowrap">{% translate "Ministry leader" %}</td>
     </tr>{% empty %}<tr><td colspan="6">{% translate "No ParishSoft Ministry leader is waiting for a user, so there is nothing to import. Every leader of this campaign's Ministries already has one, or has no usable email." %}</td></tr>{% endfor %}
     </tbody>
