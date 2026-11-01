@@ -956,25 +956,61 @@ def resolve_quiet_incidents():
     return resolved
 
 
+def _batched(cleanup, *, effect, check, batch_size, batches):
+    """Run one session cleanup in bounded batches and sum what it removed.
+
+    Each batch is its own ``effect()`` after a ``check()``. ``cleanup``
+    returns one count or a tuple of counts (the anonymous cleanup's sessions
+    and OAuth receipts); the passes stop once every count of a batch comes
+    back short of ``batch_size``, or after ``batches`` batches, leaving the
+    rest to the next hourly run. Returns the summed counts as a tuple.
+    """
+    totals = None
+    for _ in range(batches):
+        check()
+        with effect():
+            counts = cleanup(batch_size=batch_size)
+        counts = counts if isinstance(counts, tuple) else (counts,)
+        totals = (
+            counts
+            if totals is None
+            else tuple(a + b for a, b in zip(totals, counts, strict=True))
+        )
+        if max(counts) < batch_size:
+            break
+    return totals
+
+
 def maintain(*, effect=nullcontext, check=lambda: None, batch_size=500, batches=20):
     """One maintenance pass: session cleanup, endings and quiet incidents.
 
     Each step runs inside ``effect()`` (the task's fenced transaction; nothing
-    in tests). ``cleanup_admin_sessions`` runs in bounded batches until one
-    comes back short or ``batches`` ran, then the orphaned command logins go.
-    ``check`` is called before each step, so a lost task lease stops the pass.
+    in tests). The Admin, Family (#2362) and anonymous session cleanups each
+    run in bounded batches (``_batched``), then the orphaned command logins
+    go. ``check`` is called before each step, so a lost task lease stops the
+    pass. The counts are logged (counts only) and returned.
     """
-    from .sessions import cleanup_admin_sessions
+    from .sessions import (
+        cleanup_admin_sessions,
+        cleanup_anonymous_sessions,
+        cleanup_family_sessions,
+    )
 
-    removed = 0
-    for _ in range(batches):
-        check()
-        with effect():
-            count = cleanup_admin_sessions(batch_size=batch_size)
-        removed += count
-        if count < batch_size:
-            break
-    totals = {"admin_sessions_removed": removed}
+    def batched(cleanup):
+        """``_batched`` with this pass's effect, check and bounds."""
+        return _batched(
+            cleanup, effect=effect, check=check, batch_size=batch_size, batches=batches
+        )
+
+    (admin,) = batched(cleanup_admin_sessions)
+    (family,) = batched(cleanup_family_sessions)
+    anonymous, receipts = batched(cleanup_anonymous_sessions)
+    totals = {
+        "admin_sessions_removed": admin,
+        "family_sessions_removed": family,
+        "anonymous_sessions_removed": anonymous,
+        "oauth_receipts_removed": receipts,
+    }
     for name, step in (
         ("command_logins_removed", delete_orphaned_logins),
         ("sessions_ended", end_lapsed_sessions),
@@ -983,4 +1019,5 @@ def maintain(*, effect=nullcontext, check=lambda: None, batch_size=500, batches=
         check()
         with effect():
             totals[name] = step()
+    logging.getLogger(__name__).info("Automation maintenance: %s", json.dumps(totals))
     return totals

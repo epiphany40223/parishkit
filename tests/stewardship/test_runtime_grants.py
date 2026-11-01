@@ -403,9 +403,24 @@ def test_background_grants_keep_initial_completion_separate_from_general_authori
     assert tables["stewardship_audit_event"] == {"INSERT"}
     if role is ServiceRole.WORKER:
         assert "stewardship_family_session" not in tables
+        # The Family session cleanup (#2362) also selects ended rows by id,
+        # mode and deadline; never session_id, the Family's cookie value.
         assert columns["stewardship_family_session"] == {
-            "SELECT": {"family_id", "revoked_at", "last_activity_at", "version"},
+            "SELECT": {
+                "id",
+                "family_id",
+                "mode",
+                "expires_at",
+                "revoked_at",
+                "last_activity_at",
+                "version",
+            },
             "UPDATE": {"revoked_at", "version"},
+        }
+        # Expired one-use OAuth state receipts: their digest and expiry only.
+        assert tables["stewardship_oauth_consumption"] == {"DELETE"}
+        assert columns["stewardship_oauth_consumption"] == {
+            "SELECT": {"fingerprint", "expires_at"}
         }
         assert tables["stewardship_task_run"] == {"SELECT", "INSERT", "UPDATE"}
         # The automation maintenance task (ADM-11) cleans up ended Admin

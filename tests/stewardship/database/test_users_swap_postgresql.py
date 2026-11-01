@@ -605,6 +605,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # (``CLOSURE_CREATED``) and 0106's (``CLOSURE_REPLACED_LAST``) bring back
 # without the uploader's login, so ``CLOSURE_REPLACED_ONLY`` puts 0193's
 # bodies back last.
+# 0199 (#2362) creates two definers, granted to the general worker
+# (runtime_grants.CLOSURE_FUNCTIONS); it replaces nothing.
 # The columns 0185 (#2202) adds, by table.
 SERIES_IN_FORCE_COLUMNS = (
     ("stewardship_daily_fact_set", "pledge_edits"),
@@ -1161,6 +1163,15 @@ CLOSURE_CREATED = {
             "public.stewardship_response_ministry_held_v1(uuid,uuid,text,integer,date)",
         ),
         ("stewardship_responses", "0033_commitment_roster_date"),
+    ),
+    # 0199 (#2362): the maintenance task's Family and anonymous session
+    # purges.
+    **dict.fromkeys(
+        (
+            "public.stewardship_family_session_purge_v1(uuid[])",
+            "public.stewardship_anonymous_session_purge_v1(integer)",
+        ),
+        ("stewardship_accounts", "0040_family_session_purge"),
     ),
 }
 
