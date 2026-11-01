@@ -473,12 +473,18 @@ def establish_identity(
         user, created = PortalUser.objects.select_for_update().get_or_create(
             google_subject=subject,
             defaults=dict(
-                email=email, hosted_domain=hosted, verified_at=database_now()
+                email=email,
+                sign_in_email=email,
+                hosted_domain=hosted,
+                verified_at=database_now(),
             ),
         )
         if not created:
+            # The account acts as its own sign-in address: no
+            # verified-address match is ever made yet (#2343).
             PortalUser.objects.filter(pk=user.pk).update(
                 email=email,
+                sign_in_email=email,
                 hosted_domain=hosted,
                 verified_at=database_now(),
                 version=F("version") + 1,

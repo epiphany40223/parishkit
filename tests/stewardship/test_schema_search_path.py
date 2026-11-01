@@ -138,7 +138,6 @@ UNPINNED = frozenset(
         "stewardship_policy_security_ack_immutable_v1()",
         "stewardship_policy_security_event_immutable_v1()",
         "stewardship_portal_session_mutable_v1()",
-        "stewardship_portal_user_mutable_v1()",
         "stewardship_postclose_resolution_immutable_v1()",
         "stewardship_production_cancellation_immutable_v1()",
         "stewardship_provider_context_immutable_v1()",

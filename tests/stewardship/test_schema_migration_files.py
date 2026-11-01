@@ -614,6 +614,9 @@ FROZEN = {
     "0193_backup_uploader_preparation.sql": (
         "87ea2cc43e207120ce25b853ea3ebc82a4a1a0bf5741f3cfbe1315b4398b68c3"
     ),
+    "0200_address_match.sql": (
+        "2b14157352491014fed30f0967ad49a8491260b54834f608f8998f4e985930f2"
+    ),
 }
 
 
@@ -1021,3 +1024,21 @@ def test_the_pre_setup_load_void_fixture_is_unchanged():
     """The setup load void tests prove 0102's check on exactly the earlier bodies."""
     digest = hashlib.sha256(PRE_SETUP_LOAD_VOID_FIXTURE.read_bytes()).hexdigest()
     assert digest == PRE_SETUP_LOAD_VOID_DIGEST
+
+
+# The pre-0200 update guard the verified-address match tests reinstall
+# (tests/stewardship/database/pre_address_match_functions.sql), copied byte
+# for byte from the fresh-install baseline at 94abae92b, the main commit
+# 0200 (#2343) was written on. Pinned so an edit to the fixture fails here.
+PRE_ADDRESS_MATCH_FIXTURE = (
+    ROOT / "tests/stewardship/database/pre_address_match_functions.sql"
+)
+PRE_ADDRESS_MATCH_DIGEST = (
+    "6f9e2c3c7fe79c6192f14df0feb30aec596491c56f788e829ac07f7175c826e8"
+)
+
+
+def test_the_pre_address_match_fixture_is_unchanged():
+    """The match tests prove 0200's check on exactly the earlier guard."""
+    digest = hashlib.sha256(PRE_ADDRESS_MATCH_FIXTURE.read_bytes()).hexdigest()
+    assert digest == PRE_ADDRESS_MATCH_DIGEST

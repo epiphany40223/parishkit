@@ -118,12 +118,15 @@ def test_disabling_is_one_way(auth_service, google):
 
 
 def test_identity_claims_change_only_with_a_fresh_verification(auth_service, google):
-    """Email and hosted domain move only with verified_at stamped in the same
-    transaction, as the Google callback does; the callback still refreshes."""
+    """Email, the sign-in address (#2343) and hosted domain move only with
+    verified_at stamped in the same transaction, as the Google callback does;
+    the callback still refreshes."""
     signed_in()
     user = PortalUser.objects.get()
     for values in (
         dict(email="other@example.org"),
+        dict(sign_in_email="other@example.org"),
+        dict(email="other@example.org", sign_in_email="other@example.org"),
         dict(hosted_domain="elsewhere.invalid"),
         dict(email="other@example.org", verified_at=user.verified_at),
         dict(verified_at=user.verified_at - timedelta(seconds=1)),
@@ -135,6 +138,7 @@ def test_identity_claims_change_only_with_a_fresh_verification(auth_service, goo
     with transaction.atomic():
         PortalUser.objects.filter(pk=user.pk).update(
             email="other@example.org",
+            sign_in_email="other@example.org",
             verified_at=database_now(),
             version=F("version") + 1,
         )
@@ -246,6 +250,8 @@ def test_user_inserts_need_a_timestamp_inside_the_transaction(auth_service, goog
             dict(actor_id=uuid4()),
             dict(google_subject=" "),
             dict(email=""),
+            # A new account acts as its own sign-in address (#2343).
+            dict(sign_in_email="else@example.org"),
         ):
             with refused("verification inside this transaction"):
                 insert(**values)
@@ -279,8 +285,8 @@ def test_only_the_web_login_inserts_users():
         ):
             cursor.execute(
                 "INSERT INTO stewardship_portal_user (id, correlation_id, version, "
-                "google_subject, email, verified_at, disabled) VALUES "
-                "(%s, %s, 1, %s, 'synthetic@example.org', statement_timestamp(), "
-                "false)",
+                "google_subject, email, sign_in_email, verified_at, disabled) "
+                "VALUES (%s, %s, 1, %s, 'synthetic@example.org', "
+                "'synthetic@example.org', statement_timestamp(), false)",
                 [uuid4(), uuid4(), str(uuid4())],
             )
