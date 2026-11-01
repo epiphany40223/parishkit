@@ -7788,9 +7788,9 @@ def followup_bulk(args, preamble, runtime, context):
         context,
         (
             f"Mark {len(versions)} Ministry request(s) as "
-            f"{outcome_label(outcome, kind)}. Each request is resolved, with "
-            "its own entry in its follow-up history.",
-            "A resolved request leaves the open queue and cannot be edited again.",
+            f"{outcome_label(outcome, kind)}. Each request's Contact status "
+            "becomes Done, with its own entry in its follow-up history.",
+            "A Done request leaves the open queue and cannot be edited again.",
         ),
     )
     return admin_followup.bulk_followup(
@@ -7814,7 +7814,7 @@ def _followup_list_options(parser):
     parser.add_argument(
         "--state",
         choices=FOLLOWUP_STATES,
-        help="default unresolved (New or In progress)",
+        help="default unresolved (Not contacted or Contacting)",
     )
     parser.add_argument("--outcome", choices=FOLLOWUP_OUTCOMES)
     parser.add_argument(
@@ -8398,7 +8398,7 @@ def _followup_export_options(parser):
     parser.add_argument(
         "--state",
         choices=FOLLOWUP_EXPORT_STATES,
-        help="default unresolved (New or In progress)",
+        help="default unresolved (Not contacted or Contacting)",
     )
     parser.add_argument("--outcome", choices=FOLLOWUP_OUTCOMES)
     parser.add_argument(

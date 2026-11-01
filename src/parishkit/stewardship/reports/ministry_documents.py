@@ -119,10 +119,10 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
     # The page's list order (#932): Member, Member DUID, status and
     # outcome, contact details or current role, and Submitted last. A
     # spreadsheet needs one value per cell, so the page's combined cells
-    # (Status and outcome, Contact and demographics) are split into
+    # (Contact status and outcome, Contact and demographics) are split into
     # their parts, in the page's order and with the page's own words
     # (UX conventions, Downloaded files).
-    headings = ("Member", "Member DUID", "Status", "Outcome")
+    headings = ("Member", "Member DUID", "Contact status", "Outcome")
     headings += (
         ("Gender", "Age", "Email", "Phones", "Known primary Family address")
         if action == "join"

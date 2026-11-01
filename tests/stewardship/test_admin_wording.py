@@ -91,10 +91,9 @@ def test_admin_templates_carry_no_sensitive_data_banner():
 # constants (label maps, heading tuples, captions), downloaded-file
 # headings, CLI help and descriptions, and the sentences in ui-v1.js. Other
 # untranslated Python text (a plain string built inside a function, a CLI
-# command's printed output) is not scanned. KNOWN is the shrinking allowlist
-# of today's occurrences. Counts must match exactly: a new occurrence fails, and a
-# strings PR that removes one lowers or deletes its entry. The last strings
-# PR of #2330 deletes KNOWN.
+# command's printed output) is not scanned. KNOWN lists the occurrences the
+# #2330 string changes could not remove, with exact counts: a new occurrence
+# fails, and a change that removes one lowers or deletes its entry.
 
 ROOT = TEMPLATES.parents[5]
 PACKAGE = ROOT / "src/parishkit/stewardship"
@@ -198,19 +197,6 @@ REGEX_BEFORE = tuple("(,=:[!&|?{};") + ("return",)
 # Today's occurrences, by (term, path under PACKAGE): the shrinking
 # allowlist. Never add an entry or raise a count; use the replacement.
 KNOWN = {
-    # The Ministry follow-up Status filter; it changes with Contact status.
-    ("Unresolved", "reports/ministries.py"): 1,
-    (
-        "Status: New, In progress, Resolved",
-        "accounts/templates/stewardship/ministry-followup.html",
-    ): 2,
-    (
-        "Status: New, In progress, Resolved",
-        "accounts/templates/stewardship/ministry-packet.html",
-    ): 1,
-    ("Status: New, In progress, Resolved", "reports/ministries.py"): 2,
-    ("Status: New, In progress, Resolved", "reports/ministry_followup.py"): 2,
-    ("Status: New, In progress, Resolved", "reports/ministry_followup_views.py"): 1,
     # The operational alert's title is also rendered by frozen SQL
     # (schema/operational_render.sql); it changes with a later migration.
     ("Family login", "jobs/operational_content.py"): 1,

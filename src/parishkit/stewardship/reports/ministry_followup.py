@@ -51,9 +51,9 @@ SORTING = Sorting(
 # requests only, so they are not filters (#1131); a request page reached by
 # an old link still names them (STATE_LABELS).
 STATES = {
-    "new": "New",
-    "in_progress": "In progress",
-    "resolved": "Resolved",
+    "new": "Not contacted",
+    "in_progress": "Contacting",
+    "resolved": "Done",
     "closed_no_response": "Closed: no response",
 }
 STATE_LABELS = STATES | {

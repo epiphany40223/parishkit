@@ -63,7 +63,7 @@ def test_followup_save_is_in_place(page, component_origin):
     page.evaluate(MARK)
     offset = scroll_below(page, FOLLOWUP_SAVE)
     posts = count_requests(page, "POST", "/record/")
-    page.get_by_label("Status").select_option("in_progress")
+    page.get_by_label("Contact status").select_option("in_progress")
     page.locator(FOLLOWUP_SAVE).dblclick()
     visible(page.locator("#followup-item").get_by_text("Saved <note>", exact=True))
     assert page.evaluate(MARKED) == "kept"
@@ -90,7 +90,7 @@ def test_followup_save_is_in_place(page, component_origin):
     page.get_by_label("How").select_option("")
     greyed(page.locator("#contact-date"))
     assert save.is_enabled()
-    page.get_by_label("Status").select_option("resolved")
+    page.get_by_label("Contact status").select_option("resolved")
     available(page.get_by_label("Outcome", exact=True))
     assert save.is_disabled()
 
@@ -109,7 +109,7 @@ def test_followup_save_without_a_usable_save_focuses_the_heading(
     page.evaluate(MARK)
     scroll_below(page, FOLLOWUP_SAVE)
     posts = count_requests(page, "POST", "/record/")
-    page.get_by_label("Status").select_option("resolved")
+    page.get_by_label("Contact status").select_option("resolved")
     page.get_by_label("Outcome", exact=True).select_option("joined")
     page.locator(FOLLOWUP_SAVE).click()
     has_text(
@@ -145,7 +145,7 @@ def test_followup_refusal_is_swapped_into_the_request(page, component_origin):
     scroll_below(page, FOLLOWUP_SAVE)
     answer_with(page, component_origin, FOLLOWUP_UPDATE, 200, "/followup-item-refused")
     posts = count_requests(page, "POST", "/record/")
-    page.get_by_label("Status").select_option("resolved")
+    page.get_by_label("Contact status").select_option("resolved")
     page.get_by_label("Outcome", exact=True).select_option("joined")
     page.locator(FOLLOWUP_SAVE).click()
     summary = page.locator("#followup-item > [data-error-summary]:first-child")
@@ -170,7 +170,7 @@ def test_followup_refusal_is_swapped_into_the_request(page, component_origin):
     outcome.select_option("")
     assert save.is_disabled()
     has_text(page.locator("#followup-save-hint"), "Choose an outcome to save.")
-    page.get_by_label("Status").select_option("in_progress")
+    page.get_by_label("Contact status").select_option("in_progress")
     greyed(outcome)
     assert save.is_enabled()
 
@@ -287,7 +287,7 @@ def test_future_contact_check_works_after_a_swap(page, component_origin):
     save swapped in, as on the page as loaded."""
     page.clock.set_fixed_time(NOON)
     page.goto(component_origin + FOLLOWUP_ITEM)
-    page.get_by_label("Status").select_option("in_progress")
+    page.get_by_label("Contact status").select_option("in_progress")
     page.locator(FOLLOWUP_SAVE).click()
     visible(page.locator("#followup-item").get_by_text("Saved <note>", exact=True))
     page.get_by_label("How").select_option("phone")
@@ -400,7 +400,7 @@ def test_server_future_refusal_stands_when_this_clock_disagrees(page, component_
     page.locator("#contact-date").focus()
     page.locator("#contact-notes").focus()
     page.evaluate("window.dispatchEvent(new PageTransitionEvent('pageshow'))")
-    page.get_by_label("Status").select_option("new")
+    page.get_by_label("Contact status").select_option("new")
     contact_marked(page, True)
     assert page.locator("[data-error-summary]").count() == 1
     assert (
@@ -510,7 +510,7 @@ def test_server_only_error_clears_when_its_field_is_edited(page, component_origi
     on the first edit of that field; the server checks again on save."""
     page.goto(component_origin + FOLLOWUP_ITEM)
     answer_with(page, component_origin, FOLLOWUP_UPDATE, 200, "/followup-item-refused")
-    page.get_by_label("Status").select_option("resolved")
+    page.get_by_label("Contact status").select_option("resolved")
     page.get_by_label("Outcome", exact=True).select_option("joined")
     page.locator(FOLLOWUP_SAVE).click()
     outcome = page.locator("#followup-outcome")
