@@ -156,6 +156,7 @@ def test_open_form_marks_the_response_as_entered_by_staff(
     # It shows as entered by Staff, never by whom.
     _, body = as_web(get, admin, timeline)
     assert b"Entered by Staff" in body
+    assert b"by Staff for the Family" not in body
     # The hand-off's sign-in reads as Staff's (#795); the Family's own code
     # sign-in, made by the fixture, still reads as a sign-in.
     assert body.count(b"Staff opened the form") == 1
@@ -527,6 +528,7 @@ def test_open_form_enters_a_familys_first_response_after_close(
         _, body = as_web(get, admin, f"/admin/reports/families/{second.pk}/")
         assert body.count(b"Late: after the campaign closed") == 1
         assert b"Entered by Staff" in body
+        assert b"by Staff for the Family" not in body
         _, body = as_web(get, admin, "/admin/reports/census/")
         assert b"Late: after the campaign closed" in body
 
