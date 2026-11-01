@@ -153,11 +153,18 @@ def information_csv(document, output):
 
     Every format carries the same columns (#966): the report information
     lives in the XLSX "Report information" sheet and the PDF's report card,
-    never as extra CSV columns or rows.
+    never as extra CSV columns or rows. The one exception is a document's
+    ``header_rows`` (a report with the Families counted choice, R59 on
+    #2324): label/value rows, then a blank row, above the table.
     """
     wrapper = io.TextIOWrapper(output, encoding="utf-8", newline="", write_through=True)
     try:
         writer = csv.writer(wrapper, lineterminator="\r\n")
+        header = tuple(getattr(document, "header_rows", ()))
+        for label, value in header:
+            writer.writerow((label, csv_cell_value(value)))
+        if header:
+            writer.writerow(())
         writer.writerow(document.headings)
         for row in document.rows:
             writer.writerow(tuple(csv_cell_value(value) for value in row))
@@ -172,14 +179,18 @@ def information_xlsx(document, output):
     A document about one subject may have ``title_rows`` (label, value pairs,
     the Family timeline's Family, code, campaign and time): they open the
     table's sheet, then a blank row, then the table, as a packet's Ministry
-    details do (reports spec, "File design"; #1841).
+    details do (reports spec, "File design"; #1841). A document's
+    ``header_rows`` (its CSV's header block, R59 on #2324) open it the same
+    way.
     """
     from openpyxl import Workbook
     from openpyxl.styles import Alignment
 
     from .xlsx_design import describe, style_details, style_information, style_table
 
-    titles = tuple(getattr(document, "title_rows", ()))
+    titles = tuple(
+        getattr(document, "title_rows", ()) or getattr(document, "header_rows", ())
+    )
     # The table's heading row: right after the title rows and a blank row.
     head = len(titles) + 2 if titles else 1
     book = Workbook()
@@ -244,13 +255,15 @@ def information_pdf(document, output):
     """Paginate before drawing so every page states its position.
 
     Count without retaining wrapped lines, then stream one bounded page at a
-    time; both passes lay out the same detached document identically.
+    time; both passes lay out the same detached document identically. A
+    document's ``frame_details`` are the lines under every page's title
+    (Financial stewardship's Families counted, R59 on #2324).
     """
     from .pdf_design import PdfFrame, write_records
 
     return write_records(
         output,
-        PdfFrame.for_document(document),
+        PdfFrame.for_document(document, details=getattr(document, "frame_details", ())),
         lambda: information_records(document),
         requested_at=document.requested_at,
     )

@@ -13,6 +13,7 @@ from datetime import datetime
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
+import pytest
 from openpyxl import load_workbook
 
 from parishkit.stewardship.reports import charts, pdf_design
@@ -27,7 +28,7 @@ from parishkit.stewardship.reports.response_metrics import Stage
 from parishkit.stewardship.reports.spreadsheets import participation_xlsx
 
 from .test_daily_digest_content import document as digest_document
-from .test_participation_rendering import document, summary
+from .test_participation_rendering import csv_table, document, summary
 
 STAGES = (
     Stage("invited", 10),
@@ -153,7 +154,7 @@ def test_csv_leads_with_the_summary_rows_under_the_section_column():
     """
     stream = io.BytesIO()
     participation_csv(replace(document(), summary=summary()), stream)
-    reader = csv.DictReader(io.StringIO(stream.getvalue().decode()))
+    reader = csv.DictReader(io.StringIO(csv_table(stream.getvalue())))
     rows = list(reader)
     assert reader.fieldnames[: 1 + len(COLUMNS)] == ["Section", *COLUMNS]
     sections = [row["Section"] for row in rows]
@@ -186,8 +187,9 @@ def test_xlsx_summary_sheet_keeps_native_types():
             "Report information",
         ]
         sheet = book["Summary"]
-        assert [cell.value for cell in sheet[1]] == list(COLUMNS)
-        rows = {row[1].value: row for row in sheet.iter_rows(min_row=2)}
+        # Under the header block (R59 on #2324), the table's headings.
+        assert [cell.value for cell in sheet[5]] == list(COLUMNS)
+        rows = {row[1].value: row for row in sheet.iter_rows(min_row=6)}
         families = rows["Campaign Families"][2]
         assert families.value == 1234 and families.number_format == "#,##0"
         pledges = rows["Annual pledges"][2]
@@ -231,3 +233,85 @@ def test_pdf_summary_table_reads_as_the_page(monkeypatch):
         2026, 11, 1, 21, 30, tzinfo=ZoneInfo("America/Los_Angeles")
     )
     assert daily[0] == "Campaign date"
+
+
+@pytest.mark.parametrize(
+    ("scope", "counted"),
+    [
+        ("historical", "Including Families that left"),
+        ("current", "In this campaign today"),
+    ],
+)
+def test_every_format_heads_its_file_with_the_captured_population(
+    scope, counted, monkeypatch
+):
+    """R59 on #2324: the CSV, each XLSX table sheet and every PDF page say
+    "Families counted: …" under the report title, beside Source as of, from
+    the request's captured scope; the Population row and column stay."""
+    value = replace(document(), summary=summary(), population_scope=scope)
+    source = value.source_as_of.astimezone(ZoneInfo(value.browser_timezone))
+    stream = io.BytesIO()
+    participation_csv(value, stream)
+    records = list(csv.reader(io.StringIO(stream.getvalue().decode())))
+    assert records[:4] == [
+        ["Report", "Family participation"],
+        ["Families counted", counted],
+        ["Source as of", source.isoformat(sep=" ")],
+        [],
+    ]
+    assert records[4][0] == "Section"
+    # The daily rows' Population column still names it.
+    population = records[4].index("Population")
+    assert {row[population] for row in records[5:] if row[0] != "Summary"} == {counted}
+    stream = io.BytesIO()
+    participation_xlsx(value, stream)
+    book = load_workbook(io.BytesIO(stream.getvalue()))
+    try:
+        for name, heading in (
+            ("Summary", "Group"),
+            ("Daily participation", "Campaign date"),
+        ):
+            sheet = book[name]
+            assert [
+                (sheet.cell(r, 1).value, sheet.cell(r, 2).value) for r in (1, 2)
+            ] == [
+                ("Report", "Family participation"),
+                ("Families counted", counted),
+            ], name
+            assert sheet["A3"].value == "Source as of"
+            assert sheet["B3"].value == source.replace(tzinfo=None)
+            assert sheet["A4"].value is None and sheet["A5"].value == heading
+            # The heading row stays the frozen and printed one.
+            assert sheet.freeze_panes == "A6" and sheet.print_title_rows == "$5:$5"
+        information = {
+            cells[0].value: cells[1].value
+            for cells in book["Report information"].iter_rows()
+        }
+        assert information["Population"] == counted
+    finally:
+        book.close()
+    lines, draw = [], pdf_design.Canvas.text
+
+    def spy(self, x, y, text, *args, **kwargs):
+        """Record one drawn line, then draw it."""
+        if text:
+            lines.append(text)
+        return draw(self, x, y, text, *args, **kwargs)
+
+    monkeypatch.setattr(pdf_design.Canvas, "text", spy)
+    output = io.BytesIO()
+    charts.render_participation(value, output, format="pdf")
+    assert output.getvalue().startswith(b"%PDF")
+    title = f"Family participation — {counted}"
+    starts = [index for index, line in enumerate(lines) if line == title]
+    # Every page (the Summary, the chart and the daily table) has the line
+    # first under its title, then its section.
+    assert len(starts) == 3
+    assert [lines[index + 1] for index in starts] == [
+        f"Families counted: {counted}"
+    ] * 3
+    assert [lines[index + 2] for index in starts] == [
+        "Summary",
+        "Daily participation",
+        "Daily participation",
+    ]

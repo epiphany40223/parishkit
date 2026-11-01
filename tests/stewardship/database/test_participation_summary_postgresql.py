@@ -26,6 +26,7 @@ from parishkit.stewardship.reports.export_models import (
     ExportRequest,
     ParticipationExportSnapshot,
 )
+from parishkit.stewardship.reports.participation import SCOPE_LABELS
 
 from .test_export_jobs_postgresql import (  # noqa: F401
     request_export,
@@ -46,7 +47,12 @@ def published_csv(scenario, request):  # noqa: F811
         ArtifactReceipt(publication.attempt_id, publication.size, publication.sha256),
     ) as stream:
         body = stream.read().decode()
-    return list(csv.DictReader(io.StringIO(body)))
+    # The file's header block (R59 on #2324) names the population the
+    # request captured; the table follows its blank row.
+    header, table = body.split("\r\n\r\n", 1)
+    counted = str(SCOPE_LABELS[request.parameters["population_scope"]])
+    assert header.split("\r\n")[1] == f"Families counted,{counted}"
+    return list(csv.DictReader(io.StringIO(table)))
 
 
 def test_the_request_freezes_the_summary_and_the_file_reads_only_it(

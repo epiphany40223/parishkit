@@ -23,7 +23,13 @@ from parishkit.stewardship.source.source_status import (
 from parishkit.stewardship.web import dates
 
 from .money import MoneyAmount
-from .participation import SCOPE_CHOICE_LABEL, SCOPE_LABELS
+from .participation import (
+    SCOPE_CHOICE_LABEL,
+    SCOPE_LABELS,
+    SOURCE_AS_OF,
+    families_counted_line,
+    header_rows,
+)
 
 # The two comparison columns use the page's own labels (#404), so a file and
 # the page name the same figures alike; ``financial_document`` adds the
@@ -82,8 +88,27 @@ class FinancialDocument:
     item_count: int
     requested_at: datetime
     headings: tuple[str, ...] = HEADINGS
+    # The Families counted population the request captured (#2324), which
+    # the file's header block names; None writes no header block.
+    scope: str | None = None
     title: ClassVar[str] = "Financial stewardship detail"
     sheet_name: ClassVar[str] = "Financial stewardship detail"
+
+    @property
+    def header_rows(self):
+        """The CSV's and XLSX table sheet's header block (R59 on #2324).
+
+        Report, Families counted and Source as of, as label/value rows the
+        shared renderers write above the table (``information_rendering``).
+        """
+        if self.scope is None:
+            return ()
+        return header_rows(self.title, self.scope, dict(self.metadata)[SOURCE_AS_OF])
+
+    @property
+    def frame_details(self):
+        """The PDF's line under the title: "Families counted: …" (R59, #2324)."""
+        return () if self.scope is None else (families_counted_line(self.scope),)
 
 
 def period_years(start, end):
@@ -175,12 +200,13 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
     if result["total"] != len(result["rows"]):
         raise ValueError("Financial export requires every matching Family.")
     source, summary = result["metadata"], result["summary"]
+    scope = scope_of(parameters["filters"])
     through = source["giving_through"]
     metadata = (
         ("Report", FinancialDocument.title),
         ("Parish", parish_name),
         ("Campaign", source["name"]),
-        ("Source as of", instant(source["source_as_of"])),
+        (SOURCE_AS_OF, instant(source["source_as_of"])),
         (FAMILY_NAMES_DETAIL, source["family_names"]),
         # A Family-only refresh keeps an older giving read, so the money's own
         # observation time is stated apart from the source promotion time.
@@ -207,7 +233,7 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
         # report figures", #2324), in the page's words.
         (
             str(SCOPE_CHOICE_LABEL),
-            str(SCOPE_LABELS[scope_of(parameters["filters"])]),
+            str(SCOPE_LABELS[scope]),
         ),
         ("Matching Families", f"{result['total']:,}"),
         ("Total annual pledges", summary["annual_total"]),
@@ -269,4 +295,5 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
         result["total"],
         requested_at,
         headings(source["comparison_start"], source["comparison_end"]),
+        scope,
     )

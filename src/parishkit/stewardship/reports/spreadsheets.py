@@ -15,7 +15,7 @@ from .information_rendering import MONEY_FORMAT, excel_amount, xlsx_cell
 from .participation import participation_columns, participation_table
 from .participation_summary import COLUMNS as SUMMARY_COLUMNS
 from .participation_summary import DAILY, SUMMARY
-from .xlsx_design import describe, style_information, style_table
+from .xlsx_design import describe, style_details, style_information, style_table
 
 
 def _cell(sheet, row, column, value):
@@ -24,6 +24,27 @@ def _cell(sheet, row, column, value):
     if isinstance(value, str):
         cell.data_type = "s"
     return cell
+
+
+def header_block(sheet, document):
+    """Open a table sheet with the file's header block; return the heading row.
+
+    The report, Families counted and Source as of rows (R59 on #2324: a
+    printed or forwarded sheet still says which Families it counts), then a
+    blank row; the table's headings follow. ``finish_header`` styles the
+    block once the table has sized the columns.
+    """
+    for index, (label, value) in enumerate(document.header_rows, 1):
+        _cell(sheet, index, 1, label)
+        xlsx_cell(sheet, index, 2, value)
+    return len(document.header_rows) + 2
+
+
+def finish_header(sheet, document, columns):
+    """Style the header block as label/value rows spanning the table's width."""
+    style_details(
+        sheet, range(1, len(document.header_rows) + 1), widths=False, span=columns
+    )
 
 
 def summary_sheet(sheet, document):
@@ -36,10 +57,11 @@ def summary_sheet(sheet, document):
     value reads "Unavailable", never zero.
     """
     sheet.title = SUMMARY
+    head = header_block(sheet, document)
     for column, heading in enumerate(SUMMARY_COLUMNS, 1):
-        _cell(sheet, 1, column, heading)
+        _cell(sheet, head, column, heading)
     zone = ZoneInfo(document.browser_timezone)
-    for index, row in enumerate(document.summary.rows(), 2):
+    for index, row in enumerate(document.summary.rows(), head + 1):
         group, figure, value, ratio, note = row
         _cell(sheet, index, 1, group)
         _cell(sheet, index, 2, figure)
@@ -54,7 +76,8 @@ def summary_sheet(sheet, document):
         if ratio is not None:
             sheet.cell(index, 4, ratio[0] / ratio[1]).number_format = "0%"
         _cell(sheet, index, 5, note or None)
-    style_table(sheet, title=SUMMARY)
+    style_table(sheet, header_row=head, title=SUMMARY)
+    finish_header(sheet, document, len(SUMMARY_COLUMNS))
 
 
 def participation_xlsx(document, output):
@@ -74,13 +97,14 @@ def participation_xlsx(document, output):
         sheet.title = DAILY
     columns = participation_columns(document)
     keys = [key for key, _ in columns]
+    head = header_block(sheet, document)
     for column, (_, heading) in enumerate(columns, 1):
-        _cell(sheet, 1, column, heading)
-    for index, row in enumerate(rows, 2):
+        _cell(sheet, head, column, heading)
+    for index, (day, row) in enumerate(zip(document.days, rows, strict=True), head + 1):
         for column, key in enumerate(keys, 1):
             value = row[key]
             if key == "date":
-                value = document.days[index - 2].local_date
+                value = day.local_date
             elif key == "source_as_of" and value is not None:
                 # In the stated display zone; xlsx_cell writes a native cell.
                 value = datetime.fromisoformat(value).astimezone(
@@ -101,7 +125,8 @@ def participation_xlsx(document, output):
                 cell.number_format = MONEY_FORMAT
             elif type(value) is int:
                 cell.number_format = "#,##0"
-    style_table(sheet, title=DAILY)
+    style_table(sheet, header_row=head, title=DAILY)
+    finish_header(sheet, document, len(columns))
     metadata = book.create_sheet("Report information")
     for index, (label, value) in enumerate(
         (
