@@ -4,6 +4,7 @@ import argparse
 import contextlib
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -12,7 +13,7 @@ import time
 from pathlib import Path
 
 from .quality_ci import environment
-from .quality_pytest import failures_path, running_path
+from .quality_pytest import failures_path, progress_path, running_path
 from .quality_sharding import BROWSER_ENGINES, browser_label, parse_browser_runs
 
 # 50 minutes for all of one job's partitions together; a job's tests should
@@ -36,6 +37,11 @@ JOB_LIMIT_SECONDS = 3600
 RESERVE_SECONDS = 180
 # The workflow's first step stores the job's start (Unix seconds) here.
 JOB_STARTED_ENV = "BROWSER_JOB_STARTED"
+# A directory the workflow uploads as an artifact on failure; each partition
+# copies its progress log there (#2355). Unset outside CI, so nothing is kept.
+PROGRESS_DIR_ENV = "BROWSER_PROGRESS_DIR"
+# How many of the latest completed tests a kill report lists.
+RECENT_TESTS = 10
 
 
 class BudgetExhausted(ValueError):
@@ -57,7 +63,10 @@ class BudgetExhausted(ValueError):
 
 def sidecar_lines(path):
     """The lines of a receipt sidecar the child pytest wrote, if it wrote one."""
-    return path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    if not path.exists():
+        return []
+    # errors="replace": a line cut mid-character by a kill must still read.
+    return path.read_text(encoding="utf-8", errors="replace").splitlines()
 
 
 def partition_limit(remaining, later, count, budget=JOB_SECONDS):
@@ -97,6 +106,70 @@ def job_started():
         return int(os.environ[JOB_STARTED_ENV])
     except (KeyError, ValueError):
         return None
+
+
+def progress_state(lines):
+    """Split progress sidecar LINES into the running tests and the completed ones.
+
+    Return (running, done): RUNNING lists the node ids started but not ended,
+    oldest first, and DONE the (node id, seconds text) pairs ended, in order.
+    """
+    running, done = {}, []
+    for line in lines:
+        kind, _, rest = line.partition(" ")
+        if kind == "START" and rest:
+            running[rest] = None
+        elif kind == "END":
+            node, found, seconds = rest.rpartition(" elapsed=")
+            # A line cut off by the kill has no node or no elapsed time: skip.
+            if found and node:
+                running.pop(node, None)
+                done.append((node, seconds))
+    return list(running), done
+
+
+def kill_report(label, what, limit, elapsed, lines):
+    """Text naming what was killed, the limit and elapsed time, and the tests.
+
+    WHAT says why the partition was stopped; LINES are its progress lines.
+    The report lists the tests running at that moment and the last
+    RECENT_TESTS completed with their seconds (#2355).
+    """
+    running, done = progress_state(lines)
+    report = [
+        f"CI_BROWSER_KILL_REPORT {label}: {what}; killed pytest and its process "
+        f"group after {elapsed:,.0f} s (limit {limit:,.0f} s); "
+        f"{len(done):,} test(s) had completed"
+    ]
+    report += [f"  running: {node}" for node in running] or ["  running: none"]
+    report.append(f"  last {min(len(done), RECENT_TESTS)} completed:")
+    report += [f"    {node} {seconds}" for node, seconds in done[-RECENT_TESTS:]]
+    return "\n".join(report)
+
+
+def keep_progress_log(label, lines):
+    """Copy a partition's progress LINES into the artifact directory, if set."""
+    if directory := os.environ.get(PROGRESS_DIR_ENV):
+        Path(directory).mkdir(parents=True, exist_ok=True)
+        name = re.sub(r"[^A-Za-z0-9._-]+", "-", label)
+        Path(directory, f"{name}.progress.log").write_text(
+            "".join(f"{line}\n" for line in lines), encoding="utf-8"
+        )
+
+
+def report_progress(label, what, limit, elapsed, receipt):
+    """Print the kill report and keep the progress log; never raise.
+
+    This runs while a BudgetExhausted or an interrupt is being handled, so a
+    failure here (an unreadable or unwritable file) is logged as a one-line
+    warning and must not replace the exception being handled.
+    """
+    try:
+        progress = sidecar_lines(progress_path(receipt))
+        print(kill_report(label, what, limit, elapsed, progress), flush=True)
+        keep_progress_log(label, progress)
+    except Exception as error:
+        print(f"CI_BROWSER_KILL_REPORT {label}: unavailable ({error!r})", flush=True)
 
 
 def timeout_message(limit, elapsed, failures):
@@ -186,11 +259,15 @@ def run_engine(root, engine, index=1, count=1, timeout=JOB_SECONDS):
             env=environment() | {"PARISHKIT_RUN_BROWSER_TESTS": "1"},
             start_new_session=True,
         )
+        label = browser_label(engine, index, count)
         try:
             returncode = process.wait(timeout=timeout)
         except subprocess.TimeoutExpired as error:
             kill_group(process)
             elapsed = time.monotonic() - started
+            report_progress(
+                label, "partition budget ran out", timeout, elapsed, receipt
+            )
             failures = sidecar_lines(failures_path(receipt))
             running = next(iter(sidecar_lines(running_path(receipt))), None)
             raise BudgetExhausted(
@@ -204,7 +281,16 @@ def run_engine(root, engine, index=1, count=1, timeout=JOB_SECONDS):
             # The new session no longer gets the job's interrupt signals, so
             # a cancel or interrupt here must not leave pytest running.
             kill_group(process)
+            report_progress(
+                label,
+                "interrupted or cancelled",
+                timeout,
+                time.monotonic() - started,
+                receipt,
+            )
             raise
+        # Kept on any exit, so a failed partition's log is uploaded too.
+        keep_progress_log(label, sidecar_lines(progress_path(receipt)))
         if returncode:
             error = subprocess.CalledProcessError(returncode, process.args)
             # The failed node ids, for the job summary (#2001).

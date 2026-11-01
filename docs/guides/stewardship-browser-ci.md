@@ -145,6 +145,21 @@ as it happens, so the parent can still tell what happened after a kill (#2001):
   killed after N s when its M s partition budget (its share of the job budget)
   ran out; K test phase(s) had already failed: ...`.
 
+Every kill, whether the budget ran out or a cancel or interrupt reached the
+job, also prints a `CI_BROWSER_KILL_REPORT <label>: <why>; killed pytest and
+its process group after N s (limit M s); K test(s) had completed` block. It
+lists the tests running at that moment (`running: <node id>`, or `none`) and
+the last 10 completed with their seconds, so a hung test is named without a
+rerun (#2355). The child pytest appends a `START <node id>` and an `END <node
+id> elapsed=S` line per test to a progress sidecar beside the receipt; the
+parent reads it after the kill. When `BROWSER_PROGRESS_DIR` is set (the
+workflow sets it), each partition also copies that log to
+`<label>.progress.log` there, and an `if: failure()` step uploads the
+directory as the `browser-progress-<matrix entry>` artifact (7 days). No
+per-test timeout was added: `pytest-timeout` is not a dependency, and the
+child's `faulthandler_timeout=120` already dumps a hung test's stacks into
+the log.
+
 Both fail the job. The GitHub job summary lists the failed test node ids
 first, then the budget kills with their last started test, then every other failed
 partition, so the cause is visible without reading the log. The child pytest
