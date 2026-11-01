@@ -2508,7 +2508,7 @@ the same roles hold. A request review's Edit carried into another Ministry
 to that Ministry alone, its Ministry in force, the way Pledges and
 Financial stewardship read the Edit in force (Administrator decision,
 2026-11-01, on
-[#2331](https://github.com/epiphany40223/parishkit/issues/2331)). By
+[#2331](https://github.com/epiphany40223/parishkit/issues/2331#issuecomment-6559704860)). By
 Ministry counts it once, under that Ministry; the worklist's Ministry filter
 finds it only there; and only that Ministry's leaders have it in their
 scope, so a leader of only the Family's Ministry no longer sees it. Each

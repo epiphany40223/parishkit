@@ -206,7 +206,8 @@ Details the table cannot hold:
   carried-forward Ministry see it as theirs from then on, and it is
   counted, filtered and listed under that Ministry only, its Ministry in
   force, so leaders of only the Family's original Ministry no longer see it
-  ([#2331](https://github.com/epiphany40223/parishkit/issues/2331); the
+  (Administrator decision, 2026-11-01,
+  [#2331](https://github.com/epiphany40223/parishkit/issues/2331#issuecomment-6559704860); the
   [Ministry report](../reports/spec.md#ministry-change-summary)). Its row
   reads Accepted (edited) into that Ministry (for example "Accepted
   (edited) into Adult Choir", drawn with the

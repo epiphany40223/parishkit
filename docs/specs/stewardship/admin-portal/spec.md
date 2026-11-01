@@ -9181,7 +9181,7 @@ shared confirmation dialog and its optional note):
   the Ministry filter and By Ministry find and count it only there, and a
   leader of only the Family's Ministry no longer sees it (Administrator
   decision, 2026-11-01,
-  [#2331](https://github.com/epiphany40223/parishkit/issues/2331); the
+  [#2331](https://github.com/epiphany40223/parishkit/issues/2331#issuecomment-6559704860); the
   [Ministry report](../reports/spec.md#ministry-change-summary)). Its row
   reads "Accepted (edited) into Adult Choir" (drawn with the
   [Edited chip](../ui-conventions/spec.md#status-indicators)).
