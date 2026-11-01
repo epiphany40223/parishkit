@@ -43,16 +43,23 @@ FILTERS = ("ministry", "action", "state", "outcome", "sort", "page", "size")
 def _row(row):
     """One selection row as the documents print it: no Member, no notes.
 
-    ``ministry`` is the Ministry's DUID. ``member_status`` is the Member's
+    ``ministry`` is the DUID of the Ministry in force, the one an Edit
+    carried the request into, else the Family's, as ``--ministry`` filters
+    and the page lists it (#2331); ``ministry_name`` names it.
+    ``family_ministry`` is the Family's own Ministry, which ``in_campaign``
+    says is still in the campaign. ``member_status`` is the Member's
     standing in ParishSoft (``current``, or why the queue marks them, #1217),
     and ``roster`` the Entered in ParishSoft tick of a resolved join or
     leave (#528): ``eligible``, ``entered`` and its current ``sequence``.
     """
+    from .reports.ministry_contacts import current_ministry
+
     return {
         "id": row["id"],
         "version": row["version"],
-        "ministry": row["ministry_duid"],
-        "ministry_name": row["ministry_name"],
+        "ministry": current_ministry(row),
+        "ministry_name": row.get("reviewed_ministry_name") or row["ministry_name"],
+        "family_ministry": row["ministry_duid"],
         "in_campaign": row["in_campaign"],
         "kind": row["entity_kind"],
         "action": row["action"],
@@ -240,6 +247,7 @@ def read_followup_show(caller, service, request_id, *, history_page=1):
     once it was read, as the page does.
     """
     from .admin_report_reads import _report
+    from .reports.ministry_contacts import current_ministry
     from .reports.ministry_followup import (
         FollowupQuery,
         followup_history,
@@ -266,7 +274,8 @@ def read_followup_show(caller, service, request_id, *, history_page=1):
             history=[_history_row(revision) for revision in history],
             more_history=more,
         )
-        return model, row["ministry_duid"]
+        # The view event names the Ministry in force, as the page's does.
+        return model, current_ministry(row)
 
     def audit(actor, campaign_id, outcome, ministry):
         """The request page's view event."""

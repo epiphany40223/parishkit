@@ -463,18 +463,25 @@ def with_roles(monkeypatch, roles, ministries=frozenset()):
 def test_an_edited_request_is_scoped_by_its_edit(
     response_service, google, cli, monkeypatch
 ):
-    """``followup update`` scopes an edited request by its
+    """``followup update`` and ``show`` read an edited request under its
     Ministry in force (#2331). Staff edit the Food pantry (9) join into
     Ministry 4: Food pantry's leader gets not_available, as for an unknown
     request, never stale_version, which would show that it exists; Ministry
     4's leader reaches the version check, and the edited (resolved) request
-    is stale_version."""
+    is stale_version. ``show`` prints Ministry 4 as the row's Ministry."""
     harness = setup(response_service)
     signed_in()
     join = withdraw_leave(harness)
     staff = actor(harness, {"staff"}, ())
     decide(harness, staff, "edit", join, fields={"value": ["4"]})
     run = cli()
+    code, document = run("followup", "show", str(join.pk))
+    assert code == 0, document
+    shown = document["result"]["request"]
+    assert (shown["ministry"], shown["family_ministry"]) == (4, 9)
+    code, document = run("followup", "list", "--ministry", "4", "--state", "any")
+    assert code == 0, document
+    assert [row["ministry"] for row in document["result"]["rows"]] == [4]
     revisions = MinistryWorkflowRevision.objects.count()
     for ministry, refusal in ((9, "not_available"), (4, "stale_version")):
         with monkeypatch.context() as patch:
