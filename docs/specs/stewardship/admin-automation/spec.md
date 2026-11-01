@@ -4095,7 +4095,13 @@ filters) and history (`followup_history`), and its services
   default) and `followup show REQUEST_ID [--page N]` admit passively, so
   any session scope reads, and record the page's
   `ministry_followup_viewed` (started, then succeeded or failed, naming
-  the request's Ministry for `followup show`).
+  the request's Ministry for `followup show`). A row's `ministry` and
+  `ministry_name`, and the Ministry `followup show` records, are its
+  Ministry in force, the one an Edit carried it into, which `--ministry`
+  filters by
+  ([#2331](https://github.com/epiphany40223/parishkit/issues/2331#issuecomment-6559704860));
+  `family_ministry` is the Family's own Ministry, and `in_campaign` says
+  whether that one is still in the campaign.
 - **Save.** `followup update REQUEST_ID --expected-version N --state S
   [--outcome O] [--notes TEXT|-] [--contact-channel C --contact-at INSTANT
   [--contact-notes TEXT|-]]` is a request page's Save: the notes are kept

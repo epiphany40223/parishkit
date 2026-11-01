@@ -9202,9 +9202,14 @@ shared confirmation dialog and its optional note):
   leader's list holds only the other campaign Ministries that leader leads,
   so a request never leaves a leader's view by that leader's own decision;
   Staff and Administrators get every other campaign Ministry. From then on
-  the leaders of the Ministry carried forward see the request as theirs and
-  may act on it; the leaders of the Family's Ministry still see it, read
-  only, as "Accepted (edited) into Adult Choir" (drawn with the
+  the request belongs to the Ministry carried forward alone, its Ministry
+  in force: that Ministry's leaders see it as theirs and may act on it,
+  the Ministry filter and By Ministry find and count it only there, and a
+  leader of only the Family's Ministry no longer sees it (Administrator
+  decision, 2026-11-01,
+  [#2331](https://github.com/epiphany40223/parishkit/issues/2331#issuecomment-6559704860); the
+  [Ministry report](../reports/spec.md#ministry-change-summary)). Its row
+  reads "Accepted (edited) into Adult Choir" (drawn with the
   [Edited chip](../ui-conventions/spec.md#status-indicators)).
 - **Back to review** returns an accepted or ignored request to To review
   (In progress), clearing an edited Ministry, until Staff tick it Entered in
@@ -9278,9 +9283,9 @@ so this page hides them rather than greying them as #1331 did for the
 bulk outcomes.) The Member's contact details on a request's page and in
 Export these requests are read for the request's current Ministry: the one
 an Edit carried forward, else the Family's. A leader of the carried-forward
-Ministry sees them; a leader of only the Family's Ministry, who sees the
-edited request read only, sees "No contact details are available" on
-its page and Unavailable in the file
+Ministry sees them; a leader of only the Family's Ministry no longer has the
+edited request in their scope at all (#2331), so neither its page nor their
+file shows it
 ([#1718](https://github.com/epiphany40223/parishkit/issues/1718); the
 [contact rule](../reports/spec.md#ministry-change-summary)).
 

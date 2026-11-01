@@ -291,12 +291,14 @@ def campaign_ids(principal):
                         AND n::bigint=ANY(p.ministries))
                     -- A Ministry removed from a live campaign keeps its
                     -- current (not withdrawn) requests in the report, as the
-                    -- report SQL does (#342).
+                    -- report SQL does (#342), by each request's Ministry in
+                    -- force: the one an Edit carried it into (#2331).
                     OR EXISTS(SELECT 1 FROM stewardship_submission s
                     JOIN stewardship_ministry_request r ON r.submission_id=s.id
                     WHERE s.campaign_id=c.id AND s.mode='live'
                         AND r.state NOT IN ('cancelled','superseded')
-                        AND r.ministry_duid=ANY(p.ministries)))
+                        AND coalesce(r.reviewed_ministry_duid,r.ministry_duid)
+                            =ANY(p.ministries)))
             ORDER BY c.created_at DESC,c.id""",
             [
                 allows(principal, Capability.MINISTRY_REPORT),

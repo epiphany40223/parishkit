@@ -203,10 +203,15 @@ Details the table cannot hold:
 - A leader's Edit of a Ministry request offers only Ministries that leader
   leads, so an item never leaves a leader's view by that leader's own
   decision. When Staff edit a request into another Ministry, leaders of the
-  carried-forward Ministry see it as theirs from then on, and leaders of the
-  Family's original Ministry see it read-only as Accepted (edited) into
-  that Ministry (for example "Accepted (edited) into Adult Choir", drawn
-  with the [Edited chip](../ui-conventions/spec.md#status-indicators)).
+  carried-forward Ministry see it as theirs from then on, and it is
+  counted, filtered and listed under that Ministry only, its Ministry in
+  force, so leaders of only the Family's original Ministry no longer see it
+  (Administrator decision, 2026-11-01,
+  [#2331](https://github.com/epiphany40223/parishkit/issues/2331#issuecomment-6559704860); the
+  [Ministry report](../reports/spec.md#ministry-change-summary)). Its row
+  reads Accepted (edited) into that Ministry (for example "Accepted
+  (edited) into Adult Choir", drawn with the
+  [Edited chip](../ui-conventions/spec.md#status-indicators)).
 - Leaders never Add: adding a Member to a Ministry the Family did not ask
   for is a parish decision. A leader who sees a mistaken request Ignores it
   with a note; Staff Add the right one.

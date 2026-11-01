@@ -249,7 +249,7 @@ def test_a_ministry_request_the_roster_already_shows_waits_for_its_steps(
     assert (join.state, join.resolution_source_id) == ("new", None)
     row = view(harness, staff)[str(join.pk)]
     assert row["placement"].stage is Stage.TO_REVIEW and row["already_held"]
-    line = ministry_worklist._decision_line(row, False, None, None, True)
+    line = ministry_worklist._decision_line(row, False, None, None)
     assert ALREADY_HELD in str(line)
     ministry_decide(harness, staff, "accept", join)
     refresh(harness, joins=(9,))

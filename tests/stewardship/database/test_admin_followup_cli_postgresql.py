@@ -37,8 +37,9 @@ from .test_admin_status_cli_postgresql import (
 from .test_admin_task_retry_cli_postgresql import approved_by_browser, runner
 from .test_export_views_postgresql import post
 from .test_ministry_followup_postgresql import requests
-from .test_ministry_reports_postgresql import setup
+from .test_ministry_reports_postgresql import actor, setup
 from .test_ministry_responses_postgresql import ministry_source
+from .test_ministry_review_postgresql import decide, withdraw_leave
 from .test_report_workspace_postgresql import read
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -457,6 +458,37 @@ def with_roles(monkeypatch, roles, ministries=frozenset()):
     monkeypatch.setattr(sessions, "authenticated_admin", changed)
     monkeypatch.setattr(ministry_followup_views, "authenticated_admin", changed)
     monkeypatch.setattr(admin_editing, "authenticated_admin", changed)
+
+
+def test_an_edited_request_is_scoped_by_its_edit(
+    response_service, google, cli, monkeypatch
+):
+    """``followup update`` and ``show`` read an edited request under its
+    Ministry in force (#2331). Staff edit the Food pantry (9) join into
+    Ministry 4: Food pantry's leader gets not_available, as for an unknown
+    request, never stale_version, which would show that it exists; Ministry
+    4's leader reaches the version check, and the edited (resolved) request
+    is stale_version. ``show`` prints Ministry 4 as the row's Ministry."""
+    harness = setup(response_service)
+    signed_in()
+    join = withdraw_leave(harness)
+    staff = actor(harness, {"staff"}, ())
+    decide(harness, staff, "edit", join, fields={"value": ["4"]})
+    run = cli()
+    code, document = run("followup", "show", str(join.pk))
+    assert code == 0, document
+    shown = document["result"]["request"]
+    assert (shown["ministry"], shown["family_ministry"]) == (4, 9)
+    code, document = run("followup", "list", "--ministry", "4", "--state", "any")
+    assert code == 0, document
+    assert [row["ministry"] for row in document["result"]["rows"]] == [4]
+    revisions = MinistryWorkflowRevision.objects.count()
+    for ministry, refusal in ((9, "not_available"), (4, "stale_version")):
+        with monkeypatch.context() as patch:
+            with_roles(patch, {"ministry_leader"}, frozenset({ministry}))
+            code, document = update(run, join, "--state", "in_progress")
+        assert code == 1 and document["error"]["code"] == refusal, document
+    assert MinistryWorkflowRevision.objects.count() == revisions
 
 
 def test_refusals(response_service, google, cli, monkeypatch):

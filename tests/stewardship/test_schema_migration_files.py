@@ -626,6 +626,9 @@ FROZEN = {
     "0197_financial_eligibility.sql": (
         "556d6af1e6e0097f24ecae59a2160aef9dcc77ce27441037c11380b215cc35c3"
     ),
+    "0198_ministry_edit_once.sql": (
+        "9c20943c05c4f17a5564c76418d5af40661ce2d410aa0eb30b7d1e85796ef129"
+    ),
 }
 
 

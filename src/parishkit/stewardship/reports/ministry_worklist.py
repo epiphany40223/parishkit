@@ -781,19 +781,18 @@ def _ministry_cell(row):
     )
 
 
-def _decision_line(row, leader, asked, replaced_by, reader_leads, principal=None):
+def _decision_line(row, leader, asked, replaced_by, principal=None):
     """The line under a row's stage, as safe HTML (or "").
 
     An ignored request names its stored outcome ("Stayed in the
     Ministry"); one the Family asked for again, or undid on a reviewed form
     ("Family unticked", "Family chose to continue"), says when; an ignored one the
-    parish added a request in place of names it; an edited request read by
-    a leader of the Family's Ministry only says where it went. Accepted
-    stays under To enter by hand and Entered by hand, as the component
-    words it. A request whose roster already shows it before its step says
-    ParishSoft already holds it (#1890). For Staff, an accepted request a
-    later response replaced says so, and an entered one says who marked it
-    and when.
+    parish added a request in place of names it; an edited request says
+    where it went. Accepted stays under To enter by hand and Entered by
+    hand, as the component words it. A request whose roster already shows
+    it before its step says ParishSoft already holds it (#1890). For Staff,
+    an accepted request a later response replaced says so, and an entered
+    one says who marked it and when.
     """
     placement = row["placement"]
     parts = []
@@ -816,8 +815,8 @@ def _decision_line(row, leader, asked, replaced_by, reader_leads, principal=None
         and not (leader and row["stage"] == ACCEPTED)
     ):
         parts.append(format_html("{}", placement.decision.label))
-    if not reader_leads and leader and row.get("reviewed_ministry_name"):
-        parts.append(format_html("{}", "Read only: edited into another Ministry"))
+    # No "read only" note for an edited request: a leader is given one only
+    # when they lead its Ministry in force (#2331).
     if row.get("now_matches"):
         parts.append(format_html("{}", NOW_MATCHES))
     if row.get("already_held"):
@@ -947,7 +946,6 @@ def decorate(
                     leader,
                     asked.get(key),
                     replacements.get(key),
-                    reader_leads,
                     principal,
                 ),
                 "_leader_stage": row["stage"] == ACCEPTED,
