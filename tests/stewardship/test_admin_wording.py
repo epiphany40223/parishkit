@@ -242,7 +242,6 @@ KNOWN = {
         "update ParishSoft yourself",
         "accounts/templates/stewardship/ministry-requests.html",
     ): 1,
-    ("to do", "accounts/home_steps.py"): 1,
     ("Unresolved", "accounts/templates/stewardship/ministry-counts.html"): 4,
     ("Unresolved", "accounts/templates/stewardship/ministry-requests.html"): 2,
     ("Unresolved", "reports/ministries.py"): 1,
