@@ -37,8 +37,9 @@ FILTER_FORMS = {
 # table's sort and size (a TablePage's view_fields, drawn by a loop), the
 # browser's time zone, and a segmented pair's view choice carried in the
 # form (Sent mail's Production or Testing, #1562; Roster changes' Show,
-# #1535), which Clear filters keeps by rule.
-KEPT_NAMES = {"{{ name }}", "zone", "mode", "show"}
+# #1535; Financial stewardship's Families counted, #2324), which Clear
+# filters keeps by rule.
+KEPT_NAMES = {"{{ name }}", "zone", "mode", "show", "scope"}
 # Visible fields that switch the data shown between Production and Testing:
 # a view, not a filter, so Clear filters keeps them (data-view).
 VIEW_NAMES = {"mode"}

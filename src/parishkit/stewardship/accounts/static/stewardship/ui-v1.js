@@ -1547,8 +1547,17 @@
     });
     hidden(form).forEach((field) => {
       const source = wanted.get(field.getAttribute("name"))?.shift();
-      if (source) field.value = source.value;
-      else field.remove();
+      if (!source) {
+        field.remove();
+        return;
+      }
+      const changed = field.value !== source.value;
+      field.value = source.value;
+      // A rule that follows a hidden field (Financial stewardship's Family
+      // status, shown only under Including Families that left, #2324:
+      // data-show-when="scope=historical") hears its new value, as it
+      // would a visible field's.
+      if (changed) field.dispatchEvent(new Event("change"));
     });
     form.prepend(...[...wanted.values()].flat().map((field) => document.importNode(field)));
   };
@@ -1961,7 +1970,7 @@
   // A control whose re-read can take seconds (a report's Families counted,
   // #2324) is marked data-busy-control and keeps the working spinner's space;
   // the one the reader just used is marked data-busy-working, and
-  // ui-v1.css shows its spinner while its region is aria-busy (ui-conventions
+  // ui-v1.css shows its spinner while a region is aria-busy (ui-conventions
   // Working spinner). Every request clears the earlier mark first, so a
   // refused or failed read, or a periodic re-read the reader did not start
   // (null), never shows a spinner; a swap draws the control afresh, unmarked.

@@ -2800,7 +2800,7 @@ def report_financial(args, preamble, runtime, context):
     """The financial detail report's summary, without its rows (PR 8c)."""
     from .admin_report_reads import read_financial
 
-    return read_financial(context["caller"], runtime)
+    return read_financial(context["caller"], runtime, scope=args.scope)
 
 
 def report_limitations(args, preamble, runtime, context):
@@ -4626,6 +4626,15 @@ def _report_participation_options(parser):
         "--scope",
         help="current (default: today's population, as on the page) or "
         "historical (each day's population as of that day)",
+    )
+
+
+def _report_financial_options(parser):
+    """Options of ``report financial``: the page's Families counted (#2324)."""
+    parser.add_argument(
+        "--scope",
+        help="current (default: today's campaign Families) or historical "
+        "(every responding Family, including those that left the campaign)",
     )
 
 
@@ -7275,6 +7284,7 @@ def _report_specs():
             False,
             FinancialReport.field_names(),
             8,
+            options=(_report_financial_options,),
             audit_event="financial_report_viewed",
         ),
         CommandSpec(
