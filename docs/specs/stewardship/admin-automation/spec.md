@@ -664,6 +664,22 @@ registry (`runtime_background.py`), `jobs/queue_wait.py`, the task labels in
 - runs `cleanup_admin_sessions` in its bounded batches, which deletes ended
   Admin session rows (browser and command sessions) and their Django sessions,
   then deletes link rows whose command session no longer exists;
+- runs `cleanup_family_sessions` and then `cleanup_anonymous_sessions`, each
+  in the same bounded batches (500 rows, at most 20 batches a run; the next
+  run takes the rest)
+  ([#2362](https://github.com/epiphany40223/parishkit/issues/2362)). The
+  first deletes ended Family sessions (signed out, revoked, idle 60 minutes
+  or past their four-hour deadline) through
+  `stewardship_family_session_purge_v1`, which also cancels each one's open
+  forms, releases those forms' source pins and deletes its Django session;
+  a Testing session that a sealed go-live cleanup inventory owns is left to
+  that cleanup. A session that simply lapsed is deleted without a
+  `family_session_ended` audit event, which would be dated at cleanup
+  rather than when it ended. The second deletes expired Django sessions
+  that no Admin or Family session names (an unfinished Google sign-in, a
+  visit that never signed in) through
+  `stewardship_anonymous_session_purge_v1`, and expired one-use OAuth state
+  receipts;
 - marks sessions that are no longer live but not yet revoked (`role_lost`,
   `user_removed`, `recovery`), recording `automation_session_ended` and a
   notice for each;
@@ -699,6 +715,9 @@ registry (`runtime_background.py`), `jobs/queue_wait.py`, the task labels in
   page reads its progress events, so after 30 days a finished load shows
   no counts.
 
+After the session steps, the endings and the incidents, one INFO entry logs
+each of their counts (counts only, no identifiers).
+
 The worker's grants, through the database grant manifest, are what
 `cleanup_admin_sessions` and the liveness check use, confirmed against the code
 in PR 2: column-level `SELECT` on the session columns the cleanup reads (never
@@ -712,7 +731,17 @@ check read; `SELECT` and `DELETE` on `stewardship_automation_login`;
 `SELECT` and the same column-level `UPDATE` as above on
 `stewardship_automation_session`; `INSERT` on the notice table; and what
 resolving its incidents needs on `stewardship_ops_incident`. The session guard
-admits the worker's ending update only with the three reasons above.
+admits the worker's ending update only with the three reasons above. For the
+Family and anonymous cleanups (#2362) the worker reads, on
+`stewardship_family_session`, only `id`, `family_id`, `mode`, `expires_at`,
+`last_activity_at`, `revoked_at` and `version` (never `session_id`) and locks
+rows through the column-level `UPDATE` the campaign boundary already grants;
+it executes `stewardship_family_session_purge_v1` and
+`stewardship_anonymous_session_purge_v1`, which do every deletion that
+touches a session key and return only counts, so it holds no grant on
+`django_session`, the forms or their pins; and it has `SELECT` on
+`fingerprint` and `expires_at` and `DELETE` on
+`stewardship_oauth_consumption`.
 
 ### Scopes
 

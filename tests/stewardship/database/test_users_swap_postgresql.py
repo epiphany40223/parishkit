@@ -622,6 +622,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # Ministry report selections in place, which 0131's and 0141's entries
 # (and the earlier files' reruns) bring back older, so its
 # ``CLOSURE_REPLACED_ONLY`` entries restore 0198's bodies in their place.
+# 0199 (#2362) creates two definers, granted to the general worker
+# (runtime_grants.CLOSURE_FUNCTIONS); it replaces nothing.
 # The columns 0185 (#2202) adds, by table.
 SERIES_IN_FORCE_COLUMNS = (
     ("stewardship_daily_fact_set", "pledge_edits"),
@@ -1198,6 +1200,15 @@ CLOSURE_CREATED = {
     "public.stewardship_report_email_requests_v2(uuid,uuid,timestamp with time zone)": (
         "stewardship_reports",
         "0055_report_email_population",
+    ),
+    # 0199 (#2362): the maintenance task's Family and anonymous session
+    # purges.
+    **dict.fromkeys(
+        (
+            "public.stewardship_family_session_purge_v1(uuid[])",
+            "public.stewardship_anonymous_session_purge_v1(integer)",
+        ),
+        ("stewardship_accounts", "0040_family_session_purge"),
     ),
 }
 

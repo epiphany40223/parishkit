@@ -8,9 +8,10 @@ never the whole row, so nothing outside the guard's reach is writable.
 - The web login (the pages and the host command line, which runs as web)
   approves sessions, opens command logins, records use and endings, records
   notices and acknowledges them.
-- The general worker runs the maintenance task: Admin session cleanup, the
-  endings that role loss, removal and recovery imply, and incident
-  resolution. ``stewardship_automation_live_v1`` and
+- The general worker runs the maintenance task: Admin, Family and
+  anonymous session cleanup (#2362), the endings that role loss, removal
+  and recovery imply, and incident resolution.
+  ``stewardship_automation_live_v1`` and
   ``stewardship_export_authorized_v1`` run with its rights, so it reads the
   rule and user rows they read.
 - The offline admin-recovery login ends every session during a restore.
@@ -51,6 +52,19 @@ def add_automation_worker_grants(tables, columns):
     user's address and status (already granted) and recovery records. The
     worker already holds the operational incident grants that resolving an
     automation episode needs.
+
+    ``cleanup_family_sessions`` (#2362) selects and locks ended Family
+    sessions by these columns, never ``session_id`` (the Family's cookie
+    value); the lock uses the ``revoked_at``/``version`` UPDATE grant the
+    campaign boundary already gives. ``stewardship_family_session_purge_v1``
+    then cancels their open forms, releases the forms' source pins and
+    deletes the rows and Django sessions, and
+    ``stewardship_anonymous_session_purge_v1`` deletes expired Django
+    sessions no session row names, so the worker needs no grant on
+    ``django_session``, the forms or their pins for either.
+    ``cleanup_anonymous_sessions`` deletes expired one-use OAuth state
+    receipts itself: a receipt is a digest of a spent state, kept only
+    until its expiry, so reading the digest and expiry is harmless.
     """
     sessions = columns.setdefault("stewardship_portal_session", {})
     sessions.setdefault("SELECT", set()).update(
@@ -66,6 +80,12 @@ def add_automation_worker_grants(tables, columns):
     )
     sessions.setdefault("UPDATE", set()).update({"revoked_at", "version"})
     tables.setdefault("stewardship_portal_session", set()).add("DELETE")
+    family = columns.setdefault("stewardship_family_session", {})
+    family.setdefault("SELECT", set()).update(
+        {"id", "family_id", "mode", "expires_at", "last_activity_at", "revoked_at"}
+    )
+    columns["stewardship_oauth_consumption"] = {"SELECT": {"fingerprint", "expires_at"}}
+    tables["stewardship_oauth_consumption"] = {"DELETE"}
     for table in (
         "stewardship_address_rule",
         "stewardship_domain_rule",

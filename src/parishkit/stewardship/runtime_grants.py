@@ -306,6 +306,13 @@ MINISTRY_CATALOG_FUNCTION = "stewardship_ministry_catalog_v1()"
 # The automation maintenance task's Django session purge for ended Admin
 # sessions (ADM-11): the worker never reads a session key itself.
 SESSION_PURGE_FUNCTION = "stewardship_admin_session_purge_v1(uuid[])"
+# The same task's Family session purge and anonymous Django session purge
+# (0199, #2362): the first cancels the named ended Family sessions' open
+# forms, releases their source pins and deletes the rows with their Django
+# sessions; the second deletes expired Django sessions no Admin or Family
+# session names. Both return counts only, never a session key.
+FAMILY_SESSION_PURGE_FUNCTION = "stewardship_family_session_purge_v1(uuid[])"
+ANONYMOUS_SESSION_PURGE_FUNCTION = "stewardship_anonymous_session_purge_v1(integer)"
 # The mail consumers' 24-hour Family mail count, for System health (ADM-13):
 # one number, without the web reading any routed recipient address.
 DAILY_SENDS_FUNCTION = "stewardship_family_daily_sends_v1()"
@@ -687,6 +694,12 @@ CLOSURE_FUNCTIONS = {
         "stewardship_campaigns",
         "0020_staff_open_after_close",
     ),
+    # The maintenance task's Family and anonymous session purges (0199,
+    # #2362).
+    **dict.fromkeys(
+        (FAMILY_SESSION_PURGE_FUNCTION, ANONYMOUS_SESSION_PURGE_FUNCTION),
+        ("stewardship_accounts", "0040_family_session_purge"),
+    ),
 }
 
 
@@ -1018,10 +1031,12 @@ def runtime_functions(role, *, target=None):
     attempt recorded for each (its Mail message page, #1024, #806); the
     configuration installer checks that a Ministry added to a live
     campaign is in the promoted catalog, without source grants; the general
-    worker purges the Django sessions of ended Admin sessions, counts an
-    export's read-guard stops, prunes old task events and refreshes a staged
-    source snapshot's planner statistics (#895) and, after a new campaign's
-    first load, the Family campaign tables' statistics (#1932).
+    worker purges the Django sessions of ended Admin sessions, ended Family
+    sessions with their open forms (#2362) and expired anonymous Django
+    sessions, counts an export's read-guard stops, prunes old task events
+    and refreshes a staged source snapshot's planner statistics (#895) and,
+    after a new campaign's first load, the Family campaign tables'
+    statistics (#1932).
     Web and the parishsoft, google_workspace and slack credential installers
     check that the automation session a secret request names is live
     (``stewardship_automation_request_live_v1``, #1763); the google_workspace
@@ -1132,6 +1147,8 @@ def runtime_functions(role, *, target=None):
             },
             ServiceRole.WORKER: {
                 SESSION_PURGE_FUNCTION,
+                FAMILY_SESSION_PURGE_FUNCTION,
+                ANONYMOUS_SESSION_PURGE_FUNCTION,
                 READ_GUARD_KILLS_FUNCTION,
                 TASK_EVENT_PRUNE_FUNCTION,
                 LEADER_SCOPE_FUNCTION,

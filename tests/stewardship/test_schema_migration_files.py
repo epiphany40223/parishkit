@@ -629,6 +629,9 @@ FROZEN = {
     "0198_ministry_edit_once.sql": (
         "9c20943c05c4f17a5564c76418d5af40661ce2d410aa0eb30b7d1e85796ef129"
     ),
+    "0199_family_session_purge.sql": (
+        "685113869654b629c02c6ec9279d1784e6f59fe9069d406e90dcf3b9d739e815"
+    ),
 }
 
 

@@ -1263,10 +1263,13 @@ No view performs decryption scans.
 
 `FamilyEngagement` keeps, per FamilyCampaign and mode (`live` or `test`, as a
 [Submission](#submission) spells it), the response-funnel instants that no
-retained record otherwise preserves. Family session rows are deleted 60
-minutes after their last activity, or four hours after sign-in, under the
+retained record otherwise preserves. A Family session ends 60 minutes after
+its last activity, four hours after sign-in or at sign-out, under the
 [session policy](../architecture/spec.md#identity-and-session-security), and
-their presence column is the current form step, not the furthest one reached.
+its row is deleted within about an hour after it ends, by the hourly
+[maintenance task](../admin-automation/spec.md#maintenance-task)
+([#2362](https://github.com/epiphany40223/parishkit/issues/2362)). Its
+presence column is the current form step, not the furthest one reached.
 The row stores:
 
 - the first sign-in instant (`first_link_at`, "link followed"; this includes a
