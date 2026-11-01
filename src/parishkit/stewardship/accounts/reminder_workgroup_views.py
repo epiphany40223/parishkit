@@ -92,7 +92,7 @@ class WorkGroupForm(AdminForm):
             "at the ends do not matter. Families in that WorkGroup get no "
             "Reminder emails. They still get the invitation, receipts and "
             "confirmations, keep their code and link, and count in every "
-            "report. Leave it empty to send Reminders to every eligible "
+            "report. Leave it empty to send Reminders to every campaign "
             "Family that has not responded."
         ),
     )
@@ -109,7 +109,7 @@ class WorkGroupForm(AdminForm):
             field.help_text,
             _(
                 "Families in this WorkGroup get no Reminder emails. Leave it "
-                "empty to remind every eligible Family."
+                "empty to remind every campaign Family."
             ),
         )
 

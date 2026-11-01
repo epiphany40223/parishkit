@@ -72,7 +72,7 @@ def test_every_page_carries_the_frame_the_family_and_the_columns(monkeypatch):
     report = document(60)
     pages = drawn_pages(monkeypatch, report)
     assert len(pages) > 1
-    assert_framed(pages, "Family timeline", PRIVACY)
+    assert_framed(pages, "Timeline", PRIVACY)
     identity = "Family DUID 42 · Envelope number 7"
     for drawn in pages:
         assert "Example" in drawn and identity in drawn

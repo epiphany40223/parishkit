@@ -672,7 +672,7 @@ class DropCount:
             "ministry": _("Ministries"),
             "roster": _("Ministry roster entries"),
             "fund": _("Funds"),
-            "portal_eligible_families": _("Families who can use the Family portal"),
+            "portal_eligible_families": _("Campaign Families"),
             "email_eligible_families": _("Families with an email address"),
             "active_head_families": _("Families with an active head of household"),
             "valid_email_contacts": _("Valid email addresses"),

@@ -239,7 +239,7 @@ def setup_step(request, step):
         if step == "parish" and draft.source_task_id is not None:
             form.fields["timezone"].disabled = True
             form.fields["timezone"].help_text = (
-                "The source load fixes this setup's timezone. "
+                "The source load fixes this setup's time zone. "
                 "Cancel and start a new setup to change it."
             )
         if request.method == "POST":

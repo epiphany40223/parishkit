@@ -416,10 +416,10 @@ def test_a_testing_weekly_report_says_where_the_funnel_is():
     result = render(replace(document(), mode="testing"))
     for body in (result.html, result.text):
         assert "Response funnel" not in body
-        assert "Testing digests leave out the response funnel." in body
+        assert "Testing report emails leave out the response funnel." in body
     plain = render()
     for body in (plain.html, plain.text):
-        assert "Response funnel" not in body and "Testing digests" not in body
+        assert "Response funnel" not in body and "Testing report emails" not in body
 
 
 @pytest.mark.parametrize(
@@ -458,5 +458,5 @@ def test_the_weekly_saved_page_context_shares_the_daily_panel():
     assert context["funnel_testing_note"] == ""
     testing = funnel_context(None, "testing")
     assert testing["funnel_stages"] == ()
-    assert testing["funnel_testing_note"].startswith("Testing digests")
+    assert testing["funnel_testing_note"].startswith("Testing report emails")
     assert funnel_context(None, None)["funnel_testing_note"] == ""

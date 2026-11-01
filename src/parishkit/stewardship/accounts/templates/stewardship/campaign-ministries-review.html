@@ -7,7 +7,7 @@
 <p>{% translate "Families see these at their next visit. Families who already submitted are not asked again and get no email." %}</p>
 <ul>{% for ministry in ministries.added %}<li>{{ ministry.name }}{% if ministry.answers %}: {% blocktranslate count counter=ministry.answers %}{{ counter }} earlier answer will show again{% plural %}{{ counter }} earlier answers will show again{% endblocktranslate %}{% endif %}</li>{% endfor %}</ul></section>{% endif %}
 {% if ministries.removed %}<section><h3>{% translate "Ministries to remove" %}</h3>
-<p>{% translate "These leave the Family form. Nothing already answered is deleted: requests stay in Ministry requests until staff close them, and reports mark them No longer in this campaign." %}</p>
+<p>{% translate "These leave the Family form. Nothing already answered is deleted: requests stay in Ministry requests until Staff close them, and reports mark them Removed from this campaign." %}</p>
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Ministries to remove' %}"><table class="data-table"><thead><tr><th scope="col">{% translate "Ministry" %}</th><th scope="col">{% translate "Submitted answers" %}</th><th scope="col">{% translate "Open follow-up requests" %}</th></tr></thead>
 <tbody>{% for ministry in ministries.removed %}<tr><th scope="row">{{ ministry.name }}</th><td>{{ ministry.answers|number }}</td><td>{{ ministry.open|number }}</td></tr>{% endfor %}</tbody></table></div></section>{% endif %}
 <section><h3>{% translate "Families with a form open now" %}</h3>

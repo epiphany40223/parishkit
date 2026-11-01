@@ -250,7 +250,7 @@ def test_review_opens_the_dialog_and_apply_follows_change_status(auth_service, g
     assert "Renamed Parish" in shown and "America/Los_Angeles" in shown
     assert '<ul class="compact-review" id="parish-review-summary">' in shown
     assert shown.count("<li>") == 2 and "Proposed:" not in shown
-    assert "This timezone change is prospective." in shown
+    assert "This time zone change is prospective." in shown
     response = post(browser, {"action": "confirm", "preview": token(review)})
     request_id = requested(response)
     status = browser.get(response["Location"]).content
@@ -378,7 +378,7 @@ def test_a_stored_alias_is_kept_and_a_new_zone_is_stored_canonically(
     assert "US/Eastern (older name for America/New_York)" in page
     renamed = post(browser, fields(store, name="Renamed Parish"))
     assert renamed.status_code == 200, renamed.content
-    assert b"This timezone change is prospective" not in renamed.content
+    assert b"This time zone change is prospective" not in renamed.content
     moved = post(browser, fields(store, timezone="Canada/Pacific"))
     proposal = token(moved)
     assert b"America/Vancouver" in moved.content

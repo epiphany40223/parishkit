@@ -114,7 +114,7 @@ def test_a_leader_of_one_ministry_gets_one_line_whose_counts_filter_the_table(
         assert href(JOIN_9) in section and href(f"{PAGE}?ministry=9") in section
         # Every link's accessible name names its Ministry.
         assert 'aria-label="1 join request for Food pantry"' in section
-        assert 'aria-label="1 unresolved request for Food pantry"' in section
+        assert 'aria-label="1 request to review for Food pantry"' in section
         # Food pantry has no leave request: the zero is plain text, and
         # Ministry 4 is not this leader's.
         assert "0 leave requests" in section and "kind=leave" not in section
@@ -163,7 +163,7 @@ def test_a_leader_of_several_ministries_gets_a_table_of_them(response_service, g
         section = by_ministry(body)
         assert section.count('<th scope="row">') == 2
         assert href(JOIN_9) in section and href(LEAVE_4) in section
-        assert "Not in ParishSoft data" not in section
+        assert "Not in ParishSoft" not in section
         assert listed(body) == {join.pk, leave.pk}
         assert listed(page(browser, LEAVE_4)) == {leave.pk}
         assert stages(body)[:2] == ["To review (2)", "Accepted (0)"]

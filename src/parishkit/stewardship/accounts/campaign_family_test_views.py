@@ -52,7 +52,7 @@ MESSAGE_LABELS = STATE_LABELS
 REASON_LABELS = {
     "eligible": _("Eligible"),
     "unknown": _("Not a Family in this campaign"),
-    "ineligible": _("Not currently eligible for the campaign"),
+    "ineligible": _("Not in this campaign"),
     "undeliverable": _("No deliverable email address"),
     "stale_source": _("Waiting for source reconciliation"),
 }

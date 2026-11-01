@@ -322,7 +322,7 @@ def test_zero_sections_keep_their_blocks_and_say_what_zero_means():
     """Every block stays at zero, with its link; the data line says so."""
     html = render([_row(key, count=0) for key in ALL])
     assert html.count('class="panel data-to-fix-section"') == 5
-    assert "None: every Family that can use the portal can open the form." in html
+    assert "None: every campaign Family can open the form." in html
     assert "No refused addresses: campaign email reaches every address" in html
     assert "None: every campaign Family can be reached by email or postal mail." in html
     assert "None: every census change Families reported has been handled." in html

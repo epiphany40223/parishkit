@@ -2707,7 +2707,7 @@ def export_family_timeline(args, preamble, runtime, context):
 
     confirm(
         context,
-        ("Create a Family timeline export, which can hold the Family's code.",),
+        ("Create a Timeline export, which can hold the Family's code.",),
     )
     return request(
         context["caller"],

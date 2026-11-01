@@ -109,7 +109,7 @@ def test_a_malformed_telephone_holds_save_and_continue(page, component_origin):
     page.goto(component_origin + "/setup-parish")
     page.get_by_label("Parish name").fill("Sample Parish")
     page.get_by_label("Parish website").fill("https://example.org/")
-    page.get_by_label("Parish timezone").select_option("America/New_York")
+    page.get_by_label("Parish time zone").select_option("America/New_York")
     save = page.get_by_role("button", name="Save and continue")
     hint = page.locator("#setup-complete-hint")
     phone = page.get_by_label("Parish telephone")

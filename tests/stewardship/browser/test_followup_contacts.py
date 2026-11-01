@@ -71,7 +71,7 @@ def test_export_these_requests_posts_the_applied_view(page, component_origin):
     body, never in the address, with this browser's zone, unasked."""
     page.goto(component_origin + "/followup-queue")
     row = export_row(page)
-    assert page.get_by_label("Export timezone").count() == 0
+    assert page.get_by_label("Export time zone").count() == 0
     zone = page.evaluate("Intl.DateTimeFormat().resolvedOptions().timeZone")
     page.route(
         "**" + reverse("admin:ministry_followup_export"),

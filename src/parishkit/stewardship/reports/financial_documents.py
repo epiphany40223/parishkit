@@ -216,8 +216,8 @@ def financial_document(result, parameters, *, parish_name, requested_at, timezon
         ),
         ("Captured at", instant(source["observed_at"])),
         ("Requested at", instant(requested_at)),
-        ("Display timezone", timezone),
-        ("Campaign date-filter timezone", source["timezone"]),
+        ("Display time zone", timezone),
+        ("Campaign date-filter time zone", source["timezone"]),
         (
             "ParishSoft comparison period",
             dates.Span(

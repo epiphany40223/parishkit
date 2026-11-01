@@ -92,7 +92,7 @@ REACH = {
     "deliverable": _("Yes"),
     "no_eligible_email": _("No: no usable email address for a Family head"),
     "provider_suppressed": _("No: the mail service refused every address"),
-    "ineligible": _("No: not part of this campaign's mailing"),
+    "ineligible": _("No: not in this campaign"),
     "population_pending": _("Not known yet: ParishSoft data is still loading"),
 }
 # The Kind filter's choices for a Family's timeline (#1570), in menu order;

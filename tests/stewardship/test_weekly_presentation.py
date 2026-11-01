@@ -115,7 +115,7 @@ def test_report_pages_do_not_drop_or_repeat_items(report, page, count):
     # after its requests; a Testing report shows the note instead.
     assert requested[1:] == [("funnel", CAMPAIGN, "testing", snapshot.observed_at)]
     assert result["funnel_stages"] == ()
-    assert result["funnel_testing_note"].startswith("Testing digests")
+    assert result["funnel_testing_note"].startswith("Testing report emails")
 
 
 def test_an_earlier_campaigns_names_do_not_link(report, monkeypatch):

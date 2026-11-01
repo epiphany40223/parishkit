@@ -167,10 +167,10 @@ def test_queue_cells_hold_one_short_value(page, component_origin):
     # The tooltip is on the visible word, which screen readers skip, so the
     # sentence is announced once.
     assert badge.locator("[aria-hidden=true]").get_attribute("title") == (
-        "No longer in this campaign"
+        "Removed from this campaign"
     )
     assert badge.locator(".visually-hidden").text_content() == (
-        "No longer in this campaign"
+        "Removed from this campaign"
     )
     # Last contact uses the compact form: no "at" and no time zone name.
     contact = (
