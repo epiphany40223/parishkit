@@ -15,7 +15,6 @@ from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.export_models import ExportPublication, ExportRequest
 from parishkit.stewardship.reports.models import CampaignDailyFactSet
 from parishkit.stewardship.reports.report_email_models import ReportEmailSnapshot
-from parishkit.stewardship.reports.workspace import ReportQuery
 
 from ..export_urls import export_action
 from .auth_builders import signed_in, unguarded
@@ -37,8 +36,8 @@ def http_scenario(family_mail, google):  # noqa: F811
         # A Daily report's send pins a complete fact set (#1786): today's
         # campaign Families (#2331), beside the historical one its Compared
         # with past campaigns block reads. The scenario's generation is the
-        # one in the Response dashboard's default scope, so a page read with
-        # no scope draws it.
+        # historical one, which these tests read with scope=historical (the
+        # dashboard's default is today's campaign Families since #2324).
         identifier = add_digest(
             family_mail.service.store, family_mail.campaign, comparison=True
         )
@@ -46,7 +45,7 @@ def http_scenario(family_mail, google):  # noqa: F811
         pinned = ReportEmailSnapshot.objects.get(preparation=preparation).fact_set
         facts = CampaignDailyFactSet.objects.get(
             campaign_id=pinned.campaign_id,
-            population_scope=ReportQuery().scope,
+            population_scope="historical",
             source_id=pinned.source_id,
             submission_watermark=pinned.submission_watermark,
             review_watermark=pinned.review_watermark,
