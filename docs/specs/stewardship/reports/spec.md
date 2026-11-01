@@ -2501,15 +2501,21 @@ selection and the export capture still take. The queue likewise explains its
 leader leads only the Ministries the campaign asks about (#922).
 
 The page reads its rows and export through the follow-up selection with its
-cross-check; #1684's migration widens that selection so a request edited
-into another Ministry is in the scope of both Ministries' leaders
-([follow-up workflows](../admin-portal/spec.md#follow-up-workflows)). By
-Ministry and the packet's choices read the Ministry report selection with
-its own cross-check, so a reader needs both scopes, which the same roles
-hold. By Ministry counts a request edited into another Ministry under both
-its Ministries, as the worklist's Ministry filter finds it under either, so
-each count link lists exactly what it counts
-([#1718](https://github.com/epiphany40223/parishkit/issues/1718)).
+cross-check. By Ministry and the packet's choices read the Ministry report
+selection with its own cross-check, so a reader needs both scopes, which
+the same roles hold. A request review's Edit carried into another Ministry
+([follow-up workflows](../admin-portal/spec.md#follow-up-workflows)) belongs
+to that Ministry alone, its Ministry in force, the way Pledges and
+Financial stewardship read the Edit in force (Administrator decision,
+2026-11-01, on
+[#2331](https://github.com/epiphany40223/parishkit/issues/2331#issuecomment-6559704860)). By
+Ministry counts it once, under that Ministry; the worklist's Ministry filter
+finds it only there; and only that Ministry's leaders have it in their
+scope, so a leader of only the Family's Ministry no longer sees it. Each
+count link therefore lists exactly what it counts, and the column sums
+equal the badge. Frozen migration 0198 made this change; before it, #1684's
+migration and #1718 counted and listed an edited request under both
+Ministries.
 The Leaders column added migration 0169 (above). The page's view audit is
 the queue's `ministry_followup_viewed`; it no longer records
 `ministry_report_viewed`, which the host `report ministry` command still
@@ -2601,19 +2607,22 @@ shows no details and says so.
 A request is read under its current Ministry: the one review's Edit carried
 forward ([follow-up workflows](../admin-portal/spec.md#follow-up-workflows)),
 whose leaders decide it from then on, else the Family's. The Ministry report
-selection and the packet list an edited request, with its details, under
-that Ministry only, so its leaders see the Member's details and a leader of
-only the Family's Ministry, who still sees the request read only, sees none
+selection, the packet and the follow-up selection list, count and scope an
+edited request, with its details, under that Ministry only, so its leaders
+see the Member's details and a leader of only the Family's Ministry does not
+see the request at all
 ([#1718](https://github.com/epiphany40223/parishkit/issues/1718), frozen
-migration 0140). An earlier version of the request, shown with the history
-option, stays under the Family's Ministry but is not consent there (the
-rule below): its leaders see only published values on it. Both selections
-keep both Ministries of an edited request listed, so a packet for the
-Family's Ministry, which By Ministry still offers, gets its section, empty
-of that request; a one-Ministry read of the report can therefore count a
-request (By Ministry counts it under both) that it does not list. Nothing
-else changes: each selection still reads only the reader's SQL-derived
-scope, and the rule below applies to the current Ministry's leaders.
+migration 0140;
+[#2331](https://github.com/epiphany40223/parishkit/issues/2331), frozen
+migration 0198). An earlier version of the request, from before the Edit
+and shown with the history option, stays under the Family's Ministry, which
+was its Ministry in force, but is not consent there (the rule below): its
+leaders see only published values on it. An edited request no longer keeps
+the Family's Ministry listed: a Ministry the campaign no longer asks about
+stays in By Ministry and the packet's choices only while a current request
+is in force there. Nothing else changes: each selection still reads only
+the reader's SQL-derived scope, and the rule below applies to the current
+Ministry's leaders.
 
 Leader phone and email values honor ParishSoft publish flags and show "Not
 published" rather than leaking a value, with one exception (Administrator

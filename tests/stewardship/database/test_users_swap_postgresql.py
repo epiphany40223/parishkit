@@ -600,6 +600,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # report email preparation guards, which 0185's (and 0156's and 0161's)
 # reruns bring back older, so its ``CLOSURE_REPLACED_ONLY`` entries restore
 # 0192's bodies instead, the preparation guard's in 0185's entry's place.
+# 0198 (#2331) creates nothing: it replaces the follow-up, packet and
+# Ministry report selections in place, which 0131's and 0141's entries
+# (and the earlier files' reruns) bring back older, so its
+# ``CLOSURE_REPLACED_ONLY`` entries restore 0198's bodies in their place.
 # The columns 0185 (#2202) adds, by table.
 SERIES_IN_FORCE_COLUMNS = (
     ("stewardship_daily_fact_set", "pledge_edits"),
@@ -1839,6 +1843,21 @@ CLOSURE_REPLACED_ONLY = {
     "stewardship_exact_request_guard_v1": (
         ("stewardship_reports", "0053_late_report_totals"),
         "r.campaign_sequence<=NEW.submission_watermark",
+    ),
+    # 0198 (#2331) replaces the three Ministry selections last, on 0131's
+    # and 0141's bodies, so an edited request belongs to its Ministry in
+    # force alone: these keys' values replace the 0141 and 0131 entries
+    # above (in their places), so the restore installs 0198's bodies.
+    **dict.fromkeys(
+        (
+            "stewardship_ministry_followup_v1",
+            "stewardship_ministry_packet_v1",
+            "stewardship_ministry_report_v3",
+        ),
+        (
+            ("stewardship_reports", "0054_ministry_edit_once"),
+            "(VALUES (coalesce(r.reviewed_ministry_duid,r.ministry_duid))) d(duid)",
+        ),
     ),
 }
 

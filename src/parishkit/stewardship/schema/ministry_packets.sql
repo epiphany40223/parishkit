@@ -33,7 +33,7 @@ WITH selected AS MATERIALIZED (
         statement_timestamp() AS observed_at
     FROM selected x JOIN stewardship_source_snapshot s ON s.id=x.source_id
     WHERE s.state='promoted' AND s.compacted_at IS NULL
-        AND x.values->'modules' ? 'ministry'
+        AND x.values->'modules' OPERATOR(pg_catalog.?) 'ministry'
 ), scoped AS MATERIALIZED (
     -- Widen before filtering, as the Ministry report does, so an unsupported
     -- configured ID cannot become an outage through predicate reordering.
@@ -44,7 +44,7 @@ WITH selected AS MATERIALIZED (
     -- they are marked not in_campaign. A request for a Member no longer in
     -- ParishSoft (#1217) does not keep one listed (#1219), as it is never
     -- counted or listed under it. A request edited into another Ministry
-    -- (#1684) holds both, as the follow-up selection lists it (#1718).
+    -- (#1684) holds only that one, its Ministry in force (#2331).
     CROSS JOIN LATERAL (
         SELECT n.duid,true FROM jsonb_array_elements_text(x.values->'ministry_duids') n(duid)
         UNION
@@ -52,10 +52,10 @@ WITH selected AS MATERIALIZED (
         FROM stewardship_submission s
         JOIN stewardship_ministry_request r ON r.submission_id=s.id
         JOIN stewardship_family_campaign f ON f.id=s.family_id
-        CROSS JOIN LATERAL (VALUES (r.ministry_duid),(r.reviewed_ministry_duid)) d(duid)
+        CROSS JOIN LATERAL (VALUES (coalesce(r.reviewed_ministry_duid,r.ministry_duid))) d(duid)
         WHERE s.campaign_id=x.id AND s.mode='live' AND d.duid IS NOT NULL
           AND r.state NOT IN ('cancelled','superseded')
-          AND NOT x.values->'ministry_duids' @> to_jsonb(d.duid)
+          AND NOT x.values->'ministry_duids' OPERATOR(pg_catalog.@>) to_jsonb(d.duid)
           AND (r.entity_kind<>'member'
               OR stewardship_member_source_status_v1(
                   x.source_id,r.entity_key,f.family_duid)='current')
@@ -242,7 +242,7 @@ WITH selected AS MATERIALIZED (
         JOIN stewardship_ministry_revision v ON v.request_id=w.request_id
     ) h ON true
 )
-SELECT CASE WHEN NOT z.values->'modules' ? 'ministry'
+SELECT CASE WHEN NOT z.values->'modules' OPERATOR(pg_catalog.?) 'ministry'
     THEN jsonb_build_object('disabled',true)
     WHEN x.id IS NULL THEN jsonb_build_object('unavailable',true)
     ELSE jsonb_build_object(
