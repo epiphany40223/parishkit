@@ -109,6 +109,13 @@ FAMILY_TEMPLATES = {
     "family-maintenance.html",
     "family-unavailable.html",
     "hosted-file-unavailable.html",
+    # The public About, Contact, Privacy and Terms pages (#2360) are read by
+    # Families and visitors, not by Administrators, so they keep plain
+    # parish wording ("ministries", "staff") rather than the Admin terms.
+    "public-about.html",
+    "public-contact.html",
+    "public-privacy.html",
+    "public-terms.html",
 }
 # The Family sign-in page's title, which Python builds; the Family portal
 # keeps its own wording there too.
