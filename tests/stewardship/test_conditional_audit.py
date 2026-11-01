@@ -312,7 +312,7 @@ def _review(groups=(), needed=0):
 GROUP = HeldGroup(uuid4(), "initial", None, unreviewed=2, reachable=2)
 
 
-def _restore_page(review, *, refusal="", step=None):
+def _restore_page(review, *, refusal="", step=None, matches=()):
     """The Restore review page as its view renders it."""
     return render_to_string(
         "stewardship/restore-review.html",
@@ -322,6 +322,7 @@ def _restore_page(review, *, refusal="", step=None):
             "release_ready": not refusal,
             "release_refusal": refusal,
             "page_url": "/admin/maintenance",
+            "matches": list(matches),
         },
     )
 
@@ -362,3 +363,34 @@ def test_held_email_decisions_need_no_recent_sign_in():
     for label in ("Assume these were sent", "Send these again"):
         buttons = re.findall(rf"<button[^>]*>{label}</button>", html)
         assert buttons and all(" disabled" not in button for button in buttons)
+
+
+def test_restore_review_lists_the_standing_matches():
+    """What was restored names each standing verified-address match, sign-in
+    address first, or says there is none (#2343)."""
+    from django.utils import timezone
+
+    since = timezone.now()
+    listed = _restore_page(
+        _review(),
+        matches=[
+            {
+                "sign_in_email": "person@personal.example",
+                "email": "staff@example.org",
+                "matched_at": since,
+            }
+        ],
+    )
+    assert (
+        "These Google accounts sign in through another address, so check that "
+        "each is still expected:" in listed
+    )
+    assert re.search(
+        r"<li>person@personal\.example through staff@example\.org, since "
+        r'<time datetime="[^"]+" data-local-instant>',
+        listed,
+    )
+    assert "No Google accounts sign in through another address." not in listed
+    none = _restore_page(_review())
+    assert "<li>No Google accounts sign in through another address.</li>" in none
+    assert "These Google accounts sign in through another address" not in none

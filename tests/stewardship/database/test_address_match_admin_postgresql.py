@@ -396,3 +396,79 @@ def test_users_end_match_refuses_the_sessions_own_match(service, people, monkeyp
     assert document["error"]["code"] == "invalid"
     assert document["error"]["reason"] == "match_own_account"
     assert AddressMatch.objects.get(pk=made.pk).ended_at is None
+
+
+def test_where_a_match_shows(service, people):  # noqa: F811
+    """Signed-in sessions, the Timeline, the logs' actor windows and the
+    Restore review list name the matched account (#2343)."""
+    from parishkit.stewardship.accounts.actor_names import match_windows
+    from parishkit.stewardship.accounts.restore_review_views import standing_matches
+    from parishkit.stewardship.accounts.user_timelines import read_timeline
+
+    _, made = matched(people, STAFF)
+    browser = administrator(people)
+    with web():
+        sessions = browser.get("/admin/users/sessions/")
+    assert sessions.status_code == 200
+    assert f"{STAFF} through {PERSONAL}" in unescape(sessions.content.decode())
+    assert standing_matches() == [
+        {"sign_in_email": PERSONAL, "email": STAFF, "matched_at": made.matched_at}
+    ]
+    portal = PortalUser.objects.get(sign_in_email=PERSONAL)
+    windows = match_windows([portal.pk])[str(portal.pk)]
+    assert [(row["email"], row["ended_at"]) for row in windows] == [(STAFF, None)]
+    # System logs, as Edit user's Sign-in activity asks for them: the entries
+    # inside the window read "user through sign-in address"; the refused
+    # sign-in before the match reads the sign-in address, though the
+    # account acts as the user's address now.
+    with web():
+        logs = post(
+            browser,
+            "/admin/system/logs/",
+            applied="yes",
+            audit="yes",
+            activity="sign_in",
+            actor=str(portal.pk),
+        )
+    assert logs.status_code == 200
+    cells = [
+        re.sub(r"<[^>]+>", "", cell).strip()
+        for cell in re.findall(
+            r'<td class="log-actor-cell">(.*?)</td>',
+            unescape(logs.content.decode()),
+            re.S,
+        )
+    ]
+    # Newest first: the sign-in and the match, then the refusal before it.
+    assert cells == [f"{STAFF} through {PERSONAL}"] * 2 + [PERSONAL]
+    end_match(service, browser, STAFF, made.pk)
+    timeline = f"/admin/users/{user_id(service.store, STAFF)}/timeline/"
+    with web():
+        page = browser.get(timeline)
+    assert page.status_code == 200
+    text = unescape(page.content.decode())
+    assert "Google account matched" in text and PERSONAL in text
+    assert "Match ended" in text and "an Administrator ended it" in text
+    with web():
+        lines = read_timeline(
+            user_id(service.store, STAFF), PortalUser.objects.get(email=ADMIN).pk
+        ).events
+    said = [(str(line.what), line.kind, str(line.detail)) for line in lines]
+    # The match and its end are each one Role changes line: the guard's own
+    # records of them, inside the window, are left out, not said twice.
+    assert [row for row in said if row[0] == "Google account matched"] == [
+        ("Google account matched", "roles", PERSONAL)
+    ]
+    assert [row for row in said if row[0] == "Match ended"] == [
+        ("Match ended", "roles", "an Administrator ended it")
+    ]
+    # The account's refused sign-in before the match is outside its window,
+    # so it is not the user's; its sign-in inside the window is.
+    refused = AuditEvent.objects.get(event_type="admin_login_refused")
+    assert refused.actor_id == portal.pk and refused.created_at < made.matched_at
+    assert "Sign-in refused" not in {row[0] for row in said}
+    assert ("Signed in", "sessions", "") in said
+    assert "Signed in" in text
+    # No match stands now: no summary field, and nothing left to check.
+    assert "Matched Google account" not in text
+    assert standing_matches() == []

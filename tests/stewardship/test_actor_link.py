@@ -10,7 +10,7 @@ actor is a current user and the viewer may open users' Timelines
 import re
 from pathlib import Path
 from types import SimpleNamespace
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from django.template import Context, Template
@@ -154,3 +154,37 @@ def test_a_lazy_fallback_still_draws_as_text():
     wording = actor_of({}, UUID(int=9), gettext_lazy("a former portal user"))
     assert str(wording) == "a former portal user"
     assert draw("{% actor_link who %}", who=wording) == "a former portal user"
+
+
+def test_a_matched_account_is_named_by_the_match_its_entry_falls_in():
+    """Inside a verified-address match's window (#2343) an entry reads "user
+    address through sign-in address", linked to the user's Timeline; outside
+    every window it reads the sign-in address, even while the account acts
+    as the user's address now; another actor is left as it is."""
+    from datetime import UTC, datetime, timedelta
+
+    from parishkit.stewardship.accounts.actor_names import through
+
+    start = datetime(2026, 11, 1, 12, tzinfo=UTC)
+    record = uuid4()
+    match = {
+        "email": "staff@example.org",
+        "user_record_id": record,
+        "sign_in_email": "person@personal.example",
+        "matched_at": start,
+        "ended_at": start + timedelta(days=1),
+    }
+    now = Actor("Staff, Sam", "staff@example.org", record)
+    inside = through(now, [match], start + timedelta(hours=1))
+    assert inside == Actor(
+        "staff@example.org through person@personal.example",
+        "staff@example.org",
+        record,
+    )
+    assert through(now, [match], start - timedelta(hours=1)) == Actor(
+        "person@personal.example", "person@personal.example"
+    )
+    plain = Actor("Admin", "admin@example.org", uuid4())
+    assert through(plain, [], start) is plain
+    assert through(plain, None, start) is plain
+    assert through(None, [match], start) is None

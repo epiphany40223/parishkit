@@ -20,6 +20,8 @@
 <dd>{{ summary.ministries|join:", " }}</dd>{% endif %}
 <dt>{% translate "Last signed in" %}</dt>
 <dd>{% if summary.last_sign_in %}<time datetime="{{ summary.last_sign_in|instant }}" data-local-instant>{{ summary.last_sign_in|instant }}</time>{% else %}{% translate "Never" %}{% endif %}</dd>
+{% if summary.matched %}<dt>{% translate "Matched Google account" %}</dt>
+<dd>{{ summary.matched.0 }}, {% translate "since" %} <time datetime="{{ summary.matched.1|instant }}" data-local-instant>{{ summary.matched.1|instant }}</time></dd>{% endif %}
 <dt>{% translate "Last email" %}</dt>
 <dd>{% with email=summary.last_email %}{% if email %}{% if email.message_id %}<a href="{% url 'admin:delivery' email.message_id %}">{{ email.what }}</a>{% else %}{{ email.what }}{% endif %}, <time datetime="{{ email.at|instant }}" data-local-instant>{{ email.at|instant }}</time>: <strong>{{ email.detail }}</strong>{% else %}{% translate "None sent" %}{% endif %}{% endwith %}</dd>
 </dl>
