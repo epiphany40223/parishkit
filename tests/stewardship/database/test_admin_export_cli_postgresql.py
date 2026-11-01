@@ -255,7 +255,9 @@ def test_create_follows_the_pages_form_and_repeats_safely(cli, http_scenario):  
     # The worker renders it; the command downloads it.
     run_export(setup, export)
     code, body, document = download(export.pk, secret)
-    assert code == 0 and body.startswith(b"Section,Group,Figure,")
+    # The header block (R59 on #2324), then the table.
+    assert code == 0 and body.startswith(b"Report,Family participation\r\n")
+    assert b"\r\n\r\nSection,Group,Figure," in body
     assert hashlib.sha256(body).hexdigest() == document["result"]["sha256"]
 
 

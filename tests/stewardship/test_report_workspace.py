@@ -344,12 +344,14 @@ def test_xlsx_is_complete_typed_formula_safe_and_keeps_original_request():
     stream.seek(0)
     book = load_workbook(stream)
     sheet = book["Daily participation"]
-    assert sheet.max_row == len(value.days) + 1
-    assert sheet["C2"].data_type == "n" and sheet["C2"].value == 1
-    assert sheet["H2"].data_type == "n" and sheet["H2"].value == 1234.56
-    assert sheet["A2"].is_date
-    assert sheet.freeze_panes == "A2" and sheet.auto_filter.ref == "A1:H4"
-    assert sheet.print_title_rows == "$1:$1"
+    # The header block's three rows and a blank row, then the table (R59
+    # on #2324).
+    assert sheet.max_row == len(value.days) + 5
+    assert sheet["C6"].data_type == "n" and sheet["C6"].value == 1
+    assert sheet["H6"].data_type == "n" and sheet["H6"].value == 1234.56
+    assert sheet["A6"].is_date
+    assert sheet.freeze_panes == "A6" and sheet.auto_filter.ref == "A5:H8"
+    assert sheet.print_title_rows == "$5:$5"
     metadata = book["Report information"]
     assert metadata["B1"].value == "=HYPERLINK(1)" and metadata["B1"].data_type == "s"
     assert value.as_of_label == metadata["B6"].value
@@ -369,8 +371,8 @@ def test_large_money_stays_exact_instead_of_excel_rounding():
     participation_xlsx(replace(value, days=(day, *value.days[1:])), stream)
     stream.seek(0)
     book = load_workbook(stream)
-    assert book["Daily participation"]["H2"].value == "1234567890123456.78"
-    assert book["Daily participation"]["H2"].data_type == "s"
+    assert book["Daily participation"]["H6"].value == "1234567890123456.78"
+    assert book["Daily participation"]["H6"].data_type == "s"
     book.close()
 
 
@@ -382,7 +384,7 @@ def test_zero_pledge_total_is_a_number_not_text():
     participation_xlsx(replace(value, days=(day, *value.days[1:])), stream)
     stream.seek(0)
     book = load_workbook(stream)
-    cell = book["Daily participation"]["H2"]
+    cell = book["Daily participation"]["H6"]
     assert cell.data_type == "n" and cell.value == 0
     assert cell.number_format == '"$"#,##0.00'
     book.close()

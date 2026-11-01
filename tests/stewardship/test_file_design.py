@@ -196,8 +196,11 @@ def test_participation_census_and_limitations_workbooks_share_the_style():
     """The previously unstyled census and Limitations workbooks match the rest."""
     book = saved(participation_xlsx, replace(participation(), summary=summary()))
     assert book.sheetnames == ["Summary", "Daily participation", "Report information"]
-    assert_styled_table(book["Summary"])
-    assert_styled_table(book["Daily participation"])
+    # Each table sits under the file's header block (R59 on #2324), whose
+    # label/value rows share the details style.
+    for name in ("Summary", "Daily participation"):
+        assert_styled_table(book[name], header_row=5)
+        assert book[name]["A2"].font.b and book[name]["A2"].value == "Families counted"
     assert_information_sheet(book["Report information"])
     row = dict(
         family_name="Example",
