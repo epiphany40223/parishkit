@@ -178,7 +178,15 @@ def test_additional_information_reads_eligibility_under_the_legacy_rule(
     duid = AdditionalInformationItem.objects.get().submission.family.family_duid
     snapshot = SourceCurrent.objects.get().snapshot_id
     _rewrite_payload(
-        "family", snapshot, duid, {"active": True, "portal_eligible": False}
+        "family",
+        snapshot,
+        duid,
+        {
+            "active": True,
+            "parishioner": False,
+            "email_eligible": False,
+            "portal_eligible": False,
+        },
     )
     legacy = InformationQuery(disposition="all", zone=None).form_values()
     zoned = InformationQuery(disposition="all", zone="Etc/UTC").form_values()

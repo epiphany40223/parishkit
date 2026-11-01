@@ -5745,7 +5745,7 @@ Family, or marks one inactive or deceased:
 - **Not in ParishSoft**: the data has no such Member or Family (deleted or
   merged there), or the Member now belongs to another Family.
 - **Inactive in ParishSoft**: a Member present, but marked inactive. For a
-  Family the words are **No longer in this campaign**: present, but no longer matching the campaign's [Families rule](../data/spec.md#campaign-families) (its status key is `left`, #1393). Under the legacy rule (a campaign created before #1393) the test stays ParishSoft's active flag, exactly as before, except where a page counts the campaign's Families today beside the Response dashboard, or badges the same responders as such a page: there it is the dashboard's own test, the legacy rule itself (active and registered at the parish), so the same Family is never in the campaign on one page and out of it on the other (Financial stewardship and the pages that read its selection, [reports spec](../reports/spec.md#financial-stewardship-detail), and [Additional information](../reports/spec.md#additional-information), #2335).
+  Family the words are **No longer in this campaign**: present, but no longer matching the campaign's [Families rule](../data/spec.md#campaign-families) (its status key is `left`, #1393). Under the legacy rule (a campaign created before #1393) the test is ParishSoft's active flag and registration at the parish, as the dashboard counts it (#2335).
 - **Deceased in ParishSoft**: present, but marked deceased.
 - **Name not recorded in ParishSoft**: present, but with no usable name. This
   is a gap in the data, not a removal, so it is worded as the name and has
