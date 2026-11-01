@@ -1555,6 +1555,14 @@ BEGIN
                    WHERE receipt.campaign_id=c.id AND receipt.purpose='receipt'
                      AND receipt.mode='production' AND receipt.state<>'delivered') THEN
                 RAISE EXCEPTION 'Archive requires resolved submission confirmations' USING ERRCODE='23514'; END IF;
+            -- Every email of the campaign settled first (#2305): the delivery
+            -- resolution guard refuses an archived campaign's email, so one
+            -- left delivery_unknown (or still in flight, which may end so)
+            -- could never be settled and would hold a mail halt for good.
+            IF EXISTS (SELECT 1 FROM stewardship_outbox_message unsettled
+                   WHERE unsettled.campaign_id=c.id
+                     AND unsettled.state IN ('pending','retry_wait','submitting','delivery_unknown')) THEN
+                RAISE EXCEPTION 'Archive requires settled campaign email' USING ERRCODE='23514'; END IF;
             expected_state := 'archived';
         WHEN 'unarchive' THEN
             IF c.state<>'archived' OR NOT stewardship_campaign_quiet_v1(c.id) THEN
