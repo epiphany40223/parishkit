@@ -33,7 +33,7 @@ HEADINGS = (
     "Member",
     "Member DUID",
     "Request",
-    "Status",
+    "Contact status",
     "Email address(es)",
     "Email contact date",
     "Phone number(s)",

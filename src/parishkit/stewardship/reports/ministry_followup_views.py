@@ -265,7 +265,7 @@ def _labels(identities):
 # error, shows the message beside them, and its summary links to the first.
 # outcome_kind's message is built from its details (_refusal_error).
 REFUSALS = {
-    "outcome_required": (_("Choose an outcome for Resolved."), ("outcome",)),
+    "outcome_required": (_("Choose an outcome for Done."), ("outcome",)),
     "outcome_kind": (None, ("outcome",)),
     "other_needs_notes": (
         _("Add notes: the outcome Other needs them."),

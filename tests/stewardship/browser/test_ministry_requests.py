@@ -267,7 +267,7 @@ def test_packet_request_posts_its_selection(page, component_origin):
     assert download.value.suggested_filename == "packet.pdf"
     page.goto(component_origin + REQUESTS)
     page.get_by_role("checkbox", name="Example <Ministry>", exact=True).check()
-    page.get_by_label("Also include resolved and withdrawn requests").check()
+    page.get_by_label("Also include Done and withdrawn requests").check()
     zone = page.evaluate("Intl.DateTimeFormat().resolvedOptions().timeZone")
     page.route(
         "**" + reverse("admin:ministry_packet"),

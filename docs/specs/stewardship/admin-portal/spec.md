@@ -9023,8 +9023,8 @@ link reopens the same filters, sort and page. A token the session no longer
 holds opens the default queue. Beside Save follow-up, **Save and next** saves
 the same way (the same optimistic version check, history and audit event) and
 then opens the next open item after this one in that view. The item just saved
-is skipped, and so is any item that is not open: a Ministry request that is no
-longer New or In progress, or an information item that is not a current
+is skipped, and so is any item that is not open: a Ministry request whose Contact status is
+no longer Not contacted or Contacting, or an information item that is not a current
 actionable request awaiting completion. An item that isn't in the view leads
 to the view's first open item. The item page finds the next item while it
 renders, inside its own guarded read, and a help line beside the button says
@@ -9138,7 +9138,8 @@ request is at one stage, derived from its stored state as the pipeline's
 [existing state to stage](../review-pipeline/spec.md#existing-state-to-stage)
 table says (`pipeline.ministry_placement`):
 
-- **To review**: New or In progress (and Assigned, from before #552).
+- **To review**: Contact status Not contacted or Contacting (stored `new`
+  or `in_progress`; and Assigned, from before #552).
 - **To enter by hand**: Accepted (resolved as Joined the Ministry or Left
   the Ministry by a person), not yet ticked Entered in ParishSoft; then
   **Entered by hand** once ticked.
@@ -9218,7 +9219,7 @@ shared confirmation dialog and its optional note):
   reads "Accepted (edited) into Adult Choir" (drawn with the
   [Edited chip](../ui-conventions/spec.md#status-indicators)).
 - **Back to review** returns an accepted or ignored request to To review
-  (In progress), clearing an edited Ministry, until Staff tick it Entered in
+  (Contacting), clearing an edited Ministry, until Staff tick it Entered in
   ParishSoft; reopening an ignored request takes an optional note
   ([#1889](https://github.com/epiphany40223/parishkit/issues/1889)). A
   request the parish added goes back to To review the same way and stays
@@ -9267,7 +9268,7 @@ the whole batch and the notice says so. One `ministry_followup_bulk_applied`
 event records the action, and the request page marks each revision
 "(bulk)". The bulk contact attempt of #1131 is retired with the bulk
 outcomes: a contact attempt is recorded on the request page, which keeps
-Status, Outcome, Notes and Record a contact attempt as below.
+Contact status, Outcome, Notes and Record a contact attempt as below.
 
 **Family asked again**
 ([resubmission rule](../review-pipeline/spec.md#resubmission-before-the-reviewed-form)):
@@ -9306,17 +9307,21 @@ Ministry follow-up has no assignment (Administrator decision, 2026-10-04,
 [#552](https://github.com/epiphany40223/parishkit/issues/552)): each
 Ministry's leader contacts the parishioners who asked to join or leave it,
 and the portal does not track coordination between people. The queue and
-request pages therefore offer no assignee field, filter or column; the status
-choices are New, In progress, Resolved and Closed: no response. A request recorded as Assigned before this decision reads as New
-(that state only ever meant "has an assignee") until its next save stores the
-chosen status with no assignee; until then an explicit New filter on the
-queue does not match it, while Unresolved and Any status do. Past
-history entries keep the assignment they recorded. The data model keeps the unused column and state, as described in
-the [data specification](../data/spec.md#follow-up-records).
-The status's display name and choices become Contact status with Not
-contacted, Contacting and Done, as the
+request pages therefore offer no assignee field, filter or column. The
+request's **Contact status** choices are Not contacted, Contacting, Done and
+Closed: no response (stored `new`, `in_progress`, `resolved` and
+`closed_no_response`), as the
 [review pipeline terms](../ui-conventions/spec.md#review-pipeline-terms)
-convention decides ([#2330](https://github.com/epiphany40223/parishkit/issues/2330)).
+convention decides ([#2330](https://github.com/epiphany40223/parishkit/issues/2330);
+they were Status: New, In progress and Resolved). Done needs an Outcome, and a
+request the ParishSoft roster already shows reads "Done automatically". A
+request recorded as Assigned before this decision reads as Not contacted
+(that state only ever meant "has an assignee") until its next save stores the
+chosen status with no assignee; until then an explicit `new` filter on the
+command line does not match it, while `unresolved` (Not done) and `any` do.
+Past history entries keep the assignment they recorded. The data model
+keeps the unused column and state, as described in
+the [data specification](../data/spec.md#follow-up-records).
 
 Requests for Members no longer in ParishSoft are left out of the Ministry
 leaders' work (Administrator, 2026-10-13,
@@ -9363,7 +9368,7 @@ form is never one. One SQL function decides this
 
 The request form is compact
 ([#1014](https://github.com/epiphany40223/parishkit/issues/1014)): on a
-desktop screen Status and Outcome share one row, and How, Date and Time
+desktop screen Contact status and Outcome share one row, and How, Date and Time
 share another, while Notes and "What happened" span the form; at phone width
 every field takes its own row. The form enables only the fields that apply,
 and the others stay in place, greyed, so a choice never moves the fields

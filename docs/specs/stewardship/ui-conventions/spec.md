@@ -3511,8 +3511,7 @@ no other word that reads like a stage (Administrator, 2026-10-31,
   names, and the stored states are unchanged.
 
 The [retired words](#retired-words) table lists these words, and its guard
-test holds the strings that still use them until the #2330 string changes
-land.
+test keeps them out.
 
 ### Campaign Families wording
 
@@ -3679,10 +3678,11 @@ help and descriptions, and the sentences in `ui-v1.js`. It skips code
 (data keys, CLI option names) and the Family portal, including the Family
 sign-in page's title. It does not see other untranslated Python text,
 such as a plain string built inside a function or a CLI command's printed
-output; the #2330 string changes sweep those by hand. Its allowlist holds
-each file's known occurrences, with counts; a new occurrence fails, and
-each #2330 string change lowers or deletes entries until the allowlist is
-gone.
+output; the #2330 string changes swept those by hand. Its allowlist holds
+only what those changes could not remove, with counts: the Family sign-in
+abuse alert's title ("Sustained Family login abuse"), which frozen SQL
+also renders, until a later migration changes both. A new occurrence
+fails, and a change that removes one lowers or deletes its entry.
 **Precedent.** [#2330](https://github.com/epiphany40223/parishkit/issues/2330).
 
 | Retired | Use instead |

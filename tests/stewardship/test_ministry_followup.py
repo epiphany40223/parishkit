@@ -240,7 +240,7 @@ def test_assigned_is_no_longer_offered_but_still_reads_as_new():
     """Edits, queue and report filters drop Assigned; stored ones read as New."""
     assert "assigned" not in STAFF_STATES
     assert "assigned" not in STATES and "assigned" not in REPORT_STATES
-    assert STATE_LABELS["assigned"] == STATE_LABELS["new"] == "New"
+    assert STATE_LABELS["assigned"] == STATE_LABELS["new"] == "Not contacted"
     # Past history keeps what each edit recorded.
     assert HISTORY_STATES["assigned"] == "Assigned"
     assert "assignee" not in FollowupQuery().form_values()

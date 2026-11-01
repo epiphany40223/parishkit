@@ -1439,7 +1439,7 @@ review**, and the other steps read **Added by the parish**, **Withdrawn**
 **Entered by hand cleared**, **Handled**, **Handled cleared**, **Edited**,
 **Edit cleared** or,
 for a step that changes no decision or stage (a note, a contact attempt or a
-move to In progress), **Follow-up updated**. A census, Ministry or
+move to Contacting), **Follow-up updated**. A census, Ministry or
 Additional information line is worded from the item's state before and
 after the step, so the words never depend on what the row is called in
 storage. A pledge or Limitations row records the step's own decision, so
@@ -2647,10 +2647,10 @@ installed selection's order
 Member added on the form last in either direction. The CSV, XLSX and PDF of a list carry the same
 columns as each other, with no internal references
 ([#966](https://github.com/epiphany40223/parishkit/issues/966)), in the
-page's order: Member, Member DUID, Status, Outcome, the contact details or
+page's order: Member, Member DUID, Contact status, Outcome, the contact details or
 current role, and Submitted last. The page's combined cells are split into
-their parts with the page's own words ("Status and outcome" is Status and
-Outcome; "Contact and demographics" is Gender, Age, Email, Phones and Known
+their parts with the page's own words ("Contact status and outcome" is Contact
+status and Outcome; "Contact and demographics" is Gender, Age, Email, Phones and Known
 primary Family address), as the
 [downloaded files](../ui-conventions/spec.md#downloaded-files) convention
 allows. A list is always one Ministry's, so its

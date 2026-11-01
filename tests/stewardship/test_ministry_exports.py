@@ -285,7 +285,7 @@ def test_lists_follow_the_page_column_order(action, contact):
     assert report.headings == (
         "Member",
         "Member DUID",
-        "Status",
+        "Contact status",
         "Outcome",
         *contact,
         "Submitted",
@@ -320,11 +320,11 @@ def test_summary_capture_is_not_rendered():
 def test_exports_show_no_assignee_and_legacy_assigned_reads_new(action):
     """Follow-up has no assignee (#552); an old `assigned` request reads New."""
     assert "Assignee" not in document(action=action).headings
-    column = document(action=action).headings.index("Status")
+    column = document(action=action).headings.index("Contact status")
     report = document(
         action=action, count=1, state="assigned", assignee="=leader@example.org"
     )
-    assert report.rows[0][column] == "New"
+    assert report.rows[0][column] == "Not contacted"
     assert "=leader@example.org" not in report.rows[0]
 
 
