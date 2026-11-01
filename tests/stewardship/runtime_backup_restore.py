@@ -503,7 +503,9 @@ def check_backup_restore(
     assert taken["backup_recorded"] is True
     assert taken["recipient_fingerprint"] == fingerprint
     assert taken["recipient_source"] == "file"
-    assert taken["offsite"] == {"state": "not_configured"}
+    # The backup no longer copies off-site (the uploader contract, #235),
+    # so its result has no offsite field.
+    assert "offsite" not in taken, taken
     work.mkdir(mode=0o700)
     backup_set = copy_set(volume, configuration, image, work / "set")
     # The set's origin: its manifest is the one the backup recorded.
