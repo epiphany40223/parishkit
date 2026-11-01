@@ -4021,9 +4021,9 @@ checks, audit and alerts:
   with `role` and, for a Ministry leader, `ministries` as DUID and name;
   `administrator_warning`; `other_accounts`, the number of other recorded
   accounts with the address; `stale_attempt`, true when the account's last
-  attempt is more than 30 days old; `own_address_account`, null or the
-  `last_sign_in` of an enabled account of the user's own address that the
-  link takes the user from; `token` and `expires_at`). The token carries
+  attempt is more than 30 days old; `replaced_account`, null or the
+  `last_sign_in` (null for never) of the own-address Google accounts the
+  link replaces, the newest of them when there are several; `token` and `expires_at`). The token carries
   IDs and the configuration version only, never an address. `users link
   --confirm --token …` is its Apply, through the page's own functions, so
   either channel applies the other's review; it records
@@ -4031,7 +4031,8 @@ checks, audit and alerts:
   security event, once: applying the same review again returns the first
   link. A refusal is `invalid` with `error.fields` `["account"]` and the
   page's stable code as `error.reason` (`link_not_recorded`,
-  `link_account_linked`, `link_own_account` and the rest); an unknown user
+  `link_account_linked`, `link_own_account`, `link_own_address_in_use`
+  and the rest); an unknown user
   is `not_available`; a review whose user, link or account changed since, or
   that expired, is `stale_version`; a non-Administrator is `denied`.
   `--confirm` does not prompt, as `users confirm` (which can grant

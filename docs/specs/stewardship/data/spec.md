@@ -1447,16 +1447,34 @@ truncate, or the wrong login, actor or session) anything but:
 - the [own-user rule](../admin-portal/spec.md#link-and-unlink): the actor
   is not the link's account, and `stewardship_account_user_v1(actor)` is
   not the link's user;
-- while setup is complete and no restore review is required, holding the
-  users' ordering lock (`pg_advisory_xact_lock(736220, 1)`, which
-  configuration activation also takes), so a link and a user change are
-  decided one at a time;
+- every write holds the users' ordering lock (`pg_advisory_xact_lock(736220,
+  1)`, which configuration activation also takes), so a link and a user
+  change are decided one at a time; an insert or an `unlinked` end is also
+  admitted only while setup is complete and no restore review is required.
+  A `user_gone` end made by a configuration activation is exempt from that
+  state condition: an activation can remove a linked user while a restore
+  review is required (offline Admin-access recovery must be able to
+  activate a configuration in every state), and refusing its end would
+  fail the activation itself. The exemption grants nothing, since a
+  `user_gone` end only narrows access and is admitted only for a user the
+  active configuration no longer has;
 - for an insert: an enabled account whose current address is
   `account_email`, is not the user's address, is not any
   active-configuration user's address, and is not a first-Administrator
   address; a user record in the active configuration whose address is
-  `user_email` and is not a first-Administrator address; and no standing
-  link of the account or of the user record. A **first-Administrator
+  `user_email` and is not a first-Administrator address; no standing
+  link of the account or of the user record; and no **own-address account**
+  in use. The own-address accounts are every enabled `stewardship_portal_user`
+  whose own address is `user_email` (several may share it). One is **in
+  use** when it has a live `stewardship_portal_session` (not revoked, not
+  expired, active within the idle limit and issued after the latest
+  Admin-access recovery, as above; a command session is its
+  automation session's portal session row, so this covers live automation
+  sessions too) or a `stewardship_portal_session` issued less than 30 days
+  before the statement's time (its successful Admin sign-ins). Such an
+  insert is refused (`23514`) with `link_own_address_in_use` in the
+  message's detail, re-derived from the tables, so a caller that skipped
+  the review cannot replace a working account. A **first-Administrator
   address** is one the root configuration (the version with no
   predecessor) gives the Administrator role;
 - for an end: a standing link, of which only `ended_at`, `ended_by_id`,
@@ -1466,30 +1484,45 @@ truncate, or the wrong login, actor or session) anything but:
   tables), which is how the activation path below ends it.
 
 The guard records `user_account_linked` or `user_account_unlinked` itself
-(only IDs and the end reason in the context), and for a link the durable
-`account_linked` security event below. A link also revokes, in the same
-statement, every live `stewardship_portal_session` of an enabled account
-whose own address is the user's address (each with its `admin_revoked`
-audit row) and ends that account's live automation sessions
-(`revoked_by_administrator`), since the link takes the user from it. An
-end revokes the linked account's sessions the same way.
+(only IDs and the end reason in the context; a link's context also lists
+`replaced_portal_user_ids`, the own-address accounts it replaced, empty
+when there were none), and for a link the durable `account_linked`
+security event below. A link also revokes, in the same statement, every
+live `stewardship_portal_session` of every own-address account (each with
+its `admin_revoked` audit row) and ends each one's live automation
+sessions (`revoked_by_administrator`). The in-use check means none should
+be live, but a sign-in does not take the users' lock and may commit while
+the link is decided, and the session guard refuses such an account only
+once the link is committed, so the revocation closes that window. An end
+revokes the linked account's sessions the same way.
 
 **Ending a deleted user's link.** `stewardship_policy_activation_v1` (the
 activation trigger; latest definition 0052, owned by the baseline's
 `functions.sql`) calls the new definer
 `stewardship_user_account_links_activate_v1(configuration uuid)` in the
-activation's own transaction. It ends as `user_gone` every standing link
-whose `user_record_id` the activated configuration no longer has, recording
-`user_account_unlinked` with the activation's actor, and returns each
-remaining standing link's `user_record_id` and `account_email`, which the
-activation copies into the Administrator-grant events it records. A
-standing link therefore always names a user of the active configuration.
+activation's own transaction. The function trusts nothing from its caller
+but the argument, and checks that: it refuses (`42501`) unless
+`configuration` is the configuration of the newest
+`stewardship_config_activation` row, which inside the trigger is the row
+just inserted, and it takes the audit actor and correlation from that
+activation row, never from the caller. It ends as `user_gone` every
+standing link whose `user_record_id` that configuration no longer has,
+recording `user_account_unlinked` with the activation's actor, and returns
+each remaining standing link's `user_record_id` and `account_email`, which
+the activation copies into the Administrator-grant events it records. A
+login that calls it directly can therefore only repeat what the newest
+activation already did, under that activation's name: the first call ended
+those links, so a later one ends nothing, and its returned list holds only
+what the helpers already reveal to that login. A standing link therefore
+always names a user of the active configuration.
 
 **The `account_linked` security event.** `stewardship_policy_security_event`
 changes: `activation_id` becomes nullable; a nullable
 `user_account_link_id` foreign key is added with a unique index; a check
 requires `num_nonnulls(activation_id, user_account_link_id) = 1`; and a
-nullable, trimmed lower-case `account_email` is added. The existing
+nullable, trimmed lower-case `account_email` is added, and so are the
+nullable `replaced_account_email` (trimmed lower case) and
+`replaced_last_sign_in` (`timestamptz`). The existing
 `policy_security_event_identity UNIQUE (activation_id, rule_record_id)`
 does not apply to rows whose `activation_id` is null (nulls are distinct),
 so a link records at most one event because of the unique index on
@@ -1497,24 +1530,48 @@ so a link records at most one event because of the unique index on
 `user_email`, `rule_record_id` = its `user_record_id`, `before_roles` =
 `[]`, `after_roles` = the user's roles when linked, the linking
 Administrator as actor, and `account_email` = the link's `account_email`.
+When the link replaced own-address accounts, `replaced_account_email` = the
+link's `user_email` and `replaced_last_sign_in` = the newest successful
+sign-in of any of them (null when none ever signed in); when it replaced
+none, both are null and a check requires `replaced_last_sign_in` to be null
+whenever `replaced_account_email` is. Only `account_linked` rows set them.
 Its recipients are the active configuration's Administrator addresses when
-the link was made, as for an Administrator grant. An `administrator_granted`
-row gets `account_email` when its user had a standing link at activation,
-and null otherwise; the other kinds leave it null.
+the link was made, as for an Administrator grant.
+
+**Replaced-account recipient (pending Administrator decision; default
+yes):** when `replaced_account_email` is set, that address also receives
+the event's email as a notice that asks nothing of it (it is not an
+Administrator, so it neither sees nor settles the Home notice), with the
+replaced-account instruction below in place of the Administrators' one, and
+the review's security-notice line adds "The Google account it replaces is
+emailed a notice."
+
+An `administrator_granted` row gets `account_email` when its user had a
+standing link at activation, and null otherwise; the other kinds leave it
+null.
 
 Both twins of the content compiler, `stewardship_security_content_v2` and
 `jobs/security_content.py` (its `KINDS`, instructions and `SecurityAlert`,
 which gains `account_email`, required for `account_linked`), render it:
 
 - title (`KINDS`): "Google account linked to a user";
-- instruction, with no HTML-special character as the SQL twin requires: "An
-  Administrator linked a Google account to a user. That account now signs
-  in as the user, with the user's role. If this was not planned, unlink it
-  on the user's Edit page. Acknowledge it on the Admin dashboard; it stays
-  there until an Administrator other than the one who made the change
-  does.";
+- instruction, with no HTML-special character (no `&`, `<`, `>`, `"` or
+  `'`, since `jobs/security_content.py` escapes the instruction and
+  `stewardship_security_content_v2` concatenates it raw, so the two twins'
+  HTML match only for such text): "An Administrator linked a Google account
+  to a user. That account now signs in as the user, with the role of that
+  user. If this was not planned, unlink it on the Edit page of that user.
+  Acknowledge it on the Admin dashboard; it stays there until an
+  Administrator other than the one who made the change does.";
+- the replaced-account instruction, for the replaced-account recipient
+  above only, under the same character rule: "Another Google account now
+  signs in to the parish Stewardship Admin portal as this address, and the
+  Google account of this address no longer does. If you did not expect
+  this, contact the parish staff who manage Admin portal access.";
 - rows: Account (`account_email`), User (`target`), Role (`after_roles`,
-  worded as for the other kinds), By, When, Deployment mode and Event
+  worded as for the other kinds), Replaced Google account (only when
+  `replaced_account_email` is set: that address and "last signed in
+  _time_", or "never signed in"), By, When, Deployment mode and Event
   reference;
 - an `administrator_granted` alert with an `account_email` adds a "Linked
   Google account" row after Target.
@@ -1596,11 +1653,17 @@ rest, and the database-grants inventory tests list it.
 
 **The frozen file's `DO` block** raises unless the table, its indexes and
 checks, the guard and truncate triggers, the three new functions and every
-replaced function are installed; each definer (the three new functions, the
-guard and the four 0179 definers) has `prosecdef` and a `proconfig` of
-exactly `search_path=pg_catalog, public, pg_temp`; no new function or guard
-has a PUBLIC EXECUTE entry in `proacl`; and each replaced body names the
-helper it now uses. It is tested against the old definitions.
+replaced function are installed; every new and every replaced function
+(the three new functions, the guard, the four 0179 definers and the eight
+replaced invokers: `portal_session_admission_v1`, `export_authorized_v1`,
+`ministry_scope_v1`, `policy_activation_v1`, `campaign_mail_live_v1`,
+`family_test_scope_v1`, `go_live_admin_v1` and `security_content_v2`) has
+a `proconfig` of exactly `search_path=pg_catalog, public, pg_temp`, because
+`CREATE OR REPLACE` drops a `SET` clause the new text leaves out; each
+definer among them has `prosecdef` and each invoker does not; no new
+function or guard has a PUBLIC EXECUTE entry in `proacl`; and each
+replaced body names the helper it now uses. It is tested against the old
+definitions.
 
 ### Ministry leaders
 

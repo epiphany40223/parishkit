@@ -476,8 +476,11 @@ same accepted risk: it takes effect on one Administrator's word, with no
 email proof (Administrator decision, 2026-11-01). Its controls are the
 review that shows the account and what it gains, the audit and the Home
 security notice to every Administrator, the guard's one-account-per-user
-and first-Administrator rules, and an unlink that revokes the account's
-sessions at once. Google's `sub` stays the only identity key: a link names
+and first-Administrator rules, the guard's refusal to replace an
+own-address Google account still in use (a live session, or a successful
+sign-in in the last 30 days), with the replaced account named in the audit
+and the notice when an unused one is replaced, and an unlink that revokes
+the account's sessions at once. Google's `sub` stays the only identity key: a link names
 a recorded account, so an address that a different Google account later
 claims gains nothing from it. Like the backup request guard, the link's
 database guard proves a live Administrator session row named on the link,

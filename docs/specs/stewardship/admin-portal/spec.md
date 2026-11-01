@@ -8194,8 +8194,8 @@ the Ministries both its own address and the user's address lead in
 ParishSoft. The Administrator decided, on 2026-11-01:
 
 1. **The Administrator's word is the proof.** A link takes effect when an
-   Administrator applies it. No email goes to either address and nothing
-   waits for a confirmation.
+   Administrator applies it. No confirmation email goes to either address
+   and nothing waits for a confirmation.
 2. **Administrators only**, on Edit user and with `pk-admin users link`.
    There is no self-service page.
 3. **Admin portal sign-in only.** Family codes and links, Family contact
@@ -8204,7 +8204,8 @@ ParishSoft. The Administrator decided, on 2026-11-01:
 The mitigations are required, not optional: the review dialog below shows
 the account, the user and what the link grants before Apply; every link and
 unlink is audited, and every link raises a Home security notice and email
-to the Administrators; a user has at most one linked account and an account
+to the Administrators; a link never replaces an own-address Google account
+in use; a user has at most one linked account and an account
 at most one user; while a user has a linked account, no other Google
 account signs in as that user; the deployment's first Administrator is
 never part of a link; and unlinking ends that account's Admin sessions at
@@ -8239,14 +8240,27 @@ holds the record and its SQL):
 - Links are made and ended only once setup is complete and outside a
   restore review.
 
-A Google account whose own address is the user's address does not block a
-link. The person may have an old Google account of that address that they
-no longer use, and no page or command can disable a recorded Google account
+**An own-address Google account.** A Google account whose own address is
+the user's address (an **own-address account**; several can share the
+address when a Google account was deleted and made again) blocks a link
+only while it is **in use**: it has a live Admin or automation session, or
+a successful Admin sign-in less than 30 days ago (the same 30 days as the
+review's stale-attempt warning). Then the link is refused with
+`link_own_address_in_use`: that person already has access, so there is
+nothing to link, and replacing a working account would cut a person off
+the Google account they use every day and hand their role, Name and
+address in every actor label to another account in one step. An
+own-address account that never signed in, or has had no successful
+sign-in and no live session for 30 days or more, does not block the link:
+the person may have an old Google account of that address that they no
+longer use, and no page or command can disable a recorded Google account
 ([users](#portal-user-management)), so refusing would leave no way out.
-Instead the review says that the account exists and when it last signed in,
-and the link takes the user from it: from then on it is refused, and
-linking ends its live Admin and automation sessions in the same
-transaction.
+Instead the link **replaces** it: the review names it and when it last
+signed in, from then on it is refused, the link ends any session of it that
+began meanwhile in the same transaction, and the audit, Sign-in activity,
+the Home notice and its email all say which Google account was replaced.
+The database guard re-derives "in use" from the session tables under the
+users' lock, so neither the page nor a compromised web login can skip it.
 
 **Which user an account signs in as.** For each sign-in and on every
 request (as policy is re-read now), an enabled Google account's user is the
@@ -8320,6 +8334,7 @@ Each refusal is plain and carries its stable code:
 | `link_account_user` | "That Google account already signs in as its own user, _Name_. If this is the same person, delete one of the two users first." |
 | `link_first_administrator` | "The first Administrator's Google account is never linked." |
 | `link_own_account` | "You can't link or unlink your own user or your own Google account; another Administrator does that." |
+| `link_own_address_in_use` | "_user address_ signed in with its own Google account on _time_. Since that account works, there is nothing to link." (browser-local: the newest successful sign-in of any own-address account) |
 
 When several recorded Google accounts share the typed address (a Google
 account deleted and made again under it), the one that tried to sign in most
@@ -8346,12 +8361,14 @@ review, because it shows what the page does not:
   Administrators see every Ministry, so the line is left out for them.
 - When the user is an Administrator, the Administrator-grant warning that
   Edit's Save shows.
-- When an enabled Google account of the user's own address exists: "The
-  Google account of _user address_ last signed in on _time_. Once you link,
-  it can no longer sign in as this user, and its open sessions end." When
-  it never signed in, the first sentence says "has never signed in".
-- "No email is sent to either address, and the link works as soon as you
-  apply it. Check that both addresses belong to the same person."
+- When the link replaces an own-address account (none is in use, or Review
+  link is refused as above): "This replaces the Google account of _user
+  address_, which last signed in on _time_. Once you link, it can no longer
+  sign in as this user." When it never signed in, the first sentence ends
+  "which has never signed in"; with several own-address accounts, the time
+  is the newest sign-in of any of them.
+- "Nobody is asked to confirm, and the link works as soon as you apply it.
+  Check that both addresses belong to the same person."
 - "Every Administrator is told: a security notice appears on Home and is
   emailed."
 
@@ -8359,10 +8376,11 @@ The review is signed and lasts fifteen minutes. Its token carries only the
 user's record ID, the account's `PortalUser` ID, the applied
 configuration's version and the user's latest link ID (or none), never an
 address: signed tokens are readable, not encrypted. **Apply** checks every
-rule again under the users' lock, and a link or user change made since is a
-changed page. It records the link, its audit event and its security event,
-ends the sessions of an own-address account it takes the user from, and
-increments the denial-counter namespace version, as adding a user does
+rule again under the users' lock (an own-address account that came into
+use since is refused with `link_own_address_in_use`), and a link or user
+change made since is a changed page. It records the link, its audit event
+and its security event, ends any session of a replaced own-address account,
+and increments the denial-counter namespace version, as adding a user does
 ([identity and session security](../architecture/spec.md#identity-and-session-security)),
 so the person's earlier refused attempts do not hold the newly linked
 account back. The section then redraws
@@ -8392,22 +8410,28 @@ Administrator to check before release.
 
 **Audit and alerts.** Each link records `user_account_linked` and each
 unlink `user_account_unlinked`, with the Administrator as actor, the link as
-subject, and the user's record ID, the account's `PortalUser` ID, the end
-reason for an unlink and the outcome as context, never an address. Both are
-in [sign-in activity](#sign-in-activity) and on the user's
-[Timeline](#user-timeline). Every link also records a durable security event
-of the kind `account_linked` ("Google account linked to a user"), with the
+subject, and the user's record ID, the account's `PortalUser` ID, the
+`PortalUser` IDs of the own-address accounts a link replaced (empty when it
+replaced none), the end reason for an unlink and the outcome as context,
+never an address. Both are in [sign-in activity](#sign-in-activity) and on
+the user's [Timeline](#user-timeline); a link that replaced an account says
+so there ("replacing the Google account of _user address_"). Every link
+also records a durable security event of the kind `account_linked` ("Google account linked to a user"), with the
 same recipients, Home notice, acknowledgement rules and operational email
 as an [Administrator grant](#user-change-checks-and-alerts): the
 Administrators of the active configuration when the link was made. Its
 target is the user's address, so the user's own acknowledgement settles
 nothing for the others. Its Home line reads "Google account _account
 address_ now signs in as _user address_ (_Role_). Linked by _actor_,
-_time_." with the account's address as linked, and its email lists
-Account, User, Role, By and When
+_time_." with the account's address as linked; for a link that replaced an
+own-address account it adds "It replaced the Google account of _user
+address_, last signed in _time_." (or "..., which had never signed in.").
+Its email lists Account, User, Role, Replaced Google account (only for a
+link that replaced one), By and When
 ([linked Google account records](../data/spec.md#linked-google-account-records)
-holds the event's values and wording). An unlink only narrows access, so
-it is audited without a notice, as a demotion is.
+holds the event's values and wording, and the pending notice to the
+replaced account's address). An unlink only narrows access, so it is
+audited without a notice, as a demotion is.
 
 #### Linked account edge cases
 
@@ -8419,9 +8443,13 @@ it is audited without a notice, as a demotion is.
 - **A Google account of its own later signs in as the linked address.** It is
   refused while the link stands, as above, and the user's Timeline lists the
   refused sign-in. If it is the same person, unlinking lets them use it.
-- **An old Google account of the user's own address.** It does not block the
-  link: the review names it and when it last signed in, and the link ends
-  its sessions and takes the user from it, as above.
+- **An old Google account of the user's own address.** One that never
+  signed in, or has had no successful sign-in and no live session for 30
+  days or more, does not block the link: the review names it and when it
+  last signed in, and the link replaces it, as above. One in use refuses
+  the link with `link_own_address_in_use`; if that account really is no
+  longer the person's, it stops being in use once its sessions end and 30
+  days pass; until then only the server operator can disable it.
 - **The user is deleted.** The configuration activation that applies the
   deletion ends the link (`user_gone`) in its own transaction and records
   `user_account_unlinked`, so a standing link always names a current user.
@@ -12653,7 +12681,10 @@ types internal type names one at a time:
   out on Signed-in sessions, with the Administrator as actor;
 - `user_account_linked` and `user_account_unlinked`, an Administrator
   [linking or unlinking](#linked-google-accounts) a Google account and a
-  user, with the Administrator as actor;
+  user, with the Administrator as actor; a link that replaced an
+  own-address Google account says "replacing the Google account of _user
+  address_", and that account's ended sessions are its own `admin_revoked`
+  lines;
 - `admin_login_refused`, a sign-in by a Google account that Google verified
   and policy then refused (no user with that address and no link, a
   disabled identity, an address whose user is linked to another account,
