@@ -35,6 +35,14 @@ REPLACED = re.findall(r"^CREATE OR REPLACE FUNCTION public\.(\w+)\(", MIGRATION,
 CURRENT = "coalesce(r.reviewed_ministry_duid,r.ministry_duid) AS ministry_duid"
 
 
+def own_bodies(cursor):
+    """Put 0140's own bodies back, in the caller's rolled-back transaction:
+    0141 (#1670) and 0198 (#2331) have since replaced both selections
+    again."""
+    for name in REPLACED:
+        cursor.execute(definition(MIGRATION, name))
+
+
 def check_refuses(statement, message):
     """Run ``statement`` and then 0140's closing check, which must refuse it."""
     with (
@@ -43,18 +51,21 @@ def check_refuses(statement, message):
         connection.cursor() as cursor,
     ):
         cursor.execute("SET LOCAL check_function_bodies = false")
+        own_bodies(cursor)
         cursor.execute(ACL)
         cursor.execute(statement)
         cursor.execute(CHECK)
 
 
 def test_the_closing_check_passes_on_the_installed_schema():
-    """The check is the one the migration ran; it still holds afterwards."""
+    """The check is the one the migration ran; it holds on its own bodies."""
     assert sorted(REPLACED) == [
         "stewardship_ministry_packet_v1",
         "stewardship_ministry_report_v3",
     ]
     with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL check_function_bodies = false")
+        own_bodies(cursor)
         cursor.execute(ACL)
         cursor.execute(CHECK)
         cursor.execute(

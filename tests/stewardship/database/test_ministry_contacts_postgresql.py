@@ -407,9 +407,10 @@ def test_contacts_and_counts_follow_an_edit(response_service, google):
     """Staff edit Member 3's Food pantry (9) join into Ministry 4 (#1684):
     its contact details are read under Ministry 4 from then on (#1718), so
     Ministry 4's leader gets them, the Member's own unpublished email too
-    (#1591), and Food pantry's leader, who still sees the request read
-    only, gets none on its page, in its file or from its packet. By Ministry
-    counts it under both, as the worklist's Ministry filter lists it."""
+    (#1591), and Food pantry's leader no longer has the request at all
+    (#2331): not in the worklist, on its page, in their file or from their
+    packet. By Ministry counts it once, under Ministry 4, where the
+    worklist's Ministry filter lists it."""
     harness = setup(response_service)
     browser, _, _, _ = leader(harness, google)
     staff = actor(harness, {"staff"}, ())
@@ -436,7 +437,7 @@ def test_contacts_and_counts_follow_an_edit(response_service, google):
         "available",
         "available",
     )
-    assert details(pantry) is None
+    assert str(join.pk) not in view(harness, pantry)
     found = details(staff)
     assert EMAIL in json.dumps(found)
     assert (found["email_visibility"], found["phone_visibility"]) == (
@@ -494,37 +495,38 @@ def test_contacts_and_counts_follow_an_edit(response_service, google):
         assert str(join.pk) in packet_contacts(harness.campaign.pk, staff, {4})[0]
         assert str(join.pk) not in packet_contacts(harness.campaign.pk, staff, {9})[0]
         assert str(join.pk) in packet_contacts(harness.campaign.pk, fours, {4})[0]
-    # By Ministry counts it under both Ministries, as the worklist's Ministry
-    # filter finds it under either.
+    # By Ministry counts it once, under Ministry 4, its Ministry in force,
+    # where the worklist's Ministry filter finds it (#2331).
     summaries = {
         row["duid"]: row["joining"]
         for row in page(harness, roles=("staff",), scope=())["summaries"]
     }
-    assert summaries[9] == 1 and summaries[4] == 1
-    assert str(join.pk) in view(harness, staff, ministry="9")
+    assert summaries[9] == 0 and summaries[4] == 1
+    assert str(join.pk) not in view(harness, staff, ministry="9")
     assert str(join.pk) in view(harness, staff, ministry="4")
-    # Food pantry's leader still opens the request, read only, with no
-    # contact details, and its file reads them Unavailable.
+    # Food pantry's leader can no longer open the request, and their file
+    # holds only the join's earlier version, from before the Edit, with
+    # its contact details Unavailable.
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        section = contact(item(browser, join))
-        assert "No contact details are available for this request." in section
-        assert EMAIL not in section and PHONE not in section
+        response, body = read(
+            browser, reverse("admin:ministry_followup_item", args=[join.pk])
+        )
+        assert response.status_code == 403
+        assert EMAIL not in body.decode()
         response, body = export(browser, state="any")
         assert response.status_code == 200
-        rows = [row for row in table(body) if row["Ministry"] == "Food pantry"]
-        assert [(row["Email"], row["Phones"]) for row in rows] == [
-            ("Unavailable", "Unavailable")
-        ]
+        assert str(join.pk) not in body.decode()
         assert EMAIL not in body.decode()
 
 
 def test_a_leaves_contacts_follow_its_edit(response_service):
     """The Family withdraws the Food pantry join, and Staff edit the leave of
     Ministry 4 into Food pantry (9): the leave's contacts, read from the
-    packet, go to Food pantry's leader and no longer to Ministry 4's. Once
-    Ministry 4 is removed from the campaign, the edited leave still keeps it
-    listed, so a packet for it, which By Ministry offers, gets its (empty)
-    section rather than failing."""
+    packet, go to Food pantry's leader, and Ministry 4's leader no longer
+    has the leave (#2331). Once Ministry 4 is removed from the campaign,
+    the edited leave no longer keeps it listed, as it belongs to Food
+    pantry alone: By Ministry and the packet no longer offer it, as for
+    any Ministry the campaign dropped with nothing in force there."""
     harness = setup(response_service)
     staff = actor(harness, {"staff"}, ())
     fours = actor(harness, {"ministry_leader"}, (4,))
@@ -548,16 +550,15 @@ def test_a_leaves_contacts_follow_its_edit(response_service):
     found = details(pantry)
     assert (found["kind"], found["ministry_duid"]) == ("leave", 9)
     assert EMAIL in json.dumps(found) and found["email_visibility"] == "available"
-    assert details(fours) is None
+    assert str(leave.pk) not in view(harness, fours)
     assert EMAIL in json.dumps(details(staff))
     assert installed(harness, [9]).state == "applied"
     by_ministry = page(harness)["summaries"]
     assert {(row["duid"], row["in_campaign"]) for row in by_ministry} == {
-        (4, False),
         (9, True),
     }
-    _, captured = sections(packet(harness, staff.identity, (4, 9), history=True))
-    assert captured[4]["rows"] == []
+    _, captured = sections(packet(harness, staff.identity, (9,), history=True))
+    assert set(captured) == {9}
     # Food pantry's section holds the edited leave (and, with the history
     # option, the withdrawn join).
     assert str(leave.pk) in {row["id"] for row in captured[9]["rows"]}
