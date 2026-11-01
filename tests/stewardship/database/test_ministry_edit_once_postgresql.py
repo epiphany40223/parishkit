@@ -18,6 +18,7 @@ from django.db import DatabaseError, connection, transaction
 from django.urls import reverse
 
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.reports.ministry_followup import FollowupQuery, followup_page
 from parishkit.stewardship.workflows.models import (
     MinistryRequest,
     MinistryWorkflowRevision,
@@ -26,11 +27,21 @@ from parishkit.stewardship.workflows.models import (
 from .test_background_grants_postgresql import task_login
 from .test_hide_gone_members_postgresql import SCHEMA_FILES, definition
 from .test_information_followup_postgresql import search
+from .test_live_ministries_postgresql import applied, select
 from .test_ministry_exports_postgresql import leader
+from .test_ministry_followup_postgresql import member_gone
+from .test_ministry_followup_postgresql import read as followup
 from .test_ministry_reports_postgresql import actor, page, setup
 from .test_ministry_responses_postgresql import respond, revisit
 from .test_ministry_review_postgresql import decide, view, withdraw_leave
 from .test_response_http_postgresql import answers_for
+from .test_reviewed_form_postgresql import (
+    again,
+    current_requests,
+    decide_request,
+    ministry_setup,
+    set_choices,
+)
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -78,6 +89,20 @@ def summaries(harness, **reader):
     return {row["duid"]: row["joining"] for row in page(harness, **reader)["summaries"]}
 
 
+def history(harness, ministry):
+    """The ids a leader of ``ministry`` finds in its By Ministry list with
+    the history option: every version, the replaced ones included."""
+    rows = page(
+        harness,
+        roles=("ministry_leader",),
+        scope=(ministry,),
+        ministry=ministry,
+        state="any",
+        history="all",
+    )["rows"]
+    return {row["id"] for row in rows}
+
+
 @pytest.mark.usefixtures("earlier_rule")
 def test_an_edited_request_is_counted_and_listed_once(response_service):
     """Staff edit Member 3's Food pantry (9) join into Ministry 4: By
@@ -89,6 +114,13 @@ def test_an_edited_request_is_counted_and_listed_once(response_service):
     fours = actor(harness, {"ministry_leader"}, (4,))
     pantry = actor(harness, {"ministry_leader"}, (9,))
     join = withdraw_leave(harness)
+    # The join's earlier version, from the first response, which the
+    # Family's second answer replaced.
+    earlier_join = str(
+        MinistryRequest.objects.get(
+            ministry_duid=9, action="join", state="superseded"
+        ).pk
+    )
     # Before the Edit it is Food pantry's, as every unedited request is.
     assert summaries(harness) == {4: 0, 9: 1}
     assert str(join.pk) in view(harness, staff, ministry="9")
@@ -118,6 +150,66 @@ def test_an_edited_request_is_counted_and_listed_once(response_service):
         state="any",
     )["rows"]
     assert str(join.pk) not in {row["id"] for row in listed}
+    # With the history option, the earlier version from before the Edit
+    # stays under the Family's Ministry, its Ministry in force then; the
+    # edited one is listed under Ministry 4 only.
+    assert earlier_join in history(harness, 9)
+    assert str(join.pk) not in history(harness, 9)
+    assert str(join.pk) in history(harness, 4)
+    assert earlier_join not in history(harness, 4)
+
+    # Back to review clears the Edit: the request returns to Food pantry
+    # for the count, the filter and each leader's scope.
+    decide(harness, staff, "back_to_review", join)
+    assert (join.state, join.reviewed_ministry_duid) == ("in_progress", None)
+    assert summaries(harness) == {4: 0, 9: 1}
+    assert str(join.pk) in view(harness, staff, ministry="9")
+    assert str(join.pk) not in view(harness, staff, ministry="4")
+    assert str(join.pk) in view(harness, pantry)
+    assert str(join.pk) not in view(harness, fours)
+
+
+def test_a_family_resubmission_returns_an_edit_to_the_family_s_ministry(
+    response_service,
+):
+    """Staff edit the Food pantry (9) join into Choir (11), where it is
+    counted; the Family then chooses Food pantry again (rule 2), which
+    replaces the edited request with one To review under Food pantry, so
+    the count and the filter follow it back."""
+    harness, staff = ministry_setup(response_service)
+    join = current_requests()[9, "join"]
+    decide_request(harness, staff, "edit", join, value="11")
+    assert summaries(harness) == {4: 0, 9: 0, 11: 1}
+    assert str(join.pk) in view(harness, staff, ministry="11")
+    again(harness, set_choices([9], [4]))
+    join.refresh_from_db()
+    successor = str(join.superseded_by_id)
+    assert summaries(harness) == {4: 0, 9: 1, 11: 0}
+    assert successor in view(harness, staff, ministry="9")
+    assert not set(view(harness, staff, ministry="11")) & {successor, str(join.pk)}
+
+
+def test_the_presence_filters_hold_only_the_ministry_in_force(response_service):
+    """Staff edit the Food pantry (9) join into Ministry 4, the campaign
+    drops Food pantry, and Member 3 moves out of the Family in ParishSoft.
+    Staff's two views that still list Members no longer in ParishSoft, the
+    Status choice (presence 'gone') and the roster rows (presence 'any'),
+    list the edited request under Ministry 4 and no longer offer Food
+    pantry, which nothing in force holds."""
+    harness = setup(response_service)
+    staff = actor(harness, {"staff"}, ())
+    join = withdraw_leave(harness)
+    decide(harness, staff, "edit", join, fields={"value": ["4"]})
+    assert applied(select(harness, [4]))
+    member_gone(harness, "moved")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        every = followup_page(
+            harness.campaign.pk, FollowupQuery(state="any"), staff, every_member=True
+        )
+    for queue in (followup(harness, staff, state="not_in_parishsoft"), every):
+        assert {row["duid"] for row in queue["ministries"]} == {4}
+        (row,) = [row for row in queue["rows"] if row["id"] == str(join.pk)]
+        assert row["reviewed_ministry_duid"] == 4
 
 
 @pytest.mark.parametrize("into_pantry", [False, True])
