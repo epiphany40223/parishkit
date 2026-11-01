@@ -109,7 +109,7 @@ TITLES = MappingProxyType(
         IncidentKind.SCHEDULER_LAG: gettext_noop("Scheduled work is overdue"),
         IncidentKind.WORKER_UNAVAILABLE: gettext_noop("Background worker unavailable"),
         IncidentKind.ADMIN_ABUSE: gettext_noop("Sustained administration login abuse"),
-        IncidentKind.FAMILY_ABUSE: gettext_noop("Sustained Family login abuse"),
+        IncidentKind.FAMILY_ABUSE: gettext_noop("Sustained Family sign-in abuse"),
         IncidentKind.LIMITER_UNAVAILABLE: gettext_noop(
             "Login rate limiter unavailable"
         ),

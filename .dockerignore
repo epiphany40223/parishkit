@@ -226,6 +226,7 @@
 !src/parishkit/stewardship/schema/migrations/0199_family_session_purge.sql
 !src/parishkit/stewardship/schema/migrations/0200_address_match.sql
 !src/parishkit/stewardship/schema/migrations/0201_archive_settles_mail.sql
+!src/parishkit/stewardship/schema/migrations/0202_family_signin_abuse_title.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

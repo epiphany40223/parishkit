@@ -3678,11 +3678,10 @@ help and descriptions, and the sentences in `ui-v1.js`. It skips code
 (data keys, CLI option names) and the Family portal, including the Family
 sign-in page's title. It does not see other untranslated Python text,
 such as a plain string built inside a function or a CLI command's printed
-output; the #2330 string changes swept those by hand. Its allowlist holds
-only what those changes could not remove, with counts: the Family sign-in
-abuse alert's title ("Sustained Family login abuse"), which frozen SQL
-also renders, until a later migration changes both. A new occurrence
-fails, and a change that removes one lowers or deletes its entry.
+output; the #2330 string changes swept those by hand. Its allowlist is
+empty: the last entry, the Family sign-in abuse alert's title, which
+frozen SQL also renders, became "Sustained Family sign-in abuse" with
+frozen migration 0202. A new occurrence fails.
 **Precedent.** [#2330](https://github.com/epiphany40223/parishkit/issues/2330).
 
 | Retired | Use instead |

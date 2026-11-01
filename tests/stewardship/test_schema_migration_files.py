@@ -638,6 +638,9 @@ FROZEN = {
     "0201_archive_settles_mail.sql": (
         "71b11617b87a5bf9ded3e273c7c7ff377acf5ebfbf909189c2d30a5c09412e9d"
     ),
+    "0202_family_signin_abuse_title.sql": (
+        "4df6bf626a3b6bc7f22630c13ac2fc3f876530e8a4d1b6d2f253ac198873337e"
+    ),
 }
 
 
