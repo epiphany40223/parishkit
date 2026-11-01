@@ -1336,6 +1336,17 @@ before policy decides, whether or not policy then admits it, so a named refusal
 ([sign-in activity](../admin-portal/spec.md#sign-in-activity)) can show the
 address.
 
+From migration 0199 ([#2343](https://github.com/epiphany40223/parishkit/issues/2343))
+`PortalUser` holds two addresses. `sign_in_email` is Google's `email` claim
+from the account's latest verified sign-in. `email` is the address the
+account **acts as**: its `sign_in_email`, or, while a
+[verified-address match](#verified-address-match-records) of the account
+stands, that match's address. Every reader that decides access, scope or
+recipients by a signed-in person's address reads `email`, as all of them
+already do, so a matched account is seen everywhere as its user's address
+without any of those readers changing. The migration sets `sign_in_email`
+to `email` on every existing row (no match exists yet).
+
 Authorization policy materialized from the active YAML version is one list of
 **users** (Administrator decisions of 2026-10-10,
 [#952](https://github.com/epiphany40223/parishkit/issues/952); the
@@ -1385,6 +1396,219 @@ nothing writes or reads them; their tables stay, unread, until a later cleanup
 migration drops them, and older configuration versions and the audit log keep
 their history. Their earlier behavior is in this file's git history from
 before #952.
+
+#### Verified-address match records
+
+A [verified-address match](../admin-portal/spec.md#verified-address-matches)
+([#2343](https://github.com/epiphany40223/parishkit/issues/2343)) is runtime
+identity state, like `PortalUser`, not parish configuration: it is made by
+a person's own Google sign-in, never by an Administrator, and names a
+recorded Google account, which YAML cannot reference. Frozen migration 0199
+(renumbered at train time if the sequence moved) adds
+`stewardship_address_match` (model `AddressMatch`):
+
+- `id`, and the mutable-record columns (`created_at`, `updated_at`,
+  `version`, `actor_id`, `correlation_id`);
+- `portal_user_id`, a protected foreign key to `stewardship_portal_user`;
+- `email`, the matched address: a user's address, which Google verified
+  for the account;
+- `user_record_id`, that user's stable record ID when matched (for the
+  Timeline and the audit; matching itself is by address, below);
+- `sign_in_email`, the account's sign-in address when matched (what the
+  security notice and the Timeline show "as matched");
+- `matched_at`, and `confirmed_at`, the latest time Google confirmed the
+  address (the match, or a later re-check);
+- `ended_at`, `end_reason`, `ended_by_id` and `ended_session_id`, null
+  while the match stands. `end_reason` is one of `sign_in_address_matches`,
+  `not_confirmed`, `user_gone`, `replaced` and `ended_by_administrator`.
+
+`email`, `user_record_id`, `sign_in_email` and `matched_at` never change.
+Constraints: partial unique indexes on `portal_user_id` and on `email`,
+each `WHERE ended_at IS NULL` (a Google account has at most one standing
+match, and a user's address at most one matched Google account); checks
+that both addresses are trimmed lower case and differ; a check that the
+end columns are all null or `ended_at` and `end_reason` both set, with
+`ended_by_id` and `ended_session_id` set exactly for
+`ended_by_administrator`; and an index on `(email, matched_at)` for the
+Timeline and Edit user.
+
+**What is stored, and what is not.** The record holds one address of the
+account besides its sign-in address: the matched one, which is a user's
+address and so already in the parish configuration. The People API's list,
+the account's other addresses, the OAuth tokens and Google's answers are
+never written to the database, a log, the audit or a cache; the second
+sign-in step holds the list in memory for the one request. Remembering the
+matched address by `sub` is what lets later sign-ins skip asking Google
+until the 30-day re-check, and it is the least the portal can keep for
+that: storing only "this account is matched" would need Google again on
+every sign-in, and storing the user's record ID alone would break the rule
+that access follows the address
+([verified-address matches](../admin-portal/spec.md#verified-address-matches)).
+Nothing from the `profile` scope (name, photo) is stored or shown; the
+portal asks the People API for `emailAddresses` only. The privacy page
+([#2354](https://github.com/epiphany40223/parishkit/issues/2354)) must say
+so in these terms: "If your Google account's main address is not one the
+parish knows, the site may ask your permission to read the other email
+addresses Google has verified for your account. It uses them once, to find
+your access, and keeps only the one address that gave you access, which
+the parish already has."
+
+**How access reads it.** No access check reads this table. While a match
+stands, its account's `PortalUser.email` is the match's `email`
+([administration user and policy](#administration-user-and-policy)), so the
+session admission guard (#306), `stewardship_export_authorized_v1`,
+`stewardship_ministry_scope_v1`, the Ministry leader scope and every other
+function that joins a portal user's `email` to `stewardship_address_rule`
+or to the leaders definition answer for the user's address, unchanged.
+That is why the migration replaces no access function. What keeps
+`PortalUser.email` honest is the pair of guards below: the account's
+`email` may differ from its `sign_in_email` only while a standing match of
+that account names that `email`.
+
+**The portal-user guards.** The migration replaces both:
+
+- `stewardship_portal_user_insert_v1` (latest 0030) also requires a new row's
+  `email` to equal its `sign_in_email`;
+- `stewardship_portal_user_mutable_v1` (the baseline's `functions.sql`)
+  keeps every rule it has and adds: `sign_in_email` changes only with a
+  fresh verification in the same transaction, as `email` does today;
+  `email` may change to anything other than `sign_in_email` only with that
+  fresh verification and only when a standing `stewardship_address_match`
+  of the row names exactly that `email`; and `email` may return to
+  `sign_in_email` at any time, with no fresh verification, which is how an
+  Administrator's End match and a newer account's `replaced` put another
+  account back. The new text pins `SET search_path TO pg_catalog, public,
+  pg_temp` (the baseline definition had none), and the baseline file is
+  updated to match, as for every baseline-owned function a migration
+  replaces.
+
+**The match guard.** `stewardship_address_match_guard_v1` (SECURITY
+DEFINER, `SET search_path TO pg_catalog, public, pg_temp`, schema-qualified
+names and `OPERATOR(pg_catalog.…)` forms, `REVOKE ALL ... FROM PUBLIC`)
+fires `BEFORE INSERT OR UPDATE OR DELETE` for each row, and as a
+statement-level `BEFORE TRUNCATE` trigger. Column grants do not bind the
+table's owner, so it checks every login, the owner included. Every write
+takes the users' ordering lock (`pg_advisory_xact_lock(736220, 1)`, which
+configuration activation also takes), so a match and a user change are
+decided one at a time. It refuses (SQLSTATE `23514`, or `42501` for a
+delete, a truncate or the wrong login, actor or session) anything but:
+
+- **an insert** by the web login, for an enabled portal user whose
+  `verified_at` lies inside this transaction (the second sign-in step just
+  verified it), whose `sign_in_email` equals the row's `sign_in_email` and
+  differs from its `email`; whose `email` is the address of an
+  active-configuration user with record ID `user_record_id`; whose `email`
+  is not a **first-Administrator address** (one the root configuration, the
+  version with no predecessor, gives the Administrator role); no enabled
+  portal user whose `sign_in_email` is that `email` is **in use** (it has a
+  live `stewardship_portal_session`, checked as for the end below, or a
+  `stewardship_audit_event` of type `admin_login` with it as actor less
+  than 30 days before the statement's time, read through the
+  `(actor_id, created_at)` index; session rows cannot serve, since
+  `cleanup_admin_sessions` deletes them within hours of their end), refused
+  with `address_own_account_in_use` in the message's detail; and with no
+  end columns. It sets `matched_at` and `confirmed_at` to the statement's
+  time and the version to 1 itself;
+- **a re-check** by the web login: only `confirmed_at` advances, to the
+  statement's time, for a standing match whose portal user's `verified_at`
+  lies inside this transaction;
+- **an end**, once, of a standing match, changing only the end columns and
+  `version`, while the portal user's `email` is no longer the match's
+  `email` (the caller puts it back first). `ended_by_administrator` comes
+  from the web login with an `ended_by_id` that is an enabled Administrator
+  now (`stewardship_export_authorized_v1(actor, true)`) and is not the
+  match's portal user, and an `ended_session_id` that is a live Admin
+  session of that actor (`login.id = NEW.ended_session_id AND
+  login.principal_id = actor`, not revoked, not expired, active within the
+  idle limit and issued after the latest Admin-access recovery, as the
+  backup request guard of 0062 checks; a command session is its
+  automation session's portal session row). The other reasons come from
+  the web login with no actor or session, and are re-derived from the
+  tables: `user_gone` only when no active-configuration user has the
+  match's `email`; `sign_in_address_matches` only when one has the portal
+  user's `sign_in_email`; `replaced` only when `confirmed_at` is 30 days
+  old or more; `not_confirmed` only when the portal user's `verified_at`
+  lies inside this transaction (a second step just ran).
+
+On an insert the guard records the `admin_address_matched` audit row (IDs
+only) and the `address_matched` security event below; on an end it records
+`admin_address_match_ended` with the end reason, and for
+`ended_by_administrator` also revokes, in the same statement, the account's
+live `stewardship_portal_session` rows (each with its `admin_revoked` audit
+row) and its live automation sessions (`revoked_by_administrator`). A
+sign-in that commits after that statement is refused on its next request,
+since its account's `email` no longer names a user it can act as; the
+per-request policy read is what guarantees it, as for every role change.
+The insert's fresh-verification condition is the most SQL can check: it
+cannot see Google, so a compromised web login could still insert a match
+for any non-first-Administrator user after stamping some account as just
+verified, as it can already set any account's `email` today. It cannot do
+so without the audit row and the Home notice, and never for a
+first-Administrator address.
+
+**The `address_matched` security event.** `stewardship_policy_security_event`
+changes as follows. `activation_id` becomes nullable. A nullable
+`address_match_id` foreign key is added, with a unique index, and a check
+requires `num_nonnulls(activation_id, address_match_id) = 1`. A nullable,
+trimmed lower-case `account_email` is added, required for this kind and
+null for every other. The existing `policy_security_event_identity UNIQUE
+(activation_id, rule_record_id)` does not apply to rows whose
+`activation_id` is null (nulls are distinct), so the unique index on
+`address_match_id` is what makes a match's event once-only. The row has
+`kind` = `address_matched`, `target` = the match's `email`,
+`rule_record_id` = its `user_record_id`, `before_roles` = `[]`,
+`after_roles` = the user's roles when matched, `account_email` = the
+match's `sign_in_email`, the account itself as actor, and as recipients the
+active configuration's Administrator addresses at the match, as for an
+Administrator grant. `stewardship_recovery_recipient_v1` already leaves a
+row without an activation unchanged, and the security cohort binds to the
+active configuration, not to the event's activation, so neither changes;
+the implementation's PostgreSQL tests prove both with an `address_matched`
+row.
+
+Both twins of the content compiler render it:
+`stewardship_security_content_v2` (latest 0043, an invoker with a pinned
+`search_path`, replaced) and `jobs/security_content.py` (its `KINDS`, its
+instructions and `SecurityAlert`, which gains `account_email`, required for
+`address_matched` and refused on any other kind):
+
+- title: "Google account matched through another address";
+- instruction, with no HTML-special character (no `&`, `<`, `>`, `"` or
+  `'`, since the Python twin escapes the instruction and the SQL twin
+  concatenates it raw, so their HTML match only for such text): "A Google
+  account signed in to the Admin portal as a user, through another address
+  of that account that Google confirmed belongs to it. If this was not
+  expected, end the match on the Edit page of that user, or delete the
+  user if the address itself is not safe. Acknowledge it on the Admin
+  dashboard; it stays there until an Administrator other than the matched
+  person does.";
+- rows: Account (`account_email`), User (`target`), Role (`after_roles`,
+  worded as for the other kinds), When, Deployment mode and Event
+  reference.
+
+**Grants.** The web login gets `SELECT` and `INSERT` on the table and
+`UPDATE` of `confirmed_at`, the end columns, `version`, `updated_at` and
+`correlation_id` only, and `UPDATE` of `sign_in_email` on
+`stewardship_portal_user` beside its existing columns. No other runtime
+login is granted the table. The guard writes the audit, security event and
+session rows as the schema owner. The backup reads the table as it reads
+every table (its `pg_read_all_data` membership), a restore brings it back
+with the rest, and the database-grants inventory tests list it.
+
+**The frozen file's `DO` block** raises unless the table, its indexes and
+checks, the guard and truncate triggers, the new security event columns,
+index and check, and the replaced functions are installed;
+`stewardship_portal_user.sign_in_email` is `NOT NULL` and equals `email` on
+every row; the guard has `prosecdef` and the three replaced invokers
+(`stewardship_portal_user_insert_v1`, `stewardship_portal_user_mutable_v1`
+and `stewardship_security_content_v2`) do not; all four have a `proconfig`
+of exactly `search_path=pg_catalog, public, pg_temp`, because `CREATE OR
+REPLACE` drops a `SET` clause the new text leaves out; the guard has no
+PUBLIC EXECUTE entry in `proacl`; and each replaced body names what it now
+checks (`sign_in_email`, `stewardship_address_match`, `address_matched`).
+It is tested against the old definitions. The backfill of `sign_in_email`
+is one `UPDATE` that also advances `version`, which the existing update
+guard requires, before the guard is replaced.
 
 ### Ministry leaders
 
