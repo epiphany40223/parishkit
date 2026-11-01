@@ -26,7 +26,7 @@ from django.utils import timezone
 from django.utils.cache import patch_vary_headers
 from django.utils.http import http_date
 
-from parishkit.stewardship.audit.models import AuditEvent
+from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.web.namespaces import ADMIN_PREFIX, cookie_namespace
 from parishkit.stewardship.web.refusals import AccessDenied, TypedRefusal, mark_recorded
 
@@ -332,8 +332,14 @@ def create_admin_session(
     return session, row
 
 
-def issue_admin(request, user_id, *, store, authenticated_at):
-    """Issue only after verified identity and fresh current-policy authorization."""
+def issue_admin(request, user_id, *, store, authenticated_at, match_id=None):
+    """Issue only after verified identity and fresh current-policy authorization.
+
+    ``match_id`` names the verified-address match a matched sign-in acts
+    through (#2343): its ``admin_login`` then carries the match's ID in its
+    context (IDs only), so the audit itself says the sign-in was a matched
+    one.
+    """
     principal = current_principal(store, user_id)
     if not principal.roles:
         raise PermissionError("Administration access is unavailable.")
@@ -351,9 +357,23 @@ def issue_admin(request, user_id, *, store, authenticated_at):
             expires_at=now + ADMIN_ABSOLUTE,
             session=request.session,
         )
-        AuditEvent.objects.create(
+        event = AuditEvent.objects.create(
             event_type="admin_login", actor_id=user_id, subject_id=row.pk
         )
+        if match_id is not None:
+            from parishkit.stewardship.audit.schemas import (
+                ActorKind,
+                ContextKind,
+                sanitize,
+            )
+
+            AuditContext.objects.create(
+                event=event,
+                actor_id=user_id,
+                actor_kind=ActorKind.PORTAL_USER.value,
+                schema=ContextKind.ACTION.value,
+                context=sanitize(ContextKind.ACTION, {"match_id": match_id}),
+            )
     return principal
 
 

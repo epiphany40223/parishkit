@@ -2399,6 +2399,12 @@ def before_setup_source_check():
     ]
 
 
+# Closure columns that stay while the swap is pending: 0200's portal user
+# sign_in_email (see the 0200 note above), which the worker and scheduler
+# are granted only once 0200 is applied (runtime_grants.CLOSURE_COLUMNS).
+KEPT_WHILE_PENDING = {("stewardship_portal_user", "sign_in_email")}
+
+
 def before_address_match():
     """The security event constraints 0200 adds, dropped while it is pending.
 
@@ -2742,7 +2748,7 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
         assert scalar("SELECT to_regprocedure(%s)", [lookup]) is None
         for table in CLOSURE_TABLES:
             assert scalar("SELECT to_regclass(%s)", [f"public.{table}"]) is None
-        for table, column in CLOSURE_COLUMNS:
+        for table, column in set(CLOSURE_COLUMNS) - KEPT_WHILE_PENDING:
             assert not scalar(
                 "SELECT count(*) FROM pg_attribute WHERE attrelid=%s::regclass "
                 "AND attname=%s AND NOT attisdropped",

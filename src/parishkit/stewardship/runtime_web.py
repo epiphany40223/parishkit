@@ -351,6 +351,10 @@ def configure_web_runtime(configuration):
     # Update ParishSoft (#528, #1688) offers its check only while the web's own
     # parishsoft_publication setting is on; the worker obeys its own copy.
     settings.STEWARDSHIP_PARISHSOFT_PUBLICATION = configuration.parishsoft_publication
+    # Sign-in through another verified address (#2343) is the web's alone.
+    settings.STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN = (
+        configuration.alternate_address_sign_in
+    )
     client = valkey_client(configuration)
     limiter_key = hmac.digest(
         rings["django_signing"].active.material,

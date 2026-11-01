@@ -49,9 +49,12 @@ def add_export_grants(tables, columns, *, role):
         for name in ("request", "cancel", "resolution"):
             tables.setdefault("stewardship_exact_export_" + name, set()).add("SELECT")
     if role in {"worker", "scheduler", "web"}:
+        # current_principal reads these, sign_in_email too: an account whose
+        # email is not its sign-in address acts through a verified-address
+        # match (#2343).
         columns.setdefault("stewardship_portal_user", {}).setdefault(
             "SELECT", set()
-        ).update({"id", "email", "hosted_domain", "disabled"})
+        ).update({"id", "email", "sign_in_email", "hosted_domain", "disabled"})
     if role == "web":
         for name in ("request", "cancel"):
             tables["stewardship_exact_export_" + name].add("INSERT")

@@ -66,7 +66,7 @@ def _record_login_rejection(event_type):
             AuditEvent.objects.create(event_type=event_type)
 
 
-def record_account_refusal(user_id):
+def record_account_refusal(user_id, *, check=None):
     """Name a refused verified Google account, bounded per account and overall.
 
     Unlike the anonymous samples above, this follows a sign-in Google has
@@ -86,6 +86,14 @@ def record_account_refusal(user_id):
     ``admin_login_denied`` sample instead. Database failure, including a
     lock wait past one second, is the same typed, retryable outage as the
     samples. Returns whether a named entry was written.
+
+    ``check`` names a refusing outcome of a check of the account's other
+    verified addresses (#2343: ``declined``, ``none``, ``several``,
+    ``own_account_only`` or ``taken``), recorded as ``admin_address_checked``
+    with that outcome as its only context, never an address. It shares these
+    bounds, counted for its own type, so the first step's
+    ``admin_login_refused`` and the check that follows it are both named,
+    and a loop of declined checks cannot fill the log.
     """
     from .limiting import LimiterUnavailable
 
@@ -95,17 +103,24 @@ def record_account_refusal(user_id):
             cursor.execute("SELECT pg_advisory_xact_lock(%s,%s)", [736228, 4])
             cursor.execute("SELECT statement_timestamp()")
             since = cursor.fetchone()[0] - ACCOUNT_REFUSAL_INTERVAL
-            recent = AuditEvent.objects.filter(
-                event_type="admin_login_refused", created_at__gte=since
-            )
+            kind = "admin_login_refused" if check is None else "admin_address_checked"
+            recent = AuditEvent.objects.filter(event_type=kind, created_at__gte=since)
             if recent.filter(actor_id=user_id).exists():
                 return False
             if recent.count() >= ACCOUNT_REFUSAL_CEILING:
                 _record_login_rejection("admin_login_denied")
                 return False
-            AuditEvent.objects.create(
-                event_type="admin_login_refused", actor_id=user_id
-            )
+            if check is None:
+                AuditEvent.objects.create(
+                    event_type="admin_login_refused", actor_id=user_id
+                )
+            else:
+                record_action(
+                    Action.ADMIN_ADDRESS_CHECKED,
+                    actor_kind=ActorKind.PORTAL_USER,
+                    actor_id=user_id,
+                    context={"address_check": check},
+                )
             return True
     except DatabaseError:
         raise LimiterUnavailable() from None

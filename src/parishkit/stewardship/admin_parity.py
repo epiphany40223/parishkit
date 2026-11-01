@@ -91,6 +91,8 @@ LEDGER = {
     "presence": command("status"),
     "presence_count": command("status"),
     "login": permanent(SESSION_CHROME),
+    # The second sign-in step of a verified-address check (#2343).
+    "login_addresses": permanent(SESSION_CHROME),
     "logout": permanent(SESSION_CHROME),
     "session_status": permanent(SESSION_CHROME),
     "session_renew": permanent(SESSION_CHROME),

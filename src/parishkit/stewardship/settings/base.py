@@ -103,6 +103,10 @@ STEWARDSHIP_AUTH_RUNTIME = None
 # web runtime records: off unless that runtime admitted it on, so Publish to
 # ParishSoft stays inert in tests, development and any unassembled role.
 STEWARDSHIP_PARISHSOFT_PUBLICATION = False
+# The deployment's alternate_address_sign_in setting (#2343), which only the
+# web runtime records: off unless that runtime admitted it on, so sign-in
+# never asks Google for other addresses in tests or any other role.
+STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN = False
 STEWARDSHIP_FAMILY_RUNTIME = None
 # The point-in-time export window in minutes (#1398; reports.export_window);
 # runtime assembly sets the deployment's own (profile_settings).

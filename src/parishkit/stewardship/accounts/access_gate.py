@@ -22,6 +22,8 @@ from .sessions import authenticated_admin
 AUTH_ROUTES = frozenset(
     {
         "/admin/login",
+        # The second sign-in step of a verified-address check (#2343).
+        "/admin/login/addresses/",
         "/admin/oauth/start",
         "/admin/oauth/callback",
         "/admin/logout",

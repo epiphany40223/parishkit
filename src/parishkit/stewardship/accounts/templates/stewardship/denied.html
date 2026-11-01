@@ -11,8 +11,15 @@
   verified for this person, and never says whether it was never added or
   removed. Its "Sign in with a different account" form starts the ordinary
   Google sign-in, which always asks Google for its account chooser.
+  "address_check" (#2343) is the Check your other email addresses page that
+  takes no_access's place when the deployment lets a Google account sign in
+  through another address Google verified for it; "address_check_again" is
+  its 30-day form for the standing match "due". A check's outcome adds one
+  "line" (web.security.address_check_line) under no_access's first
+  sentence. Both name only the address Google
+  verified for this person.
 {% endcomment %}
-{% block title %}{% if kind == "code" %}{% translate "Family code not accepted" %}{% elif kind == "link" %}{% translate "Family link not accepted" %}{% elif kind == "unavailable" %}{% translate "Sign-in temporarily unavailable" %}{% elif kind == "no_access" %}{% translate "No access with this account" %}{% elif kind == "unfinished" %}{% translate "Sign-in didn't finish" %}{% elif kind == "rate_limited" %}{% translate "Too many sign-in attempts" %}{% else %}{% translate "Access unavailable" %}{% endif %}{% endblock %}
+{% block title %}{% if kind == "code" %}{% translate "Family code not accepted" %}{% elif kind == "link" %}{% translate "Family link not accepted" %}{% elif kind == "unavailable" %}{% translate "Sign-in temporarily unavailable" %}{% elif kind == "no_access" %}{% translate "No access with this account" %}{% elif kind == "address_check_again" %}{% translate "Check your other email address again" %}{% elif kind == "address_check" %}{% translate "Check your other email addresses" %}{% elif kind == "unfinished" %}{% translate "Sign-in didn't finish" %}{% elif kind == "rate_limited" %}{% translate "Too many sign-in attempts" %}{% else %}{% translate "Access unavailable" %}{% endif %}{% endblock %}
 {% block content %}<section class="flow panel">
   {% if kind == "code" %}
   <h1>{% translate "Family code not accepted" %}</h1>
@@ -26,8 +33,16 @@
   {% elif kind == "no_access" %}
   <h1>{% translate "No access with this account" %}</h1>
   <p>{% blocktranslate %}You signed in with Google as <strong>{{ account }}</strong>, but that address doesn't have access to the Administration portal.{% endblocktranslate %}</p>
-  <p>{% translate "If the parish gave access to a different address, sign in with that one. It doesn't have to be a Gmail address, but it needs a Google Account." %}</p>
+  {{ line }}<p>{% translate "If the parish gave access to a different address, sign in with that one. It doesn't have to be a Gmail address, but it needs a Google Account." %}</p>
   <p>{% translate "Need access? Ask the parish staff member who manages access to this portal." %}</p>
+  {% elif kind == "address_check_again" %}
+  <h1>{% translate "Check your other email address again" %}</h1>
+  <p>{% blocktranslate with matched=due.email confirmed=due.confirmed_at|instant %}You signed in with Google as <strong>{{ account }}</strong>. This Google account signs in as <strong>{{ matched }}</strong>, which Google confirmed on <time datetime="{{ confirmed }}" data-local-instant data-day-only>{{ confirmed }}</time>. Every 30 days the portal asks Google again whether that address is still yours.{% endblocktranslate %}</p>
+  {% elif kind == "address_check" %}
+  <h1>{% translate "Check your other email addresses" %}</h1>
+  <p>{% blocktranslate %}You signed in with Google as <strong>{{ account }}</strong>, but that address doesn't have access to the Administration portal.{% endblocktranslate %}</p>
+  <p>{% translate "Your Google Account may also have other email addresses that Google has confirmed are yours, such as a work or parish address. If the parish gave access to one of them, you can sign in through it with this Google account." %}</p>
+  <p>{% translate "To check, Google will ask you to let this portal see your Google Account's email addresses. The portal looks at them once and doesn't keep them. If one of them has access, it remembers only that one address, which the parish already has." %}</p>
   {% elif kind == "unfinished" %}
   <h1>{% translate "Sign-in didn't finish" %}</h1>
   <p>{% translate "Signing in with Google didn't complete. This can happen if it was cancelled or the sign-in page was open for a while." %}</p>
@@ -39,7 +54,14 @@
   <p>{% translate "Sign-in is unavailable. Please try again." %}</p>
   {% endif %}
   {% if public_content %}<div class="content-block">{{ public_content|safe }}</div>{% endif %}
-  {% if kind == "no_access" %}<form method="post" action="/admin/login">
+  {% if kind == "address_check" or kind == "address_check_again" %}<form method="post" action="/admin/login/addresses/">
+    {% csrf_token %}{% button type="submit" %}{% if kind == "address_check_again" %}{% translate "Check again" %}{% else %}{% translate "Check my other addresses" %}{% endif %}{% endbutton %}
+  </form>
+  <form method="post" action="/admin/login">
+    {% csrf_token %}{% button type="submit" variant="secondary" %}{% translate "Sign in with a different account" %}{% endbutton %}
+  </form>
+  <p><a href="/">{% translate "Family campaign portal" %}</a></p>
+  {% elif kind == "no_access" %}<form method="post" action="/admin/login">
     {% csrf_token %}{% button type="submit" %}{% translate "Sign in with a different account" %}{% endbutton %}
   </form>
   <p><a href="/">{% translate "Family campaign portal" %}</a></p>
