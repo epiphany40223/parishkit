@@ -3958,6 +3958,12 @@ there, so the Administrator can rename them in one edit.
   same Families. A figure that cannot follow the choice is not on such a
   page. The same URL parameter (`scope`), values and default are used on
   every page, so a link keeps its population from page to page.
+- **Every file.** Each downloaded file of such a page (CSV, XLSX and PDF)
+  says which population it counts, "Families counted: …" in the choice's
+  words, in the file's header block under the report title, from the
+  population its request captured
+  ([file design](../reports/spec.md#file-design); the Administrator, R59
+  on [#2324](https://github.com/epiphany40223/parishkit/issues/2324)).
 - **One population only.** A page that can show only one population
   (because its data holds only one) has no choice, and says which in one
   fixed line in the same place, in the choice's words: for example
