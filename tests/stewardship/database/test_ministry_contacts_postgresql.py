@@ -28,6 +28,7 @@ from parishkit.stewardship.reports.ministry_contacts import (
     packet_contacts,
     request_contacts,
 )
+from parishkit.stewardship.reports.ministry_exports import offered_ministries
 from parishkit.stewardship.reports.ministry_followup import FollowupQuery
 from parishkit.stewardship.workflows.models import MinistryRequest
 
@@ -557,6 +558,8 @@ def test_a_leaves_contacts_follow_its_edit(response_service):
     assert {(row["duid"], row["in_campaign"]) for row in by_ministry} == {
         (9, True),
     }
+    # The packet form and ``export ministry`` offer what the SQL holds.
+    assert offered_ministries(harness.campaign.pk) == {9}
     _, captured = sections(packet(harness, staff.identity, (9,), history=True))
     assert set(captured) == {9}
     # Food pantry's section holds the edited leave (and, with the history

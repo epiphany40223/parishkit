@@ -2,7 +2,8 @@
 
 from uuid import UUID, uuid4
 
-from django.db.models import F, Func, Q, TextField
+from django.db.models import F, Func, IntegerField, Q, TextField
+from django.db.models.functions import Coalesce
 
 from parishkit.stewardship.accounts.policy import Capability, allows, current_principal
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
@@ -69,7 +70,9 @@ def offered_ministries(campaign_id):
 
     The campaign's configured Ministries, and a Ministry removed from a live
     campaign that keeps current (not withdrawn) requests, which the report
-    offers like any other, as the packet SQL does (#342). A request for a
+    offers like any other, as the packet SQL does (#342). A request is kept
+    by its Ministry in force: the one an Edit carried it into, else the
+    Family's (#2331), as the packet and report SQL read it. A request for a
     Member no longer in ParishSoft (#1217) does not keep one offered
     (#1219): the packet and report SQL leave it out, so this asks the same
     installed standing function, and only for the removed Ministries'
@@ -85,7 +88,12 @@ def offered_ministries(campaign_id):
             submission__campaign_id=campaign_id, submission__mode="live"
         )
         .exclude(state__in=("cancelled", "superseded"))
-        .exclude(ministry_duid__in=configured)
+        .annotate(
+            held=Coalesce(
+                "reviewed_ministry_duid", "ministry_duid", output_field=IntegerField()
+            )
+        )
+        .exclude(held__in=configured)
         .annotate(
             standing=Func(
                 F("pk"),
@@ -95,7 +103,7 @@ def offered_ministries(campaign_id):
         )
         .filter(~Q(entity_kind="member") | Q(standing="current"))
     )
-    return configured | set(kept.values_list("ministry_duid", flat=True))
+    return configured | set(kept.values_list("held", flat=True))
 
 
 def create_ministry_export(
