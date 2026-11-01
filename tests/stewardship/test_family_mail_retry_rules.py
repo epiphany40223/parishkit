@@ -141,3 +141,11 @@ def test_an_old_ordinary_outcome_does_not_fail_a_new_hold(history):
     history.history = LimitHistory(1, days(1), days(20), days(1))
     assert not dispatch.budget_spent(message, limited())
     assert history.logged == []
+
+
+def test_outcome_map_never_produces_retry_idempotent():
+    """Every provider observation maps to a non-idempotent action (#2371)."""
+    from parishkit.stewardship.jobs.delivery_states import DeliveryAction
+
+    assert set(dispatch.OUTCOME_ACTIONS) == set(Status)
+    assert DeliveryAction.RETRY_IDEMPOTENT not in dispatch.OUTCOME_ACTIONS.values()
