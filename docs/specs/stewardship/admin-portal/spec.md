@@ -37,7 +37,9 @@ that Google confirmed.
 
 A refused Admin sign-in says which kind of refusal it was
 ([#2116](https://github.com/epiphany40223/parishkit/issues/2116)). Each kind
-has one fixed page; the reason within a kind is never shown:
+has one fixed page; the reason within a kind is never shown, except the one
+line a check of the account's other verified addresses adds
+([verified-address outcomes](#verified-address-outcomes)):
 
 1. **No access with this account** (title and heading). Google verified the
    account, but it has no Admin access: no user has that address, the user
@@ -54,7 +56,8 @@ has one fixed page; the reason within a kind is never shown:
    a different account**, which posts the ordinary sign-in form and so asks
    Google for its account chooser (`prompt=select_account`), and the
    **Family campaign portal** link. Never added and removed read the same;
-   the page never says which. The address is the one Google verified on this
+   the page never says which (a verified-address outcome line is about the
+   account's other addresses, never about this one). The address is the one Google verified on this
    callback only: it is rendered server-side into this response, never put
    in a URL, query string or cookie, and logged no further than the existing
    named refusal ([#953](https://github.com/epiphany40223/parishkit/issues/953)).
@@ -83,7 +86,10 @@ person who is already signed in (such as a report view they may not read)
 keeps the generic "Access unavailable" page, without the sign-in wording
 ([refusals of a signed-in person](../ui-conventions/spec.md#pages-the-role-may-not-open)).
 Status codes, limiter accounting, the audit entries and the `next` handling
-are unchanged.
+are unchanged, except that a check of the account's other verified
+addresses adds its own audit entries (`admin_address_checked`,
+`admin_address_matched` and `admin_address_match_ended`,
+[verified-address outcomes](#verified-address-outcomes)).
 Rate-limit and suspicious-login events are logged.
 Concrete per-IP, verified-identity, proxy, and deployment-wide limits are
 defined by the
@@ -190,14 +196,29 @@ verified or not.
 on the web service) turns the check on; it is off by default. The scope it
 needs, `https://www.googleapis.com/auth/user.emails.read`, is a sensitive
 Google scope: until Google has verified the deployment's OAuth app
-([#2354](https://github.com/epiphany40223/parishkit/issues/2354) covers the
-pages and the setup), Google shows an "unverified app" warning, or refuses
-people who are not the project's test users. The Administrator turns the
-setting on after that verification. While it is off, nothing on this page
-or below happens: a sign-in address with no user goes straight to "No
-access with this account", and a Google account with a standing match
-signs in by its sign-in address only (its open sessions end by their
-12-hour limit). Turning it on again uses standing matches as before.
+([#2354](https://github.com/epiphany40223/parishkit/issues/2354); the
+public pages and the sign-in guide it needs are
+[#2360](https://github.com/epiphany40223/parishkit/pull/2360), and the
+[data specification](../data/spec.md#verified-address-match-records) says
+what changes there when this ships), Google shows an "unverified app"
+warning, or refuses people who are not the project's test users. The
+Administrator turns the setting on after that verification. Like
+`parishsoft_publication`, it is checked at startup: the deployment YAML
+takes `true` or `false` and the environment variable `1` or `0`, and any
+other value refuses to start with a configuration error. Only the web
+service reads it, the [local test
+sign-in](../local-environment/spec.md#local-test-sign-in) ignores it, and
+it is one of the deployment YAML's own keys, which a scripted upgrade
+keeps as they are. While it is off, nothing on this page or below
+happens: a sign-in address with no user goes straight to "No access with
+this account", a standing match gives no access (the sign-in refresh puts
+the account's address back to its sign-in address, and the match stays
+standing, unused), and every open session of a matched account, browser or
+command line, is cut at its next request, because every request re-checks
+that its match is usable
+([administration user and policy](../data/spec.md#administration-user-and-policy)
+says what the sign-in refresh writes in each case). Turning it on again
+makes standing matches usable again, each until its 30-day check.
 
 **Incremental consent.** The ordinary sign-in is unchanged: it asks Google
 for `openid email` only, as now. Only when the sign-in address matches no
@@ -223,7 +244,12 @@ offered once per sign-in: it is valid for 15 minutes after the first
 callback, from the same browser, and its pending state (the account's
 `PortalUser` ID and `sub`, and the checked `next`) lives only in the
 server-side pre-sign-in session, never in a URL, cookie value or form
-field.
+field. Each step's one-use state record carries which step it belongs to,
+and the callback branches on that record, never on the response's shape:
+a first-step state never takes the second-step branch, and a second-step
+state is refused ("Sign-in didn't finish") unless the pre-sign-in session
+holds a pending second step whose `PortalUser` ID and `sub` match the
+ones the state record names.
 
 **The second callback** is admitted as the first is (one-use state, the
 recovery epoch, the per-IP limits; its initiation counts as an OAuth
@@ -249,8 +275,11 @@ initiation). It then:
    sign-in shows Google's own consent screen once more. No token is stored
    anywhere, and none is requested for offline use, so there is no refresh
    token.
-5. Keeps only the addresses whose `metadata.verified` is `true`,
-   normalized as sign-in addresses are, and matches them against the
+5. Keeps only the addresses whose `metadata.verified` is `true` and whose
+   `metadata.source.type` is `ACCOUNT` (the Google Account's own
+   addresses, the only kind #2352 saw); a `PROFILE`, `CONTACT`,
+   `DOMAIN_PROFILE` or other entry never counts, even when flagged
+   verified. They are normalized as sign-in addresses are, and matches them against the
    current users ([verified-address outcomes](#verified-address-outcomes)).
    The list itself is never stored, logged or shown; only the one matched
    address is kept, as part of the match.
@@ -288,10 +317,13 @@ whether that address is still yours.", with **Check again** in place of
 Check my other addresses; the date is browser-local
 ([dates and times](../ui-conventions/spec.md#dates-and-times)).
 
-Showing either page is the first step's refusal: it is counted and
-recorded as `admin_login_refused`, as "No access with this account" is,
-since policy refused the sign-in address. A successful check then signs the
-person in and clears the identity counter, as any successful sign-in does.
+Showing the first-check page is the first step's refusal: it is counted
+and recorded as `admin_login_refused`, as "No access with this account" is,
+since policy refused the sign-in address. Showing the "again" form is not:
+the account has a match it routinely re-checks, so the page records
+nothing and does not count against the identity counter, and the check's
+own outcome is recorded (below). A successful check then signs the person
+in and clears the identity counter, as any successful sign-in does.
 
 ### Verified-address outcomes
 
@@ -316,13 +348,21 @@ sign-in addresses are, against the users of the active configuration:
   use**: an enabled Google account whose sign-in address it is has a live
   Admin or automation session, or a successful Admin sign-in less than 30
   days ago (read from the `admin_login` audit events, which outlast the
-  session rows, as Users' last sign-in is). Then the person already signs
-  in with that account, and someone who can read the address's mail without
-  owning that account (a mail delegate, a shared mailbox, a forwarding
-  rule) must not gain its user through a Google account of their own.
+  session rows). Then the person already signs in with that account, and
+  someone who can read the address's mail without owning that account (a
+  mail delegate, a shared mailbox, a forwarding rule) must not gain its
+  user through a Google account of their own.
 - **Taken:** a different Google account has a standing match for that
-  address whose last check is less than 30 days old (one Google account per
-  user).
+  address that is still in use in the same sense (it signed in less than
+  30 days ago, through the match, or holds a live session), or whose last
+  check is less than 30 days old (one Google account per user). A person
+  who signs in only through a match is protected as one who signs in with
+  the address itself.
+
+The page decides "in use" by calling the database's own
+`stewardship_address_in_use_v1`, which the guard also calls
+([verified-address match records](../data/spec.md#verified-address-match-records)),
+so the page and the guard cannot disagree.
 
 Every outcome but the first shows "No access with this account", with one
 line under its first sentence saying what was checked, and without Check my
@@ -344,7 +384,10 @@ guard as `admin_address_matched`
 Every other outcome records `admin_address_checked` with the account as
 actor and the outcome (`rechecked`, `declined`, `none`, `several`,
 `own_account_only` or `taken`) and, for a re-check, the match's ID as
-context, never an address. The refusing outcomes share `admin_login_refused`'s bounds (at most once per account
+context, never an address. Every successful sign-in through a match
+(made, re-checked or remembered) records its `admin_login` with the
+match's ID in the context (IDs only), so the audit itself says durably
+that the sign-in was a matched one. The refusing outcomes share `admin_login_refused`'s bounds (at most once per account
 every ten minutes and 20 per deployment in ten minutes; past them, the
 anonymous sample), so a loop of declined checks cannot fill the log.
 
@@ -374,34 +417,50 @@ the record and its SQL guard. Its rules:
   answer. Keeping the matched address is the minimum: it is how the
   account's later sign-ins find their user without asking Google every
   time, and it reveals nothing the parish did not already have. The
-  account's `PortalUser` holds the address it signs in as (the matched
-  address while the match stands) beside its sign-in address, so every
-  existing check that matches a signed-in person by address, in Python and
-  in SQL, sees the user's address.
+  account's `PortalUser` holds the address it acts as beside its sign-in
+  address, so every existing check that matches a signed-in person by
+  address, in Python and in SQL, sees the user's address. The
+  [data specification](../data/spec.md#administration-user-and-policy)
+  says once what the sign-in writes there in each case, and when a match
+  is **usable**: the setting is on, Google confirmed it less than 30 days
+  ago, and the user with that address is still the same user record.
 
 **Later sign-ins.** The match is remembered by `sub`. At each later sign-in
 whose sign-in address matches no user, while the setting is on:
 
-- a standing match whose address is still a user's, confirmed by Google
-  less than 30 days ago, signs the account in as that user without asking
-  Google again;
+- a usable standing match signs the account in as that user without
+  asking Google again;
 - a standing match confirmed 30 days ago or more shows the page in its
   "again" form. A check that finds the address still verified and still
   the one match refreshes the confirmation time (`rechecked`; no security
-  notice). Any other outcome ends the match (`not_confirmed`) and shows
-  its line;
-- a standing match whose address is no longer any user's ends
-  (`user_gone`), and the page is offered as for a first check.
+  notice). A completed check with any other outcome (None, Several, Own
+  account only or Taken) ends the match (`not_confirmed`) and shows its
+  line. A check that does not complete, because the person declined or
+  cancelled at Google, or ended in "Sign-in didn't finish" (a timeout or
+  error from Google, another `sub`, no ID token), does not end the match:
+  that is usually a passing failure, and the match stays standing but due,
+  giving no access until a check completes;
+- a standing match whose address no longer belongs to the user record it
+  was made for (the user was deleted, or deleted and added again with the
+  same address as a new record) ends (`user_gone`), and the page is
+  offered as for a first check.
+
+The 30 days are a hard bound, not only a sign-in rule: every request
+re-checks that the match is usable, so a browser or command-line session
+whose match passes 30 days is cut at its next request, and a command-line
+session approved through a match never outlives the match's 30 days
+([session rules](../admin-automation/spec.md#session-rules)).
 
 The 30 days bound how long an address the person removed from their
 Google Account keeps working here; Google itself never asks an account to
 confirm an address again, so a check cannot notice a mailbox that passed to
 someone else while the old account kept the address (see the
 [threat analysis](../architecture/spec.md#identity-and-session-security)).
-A match follows the address, as an account's own sign-in address does: if
-the user is deleted and the address added again as a new user, a match
-still standing (not yet ended by a sign-in) signs in as the new user. A
-change to the person's address in ParishSoft changes nothing here, because
+A match serves the user record it was made for: if the user is deleted and
+the address added again as a new user, the match gives no access from the
+next request and ends at the next sign-in (`user_gone`), so a new user
+never inherits an old match without a new check and a new security
+notice. A change to the person's address in ParishSoft changes nothing here, because
 users are not tied to ParishSoft; it changes which Ministries a Ministry
 leader leads, as for anyone ([Ministry leaders from
 ParishSoft](#ministry-leaders-from-parishsoft)).
@@ -426,21 +485,38 @@ Administrators of the active configuration at the match. Its target is the
 user's address, so the matched person's own acknowledgement settles nothing
 for the others. Its Home line reads "Google account _sign-in address_ now
 signs in as _user address_ (_Role_), because Google confirmed that address
-belongs to it. _time_." The database guard records it with the match, so no
-path can match without it. A match ending is audited without a notice, as
-a demotion is.
+belongs to it. _time_." When the match took the address over from another
+Google account (`replaced`), the line adds "It replaces Google account
+_old sign-in address_, which last signed in _time_." (or "which never
+signed in"), and the email and the event have a **Replaced Google
+account** row, so the Administrators see that someone's account was cut
+off. The database guard records it with the match, so no path can match
+without it. A match ending is audited without a notice, as a demotion is.
+
+The matched address itself is not emailed about a new match: the notice
+goes to the Administrators only (an Administrator decision is pending on
+[#2343](https://github.com/epiphany40223/parishkit/issues/2343), default
+no; a yes adds one email to the matched address here, with its own content
+and routing, and changes nothing else).
 
 **Ending a match.** A match ends when a sign-in finds the sign-in address
 matching a user, the address no longer a user's, or a re-check failing (as
 above); when a newer Google account checks the address after the standing
-match's 30 days have passed (`replaced`); or when an Administrator ends it.
+match's 30 days have passed and neither the matched account nor the
+address's own account has signed in for 30 days or holds a live session
+(`replaced`); or when an Administrator ends it. An Administrator's end, a
+`replaced` end and a `user_gone` end also end the old account's live Admin
+and command-line sessions in the same transaction.
 Edit user shows, when the user has a standing match and only then
 ([conditional fields](../ui-conventions/spec.md#conditional-fields)), a
 **Google account matched through this address** line below the form and
 the Sign-in activity controls: "**_sign-in address_** signs in through this
 address since _time_. Google last confirmed it on _time_.", with **End
-match**. End match opens the shared
-[confirmation dialog](../ui-conventions/spec.md#row-actions-and-confirmation):
+match**, a red destructive button (`button-danger`,
+[button emphasis](../ui-conventions/spec.md#button-emphasis)), since it
+ends sessions. End match opens the shared
+[confirmation dialog](../ui-conventions/spec.md#row-actions-and-confirmation),
+whose confirm button is the red **End match**:
 "End the match for _sign-in address_? That Google account can no longer
 sign in as this user, and its Admin sessions, including command-line
 sessions, end now. If Google still confirms the address, its owner can
@@ -453,8 +529,9 @@ ends as `admin_revoked`) and its live
 `user_match_end`, a POST to `/admin/users/<user>/match/end/`;
 [`pk-admin users end-match`](../admin-automation/spec.md#users-and-follow-up)
 is its command); the line then leaves
-[in place](../ui-conventions/spec.md#in-place-controls), and the status line
-says "Ended the match for _sign-in address_." A match that had already
+[in place](../ui-conventions/spec.md#in-place-controls), focus moves to the
+status line that takes its place, and the status line says "Ended the
+match for _sign-in address_." A match that had already
 ended changes nothing, and the status line says "This match had already
 ended; the page is up to date." An Administrator cannot end the match their
 own session signs in through (`match_own_account`: "You can't end the
@@ -467,11 +544,16 @@ itself is not safe, delete the user.
 the matched account with them, because it holds the user's address:
 [Users](#users-table)' Last successful sign-in, Edit user's Sign-in
 activity controls and the user's [Timeline](#user-timeline), whose
-Sign-ins and sign-outs also keep an ended match's lines for the time it
-stood. Where an actor is named by address
+Sign-ins and sign-outs and Admin actions count a matched account for its
+match's window (from the match to its end), standing or ended, read from
+the match records, so ending a match never hides what was done through
+it. Where an actor is named by address
 ([sign-in activity](#sign-in-activity), [Signed-in
-sessions](#signed-in-sessions)' User column), a matched account reads
-"_user address_ through _sign-in address_". The Timeline lists "Google
+sessions](#signed-in-sessions)' User column), a matched account's entry
+from inside a match's window reads "_user address_ through _sign-in
+address_", from that match record, and one from outside every window reads
+its sign-in address, so the label never changes when a match ends. The
+Timeline lists "Google
 account matched" and "Match ended" (with the reason in plain words) under
 Role changes. A [restore](../operations/spec.md#restore) brings back the
 backup's matches, including one ended after the backup, so the
@@ -8540,9 +8622,11 @@ are:
   sign-in of the person's Google accounts (System logs'
   [sign-in activity](#sign-in-activity) types). A Google account
   [matched](#verified-address-matches) through the address counts for the
-  time from its match to its end only.
+  time from its match to its end only (each window, standing or ended,
+  read from the match records, never from the account's current address).
 - **Admin actions:** every other audit record whose actor is one of those
-  accounts, except page views, worded from its [System logs](#logs)
+  accounts (a matched account for its match windows only, as above, so
+  ending a match never drops what was done through it), except page views, worded from its [System logs](#logs)
   sentence (see Wording below), plus "Refused" or
   "Failed" when that is its outcome. An Administrator signing out another
   person's session is an action.
@@ -12696,8 +12780,9 @@ types internal type names one at a time:
   other outcome of a
   [check of a Google account's other verified addresses](#verified-address-outcomes),
   and the end of a match (by the person's sign-in, or by an Administrator
-  as actor); a matched account's entries
-  name it as "_user address_ through _sign-in address_";
+  as actor); a matched account's entries from inside a match's window
+  name it as "_user address_ through _sign-in address_" (and its
+  `admin_login` entries carry the match's ID);
 - `admin_login_refused`, a sign-in by a Google account that Google verified
   and policy then refused (no user with that address, a disabled identity,
   or the SQL session guard finding the user gone at the session insert;

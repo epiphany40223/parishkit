@@ -321,14 +321,23 @@ no token is stored. What it allows and what bounds it:
   The exception is a mailbox whose own Google account they cannot use (a
   Workspace account read through mail delegation, a shared mailbox or a
   forwarding rule): for that, the match is refused while the address's own
-  Google account is in use here (a live session, or a successful sign-in
-  in the last 30 days).
+  Google account, or the Google account already matched to it, is in use
+  here (a live session, or a successful sign-in in the last 30 days), as
+  one database function decides for the page and the guard alike.
 - *The first Administrator.* That address is never matched (page and
   database guard), so access recovery never depends on another account.
 - *Two users.* An account whose verified addresses belong to two users gets
   no access; one Google account per user (a unique standing match per
   address) keeps a second account from quietly joining a user, and a newer
-  account takes a match over only after the old one's 30-day check lapsed.
+  account takes a match over only after the old one's 30-day check lapsed
+  and it has not signed in for 30 days; the takeover ends the old
+  account's sessions and the security notice names the replaced account.
+- *Staying power.* Every request, browser or command line, re-checks that
+  the match is usable (the deployment setting on, Google's confirmation
+  less than 30 days old, the same user record), so turning the setting off
+  or a lapsed check cuts open sessions at their next request, and a
+  command-line session approved through a match never outlives its 30
+  days.
 - *Detection.* Every new match raises the durable Home security notice and
   email to the Administrators, and is audited with the account; an
   Administrator can end a match at once, ending its sessions.
@@ -339,7 +348,8 @@ no token is stored. What it allows and what bounds it:
   silently.
 
 Residual risks, accepted: a mail delegate of a user whose own Google
-account has not signed in here for 30 days can match it (the security
+account (and any account already matched to the address) has not signed
+in here for 30 days can match it (the security
 notice is then the control); Google never asks an account to confirm an
 address again, so a person who loses a mailbox (a shared or role address
 handed to someone else, a former staff member's parish address) but keeps
@@ -348,7 +358,8 @@ account made with that address as its sign-in address keeps working today;
 deleting or replacing the user is the control, and the Users page and
 Timeline show the matched account. An address the person removes from
 their Google Account keeps working here until the match's next 30-day
-check (Admin sessions last at most 12 hours each). Which addresses Google
+check, at most 30 days after Google last confirmed it, since every
+session is cut at that mark. Which addresses Google
 lets an account verify is Google's policy, not the portal's. A person who
 declines the check, or a deployment that keeps the setting off, is exactly
 where sign-in is today.

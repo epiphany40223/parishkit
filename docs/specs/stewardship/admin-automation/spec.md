@@ -598,7 +598,15 @@ longer an Administrator.
   approval) or until it ends. Use does not extend it, nothing renews it, and
   there is no idle limit on the automation session itself. Every command
   whose session has less than 72 hours left writes a warning to standard
-  error.
+  error. A session approved by a Google account that signs in through a
+  [verified-address match](../admin-portal/spec.md#verified-address-matches)
+  ([#2343](https://github.com/epiphany40223/parishkit/issues/2343)) gets an
+  `expires_at` no later than that match's `confirmed_at` plus 30 days,
+  whatever lifetime was asked for, and approval says the shorter end
+  date. Every command also ends it at once when the match stops being
+  usable (the deployment setting turned off, the match ended, its 30 days
+  passed, or its user deleted), because the principal then has no role
+  ([administration user and policy](../data/spec.md#administration-user-and-policy)).
 - **Role loss, removal, recovery and restore.** A session ends as soon as its
   principal is no longer an Administrator, is disabled or removed, or an
   offline Admin-access recovery is recorded. Every command checks this before
