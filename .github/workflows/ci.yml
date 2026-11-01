@@ -406,7 +406,24 @@ jobs:
       - name: Responsive, keyboard, accessibility, and session component checks
         env:
           PARISHKIT_RUN_BROWSER_TESTS: "1"
+          # Each partition copies its test start/end log here (#2355).
+          BROWSER_PROGRESS_DIR: ${{ runner.temp }}/browser-progress
         run: python -m parishkit.stewardship.quality_browser --runs "$BROWSER_RUNS"
+      # Artifact names cannot hold the ":", "/" or space in a matrix entry.
+      - name: Name the browser progress artifact
+        if: ${{ failure() }}
+        run: echo "BROWSER_ARTIFACT=${BROWSER_RUNS//[^A-Za-z0-9]/-}" >> "$GITHUB_ENV"
+      # On failure (a budget kill, a hang or a failed test), keep what each
+      # partition ran and how long each test took, so a hang is diagnosable
+      # without a rerun (#2355).
+      - name: Retain the browser progress log
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-progress-${{ env.BROWSER_ARTIFACT }}
+          path: ${{ runner.temp }}/browser-progress/
+          if-no-files-found: ignore
+          retention-days: 7
 
   # Preserve the protected check name, including failed/cancelled matrix work.
   stewardship-browser:

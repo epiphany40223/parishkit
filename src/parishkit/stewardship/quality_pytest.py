@@ -114,6 +114,11 @@ def running_path(receipt):
     return receipt.with_name(f"{receipt.name}.running")
 
 
+def progress_path(receipt):
+    """The sidecar beside a browser receipt logging each test's start and end."""
+    return receipt.with_name(f"{receipt.name}.progress")
+
+
 class BrowserSelection:
     """A CI-only complete-suite partition; normal developer selection is unchanged."""
 
@@ -130,6 +135,7 @@ class BrowserSelection:
         self.directory = config.rootpath.resolve() / "tests/stewardship/browser"
         self.selected = []
         self.executed = []
+        self.seconds = {}
         self.evidence = None
         self.started = None
         if value := config.getoption("--ci-browser-evidence"):
@@ -220,11 +226,21 @@ class BrowserSelection:
         time budget can say which test was running (#2001).
         """
         if self.evidence:
+            self.log_progress(f"START {nodeid}")
             # Temp file plus os.replace, so a kill never leaves it empty.
             path = running_path(self.evidence)
             temp = path.with_name(path.name + ".tmp")
             temp.write_text(f"{nodeid}\n", encoding="utf-8")
             os.replace(temp, path)
+
+    def log_progress(self, line):
+        """Append LINE to the progress sidecar, closing it so a kill loses nothing.
+
+        The parent prints the running and last completed tests from this
+        file when it kills a partition at its budget (#2355).
+        """
+        with progress_path(self.evidence).open("a", encoding="utf-8") as stream:
+            stream.write(f"{line}\n")
 
     def pytest_runtest_logreport(self, report):
         """Count actual assertion-body execution, not collection or fixture setup.
@@ -235,6 +251,13 @@ class BrowserSelection:
         """
         if report.when == "call" and report.passed:
             self.executed.append(report.nodeid)
+        if self.evidence:
+            # A test's seconds are its setup, call and teardown together.
+            seconds = self.seconds[report.nodeid] = (
+                self.seconds.get(report.nodeid, 0) + report.duration
+            )
+            if report.when == "teardown":
+                self.log_progress(f"END {report.nodeid} elapsed={seconds:.3f}s")
         if report.failed and self.evidence:
             with failures_path(self.evidence).open("a", encoding="utf-8") as stream:
                 stream.write(f"{report.nodeid}\n")
