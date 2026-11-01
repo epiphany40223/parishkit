@@ -553,7 +553,8 @@ from **smoke tests** (human-run, credential-dependent, never in CI).
   values, and stay out of normal CI.** They are operator tooling, not part of the
   test suite — and so are intentionally **not** given their own spec; this
   philosophy is their specification. They cover ParishSoft connectivity, Google
-  API access, Constant Contact list access + the device-OAuth bootstrap, Google
+  API access, the Google People API email addresses of the signed-in account,
+  Constant Contact list access + the device-OAuth bootstrap, Google
   Workspace email, and Slack notification. Their operator instructions are in
   `scripts/smoke-tests/README.md`.
 - **Lint/format**: `ruff` with rule sets `E,F,I,UP,B,SIM`, line length 88,
