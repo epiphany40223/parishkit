@@ -461,6 +461,7 @@ case "$*" in
     *" retarget-image --config "*)
         [ -z "$FAKE_RETARGET_FAIL" ] || { echo "retarget refused" >&2; exit 1; }
         bulk=false batch=20 latency="" window="" minutes="" publication=false
+        alternate=false
         for arg in "$@"; do
             case "$arg" in
                 PARISHKIT_STEWARDSHIP_BULK_FAMILY_SEND=1) bulk=true ;;
@@ -474,6 +475,9 @@ case "$*" in
                     # FAKE_RETARGET_NO_PARISHSOFT: a retarget that lost it.
                     [ -n "$FAKE_RETARGET_NO_PARISHSOFT" ] ||
                         latency="$latency"', "parishsoft_base_url": "'"${arg#*=}"'"' ;;
+                PARISHKIT_STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN=1)
+                    # FAKE_RETARGET_NO_ALTERNATE: a retarget that lost it.
+                    [ -n "$FAKE_RETARGET_NO_ALTERNATE" ] || alternate=true ;;
                 PARISHKIT_STEWARDSHIP_PARISHSOFT_PUBLICATION=1)
                     # FAKE_RETARGET_NO_PUBLICATION: a retarget that lost it.
                     [ -n "$FAKE_RETARGET_NO_PUBLICATION" ] || {
@@ -526,7 +530,14 @@ case "$*" in
         else
             jq "del($key)" "$web.new" >"$web"
         fi
-        rm -f "$web.new"
+        # Sign-in through another verified address (#2343), web's only.
+        key=.deployment.alternate_address_sign_in
+        if [ "$alternate" = true ]; then
+            jq "$key = true" "$web" >"$web.new"
+        else
+            jq "del($key)" "$web" >"$web.new"
+        fi
+        mv "$web.new" "$web"
         if [ -n "$FAKE_RENDER_LAYOUT" ]; then
             upper=$(tr '[:lower:]' '[:upper:]' <<<"$FAKE_RENDER_LAYOUT")
             rendered_var=FAKE_COMPOSE_$upper
@@ -1332,6 +1343,66 @@ def test_a_rollback_does_not_carry_the_window(tmp_path):
     assert name not in calls[first(calls, " retarget-image ")]
     assert "is not carried into a rollback" in output
     assert "export download window is 30 minutes; keeping it" not in output
+
+
+def _alternate(root):
+    """A ``prepare`` whose web document has sign-in through another
+    verified address on (#2343)."""
+    path = root / "config" / "services" / "web.yaml"
+    document = json.loads(path.read_text())
+    document["deployment"]["alternate_address_sign_in"] = True
+    path.write_text(json.dumps(document))
+
+
+ALTERNATE = "PARISHKIT_STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN"
+
+
+def test_sign_in_through_another_address_is_carried_over_and_can_change(tmp_path):
+    """Off renders nothing; on is carried into the retarget and checked in
+    the rendered web document, and the operator's variable turns it on or
+    off (#2343)."""
+    calls, output, _ = run_host(tmp_path / "default", "upgrade")
+    assert ALTERNATE not in calls[first(calls, " retarget-image ")]
+    assert "another verified address" not in output
+    calls, output, _ = run_host(tmp_path / "kept", "upgrade", prepare=_alternate)
+    assert f"{ALTERNATE}=1" in calls[first(calls, " retarget-image ")]
+    assert "sign-in through another verified address is on; keeping it on" in output
+    calls, output, _ = run_host(
+        tmp_path / "off", "upgrade", prepare=_alternate, env={ALTERNATE: "0"}
+    )
+    assert ALTERNATE not in calls[first(calls, " retarget-image ")]
+    calls, output, _ = run_host(tmp_path / "on", "upgrade", env={ALTERNATE: "1"})
+    assert f"{ALTERNATE}=1" in calls[first(calls, " retarget-image ")]
+
+
+def test_a_retarget_that_lost_the_alternate_sign_in_is_a_named_problem(tmp_path):
+    """The rendered web document must say what was carried over."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        status=1,
+        prepare=_alternate,
+        env={"FAKE_RETARGET_NO_ALTERNATE": "1"},
+    )
+    assert "web: sign-in through another verified address is false, not true" in output
+
+
+@pytest.mark.parametrize("value", ["yes", "true", "2", "on"])
+def test_a_bad_alternate_sign_in_value_is_refused_before_anything_stops(
+    tmp_path, value
+):
+    """Only 1 or 0, checked before web stops (#2343)."""
+    calls, output, _ = run_host(tmp_path, "upgrade", status=1, env={ALTERNATE: value})
+    assert f"{ALTERNATE} must be 1 or 0" in output
+    assert not any(" retarget-image " in call for call in calls)
+    assert not any(" stop " in call for call in calls)
+
+
+def test_a_rollback_does_not_carry_the_alternate_sign_in(tmp_path):
+    """A rollback renders it off and says so (#2343)."""
+    calls, output, _ = run_host(tmp_path, "rollback", prepare=_alternate)
+    assert ALTERNATE not in calls[first(calls, " retarget-image ")]
+    assert "is not carried into a rollback; it is off" in output
 
 
 def test_a_partial_static_refresh_says_how_to_restore(tmp_path):
