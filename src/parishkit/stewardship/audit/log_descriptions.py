@@ -111,6 +111,29 @@ DESCRIPTIONS = {
         "every ten minutes per account, and for at most 20 accounts every ten "
         "minutes."
     ),
+    # Sign-in through another verified address (#2343): a Google account
+    # whose sign-in address is no user's acting as the one user whose address
+    # Google confirmed for it.
+    "admin_address_matched": _(
+        "A Google account was matched to a user through another of its email "
+        "addresses that Google confirmed belongs to it, so it now signs in as "
+        "that user. The actor is that account."
+    ),
+    "admin_address_checked": _(
+        "A Google account's other email addresses, which Google confirmed "
+        "belong to it, were checked at sign-in without making a new match: "
+        "the match was confirmed again, or the check gave no access. The "
+        "actor is that account. A check that gave no access is recorded at "
+        "most once every ten minutes per account, and for at most 20 accounts "
+        "every ten minutes."
+    ),
+    "admin_address_match_ended": _(
+        "A Google account stopped signing in as a user through another of its "
+        "email addresses: its own address became a user's, the user was "
+        "removed, Google no longer confirmed the address, another Google "
+        "account took the address over after 30 days unused, or an "
+        "Administrator ended the match."
+    ),
     "family_login": _("A Family signed in to the Family form."),
     "family_assisted_login": _(
         "Staff signed in to the Family form for a Family through Open form."

@@ -100,6 +100,11 @@ SESSION_WORDS = {
     "admin_privileges_changed": _("Session replaced"),
     "admin_login_refused": _("Sign-in refused"),
     "admin_login_denied": _("Sign-in refused"),
+    # Sign-in through another verified address (#2343). Their Role changes
+    # lines and match windows come with the Timeline's slice 3 work.
+    "admin_address_checked": _("Checked the Google account's other addresses"),
+    "admin_address_matched": _("Google account matched"),
+    "admin_address_match_ended": _("Match ended"),
 }
 # The detail some session lines carry, in the System logs sentences' terms.
 SESSION_DETAILS = {

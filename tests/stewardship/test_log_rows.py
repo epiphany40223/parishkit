@@ -408,6 +408,9 @@ def test_sign_in_activity_is_a_closed_link_filter():
     Admin sign-in audit types, and may travel in a link and an export."""
     query = LogQuery.parse({"activity": "sign_in"})
     assert set(query.activity_types) == {
+        "admin_address_checked",
+        "admin_address_match_ended",
+        "admin_address_matched",
         "admin_login",
         "admin_login_denied",
         "admin_login_refused",
