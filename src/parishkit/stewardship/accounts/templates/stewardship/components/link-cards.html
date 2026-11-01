@@ -2,10 +2,12 @@
   A grid of link cards (ui-conventions "Overview pages", #1673): each card
   is one place to go next. ``cards`` are rows with ``label``, ``url`` (None
   while the menu greys the page out), ``reason`` (the menu's reason then),
-  ``count`` (None for none) and ``note`` (what the count means), such as
+  ``count`` (None for none), ``stage`` (the stages the count adds up,
+  before it) and ``note`` (what the count means, after it), such as
   home_steps.Step; ``cards_labelledby`` is the id of the heading that names
-  the list. A card that links reads its label, then its count and note, in
-  DOM order, so the link's name is "Census changes 4 to do". The start bar
+  the list. A card that links reads its label, then its stages, count and
+  note, in DOM order, so the link's name is "Census changes To review and
+  Conflict: 4" (#2331). The start bar
   only reinforces the count: warning while above zero, accent at zero, the
   plain edge without a count. A greyed card is muted text with the reason,
   never a link. A row's ``other`` (home_steps.Other, or None) is a second,
@@ -15,4 +17,4 @@
   is above zero (#1576). With ``live`` (a scope, such as its panel's
   stream) each card is an item of a review region (#2174), keyed by its
   label within that scope, so its count updates itself.
-{% endcomment %}<ul class="link-cards" aria-labelledby="{{ cards_labelledby }}">{% for card in cards %}<li class="link-card{% if not card.url %} link-card-off{% elif card.count or card.other %} link-card-attention{% elif card.count is not None %} link-card-clear{% endif %}{% if card.url and card.other %} link-card-split{% endif %}" data-link-card{% if live %} data-live-item="{{ card.label|live_key:live }}" data-live-token="{{ card|live_token }}"{% endif %}>{% if card.url %}<a href="{{ card.url }}"><span class="link-card-label">{{ card.label }}</span>{% if card.count is not None %} <span class="link-card-count">{{ card.count|number }}</span>{% if card.note %} <span class="link-card-note">{{ card.note }}</span>{% endif %}{% endif %}</a>{% if card.other %} <a class="link-card-other" href="{{ card.other.url }}">{{ card.other.count|number }} {{ card.other.note }}<span class="visually-hidden"> {{ card.other.more }}</span></a>{% endif %}{% else %}<span class="link-card-label">{{ card.label }}</span> <span class="link-card-note">{{ card.reason }}</span>{% endif %}</li>{% endfor %}</ul>
+{% endcomment %}<ul class="link-cards" aria-labelledby="{{ cards_labelledby }}">{% for card in cards %}<li class="link-card{% if not card.url %} link-card-off{% elif card.count or card.other %} link-card-attention{% elif card.count is not None %} link-card-clear{% endif %}{% if card.url and card.other %} link-card-split{% endif %}" data-link-card{% if live %} data-live-item="{{ card.label|live_key:live }}" data-live-token="{{ card|live_token }}"{% endif %}>{% if card.url %}<a href="{{ card.url }}"><span class="link-card-label">{{ card.label }}</span>{% if card.count is not None %}{% if card.stage %} <span class="link-card-note">{{ card.stage }}:</span>{% endif %} <span class="link-card-count">{{ card.count|number }}</span>{% if card.note %} <span class="link-card-note">{{ card.note }}</span>{% endif %}{% endif %}</a>{% if card.other %} <a class="link-card-other" href="{{ card.other.url }}">{{ card.other.count|number }} {{ card.other.note }}<span class="visually-hidden"> {{ card.other.more }}</span></a>{% endif %}{% else %}<span class="link-card-label">{{ card.label }}</span> <span class="link-card-note">{{ card.reason }}</span>{% endif %}</li>{% endfor %}</ul>

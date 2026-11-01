@@ -2860,7 +2860,10 @@ the reviewer decides again against ParishSoft's current value
 
 The filters sit above the table, always open, as on every
 [worklist](../ui-conventions/spec.md#admin-tables): **Stage** first, with
-each stage's count (To review by default; Conflict, Ready to update,
+each stage's count (To review and Conflict together by default, the
+stages the menu's badge and Home count, as the
+[Review worklist](../review-pipeline/spec.md#review-worklist) records; then
+To review, Conflict, Ready to update,
 Updating, To enter by hand, Entered by hand, Updated in ParishSoft,
 Confirmed, Ignored, History for superseded and cancelled rows, and Every
 stage, which counts everything but History), then a Family name or DUID

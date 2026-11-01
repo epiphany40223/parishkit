@@ -368,7 +368,9 @@ def family_tiles(counts, *, recent=None, testing=False):
         tiles.append(
             tile(
                 "recent",
-                _("Responded in the past 24 hours"),
+                # Every Family with any submission in the rolling 24 hours,
+                # a resubmission too, so the label says submitted (#2331).
+                _("Families who submitted in the past 24 hours"),
                 recent,
                 details=(_("Testing responses, while in Testing mode"),)
                 if testing

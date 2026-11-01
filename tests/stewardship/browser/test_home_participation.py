@@ -27,7 +27,7 @@ def test_responses_are_tiles_with_one_share_bar(page, component_origin, width):
         [
             "Campaign Families",
             "Campaign Families responded",
-            "Responded in the past 24 hours",
+            "Families who submitted in the past 24 hours",
         ]
     )
     expect(tiles.locator(".stat-value")).to_have_text(["400", "150", "12"])

@@ -119,7 +119,13 @@ STAGES = (
     Stage.IGNORED,
 )
 EVERY_STAGE = "all"
+# The Stage choice the page opens on (#2331): To review and Conflict
+# together, the two stages that need a person and that the menu's badge and
+# Home count (``OPEN_STAGES``), so the page opens on the number they show.
+OPEN_CHOICE = "to_review_conflict"
+OPEN_CHOICE_LABEL = f"{Stage.TO_REVIEW.label} and {Stage.CONFLICT.label}"
 STAGE_CHOICES = (
+    OPEN_CHOICE,
     *(stage.value for stage in STAGES),
     NOT_SEEN,
     Stage.HISTORY.value,
@@ -205,7 +211,8 @@ class CensusQuery:
     """The page's filters; identifying search text travels only in POST bodies.
 
     ``stage`` is the review worklist's Stage filter (#1683), which the page
-    always sends (To review by default); when it is set, ``status`` and
+    always sends (To review and Conflict by default, ``OPEN_CHOICE``,
+    #2331); when it is set, ``status`` and
     ``history`` are not used. ``pk-admin report census`` and ``export
     census`` still filter by ``status``, whose "open" default is To do and
     Conflict, plus To review for an Administrator, until #1688 renames
@@ -1188,6 +1195,8 @@ def wanted(row, query, *, administrator):
     """Whether the Stage filter (or pk-admin's status filter) keeps ``row``."""
     if query.stage == NOT_SEEN:
         return row["not_seen"]
+    if query.stage == OPEN_CHOICE:
+        return row["stage"] in {stage.value for stage in OPEN_STAGES}
     if query.stage:
         return query.stage == row["stage"] or (
             query.stage == EVERY_STAGE and row["stage"] != Stage.HISTORY.value

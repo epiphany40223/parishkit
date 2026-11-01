@@ -113,7 +113,8 @@ def test_active_campaign_steps_and_counts(response_service, google):
     assert response.status_code == 200
     html = panel(body)
     listed = steps(html)
-    assert [re.sub(r" \d.*", "", step) for step in listed] == [
+    # Each card's name, before its stages or its count (#2331).
+    assert [re.sub(r" (\d|To review).*", "", step) for step in listed] == [
         "Census changes",
         "Ministry requests to enter by hand",
         "Additional information",
@@ -123,8 +124,8 @@ def test_active_campaign_steps_and_counts(response_service, google):
     ]
     # No request is resolved yet, so nothing waits to be entered (#1590).
     assert "Ministry requests to enter by hand 0 to enter by hand" in listed
-    # The follow-up request the harness made is open in the queue.
-    assert "Ministry requests 2 open" in listed
+    # The follow-up requests the harness made are To review in the queue.
+    assert "Ministry requests To review: 2" in listed
     assert 'href="/admin/mail/sent/"' in html
     since = database_now() - timedelta(hours=24)
     recent = (

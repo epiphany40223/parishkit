@@ -56,6 +56,10 @@ def test_staff_see_and_take_every_review_decision(response_service, google):
     assert response.status_code == 200
     page = body.decode()
     assert "To review (4)" in page and "Summary" not in page
+    # It opens on To review and Conflict, the count its badge shows (#2331).
+    assert (
+        '<option value="to_review_conflict" selected>To review and Conflict (4)' in page
+    )
     assert page.count('data-row-action="accept"') == 4
     marks = re.findall(r'<button[^>]*data-row-action="entered_by_hand"[^>]*>', page)
     assert marks and all('aria-disabled="true"' in mark for mark in marks)

@@ -22,6 +22,7 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.ministry_roster_views import roster_rows
 from parishkit.stewardship.reports.ministry_worklist import WorklistQuery, read_rows
+from parishkit.stewardship.responses.models import ProposedChange
 from parishkit.stewardship.workflows.roster import can_tick
 
 from .response_builders import activate_response_service
@@ -135,19 +136,24 @@ def test_home_and_menu_show_the_census_count_for_an_administrator(
     response_service, google
 ):
     """Signed in, the menu and Home's Next steps carry the same Census
-    changes count, To review and Conflict, as "N to do"."""
+    changes count, named by its stages, "To review and Conflict: N" (#2331).
+    One change is a Conflict, so the count is the page's default Stage
+    choice, To review and Conflict, not To review alone."""
     harness = response_service
     start(harness)
     harness = activate_response_service(harness)
     submit_live(harness)
+    conflicted(ProposedChange.objects.get(field="first_name"))
     browser, _, _, _ = leader(harness, google, roles=("administrator",))
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read(browser, "/admin/")
     assert response.status_code == 200
-    expected = len(worklist(harness, ADMIN, stage="to_review")["rows"])
+    assert len(worklist(harness, ADMIN, stage="to_review")["rows"]) == 1
+    assert len(worklist(harness, ADMIN, stage="conflict")["rows"]) == 1
+    expected = len(worklist(harness, ADMIN, stage="to_review_conflict")["rows"])
     assert expected == 2
     assert _menu_count(body, "Census changes") == expected
-    assert f"Census changes {expected} to do" in steps(body)
+    assert f"Census changes To review and Conflict: {expected}" in steps(body)
     assert 'href="/admin/reports/census/"' in body.decode()
 
 
