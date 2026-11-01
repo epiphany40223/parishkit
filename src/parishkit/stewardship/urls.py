@@ -13,6 +13,7 @@ from .accounts import (
     family_authentication,
     hosted_file_serving,
     presence,
+    public_pages,
     restore_review_views,
     security_event_views,
     session_views,
@@ -47,6 +48,10 @@ public_patterns = [
     path("access/<str:token>", family_authentication.access, name="access"),
     # Hosted files (#346): public, by unguessable token.
     path("files/<str:token>", hosted_file_serving.public_file, name="hosted_file"),
+    # The public information pages Google's OAuth verification needs (#2354).
+    path("about/", public_pages.about, name="about"),
+    path("privacy/", public_pages.privacy, name="privacy"),
+    path("terms/", public_pages.terms, name="terms"),
 ]
 family_patterns = [
     path("form", response_views.start, name="form"),

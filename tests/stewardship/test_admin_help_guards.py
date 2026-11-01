@@ -34,6 +34,10 @@ FAMILY_PAGES = {
     "family-maintenance.html",
     "family-unavailable.html",
     "hosted-file-unavailable.html",
+    # The public information pages (#2354): for anyone, no sign-in.
+    "public-about.html",
+    "public-privacy.html",
+    "public-terms.html",
 }
 ADMIN_TEMPLATES = sorted(
     path.name for path in TEMPLATES.glob("*.html") if path.name not in FAMILY_PAGES

@@ -1,0 +1,80 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% comment %}
+  The Privacy policy (#2354). Public, no sign-in. Every statement here must be
+  true of the code: each one traces to the specification that owns the
+  behavior (architecture spec, "Public information pages", lists them), and a
+  change to that behavior updates this page in the same pull request. Planned
+  work is not described until it ships (#2343's Google-verified alternate
+  addresses are added then). Change public_pages.UPDATED with the wording.
+{% endcomment %}
+{% block title %}{% translate "Privacy policy" %}{% endblock %}
+{% block content %}<article class="flow panel public-page">
+  <h1>{% translate "Privacy policy" %}</h1>
+  <p>{% blocktranslate trimmed with name=contact.name %}This site is the stewardship renewal site of {{ name }}. Families use it to look over their household's information, to choose ministries and to make a pledge. Parish staff and volunteers use it to follow up. This page explains what information the site uses, why, and who can see it.{% endblocktranslate %}</p>
+
+  <h2>{% translate "Information from the parish's records" %}</h2>
+  <p>{% translate "The site reads the parish's own membership records from ParishSoft, the parish's membership system. It copies only what the stewardship form and the parish's follow-up need:" %}</p>
+  <ul>
+    <li>{% translate "for each Family: its name, envelope number, registration status, home address, email addresses and phone numbers, and whether it asked for no mail;" %}</li>
+    <li>{% translate "for each household member: name, birth date, gender, marital status, language, email address and phone numbers, and a date of death where the parish recorded one;" %}</li>
+    <li>{% translate "the parish's ministries and who serves in them, including ministry leader roles; and" %}</li>
+    <li>{% translate "each Family's pledges and gifts to the funds the parish chose for the campaign. Gifts recorded as anonymous are left out." %}</li>
+  </ul>
+  <p>{% translate "The site does not copy Social Security numbers or other details the form does not use." %}</p>
+
+  <h2>{% translate "Information Families give" %}</h2>
+  <p>{% translate "When a Family signs in, it can, depending on what the parish asks this year:" %}</p>
+  <ul>
+    <li>{% translate "correct its household's information, add a household member, or say that someone has moved away or died;" %}</li>
+    <li>{% translate "choose ministries to join or leave;" %}</li>
+    <li>{% translate "make a pledge for the coming year, with how often and how it plans to give; and" %}</li>
+    <li>{% translate "write a note to the parish." %}</li>
+  </ul>
+  <p>{% translate "A pledge records an intention only. The site never takes a payment and never asks for bank or card details." %}</p>
+  <p>{% translate "The site keeps every response a Family submits. Parish staff review the changes a Family suggests, and only the changes they approve are copied into ParishSoft. The site also notes when a Family first opened its form and how far it got, so the parish knows whom to remind." %}</p>
+
+  <h2>{% translate "Family codes and links" %}</h2>
+  <p>{% translate "The parish emails each Family its own code and personal link. Anyone who has them can open that Family's form while the campaign is open, so please keep them private. A Family's session ends after 60 minutes without activity, and after four hours at most." %}</p>
+
+  <h2>{% translate "Google sign-in for parish staff and volunteers" %}</h2>
+  <p>{% translate "Parish staff, Administrators and Ministry leaders sign in with a Google account. The site asks Google only for the account's email address and whether Google has verified it. With that, Google also sends the account's fixed ID number and, for an organization's Google Workspace account, the organization's domain name." %}</p>
+  <p>{% translate "The site keeps the account's ID number, email address and domain, and when it last signed in. It uses them only to know who is signing in, to decide what that person may see, and to keep a record of sign-ins. It does not ask Google for, or keep, your name, photo, contacts, email, files or anything else in your Google account. A Google account on its own gives no access: what you can see depends on the role the parish gave your email address." %}</p>
+  <p>{% blocktranslate trimmed %}ParishKit Stewardship's use and transfer to any other app of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements.{% endblocktranslate %}</p>
+
+  <h2>{% translate "Who can see your information" %}</h2>
+  <ul>
+    <li>{% translate "A Family sees only its own information, after signing in with its code or link." %}</li>
+    <li>{% translate "Parish staff and Administrators can see every Family's information and responses." %}</li>
+    <li>{% translate "Ministry leaders see information about the ministries they lead, such as who asked to join or leave them." %}</li>
+    <li>{% translate "The people who run the site's server for the parish can reach the stored information in order to keep the site working." %}</li>
+  </ul>
+
+  <h2>{% translate "Other services the site uses" %}</h2>
+  <ul>
+    <li>{% translate "ParishSoft, the parish's membership system: the site reads it, and writes back only the changes parish staff approve." %}</li>
+    <li>{% translate "Google Workspace: the site sends its email from the parish's own Google account, signs staff in with Google, and, if the parish turns it on, keeps encrypted backup copies in the parish's Google Drive." %}</li>
+    <li>{% translate "Slack, if the parish turns it on: short alerts about the site's health for the people who run it. They never contain Family information." %}</li>
+    <li>{% translate "A hosting company provides the server the site runs on." %}</li>
+  </ul>
+  <p>{% translate "The site does not sell information, show advertising, or share information for marketing." %}</p>
+
+  <h2>{% translate "Where information is kept, and for how long" %}</h2>
+  <p>{% translate "Information is kept in a database on the server that runs the site for the parish. Backups are encrypted before they leave the server, and only the people who hold the parish's backup key can open them. Backups are kept for about a year: every backup from the last seven days, one a day for 30 days and one a month for 12 months." %}</p>
+  <p>{% translate "Campaign records (responses, pledges, a copy of each email sent without its code or link, and a record of who did what) are kept as part of the parish's records, with no fixed end date, so the parish can compare one year with the next. Copies of ParishSoft records are kept the same way, thinned over time to one a day and later one a month. Signed-in sessions are deleted when they end, and downloaded report files after a short time." %}</p>
+
+  <h2>{% translate "Cookies and browser storage" %}</h2>
+  <p>{% translate "The site uses only the cookies it needs to work:" %}</p>
+  <ul>
+    <li>{% translate "pk_family and pk_admin keep you signed in to the Family form or to the parish's pages;" %}</li>
+    <li>{% translate "pk_family_csrf and pk_admin_csrf stop another website from sending forms in your name; and" %}</li>
+    <li>{% translate "pk_assist_binding lasts one minute, when parish staff open a Family's form to help them." %}</li>
+  </ul>
+  <p>{% translate "On the parish's pages, your browser also remembers a few display choices, such as light or dark appearance and which menus and help panels are open. They stay in your browser and are not sent to the site." %}</p>
+  <p>{% translate "The site has no analytics, advertising or tracking, and it loads nothing from other websites. The web server does not record which pages you visit or your IP address. Signing in with Google takes you to Google's own page, where Google's privacy policy applies." %}</p>
+
+  <h2>{% translate "Correcting your information" %}</h2>
+  <p>{% translate "ParishSoft is the parish's record. A Family can correct its information on the form while the campaign is open. For anything else, including a request to remove information, contact the parish: the parish will tell you what it can change or remove." %}</p>
+
+  {% include 'stewardship/public-contact.html' %}
+  <p class="help">{% blocktranslate trimmed %}Last updated: {{ updated }}{% endblocktranslate %}</p>
+</article>{% endblock %}
