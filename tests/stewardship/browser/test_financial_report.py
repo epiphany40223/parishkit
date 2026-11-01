@@ -565,7 +565,7 @@ def test_summary_charts_draw_with_tooltips_and_labelled_values(
     summary = page.locator("#financial-summary")
     # The sample's search and filters leave only some responders (#2324).
     assert summary.locator(".stat-label").all_inner_texts() == [
-        "Matching Families responded",
+        "Matching Families",
         "Total annual pledges",
         "Cannot contribute financially",
     ]
@@ -684,19 +684,19 @@ def test_applied_filters_redraw_the_summary_charts_in_place(page, component_orig
     assert_clean(page, errors)
 
 
-@pytest.mark.parametrize("width", [320, 700, 1280])
+@pytest.mark.parametrize("width", [320, 641, 700, 760, 1280])
 def test_the_responders_tile_says_matching_under_a_filter_without_moving(
     page, component_origin, width
 ):
     """Unfiltered, the first tile is Campaign comparison's Families responded;
-    a filter names it Matching Families responded (ui-conventions "Population
-    of report figures": same label, same value, #2324). The longer label
+    a filter names it Matching Families (ui-conventions "Population
+    of report figures": same label, same value, #2324). The filtered label
     leaves the tiles' row its height, so nothing below it moves."""
     page.set_viewport_size({"width": width, "height": 900})
     heights = {}
     for path, label in (
         ("/financial-unfiltered", "Families responded"),
-        ("/financial-report", "Matching Families responded"),
+        ("/financial-report", "Matching Families"),
     ):
         page.goto(component_origin + path)
         tiles = page.locator("#financial-summary .stat-tiles")

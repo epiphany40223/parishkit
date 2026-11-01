@@ -269,7 +269,7 @@ def test_financial_summary_tiles_never_read_an_unknown_total_as_zero():
     # responders (same label, same value, #2324).
     assert found[0].label == "Families responded"
     narrowed = financial_views.summary_tiles(summary, narrowed=True)[0]
-    assert (narrowed.label, narrowed.text) == ("Matching Families responded", "51")
+    assert (narrowed.label, narrowed.text) == ("Matching Families", "51")
 
 
 def test_campaign_comparison_tiles_keep_the_shared_wording():

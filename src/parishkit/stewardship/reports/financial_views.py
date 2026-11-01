@@ -70,12 +70,14 @@ def summary_tiles(summary, narrowed=False):
     return [
         # The responders matching the filters. Unfiltered they are the
         # population's responders, in Campaign comparison's words; a filter
-        # names them Matching, so a label never shows another page's figure
+        # names them Matching Families (the table line's words, short enough
+        # for one line at 320 px, so the tile row never grows and nothing
+        # below moves), so a label never shows another page's figure
         # with a smaller value (ui-conventions "Population of report
         # figures": same label, same value, #2324).
         tile(
             "families",
-            _("Matching Families responded") if narrowed else _("Families responded"),
+            _("Matching Families") if narrowed else _("Families responded"),
             summary["families"],
         ),
         tile(
