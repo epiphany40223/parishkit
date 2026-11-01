@@ -2652,6 +2652,26 @@ the [delivery resolution](#family-invitations-and-reminders) of any email
 then it holds a recorded mail halt from being cleared, as every unsettled
 `delivery_unknown` email does.
 
+**`retry_idempotent` is reserved.** The outbox vocabulary has a
+`retry_idempotent` action (an uncertain send that a provider contractually
+guarantees can be retried without a duplicate), but no provider supports it
+yet: the Workspace SMTP adapter never supplies that guarantee, and no
+dispatch owner writes the action, so no email can be in `retry_wait` after
+one. The mail sender's database write refuses it, and a test pins both that
+refusal and that `finish_submission`'s outcome map never produces it
+([#2371](https://github.com/epiphany40223/parishkit/issues/2371); the
+[pause review ledger](../../../guides/stewardship-delivery-pause-reviews.md)
+records the same scope). A message in that state could not be settled: the
+guard refuses `cancel_unsent` and `prepared` after it, so only a live task
+resubmitting it would move it, and the [delivery
+resolution](#family-invitations-and-reminders) answers could not reach it,
+open campaign or closed. A future provider that supports idempotent
+retries must therefore first add a way to settle that state. The option
+deferred until then: recovery moves an exhausted idempotent retry to
+`delivery_unknown` (a guarded `retry_wait` to `delivery_unknown` edge, only
+after `retry_idempotent` with a terminal root task), so the existing
+evidence answers apply.
+
 ### Unresponsive web server
 
 Docker restarts a container only when its process exits, and a failing

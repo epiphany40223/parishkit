@@ -128,6 +128,48 @@ def test_restricted_dispatch_preserves_outcome_and_scrubs_only_terminal(
         )
 
 
+def test_mail_sender_cannot_write_retry_idempotent(family_mail):  # noqa: F811
+    """The mail sender's database write refuses the reserved action (#2371)."""
+    from django.db import IntegrityError
+
+    from parishkit.stewardship.jobs.delivery_states import DeliveryAction
+    from parishkit.stewardship.jobs.outbox_storage import change_message
+    from parishkit.stewardship.jobs.outbox_validation import DeliveryEvidence
+
+    with campaign_clock(ScheduleDefinition.objects.get().current_revision.due_at):
+        message = prepare(family_mail)
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+            execution = claim(message)
+            begin_submission(
+                message.pk,
+                execution.claim,
+                private=family_mail.rings.private,
+                public_origin="http://localhost:8000",
+            )
+            message.refresh_from_db()
+            with (
+                pytest.raises(IntegrityError, match="requires another owner"),
+                work_transaction(),
+            ):
+                change_message(
+                    message_id=message.pk,
+                    action=DeliveryAction.RETRY_IDEMPOTENT,
+                    command_id=uuid4(),
+                    expected_version=message.version,
+                    actor_id=execution.claim.worker_id,
+                    correlation_id=execution.claim.run_id,
+                    evidence=DeliveryEvidence(
+                        evidence_digest="a" * 64,
+                        evidence_note="synthetic uncertain retry",
+                        reason="smtp_transient",
+                    ),
+                    retry_seconds=1,
+                    admit=lambda *args: True,
+                )
+        message.refresh_from_db()
+        assert message.state == "submitting"
+
+
 def test_abandoned_submission_records_unknown_and_does_not_resend(
     family_mail,  # noqa: F811
     monkeypatch,  # noqa: F811

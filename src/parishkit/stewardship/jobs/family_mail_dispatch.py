@@ -898,6 +898,19 @@ def begin_submission(
         return mail, message.provider_deadline, render.configuration_id, status.attempt
 
 
+# The outbox action recorded for each provider observation. It never maps to
+# RETRY_IDEMPOTENT: that action is reserved for a future provider with
+# contractual idempotency (#2371; a test pins this).
+OUTCOME_ACTIONS = {
+    FamilyDeliveryStatus.ACCEPTED: DeliveryAction.ACCEPT,
+    FamilyDeliveryStatus.UNKNOWN: DeliveryAction.MARK_UNKNOWN,
+    FamilyDeliveryStatus.PERMANENT: DeliveryAction.FAIL_UNACCEPTED,
+    FamilyDeliveryStatus.SYSTEMIC: DeliveryAction.FAIL_UNACCEPTED,
+    FamilyDeliveryStatus.TRANSIENT: DeliveryAction.RETRY_UNACCEPTED,
+    FamilyDeliveryStatus.UNAVAILABLE: DeliveryAction.RETRY_UNACCEPTED,
+}
+
+
 def finish_submission(identifier, claim, result, *, hold=False):
     """Keep actual observations even if configuration/lifecycle changed in flight.
 
@@ -919,14 +932,7 @@ def finish_submission(identifier, claim, result, *, hold=False):
             or result.recipient_count != len(message.render.routed_recipients)
         ):
             raise PermissionError("Family outcome does not own its submitted attempt.")
-        action = {
-            FamilyDeliveryStatus.ACCEPTED: DeliveryAction.ACCEPT,
-            FamilyDeliveryStatus.UNKNOWN: DeliveryAction.MARK_UNKNOWN,
-            FamilyDeliveryStatus.PERMANENT: DeliveryAction.FAIL_UNACCEPTED,
-            FamilyDeliveryStatus.SYSTEMIC: DeliveryAction.FAIL_UNACCEPTED,
-            FamilyDeliveryStatus.TRANSIENT: DeliveryAction.RETRY_UNACCEPTED,
-            FamilyDeliveryStatus.UNAVAILABLE: DeliveryAction.RETRY_UNACCEPTED,
-        }[result.status]
+        action = OUTCOME_ACTIONS[result.status]
         row = (
             None
             if message.purpose in UNSCHEDULED_PURPOSES
