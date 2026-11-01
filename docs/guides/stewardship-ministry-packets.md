@@ -11,7 +11,7 @@ the Ministry follow-up workflow, which is why that increment landed first.
 ## Scope and acceptance
 
 A requester ticks the Ministries to include, or none for every Ministry they
-are authorized for, and chooses whether to include resolved and withdrawn
+are authorized for, and chooses whether to include Done and withdrawn
 requests. One control has one meaning, so the native form cannot reach an
 ambiguous state without scripts. The packet
 has one section per Ministry with its name, active chair names and stewardship

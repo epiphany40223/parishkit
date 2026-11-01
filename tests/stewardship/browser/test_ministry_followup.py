@@ -103,9 +103,9 @@ def test_followup_mobile_keyboard_and_accessibility(
     assert page.get_by_text("Left a <private> voicemail", exact=True).count() == 2
     assert page.get_by_text("No <answer>", exact=False).count() == 1
     no_assignment(page)
-    assert page.get_by_label("Status").input_value() == "new"
-    choices = page.get_by_label("Status").locator("option").all_inner_texts()
-    assert choices == ["New", "In progress", "Resolved", "Closed: no response"]
+    assert page.get_by_label("Contact status").input_value() == "new"
+    choices = page.get_by_label("Contact status").locator("option").all_inner_texts()
+    assert choices == ["Not contacted", "Contacting", "Done", "Closed: no response"]
     # A past edit's recorded assignment stays readable in history.
     visible(page.get_by_text("assigned to leader@example.org", exact=False))
     # A decided request's history remains, the form does not; its decision
@@ -128,7 +128,7 @@ def test_followup_form_enables_only_the_fields_that_apply(page, component_origin
         page.get_by_label("Time", exact=True),
     )
     happened = page.get_by_label("What happened")
-    status, how = page.get_by_label("Status"), page.get_by_label("How")
+    status, how = page.get_by_label("Contact status"), page.get_by_label("How")
     # The request loads as New with no contact attempt chosen.
     for field in (outcome, date, time, happened):
         greyed(field)
@@ -163,14 +163,14 @@ def test_followup_form_enables_only_the_fields_that_apply(page, component_origin
 
 def test_followup_save_waits_for_the_visible_required_fields(page, component_origin):
     """Save stays disabled, saying why, until every shown required field is
-    filled: the outcome for Resolved, notes for Other, and a contact's date
+    filled: the outcome for Done, notes for Other, and a contact's date
     and time once a channel is chosen."""
     page.goto(component_origin + "/followup-item")
     save = page.get_by_role("button", name="Save follow-up")
     hint = page.locator("#followup-save-hint")
     assert save.is_enabled() and not hint.is_visible()
     assert save.get_attribute("aria-describedby") == "followup-save-hint"
-    page.get_by_label("Status").select_option("resolved")
+    page.get_by_label("Contact status").select_option("resolved")
     assert save.is_disabled()
     has_text(hint, "Choose an outcome to save.")
     page.get_by_label("Outcome", exact=True).select_option("joined")
@@ -223,7 +223,7 @@ def test_followup_outcomes_match_the_request_kind(page, component_origin):
         ("/followup-item-leave", leave, join),
     ):
         page.goto(component_origin + path)
-        page.get_by_label("Status").select_option("resolved")
+        page.get_by_label("Contact status").select_option("resolved")
         choices = (
             page.get_by_label("Outcome", exact=True).locator("option").all_inner_texts()
         )
@@ -242,7 +242,7 @@ def test_followup_refusal_is_shown_in_place(page, component_origin):
         "Left the Ministry doesn't apply to a request to join.",
     )
     assert page.evaluate("document.activeElement.hasAttribute('data-error-summary')")
-    assert page.get_by_label("Status").input_value() == "resolved"
+    assert page.get_by_label("Contact status").input_value() == "resolved"
     assert page.get_by_label("Outcome", exact=True).input_value() == "other"
     assert page.get_by_label("Date", exact=True).input_value() == "2026-09-19"
     assert page.get_by_label("Time", exact=True).input_value() == "15:04"
@@ -293,7 +293,7 @@ def test_followup_filters_post_privately(page, component_origin):
 def test_followup_edit_posts_privately(page, component_origin):
     """The edit posts in the body, with no URL state and no assignee."""
     page.goto(component_origin + "/followup-item")
-    page.get_by_label("Status").select_option("resolved")
+    page.get_by_label("Contact status").select_option("resolved")
     page.get_by_label("Outcome", exact=True).select_option("joined")
     page.get_by_label("How").select_option("email")
     page.get_by_label("Date", exact=True).fill("2026-09-19")

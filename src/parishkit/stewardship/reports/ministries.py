@@ -57,10 +57,10 @@ DETAIL_SORTING = Sorting(
 )
 STATES = {
     "any": "All states",
-    "unresolved": "Unresolved",
-    "new": "New",
-    "in_progress": "In progress",
-    "resolved": "Resolved",
+    "unresolved": "Not done",
+    "new": "Not contacted",
+    "in_progress": "Contacting",
+    "resolved": "Done",
     "closed_no_response": "Closed without response",
     "cancelled": "Cancelled",
     "superseded": "Superseded",

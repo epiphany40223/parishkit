@@ -174,8 +174,8 @@ def test_exact_outcome_mapping_and_unresolved_is_blank(values, expected):
 def test_legacy_assigned_request_reads_new():
     """A request assigned before assignment was removed (#552) reads as New."""
     section = dict(duid=9, name="Choir", chairs=[], rows=[item(state="assigned")])
-    status = HEADINGS.index("Status")
-    assert packet([section]).sections[0].rows[0][status] == "New"
+    status = HEADINGS.index("Contact status")
+    assert packet([section]).sections[0].rows[0][status] == "Not contacted"
 
 
 def test_contact_dates_prefill_in_the_display_zone_and_privacy_holds():
@@ -205,7 +205,7 @@ def test_contact_dates_prefill_in_the_display_zone_and_privacy_holds():
         "=Example Member",
         "12345",
         "Join",
-        "New",
+        "Not contacted",
         "member@example.org",
         date(2026, 9, 19),
         "home: +1 (202) 555-0123",
