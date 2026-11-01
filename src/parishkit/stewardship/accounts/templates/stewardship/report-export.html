@@ -76,6 +76,6 @@
 <dt>{% families_counted_label %}</dt><dd>{{ job.parameters.population_scope|scope_label }}</dd>
 {% endif %}
 <dt>{% translate "Requested at" %}</dt><dd><time datetime="{{ job.created_at|date:'c' }}" data-local-instant>{{ job.created_at|date:'c' }}</time></dd>
-<dt>{% translate "Export timezone" %}</dt><dd>{{ job.browser_timezone }}</dd></dl>
+<dt>{% translate "Export time zone" %}</dt><dd>{{ job.browser_timezone }}</dd></dl>
 <p>{% translate "A retry uses exactly the same data and request time as the original. Refreshing this page does not extend your sign-in." %}</p>
 {% endblock %}

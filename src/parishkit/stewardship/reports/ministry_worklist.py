@@ -76,7 +76,7 @@ from parishkit.stewardship.workflows.review import (
 from parishkit.stewardship.workflows.roster import eligible, mark, roster_marks
 
 from .information import parse_page
-from .ministries import outcome_label
+from .ministries import NOT_IN_CAMPAIGN, outcome_label
 from .ministry_followup import (
     NOT_IN_SOURCE,
     PAGE_SIZE,
@@ -766,9 +766,9 @@ def _ministry_cell(row):
         format_html(
             ' <span class="status-badge"><span aria-hidden="true" title="{}">{}'
             '</span><span class="visually-hidden">{}</span></span>',
-            "No longer in this campaign",
+            NOT_IN_CAMPAIGN,
             "Removed",
-            "No longer in this campaign",
+            NOT_IN_CAMPAIGN,
         )
         if row["in_campaign"] is False
         else ""

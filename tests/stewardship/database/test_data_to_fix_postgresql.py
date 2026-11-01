@@ -114,7 +114,7 @@ def test_an_administrator_sees_every_section_counted(scenario, google):
     assert sections(body) == tuple(key.encode() for key in ORDER)
     text = body.decode()
     assert "<title>Data to fix in ParishSoft" in text
-    assert "None: every Family that can use the portal can open the form." in text
+    assert "None: every campaign Family can open the form." in text
     assert "1 refused email address is not cleared yet, from 1 Family." in text
     # The rename and the move, both To review.
     assert "2 census changes that Families reported are still to be handled." in text

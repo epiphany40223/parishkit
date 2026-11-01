@@ -92,7 +92,7 @@ def test_financial_mobile_keyboard_and_accessibility(
         "Export PDF",
     ]
     assert page.get_by_label("Export format").count() == 0
-    assert page.get_by_label("Export timezone").count() == 0
+    assert page.get_by_label("Export time zone").count() == 0
     # While the campaign cannot accept work every export button is disabled.
     page.goto(component_origin + "/financial-gated")
     for name in ("Export XLSX", "Export CSV", "Export PDF"):

@@ -179,9 +179,8 @@ def _origin(job):
     elif job.report == "family_timeline":
         # The export sits under the Family's own Timeline page, so the
         # trail runs Directory > Timeline > export and keeps which Family
-        # it was (#521). The file keeps its "Family timeline" name, as it
-        # is always about one Family (#1570).
-        title = _("Family timeline export")
+        # it was (#521). Its title is the page's own name (#2330).
+        title = _("Timeline export")
         source = "timeline"
         # From the request's parameters, not its capture, which is deleted
         # when the export ends (#1398). An old Testing export's crumb opens

@@ -41,8 +41,8 @@ PRIVACY = "Parish giving figures, aggregates only. Share only with parish leader
 # The page's permanent data note on the two kinds of denominator, a fixed
 # text (never an archive's note), shortened for the files.
 DENOMINATORS = (
-    "This system's percentage counts every Family eligible for the portal at "
-    "any time through the day; each imported year's uses the active-Family "
+    "This system's percentage counts every Family in the campaign at "
+    "any time through the day; each imported year's uses the campaign-Family "
     "count its archive file names."
 )
 NOMINAL = "Amounts are in dollars of each year, with no adjustment for inflation."
@@ -165,7 +165,7 @@ def comparison_document(payload, *, parish_name, requested_at, timezone):
             else ()
         ),
         ("Requested at", requested_at.astimezone(ZoneInfo(timezone))),
-        ("Display timezone", timezone),
+        ("Display time zone", timezone),
         ("Years", f"{len(rows):,}"),
         *(("Note", note) for note in notes),
         ("Privacy", PRIVACY),

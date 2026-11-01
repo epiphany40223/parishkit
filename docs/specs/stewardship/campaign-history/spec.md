@@ -544,7 +544,7 @@ Adding a file follows the [review dialog](../ui-conventions/spec.md#review-dialo
 1. **Review** uploads the file and validates it (below), without a page
    load, and opens the dialog with a card: the year, campaign name, final
    or partial, day-1 date,
-   last day, Families responded, annual pledges, the active-Family count with
+   last day, Families responded, annual pledges, the campaign-Family count with
    its provenance, the metadata notes that the report's data notes will show,
    and what Apply will do (Add, Replace year N, or Already imported); the
    dialog's title asks it ("Add 2025?", "Replace 2025?"), or, when Apply is
@@ -750,7 +750,7 @@ The SHA-256 of the uploaded bytes identifies the file:
   does) and stores the new one in the same transaction. A partial file never
   replaces a final one; Review refuses that with the reason.
 - Replace is also how an archive is corrected: for example, when a better
-  measurement of a year's active-Family count is found, the Administrator
+  measurement of a year's campaign-Family count is found, the Administrator
   corrects `active_families` and `active_families_provenance` in the
   file's `metadata` sheet (and the `cumulative_pct_of_active` column that
   follows from it) and imports it again. The new checksum makes
@@ -1624,7 +1624,7 @@ The Administrator accepted every proposed default on October 11, 2026
    current campaign live.
 6. **Day 1 of the current campaign:** the campaign's local start date, which
    is the first invitation day.
-7. **Prior-years average:** every imported year. A measured active-Family
+7. **Prior-years average:** every imported year. A measured campaign-Family
    count is required in every archive and its provenance records the
    source; estimates are not supported (Administrator direction, 2026-10-11,
    after firm counts were found for every year, 2020–2022 from database

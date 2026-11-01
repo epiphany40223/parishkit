@@ -27,7 +27,7 @@ confirmation. UI defaulting, including comparison periods, belongs to ADM-04.
 Preparation writes history only. Activation atomically creates/updates the sole
 Testing draft, selects the global pointer and records parish-owned audit evidence.
 The first draft timezone copies the Parish value; later draft edits can change
-it independently. Parish timezone edits never rebucket existing campaign data.
+it independently. Parish time zone edits never rebucket existing campaign data.
 The current applied configuration selects configured schedule revisions; removed
 revisions remain historical. Retired schedule UUIDs cannot change owner or type.
 Every activation advances the campaign projection pointer/version, even for an

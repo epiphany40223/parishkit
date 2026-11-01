@@ -375,7 +375,7 @@ def test_dates_with_another_change_wait_while_schedules_exist(page, component_or
     review = page.get_by_role("button", name="Save", exact=True)
     hint = page.locator("#settings-complete-hint")
     page.get_by_label("Campaign end date").fill("2054-11-15")
-    page.get_by_label("Campaign timezone").select_option("America/Chicago")
+    page.get_by_label("Campaign time zone").select_option("America/Chicago")
     enabled(review)
     name = page.get_by_label("Campaign name")
     name.fill("Renamed campaign")

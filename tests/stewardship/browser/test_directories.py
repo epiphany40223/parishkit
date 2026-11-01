@@ -181,7 +181,7 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
         # The export row (#1679) is shown below the table, with no format
         # menu and no zone question: the browser's zone is sent unasked.
         assert page.get_by_label("Export format").count() == 0
-        assert page.get_by_label("Export timezone").count() == 0
+        assert page.get_by_label("Export time zone").count() == 0
         # No count line above the buttons (R37).
         assert page.get_by_text("estimated matching", exact=False).count() == 0
         page.get_by_label(
@@ -424,7 +424,7 @@ def test_the_export_row_never_asks_for_a_zone(page, component_origin):
     page.get_by_label("Include response columns").check()
     page.get_by_role("button", name="Apply filters").click()
     expect(page.locator("#table-export input[name=responses]")).to_have_value("yes")
-    assert page.get_by_label("Export timezone").count() == 0
+    assert page.get_by_label("Export time zone").count() == 0
     assert boxes() == pytest.approx(before, abs=0.5)
     hidden = page.locator("#table-export input[name=browser_timezone]")
     assert hidden.count() == 1 and hidden.input_value() == page.evaluate(

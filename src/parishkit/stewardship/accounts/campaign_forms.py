@@ -137,7 +137,7 @@ class CampaignForm(AdminForm):
     year_label = forms.CharField(
         label=_("Stewardship year label"), max_length=64, required=False
     )
-    timezone = TimezoneField(label=_("Campaign timezone"))
+    timezone = TimezoneField(label=_("Campaign time zone"))
     start_date = forms.DateField(
         label=_("Campaign start date"), widget=forms.DateInput(attrs={"type": "date"})
     )

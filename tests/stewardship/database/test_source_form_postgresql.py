@@ -41,9 +41,9 @@ def test_the_list_follows_the_snapshot_and_never_shows_a_value(
     assert login.status_code == 302
     response, body = get(browser, LIST)
     assert response.status_code == 200 and response["Cache-Control"] == "no-store"
-    assert b"Every Family that can use the portal can open the form, so there" in body
+    assert b"Every campaign Family can open the form, so there" in body
     _, body = get(browser, HEALTH)
-    assert b"Every Family that can use the portal can open the Family form." in body
+    assert b"Every campaign Family can open the Family form." in body
     # With no Family listed the list would be empty, so it is not linked.
     assert f'href="{LIST}"'.encode() not in body
     data = response_source()

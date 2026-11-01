@@ -98,7 +98,7 @@ def test_a_change_is_reviewed_and_applied_in_the_dialog(page, component_origin):
     posts = count_requests(page, "POST", PARISH)
     expect_review(page, enabled=False)
     page.get_by_label("Parish name").fill("Renamed Parish")
-    page.get_by_label("Parish timezone").select_option("America/Chicago")
+    page.get_by_label("Parish time zone").select_option("America/Chicago")
     expect_review(page, enabled=True)
     page.get_by_role("button", name=SAVE, exact=True).click()
     dialog = dialog_of(page)
@@ -116,7 +116,7 @@ def test_a_change_is_reviewed_and_applied_in_the_dialog(page, component_origin):
     expect(dialog).to_have_accessible_description(
         re.compile(r"^Parish name: Sample Parish ?, becomes Renamed Parish")
     )
-    assert "This timezone change is prospective." in dialog.inner_text()
+    assert "This time zone change is prospective." in dialog.inner_text()
     assert "Renamed Parish" in dialog.inner_text()
     assert len(reviews) == 1 and "name=Renamed+Parish" in reviews[0]
     places = [page.evaluate(PLACE, id) for id in ("settings-form", "parish-outcome")]
@@ -163,9 +163,9 @@ def test_review_waits_for_a_change(page, component_origin):
     # Spaces the server trims are no change; a choice is.
     name.fill("Sample Parish ")
     expect_review(page, enabled=False)
-    page.get_by_label("Parish timezone").select_option("America/Chicago")
+    page.get_by_label("Parish time zone").select_option("America/Chicago")
     expect_review(page, enabled=True)
-    page.get_by_label("Parish timezone").select_option("America/New_York")
+    page.get_by_label("Parish time zone").select_option("America/New_York")
     expect_review(page, enabled=False)
     # A restore without events, then pageshow: the gate follows the values.
     name.evaluate("field => { field.value = 'Restored name'; }")

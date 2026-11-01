@@ -2,13 +2,13 @@
 {% block title %}{% if detail %}{% translate "Weekly report item" %}{% else %}{% translate "Weekly report" %}{% endif %}{% endblock %}
 {% block content %}
 <h1>{% if detail %}{% translate "Weekly report item" %}{% else %}{% translate "Weekly report" %}{% endif %}</h1>
-{% if manual %}<p class="notice notice-info">{% translate "Manually requested report. This is a separate report and does not replace the regularly scheduled weekly digest." %}</p>{% endif %}
+{% if manual %}<p class="notice notice-info">{% translate "Manually requested report. This is a separate report and does not replace the regularly scheduled Weekly report." %}</p>{% endif %}
 <p>{{ snapshot.configuration.parish.name }} — {{ snapshot.timezone_configuration.name }}</p>
 <p class="notice notice-info">{% translate "Saved report: Family names and request text are as they were when this report was made. Each request's current status is checked when you open the page. This page does not send email or change follow-up records." %}</p>
 {% if snapshot.preparation.mode == 'testing' %}<p class="notice">{% translate "This report was generated in Testing mode." %}</p>{% endif %}
 <dl>
 <dt>{% translate "Captured at" %}</dt><dd><time datetime="{{ snapshot.observed_at|date:'c' }}" data-local-instant>{{ snapshot.observed_at|date:'c' }}</time></dd>
-<dt>{% translate "Campaign timezone" %}</dt><dd>{{ snapshot.timezone_configuration.timezone }}</dd>
+<dt>{% translate "Campaign time zone" %}</dt><dd>{{ snapshot.timezone_configuration.timezone }}</dd>
 <dt>{% if manual %}{% translate "Current actionable requests at capture" %}{% else %}{% translate "New actionable requests at capture" %}{% endif %}</dt><dd>{{ information_count|number }}</dd>
 <dt>{% translate "Corrections" %}</dt><dd>{{ correction_count|number }}</dd>
 </dl>

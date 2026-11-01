@@ -323,7 +323,8 @@ def test_a_leader_never_sees_the_tick_nor_the_list(response_service, google):
     """A Ministry leader has no ParishSoft access (#1160): their request page
     and queue draw no tick (state, who, when or form) and tell them Staff
     enter roster changes; the list and the tick are refused. Staff and
-    Administrators keep seeing it and the "update ParishSoft yourself" help."""
+    Administrators keep seeing it and the "enter the change in ParishSoft by hand"
+    help."""
     harness, admin, join, _ = resolved(response_service)
     item = f"/admin/reports/ministries/follow-up/{join.pk}/"
     queue = "/admin/reports/ministries/"
@@ -339,7 +340,7 @@ def test_a_leader_never_sees_the_tick_nor_the_list(response_service, google):
             b"Mark Entered",
             f"{join.pk}/roster/".encode(),
             b"followup-roster",
-            b"update ParishSoft yourself",
+            b"enter the change in ParishSoft by hand",
         ):
             assert words not in body, (entered, words)
         assert b"Staff enter roster changes in ParishSoft" in body
@@ -380,7 +381,7 @@ def test_a_leader_never_sees_the_tick_nor_the_list(response_service, google):
     _, body = get(staff, item)
     assert b"Entered by hand by admin@example.org" in body
     assert b'data-confirm-open="followup-roster-clear-dialog"' in body
-    assert b"update ParishSoft yourself" in body
+    assert b"enter the change in ParishSoft by hand" in body
     assert b"Staff enter roster changes" not in body
     shown = search(staff, queue, {"stage": "all"})[1]
     assert b'<span class="status-word">Entered by hand</span>' in shown

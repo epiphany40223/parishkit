@@ -84,9 +84,9 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
         ("Source as of", instant(source["source_as_of"])),
         ("Captured at", instant(source["observed_at"])),
         ("Requested at", instant(requested_at)),
-        ("Display timezone", timezone),
+        ("Display time zone", timezone),
         ("Age reference date", date.fromisoformat(source["report_date"])),
-        ("Campaign date-filter timezone", source["timezone"]),
+        ("Campaign date-filter time zone", source["timezone"]),
         ("Matching results", f"{payload['total']:,}"),
         (
             "Filters and sort",

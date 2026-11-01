@@ -122,7 +122,7 @@ def test_a_request_page_shows_its_stage_contacts_and_history(page, component_ori
     page.goto(component_origin + "/information-unresolved")
     # The retired weekly digest correction workflow is no longer named
     # (#2102); the earlier digest's mark stays.
-    visible(page.get_by_text("Included in a previously delivered weekly digest."))
+    visible(page.get_by_text("Included in a previously delivered Weekly report."))
     assert "correction workflow" not in page.inner_text("main")
 
 
@@ -243,7 +243,7 @@ def test_the_export_pane_posts_the_view_privately(page, component_origin):
     body: the Stage as its follow-up choices, never in an address."""
     page.goto(component_origin + "/information")
     # The export row (#1679) asks no zone: the browser's goes unasked.
-    assert page.get_by_label("Export timezone", exact=True).count() == 0
+    assert page.get_by_label("Export time zone", exact=True).count() == 0
     page.get_by_label("Include complete Staff workflow history").check()
     page.route(
         "**" + reverse("admin:information_export"),

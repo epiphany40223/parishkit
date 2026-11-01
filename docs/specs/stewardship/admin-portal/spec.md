@@ -515,7 +515,7 @@ The regular page's list, its row actions and the New and Edit scheduled
 email page are described under
 [Dates and mail schedules](#dates-and-mail-schedules).
 
-Setup no longer fixes the Parish timezone at any step: the final load
+Setup no longer fixes the Parish time zone at any step: the final load
 reads the parish data under the timezone the frozen setup holds, and the
 campaign created later has its own zone (see
 [Create the campaign](#create-the-campaign)). Until a zone is saved, the
@@ -1992,7 +1992,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `response_dashboard` | Response dashboard | Menu: Response dashboard | Administrator, Staff | (same); Participation and campaign statistics | `/admin/reports/responses/` | (same) | Absorbed Participation ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)): `/admin/reports/participation/` and its `exact-exports/` form action are gone, with no redirect (#864); the export form posts to `responses/exports/`. |
 | `reports` | Response dashboard | Menu: Response dashboard | Administrator, Staff | (redirects) Participation and campaign statistics; 'Campaign reports' only when no campaign exists; Campaign reports | `/admin/reports/` | (same) | Not a group root: redirects to the Response dashboard, or to Ministry requests for a viewer who may not open it (a Ministry leader). |
 | `campaign_comparison` | Campaign comparison | Menu: Campaign comparison | Administrator, Staff | (new, [#1018](https://github.com/epiphany40223/parishkit/issues/1018)) | `/admin/reports/comparison/` | (same) | Compares the current campaign with imported past campaigns ([campaign history](../campaign-history/spec.md#comparison-report)). |
-| `report_export` | _report page name_ export | The report it came from | Administrator, Staff, Ministry leader | Ministry export / Additional-information export / Family-directory export / Family-directory mail-merge export; Report export (breadcrumb) | `/admin/reports/exports/<request>/` | (same) | Object-named (exception). Every export shares it: a latest-data export too (decision 8). A report's export is named after its report page, for example "Campaign Family directory export" or "Ministry requests export" (#520), and its breadcrumb says the same name as its heading. Exports that are not one report's keep their own names (Campaign archive, Campaign comparison download, Family timeline export, Chosen-Family test names export). No Admin page opens it: every export button downloads in place and only reads this address passively for the export's state ([downloads happen in place](../ui-conventions/spec.md#downloads-happen-in-place)); it is still the page for the exports only the command line asks for (latest-data, chosen-Family test names) and for an address opened directly. The export error page reads nothing from the database, so it cannot name the export; its link back says "Return to the export status page", and its sentences say to try again, never to return to the status page. Its actions post to `cancellation/`, `retries/` and `download/`. It is a [point-in-time](../operations/spec.md#point-in-time-exports) preparing step, not a history entry: past the download window it answers the fixed "no longer available" page, and no page lists earlier exports. |
+| `report_export` | _report page name_ export | The report it came from | Administrator, Staff, Ministry leader | Ministry export / Additional-information export / Family-directory export / Family-directory mail-merge export; Report export (breadcrumb) | `/admin/reports/exports/<request>/` | (same) | Object-named (exception). Every export shares it: a latest-data export too (decision 8). A report's export is named after its report page, for example "Campaign Family directory export" or "Ministry requests export" (#520), and its breadcrumb says the same name as its heading. Exports that are not one report's keep their own names (Campaign archive, Campaign comparison download, Timeline export, Chosen-Family test names export). No Admin page opens it: every export button downloads in place and only reads this address passively for the export's state ([downloads happen in place](../ui-conventions/spec.md#downloads-happen-in-place)); it is still the page for the exports only the command line asks for (latest-data, chosen-Family test names) and for an address opened directly. The export error page reads nothing from the database, so it cannot name the export; its link back says "Return to the export status page", and its sentences say to try again, never to return to the status page. Its actions post to `cancellation/`, `retries/` and `download/`. It is a [point-in-time](../operations/spec.md#point-in-time-exports) preparing step, not a history entry: past the download window it answers the fixed "no longer available" page, and no page lists earlier exports. |
 | `report_exact` | Latest-data export | Response dashboard | Administrator, Staff | Queued participation export; Exact export | `/admin/reports/exports/<request>/` (the shared export page) | (same) | Decision 8: folded into the shared export page; it keeps its own heading, and its trail names it. Its old addresses (`exact-exports/<request>/` and its actions) are gone (#864). Since #1537 it is requested only with `export exact create`: the Response dashboard offers the export of the chart shown. |
 | `financial_report` | Financial stewardship | Menu: Financial stewardship | Administrator, Staff | Financial stewardship detail; Financial report | `/admin/reports/financial/` | (same) |  |
 | `review_wizard` | Review one at a time | Menu: Review one at a time | Administrator, Staff, Ministry leader | (new, [#2123](https://github.com/epiphany40223/parishkit/issues/2123)) | `/admin/reports/review/` | (same) | The [review wizard](../review-pipeline/spec.md#review-wizard)'s start page, the first entry of Review work while any stream's page is offered; Start and Discard post to it. |
@@ -3473,7 +3473,7 @@ campaign's selections never change.
   stop requests stay in the follow-up queue until staff close them, and
   Ministry requests (its By Ministry counts and queue) and follow-up packets
   keep showing them,
-  marked "No longer in this campaign" (in the follow-up queue, a "Removed"
+  marked "Removed from this campaign" (in the follow-up queue, a "Removed"
   badge; see [follow-up workflows](#follow-up-workflows)), while it has a
   request that was not later withdrawn or replaced. A request for a
   [Member no longer in ParishSoft](#follow-up-workflows) does not count
@@ -6766,7 +6766,7 @@ its outbox message state, or, before preparation, by its occurrence:
   held until it is prepared. These need a restore or a deliverability edge
   case, never the launch invitation, and are an accepted v1 limit.
 - **Couldn't be emailed**: skipped or cancelled because the Family has no
-  deliverable address (`no_deliverable_recipient`) or is no longer eligible
+  deliverable address (`no_deliverable_recipient`) or has left the campaign
   (`family_ineligible`).
 - **Skipped: in the ParishSoft No-reminders WorkGroup** (shown when non-zero; a
   column of the send history): a reminder skipped, or its unsent email
@@ -9006,7 +9006,7 @@ carries only the Ministry number (`?ministry=<DUID>`), and the By Ministry
 counts on the same page add the worklist's own closed Request and Stage
 values (`?ministry=<DUID>&kind=join&stage=all`,
 `?ministry=<DUID>&kind=leave&stage=all`, or the Ministry alone for
-Unresolved, which is To review,
+To review,
 [#1133](https://github.com/epiphany40223/parishkit/issues/1133), #1684), so the
 worklist shows exactly the requests counted. Home's Ministry requests to
 enter by hand card carries the Stage alone (`?stage=to_enter_by_hand`,
@@ -9464,7 +9464,7 @@ who, when or form on their request pages, the stage Accepted in their
 worklist, and the server refuses their set or clear (the view, the service
 and the SQL guard each check). Their page help and the Status field's help
 say Staff enter roster changes in ParishSoft, where Staff and Admin read
-"update ParishSoft yourself". Ministry leaders never see the roster rows
+"enter the change in ParishSoft by hand". Ministry leaders never see the roster rows
 either. A later Family response never replaces a decided request: a
 Family that asks for it again is shown on it ("Family asked again"), not
 given a second request (#1684), so the tick stays with the request it was

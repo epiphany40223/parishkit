@@ -12,7 +12,7 @@
 <dt>{% translate "Not sure it arrived" %}</dt><dd>{% url 'admin:deliveries' as outgoing_url %}{% blocktranslate %}The mail service did not confirm either way. Resolve these on the <a href="{{ outgoing_url }}">Sent mail</a> page.{% endblocktranslate %}</dd>
 <dt>{% translate "Cancelled" %}</dt><dd>{% translate "Emails prepared and then cancelled before they were sent, for example because the schedule changed or the Family responded. These Families are also counted under Not needed or Couldn't be emailed." %}</dd>
 <dt>{% translate "Not needed" %}</dt><dd>{% translate "The Family already responded, a later email replaced this one, the schedule changed, or the campaign closed." %}</dd>
-<dt>{% translate "Couldn't be emailed" %}</dt><dd>{% translate "The Family has no deliverable email address, or is no longer eligible." %}</dd>
+<dt>{% translate "Couldn't be emailed" %}</dt><dd>{% translate "The Family has no deliverable email address, or has left the campaign." %}</dd>
 <dt>{% translate "Held" %}</dt><dd>{% translate "A reminder waiting because the Family's invitation failed or may not have arrived." %}</dd></dl>
 <p>{# Greyed out, as the menu greys it, on an archived campaign (#521). #}{% translate "Reminders are numbered by their current scheduled time, in every mode, so Reminder 1 is the earliest reminder on" %} {% menu_link "schedule_settings" _("Dates and mail schedules") %}. {% translate "A reminder that was removed has no number." %}</p>
 <p>{% translate "A send still in progress says so. The one the Mail queue's Family send panel is showing links to it, and that panel follows it live. This page does not update by itself, does not slow any send down, and does not extend your sign-in." %}</p>{% endaboutpage %}

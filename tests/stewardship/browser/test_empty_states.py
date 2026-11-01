@@ -46,7 +46,7 @@ EMPTY_PAGES = {
     "/limitations-report-none-searched": (
         "Nothing is at this stage. Choose another Stage",
     ),
-    "/source-form-none": ("Every Family that can use the portal can open the form,",),
+    "/source-form-none": ("Every campaign Family can open the form,",),
 }
 # The Filters panel beside each empty table with one (#227): its summary and
 # whether it arrives open, from the same count the message is chosen by, so

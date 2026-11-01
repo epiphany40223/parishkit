@@ -273,10 +273,11 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
         for hidden in (
             b"Ministry activity",
             b'id="ministry-activity"',
-            b"Not in ParishSoft data",
+            b"<br>Not in ParishSoft",
+            b"(Not in ParishSoft)",
             b"Inactive",
             b"<br>Active",
-            b"No longer in this campaign",
+            b"Removed from this campaign",
         ):
             assert hidden not in body, hidden
         # Its forms carry no activity field at all.

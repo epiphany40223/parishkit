@@ -287,7 +287,7 @@ def test_the_file_names_its_scope_and_privacy_but_no_internal_reference():
     labels = dict(built.metadata)
     assert labels["Report"] == "Ministry follow-up requests"
     assert labels["Matching results"] == "4"
-    assert labels["Display timezone"] == "America/Chicago"
+    assert labels["Display time zone"] == "America/Chicago"
     assert "Sensitive parish information" in labels["Privacy"]
     assert '"search": "private"' in labels["Filters and sort"]
     text = str(built.rows)
