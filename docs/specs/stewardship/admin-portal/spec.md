@@ -9205,7 +9205,7 @@ shared confirmation dialog and its optional note):
   only, as "Accepted (edited) into Adult Choir" (drawn with the
   [Edited chip](../ui-conventions/spec.md#status-indicators)).
 - **Back to review** returns an accepted or ignored request to To review
-  (In progress), clearing an edited Ministry, until Staff tick it Entered in
+  (Contacting), clearing an edited Ministry, until Staff tick it Entered in
   ParishSoft; reopening an ignored request takes an optional note
   ([#1889](https://github.com/epiphany40223/parishkit/issues/1889)). A
   request the parish added goes back to To review the same way and stays
@@ -9254,7 +9254,7 @@ the whole batch and the notice says so. One `ministry_followup_bulk_applied`
 event records the action, and the request page marks each revision
 "(bulk)". The bulk contact attempt of #1131 is retired with the bulk
 outcomes: a contact attempt is recorded on the request page, which keeps
-Status, Outcome, Notes and Record a contact attempt as below.
+Contact status, Outcome, Notes and Record a contact attempt as below.
 
 **Family asked again**
 ([resubmission rule](../review-pipeline/spec.md#resubmission-before-the-reviewed-form)):
@@ -9354,7 +9354,7 @@ form is never one. One SQL function decides this
 
 The request form is compact
 ([#1014](https://github.com/epiphany40223/parishkit/issues/1014)): on a
-desktop screen Status and Outcome share one row, and How, Date and Time
+desktop screen Contact status and Outcome share one row, and How, Date and Time
 share another, while Notes and "What happened" span the form; at phone width
 every field takes its own row. The form enables only the fields that apply,
 and the others stay in place, greyed, so a choice never moves the fields

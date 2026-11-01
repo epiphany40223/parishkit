@@ -61,12 +61,12 @@ STATES = {
     "new": "Not contacted",
     "in_progress": "Contacting",
     "resolved": "Done",
-    "closed_no_response": "Closed without response",
+    "closed_no_response": "Closed: no response",
     "cancelled": "Cancelled",
     "superseded": "Superseded",
 }
 # Row labels. Follow-up has no assignee (#552); a request still stored as
-# `assigned` from before then reads as New, because that state only ever
+# `assigned` from before then reads as Not contacted, because that state only ever
 # meant "has an assignee". Screens, exports and packets share these labels.
 # The frozen report selection (stewardship_ministry_report_v3) still returns each
 # row's assignee email; nothing renders it any more.

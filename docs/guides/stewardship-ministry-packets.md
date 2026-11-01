@@ -95,7 +95,7 @@ keeping one copy of it.
 
 The specified row contents do not say whether a request is to join or leave, and
 with history a blank outcome cannot tell an unresolved request from a withdrawn
-one. Two columns, Request and Status, were added so a printed row is
+one. Two columns, Request and Contact status, were added so a printed row is
 unambiguous. Contact dates are calendar dates in the requester's chosen zone.
 
 ### Rendering
