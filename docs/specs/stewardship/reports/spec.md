@@ -3822,8 +3822,9 @@ or a retained export capture, keep their campaign-zone days. The summary of
 the matching pledges comes first, as visuals
 ([#720](https://github.com/epiphany40223/parishkit/issues/720)): tiles for
 Families responded (Campaign comparison's words, #2324), which a filter
-other than the population names Matching Families responded, so that label
-never shows another page's figure with a smaller value
+other than the population names Matching Families (the table line's words,
+short enough for one line at 320 pixels so the tiles never move), so that
+label never shows another page's figure with a smaller value
 ([same label, same value](../ui-conventions/spec.md#population-of-report-figures)),
 the annual total and the number of Families that cannot
 contribute financially (such a Family's frequency reads "Cannot contribute"),
