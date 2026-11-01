@@ -21,7 +21,7 @@ from dataclasses import dataclass
 
 from django.db import connection
 
-from .family_names import family_display_name, family_heads_name
+from .family_names import family_display_name, family_heads_name, family_last_name
 from .snapshot_models import SourceCurrent
 from .source_status import NAME_NOT_RECORDED
 
@@ -156,7 +156,11 @@ def _read_facts(snapshot_id, duids, default):
             )
         mailing = values.get("mailingName")
         names[duid] = FamilyFacts(
-            family_heads_name(family_display_name(values, default), heads),
+            family_heads_name(
+                family_display_name(values, default),
+                heads,
+                recorded=bool(family_last_name(values)),
+            ),
             _envelope(values.get("envelopeNumber")),
             mailing.strip() if isinstance(mailing, str) else "",
         )

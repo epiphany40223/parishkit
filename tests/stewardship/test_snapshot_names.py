@@ -97,7 +97,9 @@ def test_presence_words_a_nameless_family_as_name_not_recorded(monkeypatch):
     _install(
         monkeypatch,
         {"7": {"active_head_duids": [70]}},
-        {"70": {"firstName": "Jeff", "lastName": "Squyres", "active": True}},
+        # A head without a surname, so the default still leads the name (a
+        # head's own surname would lead instead, #2320).
+        {"70": {"firstName": "Jeff", "lastName": "", "active": True}},
     )
     configuration = SimpleNamespace(
         active_configuration=SimpleNamespace(
@@ -117,7 +119,7 @@ def test_presence_words_a_nameless_family_as_name_not_recorded(monkeypatch):
     )
     rows = [SimpleNamespace(family=SimpleNamespace(family_duid=7))]
     assert presence._names(configuration, rows) == {
-        7: "Name not recorded in ParishSoft, Jeff Squyres"
+        7: "Name not recorded in ParishSoft, Jeff"
     }
 
 

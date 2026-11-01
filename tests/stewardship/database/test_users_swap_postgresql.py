@@ -1162,6 +1162,19 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_responses", "0033_commitment_roster_date"),
     ),
+    # 0194 (#2320) creates the name series, last name and two-surname
+    # name helpers; its file's other statements replace in place, so
+    # running it whole again is safe. It comes last: it replaces the
+    # Additional information selection v2, which 0064's file (above)
+    # makes again, and records the grants of what it replaces first.
+    **dict.fromkeys(
+        (
+            "public.stewardship_name_series_v1(text[])",
+            "public.stewardship_family_last_name_v1(jsonb)",
+            "public.stewardship_family_heads_name_v2(text,boolean,text[])",
+        ),
+        ("stewardship_reports", "0054_mixed_surname_names"),
+    ),
 }
 
 
@@ -1858,6 +1871,33 @@ CLOSURE_REPLACED_ONLY = {
         (
             ("stewardship_jobs", "0041_backup_uploader_preparation"),
             "pk_stewardship_backup_uploader",
+        ),
+    ),
+    # 0194 (#2320) replaces both directory selections last, on 0094's
+    # bodies, so they build the shown Family name with the shared function;
+    # 0094's rerun (CLOSURE_REPLACED) puts the inline name back, so only
+    # 0194's replacements run again. It also replaces the Financial and both
+    # Additional information selections last, on 0182's and 0175's bodies
+    # (these keys' values replace those entries above, in their place), so
+    # they name a Family with a blank lastName by its heads and search the
+    # Family surname. The name functions it also replaces come from 0045,
+    # which no closure reruns.
+    **dict.fromkeys(
+        ("stewardship_directory_report_v1", "stewardship_directory_report_v2"),
+        (
+            ("stewardship_reports", "0054_mixed_surname_names"),
+            "stewardship_family_heads_name_v2(family_name,surname_recorded,n.parts)",
+        ),
+    ),
+    **dict.fromkeys(
+        (
+            "stewardship_financial_report_v1",
+            "stewardship_information_report_v1",
+            "stewardship_information_report_v2",
+        ),
+        (
+            ("stewardship_reports", "0054_mixed_surname_names"),
+            "stewardship_family_heads_name_v2(r.surname,r.surname_recorded,n.parts)",
         ),
     ),
 }

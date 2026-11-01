@@ -487,11 +487,15 @@ def row_name(row):
     """The Family as shown: surname and heads, or why there is no name.
 
     A Family the Response filter lists after the current ParishSoft data
-    dropped it entirely has no name (``family_name`` None, #933).
+    dropped it entirely has no name (``family_name`` None, #933). The
+    selection's ``surname_recorded`` says whether ``family_name`` is the
+    Family's own surname (#2320); a capture made before it existed lacks it.
     """
     if row["family_name"] is None:
         return MISSING_NAME
-    return family_heads_name(row["family_name"], row["heads"])
+    return family_heads_name(
+        row["family_name"], row["heads"], recorded=row.get("surname_recorded", True)
+    )
 
 
 def add_responses(rows):

@@ -360,11 +360,12 @@ def name_families(result):
 
     The name (#932) is read from the snapshot the projection itself was read
     from, so the page and an export rendered later from its capture name a
-    Family alike. SQL still searches and orders by the surname, which leads
-    that name. Once the 15-minute refresh has compacted that snapshot, a late
-    export render keeps the captured surname for every row rather than mixing
-    in later data, and the file's "Family names" detail says which form it
-    used.
+    Family alike. SQL searches by that name and the Family surname, and
+    orders by the Family surname, then that name; the surname leads the
+    name unless no head shares it (#2320). Once the 15-minute refresh has
+    compacted that snapshot, a late export render keeps the captured
+    surname for every row rather than mixing in later data, and the file's
+    "Family names" detail says which form it used.
     """
     name_file_rows(result["metadata"], result["rows"])
     return result

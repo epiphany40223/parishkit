@@ -14,12 +14,14 @@ from .family_names import WHITESPACE
 # The SQL twin of snapshot_names.snapshot_family_names for one Family: the
 # surname (family_display_name's lastName, mailingName, "first last", then
 # default choice), then the active heads in DUID order as family_heads_name
-# joins them. It is the same expression directory_reports.sql uses to order
-# the directory. An active_head_duids that is not a JSON array counts as no
-# heads instead of failing the whole query. The placeholders are, in order:
-# the WHITESPACE sets ({shown} holds two when it is the whole name, then the
-# surname four), the default, the snapshot id, then the compiled Family DUID
-# expression's own parameters.
+# joins them, through the shared functions directory_reports.sql also uses
+# (stewardship_family_head_part_v1 and stewardship_family_heads_name_v2,
+# migration 0194; a blank lastName, stewardship_family_last_name_v1, lets
+# the heads' own surnames lead). An active_head_duids that is not a JSON
+# array counts as no heads instead of failing the whole query. The
+# placeholders are, in order: the surname's four WHITESPACE sets, the
+# default, the snapshot id, then the compiled Family DUID expression's own
+# parameters.
 FAMILY_NAME_SQL = """(SELECT {shown} FROM (
     SELECT sf.snapshot_id,d.document,coalesce(
         nullif(btrim(d.document->>'lastName',%s),''),
@@ -33,25 +35,16 @@ FAMILY_NAME_SQL = """(SELECT {shown} FROM (
     WHERE sf.snapshot_id=%s AND sf.source_key=({duid})::text
 ) f)"""
 
-HEADS_SQL = """f.surname||coalesce(', '||(
-    SELECT CASE WHEN cardinality(n.parts)<3 THEN array_to_string(n.parts,' and ')
-        ELSE array_to_string(n.parts[1:cardinality(n.parts)-1],', ')
-            ||' and '||n.parts[cardinality(n.parts)] END
-    FROM (SELECT array_agg(p.part ORDER BY h.head::bigint)
-            FILTER (WHERE p.part<>'') AS parts
-        FROM jsonb_array_elements_text(CASE
-            WHEN jsonb_typeof(f.document->'active_head_duids')='array'
-            THEN f.document->'active_head_duids' ELSE '[]'::jsonb END) h(head)
-        JOIN stewardship_snapshot_member sm
-            ON sm.snapshot_id=f.snapshot_id AND sm.source_key=h.head
-        JOIN stewardship_source_member mp ON mp.id=sm.payload_id
-        CROSS JOIN LATERAL (SELECT mp.canonical::jsonb) m(value)
-        CROSS JOIN LATERAL (SELECT
-            btrim(coalesce(m.value->>'firstName',''),%s),
-            btrim(coalesce(m.value->>'lastName',''),%s)) t(first,last)
-        CROSS JOIN LATERAL (SELECT CASE WHEN t.last=f.surname THEN t.first
-            ELSE concat_ws(' ',nullif(t.first,''),nullif(t.last,'')) END) p(part)
-        WHERE m.value->'active'='true'::jsonb) n),'')"""
+HEADS_SQL = """stewardship_family_heads_name_v2(f.surname,
+    stewardship_family_last_name_v1(f.document)<>'',ARRAY(
+    SELECT stewardship_family_head_part_v1(mp.canonical::jsonb,f.surname)
+    FROM jsonb_array_elements_text(CASE
+        WHEN jsonb_typeof(f.document->'active_head_duids')='array'
+        THEN f.document->'active_head_duids' END) h(head)
+    JOIN stewardship_snapshot_member sm
+        ON sm.snapshot_id=f.snapshot_id AND sm.source_key=h.head
+    JOIN stewardship_source_member mp ON mp.id=sm.payload_id
+    ORDER BY h.head::bigint))"""
 
 
 class SnapshotFamilyName(Func):
@@ -78,6 +71,6 @@ class SnapshotFamilyName(Func):
         duid, params = compiler.compile(self.get_source_expressions()[0])
         shown = "f.surname" if self.surname_only else HEADS_SQL
         sql = FAMILY_NAME_SQL.format(shown=shown, duid=duid)
-        # The surname source trims four values; the heads part two more.
-        trims = 4 if self.surname_only else 6
-        return sql, (*[WHITESPACE] * trims, self.default, self.snapshot_id, *params)
+        # The surname source trims four values; the shared head functions
+        # trim with their own set (stewardship_name_strip_v1).
+        return sql, (*[WHITESPACE] * 4, self.default, self.snapshot_id, *params)
