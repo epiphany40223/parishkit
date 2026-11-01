@@ -95,12 +95,27 @@ statement below cites the Google page it was checked against on November 1,
   *External*, which admits any Google account; the Users page still decides
   who gets in. (Google:
   [Manage App Audience](https://support.google.com/cloud/answer/15549945).)
-- **Publishing status.** While the project is *Testing*, only the people
-  listed under Audience → Test users can sign in, at most 100, and Google
-  shows each of them a warning first; a test user's consent lasts seven days.
-  Add test users with **Add users** on the Audience page. Select **Publish
-  app** to move to *In production*, which admits any Google account (same
-  page as above).
+- **Publishing status.** A *Testing* project normally admits only the people
+  listed under Audience → Test users (at most 100), shows each of them a
+  warning first, and makes their consent expire after seven days. Basic
+  sign-in is exempt. Google's page says: "The only exception to this behavior
+  is if your app requests a subset of the following: name, email address, and
+  user profile (through the userinfo.email, userinfo.profile, openid scopes or
+  their OpenID Connect equivalents). For such requests, your users do not
+  need to be in the trusted user list, they will not see a warning message,
+  and their authorizations will not expire after 7 days." Stewardship asks for
+  `openid` and `email` only, so today a Testing project neither blocks nor
+  warns anyone. The test-user list, the 100-user limit, the warning and the
+  seven-day expiry apply once the project asks for any other scope, such as
+  `user.emails.read` for
+  [#2343](https://github.com/epiphany40223/parishkit/issues/2343). Add test
+  users with **Add users** on the Audience page. Select **Publish app** to
+  move to *In production*, which admits any Google account (same page as
+  above).
+- **App name.** On the Branding page, set the app name to exactly
+  `ParishKit Stewardship`. The Privacy policy's Limited Use statement names
+  the app that way, and Google compares that statement with the consent
+  screen's app name.
 - **Pages Google requires.** An external app in production must list an
   application home page, a privacy policy and terms of service on the Branding
   page, on an authorized domain (the parish's top private domain, verified in
@@ -109,7 +124,11 @@ statement below cites the Google page it was checked against on November 1,
   `<public origin>/about/` (home page), `<public origin>/privacy/` and
   `<public origin>/terms/`; every page's footer links them (see
   [public information pages](../specs/stewardship/architecture/spec.md#public-information-pages)).
-  Have the parish approve their wording first. (Google:
+  Have the parish approve their wording first. Google's pages differ on the
+  terms of service: the Branding help says the three links "are required for
+  all external production apps", while the brand verification page calls the
+  terms of service "optional"; Stewardship provides all three either way.
+  (Google:
   [Manage OAuth App Branding](https://support.google.com/cloud/answer/10311615);
   [brand verification](https://developers.google.com/identity/protocols/oauth2/production-readiness/brand-verification).)
 - **When Google must verify the app.**
@@ -125,8 +144,11 @@ statement below cites the Google page it was checked against on November 1,
     [#2343](https://github.com/epiphany40223/parishkit/issues/2343) (the Data
     Access page lists each scope as non-sensitive, sensitive or restricted:
     confirm it there), need Google's review, which can take up to ten days and
-    needs a demonstration video. Restricted scopes also need a security
-    assessment. (Google: sensitive scope verification, above.)
+    needs a demonstration video. (Google: sensitive scope verification,
+    above.) Restricted scopes need a further review, and an annual security
+    assessment only when the app stores or sends restricted-scope data
+    through its own servers. (Google:
+    [restricted scope verification](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification).)
   - Until a sensitive scope is verified, a published app shows the "unverified
     app" screen and is limited to 100 new users in total. (Google:
     [Unverified apps](https://support.google.com/cloud/answer/7454865).)
@@ -134,18 +156,22 @@ statement below cites the Google page it was checked against on November 1,
   Data Access page, list only `openid` and `email` until Google grants
   verification for `user.emails.read`; then add it, in the same release as
   the #2343 code that uses it and the Privacy policy text that describes it.
-  At Epiphany nearly every Ministry leader already has a Google account under
-  the address ParishSoft holds (AT&T and BellSouth addresses included), so
-  basic sign-in covers almost everyone; the lookup is for the few exceptions.
+  Basic sign-in covers every leader whose Google account uses the address
+  ParishSoft holds; the lookup is for the others.
 - **A separate project for experiments.** Try new scopes in a second Cloud
   project (External, Testing, with yourself as a test user), as the #2352
   test did, never in Production's project.
 
 #### The "Google hasn't verified this app" page
 
-Google shows this page before its consent screen while the project is in
-Testing (to test users), or when a published app asks for a sensitive scope
-Google has not yet verified. It names the app's domain and says Google hasn't
+With today's basic scopes (`openid` and `email`) Google does not show this
+page, in Testing or in production (see **Publishing status** above). It
+applies only once the sign-in asks for a scope beyond basic sign-in, such as
+`user.emails.read` for
+[#2343](https://github.com/epiphany40223/parishkit/issues/2343): then Google
+shows it before its consent screen while the project is in Testing (to test
+users), or while a published app's sensitive scope is not yet verified. It
+names the app's domain and says Google hasn't
 verified the app. To continue, the person selects **Advanced**, then **Go to
 \<domain\> (unsafe)**, and then sees Google's usual consent screen. (Check the
 exact link names against
@@ -153,16 +179,17 @@ exact link names against
 sending; Google's own page did not show them when this was written.)
 
 Text to paste into a Ministry leader's sign-in email while the warning can
-appear (adjust the parish name and address):
+appear, that is, once the sign-in asks for `user.emails.read` (#2343) and
+until Google verifies it (adjust the parish name and address):
 
 > When you sign in with Google, Google may first show a page saying "Google
 > hasn't verified this app". That is expected: it means the parish's sign-in
 > is still waiting for Google's review, not that anything is wrong. Select
 > **Advanced**, then **Go to stewardship.example.org (unsafe)**, and continue
 > to sign in. The site asks Google only for your account's email addresses,
-> so the parish knows it is you. Once Google finishes its review, this page goes away. If
-> anything looks different, or you are unsure, reply to this email before you
-> continue.
+> so the parish knows it is you. Once Google finishes its review, this page
+> goes away. If anything looks different, or you are unsure, reply to this
+> email before you continue.
 
 ## Commands and generated paths
 
