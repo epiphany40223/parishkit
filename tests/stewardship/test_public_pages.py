@@ -111,8 +111,18 @@ def test_the_privacy_policy_names_only_the_sign_in_data_the_code_requests():
     """
     from pathlib import Path
 
+    from parishkit.stewardship.accounts import address_matching
+
     source = Path(public_pages.__file__).with_name("authentication.py").read_text()
     assert 'scope=["openid", "email"]' in source
+    # The second step of #2343's check, which the page describes only while
+    # alternate_address_sign_in is on.
+    assert address_matching.SECOND_STEP_SCOPES == (
+        "openid",
+        "profile",
+        "https://www.googleapis.com/auth/user.emails.read",
+    )
+    assert address_matching.PEOPLE_URL.endswith("personFields=emailAddresses")
 
 
 def test_every_page_in_the_site_layout_ends_with_the_footer(client):
@@ -225,6 +235,38 @@ def test_the_privacy_policy_follows_parishsoft_publication(
     for text in (WRITES_CONFIRMED, WRITES_NEVER, WRITES_MAYBE):
         assert (text in html) is (text == family), text
     assert service in html
+
+
+CHECK = "the site can offer to check your Google account's other email addresses"
+NEVER_ASKS = "It does not ask Google for, or keep, your name, photo"
+ONLY_ASKS = "The site asks Google only for the account's email address"
+APART = "Apart from the check of your other email addresses described below, the "
+
+
+@pytest.mark.parametrize("values", [None, {"modules": ["census"]}])
+def test_the_privacy_policy_describes_the_address_check_only_while_it_is_on(
+    client, monkeypatch, values
+):
+    """With alternate_address_sign_in off the page says the site asks Google
+    only for the address and never for more; on, both of those sentences
+    except the check of the account's other verified addresses, which it
+    describes with what it keeps (#2343), with or without a campaign."""
+    html = _privacy(client, monkeypatch, values)
+    assert NEVER_ASKS in html and CHECK not in html
+    assert ONLY_ASKS in html and APART not in html
+    monkeypatch.setattr(
+        "django.conf.settings.STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN",
+        True,
+        raising=False,
+    )
+    html = _privacy(client, monkeypatch, values)
+    assert CHECK in html and NEVER_ASKS not in html
+    assert f"{APART}site asks Google only for the account's email address" in html
+    assert ONLY_ASKS not in html
+    assert "Apart from the check of your other email addresses" in html
+    assert "the site does not use or keep anything from it" in html
+    assert "keeps only that one address, which the parish already has" in html
+    assert "asks you to check again every 30 days" in html
 
 
 @pytest.mark.parametrize("parish", [False, True])
