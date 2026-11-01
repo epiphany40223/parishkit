@@ -13,7 +13,6 @@ from parishkit.stewardship.accounts.leader_import import (
     Leaders,
     _row,
     imported_ids,
-    ministries_label,
     plan_import,
 )
 from parishkit.stewardship.accounts.user_changes import ENTRY_LIMIT
@@ -128,19 +127,23 @@ def test_rows_the_users_schema_refuses_are_shaped_or_dropped():
     assert _row({"email": "a@example.org", "name": "x" * 201})["name"] == "a"
 
 
-@pytest.mark.parametrize(
-    ("names", "label"),
-    [
-        ([], ""),
-        (["Choir"], "Choir"),
-        (["Choir", "Ushers"], "Choir, Ushers"),
-        (["Choir", "Ushers", "Lectors"], "Choir, Ushers and 1 more"),
-        (["Choir", "Ushers", "A", "B", "C"], "Choir, Ushers and 3 more"),
-    ],
-)
-def test_ministries_are_a_short_list(names, label):
-    """The spec's "Choir, Ushers and 3 more"."""
-    assert ministries_label(names) == label
+def test_table_rows_list_every_ministry_in_order(monkeypatch):
+    """The Ministries led cell shows the whole list (#2342), sorted by name
+    without regard to case; there is no short form any more."""
+    names = {1: "ushers", 2: "Choir", 3: "Food pantry", 4: "Lectors", 5: "Youth"}
+    monkeypatch.setattr(leader_import, "ministry_names", lambda duids: names)
+    leaders = Leaders(
+        rows=[{"email": "a@example.org", "ministries": [1, 2, 3, 4, 5]}], unreachable=0
+    )
+    (row,) = leader_import.table_rows(leaders)
+    assert row["ministry_names"] == [
+        "Choir",
+        "Food pantry",
+        "Lectors",
+        "ushers",
+        "Youth",
+    ]
+    assert "ministries_label" not in row
 
 
 def test_the_table_sorts_by_name_by_default():

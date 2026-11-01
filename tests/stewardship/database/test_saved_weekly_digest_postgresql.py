@@ -111,7 +111,7 @@ def test_weekly_list_page_recounts_the_emails_funnel(
             )
             assert panel, "The list page has no funnel panel."
             return re.findall(
-                rb'<th scope="row">([^<]+).*?</th><td>([^<]+)</td>',
+                rb'<th scope="row">([^<]+).*?</th><td class="numeric">([^<]+)</td>',
                 panel.group(0),
                 re.S,
             )
