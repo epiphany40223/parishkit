@@ -25,14 +25,18 @@ COUNT_KEYS = (
 
 
 def family_counts(demand, family_id, result):
-    """Freeze actual group eligibility and retained current-revision outcomes."""
+    """Freeze actual group eligibility and retained current-revision outcomes.
+
+    The Family counts are over the campaign Families (``portal_eligible``,
+    the Families rule's), as the go-live preview counts them (#2331).
+    """
     require_work_order()
     family = FamilyCampaign.objects.get(pk=family_id, campaign_id=demand.campaign_id)
     counts = dict.fromkeys(COUNT_KEYS, 0)
     counts.update(
-        active_families=int(family.active),
-        eligible_families=int(family.active and family.email_eligible),
-        no_email_families=int(family.active and not family.email_eligible),
+        active_families=int(family.portal_eligible),
+        eligible_families=int(family.portal_eligible and family.email_eligible),
+        no_email_families=int(family.portal_eligible and not family.email_eligible),
         family_messages=int(result.selected is not None),
         coalesced_slots=_coalesced(demand, target=f"family:{family_id}"),
     )
