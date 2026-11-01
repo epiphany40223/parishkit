@@ -605,6 +605,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # (``CLOSURE_CREATED``) and 0106's (``CLOSURE_REPLACED_LAST``) bring back
 # without the uploader's login, so ``CLOSURE_REPLACED_ONLY`` puts 0193's
 # bodies back last.
+# 0195 (#235, contract) creates and replaces nothing and alters no table:
+# it only revokes the backup login's two table INSERTs (tolerated on the
+# base through runtime_grants.CLOSURE_TABLE_REVOKES), and its revokes are
+# no-ops when run again, so nothing is registered for it.
 # The columns 0185 (#2202) adds, by table.
 SERIES_IN_FORCE_COLUMNS = (
     ("stewardship_daily_fact_set", "pledge_edits"),
@@ -2717,7 +2721,10 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
     and the digest ready row's comparison column (#1018). Mail dispatch
     still holds the earlier release's ciphertext reads on the base, which
     database-grants admits there; the full migration's 0073 revokes them
-    (#389 L1), and after it the same reads would be refused as excess.
+    (#389 L1), and after it the same reads would be refused as excess. The
+    backup login's earlier table INSERTs on its run row and the off-site
+    copy outcomes are the same case for 0195 (#235, contract): admitted on
+    the base, revoked by the full migration, refused as excess after it.
     """
     from django.core.management import call_command
 
@@ -2748,8 +2755,10 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
             )
         with connection.cursor() as cursor:
             cursor.execute(EARLIER_MAIL_TOKEN_READS)
+            cursor.execute(EARLIER_BACKUP_INSERTS)
         assert grants() == {"database_grants_provisioned": True}
         assert mail_reads_ciphertext()
+        assert backup_inserts() == (True, True, True)
         with connection.cursor() as cursor:
             cursor.execute("SET SESSION AUTHORIZATION pk_stewardship_admin_recovery")
         result = operator_commands.upgrade_users_command(
@@ -2854,7 +2863,22 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
             "'EXECUTE')",
             [f"public.{DISPATCH_TOKEN_FUNCTION}"],
         )
+        # Only the run row's other columns (the registry's column grant).
+        assert backup_inserts() == (False, False, False)
+        assert scalar(
+            "SELECT has_column_privilege('pk_stewardship_backup_worker', "
+            "'public.stewardship_backup_run', 'started_at', 'INSERT')"
+        )
         with connection.cursor() as cursor:
+            cursor.execute(EARLIER_BACKUP_INSERTS)
+        with pytest.raises(ConfigError, match="grants exceed initial provisioning"):
+            grants()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                EARLIER_BACKUP_INSERTS.replace("GRANT", "REVOKE").replace(
+                    " TO ", " FROM "
+                )
+            )
             cursor.execute(EARLIER_MAIL_TOKEN_READS)
         with pytest.raises(ConfigError, match="column grants exceed"):
             grants()
@@ -2868,6 +2892,28 @@ EARLIER_MAIL_TOKEN_READS = (
     "GRANT SELECT (token_ciphertext) ON public.stewardship_rehearsal_credential "
     "TO pk_stewardship_mail_dispatch"
 )
+
+
+# The earlier release's backup-login table INSERTs on its run row and the
+# off-site copy outcomes, which migration 0195 revokes (#235, contract).
+EARLIER_BACKUP_INSERTS = (
+    "GRANT INSERT ON public.stewardship_backup_run TO pk_stewardship_backup_worker; "
+    "GRANT INSERT ON public.stewardship_backup_upload TO pk_stewardship_backup_worker"
+)
+
+
+def backup_inserts():
+    """The backup login's table INSERTs and its INSERT on completed_at."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT has_table_privilege('pk_stewardship_backup_worker', "
+            "'public.stewardship_backup_run', 'INSERT'), "
+            "has_table_privilege('pk_stewardship_backup_worker', "
+            "'public.stewardship_backup_upload', 'INSERT'), "
+            "has_column_privilege('pk_stewardship_backup_worker', "
+            "'public.stewardship_backup_run', 'completed_at', 'INSERT')"
+        )
+        return cursor.fetchone()
 
 
 def mail_reads_ciphertext():
@@ -3206,7 +3252,6 @@ def backup_command(monkeypatch, run_backup):
     monkeypatch.setattr(backup_commands, "configure_logging", lambda: None)
     monkeypatch.setattr(backup_commands, "load_deployment", lambda path: None)
     monkeypatch.setattr(backup_commands, "_admit_backup_identity", lambda: None)
-    monkeypatch.setattr(backup_commands, "_copy_offsite", lambda c: {"state": "x"})
     monkeypatch.setattr(backup_boundaries, "admit_backup_service", lambda c: None)
     monkeypatch.setattr(
         operator_commands, "configure_operator_database", lambda c: None
@@ -3482,7 +3527,6 @@ def test_a_resumed_users_upgrade_reuses_the_earlier_runs_backup(
     from datetime import timedelta
 
     from parishkit.stewardship.cli import main
-    from parishkit.stewardship.jobs.backup_models import BackupUpload
 
     from .test_backup_postgresql import FACTS, recorded
 
@@ -3521,16 +3565,8 @@ def test_a_resumed_users_upgrade_reuses_the_earlier_runs_backup(
         assert report["backup_reused"] is True
         assert report["reused_backup"]["manifest_digest"] == "e" * 64
         assert report["pending_base_migrations"] == 1
-        # No off-site destination in this configuration and no copy row.
-        assert report["offsite"] == {"state": "not_configured"}
-        with transaction.atomic():
-            BackupUpload.objects.create(
-                state="uploaded",
-                set_name="20261010T000000Z",
-                manifest_digest="e" * 64,
-                folder_id="f" * 20,
-            )
-        assert backup(resume)[1]["offsite"] == {"state": "uploaded"}
+        # Whether it was copied is the uploader's answer (#235, contract).
+        assert "offsite" not in report
         assert taken == []
     with swap_pending():
         # Only the swap pending: a fresh backup, flag or not.

@@ -219,8 +219,8 @@ def drive_probe(profile, monkeypatch, tmp_path):
 
 
 def drive_copy(profile, monkeypatch, tmp_path):
-    """The backup's off-site copy contacts Drive only outside LOCAL."""
-    from parishkit.stewardship import backup_offsite
+    """The off-site uploader's copy contacts Drive only outside LOCAL (#235)."""
+    from parishkit.stewardship import runtime_paths, uploader_commands
 
     reached = []
 
@@ -228,20 +228,24 @@ def drive_copy(profile, monkeypatch, tmp_path):
         reached.append(args)
         raise LookupError("The copy went past its profile check.")
 
-    # Outside LOCAL the copy goes on to read the destination; stop it there.
-    monkeypatch.setattr(backup_offsite, "destination", contacted)
+    # Outside LOCAL the copy goes on to take the copy lock; stop it there.
+    monkeypatch.setattr(runtime_paths, "private_directory", lambda path: path)
+    monkeypatch.setattr(uploader_commands, "_copy_lock", contacted)
     configuration = configuration_for(profile, tmp_path)
-    result = backup_offsite.copy_offsite(configuration, session_factory=contacted)
+    result = uploader_commands.run_upload(
+        configuration, wait_seconds=1, session_factory=contacted
+    )
     if result == {"state": "not_configured"} and not reached:
         raise ConfigError("The off-site copy was skipped.")
 
 
 def drive_smoke(profile, monkeypatch, tmp_path):
     """The off-site backup smoke check runs only outside LOCAL."""
-    from parishkit.stewardship import smoke
+    from parishkit.stewardship import smoke, uploader_boundaries
 
+    monkeypatch.setattr(uploader_boundaries, "admit_uploader_service", lambda c: None)
     configuration = replace(
-        configuration_for(profile, tmp_path), service_role=ServiceRole.BACKUP_WORKER
+        configuration_for(profile, tmp_path), service_role=ServiceRole.BACKUP_UPLOADER
     )
     smoke.check_backup_drive(
         configuration, delegated_email="mail@example.org", folder_link=""
@@ -283,7 +287,7 @@ def test_production_passes_the_same_check(name, monkeypatch, tmp_path):
             CASES[name][0](PRODUCTION, monkeypatch, tmp_path)
         return
     if name == "drive_copy":
-        # Production reads the destination, which the fake refuses.
+        # Production takes the copy lock, which the fake refuses.
         with pytest.raises(LookupError):
             CASES[name][0](PRODUCTION, monkeypatch, tmp_path)
         return

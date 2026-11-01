@@ -437,9 +437,10 @@ def render_runtime(configuration, *, image, checkout=None, provider_mode="config
                 bind(path, read_only=ro)
                 for path, ro in backup_targets(selected).items()
             ]
+            # Its own internal network only (#235, contract): the off-site
+            # uploader copies the sealed sets, so the profile that reads
+            # every tree and all database data has no route out at all.
             service["networks"] = {_offline_network(name): {}}
-            # The off-site copy uploads the sealed set to Google Drive.
-            _join_egress(service)
         elif role is ServiceRole.BACKUP_UPLOADER:
             from .uploader_boundaries import uploader_targets
 

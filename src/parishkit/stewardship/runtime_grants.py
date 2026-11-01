@@ -505,6 +505,19 @@ BACKUP_DESTINATION_FUNCTION = "stewardship_backup_destination_v1()"
 # that names a finished set's manifest and the two times its name is
 # bound to. Nothing else of the row (sizes, recipient, version).
 UPLOADER_RUN_COLUMNS = ("manifest_digest", "started_at", "completed_at")
+# What the backup login writes of its run row (#235, contract, 0195): every
+# column but completed_at, whose STATEMENT_TIMESTAMP() default the database
+# alone sets, so a set's name stays bound to the database's clock
+# (``backup_commands.record_run`` names exactly these).
+BACKUP_RUN_INSERT_COLUMNS = (
+    "id",
+    "started_at",
+    "database_bytes",
+    "files_bytes",
+    "manifest_digest",
+    "recipient_fingerprint",
+    "application_version",
+)
 # Each Family's pledge Edit in force, as the response it is in force on and
 # the Edit's annual pledge (0184, #2202): the campaign statistics capture
 # counts the values in force. Web runs every production capture today (the
@@ -908,6 +921,40 @@ CLOSURE_REVOKES = {
 }
 
 
+# Table grants an earlier release declared that a migration in the users
+# swap's closure revokes, with that migration: role -> table -> privileges.
+# Like ``CLOSURE_REVOKES`` (column grants), they are tolerated, never
+# granted, until their migration is applied (``pending_table_revokes``);
+# a table grant also covers each of its columns, so the column comparison
+# tolerates them too.
+CLOSURE_TABLE_REVOKES = {
+    # The off-site uploader's contract (#235, 0195): the backup login no
+    # longer appends copy outcomes, and its run-row INSERT becomes the
+    # column grant BACKUP_RUN_INSERT_COLUMNS.
+    ("stewardship_jobs", "0042_backup_uploader_contract"): {
+        ServiceRole.BACKUP_WORKER: {
+            "stewardship_backup_run": frozenset({"INSERT"}),
+            "stewardship_backup_upload": frozenset({"INSERT"}),
+        },
+    },
+}
+
+
+def pending_table_revokes(role, applied):
+    """The table grants ``role`` may still hold until a pending revoke applies.
+
+    ``applied`` is the ``(app, name)`` pairs of ``django_migrations``; the
+    answer is table -> privileges, for admission only.
+    """
+    tolerated = {}
+    for migration, roles in CLOSURE_TABLE_REVOKES.items():
+        if migration in applied:
+            continue
+        for table, privileges in roles.get(role, {}).items():
+            tolerated.setdefault(table, set()).update(privileges)
+    return tolerated
+
+
 def pending_functions(applied):
     """The registry routines whose creating migration is not in ``applied``.
 
@@ -1246,18 +1293,24 @@ def runtime_grants(role, *, target=None):
     if role is ServiceRole.BACKUP_WORKER:
         # The dump itself reads through the pg_read_all_data membership that
         # provisioning grants; the registry holds the one row it may write and
-        # read back (the database supplies the completion time), and the
-        # off-site copy outcome it appends after each set. A copy stopped by
-        # its whole-copy deadline, or a backup task's lost lease, is logged
-        # (#293): insert only, and a trigger admits only timeout events.
-        # Request mode (ADM-13 PR 3) reads requests and settles them through
-        # a column UPDATE; the request's guard checks every move.
+        # read back. Since the contract release (#235, 0195) that row's INSERT
+        # is a column grant without completed_at, so the database alone sets
+        # the completion time a set's name is bound to, and the off-site copy
+        # outcomes are the uploader's alone (no INSERT here). A backup task's
+        # lost lease is logged (#293): insert only, and a trigger admits only
+        # timeout events. Request mode (ADM-13 PR 3) reads requests and
+        # settles them through a column UPDATE; the request's guard checks
+        # every move. The table SELECTs stay: pg_read_all_data reads every
+        # table anyway, so dropping them would narrow nothing.
         return {
-            "stewardship_backup_run": {"SELECT", "INSERT"},
-            "stewardship_backup_upload": {"SELECT", "INSERT"},
+            "stewardship_backup_run": {"SELECT"},
+            "stewardship_backup_upload": {"SELECT"},
             "stewardship_operational_log": {"INSERT"},
             "stewardship_backup_request": {"SELECT"},
-        }, {"stewardship_backup_request": {"UPDATE": set(BACKUP_REQUEST_COLUMNS)}}
+        }, {
+            "stewardship_backup_request": {"UPDATE": set(BACKUP_REQUEST_COLUMNS)},
+            "stewardship_backup_run": {"INSERT": set(BACKUP_RUN_INSERT_COLUMNS)},
+        }
     if role is ServiceRole.BACKUP_UPLOADER:
         # The off-site uploader (#235): it appends its copy outcomes, reads
         # only what binds a set to its run row (the digest and the two

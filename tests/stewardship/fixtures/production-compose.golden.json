@@ -294,7 +294,6 @@
     }
    },
    "networks": {
-    "application-egress": {},
     "offline-backup-worker": {}
    },
    "oom_score_adj": 500,

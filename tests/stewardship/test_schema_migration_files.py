@@ -617,6 +617,9 @@ FROZEN = {
     "0194_mixed_surname_names.sql": (
         "a24ef906f36473f703de5b673388b8fa22cc23798e6c8666d0fd3e058c1ed054"
     ),
+    "0195_backup_uploader_contract.sql": (
+        "83571c4f1b5e33a011a6fe193c5547e22e7cf62ddcee1b84d3f1cc8fa900b2f3"
+    ),
 }
 
 

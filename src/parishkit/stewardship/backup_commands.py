@@ -199,19 +199,30 @@ def _admit_backup_grants(connection):
 
     pg_read_all_data gives SELECT on every table and sequence and USAGE on
     every schema, so only what it does not give is compared: table and
-    column write privileges against ``runtime_grants``, and the definer,
+    column write privileges against ``runtime_grants`` (plus the table
+    grants a pending closure migration revokes,
+    ``runtime_grants.pending_table_revokes``), and the definer,
     sequence-write and CREATE authority of ``excess_authority``.
     """
     from .accounts.credential_database import excess_authority
     from .database_provisioning import BACKUP_SEQUENCES
     from .deployment import ServiceRole
-    from .runtime_grants import runtime_grants
+    from .runtime_grants import pending_table_revokes, runtime_grants
 
     tables, columns = runtime_grants(ServiceRole.BACKUP_WORKER)
     allowed = {table: set(grants) for table, grants in tables.items()}
     for table, grants in columns.items():
         allowed.setdefault(table, set()).update(grants)
     with connection.cursor() as cursor:
+        # A database whose users swap is still pending (#952) has not run
+        # the closure's revokes yet (0195, #235): the table INSERTs it
+        # revokes are still held there, and only there.
+        cursor.execute("SELECT app,name FROM public.django_migrations")
+        applied = set(cursor.fetchall())
+        for table, grants in pending_table_revokes(
+            ServiceRole.BACKUP_WORKER, applied
+        ).items():
+            allowed.setdefault(table, set()).update(grants)
         cursor.execute(
             "SELECT n.nspname,c.relname,p FROM pg_class c "
             "JOIN pg_namespace n ON n.oid=c.relnamespace "
@@ -281,15 +292,15 @@ def reusable_upgrade_backup():
     backup runs, as before); everything pending is the swap's closure or
     the base migration's plan (``users_upgrade_targets`` admits the graph);
     and the newest backup is within the window ``migrate`` itself requires,
-    so the repeated base migration is admitted on it. Its off-site state is
-    the recorded copy of that very set.
+    so the repeated base migration is admitted on it. Whether that set was
+    copied off-site is the uploader's answer (``--require-digest`` with its
+    manifest digest, upgrade step 1), not this line's.
     """
     from django.db import connection
     from django.db.migrations.executor import MigrationExecutor
 
     from .backup import recent_backup_recorded
-    from .backup_offsite import destination
-    from .jobs.backup_models import BackupRun, BackupUpload
+    from .jobs.backup_models import BackupRun
     from .operator_commands import users_upgrade_targets
     from .runtime_database import USERS_SWAP, users_swap_closure
 
@@ -318,15 +329,6 @@ def reusable_upgrade_backup():
         .values("completed_at", "manifest_digest", "application_version")
         .first()
     )
-    copied = BackupUpload.objects.filter(
-        state="uploaded", manifest_digest=run["manifest_digest"]
-    ).exists()
-    if copied:
-        offsite = "uploaded"
-    elif destination() is None:
-        offsite = "not_configured"
-    else:
-        offsite = "not_uploaded"
     return {
         "backup_recorded": False,
         "backup_reused": True,
@@ -336,7 +338,6 @@ def reusable_upgrade_backup():
             "application_version": run["application_version"],
         },
         "pending_base_migrations": len(base),
-        "offsite": {"state": offsite},
     }
 
 
@@ -411,7 +412,6 @@ def _run(configuration, *, wait, request_mode):
 
     from .backup import configured_recipient, run_backup
     from .backup_requests import claim, held, settle_lapsed, waiting
-    from .jobs.backup_models import BackupRun
 
     if not _lock_backups(wait=wait):
         raise Quiet
@@ -463,7 +463,7 @@ def _run(configuration, *, wait, request_mode):
             facts,
             recipient_changed=recipient_changed(facts["recipient_fingerprint"]),
         )
-        recorded["run_id"] = BackupRun.objects.create(**facts).pk
+        recorded["run_id"] = record_run(**facts)
 
     # Read before the run starts, so the recorded start time follows the
     # configuration the key came from (see backup_health.key_changed).
@@ -486,6 +486,53 @@ def _run(configuration, *, wait, request_mode):
     # follows needs no lock, so another backup may start while it runs.
     _unlock_backups()
     return manifest, recorded, configured, request
+
+
+def record_run(
+    *,
+    started_at,
+    database_bytes,
+    files_bytes,
+    manifest_digest,
+    recipient_fingerprint,
+    application_version,
+):
+    """Insert one backup run row and return its id; the database dates it.
+
+    A fixed SQL ``INSERT`` naming exactly
+    ``runtime_grants.BACKUP_RUN_INSERT_COLUMNS``, never ``completed_at``
+    (#235, contract, frozen file 0195): the backup login's INSERT on the run
+    table is a column grant without that column, so its
+    ``STATEMENT_TIMESTAMP()`` default, the database's own clock, is the
+    completion time a set's name is bound to (``uploader_commands.binds``).
+    ``BackupRun.objects.create`` names every concrete field, ``DEFAULT`` for
+    a ``db_default`` one, which PostgreSQL refuses under that grant. The id
+    is made here, so no ``RETURNING`` reads anything back.
+    """
+    import uuid
+
+    from django.db import connection
+
+    from .runtime_grants import BACKUP_RUN_INSERT_COLUMNS
+
+    run_id = uuid.uuid4()
+    values = (
+        run_id,
+        started_at,
+        database_bytes,
+        files_bytes,
+        manifest_digest,
+        recipient_fingerprint,
+        application_version,
+    )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"INSERT INTO public.stewardship_backup_run "
+            f"({','.join(BACKUP_RUN_INSERT_COLUMNS)}) "
+            f"VALUES ({','.join(['%s'] * len(values))})",
+            values,
+        )
+    return run_id
 
 
 def _unlock_backups():
@@ -578,10 +625,9 @@ def _backup(config, *, request_mode=False, users_upgrade_resume=False):
             return None
     finally:
         lease.__exit__(None, None, None)
-    # The off-site copy runs after the lease: it reads only the finished set
-    # and appends its outcome, so a slow upload never holds offline work back.
-    offsite = _copy_offsite(configuration)
-    # The manifest digest is what the operator records off the host and
+    # No off-site copy here (#235, contract): this profile has no route out,
+    # and the off-site uploader's own cron line copies the new set. The
+    # manifest digest is what the operator records off the host and
     # compares at restore, since the sealed files alone prove no origin.
     result = {
         "backup_recorded": True,
@@ -593,27 +639,10 @@ def _backup(config, *, request_mode=False, users_upgrade_resume=False):
         # "file" when the installed backup_data key was used.
         "recipient_source": "file" if configured is None else "configured",
         "manifest_digest": recorded["manifest_digest"],
-        "offsite": offsite,
     }
     if request is not None:
         result["request_id"] = str(request.pk)
     return result
-
-
-def _copy_offsite(configuration):
-    """Copy the new set off-site; a failure never undoes the local backup.
-
-    Drive failures are recorded and categorized by ``copy_offsite`` itself;
-    anything unexpected is logged by category here and reported as failed,
-    and the scheduler's alert and the next run take it from there.
-    """
-    from .backup_offsite import copy_offsite
-
-    try:
-        return copy_offsite(configuration)
-    except Exception as error:
-        emit_failure(error, event=Event.TASK_FAILED)
-        return {"state": "failed", "failure_kind": "unexpected"}
 
 
 def execute_backup_command(args):

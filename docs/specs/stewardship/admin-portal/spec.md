@@ -2909,9 +2909,9 @@ credential file, and only the one-shot `backup-worker` profile reads it
   `backup_data` file stays the install-time key: a backup seals to the
   configured key when one is applied, and to the file otherwise.
 - **Pick-up.** Each `backup-worker` run reads the active configuration when
-  it starts, as it already does for the off-site folder, so the next backup
-  after the change is applied uses the new key. No service restarts and no
-  file changes.
+  it starts (as each off-site uploader run reads the applied off-site
+  folder), so the next backup after the change is applied uses the new key.
+  No service restarts and no file changes.
 - **Validation.** The key must be exactly one standard base64 line of 32
   bytes that is a canonical, usable X25519 public key: below 2^255 - 19
   (so never with the top bit set, which about half of all private keys
@@ -11346,8 +11346,10 @@ checks.
 #### Take a backup now
 
 **What it does.** It asks the server to run one backup soon, of the same
-kind as the scheduled backups: the same sealed files, record, off-site copy
-and [retention](../../../guides/stewardship-backup-runbook.md#retention).
+kind as the scheduled backups: the same sealed files, record and
+[retention](../../../guides/stewardship-backup-runbook.md#retention), and the
+same off-site copy, which the off-site uploader's own five-minute cron line
+makes once the set is recorded.
 
 **How it reaches the server.** The web process cannot start a backup: it
 has no Docker access, does not read the credentials tree and does not hold
@@ -11369,7 +11371,8 @@ the backup login. Instead:
    exits quietly and leaves the request waiting. It then tries once,
    without waiting, to take the backup lock that every backup run now
    takes. The lock is a PostgreSQL session advisory lock, held while a run
-   makes its backup set (the off-site upload that follows is not covered);
+   makes its backup set (the off-site uploader copies the set later, on its
+   own five-minute schedule, and is not covered);
    any database login could take its key and stall backups, which the
    scheduled run's timeout and the overdue-backup alert would then show (a
    lock file would need a new mount on every host). If another backup holds
