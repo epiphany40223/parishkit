@@ -17,7 +17,7 @@
   <h2>{% translate "Information from the parish's records" %}</h2>
   <p>{% translate "The site reads the parish's own membership records from ParishSoft, the parish's membership system. It copies only what the stewardship form and the parish's follow-up need:" %}</p>
   <ul>
-    <li>{% translate "for each Family: ParishSoft's ID numbers for it, its name and mailing name, envelope number, family group, registration and participation status, home address, email addresses and phone numbers, whether the parish may publish its address, email and phone, and whether it asked for no mail;" %}</li>
+    <li>{% translate "for each Family: ParishSoft's ID numbers for it, its name and mailing name, envelope number, family group, registration and participation status (including whether ParishSoft shows it as having members or as held in suspense), whether it is in the ParishSoft WorkGroup the parish uses to skip reminders, home address, email addresses and phone numbers, whether the parish may publish its address, email and phone, and whether it asked for no mail;" %}</li>
     <li>{% translate "for each household member: ParishSoft's ID number, full name (including middle, maiden and nickname, salutation and suffix), place in the household (such as head, spouse or child), member status, birth date, gender, marital status, language, email address and home, mobile and work phone numbers, and a date of death where the parish recorded one;" %}</li>
     <li>{% translate "the parish's ministries and who serves in them: each person's ministry role (including ministry leader roles), the event they serve at, start and end dates, and whether the person is trained or a substitute only; and" %}</li>
     <li>{% translate "each Family's pledges and gifts (amount, date and fund) to the funds the parish chose, for the campaign's year and for the earlier period the parish chose to compare it with. Gifts recorded as anonymous are only counted, never linked to anyone." %}</li>
@@ -29,6 +29,7 @@
   <ul>
     <li>{% translate "correct its household's information, add a household member, or say that someone has moved away or died;" %}</li>
     <li>{% translate "choose ministries to join or leave;" %}</li>
+    <li>{% translate "say that the household cannot attend Mass or prayer services, or that a Member cannot take part in ministries because of physical limitations (Parish staff review both answers, and Ministry leaders see the second);" %}</li>
     <li>{% translate "make a pledge for the coming year, with how often and how it plans to give; and" %}</li>
     <li>{% translate "write a note to the parish." %}</li>
   </ul>
@@ -47,7 +48,7 @@
   <ul>
     <li>{% translate "A Family sees only its own information, after signing in with its code or link." %}</li>
     <li>{% translate "Parish staff and Administrators can see every Family's information and responses." %}</li>
-    <li>{% translate "Ministry leaders see, for the ministries they lead only, the people serving in them or asking to join or leave them, with each person's name, gender, age, phone numbers, email addresses and home address, and how each request was followed up. They never see pledges, gifts or Family codes." %}</li>
+    <li>{% translate "Ministry leaders see, for the ministries they lead only, the people who asked to join or leave them and the names of the Ministry's Chairpersons. For each request they see the person's name and ParishSoft ID number, and their email address and phone numbers (for a request to leave, or for someone who cannot take part in ministries, only what the parish may publish; a standing request to join counts as permission). For a request to join, they also see the home address, gender and age. For a request to leave, they see the person's current role and whether the Family said the person cannot take part in any ministries because of physical limitations. They also see how each request was followed up. They never see pledges, gifts or Family codes." %}</li>
     <li>{% translate "The people who run the site's server for the parish can reach the stored information in order to keep the site working." %}</li>
   </ul>
 
@@ -62,7 +63,7 @@
 
   <h2>{% translate "Where information is kept, and for how long" %}</h2>
   <p>{% translate "Information is kept in a database on the server that runs the site for the parish. Backups are encrypted before they leave the server, and only the people who hold the parish's backup key can open them. Backups are kept for about a year: every backup from the last seven days, one a day for 30 days and one a month for 12 months, and always at least the 14 newest." %}</p>
-  <p>{% translate "Campaign records (responses, pledges, a copy of each email sent without its code or link, and a record of who did what) are kept as part of the parish's records, with no fixed end date, so the parish can compare one year with the next. Copies of ParishSoft records are kept the same way, thinned over time to one a day and later one a month. Signed-in sessions stop working when they end. A session on the parish's pages is deleted within about an hour after it ends; ended Family sessions are currently kept in the database. Downloaded report files are deleted after a short time." %}</p>
+  <p>{% translate "Campaign records (responses, pledges, a copy of each email sent without its code or link, and a record of who did what) are kept as part of the parish's records, with no fixed end date, so the parish can compare one year with the next. Copies of ParishSoft records are kept the same way, thinned over time to one a day and later one a month. Signed-in sessions stop working when they end. A signed-in session on the parish's pages is deleted within about an hour after it ends; ended Family sessions are currently kept in the database. Downloaded report files are deleted after a short time." %}</p>
 
   <h2>{% translate "Cookies and browser storage" %}</h2>
   <p>{% translate "The site uses only the cookies it needs to work:" %}</p>
