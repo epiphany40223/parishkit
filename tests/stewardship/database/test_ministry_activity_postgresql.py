@@ -156,7 +156,7 @@ def test_the_guard_refuses_an_inactive_ministry_in_the_active_configuration(
 def test_a_request_adding_a_ministries_record_is_refused(tmp_path):
     """No request records a change to the retired section."""
     store, root, actor = initialized(tmp_path)
-    with pytest.raises(ConfigError, match="ministries section"):
+    with pytest.raises(ConfigError, match="Ministry activity section"):
         record_request(
             base_digest=root.digest,
             patch=[{"operation": "add", "section": "ministries", **activity()}],

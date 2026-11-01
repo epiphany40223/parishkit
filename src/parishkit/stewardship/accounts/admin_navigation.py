@@ -192,7 +192,7 @@ PAGES = {
     "artwork_upload": Page("campaign", _("Campaign images"), "artwork_settings"),
     "reminder_workgroup": Page("campaign", _(REMINDER_WORKGROUP_NAME)),
     "go_live": Page("campaign", _("Go live")),
-    "go_live_families": Page("campaign", _("Testing submissions"), "go_live"),
+    "go_live_families": Page("campaign", _("Testing responses"), "go_live"),
     # The Go live page's Prepare and Confirm Production steps (#1585): the
     # same page as Check, so each has its name and marks its menu entry,
     # and its trail is the group, then Go live, never one crumb per step.

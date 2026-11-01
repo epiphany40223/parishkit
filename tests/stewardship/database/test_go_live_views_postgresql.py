@@ -128,8 +128,8 @@ def test_testing_submissions_after_go_live_say_so_plainly(
         )
         assert response.status_code == 410
         body = response.content.decode()
-        assert "Testing submissions are only available before go-live." in body
-        assert "Going live removes the Testing submissions." in body
+        assert "Testing responses are only available before go-live." in body
+        assert "Going live removes the Testing responses." in body
         # The error page's own "Sign in again" link (the Admin base also
         # carries a hidden signed-out dialog with that text).
         assert '<p><a href="/admin/login">' not in body
@@ -142,7 +142,7 @@ def test_testing_submissions_after_go_live_say_so_plainly(
         )
         assert script.status_code == 410
         assert script.json()["refusal"]["message"] == (
-            "Testing submissions are only available before go-live."
+            "Testing responses are only available before go-live."
         )
 
 

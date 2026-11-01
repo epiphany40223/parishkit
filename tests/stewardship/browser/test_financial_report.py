@@ -202,7 +202,7 @@ def test_financial_columns_lead_with_family_and_name_the_parishsoft_year(
         "Installment",
         "Share methods",
         "ParishSoft (2025–2026)",
-        "Latest response",
+        "Submitted",
     ]
     assert len(shown) == len(expected), shown
     assert all(

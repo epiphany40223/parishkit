@@ -476,7 +476,7 @@ def test_family_lines_are_tagged_and_keep_their_order():
 def test_a_family_member_sees_the_familys_summary_and_lines():
     """A panel per Family linking its Timeline, its fields and tagged lines."""
     page = render(with_families(SHOWN))
-    assert "Family member of" in page
+    assert "Family Member of" in page
     assert (
         f'<a href="/admin/reports/families/{FAMILY_ID}/">Adams, Ann and Bob</a>' in page
     )
@@ -515,10 +515,10 @@ def test_family_parts_without_records_say_why():
     assert f'href="/admin/reports/families/{UUID(int=8)}/"' in page
     alone = render(timeline())
     assert (
-        "Not found in ParishSoft as a Family member, so there are no Family form "
+        "Not found in ParishSoft as a Family Member, so there are no Family form "
         "records." in alone
     )
-    assert "Family member of" not in alone and 'value="form"' not in alone
+    assert "Family Member of" not in alone and 'value="form"' not in alone
 
 
 def test_family_form_activity_narrows_to_the_familys_lines():

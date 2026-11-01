@@ -132,7 +132,7 @@ def test_a_direct_save_refuses_what_it_cannot_set(auth_service, google, monkeypa
     # The census-only draft shows no Financial page, so its slot takes none.
     unavailable = save(browser, path, data | {"bundle_financial": banner})
     assert unavailable.status_code == 400
-    assert refusal(unavailable).startswith("Families see no Financial page")
+    assert refusal(unavailable).startswith("Families see no Financial stewardship page")
     # A banner is not an icon: the staged image cannot be saved there.
     wrong = save(browser, path, data | {"bundle_welcome": banner})
     assert wrong.status_code == 409

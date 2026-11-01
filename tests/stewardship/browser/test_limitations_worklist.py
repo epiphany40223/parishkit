@@ -46,7 +46,7 @@ def test_one_table_lists_members_and_families(page, component_origin):
     ]
     assert page.locator(".table-scroll table").count() == 1
     answers = page.locator("#table tbody tr td").all_inner_texts()
-    assert "Cannot participate in any ministries" in answers
+    assert "Cannot participate in any Ministries" in answers
     assert "Cannot attend Mass or prayer services" in answers
     # A Member added on the form shows New Member under its name, where a
     # Member DUID would be (#2124).

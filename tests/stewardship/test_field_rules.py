@@ -312,7 +312,7 @@ EMAIL_FIELDS = [
     (SetupMailForm, "delegated_email", "Enter a valid delegated mailbox address."),
     (SetupMailForm, "sender", "Enter a valid From address."),
     (SetupMailForm, "reply_to", "Enter a valid reply-to address."),
-    (SetupTestingForm, "testing_recipient", "Enter a valid Testing email address."),
+    (SetupTestingForm, "testing_recipient", "Enter a valid Testing recipient address."),
     (
         lambda: IntegrationForm("google_workspace"),
         "delegated_email",

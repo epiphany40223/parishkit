@@ -2858,7 +2858,7 @@ role may not open (from a bookmark, a shared link or a typed address) is
 told the role is the reason, never to sign in again: the page keeps the
 "Access unavailable" heading and says "This page is for Administrators.
 Your access doesn't include it." ("for Administrators and Staff" on a Staff
-page), then "Choose a page from the menu, or ask a parish administrator if
+page), then "Choose a page from the menu, or ask a parish Administrator if
 you need this one.", with the usual Administration home link and no Sign in
 again link. Only a missing or ended session keeps the sign-in wording
 ("Your sign-in has ended…" or "Your session may have ended…", with Sign in
@@ -2893,7 +2893,7 @@ current Admin session, its 403 page never says to sign in again. A refusal
 with no reviewed wording of its own (a report a Ministry leader may not
 read, a plain access check) keeps the "Access unavailable" heading and says
 "Your access doesn't include this page." then "Choose a page from the menu,
-or ask a parish administrator if you need this one.", with the left menu,
+or ask a parish Administrator if you need this one.", with the left menu,
 the usual Return to the previous page and Administration home links, and no
 Sign in link. A refusal that has its own sentence (a Ministry leader who
 leads no Ministry, the role refusal above) keeps it, still without a Sign in
@@ -3624,8 +3624,7 @@ stewardship dated the same pledge under two headings, and the Testing page
 was "Testing submissions" while its own About and Home said "Testing
 responses" (Administrator, 2026-10-31). **Precedent.**
 [#2330](https://github.com/epiphany40223/parishkit/issues/2330). Status:
-decided; the strings change in a later #2330 pull request, and the
-[retired words](#retired-words) guard holds the strings left until then.
+built (#2330).
 
 ### Testing recipient
 
@@ -3636,9 +3635,7 @@ or "the testing address". Text about its mailbox says **the Testing
 recipient's inbox** ("Check the Testing recipient's inbox"), not "the
 Testing mailbox". **Why.** Setup, Parish settings, Campaign mail and the
 restore review gave one setting four names. **Precedent.**
-[#2330](https://github.com/epiphany40223/parishkit/issues/2330) (Status:
-decided; strings change later, as for
-[responses and submissions](#responses-and-submissions)).
+[#2330](https://github.com/epiphany40223/parishkit/issues/2330) (Status: built).
 
 ### Capitalization
 
@@ -3658,8 +3655,7 @@ sign-in and access-denied pages, whose reader may hold no role
 (Administrator, 2026-10-31). **Why.** Lower-case "member", "ministries",
 "staff" and "administrator" read as everyday words where the page means
 the record or the role. **Precedent.**
-[#2330](https://github.com/epiphany40223/parishkit/issues/2330) (Status:
-decided; strings change later).
+[#2330](https://github.com/epiphany40223/parishkit/issues/2330) (Status: built).
 
 ### Retired words
 

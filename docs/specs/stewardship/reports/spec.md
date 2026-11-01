@@ -1214,7 +1214,7 @@ request page's heading, each Weekly report item, Refused addresses and each
 Refused address page, and Families the form cannot open. The
 names stay unlinked where the page must not open a Timeline: the Additional
 information queue (each name is already the link to its request, and the
-request page links the Timeline), Go-live's Testing submissions and the
+request page links the Timeline), Go-live's Testing responses and the
 chosen-Family test send (Testing only), and the examples of a refused
 ParishSoft load. Sent mail's Recipient links a Production Family email's
 Family here; every other Recipient stays the button that lists everything
@@ -1469,7 +1469,7 @@ none, even with the same answer as the change it replaced (#2028). **Details** n
   Reviewer's value: $1,300.00, Quarterly; share methods: Online giving",
   [#2177](https://github.com/epiphany40223/parishkit/issues/2177));
 - a Limitations answer: the answer in [Limitations](#limitations)' words
-  and whom it is about ("Cannot participate in any ministries for Smith,
+  and whom it is about ("Cannot participate in any Ministries for Smith,
   Anne", "Cannot attend Mass or prayer services for the Family");
 - then "by" and the acting user's address ("Former portal user" when the
   user record is gone, as Ministry requests says). A line never shows a
@@ -3779,8 +3779,8 @@ pledge, Frequency, Approximate installment, Share methods (selected
 share-option labels with any Other text; the page uses each option's
 [short label](../admin-portal/spec.md#campaign-configuration) where one is
 set, the exports always the full label), the ParishSoft comparison pledge
-and contribution aggregates, Latest response (the time the Family last
-updated its response; to be named Submitted, as everywhere in this spec, per
+and contribution aggregates, Submitted (the time the Family last
+updated its response, per
 [responses and submissions](../ui-conventions/spec.md#responses-and-submissions)), First response (when it first responded),
 Entered by Staff (described below) and, as the last column, Edited on
 Pledges (the [values in force](#values-in-force-on-financial-stewardship), since
@@ -3798,7 +3798,7 @@ Family, Family DUID (still its own sortable column, as the
 Annual pledge, Installment (a compact "$103/mo", with /wk, /qtr or /yr
 for the other frequencies and the unit spoken in full to a screen reader;
 the frequency alone, or why there is none, when there is no installment),
-Share methods, ParishSoft, and Latest response. Money on the page is in
+Share methods, ParishSoft, and Submitted. Money on the page is in
 whole dollars, rounded half away from zero; a screen reader hears the exact
 amount, and the exports and the summary keep the cents. Share methods shows
 every chosen method as its own chip, in order, each named by its short label
@@ -3813,7 +3813,7 @@ with the contribution total ("Contributed") under it in one cell, each named
 for a screen reader; its heading carries the comparison years and names
 Pledged and Contributed in that order, each with its period toggletip.
 Neither ParishSoft total is sortable: like frequency and share methods, the
-projection cannot order them without a schema change. Latest response is the
+projection cannot order them without a schema change. Submitted is the
 compact date alone, in the browser's time zone, with a "Staff" chip when
 Staff entered the current response. The page has no First response column
 (its date filter stays) and no Entered by Staff column; the exports keep
@@ -3844,7 +3844,7 @@ Entered by Staff says Yes when Staff entered the Family's current response
 through [Open form](#open-form) (#529), and No when the Family
 submitted it, so an earlier response Staff entered and the Family later
 replaced shows No; it names no Staff member, and the page's help says so.
-On the page the same marker is the Latest response cell's Staff chip.
+On the page the same marker is the Submitted cell's Staff chip.
 A file captured before frozen migration 0066 added the marker to
 the projection leaves the column blank, never No (#794).
 
@@ -3975,7 +3975,7 @@ settings, which the editor offered it from. The selection (frozen migration
 so the two pages never disagree; the Family's response dates, Entered by
 Staff and the ParishSoft totals do not change with an Edit.
 
-The page marks an edited pledge the way Latest response marks a Staff
+The page marks an edited pledge the way Submitted marks a Staff
 entry ([table fit](../ui-conventions/spec.md#table-fit-and-row-height)): an
 "Edited" chip at the end of the Installment cell, a text cell, so the
 right-aligned amounts stay in line. A screen reader hears it as "Edited on
@@ -4181,7 +4181,7 @@ The page is the cannot-participate stream's
 same address; its stages, words and per-role actions are the
 [review pipeline](../review-pipeline/spec.md#cannot-participate-stream)'s.
 From each Family's currently effective live response, one table lists a row
-for each Member who cannot participate in any ministries and a row for each
+for each Member who cannot participate in any Ministries and a row for each
 Family that cannot attend Mass or prayer services (see
 [Family portal](../parishioner-portal/spec.md#cannot-participate-in-ministries)).
 Its columns follow the
@@ -4191,7 +4191,7 @@ header, named as the
 names it, surname then heads, the name opening the Family's Timeline),
 Family DUID, Member, Member DUID (blank for a Family's row and for a
 proposed Member, who has no DUID yet), the Family's answer ("Cannot
-participate in any ministries" or "Cannot attend Mass or prayer
+participate in any Ministries" or "Cannot attend Mass or prayer
 services"), Stage, Submitted (the response's time), Last decision and the
 row's actions. There is no Baseline (ParishSoft holds none of these
 answers) and no Reviewer's value (no Edit). Testing responses are excluded.
@@ -4275,22 +4275,21 @@ heading, the Families table starting on a new page, in the shared page frame
 with both counts), with times in the browser's zone
 ([time zones](../ui-conventions/spec.md#downloaded-files)), applying the
 Stage filter too. Each table has the columns Member, Member DUID, Family,
-ParishSoft status, Family DUID, Cannot participate in ministries, Latest
-response (to be named Submitted, per
-[responses and submissions](../ui-conventions/spec.md#responses-and-submissions))
+ParishSoft status, Family DUID, Cannot participate in Ministries, Submitted
+([responses and submissions](../ui-conventions/spec.md#responses-and-submissions))
 and Stage for Members, and Family, ParishSoft status, Family DUID,
-Limitation, Latest response and Stage for Families, whose rows include the
+Limitation, Submitted and Stage for Families, whose rows include the
 Cannot contribute financially answers the table lists, each with its
 Pledges stage. Limitation names the Family's limitation in the page's
 words, "Cannot attend Mass or prayer services" or "Cannot contribute
 financially", so a reader of the Families sheet sees what each row is about
 (R39 finding 11); the Members sheet says it with its Cannot participate in
-ministries column, which reads Yes on every row. ParishSoft status splits out the page's
+Ministries column, which reads Yes on every row. ParishSoft status splits out the page's
 [badge](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
 for a Family the data no longer has, whose Family cell is then blank
 (#1216); the report reads no activity, so it marks no inactive Family. Every format carries these columns and rows
 ([downloaded files](../ui-conventions/spec.md#downloaded-files)); the PDF
-words Latest response in the parish's date format. A download is rendered in memory on the web
+words Submitted in the parish's date format. A download is rendered in memory on the web
 connection under the interactive campaign read guard, not through the
 dedicated download pool, whose login cannot read the response and source
 data the report needs. `pk-admin export limitations` writes these same
@@ -4308,7 +4307,7 @@ still word older events' `option` choice and `talent_option_id`. The search
 text itself is never recorded, because it can name a Family. These answers
 are never written to ParishSoft. The follow-up queue on Ministry requests
 also notes when
-a leave comes from a Member who cannot participate in any ministries.
+a leave comes from a Member who cannot participate in any Ministries.
 
 ## System logs
 

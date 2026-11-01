@@ -74,7 +74,7 @@ STEP_HINTS = {
     "parish": "Fill in the parish name, website, time zone and telephone correctly",
     "access": "Fill in every required field correctly to save.",
     "mail": "Enter a valid mailbox, From address and Reply-to address to save.",
-    "testing": "Enter a valid Testing email address to save.",
+    "testing": "Enter a valid Testing recipient address to save.",
 }
 
 

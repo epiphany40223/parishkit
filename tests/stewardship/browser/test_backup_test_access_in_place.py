@@ -137,7 +137,7 @@ def test_a_refusal_s_link_is_shown_with_it(page, component_origin):
         (
             DENIED_SIGNED_IN,
             "Your access doesn't include this page. Choose a page from the menu, "
-            "or ask a parish administrator if you need this one.",
+            "or ask a parish Administrator if you need this one.",
         ),
         (
             DENIED_SIGNED_OUT,

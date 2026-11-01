@@ -598,22 +598,22 @@ def test_staff_entered_responses_are_marked_without_a_name():
     """Entered by Staff shows on the event, combined with no receipt (#529).
 
     The summary counts how many of the Family's responses Staff entered:
-    "Entered by Staff for the Family" when all were, a count when only some
+    "Entered by Staff" when all were, a count when only some
     were, and nothing when none was.
     """
     staffed = Submitted(FIRST.id, FIRST.at, no_receipt=True, by_staff=True)
     lines = events([], [staffed, SECOND])
     assert [str(line.detail) for line in lines] == [
-        "Entered by Staff for the Family; No receipt: no email address",
+        "Entered by Staff; No receipt: no email address",
         "",
     ]
     partial = summary([], [staffed, SECOND])
     assert (partial.count, partial.by_staff) == (2, 1)
     page = render(Timeline(partial, lines))
-    assert "1 entered by Staff for the Family" in page
+    assert "1 entered by Staff" in page
     whole = summary([], [staffed])
     page = render(Timeline(whole, events([], [staffed])))
-    assert "· Entered by Staff for the Family" in page
+    assert "· Entered by Staff" in page
     assert "1 entered by Staff" not in page
     assert "entered by Staff" not in render(TIMELINE).replace(
         "marked as entered by Staff", ""
@@ -626,7 +626,7 @@ def test_a_late_response_is_marked_late():
     late = Submitted(FIRST.id, FIRST.at, by_staff=True, late=True)
     lines = events([], [late, SECOND])
     assert [str(line.detail) for line in lines] == [
-        "Entered by Staff for the Family; Late: after the campaign closed",
+        "Entered by Staff; Late: after the campaign closed",
         "",
     ]
 

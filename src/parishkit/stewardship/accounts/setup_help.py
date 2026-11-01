@@ -90,7 +90,7 @@ MAIL = {
 
 SLACK = {
     "enabled": _(
-        "Posts alerts about problems that need an administrator to a Slack "
+        "Posts alerts about problems that need an Administrator to a Slack "
         "channel. Turning Slack off discards any Slack token entered for this "
         "setup."
     ),
@@ -129,7 +129,7 @@ TESTING = {
         "While the system is in Testing mode, every email it sends goes to this "
         "one address instead of to Families. That includes test emails for a "
         "chosen real Family, which contain that Family's real information. Use a "
-        "staff mailbox that only trusted people can read, for example "
+        "parish mailbox that only trusted people can read, for example "
         "stewardship-testing@yourparish.org."
     ),
 }
@@ -190,7 +190,7 @@ CREDENTIALS = {
 # campaign since #142.)
 ADMIN_CAMPAIGN = {
     "name": _(
-        "A name Families and staff will see, for example “2027 Stewardship Renewal”."
+        "A name Families and Staff will see, for example “2027 Stewardship Renewal”."
     ),
     "year_label": _(
         "Optional. Pages and emails show this where they mention the campaign "
@@ -324,7 +324,7 @@ HINTS = {
     "folder_link": _("The folder link from the address bar; it has /folders/."),
     "testing_recipient": _(
         "In Testing mode every email goes to this one address; use a trusted "
-        "staff mailbox."
+        "parish mailbox."
     ),
     "logo": _("PNG, JPEG or WebP, up to 5 MB."),
     "candidate": _("Paste it exactly. It is never displayed again."),

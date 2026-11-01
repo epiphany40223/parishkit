@@ -33,7 +33,7 @@
   <p class="export-state export-state-pending" role="status">{% include "stewardship/components/spinner.html" %} {% if status.state == 'retry_wait' %}{% translate "Trying again in a moment…" %}{% elif wait %}{% include 'stewardship/queue-wait.html' %}{% else %}{% translate "Preparing your file…" %}{% endif %}</p>
   <p class="help">{% translate "This usually takes a few seconds. This page updates by itself and the download starts when the file is ready." %}</p>
 {% elif status.state == 'failed' or status.state == 'abandoned' %}
-  <p class="notice notice-error export-state" role="alert">{% translate "The file could not be created. Try again; if it fails again, check System logs or ask your system administrator." %}</p>
+  <p class="notice notice-error export-state" role="alert">{% translate "The file could not be created. Try again; if it fails again, check System logs or ask whoever runs the server." %}</p>
   <form method="post" action="{% url 'admin:report_export_retry' job.pk %}#export-status" data-in-place="export-retry" data-in-place-message="{% translate 'Export retry started.' %}">{% csrf_token %}<input type="hidden" name="request_key" value="{{ retry_key }}">{% button type="submit" enabled=mutable aria-describedby=mutable|yesno:",export-locked" %}{% translate "Retry export" %}{% endbutton %}</form>
 {% endif %}
 {% if can_cancel %}<form method="post" action="{% url 'admin:report_export_cancel' job.pk %}#export-status" data-in-place="export-cancel" data-in-place-message="{% translate 'Export cancel requested.' %}">{% csrf_token %}{% button type="submit" variant="secondary" enabled=mutable aria-describedby=mutable|yesno:",export-locked" %}{% translate "Cancel export" %}{% endbutton %}</form>{% endif %}

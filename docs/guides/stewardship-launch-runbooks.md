@@ -135,7 +135,7 @@ the Family links were prepared makes the system prepare them again.
 3. **Administrator: Start go-live.** Once Check says **Everything is
    ready.**, choose **Start go-live**. The dialog "Start going live?" says
    what happens next, shows the Testing data to be deleted (with a link to
-   the Testing submissions) and the caution that deleted Testing data cannot
+   the Testing responses) and the caution that deleted Testing data cannot
    be restored and that Testing links and codes stop working now. **Apply**
    is the acknowledgement; there is no separate tick box. Apply checks
    readiness and the public web address again and refuses inside the dialog

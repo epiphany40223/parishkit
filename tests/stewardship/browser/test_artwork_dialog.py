@@ -432,7 +432,7 @@ def test_upload_waits_for_an_image_and_an_unshown_slot_says_why(page, component_
     assert page.evaluate(SLOT_BOTTOM, "Closing page icon") == pytest.approx(
         bottom, abs=1
     )
-    financial = slot(page, "Financial page icon")
+    financial = slot(page, "Financial stewardship page icon")
     unavailable = financial.get_by_role("button", name="Upload and review")
     assert unavailable.is_disabled()
     field = financial.get_by_label("Image")

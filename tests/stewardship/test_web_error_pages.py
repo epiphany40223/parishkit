@@ -535,7 +535,7 @@ def test_a_role_refusal_reaches_scripts_as_the_same_closed_json():
     assert data["refusal"] == {
         "message": "This page is for Administrators. Your access doesn't include it.",
         "fix": (
-            "Choose a page from the menu, or ask a parish administrator if you "
+            "Choose a page from the menu, or ask a parish Administrator if you "
             "need this one."
         ),
         "link": {"url": "/admin/", "label": "Administration home"},
@@ -748,7 +748,7 @@ def test_only_the_generic_admin_denial_is_redrawn(recheck, kind):
 SIGNED_IN_REFUSAL = {
     "message": "Your access doesn't include this page.",
     "fix": (
-        "Choose a page from the menu, or ask a parish administrator if you "
+        "Choose a page from the menu, or ask a parish Administrator if you "
         "need this one."
     ),
     "link": None,

@@ -756,7 +756,7 @@ def test_native_page_filters_privately_and_denies_leaders(
             "ParishSoft",
             "Pledged",
             "Contributed",
-            "Latest response",
+            "Submitted",
         ]
         assert head.count(b"<tr>") == 1 and head.count(b'scope="col"') == 7
         assert b"First response" not in head and b"Entered by Staff" not in head

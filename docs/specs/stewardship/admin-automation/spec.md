@@ -1881,7 +1881,7 @@ signatures:
   (`go_live_prepare_views._retry`, `_again`, `_stop`), Check's retry of a
   failed stop (`go_live_views._retry_stop`) and the Production preparation
   retry (`confirmation_progress.retry_shown`, which now takes a caller)
-  already took one. The Testing submissions list reads
+  already took one. The Testing responses list reads
   `cleanup_preview.cleanup_families`, as its page does.
 
 ### Read models
@@ -2871,7 +2871,7 @@ action's own transaction, so nothing is recorded when the action is not.
   through its `record` hook. It prints `created`, `withdrawal_id` and
   `campaign_id`; the campaign is a Testing draft again, and Check starts
   over from readiness.
-- **`go-live families`** streams the Testing submissions list (each
+- **`go-live families`** streams the Testing responses list (each
   Testing Family's `duid` and `name`, by DUID) as CSV to standard output,
   with its document (`campaign_id`, `count`, `file_name`, `content_type`,
   `size`, `sha256`) on standard error, as other streamed files are. Only
@@ -5073,7 +5073,7 @@ exactly the commands that exist.
   retry, refresh-again and stop, Confirm Production, the Production
   preparation retry and Cancel go-live
   ([#1809](https://github.com/epiphany40223/parishkit/issues/1809)), and
-  the Testing submissions list as a streamed file.
+  the Testing responses list as a streamed file.
 
 ## Decisions
 

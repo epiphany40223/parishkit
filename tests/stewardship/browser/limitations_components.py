@@ -176,7 +176,7 @@ def components(context, admin):
         "/limitations-report-none-searched": page(
             {}, data=nobody, chosen=LimitationsQuery(search="Nobody"), stage="ignored"
         ),
-        # What Show "Cannot participate in ministries" returns (#484), here
+        # What Show "Cannot participate in Ministries" returns (#484), here
         # narrowed as a search would be: one Member and one Family.
         "/limitations-report-cannot-serve": page(
             {}, data=narrowed, chosen=LimitationsQuery(show="cannot_serve")

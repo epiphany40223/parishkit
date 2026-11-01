@@ -4,7 +4,7 @@
 {% block content %}
 <h1>{% translate "Preview and test email" %}</h1>
 {% aboutpage "campaign-mail" %}<p>{% translate "The test is a fictional sample with a prominent TEST banner. It does not count as a scheduled email and does not let anyone sign in outside the campaign dates." %}</p>
-<p>{% translate "“Accepted” means the mail service took the message, not that it reached the inbox. Check the Testing mailbox to be sure." %}</p>{% endaboutpage %}
+<p>{% translate "“Accepted” means the mail service took the message, not that it reached the inbox. Check the Testing recipient's inbox to be sure." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
 <p class="notice">{% translate "TEST — a fictional sample, not a real Family's message. You can send it even before the campaign starts. It is sent only to" %} {{ testing_recipient }}.</p>
 <section class="panel"><h2>{% translate "Reviewed email sample" %}</h2>{% include 'stewardship/content-sample.html' %}</section>
@@ -30,7 +30,7 @@
   swapped. There is no manual refresh link. A refusal is the
   view's error page, which draws neither region, so it is shown whole.
 {% endcomment %}<div id="campaign-test-send" data-in-place-region>{% if pending %}<p role="status" id="campaign-test-pending">{% translate "A test is pending. Its result appears below by itself; another test cannot be sent until it settles." %}</p>{% endif %}
-{% if unknown %}<p role="alert">{% translate "We are not sure the previous test arrived: it may have. It is not retried automatically. Check the Testing mailbox first; to send another test anyway, check the box below." %}</p>{% endif %}
+{% if unknown %}<p role="alert">{% translate "We are not sure the previous test arrived: it may have. It is not retried automatically. Check the Testing recipient's inbox first; to send another test anyway, check the box below." %}</p>{% endif %}
 <form method="post" action="#campaign-tests" class="panel" data-in-place="campaign-test-send" data-in-place-message="{% translate 'Test email requested.' %}">{% csrf_token %}{{ form.preview_token }}{{ form.preview_token.errors }}{{ form.non_field_errors }}{% if unknown %}<p>{{ form.acknowledge_unknown }}<label for="{{ form.acknowledge_unknown.id_for_label }}">{{ form.acknowledge_unknown.label }}</label>{{ form.acknowledge_unknown.errors }}</p>{% endif %}{% button type="submit" disabled=pending aria-describedby=pending|yesno:"campaign-test-pending,"|default:None %}{% translate "Send this test email" %}{% endbutton %}</form></div>
 <div id="campaign-tests" data-in-place-region><section class="panel"><h2 id="campaign-tests-heading" tabindex="-1" data-in-place-focus>{% translate "Recent test results" %}</h2>
 <div aria-live="polite" data-live-status="campaign-tests"{% if page_url %} data-live-url="{{ page_url }}"{% endif %}{% if pending %} data-live-pending{% endif %}><ul>{% for item in items %}<li>{{ item.label }} — <time data-local-instant datetime="{{ item.created_at|date:'c' }}">{{ item.created_at|date:'c' }}</time>{% if not item.current %} ({% translate "earlier configuration or template" %}){% endif %}</li>{% empty %}<li>{% translate "No tests have been requested. Select Send this test email to send one." %}</li>{% endfor %}</ul>

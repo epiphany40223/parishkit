@@ -438,6 +438,8 @@ RETIRED = (
     "Campaign content and templates",
     "Campaign email test",
     "Families with Testing submissions",
+    # Renamed Testing responses by #2330.
+    "Testing submissions",
     "How Families will share",
     "Production activation progress",
     # Renamed Go live by #1585 slice 2.
@@ -523,20 +525,6 @@ ALLOWED = {
     # ``pk-admin census review`` (#528) words that button's decision
     # (``unreviewed``) in its help, not a link back to a page.
     ("admin_cli.py", "Back to "),
-    # "Distinct Families with Testing submissions": a readiness count and
-    # the Testing submissions table's caption, not the page's name.
-    (
-        "accounts/templates/stewardship/go-live-check.html",
-        "Families with Testing submissions",
-    ),
-    (
-        "accounts/templates/stewardship/go-live-start-review.html",
-        "Families with Testing submissions",
-    ),
-    (
-        "accounts/templates/stewardship/go-live-families.html",
-        "Families with Testing submissions",
-    ),
     # ``pk-admin go-live readiness`` is a command's name, kept when the page
     # was renamed Go live (#1585), as ``content list`` below.
     ("admin_cli.py", "Go-live readiness"),

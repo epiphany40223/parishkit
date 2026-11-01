@@ -2,7 +2,7 @@
 {% block title %}{% reminder_workgroup_name %}{% endblock %}
 {% block content %}
 <h1>{% reminder_workgroup_name %}</h1>
-{% aboutpage "reminder-workgroup" %}<p>{% translate "Families in this ParishSoft WorkGroup do not get Reminder emails, even if they have not responded. Use it for duplicate or staff Family records, for example a second Family record ParishSoft keeps for a staff member who already responded as a parishioner: add those Families to one Family WorkGroup in ParishSoft and name that WorkGroup here." %}</p>
+{% aboutpage "reminder-workgroup" %}<p>{% translate "Families in this ParishSoft WorkGroup do not get Reminder emails, even if they have not responded. Use it for duplicate or Staff Family records, for example a second Family record ParishSoft keeps for a Staff member who already responded as a parishioner: add those Families to one Family WorkGroup in ParishSoft and name that WorkGroup here." %}</p>
 <p>{% translate "A Family in the WorkGroup gets no Reminders. Nothing else changes: it still gets the invitation, receipts and confirmations, keeps its code and link, and counts in every report. Changes take effect at the next ParishSoft refresh, and a Reminder already prepared for a Family is not sent once the Family is in the WorkGroup." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
 {% comment %}

@@ -32,7 +32,7 @@
 
 <div class="panel">
 <h2>{% translate "Emails that may have gone out" %}</h2>
-{% if review.mode != "production" %}<p>{% translate "The site is in Testing, so no Family email is held: Testing email goes only to the testing address." %}</p>
+{% if review.mode != "production" %}<p>{% translate "The site is in Testing, so no Family email is held: Testing email goes only to the Testing recipient." %}</p>
 {% elif not review.listed %}<p>{% translate "Find the invitations and reminders that were due but are not recorded as sent. Finding them only holds them; nothing is sent." %}</p>
 {% else %}{% include "stewardship/components/held-email-groups.html" with groups=review.groups %}
 {% endif %}
@@ -45,7 +45,7 @@
 <h2>{% translate "Release the site" %}</h2>
 {% if step.release %}<div data-restore-preview="release">
 <ul>
-<li>{% translate "As things stand now:" %} {% if review.release_outcome == "open" %}{% translate "Families can sign in again, and Family email resumes." %}{% elif review.release_outcome == "paused" %}{% translate "Families can sign in again. Family email stays paused until you resume it on Pause and resume mail." %}{% elif review.release_outcome == "scheduled" %}{% translate "The campaign has not opened yet: Family access and Family email start when it opens." %}{% elif review.release_outcome == "testing" %}{% translate "The site is in Testing: Family email goes only to the testing address, as before." %}{% else %}{% translate "Family access and Family email stay off: the campaign is closed." %}{% endif %}</li>
+<li>{% translate "As things stand now:" %} {% if review.release_outcome == "open" %}{% translate "Families can sign in again, and Family email resumes." %}{% elif review.release_outcome == "paused" %}{% translate "Families can sign in again. Family email stays paused until you resume it on Pause and resume mail." %}{% elif review.release_outcome == "scheduled" %}{% translate "The campaign has not opened yet: Family access and Family email start when it opens." %}{% elif review.release_outcome == "testing" %}{% translate "The site is in Testing: Family email goes only to the Testing recipient, as before." %}{% else %}{% translate "Family access and Family email stay off: the campaign is closed." %}{% endif %}</li>
 <li>{% if not review.listed %}{% translate "No email needed a hold." %}{% elif review.unsettled %}{% blocktranslate count n=review.unsettled trimmed %}{{ n }} held email you have not decided on stays held and is not sent.{% plural %}{{ n }} held emails you have not decided on stay held and are not sent.{% endblocktranslate %}{% else %}{% translate "Every held email that would be sent now has a decision." %}{% endif %}{% if review.inert %} {% blocktranslate count n=review.inert trimmed %}{{ n }} more undecided hold would send nothing now and stays held too.{% plural %}{{ n }} more undecided holds would send nothing now and stay held too.{% endblocktranslate %}{% endif %} {% translate "If more emails need a hold before you confirm (for example after a ParishSoft refresh), the release is refused and you find them again." %}</li>
 {% if review.reminders_blocked %}<li><strong>{% blocktranslate count n=review.reminders_blocked trimmed %}{{ n }} Family's invitation is not decided, so it gets no reminders either until it is.{% plural %}{{ n }} Families' invitations are not decided, so they get no reminders either until they are.{% endblocktranslate %}</strong></li>{% endif %}
 <li>{% translate "Staff and Ministry leaders can use the site again." %}</li>

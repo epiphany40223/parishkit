@@ -55,7 +55,7 @@ def test_a_new_configuration_with_a_ministries_record_is_refused(active):
     with pytest.raises(ConfigError) as refused:
         configuration_version(policy_document(activity(active=active)))
     assert str(refused.value) == RETIRED_MESSAGE
-    assert "ministries section" in RETIRED_MESSAGE
+    assert "Ministry activity section" in RETIRED_MESSAGE
 
 
 def test_an_empty_section_is_still_admitted():
@@ -113,7 +113,7 @@ def test_no_request_adds_a_ministries_record():
     """Neither the Admin nor the recovery request formats can add one."""
     base = configuration_version(policy_document())
     patch = [{"operation": "add", "section": "ministries", **activity()}]
-    with pytest.raises(ConfigError, match="ministries section"):
+    with pytest.raises(ConfigError, match="Ministry activity section"):
         build_candidate(base, patch, candidate_id=uuid4())
 
 
@@ -126,7 +126,7 @@ def test_a_change_to_older_history_must_remove_its_records():
     row = activity()
     base = history_version(policy_document(row))
     admin = address("second@example.org")
-    with pytest.raises(ConfigError, match="ministries section"):
+    with pytest.raises(ConfigError, match="Ministry activity section"):
         build_candidate(
             base,
             [{"operation": "add", "section": "login_rules", **admin}],

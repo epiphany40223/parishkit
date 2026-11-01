@@ -22,11 +22,11 @@
 <li>{% translate "The system refreshes ParishSoft data and prepares new Family links by itself." %}</li>
 <li>{% translate "Nothing reaches Families until you confirm." %}</li>
 </ul>
-<dl><dt>{% translate "Testing submissions" %}</dt><dd>{{ cleanup.submissions|number }}</dd>
-<dt>{% translate "Families with Testing submissions" %}</dt><dd>{{ cleanup.families|number }}</dd>
+<dl><dt>{% translate "Form submissions in Testing" %}</dt><dd>{{ cleanup.submissions|number }}</dd>
+<dt>{% translate "Families with Testing responses" %}</dt><dd>{{ cleanup.families|number }}</dd>
 <dt>{% translate "Testing messages" %}</dt><dd>{{ cleanup.messages|number }}</dd>
 <dt>{% translate "Testing records to delete" %}</dt><dd>{{ cleanup.inventory.total|number }}</dd></dl>
-<p><a href="{% url 'admin:go_live_families' %}">{% translate "View Testing submissions" %}</a></p>
+<p><a href="{% url 'admin:go_live_families' %}">{% translate "View Testing responses" %}</a></p>
 <p class="notice">{% translate "Deleted Testing data cannot be restored, even if you stop going live later. Testing links and codes stop working now." %}</p>
 <input type="hidden" name="preview_token" value="{{ start.token }}" data-review-preview>
 </div>{% endwith %}

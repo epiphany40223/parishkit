@@ -40,8 +40,8 @@ MEMBER_HEADINGS = [
     "Family",
     "ParishSoft status",
     "Family DUID",
-    "Cannot participate in ministries",
-    "Latest response",
+    "Cannot participate in Ministries",
+    "Submitted",
     "Stage",
 ]
 FAMILY_HEADINGS = [
@@ -49,7 +49,7 @@ FAMILY_HEADINGS = [
     "ParishSoft status",
     "Family DUID",
     "Limitation",
-    "Latest response",
+    "Submitted",
     "Stage",
 ]
 # The writers read ``zone.key``, so tests pass a ZoneInfo, as the view does.
@@ -171,7 +171,7 @@ def test_downloads_match_the_page_columns():
 def test_pdf_prints_both_tables_with_the_csv_columns_and_rows(monkeypatch):
     """The PDF (#966) is the CSV's two tables, Members then Families.
 
-    Each table has the CSV's headings and values, only Latest response
+    Each table has the CSV's headings and values, only Submitted
     worded in the parish's date format; the Families table starts on its
     own page, and one frame names the parish, campaign and both counts.
     """
@@ -214,7 +214,7 @@ def test_pdf_prints_both_tables_with_the_csv_columns_and_rows(monkeypatch):
     assert frame.eyebrow == "Example Parish · Stewardship 2055"
     # The tables' frame adds two blank lines of room for their captions.
     assert frame.details == (
-        "1 Member cannot participate in ministries; 1 Family cannot attend Mass.",
+        "1 Member cannot participate in Ministries; 1 Family cannot attend Mass.",
         "",
         "",
     )
@@ -367,7 +367,7 @@ def test_the_table_leads_with_the_family_then_the_member_and_their_duids():
     clamp = '<span class="cell-clamp name-clamp" data-clip-tip>'
     assert family_10 + ' data-label="Member">' + clamp + "Alex Example" in table
     assert "Alex Example</span>" + duid("Member DUID", 3) + "</td>" in table
-    assert "Cannot participate in any ministries" in table
+    assert "Cannot participate in any Ministries" in table
     assert "Cannot attend Mass or prayer services" in table
     # Sorted by Family DUID: 7 comes before 10.
     assert table.index(duid("Family DUID", 7)) < table.index(duid("Family DUID", 10))
@@ -507,7 +507,7 @@ def test_cannot_contribute_rows_follow_the_families_in_every_file():
     assert details["Family rows in this file"] == "2"
     assert row_count(shaped) == 3
     assert summary_line(shaped) == (
-        "1 Member cannot participate in ministries; 1 Family cannot attend "
+        "1 Member cannot participate in Ministries; 1 Family cannot attend "
         "Mass; 1 Family cannot contribute financially."
     )
 
