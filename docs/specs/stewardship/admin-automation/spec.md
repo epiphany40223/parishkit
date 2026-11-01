@@ -4021,9 +4021,11 @@ checks, audit and alerts:
   with `role` and, for a Ministry leader, `ministries` as DUID and name;
   `administrator_warning`; `other_accounts`, the number of other recorded
   accounts with the address; `stale_attempt`, true when the account's last
-  attempt is more than 30 days old; `replaced_account`, null or the
-  `last_sign_in` (null for never) of the own-address Google accounts the
-  link replaces, the newest of them when there are several; `token` and `expires_at`). The token carries
+  attempt is more than 30 days old; `replaced_account`, null when the link
+  replaces no Google account, and otherwise an object with `accounts`, the
+  number of own-address Google accounts it replaces, and `last_sign_in`,
+  the newest successful sign-in of any of them, or null when none ever
+  signed in; `token` and `expires_at`). The token carries
   IDs and the configuration version only, never an address. `users link
   --confirm --token …` is its Apply, through the page's own functions, so
   either channel applies the other's review; it records

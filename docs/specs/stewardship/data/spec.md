@@ -1451,13 +1451,16 @@ truncate, or the wrong login, actor or session) anything but:
   1)`, which configuration activation also takes), so a link and a user
   change are decided one at a time; an insert or an `unlinked` end is also
   admitted only while setup is complete and no restore review is required.
-  A `user_gone` end made by a configuration activation is exempt from that
-  state condition: an activation can remove a linked user while a restore
-  review is required (offline Admin-access recovery must be able to
-  activate a configuration in every state), and refusing its end would
-  fail the activation itself. The exemption grants nothing, since a
-  `user_gone` end only narrows access and is admitted only for a user the
-  active configuration no longer has;
+  A `user_gone` end is exempt from that state condition, from any caller:
+  the guard cannot tell which caller made the end, and what it admits is
+  only an end, changing only the end columns, of a standing link whose
+  user the active configuration no longer has (see "for an end" below).
+  That is how a configuration activation ends a removed user's link, and
+  an activation can remove a linked user while a restore review is
+  required (offline Admin-access recovery must be able to activate a
+  configuration in every state), so refusing its end would fail the
+  activation itself. The exemption grants nothing, since such an end only
+  narrows access;
 - for an insert: an enabled account whose current address is
   `account_email`, is not the user's address, is not any
   active-configuration user's address, and is not a first-Administrator
@@ -1470,9 +1473,9 @@ truncate, or the wrong login, actor or session) anything but:
   expired, active within the idle limit and issued after the latest
   Admin-access recovery, as above; a command session is its
   automation session's portal session row, so this covers live automation
-  sessions too) or a `stewardship_portal_session` issued less than 30 days
-  before the statement's time (its successful Admin sign-ins). Such an
-  insert is refused (`23514`) with `link_own_address_in_use` in the
+  sessions too) or a successful Admin sign-in less than 30 days before the
+  statement's time (see "Sign-ins come from the audit events" below). Such
+  an insert is refused (`23514`) with `link_own_address_in_use` in the
   message's detail, re-derived from the tables, so a caller that skipped
   the review cannot replace a working account. A **first-Administrator
   address** is one the root configuration (the version with no
@@ -1491,10 +1494,44 @@ security event below. A link also revokes, in the same statement, every
 live `stewardship_portal_session` of every own-address account (each with
 its `admin_revoked` audit row) and ends each one's live automation
 sessions (`revoked_by_administrator`). The in-use check means none should
-be live, but a sign-in does not take the users' lock and may commit while
-the link is decided, and the session guard refuses such an account only
-once the link is committed, so the revocation closes that window. An end
-revokes the linked account's sessions the same way.
+be live, but a sign-in does not take the users' lock, so one may race the
+link, with two outcomes. A session that committed before the link's
+revocation statement runs is revoked by it. One that commits after it is
+not revoked, and is instead refused on its next request by the
+per-request check ([which user an account signs in
+as](../admin-portal/spec.md#linked-google-accounts) is re-derived on every
+request, and while the link stands an own-address account has no user), so
+no request after the link commits is served as the user. Such a session
+row stays unrevoked but unusable until it idles out or expires; if the
+link is later ended, it serves the own-address account again until then,
+which is what an unlink means to allow. Rejected: having the session
+admission take `pg_advisory_xact_lock_shared(736220, 1)` so sign-ins are
+ordered against links at commit. Every sign-in would then wait behind
+each configuration activation, and the lock order against the sign-in's
+other row locks would need its own deadlock analysis, for no request the
+per-request check does not already refuse. An end revokes the linked
+account's sessions the same way.
+
+**Sign-ins come from the audit events.** A successful Admin sign-in is a
+`stewardship_audit_event` with `event_type = 'admin_login'` whose
+`actor_id` is the account; the web sign-in (`issue_admin`) records it in
+the transaction that inserts the session, and the table is append-only and
+kept indefinitely. Session rows cannot serve here: an Admin session lasts
+at most 12 hours, and `cleanup_admin_sessions` (the automation maintenance
+task) deletes every revoked, expired or idle one, so a 30-day test on them
+would see only live sessions. The guard is a SECURITY DEFINER owned by the
+schema owner, so it reads `public.stewardship_audit_event`
+(schema-qualified, under its pinned `search_path`) whatever the inserting
+login's grants are, through the `(actor_id, created_at)` index
+`audit_event_actor_time`. These events are the one source of every
+own-address account's "last signed in": the guard's 30-day test, the
+review's line, the time in the `link_own_address_in_use` refusal and
+`replaced_last_sign_in` each take the newest such event of any
+own-address account, as the Users page's last sign-in (`user_reads`)
+already does, so the page, the command and the guard cannot disagree. A
+PostgreSQL test signs an own-address account in, revokes its session and
+runs `cleanup_admin_sessions` so the row is gone, then links within 30
+days and expects `link_own_address_in_use`.
 
 **Ending a deleted user's link.** `stewardship_policy_activation_v1` (the
 activation trigger; latest definition 0052, owned by the baseline's
@@ -1532,27 +1569,51 @@ so a link records at most one event because of the unique index on
 Administrator as actor, and `account_email` = the link's `account_email`.
 When the link replaced own-address accounts, `replaced_account_email` = the
 link's `user_email` and `replaced_last_sign_in` = the newest successful
-sign-in of any of them (null when none ever signed in); when it replaced
+sign-in of any of them (its newest `admin_login` event, as above; null
+when none ever signed in); when it replaced
 none, both are null and a check requires `replaced_last_sign_in` to be null
 whenever `replaced_account_email` is. Only `account_linked` rows set them.
 Its recipients are the active configuration's Administrator addresses when
 the link was made, as for an Administrator grant.
 
 **Replaced-account recipient (pending Administrator decision; default
-yes):** when `replaced_account_email` is set, that address also receives
-the event's email as a notice that asks nothing of it (it is not an
-Administrator, so it neither sees nor settles the Home notice), with the
-replaced-account instruction below in place of the Administrators' one, and
-the review's security-notice line adds "The Google account it replaces is
-emailed a notice."
+yes; a "no" deletes this paragraph and nothing else):** when
+`replaced_account_email` is set, that address also receives the event's
+email as a notice that asks nothing of it, and the review's security-notice
+line adds "The Google account it replaces is emailed a notice." It is not
+an Administrator, so it stays out of the event's `recipients`, which remain
+the Administrators: the Home notice, its acknowledgement (`cleared()` in
+`accounts/security_events.py`) and every other reader of `recipients` are
+unchanged, so it neither sees nor settles the notice. The security fanout
+(`security_fanout.sql`) adds `replaced_account_email` to the event's
+cohort as one more recipient, and `jobs/security_routing.py`'s
+`current_mail` admits an address that is in `recipients` or is the event's
+`replaced_account_email`, and renders the replaced-account variant for the
+latter. The variant is an audience input to both content twins:
+`SecurityAlert` gains `audience` (`administrators`, the default, or
+`replaced_account`, admitted only for `account_linked` with a
+`replaced_account_email`), and `stewardship_security_content_v2` gains a
+four-argument overload with a trailing `audience text` beside the
+three-argument one, which stays the Administrators' variant. The
+replaced-account variant has the same title and rows, and in place of the
+Administrators' instruction this one, with no HTML-special character (the
+rule below): "Another Google account now signs in to the parish
+Stewardship Admin portal as this address, and the Google account of this
+address no longer does. If you did not expect this, contact the parish
+staff who manage Admin portal access."
 
 An `administrator_granted` row gets `account_email` when its user had a
 standing link at activation, and null otherwise; the other kinds leave it
 null.
 
 Both twins of the content compiler, `stewardship_security_content_v2` and
-`jobs/security_content.py` (its `KINDS`, instructions and `SecurityAlert`,
-which gains `account_email`, required for `account_linked`), render it:
+`jobs/security_content.py` (its `KINDS`, instructions and `SecurityAlert`),
+render it. `SecurityAlert` gains `account_email` (required for
+`account_linked`), `replaced_account_email` and `replaced_last_sign_in`,
+which `event_alert` copies from the event; its `__post_init__` refuses a
+`replaced_last_sign_in` without a `replaced_account_email`, and either of
+them on any kind but `account_linked`. `stewardship_security_content_v2`
+reads the same three columns from the event row:
 
 - title (`KINDS`): "Google account linked to a user";
 - instruction, with no HTML-special character (no `&`, `<`, `>`, `"` or
@@ -1563,11 +1624,6 @@ which gains `account_email`, required for `account_linked`), render it:
   user. If this was not planned, unlink it on the Edit page of that user.
   Acknowledge it on the Admin dashboard; it stays there until an
   Administrator other than the one who made the change does.";
-- the replaced-account instruction, for the replaced-account recipient
-  above only, under the same character rule: "Another Google account now
-  signs in to the parish Stewardship Admin portal as this address, and the
-  Google account of this address no longer does. If you did not expect
-  this, contact the parish staff who manage Admin portal access.";
 - rows: Account (`account_email`), User (`target`), Role (`after_roles`,
   worded as for the other kinds), Replaced Google account (only when
   `replaced_account_email` is set: that address and "last signed in

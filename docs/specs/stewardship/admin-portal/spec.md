@@ -8245,7 +8245,9 @@ the user's address (an **own-address account**; several can share the
 address when a Google account was deleted and made again) blocks a link
 only while it is **in use**: it has a live Admin or automation session, or
 a successful Admin sign-in less than 30 days ago (the same 30 days as the
-review's stale-attempt warning). Then the link is refused with
+review's stale-attempt warning; sign-ins are read from the `admin_login`
+audit events, which outlast the session rows, as Users' last sign-in
+is). Then the link is refused with
 `link_own_address_in_use`: that person already has access, so there is
 nothing to link, and replacing a working account would cut a person off
 the Google account they use every day and hand their role, Name and
@@ -8259,8 +8261,11 @@ Instead the link **replaces** it: the review names it and when it last
 signed in, from then on it is refused, the link ends any session of it that
 began meanwhile in the same transaction, and the audit, Sign-in activity,
 the Home notice and its email all say which Google account was replaced.
-The database guard re-derives "in use" from the session tables under the
-users' lock, so neither the page nor a compromised web login can skip it.
+The database guard re-derives "in use" from the live sessions and the
+`admin_login` audit events under the users' lock, so neither the page nor
+a compromised web login can skip it, and the page, the review, the refusal
+and the audit take every "last signed in" from those same events
+([linked Google account records](../data/spec.md#linked-google-account-records)).
 
 **Which user an account signs in as.** For each sign-in and on every
 request (as policy is re-read now), an enabled Google account's user is the
@@ -8429,8 +8434,7 @@ address_, last signed in _time_." (or "..., which had never signed in.").
 Its email lists Account, User, Role, Replaced Google account (only for a
 link that replaced one), By and When
 ([linked Google account records](../data/spec.md#linked-google-account-records)
-holds the event's values and wording, and the pending notice to the
-replaced account's address). An unlink only narrows access, so it is
+holds the event's values and wording). An unlink only narrows access, so it is
 audited without a notice, as a demotion is.
 
 #### Linked account edge cases
