@@ -190,6 +190,9 @@ services:
         source: ../../docs/guides/stewardship-deployment-runbook.md
         target: /app/docs/guides/stewardship-deployment-runbook.md
       - <<: *test-bind
+        source: ../../docs/guides/stewardship-backup-runbook.md
+        target: /app/docs/guides/stewardship-backup-runbook.md
+      - <<: *test-bind
         source: ../../install.py
         target: /app/install.py
       - <<: *test-bind
