@@ -7869,6 +7869,30 @@ An unfinished ActivationCatchUpDemand also blocks archive/Return to Testing,
 even when its current TaskRun has exhausted retries or no occurrences have yet
 been materialized.
 
+The database enforces the outbox part of this rule for every purpose and mode,
+not only Production (#2305, frozen migration 0201): the campaign transition
+guard refuses archive while any outbox message of the campaign is `pending`,
+`retry_wait`, `submitting` or `delivery_unknown`, after its closed-and-quiet
+and Production receipt checks, with the words "Archive requires settled
+campaign email" (SQLSTATE 23514). Email that belongs to no campaign, such as an
+operational notice, is not counted. The resolution guard admits no answer on an
+archived campaign's email ([resolution questions](#resolution-questions)), so
+each such message is settled while the campaign is still closed; otherwise it
+could never leave Not sure it arrived and would hold a recorded mail halt (see
+[Clear a halted mail sender](#clear-a-halted-mail-sender)) for good.
+
+The archive flow ([#145](https://github.com/epiphany40223/parishkit/issues/145))
+recognizes those words and refuses with the stable reason code
+`archive_unsettled_mail` and one plain-language message that covers both
+cases the guard counts: emails still being sent (`pending`, `retry_wait`,
+`submitting`; the Administrator waits, or pauses delivery and cancels them) and
+emails that are Not sure it arrived (a link to the campaign's Sent mail
+filtered to that state). The flow cancels the campaign's pending messages in
+the same transaction, before it inserts the archive transition, or the guard
+would refuse its own archive. A closed, unpaused campaign whose `pending` mail
+never goes out is cleared by pausing delivery, cancelling the held messages,
+and resuming; the message names that path when it applies.
+
 Archive preparation also inventories every outstanding receipt and every
 report email send due by the archive check that is not settled, and lists
 the report sends still to come, which archive cancels
