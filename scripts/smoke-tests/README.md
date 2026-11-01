@@ -136,6 +136,30 @@ ssh root@HOST rm /root/people_emails.py /root/client_secret.json
 
 Add `--redact` to print each address's domain only (`…@example.org`). Other options: `--no-browser` (print the URL, still listen), `--port N`, `--timeout SECONDS` (default 300). The tool exits `0`, or `2` with one `ERROR:` line.
 
+### Incremental authorization (`--two-step`)
+
+`--two-step` tries the sign-in sequence planned for [#2343](https://github.com/epiphany40223/parishkit/issues/2343): sign in first with identity scopes only, and ask for the email-addresses permission afterwards, on its own. It works with the default loopback redirect and with `--manual` (then you paste two addresses, one per step).
+
+```sh
+python3 -I src/parishkit/google/people_emails.py --two-step --client-file ~/client_secret.json
+```
+
+1. **Step 1** asks for `openid email profile` only. After you sign in it prints `Step 1: signed in as <address> (account <hash>); granted scopes: …`. The hash is the first 12 hex characters of the SHA-256 of Google's account id (`sub`); the id itself is never printed.
+2. **Step 2** asks for `https://www.googleapis.com/auth/user.emails.read` alone, with `include_granted_scopes=true`, your step 1 address as `login_hint` and `prompt=consent`. Google's consent screen shows the permission ("See and download all of your Google Account email addresses") as a checkbox. The tool prints `Step 2: consent from account <hash>; granted scopes: …` and then what ParishKit would do.
+3. At exit it revokes both steps' access, newest first: `Step 2 access revoked at Google.` and, because that usually ends the whole grant, `Step 1 access had already ended at Google.` (either line may say `revoked`).
+
+Run it three times, once per case:
+
+| In step 2 you… | The tool prints |
+| --- | --- |
+| tick the checkbox and continue with the same account | the same account hash as step 1, granted scopes including `user.emails.read`, then the address table |
+| leave the checkbox unticked and continue | `Not granted: ParishKit would show the normal no-access page.` (it does not call the People API) |
+| choose a **different** Google account on the account chooser (if Google offers one; otherwise use **Use another account**) | a different account hash, then `Refused: a different Google account consented; ParishKit would refuse.` (no People API call) |
+
+Google may show a lone permission without a checkbox, only **Allow** and **Cancel**; if so, the unticked case cannot happen: report that, and use **Cancel** instead. Cancelling step 2 prints `Step 2 cancelled (Google answered access_denied): ParishKit would show the normal no-access page.` For the different-account case, the other account must be allowed by the project (a test user, if the audience is External and in Testing); if Google blocks it, report the message Google shows.
+
+For each case, report the printed `Step 1` and `Step 2` lines, the outcome line or table, and what Google's screens looked like in step 2 (whether it showed the account chooser or went straight to consent, and how the checkbox was worded).
+
 ### What to report back
 
 Copy into the issue (addresses may be redacted to their domain):
