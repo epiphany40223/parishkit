@@ -277,7 +277,10 @@ Administration authentication uses Google through django-allauth with OAuth
 authorization code flow, state, nonce, and PKCE. Only a Google-verified email is
 accepted. The stable Google `sub` identifies the external account; normalized
 email is re-evaluated against the current Admin portal users on every login
-and privileged request. Password, recovery, signup, and non-Google authentication endpoints
+and privileged request. That email is the account's sign-in address, or,
+while the deployment allows it, another address of the account that Google
+verified and the person let the portal check
+([sign-in through another verified address](../admin-portal/spec.md#sign-in-through-another-verified-address)). Password, recovery, signup, and non-Google authentication endpoints
 are disabled. The only exception is the
 [local test sign-in](../local-environment/spec.md#local-test-sign-in), which
 exists only in the LOCAL deployment profile. An
@@ -298,7 +301,69 @@ current-user authorization. First-time bootstrap is not a recovery mechanism.
 A user matches the verified normalized email exactly. Authorization is by
 email address only (#952): there are no hosted-domain rules, and the signed
 Google ID-token `hd` claim, an OAuth request hint, an email suffix, DNS/MX
-records and client-supplied values never grant a role.
+records and client-supplied values never grant a role. An address Google
+reports as verified for the account in the People API counts as the
+sign-in address does, and only that: an unverified address in the same
+answer never does
+([#2343](https://github.com/epiphany40223/parishkit/issues/2343)).
+
+**Verified-address threat analysis** (#2343). The second Google step's
+token is bound to the first step's account by the `sub` of a signed ID
+token, never by `tokeninfo`, and is revoked after its one People API call;
+no token is stored. What it allows and what bounds it:
+
+- *Someone adds another person's address to their own Google account.*
+  Google sends a code to that address and marks it verified only after the
+  code comes back, so they would need that mailbox. Whoever reads a user's
+  mailbox can already make a Google account with that address as its
+  sign-in address, or reset the password of one that has it, and sign in
+  as the user today; a verified other address gives them nothing more.
+  The exception is a mailbox whose own Google account they cannot use (a
+  Workspace account read through mail delegation, a shared mailbox or a
+  forwarding rule): for that, the match is refused while the address's own
+  Google account, or the Google account already matched to it, is in use
+  here (a live session, or a successful sign-in in the last 30 days), as
+  one database function decides for the page and the guard alike.
+- *The first Administrator.* That address is never matched (page and
+  database guard), so access recovery never depends on another account.
+- *Two users.* An account whose verified addresses belong to two users gets
+  no access; one Google account per user (a unique standing match per
+  address) keeps a second account from quietly joining a user, and a newer
+  account takes a match over only after the old one's 30-day check lapsed
+  and neither the old matched account nor the address's own account has
+  signed in for 30 days or holds a live session; the takeover ends the old
+  account's sessions and the security notice names the replaced account.
+- *Staying power.* Every request, browser or command line, re-checks that
+  the match is usable (the deployment setting on, Google's confirmation
+  less than 30 days old, the same user record), so turning the setting off
+  or a lapsed check cuts open sessions at their next request, and a
+  command-line session approved through a match never outlives its 30
+  days.
+- *Detection.* Every new match raises the durable Home security notice and
+  email to the Administrators, and is audited with the account; an
+  Administrator can end a match at once, ending its sessions.
+- *A compromised web database login* could insert a match for any user but
+  the first Administrator after stamping an account as just verified, as
+  it can already rewrite any account's address today; the guard still
+  writes the audit row and the security event, so it cannot do so
+  silently.
+
+Residual risks, accepted: a mail delegate of a user whose own Google
+account (and any account already matched to the address) has not signed
+in here for 30 days can match it (the security
+notice is then the control); Google never asks an account to confirm an
+address again, so a person who loses a mailbox (a shared or role address
+handed to someone else, a former staff member's parish address) but keeps
+it on their Google account keeps passing the check, exactly as a Google
+account made with that address as its sign-in address keeps working today;
+deleting or replacing the user is the control, and the Users page and
+Timeline show the matched account. An address the person removes from
+their Google Account keeps working here until the match's next 30-day
+check, at most 30 days after Google last confirmed it, since every
+session is cut at that mark. Which addresses Google
+lets an account verify is Google's policy, not the portal's. A person who
+declines the check, or a deployment that keeps the setting off, is exactly
+where sign-in is today.
 
 Administration OAuth endpoints use shared Valkey sliding-window counters after
 resolving the source address through the configured trusted-proxy policy. The
