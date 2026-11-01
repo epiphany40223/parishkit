@@ -54,6 +54,16 @@ WEEKLY_NEW = (
     "                    ELSE 'Name not recorded in ParishSoft' END)\n"
 )
 WEEKLY_OLD = "''),'Family')\n"
+# 0197 (#2335) has replaced both Additional information selections since,
+# without the ParishSoft active branch 0094's check names, so the check
+# tests put 0094's own bodies back first, rolled back with the test.
+OWN = [
+    definition(MIGRATION, name)
+    for name in (
+        "stewardship_information_report_v1",
+        "stewardship_information_report_v2",
+    )
+]
 
 
 def earlier(name):
@@ -74,15 +84,19 @@ def check_refuses(statement, message):
     ):
         cursor.execute("SET LOCAL check_function_bodies = false")
         cursor.execute(ACL)
+        for own in OWN:
+            cursor.execute(own)
         cursor.execute(statement)
         cursor.execute(CHECK)
 
 
 def test_the_closing_check_passes_on_the_installed_schema():
-    """The check is the one the migration ran; it still holds afterwards."""
+    """The check is the one the migration ran; it holds for 0094's bodies."""
     assert sorted(REPLACED) == sorted([*EARLIER, "stewardship_weekly_observation_v1"])
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(ACL)
+        for own in OWN:
+            cursor.execute(own)
         cursor.execute(CHECK)
         transaction.set_rollback(True)
 

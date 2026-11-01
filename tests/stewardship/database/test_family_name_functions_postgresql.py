@@ -197,7 +197,8 @@ def test_0194_check_refuses_each_older_definition():
     Smith" form) and display name lookup, 0094's directory selections, and
     0182's and 0175's Financial and Additional information selections; it
     passes again once 0194's statements are run over them. The baseline
-    selections are 0194's."""
+    directory selection is 0194's; the Financial and Additional information
+    ones are 0197's."""
     frozen = "migrations/0194_mixed_surname_names.sql"
     text = (MIGRATIONS / frozen).read_text(encoding="utf-8")
     acl = re.search(
@@ -235,9 +236,13 @@ def test_0194_check_refuses_each_older_definition():
                 cursor.execute(new)
                 cursor.execute(check)
                 raise Rollback
-    for path, name in (
-        ("directory_reports.sql", "stewardship_directory_report_v1"),
-        ("financial_reports.sql", "stewardship_financial_report_v1"),
-        ("information_reports.sql", "stewardship_information_report_v1"),
+    # 0197 (#2335) has replaced the Financial and Additional information
+    # selections since (only their active column), so the baseline carries
+    # its bodies, not 0194's.
+    latest = "migrations/0197_financial_eligibility.sql"
+    for path, name, source in (
+        ("directory_reports.sql", "stewardship_directory_report_v1", frozen),
+        ("financial_reports.sql", "stewardship_financial_report_v1", latest),
+        ("information_reports.sql", "stewardship_information_report_v1", latest),
     ):
-        assert statement(path, name) == statement(frozen, name)
+        assert statement(path, name) == statement(source, name)

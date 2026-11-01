@@ -623,6 +623,9 @@ FROZEN = {
     "0196_report_email_population.sql": (
         "e6fac1e1c2f2ebba2279ec9514617cd4ff70040f0d6f988dcd193da078ffd6bf"
     ),
+    "0197_financial_eligibility.sql": (
+        "556d6af1e6e0097f24ecae59a2160aef9dcc77ce27441037c11380b215cc35c3"
+    ),
 }
 
 
