@@ -42,13 +42,30 @@ ParishKit, so it can be copied to a host and run with ``python3`` alone.
 
 from __future__ import annotations
 
+import os
+import sys
+
+if __name__ == "__main__":
+    # Run as a script (``python3 people_emails.py``), Python puts this file's
+    # own directory first on sys.path. Its sibling ``calendar.py`` then
+    # shadows the standard library's ``calendar``, which http.server imports
+    # (through ``email``), and the tool dies before it starts. So, before any
+    # other import, drop this directory from sys.path. This is the opposite
+    # of the ad hoc sys.path additions CLAUDE.md forbids: it adds nothing and
+    # imports no package code; it only stops the stdlib being shadowed when
+    # the file is run, or copied and run, on its own. ``python3 -I`` (which
+    # leaves the script's directory off sys.path) works as well.
+    _here = os.path.realpath(os.path.dirname(os.path.abspath(__file__)))
+    sys.path[:] = [
+        entry for entry in sys.path if os.path.realpath(entry or os.curdir) != _here
+    ]
+
 import argparse
 import base64
 import hashlib
 import http.server
 import json
 import secrets
-import sys
 import time
 import urllib.error
 import urllib.parse

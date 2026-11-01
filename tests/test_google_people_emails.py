@@ -8,6 +8,8 @@ import hashlib
 import io
 import json
 import os
+import shutil
+import subprocess
 import sys
 import threading
 import urllib.error
@@ -432,6 +434,32 @@ def test_module_is_standalone_stdlib_only():
         if isinstance(node, ast.ImportFrom) and node.module
     }
     assert names - {"__future__"} <= set(sys.stdlib_module_names)
+
+
+def test_running_the_file_directly_ignores_its_sibling_modules(tmp_path):
+    """``python3 people_emails.py`` works although a sibling shadows the stdlib.
+
+    The planted ``calendar.py`` stands in for parishkit/google/calendar.py,
+    which shadowed the stdlib module http.server needs (on older Pythons,
+    through ``email``). Newer Pythons import ``calendar`` lazily, so a planted
+    ``base64.py``, which this module imports directly, makes the check bite
+    on every version.
+    """
+    shutil.copy(MODULE, tmp_path / "people_emails.py")
+    for name in ("calendar", "base64"):
+        (tmp_path / f"{name}.py").write_text("raise ImportError('shadowed')\n")
+    env = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
+    result = subprocess.run(
+        [sys.executable, str(tmp_path / "people_emails.py"), "--help"],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=tmp_path,
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "--client-file" in result.stdout
 
 
 def test_redirect_handler_does_not_log_requests():

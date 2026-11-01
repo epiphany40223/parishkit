@@ -113,11 +113,19 @@ On a laptop with a browser (the tool opens it and reads the redirect itself):
 scripts/smoke-tests/google-people-emails.py --client-file ~/client_secret.json
 ```
 
+The wrapper needs ParishKit installed in the Python it runs with. Without that, run the module file itself with any Python 3.12 or newer:
+
+```sh
+python3 -I src/parishkit/google/people_emails.py --client-file ~/client_secret.json
+```
+
+`-I` (isolated mode) keeps the file's own directory, the current directory and `PYTHON*` environment variables off the import path. Without it, the file's sibling `calendar.py` would shadow the standard library's `calendar`; the module drops its own directory from the import path when run as a script, so plain `python3 people_emails.py` also works, but `-I` is the safer habit.
+
 On a headless host over ssh, copy the one file and the client JSON there, and use `--manual`:
 
 ```sh
 scp -p src/parishkit/google/people_emails.py ~/client_secret.json root@HOST:/root/
-ssh -t root@HOST python3 /root/people_emails.py --manual \
+ssh -t root@HOST python3 -I /root/people_emails.py --manual \
     --client-file /root/client_secret.json
 ssh root@HOST rm /root/people_emails.py /root/client_secret.json
 ```
