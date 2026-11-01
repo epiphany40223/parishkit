@@ -6,7 +6,6 @@ from importlib import import_module
 
 from django.conf import global_settings, settings
 from django.contrib.sessions.exceptions import SessionInterrupted
-from django.contrib.sessions.models import Session
 from django.core.exceptions import ImproperlyConfigured
 from django.db import connection, transaction
 from django.db.models import F, Q, Value
@@ -720,16 +719,26 @@ def revoke_family_sessions(rows, *, now):
 
 
 def cleanup_family_sessions(*, batch_size=500):
-    """Expire Family authority before removing protected metadata and parent rows."""
+    """Delete ended Family sessions, their open forms' pins and Django sessions.
+
+    The automation maintenance task runs this hourly as the general worker
+    (#2362), which may read only the session columns named below and never
+    a session key, so ``stewardship_family_session_purge_v1`` does the
+    deleting: it cancels each ended session's open forms, releases their
+    source pins and deletes the rows and their Django sessions, returning a
+    count. A session that simply lapsed (idle or past its deadline) is
+    deleted without a revocation or a ``family_session_ended`` event: that
+    event would be dated at cleanup, not when the session ended. A revoked
+    session already has its event. Returns how many rows went.
+    """
     from parishkit.stewardship.campaigns.credential_models import FamilySession
     from parishkit.stewardship.campaigns.work_locks import work_transaction
-    from parishkit.stewardship.responses.baselines import cancel_session_baselines
 
     if type(batch_size) is not int or not 1 <= batch_size <= 1000:
         raise ValueError("Session cleanup requires a bounded batch size.")
     with work_transaction():
         now = database_now()
-        rows = list(
+        identifiers = list(
             FamilySession.objects.select_for_update(of=("self",), skip_locked=True)
             .filter(
                 Q(revoked_at__isnull=False)
@@ -741,41 +750,43 @@ def cleanup_family_sessions(*, batch_size=500):
             .exclude(
                 mode="testing", family__campaign__credential_state__go_live_gate=True
             )
-            .order_by("expires_at", "pk")[:batch_size]
+            .order_by("expires_at", "pk")
+            .values_list("pk", flat=True)[:batch_size]
         )
-        revoke_family_sessions(rows, now=now)
-        identifiers = [row.pk for row in rows]
-        keys = [row.session_id for row in rows]
-        cancel_session_baselines(identifiers)
-        FamilySession.objects.filter(pk__in=identifiers).delete()
-        Session.objects.filter(pk__in=keys).delete()
-        return len(rows)
+        if not identifiers:
+            return 0
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT public.stewardship_family_session_purge_v1(%s::uuid[])",
+                [identifiers],
+            )
+            return cursor.fetchone()[0]
 
 
 def cleanup_anonymous_sessions(*, batch_size=500):
-    """Clean expired OAuth sessions/one-use receipts without crossing live metadata."""
+    """Delete expired anonymous Django sessions and expired OAuth receipts.
+
+    An anonymous session is one no Admin or Family session row names (an
+    OAuth sign-in never finished, or a visit that never signed in);
+    ``stewardship_anonymous_session_purge_v1`` deletes them for the general
+    worker, which never reads a session key. The one-use OAuth state
+    receipts are deleted here once expired. Returns both counts.
+    """
     from .auth_models import OAuthStateConsumption
 
     if type(batch_size) is not int or not 1 <= batch_size <= 1000:
         raise ValueError("Session cleanup requires a bounded batch size.")
     with transaction.atomic():
-        now = database_now()
-        keys = list(
-            Session.objects.select_for_update(of=("self",), skip_locked=True)
-            .filter(
-                expire_date__lte=now,
-                stewardship_portal__isnull=True,
-                familysession__isnull=True,
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT public.stewardship_anonymous_session_purge_v1(%s)",
+                [batch_size],
             )
-            .order_by("expire_date", "pk")
-            .values_list("pk", flat=True)[:batch_size]
-        )
-        Session.objects.filter(pk__in=keys).delete()
+            sessions = cursor.fetchone()[0]
         receipts = list(
-            OAuthStateConsumption.objects.select_for_update(skip_locked=True)
-            .filter(expires_at__lte=now)
+            OAuthStateConsumption.objects.filter(expires_at__lte=database_now())
             .order_by("expires_at", "pk")
             .values_list("pk", flat=True)[:batch_size]
         )
         OAuthStateConsumption.objects.filter(pk__in=receipts).delete()
-        return len(keys), len(receipts)
+        return sessions, len(receipts)

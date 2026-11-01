@@ -614,6 +614,9 @@ FROZEN = {
     "0193_backup_uploader_preparation.sql": (
         "87ea2cc43e207120ce25b853ea3ebc82a4a1a0bf5741f3cfbe1315b4398b68c3"
     ),
+    "0199_family_session_purge.sql": (
+        "685113869654b629c02c6ec9279d1784e6f59fe9069d406e90dcf3b9d739e815"
+    ),
 }
 
 

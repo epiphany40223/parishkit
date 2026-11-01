@@ -168,7 +168,9 @@ owner and are exempt from this binding.
 
 Workers heartbeat and record phases/progress; the heartbeat and progress
 events of a run that finished more than 30 days ago are pruned by the
-[maintenance task](../admin-automation/spec.md#maintenance-task). A worker's
+[maintenance task](../admin-automation/spec.md#maintenance-task), the
+general worker's hourly housekeeping, which also deletes ended Admin and
+Family sessions and expired anonymous sessions. A worker's
 lease renewal runs
 every 20 seconds on its own connection and confirms a 60-second lease. A
 renewal stopped by its own lock or statement limit has not lost the lease:
