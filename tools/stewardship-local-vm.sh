@@ -1190,11 +1190,18 @@ cmd_deploy() {
     # setting, which the host half keeps. BULK and LATENCY (BG-12's
     # rehearsal), PARISHSOFT and MAIL_REDIRECT (#1399) reach the host half as
     # the local-mode variables it reads; "keep" carries the current value over.
+    # ALTERNATE (#2343, on or off) is the host half's own
+    # PARISHKIT_STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN, as in Production.
     local tag=$1 schema_change=$2 host_script=$3 previous
     export PARISHKIT_LOCAL_BULK_FAMILY_SEND=${4:-keep}
     export PARISHKIT_LOCAL_SMTP_LATENCY_MS=${5:-keep}
     export PARISHKIT_LOCAL_PARISHSOFT=${6:-keep}
     export PARISHKIT_LOCAL_MAIL_REDIRECT=${7:-keep}
+    case "${8:-keep}" in
+        on) export PARISHKIT_STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN=1 ;;
+        off) export PARISHKIT_STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN=0 ;;
+        *) unset PARISHKIT_STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN ;;
+    esac
     require_marker
     load_env
     [ -f "$host_script" ] || refuse "No uploaded upgrade host script at $host_script; refusing."
@@ -2186,8 +2193,8 @@ case "$command" in
     reset) cmd_reset "${1:?reset needs NAME}" ;;
     wipe) cmd_wipe ;;
     deploy)
-        [ $# -eq 3 ] || [ $# -eq 5 ] || [ $# -eq 6 ] || [ $# -eq 7 ] ||
-            refuse "deploy needs TAG SCHEMA_CHANGE HOST_SCRIPT [BULK LATENCY [PARISHSOFT [MAIL_REDIRECT]]]"
+        [ $# -eq 3 ] || [ $# -eq 5 ] || [ $# -eq 6 ] || [ $# -eq 7 ] || [ $# -eq 8 ] ||
+            refuse "deploy needs TAG SCHEMA_CHANGE HOST_SCRIPT [BULK LATENCY [PARISHSOFT [MAIL_REDIRECT [ALTERNATE]]]]"
         cmd_deploy "$@" ;;
     rehearse) [ $# -eq 4 ] || refuse "rehearse needs DUE_IN SEND_ONLY TIMEOUT LABEL"; cmd_rehearse "$@" ;;
     spike) [ $# -eq 5 ] || refuse "spike needs FAMILIES SOURCES DURING_SEND WAIT LABEL"; cmd_spike "$@" ;;
