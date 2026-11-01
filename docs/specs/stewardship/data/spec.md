@@ -1363,7 +1363,9 @@ never disagree, and every SQL check that tests `roles` with `?` or `?|` keeps
 its meaning without restating the ladder. Python resolves an address to its
 one user's role, or to nothing, and treats the roles as levels. The session
 admission, Ministry scope, export authorization and policy projection and
-completeness functions read only this projection.
+completeness functions read only this projection, plus the
+[linked Google accounts](#linked-google-account-records) that say which
+user a Google account signs in as.
 
 Users carry their applied-configuration version and cannot be edited
 independently: every change is a `ConfigurationChangeRequest` and takes effect
@@ -1386,6 +1388,120 @@ migration drops them, and older configuration versions and the audit log keep
 their history. Their earlier behavior is in this file's git history from
 before #952.
 
+#### Linked Google account records
+
+A [linked Google account](../admin-portal/spec.md#linked-google-accounts)
+([#2343](https://github.com/epiphany40223/parishkit/issues/2343)) is
+runtime identity state, like `PortalUser`, not parish configuration: it
+names a Google account by its recorded `PortalUser` row, which YAML cannot
+reference. Frozen migration 0199 (renumbered at train time if needed) adds
+`stewardship_user_account_link` (model `UserAccountLink`):
+
+- `id`, and the mutable-record columns (`created_at`, `version`,
+  `actor_id`, `correlation_id`);
+- `portal_user_id`, a protected foreign key to `stewardship_portal_user`;
+- `user_record_id`, the user's stable record ID
+  (`stewardship_address_rule.record_id`, kept across configuration versions
+  and never reused), and `user_email`, that user's normalized address when
+  linked;
+- `linked_at` and `linked_by_id` (the Administrator's `PortalUser`), and
+  `ended_at`, `ended_by_id` and `end_reason` (`unlinked`, or `user_gone` for
+  a link whose user was deleted, ended when its account is linked again),
+  null while the link stands.
+
+Constraints: partial unique indexes on `portal_user_id`, on
+`user_record_id` and on `user_email`, each `WHERE ended_at IS NULL` (one
+account per user, one user per account, one account per address); a check
+that `user_email` is trimmed lower case; a check that the three end columns
+are all null or all set, with `end_reason` in the closed list; and an index
+on `(user_record_id, linked_at)` for the Timeline. Rows are never deleted,
+and the only update is the one end of a standing link, so the table keeps
+the whole history.
+
+The web login writes the table, and only through the SECURITY DEFINER
+guard trigger `stewardship_user_account_link_guard_v1`, which refuses
+(SQLSTATE `23514`, or `42501` for the wrong login or actor) anything but:
+
+- an insert or an end by the web login, whose actor is an enabled
+  Administrator now (`stewardship_export_authorized_v1(actor, true)`) with
+  a live Admin session (interactive or command session, issued after the
+  latest Admin-access recovery), and who is not the link's account;
+- while setup is complete and no restore review is required, holding the
+  users' ordering lock (`pg_advisory_xact_lock(736220, 1)`, which
+  configuration activation also takes), so a link and a user change are
+  decided one at a time;
+- for an insert: an enabled account whose own address is not the user's
+  address, is not any active-configuration user's address, and is not a
+  first-Administrator address; a user record in the active configuration
+  whose address is `user_email` and is not a first-Administrator address;
+  and no enabled `PortalUser` whose own address is `user_email`. A
+  **first-Administrator address** is one the root configuration (the
+  version with no predecessor) gives the Administrator role;
+- for an end: a standing link, ended by an Administrator (`unlinked`) or,
+  just before its account is linked again, because its user is gone
+  (`user_gone`).
+
+The guard records `user_account_linked` or `user_account_unlinked` itself,
+and for a link the durable `account_linked` security event
+(`stewardship_policy_security_event`, whose `activation_id` becomes
+nullable and gains a nullable `user_account_link_id`, with a check that
+exactly one is set and a unique index on the link), with the active
+configuration's Administrator addresses as its recipients. An end also
+revokes, in the same statement, every live `stewardship_portal_session` of
+the account (each with its `admin_revoked` audit row) and ends its live
+automation sessions (`revoked_by_administrator`).
+
+Which user a Google account signs in as is defined once, in SQL.
+`stewardship_account_user_v1(account)`, a STABLE SECURITY DEFINER function,
+returns the one active-configuration user (record ID, address, roles) whose
+address is the enabled account's own address, unless a standing link joins
+that user to another account, or that a standing link joins the account
+to; it returns nothing for zero or two such users.
+`stewardship_account_addresses_v1(account)` returns the account's
+addresses: its own address and its linked user's address, nothing for a
+disabled account. Every check that today joins a portal user's address to
+`stewardship_address_rule` or to the leaders definition uses them instead;
+the migration replaces each (its latest frozen file named), re-asserting
+`SECURITY DEFINER` where the function has it and its `REVOKE ALL ... FROM
+PUBLIC`:
+
+| Function | Latest definition | Change |
+| --- | --- | --- |
+| `stewardship_portal_session_admission_v1` | 0052 | the Admin session guard (#306) admits by the account's user |
+| `stewardship_export_authorized_v1` | 0052 | roles from the account's user |
+| `stewardship_ministry_scope_v1` | 0052 | roles from the account's user |
+| `stewardship_ministry_leader_scope_v1` | 0179 (definer) | leaders matched on every address of the account |
+| `stewardship_campaign_mail_live_v1` | baseline `functions.sql` | Administrator from the account's user |
+| `stewardship_family_test_scope_v1` | baseline `family_mail_tests.sql` | Administrator from the account's user |
+| `stewardship_go_live_admin_v1` | baseline `go_live.sql` | Administrator from the account's user |
+| `stewardship_leaders_without_user_v1` | 0179 (definer) | leaves out the own address of an account linked to a user |
+| `stewardship_ministry_leader_coverage_v1` | 0179 (definer) | a linked account's own address counts as a user, and its sign-ins count |
+| `stewardship_leader_email_facts_v1` | 0179 (definer) | a Ministry leader user's Ministries include its linked account's own address |
+| `stewardship_security_content_v2` | 0043 | renders the `account_linked` kind |
+
+Deliberately unchanged: the setup functions
+(`stewardship_setup_*`, which run only before setup is complete, when no
+link can exist); `stewardship_report_email_test_guard_v1`, whose recipient
+stays the Google account's own address (its role check goes through
+`stewardship_export_authorized_v1`); the reads that take an address
+(`stewardship_address_leader_scope_v1`, `stewardship_address_people_v1`)
+or a user's address (`stewardship_family_users_v1`); the users-upgrade
+reads of 0047; and every function that only shows a portal user's address
+as an actor label. Every other definer reaches roles through
+`stewardship_export_authorized_v1` or `stewardship_ministry_scope_v1`, so
+it follows without being replaced.
+
+Python reads the same answer: `current_principal()` asks
+`stewardship_account_user_v1` for the account's user record and takes its
+role from the coherent canonical document, and the leader scope from
+`stewardship_ministry_leader_scope_v1` as today, so Python never restates
+which user an account is and can never grant more than SQL. The two
+helpers are definers with no PUBLIC EXECUTE; database-grants gives EXECUTE
+to every login that may execute `stewardship_export_authorized_v1`, and a
+test pins the two lists equal. The web login gets `SELECT` and `INSERT` on
+the table and `UPDATE` of the end columns only; no other login may read
+it except through the helpers.
+
 ### Ministry leaders
 
 Signing in to the Admin portal needs a user of Ministry leader, Staff or
@@ -1393,9 +1509,10 @@ Administrator (Administrator decision, 2026-10-10, made with the Portal Users
 revamp); a ParishSoft role alone admits no one. ParishSoft decides only which Ministries such a
 person leads: a person leads a Ministry for the current campaign when an active
 Member of an active Family holds one of the campaign's Ministry leader roles on
-that Ministry's current roster in the promoted ParishSoft data, and the person
-signs in with a valid email address on that Member's ParishSoft contact record
-(#922). A person whose highest role is Ministry leader and who leads no
+that Ministry's current roster in the promoted ParishSoft data, and one of
+the person's Google account's addresses (its own address, or the address of
+the user it is [linked](#linked-google-account-records) to, #2343) is a
+valid email address on that Member's ParishSoft contact record (#922). A person whose highest role is Ministry leader and who leads no
 Ministry can sign in but sees no Ministry. Both flags are the promoted source's
 own: a Member is active unless ParishSoft marks them Inactive or Deceased, and
 a Family is active unless it is in ParishSoft's "Inactive" Family group or has
@@ -1467,7 +1584,9 @@ bounds it.
 definer the web login may execute that reads this definition for Staff and
 Administrators: for each Ministry with a leader, only the number of leader
 addresses, how many of them are users and how many of those users have
-signed in. It answers only a live Staff or Administrator Admin session and
+signed in. A leader address that is the own address of a Google account
+linked to a user counts as that user's, and a linked account's sign-ins
+count for its user. It answers only a live Staff or Administrator Admin session and
 audits each read; the Ministry requests page's
 [Leaders column](../reports/spec.md#ministry-change-summary) shows it.
 

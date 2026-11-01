@@ -18,14 +18,19 @@ keeps only the rules of its own pages and links the conventions it follows.
 must provide a verified email and stable subject. The normalized address is
 evaluated as follows (#952):
 
-1. If a [user](#portal-user-management) has that address, take the user's
-   role. Roles are levels: Administrator includes Staff and Ministry leader,
-   and Staff includes Ministry leader.
+1. If a [user](#portal-user-management) has that address, or an
+   Administrator has [linked](#linked-google-accounts) this Google account to
+   a user ([#2343](https://github.com/epiphany40223/parishkit/issues/2343)),
+   take that one user's role. Roles are levels: Administrator includes Staff
+   and Ministry leader, and Staff includes Ministry leader.
 2. Otherwise deny access.
 
-Sign-in is by email address only. There are no hosted-domain rules and no
-explicit-deny entries: an address without a user cannot sign in, and the
-signed Google hosted-domain (`hd`) claim plays no part in authorization.
+Sign-in is by email address, plus the Administrator's links. There are no
+hosted-domain rules and no explicit-deny entries: an address without a user
+cannot sign in unless its Google account is linked to one, and the signed
+Google hosted-domain (`hd`) claim plays no part in authorization. Google's
+stable subject (`sub`) stays the identity: a link names a recorded Google
+account, never an address that any account could later claim.
 
 A refused Admin sign-in says which kind of refusal it was
 ([#2116](https://github.com/epiphany40223/parishkit/issues/2116)). Each kind
@@ -7970,7 +7975,9 @@ the record. The roles are levels, and each includes everything below it:
    everything.
 
 People sign in with the Google account of their user's email address
-([login and denial behavior](#login-and-denial-behavior)). The Name is a plain
+([login and denial behavior](#login-and-denial-behavior)), or with the one
+other Google account an Administrator has
+[linked](#linked-google-accounts) to their user. The Name is a plain
 label: it is not tied to a ParishSoft Member, and only an Administrator changes
 it. An address with no user cannot sign in, so deleting a user is how
 access is removed; there is no explicit-deny entry and no hosted-domain rule.
@@ -8011,11 +8018,15 @@ preview before it.
 ### Users table
 
 The page opens with **New user** above one table of users. Its columns are
-Email (the row header, the most relevant column), Name, Role, Last successful
-sign-in and the row actions. Email, Name, Role and Last successful sign-in
+Email (the row header, the most relevant column), Name, Role, Linked Google
+account, Last successful sign-in and the row actions. Linked Google account
+is the current address of the Google account
+[linked](#linked-google-accounts) to the user, or empty; it does not sort.
+Email, Name, Role and Last successful sign-in
 sort on the server; Role sorts by level (Administrator first on the first
 choice), and Last successful sign-in shows the newest successful Google
-sign-in of any identity with that address, as every table cell shows a
+sign-in of any identity with that address or of the user's linked account
+while it was linked, as every table cell shows a
 time ([date format](../ui-conventions/spec.md#date-format)), with users who
 never signed in sorting last; it sorts by the time itself. The default order is Email. The table
 refreshes in place like every other Admin table.
@@ -8037,7 +8048,8 @@ sign in with a Google Account for their address and repeats the
 Administrator can pass it on (in the local laptop environment, only while
 it offers Google sign-in beside its test sign-in links).
 
-Each row is one line. An email or Name too long for its column is cut short
+Each row is one line. An email, Name or linked account address too long for
+its column is cut short
 with an ellipsis; the full value stays the cell's text for screen readers and
 copying, the cell's `title` attribute shows it whole as a hover tooltip, and
 the Edit page shows it whole. This is a recorded exception to
@@ -8068,7 +8080,11 @@ fields:
   be a valid address and not already a user's. The page checks both as the
   Administrator leaves the field. On Edit it is read-only, because changing
   the address is Delete and then New. When a recorded Google identity with
-  that address is disabled, one line under it says so.
+  that address is disabled, one line under it says so. New also refuses an
+  address whose Google account is already
+  [linked](#linked-google-accounts) to another user, since that person
+  would then have two users: "This address's Google account already signs
+  in as _Name_. Unlink it there first, or use that user."
 - **Name**, required: plain text, at most 200 characters, trimmed. Its
   default from ParishSoft is described below.
 - **Role**: three radio buttons, Ministry leader, Staff and Administrator,
@@ -8077,6 +8093,11 @@ fields:
   page (and the only Administrator's) the lower roles are unavailable, with
   the reason in a line under the roles that is reserved while empty (#563);
   the server refuses that change anyway.
+
+Edit user also holds the [Linked Google account](#linked-google-accounts)
+section, below the form and the Sign-in activity controls. It has its own
+review and Apply and is not part of Save, since a link is not a
+configuration change.
 
 On Edit, the button reads **Save** and its dialog, "Save this user change?",
 is a [compact review](../ui-conventions/spec.md#review-dialog) (#1356): one
@@ -8143,6 +8164,213 @@ open Admin sessions end on their next request, and that the address can be
 added again later as a new user. Confirming records one configuration change
 and follows it until it is applied, as
 [row actions](../ui-conventions/spec.md#row-actions-and-confirmation) describe.
+When the user has a [linked Google account](#linked-google-accounts), the
+dialog also says that the link ends with the user: a user added again
+later is a new record and has no link.
+
+### Linked Google accounts
+
+A Google account can receive mail at addresses other than the one it signs
+in as: a Workspace alias, a secondary domain, or a personal Google account
+made for an outside address. Google's sign-in tells the portal only the
+account's own address, so when ParishSoft and the user know a person by one
+address and their Google account signs in as another, the portal does not
+know them
+([#2343](https://github.com/epiphany40223/parishkit/issues/2343)). An
+Administrator can therefore **link** one recorded Google account to a user:
+that account then signs in as that user, with that user's role, and leads
+the Ministries both its own address and the user's address lead in
+ParishSoft. The Administrator decided, on 2026-11-01:
+
+1. **The Administrator's word is the proof.** A link takes effect when an
+   Administrator applies it. No email goes to either address and nothing
+   waits for a confirmation.
+2. **Administrators only**, on Edit user and with `pk-admin users link`.
+   There is no self-service page.
+3. **Admin portal sign-in only.** Family codes and links, Family contact
+   matching and every email's recipients are unchanged.
+
+The mitigations are required, not optional: the review dialog below shows
+the account, the user and what the link grants before Apply; every link and
+unlink is an audited security event, and a link raises a Home security
+notice; an address is linked to at most one Google account, and never to
+one when a Google account of its own already signs in; the deployment's
+first Administrator is never part of a link; and unlinking ends that
+account's Admin sessions at once.
+
+**What a link is.** A link joins one Google account (a `PortalUser`, keyed
+on Google's `sub`) to one user (the user's stable record ID), with the
+user's address as it was when linked. Its rules
+([linked Google account records](../data/spec.md#linked-google-account-records)
+holds the record and its SQL):
+
+- A user has at most one linked account, and an account is linked to at most
+  one user. The account must have tried to sign in at least once, so the
+  portal has recorded it: a refused sign-in records it too
+  ([administration user and policy](../data/spec.md#administration-user-and-policy)).
+- The account's own address must differ from the user's, and no enabled
+  Google account may already have the user's address as its own: that
+  person signs in with it, and nothing needs linking.
+- The account's own address must not be another user's address, so one
+  Google account always signs in as at most one user.
+- The deployment's **first Administrator**, the address the deployment's
+  root configuration made Administrator (`pk-stewardship bootstrap
+  --admin-email`), is never linked, and no Google account whose own address
+  it is can be linked to anyone. That account stays the way back in.
+- An Administrator cannot link or unlink their own Google account; another
+  Administrator does it, as with the
+  [own-Administrator guard](#user-change-checks-and-alerts).
+- Links are made only once setup is complete and outside a restore review.
+
+**Which user an account signs in as.** For each sign-in and on every
+request (as policy is re-read now), an enabled Google account's user is the
+user whose address is the account's own address, or the user it is linked
+to. Exactly one such user must exist. When there would be two (a race with
+a New user, or a Google account whose own address changed to another
+user's), the account gets no role at all until an Administrator resolves it,
+rather than either user's: failing closed is safer than guessing. While a
+user has a linked account, that account is the only one that signs in as the
+user: a different Google account whose own address is the user's address is
+refused, with the ordinary "No access with this account" page, and its
+refusal is a named `admin_login_refused` in
+[sign-in activity](#sign-in-activity). The account's **addresses** are its
+own address and its linked user's address; the
+[Ministry leader scope](../data/spec.md#ministry-leaders) is every Ministry
+either address leads, and only while the account has a role, as today.
+
+Everything that today means "the signed-in person's address" for portal
+users means the address of the account's user: the
+[own-Administrator guard](#user-change-checks-and-alerts), the address a
+[security event](#user-change-checks-and-alerts) acknowledgement is recorded
+under, and an actor's Name in logs and tables. An automation pairing's
+expected address matches either the account's own address or its user's.
+What stays the Google account's own address, because Google verified it on
+the sign-in: the "No access with this account" page's address, the
+recipient of a report email's
+[Send a test to me](../report-emails/spec.md#send-a-test-to-me), and
+Sign-in activity's Actor column.
+
+#### Link and unlink
+
+Edit user's **Linked Google account** section is shown only when a link is
+possible or present
+([conditional fields](../ui-conventions/spec.md#conditional-fields)):
+
+- **Linked:** one line names the linked account's current address, when it
+  was linked and by whom, and its last successful sign-in, with **Unlink**.
+- **Not linked:** a **Google account address** field with the plain help
+  line "If this person signs in to Google with a different address than the
+  one above (for example a Gmail address), enter it here so that Google
+  account can sign in as this user. Ask them to try signing in once with it
+  first.", and **Review link**, unavailable until the field holds an
+  address ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)).
+- **Nothing to link:** the section is a single line saying why, in place of
+  the field: "This person already signs in with the Google account of this
+  address.", or "The first Administrator's address is never linked." The
+  signed-in Administrator's own user shows "Another Administrator links or
+  unlinks your own user."
+
+The field is checked as the Administrator leaves it and again at Review
+([field errors and live checks](../ui-conventions/spec.md#field-errors-and-live-checks)),
+through a CSRF-protected POST, so the typed address never enters a URL.
+Each refusal is plain and carries its stable code:
+
+| Code | Refusal |
+| --- | --- |
+| `link_address_invalid` | "Enter one email address." |
+| `link_own_address` | "That is this user's own address." |
+| `link_not_recorded` | "No Google account with this address has tried to sign in yet. Ask the person to sign in once with it (they'll see "No access with this account"), then link it." |
+| `link_account_disabled` | "That Google account can't sign in, so it can't be linked." |
+| `link_account_linked` | "That Google account is already linked to _Name_. Unlink it there first." |
+| `link_account_user` | "That Google account already signs in as its own user, _Name_. If this is the same person, delete one of the two users first." |
+| `link_first_administrator` | "The first Administrator's Google account is never linked." |
+| `link_own_account` | "You can't link your own Google account; another Administrator does that." |
+
+When several recorded Google accounts share the typed address (a Google
+account deleted and made again under it), the one that tried to sign in most
+recently is the one linked, and the review says when that was.
+
+**Review link** opens the **Link this Google account?** review in the
+[review dialog](../ui-conventions/spec.md#review-dialog). It is a full
+review, because it shows what the page does not:
+
+- "**_account address_** will sign in as **_Name_** (_user address_)."
+- "That Google account last tried to sign in on _time_." (browser-local).
+- "It gets: _Role_", with the role's line from the Role field, and for a
+  Ministry leader "Ministries it will lead: Choir, Ushers and 3 more" (both
+  addresses' Ministries in the current ParishSoft data, as the
+  [leaders table](#parishsoft-ministry-leaders-without-a-user) lists
+  them), or "No Ministries in the current ParishSoft data". Staff and
+  Administrators see every Ministry, so the line is left out for them.
+- When the user is an Administrator, the Administrator-grant warning that
+  Edit's Save shows.
+- "No email is sent to either address, and the link works as soon as you
+  apply it. Check that both addresses belong to the same person."
+- "Every Administrator is told: a security notice appears on Home and is
+  emailed."
+
+**Apply** records the link, its audit event and its security event in one
+transaction, then the section redraws
+[in place](../ui-conventions/spec.md#in-place-controls) as Linked, and the
+status line says "Linked _account address_ to _Name_." The review is signed
+and lasts fifteen minutes; Apply checks every rule again under the users'
+lock, and a link or user change made since is a changed page.
+
+**Unlink** opens the shared
+[confirmation dialog](../ui-conventions/spec.md#row-actions-and-confirmation):
+"Unlink _account address_ from _Name_? That Google account can no longer
+sign in as this user, and its Admin sessions, including command-line
+sessions, end now. You can link it again later." Confirming ends the link,
+revokes every live Admin session of that account (each ends as
+`admin_revoked`) and ends its live
+[automation sessions](../admin-automation/spec.md#revocation-and-listing)
+(`revoked_by_administrator`), all in one transaction, and the section redraws
+in place as Not linked. An unlink that finds the link already ended changes
+nothing and says the section is up to date.
+
+A link is not a configuration change, so it has no Change status to follow
+and does not move the applied configuration's version. Links are database
+records: a [restore](../operations/spec.md#restore) brings back the links
+of the backup it restores.
+
+**Audit and alerts.** Each link records `user_account_linked` and each
+unlink `user_account_unlinked`, with the Administrator as actor, the link as
+subject, and the user's record ID, the account's `PortalUser` ID and the
+outcome as context, never an address. Both are in
+[sign-in activity](#sign-in-activity) and on the user's
+[Timeline](#user-timeline). A link also records a durable security event of
+the kind `account_linked` ("Google account linked to a user"), with the same
+recipients, Home notice, acknowledgement rules and operational email as an
+[Administrator grant](#user-change-checks-and-alerts): the Administrators of
+the active configuration when the link was made. Its target is the user's
+address, so the user's own acknowledgement settles nothing for the others.
+An unlink only narrows access, so it is audited without a notice, as a
+demotion is.
+
+#### Linked account edge cases
+
+- **The Google account's own address changes.** The link follows the
+  account (its `sub`), never the old address. When the new address is the
+  user's own, the link is harmless and stays until unlinked. When it is
+  another user's address, the account has two users and gets no role until
+  an Administrator unlinks it or changes a user.
+- **A Google account of its own later signs in as the linked address.** It is
+  refused while the link stands, as above, and the user's Timeline lists the
+  refused sign-in. If it is the same person, unlinking lets them use it.
+- **The user is deleted.** The link no longer grants anything and is not
+  shown; it is ended when its account is next linked, and a user added
+  again with the address is a new record with no link.
+- **The user's role changes.** The linked account has the new role on its
+  next request, as for any user; a raise to Administrator raises the
+  ordinary Administrator-grant notice.
+- **Disabled identities.** A disabled Google account cannot be linked, and a
+  link to one grants nothing.
+- **Domain rules.** None exist since the users revamp, and a linked address
+  never matches one.
+- **A Ministry leader matched through the link.** A Ministry leader user
+  whose ParishSoft address is the user's address, signing in with a Gmail
+  account, leads that address's Ministries; ParishSoft leader roles held
+  under the Gmail address count too.
 
 ### User timeline
 
@@ -8187,9 +8415,14 @@ history does not keep the name. Its breadcrumb parent is Users.
   their address is read instead, with the same answer the shared scope
   gives once they sign in. A user whose Google accounts are all disabled
   shows no Ministries (the address is not read instead)
-  ([#1925](https://github.com/epiphany40223/parishkit/issues/1925)).
+  ([#1925](https://github.com/epiphany40223/parishkit/issues/1925)). A
+  user with a [linked Google account](#linked-google-accounts) shows that
+  account's scope, which also holds its own address's Ministries.
+- **Linked Google account:** the linked account's current address and when
+  it was linked, when there is one.
 - **Last signed in:** the newest successful sign-in of any Google account
-  with the address, or "Never".
+  with the address, or of a linked account while it was linked, or
+  "Never".
 - **Last email:** the email to the address, not cancelled, whose line is
   newest (its outcome's time, or when it was planned while still on its
   way), with that time and its outcome in the shared outcome words, or
@@ -8206,7 +8439,11 @@ are:
 - **Sign-ins and sign-outs:** every Admin portal sign-in, confirmed sign-in,
   sign-out, inactivity sign-out, session replaced or ended, and refused
   sign-in of the person's Google accounts (System logs'
-  [sign-in activity](#sign-in-activity) types).
+  [sign-in activity](#sign-in-activity) types). The person's Google
+  accounts are those with the address, plus each account
+  [linked](#linked-google-accounts) to the user record, for the time from
+  its link to its unlink only: what that account did before or after was
+  not done as this user.
 - **Admin actions:** every other audit record whose actor is one of those
   accounts, except page views, worded from its [System logs](#logs)
   sentence (see Wording below), plus "Refused" or
@@ -8221,7 +8458,9 @@ are:
   viewed, never under All.
 - **Role changes:** "Became a user", "Role changed" and "Removed as a user",
   from the user's role in each activated configuration, at its activation
-  time. A Name change is not a line. Role changes follow the user's record,
+  time, and "Google account linked" and "Google account unlinked" from the
+  user's [links](#linked-google-accounts), each naming the account's
+  address and the Administrator who acted. A Name change is not a line. Role changes follow the user's record,
   but sign-ins, actions and emails follow the address (its Google accounts
   and the emails meant for it), so a user deleted and added again (a new
   record) also shows the address's earlier sign-ins, actions and emails.
@@ -8361,7 +8600,9 @@ the demoted reader could no longer make). The change builder refuses it at
 Review and Delete, and the configuration request's own transaction refuses
 it again against the request's base. Both guards are Python's: SQL's
 activation check keeps an Administrator but cannot tell who asked, so the
-own-Administrator guard has no SQL counterpart. The `pk-admin users` commands
+own-Administrator guard has no SQL counterpart. An Administrator's own user
+is the user their Google account signs in as, through its own address or a
+[link](#linked-google-accounts). The `pk-admin users` commands
 act as the Administrator who approved the automation session and apply the
 same guard. A user change asks for no
 dialog beyond Delete's; this is the accepted low-friction policy of the
@@ -8392,7 +8633,9 @@ Which Ministries a Ministry leader sees is not entered in the Admin portal
 (Administrator decision, 2026-10-09, #922). A person signed in as a user of
 Ministry leader or higher leads each Ministry where they hold one of the
 campaign's [Ministry leader roles](#ministry-leader-roles) in ParishSoft,
-matched by an email address their ParishSoft Member record lists. A
+matched by an email address their ParishSoft Member record lists: their
+Google account's own address, or the address of the user it is
+[linked](#linked-google-accounts) to. A
 ParishSoft role without a user admits no one, and a Ministry leader who holds
 no such role signs in and sees no Ministry (Administrator decision,
 2026-10-10). Opening a Ministry page then answers 403 with a plain sentence
@@ -8412,7 +8655,10 @@ Ministry leaders ([#922](https://github.com/epiphany40223/parishkit/issues/922),
 the leaders definition of PR #939) who have no user yet, with a way to import
 them (Administrator, 2026-10-10). A leader is listed once for each usable
 email address their Member record lists that matches no user (trimmed and
-case-insensitive, as sign-in matches). When several leader Members list one
+case-insensitive, as sign-in matches) and is not the own address of a
+Google account [linked](#linked-google-accounts) to a user: that person
+already signs in, through the link, and leads with that address, so they
+are listed once, as their user. When several leader Members list one
 address, it is one row: the Member that the
 [Name default order](#name-from-parishsoft) puts first gives the Name and
 Member DUID, and Ministries led is the union, as their sign-in scope would
@@ -8604,7 +8850,10 @@ the number of leaders and never an address. Posted addresses only choose
 among the leaders it returns. Apply records one Ministry leader email
 request. Its database guard admits it only from the web login, for a
 current Administrator, for at most 100 distinct addresses that are each a
-current Ministry leader user leading one of the campaign's Ministries,
+current Ministry leader user leading one of the campaign's Ministries
+(through the user's address or its
+[linked Google account's](#linked-google-accounts) own address, as the
+leader sees them once signed in; the email still goes to the user's address),
 while the campaign is not archived and its delivery is not paused. The guard works out each leader's Ministries and counts itself, with
 the same function, so no form supplies them, and it records the
 `user_leader_emails_requested` audit event with the count. The signed
@@ -8643,7 +8892,9 @@ and was issued after the latest offline Admin-access recovery. Command
 sessions of the command line are left out; Automation access lists their
 automation sessions.
 
-The table's columns are User (the address, with "(you, this browser)" on the
+The table's columns are User (the address of the session's user, followed
+by "through _account address_" when the session's Google account signs in
+through a [link](#linked-google-accounts), and "(you, this browser)" on the
 reader's own current session), Signed in (the session's latest confirmation
 with Google), Last activity, Expires (the absolute limit) and Actions. Times
 are browser-local
@@ -12327,9 +12578,14 @@ types internal type names one at a time:
   changed roles);
 - `admin_session_signed_out`, an Administrator signing someone's session
   out on Signed-in sessions, with the Administrator as actor;
+- `user_account_linked` and `user_account_unlinked`, an Administrator
+  [linking or unlinking](#linked-google-accounts) a Google account and a
+  user, with the Administrator as actor;
 - `admin_login_refused`, a sign-in by a Google account that Google verified
-  and policy then refused (no user with that address, a disabled identity,
-  or the SQL session guard finding the user gone at the session insert;
+  and policy then refused (no user with that address and no link, a
+  disabled identity, an address whose user is linked to another account,
+  an account that would have two users, or the SQL session guard finding
+  the user gone at the session insert;
   until the users code of #952 lands, no rule or a rule with no role stands
   for no user). Its actor is that account's `PortalUser`, so the Actor column
   names the address, and it carries no context. It is recorded at most once

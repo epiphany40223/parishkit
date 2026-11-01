@@ -465,6 +465,17 @@ complete audit, and last-Admin guard are the selected compensating controls;
 implementations must not imply they prevent a misused live session from
 granting access.
 
+A [linked Google account](../admin-portal/spec.md#linked-google-accounts)
+([#2343](https://github.com/epiphany40223/parishkit/issues/2343)) is the
+same accepted risk: it takes effect on one Administrator's word, with no
+email proof (Administrator decision, 2026-11-01). Its controls are the
+review that shows the account and what it gains, the audit and the Home
+security notice to every Administrator, the guard's one-account-per-user
+and first-Administrator rules, and an unlink that revokes the account's
+sessions at once. Google's `sub` stays the only identity key: a link names
+a recorded account, so an address that a different Google account later
+claims gains nothing from it.
+
 Cookies are `Secure` in production, `HttpOnly`, `SameSite=Lax`, narrowly
 scoped, and rotated at login/privilege transition. Family and administration
 sessions are separate namespaces; acquiring one never grants the other. Each

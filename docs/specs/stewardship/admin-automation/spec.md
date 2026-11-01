@@ -3927,6 +3927,7 @@ unknown email `not_available`, and a key used with another intent `invalid`.
 | `user_leader_import`, `user_leaders_status` (the leaders section's passive status, [#1863](https://github.com/epiphany40223/parishkit/issues/1863)) | `users import-leaders --preview`, `users import-leaders --confirm` (#952 leaders slice) |
 | `user_leader_emails` | `users email-leaders --preview`, `users email-leaders --confirm` ([#1622](https://github.com/epiphany40223/parishkit/issues/1622)) |
 | `user_timeline` | `users timeline --user ID [--kind K] [--from DAY] [--to DAY] [--zone ZONE]` ([#1866](https://github.com/epiphany40223/parishkit/issues/1866)); see below |
+| `user_account_link_check`, `user_account_link`, `user_account_unlink` | `users link --preview`, `users link --confirm`, `users unlink` ([#2343](https://github.com/epiphany40223/parishkit/issues/2343)); see below |
 | `user_rules`, `rule_apply`, `rule_base`, `rule_request` | Retired by #952: removed with the rule tables and autosave when the users commands land; no rule commands are built |
 | `chair_confirmations`, `chair_reviews`, `assignments` | Retired by #922: removed with Ministry assignments and Chairperson flows; no commands are built |
 | `security_event_acknowledge`, `critical_events_acknowledge` | `events list`, `events acknowledge` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); see below |
@@ -3943,7 +3944,9 @@ The users commands (#952) call the same service functions as the
 checks, audit and alerts:
 
 - `users list` prints each user's ID, email, Name, role, last successful
-  sign-in and recorded identities, with the page's sort (`--sort`), and the
+  sign-in, recorded identities and `linked_account` (null, or the link's
+  `link_id` and the linked Google account's `id`, current `email`,
+  `linked_at` and `last_sign_in`), with the page's sort (`--sort`), and the
   applied configuration's `version`, which `users preview` takes; it is
   read-only and needs only a read-only session. Before the users upgrade, its `form` is
   `sign_in_rules` and its users are the exact-address rules that grant a
@@ -4009,6 +4012,32 @@ checks, audit and alerts:
   `admin_cmd_users_email_leaders` with the page's
   `user_leader_emails_requested`, once: applying the same review again
   returns the first request. No document names a parishioner.
+- `users link --user ID --account EMAIL --preview` is Edit user's
+  [Review link](../admin-portal/spec.md#link-and-unlink): it runs the
+  page's checks and prints the review (`user` with `id`, `email`, `name`
+  and `role`; `account` with `id`, `email` and `last_attempt`; `grants`
+  with `role` and, for a Ministry leader, `ministries` as DUID and name;
+  `administrator_warning`; `token` and `expires_at`). `users link
+  --confirm --token …` is its Apply, through the page's own functions, so
+  either channel applies the other's review; it records
+  `admin_cmd_users_link` with the page's `user_account_linked` and
+  security event, once: applying the same review again returns the first
+  link. A refusal is `invalid` with `error.fields` `["account"]` and the
+  page's stable code as `error.reason` (`link_not_recorded`,
+  `link_account_linked` and the rest); an unknown user is
+  `not_available`; a review whose user, link or account changed since, or
+  that expired, is `stale_version`; a non-Administrator is `denied`.
+  `--confirm` prompts, showing the user's record ID and role (never an
+  address), since a link grants access on the Administrator's word alone;
+  `--yes` answers it.
+- `users unlink --user ID --link LINK_ID [--yes]` is the section's
+  Unlink: it prompts as the page's confirmation does, ends the link and
+  the account's Admin and automation sessions in one transaction, and
+  records `admin_cmd_users_unlink` with the page's `user_account_unlinked`.
+  `LINK_ID` is the `linked_account`'s link as `users list` prints it
+  (`linked_account.link_id`), so an unlink never ends a newer link; one
+  already ended is `stale_version`. Unlinking the command session's own
+  account is `invalid`, as on the page.
 - `users timeline --user ID` prints one user's
   [Timeline](../admin-portal/spec.md#user-timeline): the summary (Name,
   role or when the user was removed, address, Ministries led, last sign-in
@@ -4032,6 +4061,9 @@ checks, audit and alerts:
   each Family whose lines it prints: it prints no Family summary, so a
   Family whose lines the filters all leave out was not looked at and is not
   recorded.
+
+`users link` and `users unlink` need a full-scope session and are not
+fresh-gated, as the page asks for no recent sign-in.
 
 These need a full-scope session, except `users list`,
 `users preview-upgrade` and `users timeline`; none is fresh-gated, as the page asks for no fresh
