@@ -1,0 +1,11 @@
+{% load i18n stewardship %}{% comment %}
+  The parish's contact lines on the public information pages (#2354), from
+  the applied parish profile and the outgoing mail's Reply-to address. Before
+  setup there is no parish profile, so only the heading's sentence shows.
+{% endcomment %}<h2>{% translate "Contact the parish" %}</h2>
+{% if contact.known %}<p>{% blocktranslate trimmed with name=contact.name %}Questions about this site or your information go to {{ name }}:{% endblocktranslate %}</p>
+<ul>
+  {% if contact.email %}<li>{% translate "Email:" %} <a href="mailto:{{ contact.email }}">{{ contact.email }}</a></li>{% endif %}
+  {% if contact.phone %}<li>{% translate "Phone:" %} {{ contact.phone|phone }}</li>{% endif %}
+  {% if contact.website %}<li>{% translate "Website:" %} <a href="{{ contact.website }}">{{ contact.website }}</a></li>{% endif %}
+</ul>{% else %}<p>{% translate "Questions about this site or your information go to the parish office." %}</p>{% endif %}

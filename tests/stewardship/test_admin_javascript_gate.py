@@ -37,6 +37,10 @@ FAMILY_PAGES = {
     "family-maintenance.html",
     "family-unavailable.html",
     "hosted-file-unavailable.html",
+    # The public information pages (#2354): for anyone, no sign-in.
+    "public-about.html",
+    "public-privacy.html",
+    "public-terms.html",
 }
 # Pages both portals render: error pages, denials and the availability gate.
 SHARED_PAGES = {"availability.html", "denied.html", "error.html"}

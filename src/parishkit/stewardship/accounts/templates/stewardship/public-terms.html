@@ -1,0 +1,36 @@
+{% extends 'stewardship/base.html' %}{% load i18n %}
+{% comment %}
+  The Terms of use (#2354). Public, no sign-in, and short on purpose: the
+  site is the parish's own tool for its parishioners and volunteers.
+  "Pledges" shows only when the current campaign asks for a pledge, or when
+  there is no current campaign (public_pages.campaign_facts).
+  Change public_pages.UPDATED with the wording.
+{% endcomment %}
+{% block title %}{% translate "Terms of use" %}{% endblock %}
+{% block content %}<article class="flow panel public-page">
+  <h1>{% translate "Terms of use" %}</h1>
+  <p>{% blocktranslate trimmed with name=contact.name %}This site is provided by {{ name }} for its parishioners, parish staff and volunteers, to run the parish's stewardship renewal. By using it, you agree to these terms.{% endblocktranslate %}</p>
+
+  <h2>{% translate "Using the site" %}</h2>
+  <ul>
+    <li>{% translate "Use only your own Family's code or link, or the access the parish gave you, and keep them private." %}</li>
+    <li>{% translate "Give information that is true to the best of your knowledge." %}</li>
+    <li>{% translate "Do not try to see information you were not given, to get around the site's protections, or to disrupt the site." %}</li>
+    <li>{% translate "Parish staff and volunteers use what they see only for parish ministry, and keep it confidential." %}</li>
+  </ul>
+
+  {% if facts.financial %}<h2>{% translate "Pledges" %}</h2>
+  <p>{% translate "A pledge is a statement of your intention, not a contract or a payment. You can change it by sending the form again while the campaign is open, or by contacting the parish." %}</p>{% endif %}
+
+  <h2>{% translate "No warranty" %}</h2>
+  <p>{% translate "The parish provides this site as it is, without any warranty. The parish works to keep it available and accurate, but cannot promise that it will always be available or free of mistakes. As far as the law allows, the parish is not responsible for any loss that comes from using the site or from the site being unavailable." %}</p>
+
+  <h2>{% translate "Your information" %}</h2>
+  <p>{% translate "How the site uses your information is explained in the" %} <a href="{% url 'public:privacy' %}">{% translate "Privacy policy" %}</a>.</p>
+
+  <h2>{% translate "Changes to these terms" %}</h2>
+  <p>{% translate "The parish may change these terms. The date below shows when they last changed." %}</p>
+
+  {% include 'stewardship/public-contact.html' %}
+  <p class="help">{% blocktranslate trimmed %}Last updated: {{ updated }}{% endblocktranslate %}</p>
+</article>{% endblock %}

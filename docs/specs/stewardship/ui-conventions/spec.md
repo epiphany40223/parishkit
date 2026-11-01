@@ -45,7 +45,7 @@ when it lands.
   [dates and times](#dates-and-times), [date format](#date-format),
   [accessibility and client behavior](#accessibility-and-client-behavior),
   [step bars](#step-bars), [stepper button row](#stepper-button-row),
-  [charts](#charts).
+  [charts](#charts), [site footer](#site-footer).
 - Admin interaction: [JavaScript requirement](#javascript-requirement),
   [in-place controls](#in-place-controls),
   [pages that update themselves](#pages-that-update-themselves),
@@ -573,6 +573,24 @@ technology, is cleared when the page starts to print (so a pointer resting on
 a chart does not leave it in the printout) and never appears in a download or
 email image. Category and bar charts, whose rows or bars react as a whole, have no guide
 line ([#1536](https://github.com/epiphany40223/parishkit/issues/1536)).
+
+### Site footer
+
+**Rule.** Every page in the site layout, Family and Admin alike (sign-in,
+error and unavailable pages included), ends with one quiet footer line of
+three links: **About this site**, **Privacy policy** and **Terms of use**,
+leading to the
+[public information pages](../architecture/spec.md#public-information-pages).
+The footer sits below the page's content, never over it, and is the same on
+every page. The exception is a page whose
+[button row](#stepper-button-row) is pinned to the screen's bottom to the
+page's end: the Family form's steps (#2063) and the Admin review wizard have
+no footer, which would lift the row there; the Family code page before the
+form has it. **Why.** Google requires the privacy policy and terms to be
+reachable from the app, and a person anywhere on the site should find out
+what it does with their data in one click. **Shared code.**
+`site-footer.html`, included by `base.html`; `.site-footer` in `ui-v1.css`.
+**Precedent.** [#2354](https://github.com/epiphany40223/parishkit/issues/2354).
 
 ## Admin portal interaction
 
