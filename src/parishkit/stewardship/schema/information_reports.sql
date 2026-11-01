@@ -11,11 +11,11 @@ SET jit TO off AS $$
 DECLARE f jsonb:=parameters->'filters'; answer jsonb;
 BEGIN
     IF jsonb_typeof(parameters) IS DISTINCT FROM 'object'
-       OR NOT parameters ?& ARRAY['filters','history']
+       OR NOT parameters OPERATOR(pg_catalog.?&) ARRAY['filters','history']
        OR parameters-ARRAY['filters','history']<>'{}'::jsonb
        OR jsonb_typeof(parameters->'history') IS DISTINCT FROM 'boolean'
        OR jsonb_typeof(f) IS DISTINCT FROM 'object'
-       OR NOT f ?& ARRAY['search','disposition','needed','completed','start','end','sort']
+       OR NOT f OPERATOR(pg_catalog.?&) ARRAY['search','disposition','needed','completed','start','end','sort']
        OR f-ARRAY['search','disposition','needed','completed','start','end','sort']<>'{}'::jsonb
        OR EXISTS(SELECT 1 FROM jsonb_each(f) WHERE jsonb_typeof(value)<>'string')
        OR length(f->>'search')>200
@@ -66,6 +66,10 @@ BEGIN
             -- its own trim for the returned rows.
             stewardship_family_surname_v1(p.canonical::jsonb,
                 CASE WHEN p.id IS NOT NULL THEN 'Name not recorded in ParishSoft' END) AS surname,
+            -- Whether surname is the Family's own lastName, not a stand-in for
+            -- a blank one (family_names.family_last_name): without one, the
+            -- heads' own surnames lead the shown name (#2320).
+            stewardship_family_last_name_v1(p.canonical::jsonb)<>'' AS surname_recorded,
             CASE WHEN jsonb_typeof(p.canonical::jsonb->'active_head_duids')='array'
                 THEN p.canonical::jsonb->'active_head_duids' END AS head_duids,
             -- Whether the Family is still one of the campaign's Families
@@ -73,13 +77,13 @@ BEGIN
             -- #1393). A row loaded under a Families rule names the rule
             -- (campaign_families) and its portal_eligible is "matches the
             -- rule"; a legacy row names none and keeps ParishSoft's active.
-            CASE WHEN p.canonical::jsonb ? 'campaign_families'
+            CASE WHEN p.canonical::jsonb OPERATOR(pg_catalog.?) 'campaign_families'
                     AND jsonb_typeof(p.canonical::jsonb->'portal_eligible')='boolean'
                 THEN (p.canonical::jsonb->'portal_eligible')::boolean
                 WHEN jsonb_typeof(p.canonical::jsonb->'active')='boolean'
                 THEN (p.canonical::jsonb->'active')::boolean END AS active,
-            h.value->'reported' ? i.id::text AS previously_reported,
-            h.value->'corrected' @>
+            h.value->'reported' OPERATOR(pg_catalog.?) i.id::text AS previously_reported,
+            h.value->'corrected' OPERATOR(pg_catalog.@>)
                 jsonb_build_array(jsonb_build_array(i.id::text,i.disposition))
                 AS correction_resolved
         FROM selected x CROSS JOIN history h
@@ -114,13 +118,18 @@ BEGIN
         GROUP BY r.family_duid
     ), named AS MATERIALIZED (
         -- "Surname, A and B" (family_names.family_heads_name).
-        SELECT r.*,stewardship_family_heads_name_v1(r.surname,n.parts) AS display_name
+        SELECT r.*,stewardship_family_heads_name_v2(r.surname,r.surname_recorded,n.parts)
+            AS display_name
         FROM rows r LEFT JOIN head_names n ON n.family_duid=r.family_duid
     ), filtered AS MATERIALIZED (
         SELECT * FROM named WHERE (f->>'disposition'='all' OR disposition=f->>'disposition')
           AND (f->>'needed'='any' OR follow_up_needed=(f->>'needed'='yes'))
           AND (f->>'completed'='any' OR (followed_up_at IS NOT NULL)=(f->>'completed'='yes'))
+          -- Search matches the shown name, which names every head's
+          -- surname, and the Family surname (or its stand-in), which it
+          -- may not (#2320).
           AND (f->>'search'='' OR position(lower(f->>'search') IN lower(display_name))>0
+            OR position(lower(f->>'search') IN lower(surname))>0
             OR position(f->>'search' IN family_duid::text)>0
             OR position(lower(f->>'search') IN lower(text))>0
             OR position(lower(f->>'search') IN lower(notes))>0)
@@ -144,7 +153,8 @@ BEGIN
     ), detached AS (
         -- The shown name and heads only order and search; the page and an
         -- export capture keep the row they always had.
-        SELECT ordinal,to_jsonb(page)-ARRAY['ordinal','head_duids','surname','display_name']
+        SELECT ordinal,to_jsonb(page)-ARRAY['ordinal','head_duids','surname',
+            'surname_recorded','display_name']
             || jsonb_build_object('history',
             CASE WHEN (parameters->>'history')::boolean THEN coalesce((
                 SELECT jsonb_agg(jsonb_build_object(

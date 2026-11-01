@@ -5652,23 +5652,54 @@ Ministry requests). **Precedent.** #2124.
 **Rule.** Everywhere a table shows a Family's name, it is the Family's heads
 of household with the surname first ("Squyres, Tracy and Jeff"), so the
 column sorts by surname, built by the shared helper rather than by each page.
+When the heads have more than one surname, the surnames lead, separated by
+" / ": the Family surname (`lastName`) first, then the others in head order.
+After a comma come each surname's first names in the same order, also
+separated by " / ", with the first names inside one surname joined naturally:
+"Kelly / Thieneman, Maureen / Linda", or "Kelly / Thieneman, Maureen and Bob /
+Linda" for Maureen and Bob Kelly and Linda Thieneman. Surnames are compared
+ignoring letter case; the Family surname is shown as recorded and each other
+surname as its first head spells it. A head without a surname comes after
+those groups, in full. When no head shares the Family surname,
+only the heads' own surnames lead ("Lee / Fox, Ann / Bo" for the Kelly Family
+of Ann Lee and Bo Fox); the directory still sorts by the Family's own
+surname. When every head shares the surname, the name stays "Squyres, Tracy
+and Jeff" (Administrator, 2026-10-28,
+[#2320](https://github.com/epiphany40223/parishkit/issues/2320)). A Family
+whose `lastName` is blank has no surname of its own: its name is built from
+the heads' own surnames in the same way, "Lee / Fox, Ann / Bo", or "Lee, Ann
+and Bo" when they share one, even when the mailing name standing in for the
+surname is one of them. Since that stand-in is not the Family's surname, a
+head without a surname then still follows after " / ": "Lee, Ann / Cher" for
+Ann Lee and Cher, where a Family recorded as Lee reads "Lee, Ann and Cher".
+Only when no head has a surname either does the
+stand-in (the mailing name, the first name, or "Name not recorded in
+ParishSoft") lead the name as before: "The Lees, Ann and Bo" (Administrator,
+2026-10-31, #2320).
 A Member's name is shown with that Member's DUID beside it on the pages
 [Table column order](#table-column-order) lists. **Why.** The
 surname alone does not tell two Families apart, and the free-text mailing
 name is sometimes one person's given name. **Shared code.**
 `family_heads_name` in `source/family_names.py` (the rule); for a set of
-DUIDs, `snapshot_family_names` in `source/snapshot_names.py`; the SQL
-equivalent in `schema/directory_reports.sql` for the directory's search and
-order. Migration 0045 adds the shared SQL functions the report selections
-use, each matching its Python counterpart, Unicode trim included:
-`stewardship_name_strip_v1` (`str.strip()`), `stewardship_family_surname_v1`
-(`family_display_name`), `stewardship_family_head_part_v1` and
-`stewardship_family_heads_name_v1` (`family_heads_name`), and the lookup
-`stewardship_family_display_name_v1` (`snapshot_family_names` for one
-Family); later steps of
+DUIDs, `snapshot_family_names` in `source/snapshot_names.py`. Migration
+0045 adds the shared SQL functions the report selections use, each matching
+its Python counterpart, Unicode trim included: `stewardship_name_strip_v1`
+(`str.strip()`), `stewardship_family_surname_v1` (`family_display_name`),
+`stewardship_family_head_part_v1` and `stewardship_family_heads_name_v1`
+(`family_heads_name`), and the lookup `stewardship_family_display_name_v1`
+(`snapshot_family_names` for one Family); later steps of
 [#932](https://github.com/epiphany40223/parishkit/issues/932) move the other
-SQL copies onto them. Salutations use `heads_salutation_name` ("Tracy and Jeff Squyres")
-from the same module. Where a table sorts in the database, the
+SQL copies onto them. Migration 0194 (#2320) adds
+`stewardship_name_series_v1` (`name_series`),
+`stewardship_family_last_name_v1` (`family_last_name`) and
+`stewardship_family_heads_name_v2` (`family_heads_name`, told whether the
+surname is the recorded `lastName`), replaces the head part with the
+mixed-surname form, makes `stewardship_family_heads_name_v1` call the new
+function, and moves the lookup and the Family codes directory's search and
+order (`schema/directory_reports.sql`) onto them.
+Salutations use `heads_salutation_name` ("Tracy and Jeff Squyres") from the
+same module; given the Family surname, its heads come first ("Maureen Kelly
+and Linda Thieneman", #2320). Where a table sorts in the database, the
 `SnapshotFamilyName` ORM expression (open #965, in
 `source/snapshot_name_sql.py`) builds the same name per row, so the sort
 orders by surname, then the whole name. **Precedent.** #471, #932 (Administrator, 2026-10-10), open #965.

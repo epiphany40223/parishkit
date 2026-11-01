@@ -193,7 +193,9 @@ def _mailing_rows(rows):
     "By postal mail only" Families (#951).
     """
     for row in rows:
-        row["addressee"] = head_names(row["heads"]) or row["family_name"]
+        row["addressee"] = (
+            head_names(row["heads"], row["family_name"]) or row["family_name"]
+        )
 
 
 def _column_count(postal, dates, counts, checks, *, testing=False):

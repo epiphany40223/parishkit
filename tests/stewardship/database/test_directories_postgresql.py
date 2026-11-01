@@ -908,7 +908,7 @@ def test_directory_names_lead_with_the_surname_then_the_heads(live_response_serv
     assert [row["display_name"] for row in report["rows"]] == [
         "Example",
         "Example, Amy and Bob",
-        "Example, Member and Second Other",
+        "Example / Other, Member / Second",
         "Example, Zed",
     ]
     assert [row["family_duid"] for row in report["rows"]] == [9, 8, 1, 7]
@@ -934,13 +934,38 @@ def test_directory_names_lead_with_the_surname_then_the_heads(live_response_serv
     # Search matches the whole shown name, so a head's first name finds the Family.
     for text, expected in (
         ("zed", [7]),
-        ("Example, Member and Second Other", [1]),
+        ("Example / Other, Member / Second", [1]),
         ("amy and bob", [8]),
         ("Other", [1]),
     ):
         assert [
             row["family_duid"] for row in page(harness, search=text)["rows"]
         ] == expected
+
+
+def test_a_blank_last_name_names_the_family_by_its_heads(live_response_service):
+    """Without a lastName the heads' own surnames lead, in head order (#2320).
+
+    The mailing name stands in for the surname but matches no head, even
+    when it is one head's surname, so SQL (search) and the page agree on
+    "Example / Other, Member / Second", not "Other / Example, ...".
+    """
+    harness = live_response_service
+    data = response_source()
+    data.members[4] = data.members[3] | {
+        "memberDUID": 4,
+        "firstName": "Second",
+        "lastName": "Other",
+        "emailAddress": "",
+    }
+    data.families[1] |= {"lastName": "", "mailingName": "Other"}
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    (row,) = page(harness)["rows"]
+    assert (row["family_name"], row["surname_recorded"]) == ("Other", False)
+    assert row["display_name"] == "Example / Other, Member / Second"
+    found = page(harness, search="Example / Other, Member / Second")["rows"]
+    assert [row["family_duid"] for row in found] == [1]
 
 
 def test_contact_details_show_head_emails_in_one_batched_read(

@@ -1,9 +1,11 @@
-"""Migration 0045's shared Family name functions name Families as Python does.
+"""The shared Family name functions name Families as Python does.
 
 ``stewardship_family_display_name_v1`` and the functions it is built from
-(``stewardship_name_strip_v1``, ``stewardship_family_surname_v1``,
-``stewardship_family_head_part_v1`` and ``stewardship_family_heads_name_v1``)
-are the SQL twins of ``family_names`` and ``snapshot_names``. Each test seeds
+(``stewardship_name_strip_v1``, ``stewardship_family_surname_v1`` and
+``stewardship_family_head_part_v1``, migration 0045, and 0194's
+``stewardship_family_last_name_v1`` and ``stewardship_family_heads_name_v2``;
+0194 replaces the lookup and the head part for mixed surnames, #2320) are
+the SQL twins of ``family_names`` and ``snapshot_names``. Each test seeds
 Families into the current snapshot and compares the SQL name with
 ``snapshot_family_names`` (and the expected text, where a case states it), so
 the two cannot drift, Unicode white space included (#960, #932).
@@ -11,10 +13,12 @@ the two cannot drift, Unicode white space included (#960, #932).
 
 import itertools
 import json
+import re
 import sys
+from pathlib import Path
 
 import pytest
-from django.db import connection
+from django.db import DatabaseError, connection, transaction
 
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
@@ -107,7 +111,9 @@ def test_display_name_matches_python_on_generated_names(response_service, defaul
     # The cases do reach the edges: padding trimmed, a fallback, heads joined.
     assert "Lee, Ann and Bob" in python.values()
     assert "The Lees" in python.values() and "Pat" in python.values()
-    assert any(name.endswith(", Ann, Bob, Cy Fox and Di") for name in python.values())
+    assert any(
+        name.endswith(" / Fox, Ann, Bob and Di / Cy") for name in python.values()
+    )
 
 
 def test_display_name_of_a_family_outside_the_snapshot_is_null(response_service):
@@ -165,3 +171,73 @@ def test_name_strip_removes_exactly_what_str_strip_removes(response_service):
         )
         sql = set(cursor.fetchone()[0])
     assert sql == python
+
+
+MIGRATIONS = Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema"
+
+
+class Rollback(Exception):
+    """Undoes a transaction.atomic() block that passed."""
+
+
+def statement(path, name):
+    """One function's CREATE statement in a schema file, up to its closing $$."""
+    text = (MIGRATIONS / path).read_text(encoding="utf-8")
+    found = re.search(rf"^CREATE (?:OR REPLACE )?FUNCTION public\.{name}\(", text, re.M)
+    quote = re.compile(r"\bAS\s+(\$\w*\$)").search(text, found.start())
+    end = text.index(quote[1] + ";", quote.end()) + len(quote[1]) + 1
+    return re.sub(
+        r"^CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", text[found.start() : end]
+    )
+
+
+def test_0194_check_refuses_each_older_definition():
+    """0194's DO block passes on the installed functions and refuses each
+    older body: 0045's head part, heads name (the inline "Surname, A and B
+    Smith" form) and display name lookup, 0094's directory selections, and
+    0182's and 0175's Financial and Additional information selections; it
+    passes again once 0194's statements are run over them. The baseline
+    selections are 0194's."""
+    frozen = "migrations/0194_mixed_surname_names.sql"
+    text = (MIGRATIONS / frozen).read_text(encoding="utf-8")
+    acl = re.search(
+        r"^SELECT set_config\('stewardship.migration_0194_acl'.*?;$", text, re.M | re.S
+    )[0]
+    check = re.search(r"^DO \$check\$.*?\$check\$;", text, re.M | re.S)[0]
+    older = {
+        "stewardship_family_head_part_v1": "migrations/0045_report_duid_sorts.sql",
+        "stewardship_family_heads_name_v1": "migrations/0045_report_duid_sorts.sql",
+        "stewardship_family_display_name_v1": "migrations/0045_report_duid_sorts.sql",
+        "stewardship_directory_report_v1": "migrations/0094_source_status_names.sql",
+        "stewardship_directory_report_v2": "migrations/0094_source_status_names.sql",
+        "stewardship_financial_report_v1": "migrations/0182_financial_in_force.sql",
+        "stewardship_information_report_v1": "migrations/0175_campaign_families.sql",
+        "stewardship_information_report_v2": "migrations/0175_campaign_families.sql",
+    }
+    with connection.cursor() as cursor:
+        with pytest.raises(Rollback), transaction.atomic():
+            cursor.execute(acl)
+            cursor.execute(check)
+            raise Rollback
+        for name, path in older.items():
+            old, new = statement(path, name), statement(frozen, name)
+            assert old != new
+            with (
+                pytest.raises(DatabaseError, match="Migration 0194"),
+                transaction.atomic(),
+            ):
+                cursor.execute(acl)
+                cursor.execute(old)
+                cursor.execute(check)
+            with pytest.raises(Rollback), transaction.atomic():
+                cursor.execute(acl)
+                cursor.execute(old)
+                cursor.execute(new)
+                cursor.execute(check)
+                raise Rollback
+    for path, name in (
+        ("directory_reports.sql", "stewardship_directory_report_v1"),
+        ("financial_reports.sql", "stewardship_financial_report_v1"),
+        ("information_reports.sql", "stewardship_information_report_v1"),
+    ):
+        assert statement(path, name) == statement(frozen, name)

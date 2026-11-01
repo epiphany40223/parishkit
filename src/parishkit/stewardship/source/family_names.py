@@ -5,8 +5,9 @@ households it is a single person's given name, so showing it as the Family's
 name misleads staff and parishioners alike. The household surname
 (``lastName``) is the stable identity. SQL report functions apply the same
 precedence inline (see the ``family_name`` expressions in schema/*.sql), and
-directory_reports.sql builds the same surname-and-heads string as
-``family_heads_name`` to search and order the Family codes directory.
+``stewardship_family_heads_name_v2`` (migration 0194) builds the same
+surname-and-heads string as ``family_heads_name``, so the Family codes
+directory and the report selections search and order by it.
 
 The salutation order (``heads_salutation_name``: "Andrew and Betty Test") has
 no SQL counterpart: nothing searches or sorts by it, so only Python builds it.
@@ -52,39 +53,53 @@ def _head_full_name(head):
     return " ".join(part for part in parts if part) or _text(head, "name")
 
 
-def heads_salutation_name(heads, default=""):
+def _surname_groups(heads, surname):
+    """The heads grouped by last name, for both name orders.
+
+    Returns ``(own, others, alone)``. Heads with a last name are grouped
+    under it, ignoring letter case (casefold; the first spelling seen is
+    kept), in the order each group's first head appears; a group is
+    ``(last name, [first names])``. ``own`` is the group of the Family
+    ``surname`` (or None) and ``others`` the other groups. ``alone`` holds
+    the full names of heads without a last name (a first name only, or an
+    older capture with just ``name``). SQL groups the same way in
+    ``stewardship_family_heads_name_v2`` (migration 0194).
+    """
+    groups = {}  # casefolded last name -> (first spelling, [first names])
+    alone = []
+    for head in heads:
+        first, last = _text(head, "first"), _text(head, "last")
+        if last:
+            groups.setdefault(last.casefold(), (last, []))[1].append(first)
+        elif full := _head_full_name(head):
+            alone.append(full)
+    own = groups.pop(surname.casefold(), None) if surname else None
+    return own, list(groups.values()), alone
+
+
+def heads_salutation_name(heads, default="", *, surname=""):
     """The heads as a salutation addresses them: "Andrew and Betty Test".
 
-    The rule, in the heads' order except as noted:
+    The rule:
 
-    - Heads with a last name are grouped under it, ignoring letter case (the
-      first spelling seen is used); a group is placed where its first head
-      appears. Each group reads as the ``name_series`` of its first names
-      followed by the last name once ("Ann, Bob and Cy Lee"). Blank first
-      names add nothing, so a group of only surnames is just the surname.
-    - A head without a last name (a first name only, or an older capture with
-      just ``name``) keeps its full display name as a group of its own. These
-      come after every surname group, so a lone first name never reads as
-      sharing the next group's surname ("Bob Lee and Cher", not "Cher and Bob
-      Lee").
+    - Heads are grouped by last name (``_surname_groups``). Each group reads
+      as the ``name_series`` of its first names followed by the last name
+      once ("Ann, Bob and Cy Lee"). Blank first names add nothing, so a
+      group of only surnames is just the surname.
+    - The group of the Family ``surname`` (when given) comes first, then the
+      other groups in the heads' order: "Maureen Kelly and Linda Thieneman"
+      for the Kelly Family even when Linda is the first head (#2320).
+    - A head without a last name keeps its full display name as a group of
+      its own. These come after every surname group, so a lone first name
+      never reads as sharing the next group's surname ("Bob Lee and Cher",
+      not "Cher and Bob Lee").
     - The groups are then joined by ``name_series`` again: "Andrew and Betty
       Test and Carol Smith"; "Ann Lee, Bob Ray and Cy Fox".
 
     Without any usable name the result is ``default``.
     """
-    groups = []  # (last name, [first names]) in order of first appearance
-    by_last = {}
-    alone = []  # full names of heads without a last name
-    for head in heads:
-        first, last = _text(head, "first"), _text(head, "last")
-        if last:
-            key = last.casefold()
-            if key not in by_last:
-                by_last[key] = []
-                groups.append((last, by_last[key]))
-            by_last[key].append(first)
-        elif full := _head_full_name(head):
-            alone.append(full)
+    own, others, alone = _surname_groups(heads, surname)
+    groups = ([own] if own else []) + others
     parts = [f"{name_series(firsts)} {last}".strip() for last, firsts in groups]
     return name_series(parts + alone) or default
 
@@ -100,23 +115,50 @@ def name_placeholders(family_name, heads, members):
     and Cy Test"). A Family without usable head (or Member) names is addressed
     by ``family_name`` instead, so no greeting is ever blank (#471).
     """
-    salutation = heads_salutation_name(heads, family_name)
+    salutation = heads_salutation_name(heads, family_name, surname=family_name)
     return {
         "family_name": family_name,
         "head_salutation": salutation,
         "family_member_names": salutation,
-        "all_family_member_names": heads_salutation_name(members, family_name),
+        "all_family_member_names": heads_salutation_name(
+            members, family_name, surname=family_name
+        ),
     }
 
 
-def family_heads_name(surname, heads, *, surname_first=True):
+def family_last_name(values):
+    """The Family's recorded surname (stripped ``lastName``), or "" if none.
+
+    ``family_display_name`` stands in for a blank one with the mailing name
+    or a first name; ``family_heads_name`` must know when it did (#2320).
+    """
+    return _text(values, "lastName")
+
+
+def family_heads_name(surname, heads, *, surname_first=True, recorded=True):
     """The Family as staff recognize it: "Squyres, Tracy and Jeff".
 
-    The surname leads so the string sorts by it. Heads sharing that surname
-    contribute their first names; a head of another surname is shown in full
-    ("Squyres, Tracy and Jeff Smith"). Without heads it is just the surname.
-    Heads captured before first and last names were kept separately
-    contribute their full display name.
+    The surname leads so the string sorts by it. When every head with a last
+    name shares the Family surname (ignoring letter case), the heads follow
+    in their order as first names; a head without a last name, or captured
+    before first and last names were kept separately, contributes its full
+    display name. Without heads it is just the surname.
+
+    When heads have other last names (#2320), the surnames lead, separated by
+    " / ": the Family surname first (when a head has it), then the others in
+    the heads' order. After a comma come each surname's first names, in the
+    same order and also separated by " / ", each group joined by
+    ``name_series``: "Kelly / Thieneman, Maureen and Bob / Linda". Heads
+    without a last name follow, in full, as further " / " parts. A surname
+    whose heads have no first names leaves no empty part. SQL builds the
+    same string in ``stewardship_family_heads_name_v2`` (migration 0194).
+
+    ``recorded`` is False when ``surname`` only stands in for a blank
+    ``lastName`` (``family_display_name``'s mailing name, first name or
+    default; ``family_last_name``). No head then shares the Family surname,
+    so a head with a last name always leads, as when no head shares it:
+    "Lee / Fox, Ann / Bo", or "Lee, Ann and Bo". Only when no head has a
+    last name does the stand-in lead, as before: "The Lees, Ann and Bo".
 
     With ``surname_first=False`` the names read naturally, as in a salutation
     or on an envelope (see ``heads_salutation_name``): "Tracy and Jeff
@@ -124,10 +166,17 @@ def family_heads_name(surname, heads, *, surname_first=True):
     the surname.
     """
     if not surname_first:
-        return heads_salutation_name(heads, surname)
-    parts = []
-    for head in heads:
-        first, last = _text(head, "first"), _text(head, "last")
-        parts.append(first if last == surname else _head_full_name(head))
+        return heads_salutation_name(heads, surname, surname=surname)
+    own, others, alone = _surname_groups(heads, surname if recorded else "")
+    if others:
+        surnames = ([surname] if own else []) + [last for last, _ in others]
+        groups = ([own] if own else []) + others
+        parts = [name_series(firsts) for _, firsts in groups] + alone
+        leading = " / ".join(surnames)
+        names = " / ".join(part for part in parts if part)
+        return f"{leading}, {names}" if names else leading
+    parts = [
+        _text(h, "first") if _text(h, "last") else _head_full_name(h) for h in heads
+    ]
     names = name_series(parts)
     return f"{surname}, {names}" if names else surname
