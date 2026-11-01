@@ -30,7 +30,7 @@ FIELDS = {
     "parish_website": ("/setup-parish", "Parish website"),
     "online_giving_url": ("/setup-parish", "Online giving URL"),
     "slack_channel_id": ("/setup-slack", "Slack channel ID"),
-    "email_address": ("/setup-testing", "Testing email address"),
+    "email_address": ("/setup-testing", "Testing recipient"),
     "email_lines": ("/setup-access", "Staff email addresses"),
     "sender_name": ("/setup-mail", "From name"),
     "parishsoft_key": ("/setup-credential", "ParishSoft API key"),
@@ -212,7 +212,7 @@ def test_only_pythons_whitespace_is_still_empty(page, component_origin, value):
     continue waits for it, as the server's required check refuses it."""
     failures = watch(page)
     page.goto(component_origin + "/setup-testing")
-    address = page.get_by_label("Testing email address").first
+    address = page.get_by_label("Testing recipient").first
     address.evaluate(ENTER, value)
     assert page.get_by_role("button", name="Save and continue").is_disabled()
     assert not failures

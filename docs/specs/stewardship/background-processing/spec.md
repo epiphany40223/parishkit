@@ -841,7 +841,7 @@ after a clean reconciliation or preparation that keeps failing cancels it, so
 no test message is left unfinished. A scheduler sweep settles tickets whose
 task ended.
 Those messages have routing class `testing_override`; the envelope has only the
-single configured Testing address, and the subject and both body alternatives
+single configured Testing recipient, and the subject and both body alternatives
 prominently identify Testing and safely name the intended recipients. Production
 applies none of these overrides.
 [Ministry leader emails](#ministry-leader-emails) are routed the same way,

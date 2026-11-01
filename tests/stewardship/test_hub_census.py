@@ -442,7 +442,7 @@ def test_an_added_member_entered_by_hand_is_not_a_second_joined_tab():
     panel = page.split('id="family-tabs-panel-member-2"')[1]
     assert '<h2 id="hub-member-2-heading">Adams, Zed (DUID 20)</h2>' in panel
     assert '<span class="status-badge">New Member</span>' in panel
-    assert "staff entered them in ParishSoft by hand" in panel
+    assert "Staff entered them in ParishSoft by hand" in panel
     assert "The Family's answers for this Member" in panel
     assert "Joined in ParishSoft" not in page
     # The ID is not in the roster yet: the plain New Member tab, and the

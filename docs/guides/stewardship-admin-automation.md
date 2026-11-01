@@ -329,7 +329,7 @@ current campaign, in the order of the
 
 ```sh
 pk-admin go-live preview                  # Check readiness and public web address
-pk-admin go-live families > testing.csv   # the Testing submissions list
+pk-admin go-live families > testing.csv   # the Testing responses list
 pk-admin go-live start --token TOKEN      # Start go-live (prompts)
 pk-admin go-live status --watch 30        # the Prepare step
 pk-admin go-live retry                    # a failed part's Retry
@@ -404,7 +404,7 @@ Administrator's token is exit 1 (`denied`) before any prompt.
   cancels only if nothing changed. It prints `created`, `withdrawal_id`
   and `campaign_id`, and notifies the Administrators of an irreversible
   action. The campaign is a Testing draft again.
-- `go-live families` writes the Testing submissions list (`duid`, `name`,
+- `go-live families` writes the Testing responses list (`duid`, `name`,
   by DUID) as CSV to standard output, and its document (`campaign_id`,
   `count`, `file_name`, `content_type`, `size`, `sha256`) to standard
   error. It holds Family names: keep the file private.
@@ -2444,7 +2444,7 @@ pk-admin report roster --show all --ministry 9
 | `report comparison` | Campaign comparison | `day` and `date` (the comparison day: the current campaign's last complete day, or `--day`), `status`, `last_year`, `current` (the current campaign's figures at the day and so far, and its renewal of last year's Families), `years` (each imported year's figures at the day and final figures, renewal and, for a final year, its pledge distribution) and `averages` (the imported years' mean of each figure at the day); see below |
 | `report responses` | Response dashboard (Families by stage) | `metrics`: the funnel `stages`, the three figures beside it, the `activity` buckets, the `sends` and each list's length (`lists`), which the page no longer shows; null in Testing without a rehearsal |
 | `report financial` | Financial report | `scope` and the summary over every pledge of its Families: `families`, `annual_total`, `frequencies`, `shares` (by share option id), `no_share`, `cannot_give` and the comparison period |
-| `report limitations` | Limitations | `cannot_serve` (Members who cannot participate in ministries) and `cannot_attend` (Families who cannot attend Mass or prayer services) at `stage`, and `stages`: every answer by stage, zeros included |
+| `report limitations` | Limitations | `cannot_serve` (Members who cannot participate in Ministries) and `cannot_attend` (Families who cannot attend Mass or prayer services) at `stage`, and `stages`: every answer by stage, zeros included |
 | `report census` | Census changes | `matching`: how many changes the filters keep, split by `routes` (`automatic`, `by_hand`) and `kinds` (`contact`, `moved`, `deceased`, `new_member`), and `statuses`, every change of the campaign by status (the counts the Status filter's choices show); see below |
 | `report information` | Additional information | `matching`: how many items match the filters; with `--stage`, how many requests are at that stage, and `stages`, each stage's count (null without `--stage`) |
 | `report ministry` | Ministry report | `summaries`: each Ministry's DUID (`ministry`), name, state and request counts and, for Staff and Administrators, `leaders` (the Leaders column: `state` is `no_leader`, `no_user`, `not_signed_in` or `signed_in`, and `signed_in` the number of its leaders' users who have signed in; each read is recorded in System logs as `ministry_leader_coverage_viewed`); with `--ministry` and `--requests`, `matching` is that list's request count |

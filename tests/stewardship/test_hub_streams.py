@@ -210,13 +210,13 @@ def test_the_last_tab_stages_each_yes_and_the_current_item():
     assert [
         (row.label, row.answer, row.stage_label) for row in tab.subject.changed
     ] == [
-        ("Cannot participate in ministries: Adams, Requested", "Yes", "To review"),
-        ("Cannot participate in ministries: Adams, Zed", "Yes", "To review"),
+        ("Cannot participate in Ministries: Adams, Requested", "Yes", "To review"),
+        ("Cannot participate in Ministries: Adams, Zed", "Yes", "To review"),
         ("Additional information", "Please call\nabout the choir", "To handle"),
     ]
     assert [(row.label, row.answer) for row in tab.subject.unchanged] == [
         ("Cannot attend Mass or prayer services", "No"),
-        ("Cannot participate in ministries: Adams, Bo", "No"),
+        ("Cannot participate in Ministries: Adams, Bo", "No"),
     ]
     assert all(not row.baseline_read for row in tab.subject.changed)
     # Followed up reads Handled; no item reads "None given", unchanged.

@@ -1048,7 +1048,7 @@ def go_live_cancel(args, preamble, runtime, context):
 
 
 def go_live_families(args, preamble, runtime, context):
-    """The Testing submissions list, streamed as CSV."""
+    """The Testing responses list, streamed as CSV."""
     from .admin_go_live import export_families
 
     return export_families(context["caller"], runtime, context=context)
@@ -4783,7 +4783,7 @@ def _export_limitations_options(parser):
         "--show",
         choices=("any", "cannot_serve", "cannot_attend"),
         default="any",
-        help="any (default), cannot_serve (cannot participate in ministries) "
+        help="any (default), cannot_serve (cannot participate in Ministries) "
         "or cannot_attend (cannot attend Mass or prayer services)",
     )
     _limitation_stage_option(parser)
@@ -5762,7 +5762,7 @@ def _go_live_specs():
         ),
         CommandSpec(
             "go-live families",
-            "Write the Testing submissions list (CSV) to standard output.",
+            "Write the Testing responses list (CSV) to standard output.",
             go_live_families,
             "read_only",
             False,

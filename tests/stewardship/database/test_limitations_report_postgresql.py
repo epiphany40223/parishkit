@@ -183,7 +183,7 @@ def test_native_page_and_downloads(response_service, google, settings):
         head = page.split("<thead>")[1].split("</thead>")[0]
         assert "Reviewer's value" not in head and "Baseline" not in head
         assert "Member DUID" in head and "Family's answer" in head
-        assert "Cannot participate in any ministries" in page
+        assert "Cannot participate in any Ministries" in page
         assert "Cannot attend Mass or prayer services" in page
         # Each Family name opens its Timeline (#1570): one record id read.
         assert '<th scope="row"><a href="/admin/reports/families/' in page
@@ -251,11 +251,11 @@ def test_native_page_and_downloads(response_service, google, settings):
         # name (#1216).
         assert (
             b"\r\nFamily,ParishSoft status,Family DUID,Limitation,"
-            b"Latest response,Stage\r\n" in body
+            b"Submitted,Stage\r\n" in body
         )
         assert body.startswith(
             b"Member,Member DUID,Family,ParishSoft status,Family DUID,"
-            b"Cannot participate in ministries,Latest response,Stage\r\n"
+            b"Cannot participate in Ministries,Submitted,Stage\r\n"
         )
         assert b",Ignored\r\n" in body and b",To handle\r\n" in body
         # The download applies the page's Stage.
@@ -284,8 +284,8 @@ def test_native_page_and_downloads(response_service, google, settings):
             "Family",
             "ParishSoft status",
             "Family DUID",
-            "Cannot participate in ministries",
-            "Latest response",
+            "Cannot participate in Ministries",
+            "Submitted",
             "Stage",
         ]
         assert book["Members"]["B2"].value == "3"

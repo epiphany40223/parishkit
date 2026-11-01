@@ -146,7 +146,7 @@ class DriveFailure(Exception):
         ),
         "unanswered": (
             "The check was not answered. The Google Workspace installer service "
-            "may not be running; ask the server administrator."
+            "may not be running; ask whoever runs the server."
         ),
         # Test access only (#269): the check waited while the user changed.
         "settings_changed": (

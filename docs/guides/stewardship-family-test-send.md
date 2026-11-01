@@ -5,7 +5,7 @@ specification](../specs/stewardship/admin-portal/spec.md#production-transition)
 describes a readiness test send that could render a selected Family, but only
 the fictional sample existed, and the only way for staff to hold a Testing
 code or link was the scheduled Testing invitation run, which mails every
-Family with a deliverable address to the one Testing mailbox. This increment
+Family with a deliverable address to the one Testing recipient's inbox. This increment
 adds the page **Send this email to chosen Families**, linked from the
 fictional sample's test page as **Send this email to chosen real Families
 (Testing recipient only)**, so staff can validate the Family form as up to ten

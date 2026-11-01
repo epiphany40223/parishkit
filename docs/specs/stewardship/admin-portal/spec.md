@@ -1966,7 +1966,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `share_settings` | Share options | Menu: Share options | Administrator | How Families will share | `/admin/campaign/share-options/` | (same) | Gains a Return link and About panel. |
 | `reminder_workgroup` | No-reminders WorkGroup | Menu: No-reminders WorkGroup | Administrator | (new, #861) | `/admin/campaign/no-reminders-workgroup/` | (same) | Edit, confirm, apply; stays editable while live. |
 | `go_live` | Go live | Menu: Go live | Administrator | Go live | `/admin/campaign/go-live/` | (same) | The Go live page's Check step (#1585); its POSTs answer in place or in the Start go-live dialog. |
-| `go_live_families` | Testing submissions | Go live | Administrator | Families with Testing submissions; Testing Families | `/admin/campaign/go-live/families/` | (same) |  |
+| `go_live_families` | Testing responses | Go live | Administrator | Testing submissions; Families with Testing submissions; Testing Families | `/admin/campaign/go-live/families/` | (same) |  |
 | `go_live_prepare` | Go live | Go live (its Check step) | Administrator | (new, #1585) | `/admin/campaign/go-live/preparing/` | (same) | The Go live page's Prepare step (#1585 slice 3); its trail is Campaign setup › Go live and it marks the Go live menu entry. |
 | `go_live_cleanup` | (retired) | (retired) | Administrator | Testing cleanup; Testing cleanup progress | `/admin/campaign/go-live/cleanup/<request>/` | (retired; 404) | Retired with no redirect (#1585 slice 3): the Prepare step shows cleanup. |
 | `go_live_links` | (retired) | (retired) | Administrator | Prepare Family links; Family links | `/admin/campaign/go-live/cleanup/<request>/links/` | (retired; 404) | Retired with no redirect (#1585 slice 3): the system prepares the links, and the Prepare step shows them. |
@@ -2623,7 +2623,7 @@ button in a line kept while empty
 field carries the server's 5 MB bound as `data-max-bytes`, which will refuse
 a larger file at the field as it is chosen once that shared check lands
 (pending #1069); until then the server refuses it on upload. An icon whose
-Family page the campaign does not show (the Financial page icon while
+Family page the campaign does not show (the Financial stewardship page icon while
 Financial stewardship is off; the Member pages icon while Census and
 Ministries are both off) has its upload controls greyed in place, with the
 field and Upload named by that reason, and the server refuses such an upload
@@ -4348,9 +4348,8 @@ browser's zone; the text's problems, each named by its field; or a refusal,
 such as a test already on its way. The acknowledgment of an uncertain
 earlier test shows below that line when the page is drawn with one or a send
 is refused for one. A send that gets no answer is not repeated, and the line
-says to check the Testing mailbox (to be named the Testing recipient's
-inbox, per [Testing recipient](../ui-conventions/spec.md#testing-recipient))
-first. The command line has no
+says to check the Testing recipient's inbox first
+([Testing recipient](../ui-conventions/spec.md#testing-recipient)). The command line has no
 counterpart: `test sample` tests a saved email.
 
 On New, a Reminder's Sends **Repeating**
@@ -5681,8 +5680,7 @@ invitation or reminder that a mail schedule selects and that is marked
 cleaned form, so they are listed without blocking. Production confirmation
 re-reads the same check.
 
-The Admin-only Family list (the **Testing submissions** page, to be named
-Testing responses by the
+The Admin-only Family list (the **Testing responses** page, named by the
 [responses and submissions](../ui-conventions/spec.md#responses-and-submissions)
 convention) opens only
 while the campaign is the current Testing draft, as does Go live,
@@ -5691,7 +5689,7 @@ tables do, the surname then the heads ("Squyres, Tracy and Jeff"), with the
 Family DUID in its own column; both columns sort on the server, the name by
 surname and then the whole name, as the Family codes directory sorts
 ([#932](https://github.com/epiphany40223/parishkit/issues/932)). Afterwards the list answers with a plain
-notice, "Testing submissions are only available before go-live.", as a 410
+notice, "Testing responses are only available before go-live.", as a 410
 refusal: signing in again cannot help, so it never shows the generic
 sign-in-again refusal
 ([#867](https://github.com/epiphany40223/parishkit/issues/867)).
@@ -5879,8 +5877,7 @@ campaign.
 | 3. Confirm Production | `/admin/campaign/go-live/confirmation/` | Opens once the Family links are prepared on current data. |
 | 4. Activation | `/admin/campaign/production/` | Today's Production activation address; the menu entry once Production is confirmed. |
 
-**Testing submissions** (`/admin/campaign/go-live/families/`; to be named
-Testing responses, per
+**Testing responses** (`/admin/campaign/go-live/families/`; named per
 [responses and submissions](../ui-conventions/spec.md#responses-and-submissions))
 stays a sub-page of Check, under the same rules as today (410 once go-live has
 started). Every step's trail is the Campaign setup group, then Go live; the
@@ -5976,7 +5973,7 @@ outcome.
      the body says in three short lines what happens next (Testing data is
      deleted; the system refreshes ParishSoft data and prepares new Family
      links by itself; nothing reaches Families until you confirm), then the
-     cleanup counts with a link to Testing submissions, and the caution
+     cleanup counts with a link to Testing responses, and the caution
      "Deleted Testing data cannot be restored, even if you stop going live
      later. Testing links and codes stop working now." Its buttons are
      **Apply** and **Cancel**. Apply is the explicit acknowledgement that
@@ -8317,7 +8314,7 @@ never contact data.
   records in the current ParishSoft data, compared in lower case. Usually
   that is one Family; an address shared by two Families lists each.
 - **Family groups.** Below the Summary, each Family has its own panel headed
-  "Family member of" with the Family's name (the shared
+  "Family Member of" with the Family's name (the shared
   [Family name link](../ui-conventions/spec.md#family-and-member-names) to
   its [Timeline](../reports/spec.md#timeline)) and its DUID. The panel holds
   that Family's Timeline summary fields, with the same meaning: Submitted,
@@ -8334,7 +8331,7 @@ never contact data.
 - **No Family.** A user whose address is on no Family or Member contact
   record shows no Family panel and no Family field
   ([conditional fields](../ui-conventions/spec.md#conditional-fields)); the
-  Summary says "Not found in ParishSoft as a Family member, so there are no
+  Summary says "Not found in ParishSoft as a Family Member, so there are no
   Family form records."
 - **Merged lines.** The Family's Timeline lines (its emails, sign-ins,
   sign-outs, form opens, steps and submissions) join the user's own lines in
@@ -9047,7 +9044,7 @@ requesting Member's own email and phones on a standing request, since asking
 is consent to be contacted (Administrator decision, 2026-10-17,
 [#1591](https://github.com/epiphany40223/parishkit/issues/1591)), except on
 any request of a Member whom the Family's latest response says cannot
-participate in any ministries, and otherwise only the values the Member allows to be shared, with "Not
+participate in any Ministries, and otherwise only the values the Member allows to be shared, with "Not
 published" for the others; Administrators and Staff see operational
 contact. The exact rule is the
 [Ministry change summary's](../reports/spec.md#ministry-change-summary).

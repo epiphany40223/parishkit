@@ -63,7 +63,7 @@ from .timeline_reviews import read_reviews
 STEPS = {
     "welcome": _("Welcome"),
     "census": _("Census"),
-    "members": _("Family members"),
+    "members": _("Family Members"),
     "ministry": _("Ministry stewardship"),
     "financial": _("Financial stewardship"),
     "closing": _("Closing page"),
@@ -509,7 +509,7 @@ def events(
     for submission in submissions:
         details = []
         if submission.by_staff:
-            details.append(str(_("Entered by Staff for the Family")))
+            details.append(str(_("Entered by Staff")))
         if submission.late:
             details.append(str(_("Late: after the campaign closed")))
         if submission.no_receipt:

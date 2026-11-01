@@ -85,7 +85,7 @@ def population_figures(statistics, scope):
             annual_reason = everyone_reason = no_data
         elif statistics.financial is None:
             annual_reason = everyone_reason = _(
-                "Giving is turned on, but this campaign has no giving "
+                "Financial stewardship is turned on, but this campaign has no giving "
                 "definition yet, so pledges cannot be totalled."
             )
         else:

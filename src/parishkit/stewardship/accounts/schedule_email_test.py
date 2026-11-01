@@ -145,8 +145,8 @@ def _send(request, campaign_id):
         refusal = Refusal(
             _("An earlier test may have arrived: its result is uncertain."),
             fix=_(
-                "Check the Testing mailbox first. To send another test anyway, "
-                "tick the confirmation below."
+                "Check the Testing recipient's inbox first. To send another test "
+                "anyway, tick the confirmation below."
             ),
         )
         return with_reason(

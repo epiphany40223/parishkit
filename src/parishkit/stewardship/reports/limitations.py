@@ -43,8 +43,8 @@ SHOW_WORDS = frozenset({"any", "cannot_serve", "cannot_attend"})
 STAGES = (Stage.TO_REVIEW, Stage.TO_HANDLE, Stage.IGNORED, Stage.HANDLED)
 # Each answer in words, by its kind: the worklist's Family's answer.
 ANSWERS = {
-    "member": "Cannot participate in any ministries",
-    "proposed_member": "Cannot participate in any ministries",
+    "member": "Cannot participate in any Ministries",
+    "proposed_member": "Cannot participate in any Ministries",
     "family": "Cannot attend Mass or prayer services",
     # A Family's cannot_give flag on its $0 pledge (R39 finding 11): listed
     # beside the Limitations answers, but decided on Pledges.
@@ -75,8 +75,8 @@ MEMBER_HEADINGS = (
     "Family",
     STATUS_HEADING,
     "Family DUID",
-    "Cannot participate in ministries",
-    "Latest response",
+    "Cannot participate in Ministries",
+    "Submitted",
     "Stage",
 )
 FAMILY_HEADINGS = (
@@ -84,11 +84,11 @@ FAMILY_HEADINGS = (
     STATUS_HEADING,
     "Family DUID",
     "Limitation",
-    "Latest response",
+    "Submitted",
     "Stage",
 )
 # Each table's page heading, which the PDF prints above that table.
-MEMBER_CAPTION = "Members who cannot participate in ministries"
+MEMBER_CAPTION = "Members who cannot participate in Ministries"
 FAMILY_CAPTION = "Families that cannot attend Mass or prayer services"
 # Relative PDF column widths, by heading: names and the response time get the
 # room; the Yes columns and DUIDs are short.
@@ -98,9 +98,9 @@ PDF_WEIGHTS = {
     "Family DUID": 5,
     "Member": 9,
     "Member DUID": 5,
-    "Cannot participate in ministries": 6,
+    "Cannot participate in Ministries": 6,
     "Limitation": 9,
-    "Latest response": 8,
+    "Submitted": 8,
     "Stage": 6,
 }
 PRIVACY = "Sensitive parish report. Share only with authorized recipients."
@@ -287,7 +287,7 @@ def summary_line(result):
     give = len(result.get("contributions", []))
     line = (
         f"{_counted(len(result['members']), 'Member', 'Members')} cannot "
-        f"participate in ministries; {_counted(attend, 'Family', 'Families')} "
+        f"participate in Ministries; {_counted(attend, 'Family', 'Families')} "
         "cannot attend Mass"
     )
     if give:
@@ -315,7 +315,7 @@ def _family(row):
 def export_tables(result, zone, *, time_text=iso_time):
     """Two plain tables (Members, then Families) with localized timestamps.
 
-    ``time_text`` words each Latest response time already placed in
+    ``time_text`` words each Submitted time already placed in
     ``zone``: ISO 8601 for CSV and XLSX, the parish's compact date format
     for the PDF. Every format reads these same rows (#966).
     """
@@ -430,7 +430,7 @@ def limitations_pdf(result, zone, *, parish, campaign, as_of):
     """The Members table, then the Families table, as shared framed PDF tables.
 
     Each table is its CSV/XLSX headings over ``export_tables``' rows, so the
-    three files never disagree (#966); only Latest response reads in the
+    three files never disagree (#966); only Submitted reads in the
     parish's compact date format. The Families table starts on a new page,
     and every page names its table with the page's table heading. The page
     frame names the parish and campaign, the download time ``as_of`` in

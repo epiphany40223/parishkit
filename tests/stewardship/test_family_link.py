@@ -134,7 +134,7 @@ FAMILY_NAME_PAGES = {
     "delivery-refusals.html": "Refused addresses",
     "delivery-refusal.html": "Refused address",
     "source-form.html": "Families the form cannot open",
-    "go-live-families.html": "Testing submissions (no link: Testing only)",
+    "go-live-families.html": "Testing responses (no link: Testing only)",
     "campaign-mail-families.html": "Send to chosen Families (no link: Testing)",
     "system-health-accept.html": "Refused load examples (no link)",
     "deliveries.html": "Sent mail Recipient (Production Family emails, #1562)",

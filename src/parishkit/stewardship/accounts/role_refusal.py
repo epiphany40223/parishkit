@@ -109,7 +109,7 @@ def role_denied_for(level):
     return RoleDenied(
         _FOR_STAFF if level == "staff" else _FOR_ADMINISTRATORS,
         fix=_(
-            "Choose a page from the menu, or ask a parish administrator if you "
+            "Choose a page from the menu, or ask a parish Administrator if you "
             "need this one."
         ),
         link=ADMIN_HOME,

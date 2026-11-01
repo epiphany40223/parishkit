@@ -328,7 +328,9 @@ def test_a_slot_no_family_page_shows_cannot_take_an_upload(
     # Outside the wizard (the stepper not shown) each slot has its Upload.
     monkeypatch.setattr(campaign_wizard, "shown", lambda *_, **__: False)
     page = browser.get(path).content.decode()
-    reason = "Families see no Financial page while Financial stewardship is off"
+    reason = (
+        "Families see no Financial stewardship page while Financial stewardship is off"
+    )
     assert (
         '<fieldset class="artwork-upload" disabled>' in page
         and page.count('<fieldset class="artwork-upload" disabled>') == 1

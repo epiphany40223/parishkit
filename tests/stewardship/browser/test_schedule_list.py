@@ -1899,7 +1899,7 @@ REQUIRED = "This field is required."
 MISSING = "HTML is missing {{ family_code }}."
 QUEUED_LINE = re.compile(
     r"^Test queued at \d{1,2}:\d{2}\s?[AP]M for the Testing recipient\. "
-    r"Check the Testing mailbox\.$"
+    r"Check the Testing recipient's inbox\.$"
 )
 
 

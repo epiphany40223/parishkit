@@ -90,7 +90,7 @@ def test_the_header_box_is_a_labelled_post_search():
     assert 'placeholder="Find a Family"' in box
     help_text = box[box.index('id="find-family-help"') :]
     help_text = help_text[: help_text.index("</span>")]
-    for words in ("Family name", "member's name", "DUID", "envelope number", "address"):
+    for words in ("Family name", "Member's name", "DUID", "envelope number", "address"):
         assert words in help_text, words
     assert '<script src="/static/stewardship/find-family-v1.js" defer>' in html
     assert "data-find-family" not in _page(None)

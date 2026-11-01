@@ -285,7 +285,7 @@ def test_slack_channel_shows_and_is_required_only_while_enabled(page, component_
 
 
 # Each address field's own words, the shared email rule's (#1577).
-TESTING_HINT = "Enter a valid Testing email address."
+TESTING_HINT = "Enter a valid Testing recipient address."
 MAILBOX_HINT = "Enter a valid delegated mailbox address."
 REPLY_HINT = "Enter a valid reply-to address."
 
@@ -299,7 +299,7 @@ def test_setup_testing_step_waits_for_a_valid_address(page, component_origin):
     page.goto(component_origin + "/setup-testing")
     save = page.get_by_role("button", name="Save and continue")
     hint = page.locator("#setup-complete-hint")
-    address = page.get_by_label("Testing email address")
+    address = page.get_by_label("Testing recipient")
     waits_with(save, hint, TESTING_HINT)
     place = spot(save)
     address.fill("not an address")

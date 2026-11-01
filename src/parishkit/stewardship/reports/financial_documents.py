@@ -49,7 +49,7 @@ HEADINGS = (
     "Share methods",
     "ParishSoft pledged",
     "ParishSoft contributed",
-    "Latest response",
+    "Submitted",
     "First response",
     "Entered by Staff",
     # Whether a reviewer's Edit on Pledges is in force, so the row's pledge

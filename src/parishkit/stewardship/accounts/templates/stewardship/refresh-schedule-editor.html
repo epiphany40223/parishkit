@@ -21,7 +21,7 @@ The editor offers full refreshes only: quick updates were removed (#1147),
 and a stored quick rule is not shown.
 {% endcomment %}{% with editor=schedule.editor %}<section class="panel refresh-schedule" id="refresh-schedule" aria-labelledby="refresh-schedule-heading" data-refresh-schedule data-check-url="{% url 'admin:refresh_schedule_check' 'parishsoft' %}" data-schedule-zone="{{ schedule.timezone }}" data-blocking="{{ schedule.blocking|yesno:'true,false' }}" data-browser-zone-text="{% translate "Your browser is in {zone}, so the seven-day list also shows each time in your browser's time." %}" data-too-many-times-text="{% blocktranslate with most=editor.rules.max_num %}This list has {count} times, but a schedule has at most {{ most }} rules. Use rules that repeat (every …) instead.{% endblocktranslate %}">
 <h2 id="refresh-schedule-heading">{% translate "Refresh schedule" %}</h2>
-<p class="help">{% translate "A full refresh reloads all Families, Members, ministries and giving from ParishSoft and takes a few minutes." %}</p>
+<p class="help">{% translate "A full refresh reloads all Families, Members, Ministries and giving from ParishSoft and takes a few minutes." %}</p>
 <p class="help">{% translate "Refreshes never overlap: one that comes due while another runs waits for it." %}</p>
 <p class="help">{% blocktranslate with zone=schedule.timezone %}Times are in the refresh schedule's time zone, {{ zone }}: the current campaign's, or the parish's when there is no campaign.{% endblocktranslate %} <span data-browser-zone-note hidden></span></p>
 {% if editor.converted %}<p class="notice">{% translate "Your current schedule, shown as rules. It runs exactly as before until you change it." %}</p>{% endif %}
