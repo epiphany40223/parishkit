@@ -1817,7 +1817,12 @@ sorts by Family (surname, then that name), Family DUID and Submitted
 ([#960](https://github.com/epiphany40223/parishkit/issues/960)). A Family
 the data no longer has has no name: the page shows the
 [ParishSoft status](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
-badge in its place, and marks an inactive Family beside its name (#1216).
+badge in its place, and marks a Family no longer in this campaign beside
+its name (#1216), by the same test as Financial stewardship and the
+Response dashboard: whether it still matches the campaign's Families
+rule, which for a campaign on the legacy rule is ParishSoft's active flag
+and registration at the parish (schema migration 0197,
+[#2335](https://github.com/epiphany40223/parishkit/issues/2335)).
 No chart or summary sits above the table: the counts are the Stage choices'.
 The search and filters travel in POST bodies; the one address a link may
 carry is a Stage alone (`?stage=<value>`, a
@@ -3841,14 +3846,22 @@ dashboard's labels, default and `scope` parameter
 ([population of report figures](../ui-conventions/spec.md#population-of-report-figures),
 [#2324](https://github.com/epiphany40223/parishkit/issues/2324)). The
 summary, the table, Matching Families and every export follow it. The
-selection's own Family status filter (`active`) carries it, so no schema
-change was needed: the historical population is every responding Family
-(`active` "any"), and the current one the Families that are still campaign
-Families (`active` "active"), by the same test as the Family's
-[badge](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft):
-under a [Families rule](../data/spec.md#campaign-families) whether the
-Family still matches it, and for the legacy rule whether ParishSoft lists it
-as active (#1393). Each export names its population in its
+selection's own Family status filter (`active`) carries it: the historical
+population is every responding Family (`active` "any"), and the current one
+the Families that are still campaign Families (`active` "active"), by the
+same test as the Family's
+[badge](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
+and the Response dashboard's campaign Families: whether the Family still
+matches the campaign's [Families rule](../data/spec.md#campaign-families)
+(its `portal_eligible`). For a campaign on the legacy rule that is
+ParishSoft's active flag and registration at the parish, so a Family that
+moved its registration to another parish is no longer in this campaign
+even while ParishSoft lists it as active; schema migration 0197 made the
+selection read that, where it had read the active flag alone
+([#2335](https://github.com/epiphany40223/parishkit/issues/2335)). Its
+badge and the No longer in this campaign refinement below read the same
+test, as do [Pledges](#pledges) and the Family hub's Financial tab, which
+read this selection. Each export names its population in its
 [header block](#file-design) and in a Families counted metadata row, both
 read from the filters it captured, so a file captured before #2324 names its
 population too.
