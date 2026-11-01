@@ -17,6 +17,10 @@ PUBLIC = [
     ("", "entry"),
     ("access/<str:token>", "access"),
     ("files/<str:token>", "hosted_file"),
+    # The public information pages (#2354): added routes; nothing moved.
+    ("about/", "about"),
+    ("privacy/", "privacy"),
+    ("terms/", "terms"),
 ]
 FAMILY = [
     ("form", "form"),

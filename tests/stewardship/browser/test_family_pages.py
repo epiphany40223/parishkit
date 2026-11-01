@@ -1071,7 +1071,7 @@ def test_button_row_is_always_at_the_bottom_of_the_screen(
     not right under the content, without making the page scroll. A page taller
     than the screen (Review) keeps it there at the top, midway and at the end,
     and the bar never covers the content at the end. The bar spans the flow's
-    column at every width.
+    column at every width. The site footer stays hidden on both (#2354).
     """
     page.set_viewport_size({"width": width, "height": 900})
     begin(page, component_origin, paged_form(), None)
@@ -1082,6 +1082,11 @@ def test_button_row_is_always_at_the_bottom_of_the_screen(
         assert abs(place["bottom"] - place["view"]) < 1, (height, place)
         assert place["scroll"] == 0 and place["column"], (height, place)
         assert place["content"] <= place["top"], (height, place)
+    # The site footer is in the layout but hidden on every form step and on
+    # Review, so nothing sits below the bar (#2354).
+    footer = page.locator("footer.site-footer")
+    expect(footer).to_have_count(1)
+    expect(footer).to_be_hidden()
     page.set_viewport_size({"width": width, "height": 900})
     show(page, page.get_by_label("Annual pledge in dollars")).fill("0")
     assert review(page)
@@ -1097,3 +1102,4 @@ def test_button_row_is_always_at_the_bottom_of_the_screen(
     # snaps to whole pixels, the content does not).
     assert round(place["top"] - place["content"]) >= 24, place
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    expect(footer).to_be_hidden()

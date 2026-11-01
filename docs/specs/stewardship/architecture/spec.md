@@ -103,6 +103,9 @@ The human-facing interface consists of:
 - `/family/...`: authenticated wizard steps and final submission endpoint;
 - `/files/<token>`: unauthenticated hosted files for parishioners, defined by
   [hosted files](../hosted-files/spec.md#public-serving);
+- `/about/`, `/privacy/` and `/terms/`: the public About, Privacy policy and
+  Terms of use pages, defined by
+  [public information pages](#public-information-pages);
 - `/admin/login`: Google-only login;
 - `/admin/...`: every administration page, JSON/HTML partial endpoint, export,
   job detail, and purge workflow.
@@ -705,6 +708,79 @@ encryption protects credentials, Family display codes, and other values whose
 operational lookup requires reversible storage. Ordinary census data relies on
 encrypted storage plus strict role access; field-level encryption must not make
 required reporting/search impractical.
+
+## Public information pages
+
+Three pages describe the site to anyone, with no sign-in
+([#2354](https://github.com/epiphany40223/parishkit/issues/2354)). Google
+needs them before the Admin sign-in's Google Cloud project can be published
+and verified (see the
+[Google sign-in project](../../../guides/stewardship-deployment-runbook.md#google-sign-in-project)
+guide):
+
+- `/about/` (About this site): the application home page. It says what the
+  site is (the parish's stewardship renewal site, run with ParishKit
+  Stewardship), who uses it (Families with their emailed code or link;
+  parish Staff, Administrators and Ministry leaders with Google sign-in) and
+  links the other two pages. The Family code page at `/` is not the home
+  page: its text is the parish's own and changes with the campaign's state.
+- `/privacy/` (Privacy policy): what the site reads, what Families submit,
+  what Google sign-in provides, where the data is kept and for how long, who
+  can see it, which other services take part, cookies and browser storage,
+  and how to ask for a correction. It carries Google's Limited Use statement
+  with a link to the
+  [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy).
+- `/terms/` (Terms of use): short. The site is the parish's tool for its
+  parishioners and volunteers; acceptable use; no warranty; the parish's
+  contact.
+
+**Grounded text.** Every statement on the Privacy policy must be true of the
+code, and each traces to the specification that owns the behavior (the
+[data](../data/spec.md), [identity and session
+security](#identity-and-session-security), [web security and
+privacy](#web-security-and-privacy), [backup](../operations/spec.md#backup) and
+[retention](../data/spec.md#retention-and-deletion) rules). A change to any of
+those behaviors updates the page in the same pull request. A behavior that
+is planned but not built is not described as current: the Google-verified
+alternate addresses of
+[#2343](https://github.com/epiphany40223/parishkit/issues/2343) are added to
+the page when that work ships.
+
+**Configured content.** The Privacy policy describes only what this
+deployment does, so its wording follows the configuration rather than
+listing every feature. It reads the current campaign's form modules
+(`census`, `ministry`, `financial`) and its note-to-the-parish switch
+(`additional_information`), as defined in
+the [Campaign](../data/spec.md#campaign) record, and the
+deployment's `parishsoft_publication` setting (see the
+[publication guide](../../../guides/stewardship-member-requests.md#parishsoft-publication)). A
+paragraph about a form step, the pledge and giving history read, the
+Ministry leaders' view, or writing back to ParishSoft shows only when the
+setting it describes is on; reads the source refresh makes for every campaign
+(Family and Member records, ministry rosters) always show. With no current
+campaign to read (before setup, during a restore review, or before the first
+campaign), the page describes everything the site can collect and says so.
+The Terms of use shows its "Pledges" section on the same rule. The first
+"ParishSoft" on the Privacy policy links to the ParishSoft website, and the
+About page and the Privacy policy (in its closing "About this software" note)
+link "ParishKit" to its source repository. The pages
+name no campaign and show no Family data.
+
+**Parish values.** The pages are parish-neutral templates. The parish's name,
+website and main phone come from the applied
+[parish profile](../data/spec.md#parish-and-integrations), and the contact
+email is the outgoing mail's Reply-to address (the same value as the
+`parish_email` placeholder). These are already validated configuration, so
+the pages add no configuration and no schema. Before setup, or during a
+restore review, the pages still render, naming "the parish" and leaving the
+contact lines out. The "Last updated" date is a constant in the code, changed
+with the text; the parish date format shows it.
+
+**Behavior.** The pages answer `GET` and `HEAD` only, on every portal state
+(they are outside the Family and Admin namespaces, so neither the setup and
+restore gates nor Family maintenance closes them), set no session, CSRF or
+other cookie, and load nothing from another site. They use the site layout
+and its [site footer](../ui-conventions/spec.md#site-footer).
 
 ## Availability and performance
 

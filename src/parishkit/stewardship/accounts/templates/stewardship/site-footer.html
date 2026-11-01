@@ -1,0 +1,15 @@
+{% load i18n %}{% comment %}
+  The site footer on every page in the site layout, Family and Admin alike
+  (ui-conventions "Site footer", #2354): the three public information pages
+  Google's OAuth verification needs, reachable from anywhere in one click.
+  Plain links, so it works without JavaScript; the Admin JavaScript gate
+  hides it with the rest of the page until the gate script runs.
+{% endcomment %}<footer class="site-footer">
+  <nav aria-label="{% translate 'Site information' %}">
+    <ul>
+      <li><a href="{% url 'public:about' %}">{% translate "About this site" %}</a></li>
+      <li><a href="{% url 'public:privacy' %}">{% translate "Privacy policy" %}</a></li>
+      <li><a href="{% url 'public:terms' %}">{% translate "Terms of use" %}</a></li>
+    </ul>
+  </nav>
+</footer>

@@ -170,8 +170,8 @@ def test_the_navigation_rows_keep_their_place_on_every_page(
     height, in both rows, on a phone and a desktop; page 1 keeps Previous's
     slot empty, the last page keeps Next's empty and Finish stays in the
     middle, at the same box on all three pages (R52 Part W); the bottom row is at
-    the bottom of the screen; every page passes axe and scrolls no wider
-    than the screen."""
+    the bottom of the screen, with the site footer hidden (#2354); every page
+    passes axe and scrolls no wider than the screen."""
     page.set_viewport_size({"width": width, "height": 700})
     found, heights, finishes = [], set(), []
     for path in PAGE_PATHS:
@@ -180,6 +180,10 @@ def test_the_navigation_rows_keep_their_place_on_every_page(
         finishes.append(page.evaluate(FINISH))
         heights.add(page.locator("#review-section").bounding_box()["height"])
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        # The site footer is in the layout but hidden, so the bottom row
+        # stays at the screen's bottom (#2354).
+        expect(page.locator("footer.site-footer")).to_have_count(1)
+        expect(page.locator("footer.site-footer")).to_be_hidden()
         page.evaluate(axe_source)
         assert page.evaluate(AXE) == [], path
     # The pages' sections differ in height, so equal spots mean something.

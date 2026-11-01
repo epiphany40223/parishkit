@@ -6,6 +6,7 @@ This guide is for Administrators to pass on to Ministry leaders (and Staff) who 
 
 - A leader can sign in only after an Administrator adds them as a user, by hand (New user) or with Import on the Users page. Import sends nothing to the leader, so tell each new leader yourself: the portal's address (the Admin sign-in page), which email address you added for them, and the steps below.
 - The line under the Users table counts Ministry leaders who have never signed in. Their Last successful sign-in reads Never. A leader who stays there is often stuck at the Google Account step.
+- Basic Google sign-in, which is all the portal asks for today, never shows Google's "Google hasn't verified this app" page. Once the sign-in asks for a scope beyond basic sign-in ([#2343](https://github.com/epiphany40223/parishkit/issues/2343)) and while Google has not verified it, Google may show that page: then include the ready-to-paste paragraph from [the "Google hasn't verified this app" page](stewardship-deployment-runbook.md#the-google-hasnt-verified-this-app-page) in your message, so leaders know to expect it.
 - The portal signs in with Google only. There is no password or emailed sign-in link, and adding one is not planned for v1 (the Administrator can reopen that decision on #1593).
 
 ## For the leader
