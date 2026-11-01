@@ -18,6 +18,15 @@ Two ways to finish the sign-in:
   which is expected. Copy that whole address from the browser's address bar
   and paste it at the prompt.
 
+``--two-step`` tries incremental authorization, the planned design for
+#2343: step 1 signs in with ``openid email profile`` only and prints the ID
+token's email and a short hash of its account id (``sub``); step 2 asks for
+``user.emails.read`` alone (``include_granted_scopes=true``, the step 1
+address as ``login_hint``, ``prompt=consent``). The tool then prints what
+ParishKit would do: refuse if a different account consented, show the
+no-access page if the permission was not granted or step 2 was cancelled,
+and otherwise list the addresses. Both modes above work with it.
+
 The OAuth client comes from ``--client-file``: a Desktop-app client JSON
 downloaded from Google Cloud (``{"installed": {...}}``), a Web client JSON
 (``{"web": {...}}``), or ParishKit's compact ``{"client_id": ...,
@@ -27,7 +36,7 @@ on it, so with one pass ``--port`` and register ``http://127.0.0.1:<port>/``.
 
 Nothing is written to disk or logged: the client secret, the code, the
 tokens and the addresses live only in this process's memory and on your
-terminal. At exit the tool revokes the access token, so the grant ends too.
+terminal. At exit the tool revokes every access token, so the grant ends too.
 
 Before running it, in the Google Cloud project: enable the Google People API;
 add the user.emails.read scope under Google Auth Platform -> Data Access; with
@@ -72,6 +81,7 @@ import urllib.parse
 import urllib.request
 import webbrowser
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -82,12 +92,11 @@ REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 # needs more than user.emails.read grants. ``people/me`` itself answers 403
 # without the basic ``profile`` scope (both found in the #2352 live test).
 PEOPLE_URL = "https://people.googleapis.com/v1/people/me?personFields=emailAddresses"
-SCOPES = (
-    "openid",
-    "email",
-    "profile",
-    "https://www.googleapis.com/auth/user.emails.read",
-)
+TOKENINFO_URL = "https://oauth2.googleapis.com/tokeninfo"
+EMAILS_SCOPE = "https://www.googleapis.com/auth/user.emails.read"
+SCOPES = ("openid", "email", "profile", EMAILS_SCOPE)
+# --two-step's first sign-in: identity only, as ParishKit's sign-in asks today.
+SIGN_IN_SCOPES = ("openid", "email", "profile")
 HTTP_TIMEOUT = 30
 EXIT_FAILED = 2
 
@@ -98,6 +107,14 @@ class SmokeError(Exception):
 
 class StateMismatch(SmokeError):
     """The redirect's ``state`` is not this run's, so it is not Google's answer."""
+
+
+class Refused(SmokeError):
+    """Google's redirect carried ``error`` (the person cancelled or was denied)."""
+
+    def __init__(self, code: str):
+        self.code = code
+        super().__init__(f"Google refused the sign-in: {code}.")
 
 
 def load_client(path: Path) -> tuple[str, str]:
@@ -142,13 +159,24 @@ def redirect_uri(port: int) -> str:
     return f"http://127.0.0.1:{port}/"
 
 
-def authorization_url(client_id: str, redirect: str, state: str, challenge: str):
-    """Build Google's authorization URL for this flow."""
+def authorization_url(
+    client_id: str,
+    redirect: str,
+    state: str,
+    challenge: str,
+    scopes=SCOPES,
+    extra: dict[str, str] | None = None,
+):
+    """Build Google's authorization URL for this flow.
+
+    ``extra`` adds or overrides query parameters (--two-step's second
+    request adds include_granted_scopes and login_hint).
+    """
     query = {
         "client_id": client_id,
         "redirect_uri": redirect,
         "response_type": "code",
-        "scope": " ".join(SCOPES),
+        "scope": " ".join(scopes),
         "state": state,
         "code_challenge": challenge,
         "code_challenge_method": "S256",
@@ -156,6 +184,7 @@ def authorization_url(client_id: str, redirect: str, state: str, challenge: str)
         # sees (and can report) what it says for user.emails.read.
         "prompt": "consent",
     }
+    query.update(extra or {})
     return f"{AUTH_URL}?{urllib.parse.urlencode(query)}"
 
 
@@ -190,9 +219,7 @@ def code_from_params(params: dict[str, list[str]], state: str) -> str:
             "The redirect's state does not match this run; start the tool again."
         )
     if "error" in params:
-        raise SmokeError(
-            f"Google refused the sign-in: {printable(params['error'][0])}."
-        )
+        raise Refused(printable(params["error"][0]))
     code = params.get("code", [""])[0]
     if not code:
         raise SmokeError("The redirect has no authorization code.")
@@ -313,16 +340,23 @@ def fetch_people(access_token: str, opener=urllib.request.urlopen):
     return http_json(request, opener)
 
 
-def revoke(token: str, opener=urllib.request.urlopen) -> bool:
-    """Revoke ``token`` at Google; return whether Google confirmed it."""
+def revoke(token: str, opener=urllib.request.urlopen) -> int | None:
+    """Revoke ``token`` at Google; return Google's HTTP status, or None.
+
+    200 means revoked. Google answers 400 for a token that is already
+    invalid, for example because revoking another token of the same grant
+    ended it. None means Google could not be reached.
+    """
     form = urllib.parse.urlencode({"token": token}).encode("ascii")
     try:
         with opener(
             urllib.request.Request(REVOKE_URL, data=form), timeout=HTTP_TIMEOUT
         ) as response:
-            return response.status == 200
+            return response.status
+    except urllib.error.HTTPError as error:
+        return error.code
     except (urllib.error.URLError, OSError):
-        return False
+        return None
 
 
 def id_token_claims(id_token: str) -> dict:
@@ -340,6 +374,40 @@ def id_token_claims(id_token: str) -> dict:
     if not isinstance(claims, dict):
         raise SmokeError("Google's ID token could not be read.")
     return claims
+
+
+def checked_claims(tokens: dict, client_id: str) -> dict:
+    """Return the token answer's ID token claims after checking its audience."""
+    claims = id_token_claims(tokens.get("id_token", ""))
+    if claims.get("aud") != client_id:
+        raise SmokeError("The ID token was issued for a different client.")
+    return claims
+
+
+def token_subject(tokens: dict, client_id: str, opener=urllib.request.urlopen):
+    """Return the Google account id (``sub``) a token answer belongs to.
+
+    Uses the answer's ID token. A request without ``openid`` in its own scope
+    list may come back without one even when include_granted_scopes carries
+    openid over, so then ask Google's tokeninfo endpoint about the access
+    token instead (the token goes in the query, which errors never print).
+    """
+    if tokens.get("id_token"):
+        subject = checked_claims(tokens, client_id).get("sub")
+    else:
+        query = urllib.parse.urlencode({"access_token": tokens["access_token"]})
+        info = http_json(urllib.request.Request(f"{TOKENINFO_URL}?{query}"), opener)
+        if client_id not in (info.get("aud"), info.get("azp")):
+            raise SmokeError("The access token was issued for a different client.")
+        subject = info.get("sub")
+    if not (isinstance(subject, str) and subject):
+        raise SmokeError("Google did not say which account the token belongs to.")
+    return subject
+
+
+def account_hash(subject: str) -> str:
+    """Return a short, stable stand-in for a Google account id (never the id)."""
+    return hashlib.sha256(subject.encode("utf-8")).hexdigest()[:12]
 
 
 def email_rows(person: dict) -> list[tuple[str, str, str, str]]:
@@ -419,6 +487,12 @@ def parse_args(argv):
         help="print the URL instead of opening a browser (still listens)",
     )
     parser.add_argument(
+        "--two-step",
+        action="store_true",
+        help="test incremental authorization: sign in with openid email "
+        "profile, then ask for user.emails.read alone",
+    )
+    parser.add_argument(
         "--port",
         type=int,
         default=0,
@@ -442,6 +516,67 @@ def parse_args(argv):
     return args
 
 
+@dataclass
+class Hooks:
+    """The tool's ways to reach Google, the operator and the browser.
+
+    Production uses the defaults; tests pass fakes.
+    """
+
+    opener: Callable = urllib.request.urlopen
+    input_fn: Callable[[str], str] = input
+    print_fn: Callable[..., None] = print
+    open_browser: Callable[[str], bool] = webbrowser.open
+    server_factory: Callable = http.server.HTTPServer
+
+
+def sign_in(args, client, hooks: Hooks, scopes, extra=None) -> dict:
+    """Run one authorization-code round with PKCE; return Google's token answer.
+
+    Each round has its own PKCE verifier, state and (in loopback mode)
+    listening socket. Raises Refused when the person cancels at Google.
+    """
+    print_fn = hooks.print_fn
+    verifier, challenge = pkce_pair()
+    state = secrets.token_urlsafe(24)
+    server = None
+    if args.manual:
+        # Nothing listens; the port only has to match the client's rules.
+        port = args.port or 49152 + secrets.randbelow(16383)
+    else:
+        try:
+            server = hooks.server_factory(("127.0.0.1", args.port), _RedirectHandler)
+        except OSError as error:
+            raise SmokeError(f"Cannot listen on 127.0.0.1: {error.strerror}.") from None
+        port = server.server_address[1]
+    redirect = redirect_uri(port)
+    url = authorization_url(client[0], redirect, state, challenge, scopes, extra)
+    try:
+        if args.manual:
+            print_fn("Open this URL in a browser and sign in:\n\n" + url + "\n")
+            print_fn(
+                f"Google then sends the browser to {redirect}?... and the page "
+                "fails to load. That is expected: copy the whole address from "
+                "the address bar."
+            )
+            code, checked = parse_redirect(hooks.input_fn("Paste it here: "), state)
+            if not checked:
+                print_fn("Note: a bare code cannot be state-checked; PKCE still is.")
+        else:
+            if args.no_browser or not hooks.open_browser(url):
+                print_fn("Open this URL in a browser and sign in:\n\n" + url + "\n")
+            else:
+                print_fn("Opened your browser; finish signing in there.")
+            code = wait_for_code(server, state, args.timeout)
+    finally:
+        if server is not None:
+            server.server_close()
+    tokens = exchange_code(client, code, verifier, redirect, hooks.opener)
+    if not tokens.get("access_token"):
+        raise SmokeError("Google's token answer has no access token.")
+    return tokens
+
+
 def run(
     args,
     *,
@@ -452,49 +587,14 @@ def run(
     server_factory=http.server.HTTPServer,
 ) -> int:
     """Run the sign-in, the People API call and the report; return the exit code."""
+    hooks = Hooks(opener, input_fn, print_fn, open_browser, server_factory)
     client = load_client(args.client_file)
-    verifier, challenge = pkce_pair()
-    state = secrets.token_urlsafe(24)
-    server = None
-    if args.manual:
-        # Nothing listens; the port only has to match the client's rules.
-        port = args.port or 49152 + secrets.randbelow(16383)
-    else:
-        try:
-            server = server_factory(("127.0.0.1", args.port), _RedirectHandler)
-        except OSError as error:
-            raise SmokeError(f"Cannot listen on 127.0.0.1: {error.strerror}.") from None
-        port = server.server_address[1]
-    redirect = redirect_uri(port)
-    url = authorization_url(client[0], redirect, state, challenge)
+    if args.two_step:
+        return run_two_step(args, client, hooks)
+    tokens = sign_in(args, client, hooks, SCOPES)
+    access = tokens["access_token"]
     try:
-        if args.manual:
-            print_fn("Open this URL in a browser and sign in:\n\n" + url + "\n")
-            print_fn(
-                f"Google then sends the browser to {redirect}?... and the page "
-                "fails to load. That is expected: copy the whole address from "
-                "the address bar."
-            )
-            code, checked = parse_redirect(input_fn("Paste it here: "), state)
-            if not checked:
-                print_fn("Note: a bare code cannot be state-checked; PKCE still is.")
-        else:
-            if args.no_browser or not open_browser(url):
-                print_fn("Open this URL in a browser and sign in:\n\n" + url + "\n")
-            else:
-                print_fn("Opened your browser; finish signing in there.")
-            code = wait_for_code(server, state, args.timeout)
-    finally:
-        if server is not None:
-            server.server_close()
-    tokens = exchange_code(client, code, verifier, redirect, opener)
-    access = tokens.get("access_token")
-    if not access:
-        raise SmokeError("Google's token answer has no access token.")
-    try:
-        claims = id_token_claims(tokens.get("id_token", ""))
-        if claims.get("aud") != client[0]:
-            raise SmokeError("The ID token was issued for a different client.")
+        claims = checked_claims(tokens, client[0])
         person = fetch_people(access, opener)
         print_fn(
             render(
@@ -505,7 +605,7 @@ def run(
             )
         )
     finally:
-        revoked = revoke(access, opener)
+        revoked = revoke(access, opener) == 200
         tokens.clear()
         print_fn(
             "Access revoked at Google."
@@ -514,6 +614,93 @@ def run(
             "https://myaccount.google.com/permissions if you want."
         )
     return 0
+
+
+def run_two_step(args, client, hooks: Hooks) -> int:
+    """Try incremental authorization, the planned design for #2343.
+
+    Step 1 signs in with identity scopes only. Step 2 asks for
+    user.emails.read alone, with include_granted_scopes, the step 1 address
+    as login_hint and a forced consent screen. The tool then reports what
+    ParishKit would do: refuse when a different account consented, show
+    the no-access page when the permission was not granted (box unchecked
+    or step 2 cancelled), and otherwise list the addresses. Every token is
+    revoked at exit, newest first.
+    """
+    print_fn = hooks.print_fn
+    show = redact if args.redact else str
+    grants: list[tuple[str, str]] = []  # (step label, access token)
+    try:
+        print_fn("Step 1 of 2: sign in (openid email profile only).")
+        first = sign_in(args, client, hooks, SIGN_IN_SCOPES)
+        grants.append(("Step 1", first["access_token"]))
+        claims = checked_claims(first, client[0])
+        email, subject = claims.get("email"), claims.get("sub")
+        if not (
+            isinstance(email, str) and email and isinstance(subject, str) and subject
+        ):
+            raise SmokeError("Step 1's ID token has no email or account id.")
+        print_fn(
+            f"Step 1: signed in as {show(email)} (account {account_hash(subject)});"
+            f" granted scopes: {first.get('scope') or '-'}"
+        )
+        print_fn("Step 2 of 2: ask for the email-addresses permission only.")
+        extra = {
+            "include_granted_scopes": "true",
+            "login_hint": email,
+            "prompt": "consent",
+        }
+        try:
+            second = sign_in(args, client, hooks, (EMAILS_SCOPE,), extra)
+        except Refused as error:
+            print_fn(
+                f"Step 2 cancelled (Google answered {error.code}): ParishKit "
+                "would show the normal no-access page."
+            )
+            return 0
+        grants.append(("Step 2", second["access_token"]))
+        consenting = token_subject(second, client[0], hooks.opener)
+        granted = second.get("scope", "")
+        print_fn(
+            f"Step 2: consent from account {account_hash(consenting)}; "
+            f"granted scopes: {granted or '-'}"
+        )
+        if consenting != subject:
+            print_fn(
+                "Refused: a different Google account consented; ParishKit would refuse."
+            )
+            return 0
+        if EMAILS_SCOPE not in granted.split():
+            print_fn("Not granted: ParishKit would show the normal no-access page.")
+            return 0
+        person = fetch_people(second["access_token"], hooks.opener)
+        print_fn(
+            render(claims, email_rows(person), granted, redact_addresses=args.redact)
+        )
+        return 0
+    finally:
+        _revoke_all(grants, hooks)
+
+
+def _revoke_all(grants: list[tuple[str, str]], hooks: Hooks) -> None:
+    """Revoke each step's access token, newest first, and report each result.
+
+    The newest token carries every scope of an incremental grant, so
+    revoking it usually ends the earlier one too; Google then answers 400
+    for the earlier token, which is reported as already ended.
+    """
+    for label, token in reversed(grants):
+        status = revoke(token, hooks.opener)
+        if status == 200:
+            hooks.print_fn(f"{label} access revoked at Google.")
+        elif status == 400:
+            hooks.print_fn(f"{label} access had already ended at Google.")
+        else:
+            hooks.print_fn(
+                f"Could not revoke the {label.lower()} access; remove it at "
+                "https://myaccount.google.com/permissions if you want."
+            )
+    grants.clear()
 
 
 def main(argv=None) -> int:

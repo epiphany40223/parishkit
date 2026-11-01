@@ -474,3 +474,198 @@ def test_wrapper_delegates_to_the_package():
     assert os.access(WRAPPER, os.X_OK)
     assert "from parishkit.google.people_emails import main" in text
     assert "raise SystemExit(main())" in text
+
+
+SUB = "google-sub-1234567890"
+STEP1, STEP2 = "access-step-1", "access-step-2"
+IDENTITY = (
+    "openid https://www.googleapis.com/auth/userinfo.email "
+    "https://www.googleapis.com/auth/userinfo.profile"
+)
+
+
+class TwoStepGoogle:
+    """Answer --two-step's two exchanges, tokeninfo, People and revoke requests.
+
+    Revoking the step 2 token ends the whole incremental grant, as at Google,
+    so a later revoke of the step 1 token answers 400.
+    """
+
+    def __init__(self, scope=f"{IDENTITY} {pe.EMAILS_SCOPE}", sub=SUB, id_token=True):
+        self.requests = []
+        self.scope, self.sub, self.id_token = scope, sub, id_token
+        self.revoked = []
+
+    def __call__(self, request, timeout):
+        """Route one request by URL, like ``urllib.request.urlopen``."""
+        assert timeout == pe.HTTP_TIMEOUT
+        self.requests.append(request)
+        url = request.full_url
+        if url == pe.TOKEN_URL:
+            if self.exchanges() == 1:
+                claims = {"aud": CLIENT_ID, "email": "me@example.org", "sub": SUB}
+                answer = {"access_token": STEP1, "scope": IDENTITY}
+                answer["id_token"] = _jwt({**claims, "email_verified": True})
+                return _Response(answer)
+            answer = {"access_token": STEP2, "scope": self.scope}
+            if self.id_token:
+                answer["id_token"] = _jwt({"aud": CLIENT_ID, "sub": self.sub})
+            return _Response(answer)
+        if url.startswith(pe.TOKENINFO_URL + "?"):
+            return _Response({"aud": CLIENT_ID, "sub": self.sub})
+        if url == pe.PEOPLE_URL:
+            return _Response(_person())
+        if url == pe.REVOKE_URL:
+            token = dict(urllib.parse.parse_qsl(request.data.decode()))["token"]
+            self.revoked.append(token)
+            if token == STEP1 and STEP2 in self.revoked[:-1]:
+                raise urllib.error.HTTPError(url, 400, "x", {}, io.BytesIO(b"{}"))
+            return _Response({})
+        raise AssertionError(url)
+
+    def exchanges(self):
+        """Return how many token exchanges have been requested so far."""
+        return sum(r.full_url == pe.TOKEN_URL for r in self.requests)
+
+    def people_calls(self):
+        """Return the People API requests sent so far."""
+        return [r for r in self.requests if r.full_url == pe.PEOPLE_URL]
+
+
+def _two_step(client_file, google, cancel=False):
+    """Run --two-step in manual mode, pasting Google's answer to each URL.
+
+    Returns the exit status, the printed text and each step's URL query.
+    With ``cancel`` the step 2 answer is Google's access_denied redirect.
+    """
+    shown, queries = [], []
+
+    def paste(_prompt):
+        """Answer the prompt with Google's redirect for the latest printed URL."""
+        url = [line for line in shown if line.startswith(pe.AUTH_URL)][-1]
+        query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query))
+        queries.append(query)
+        base = f"{query['redirect_uri']}?state={query['state']}"
+        if cancel and len(queries) == 2:
+            return f"{base}&error=access_denied"
+        return f"{base}&code=code-{len(queries)}"
+
+    def show(*items):
+        """Collect printed text line by line."""
+        for item in items:
+            shown.extend(str(item).splitlines())
+
+    status = pe.run(
+        _args(client_file, manual=True, two_step=True),
+        opener=google,
+        input_fn=paste,
+        print_fn=show,
+    )
+    return status, "\n".join(shown), queries
+
+
+def test_two_step_both_steps_ok_lists_the_addresses(client_file):
+    """Identity first, then user.emails.read alone; same account → the table."""
+    assert pe.parse_args(["--client-file", "c.json", "--two-step"]).two_step
+    google = TwoStepGoogle()
+    status, text, (first, second) = _two_step(client_file, google)
+    assert status == 0
+    assert first["scope"] == "openid email profile"
+    assert "include_granted_scopes" not in first
+    assert second["scope"] == pe.EMAILS_SCOPE
+    assert second["include_granted_scopes"] == "true"
+    assert second["login_hint"] == "me@example.org"
+    assert second["prompt"] == "consent"
+    assert first["state"] != second["state"]
+    assert first["code_challenge"] != second["code_challenge"]
+    (people,) = google.people_calls()
+    assert people.get_header("Authorization") == f"Bearer {STEP2}"
+    assert f"(account {pe.account_hash(SUB)})" in text
+    assert SUB not in text
+    assert ["alt@other.example", "true", "-", "ACCOUNT"] in [
+        row.split() for row in text.splitlines()
+    ]
+    assert google.revoked == [STEP2, STEP1]
+    assert "Step 2 access revoked at Google." in text
+    assert "Step 1 access had already ended at Google." in text
+    for secret in (SECRET, STEP1, STEP2, "code-1", "code-2"):
+        assert secret not in text
+
+
+def test_two_step_unchecked_box_is_not_granted(client_file):
+    """Without user.emails.read in the grant, no People call: the no-access page."""
+    google = TwoStepGoogle(scope=IDENTITY)
+    status, text, _ = _two_step(client_file, google)
+    assert status == 0
+    assert "Not granted: ParishKit would show the normal no-access page." in text
+    assert google.people_calls() == []
+    assert google.revoked == [STEP2, STEP1]
+
+
+def test_two_step_different_account_is_refused(client_file):
+    """Consent from another Google account in step 2 is refused, unread."""
+    google = TwoStepGoogle(sub="someone-else")
+    status, text, _ = _two_step(client_file, google)
+    assert status == 0
+    assert (
+        "Refused: a different Google account consented; ParishKit would refuse." in text
+    )
+    assert f"consent from account {pe.account_hash('someone-else')}" in text
+    assert google.people_calls() == []
+    assert google.revoked == [STEP2, STEP1]
+
+
+def test_two_step_cancelled_step_2_is_the_no_access_page(client_file):
+    """access_denied in step 2: no second exchange, and step 1 is revoked."""
+    google = TwoStepGoogle()
+    status, text, _ = _two_step(client_file, google, cancel=True)
+    assert status == 0
+    assert (
+        "Step 2 cancelled (Google answered access_denied): ParishKit would show "
+        "the normal no-access page." in text
+    )
+    assert google.exchanges() == 1
+    assert google.people_calls() == []
+    assert google.revoked == [STEP1]
+    assert "Step 1 access revoked at Google." in text
+
+
+def test_two_step_without_a_step_2_id_token_asks_tokeninfo(client_file):
+    """No ID token in step 2: the account comes from tokeninfo, never printed."""
+    google = TwoStepGoogle(id_token=False)
+    status, text, _ = _two_step(client_file, google)
+    assert status == 0
+    (info,) = [r for r in google.requests if r.full_url.startswith(pe.TOKENINFO_URL)]
+    query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(info.full_url).query))
+    assert query == {"access_token": STEP2}
+    assert len(google.people_calls()) == 1
+    assert STEP2 not in text
+
+
+def test_two_step_works_with_the_loopback_redirect(client_file):
+    """Default mode: each step listens anew and reads its own redirect."""
+    google = TwoStepGoogle()
+    out = []
+
+    def browser(url):
+        """Play the browser: follow Google's redirect for this step's URL."""
+        query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url).query))
+
+        def visit():
+            """Fetch the loopback redirect the way a browser would."""
+            target = f"{query['redirect_uri']}?state={query['state']}&code=c"
+            urllib.request.urlopen(target, timeout=5).close()
+
+        threading.Thread(target=visit, daemon=True).start()
+        return True
+
+    status = pe.run(
+        _args(client_file, two_step=True, timeout=20),
+        opener=google,
+        print_fn=lambda *a: out.extend(a),
+        open_browser=browser,
+    )
+    assert status == 0
+    assert google.exchanges() == 2
+    assert len(google.people_calls()) == 1
+    assert google.revoked == [STEP2, STEP1]
