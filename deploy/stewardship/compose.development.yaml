@@ -142,6 +142,9 @@ services:
         source: ../../scripts/pk-sync-ps-to-cc/example-config.yaml
         target: /app/scripts/pk-sync-ps-to-cc/example-config.yaml
       - <<: *test-bind
+        source: ../../scripts/smoke-tests/google-people-emails.py
+        target: /app/scripts/smoke-tests/google-people-emails.py
+      - <<: *test-bind
         source: ../../tools/prepare-release.py
         target: /app/tools/prepare-release.py
       - <<: *test-bind
