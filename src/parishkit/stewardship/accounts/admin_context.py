@@ -485,17 +485,21 @@ COUNTED = frozenset(
 )
 # The stages each counted entry's number adds up, as its badge and Home's
 # card name them ("To review: 10"): "open" is not a stage (#2331). Census
-# changes counts To review and Conflict (``census_changes.OPEN_STAGES``);
-# every other entry its worklist's default, To review.
-COUNT_WORDS = {
-    "census_changes": f"{Stage.TO_REVIEW.label} and {Stage.CONFLICT.label}",
-}
+# changes counts To review and Conflict (``census_changes.OPEN_STAGES``),
+# named by its page's own first Stage choice (``OPEN_CHOICE_LABEL``) so the
+# two cannot drift; every other entry counts its worklist's default.
 DEFAULT_COUNT_WORDS = Stage.TO_REVIEW.label
 
 
 def count_words(name):
     """The stages entry ``name``'s count adds up, in the shared stage words."""
-    return COUNT_WORDS.get(name, DEFAULT_COUNT_WORDS)
+    # Imported here, as _open_counts does, to keep the reports package out
+    # of this module's import time.
+    from parishkit.stewardship.reports import census_changes
+
+    if name == "census_changes":
+        return census_changes.OPEN_CHOICE_LABEL
+    return DEFAULT_COUNT_WORDS
 
 
 # The count of Ministry requests' To enter by hand Stage, by this key: Home's

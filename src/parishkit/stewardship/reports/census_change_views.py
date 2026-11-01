@@ -461,8 +461,9 @@ def _respond(request, campaign_id, *, export, render):
 
 @require_http_methods(["GET", "POST"])
 def report(request, campaign_id):
-    """The default GET shows the changes To review; filters use POST, and a
-    GET may carry the view's own address (its link-safe choices, R38)."""
+    """The default GET shows the changes To review and Conflict together
+    (#2331); filters use POST, and a GET may carry the view's own address
+    (its link-safe choices, R38)."""
 
     def render(result, query, extra):
         """The census stream's review worklist: one table, redrawn in place."""
