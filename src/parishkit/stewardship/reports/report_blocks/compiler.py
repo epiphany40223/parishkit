@@ -150,9 +150,7 @@ def compile_report(
             requests_url = copy_url + "items/" if copy_url else None
         frame = Frame(
             public_origin,
-            dashboard_url=(
-                response_dashboard_url(public_origin, document.mode) if opens else None
-            ),
+            dashboard_url=(response_dashboard_url(public_origin) if opens else None),
             copy_url=copy_url,
             requests_url=requests_url,
         )

@@ -489,9 +489,10 @@ def test_acknowledgements_act_in_place():
 
 def test_response_dashboard_choices_apply_in_place():
     """The Response dashboard (#1537) is one region holding every panel, the
-    report options (its zone) and both binary choices (#519 PR 5, #1535):
-    Responses shown and the Chart population each land on it, so every
-    answer redraws the page's links with the view now shown. The daily
+    report options (its zone) and its one binary choice (#519 PR 5, #1535):
+    Families counted lands on it (#2324; the site's mode replaced Responses
+    shown), so every answer redraws the page's links with the view now
+    shown, and its spinner shows while the read is under way. The daily
     table keeps its own region inside the chart panel, and no form opts out
     of the in-place filter path any more. No Apply button is left."""
     text = (TEMPLATES / "response-dashboard.html").read_text()
@@ -503,11 +504,12 @@ def test_response_dashboard_choices_apply_in_place():
         r"[^%]*%\}",
         text,
     )
-    assert len(choices) == 2
+    assert len(choices) == 1
     assert all('region_id="response-dashboard"' in choice for choice in choices)
     keys = " ".join(choices)
-    for key in ("mode-production", "mode-testing", "scope-historical", "scope-current"):
+    for key in ("scope-historical", "scope-current"):
         assert f'_key="{key}"' in keys, key
+    assert "spinner=True" in keys and "mode-" not in text
     assert "Apply report options" not in text and '<select id="scope"' not in text
     chart = text.split('id="participation-chart"', 1)[1]
     assert "data-table-region" in chart.split('id="participation-export"', 1)[0]

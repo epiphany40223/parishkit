@@ -16,7 +16,7 @@ from parishkit.stewardship.reports.export_models import ExportPublication, Expor
 from parishkit.stewardship.reports.report_email_models import ReportEmailSnapshot
 
 from ..export_urls import export_action
-from .auth_builders import signed_in
+from .auth_builders import signed_in, unguarded
 from .campaign_builders import campaign_clock
 from .report_builders import DAILY_INSTANT as INSTANT
 from .report_builders import allocated
@@ -35,6 +35,11 @@ def http_scenario(family_mail, google):  # noqa: F811
         # A Daily report's send pins a complete fact set (#1786).
         preparation = allocated(family_mail)
         facts = ReportEmailSnapshot.objects.get(preparation=preparation).fact_set
+        # The dashboard shows what the site's mode says (#2324): in
+        # Production mode its statistics, chart and export, rather than the
+        # fixture's rehearsal.
+        with unguarded():
+            SystemConfiguration.objects.update(mode="production")
         browser, _ = signed_in()
         yield (family_mail.service.store, None, facts, None), browser
 
@@ -75,21 +80,24 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
             and "scope=historical" in redirected["Location"]
         )
         assert "timezone=" not in redirected["Location"]
-        response, html = read(browser, path)
+        # The fixture's chart is the historical one; the page's default
+        # population is today's campaign Families (#2324).
+        response, html = read(browser, path + "?scope=historical")
         assert response.status_code == 200
         assert response["Cache-Control"] == "no-store"
         assert b"Updating" in html
-        assert b'aria-label="Active population"' in html
+        assert b'aria-label="Population"' in html
         # One time line, "Data as of"; no Technical details (#1537).
         assert b"Data as of" in html and b"ParishSoft data load" not in html
-        assert b"Historical as of day" in html
+        assert b"Including Families that left" in html
         assert str(setup[2].pk).encode() in html
         # The daily chart is drawn in the browser from its embedded spec
         # (#720); the page has no chart image to fetch.
         assert b'id="daily-participation-spec"' in html
         assert b"digest-chart" not in html and b"<img" not in html
-        _, missing = read(browser, path + "?scope=current")
-        assert b"No complete report is ready" in missing
+        for current in ("", "?scope=current"):
+            _, missing = read(browser, path + current)
+            assert b"No complete report is ready" in missing
         for query in (
             "scope=all",
             "page=0",
@@ -103,7 +111,7 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
             assert response.status_code == 400
     assert SystemConfiguration.objects.get().current_campaign_id == before
     events = AuditEvent.objects.filter(event_type="participation_viewed")
-    assert events.count() == 4
+    assert events.count() == 6
     assert all(
         event.ownership_scope == "parish" and event.campaign_reference == campaign_id
         for event in events
@@ -116,7 +124,7 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
     )
     from parishkit.stewardship.reports import workspace_views
 
-    assert events.count() == 4
+    assert events.count() == 6
 
     from parishkit.stewardship.reports import read_admission
 
@@ -134,7 +142,7 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
                 assert response.status_code == 503, endpoint
                 assert response["Retry-After"] == "5"
                 assert b"private lifecycle detail" not in body
-    assert events.count() == 4
+    assert events.count() == 6
 
     # Existing middleware routes an already-restoring deployment to maintenance.
     # The admission unit cases separately cover closure after that middleware.
@@ -147,7 +155,7 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
             assert response.status_code == 302, endpoint
             assert response["Location"] == "/admin/maintenance"
             assert "Retry-After" not in response
-    assert events.count() == 4
+    assert events.count() == 6
 
     # Use a smaller page budget to exercise actual pagination with this small
     # source fixture. Selection, ordering, rows and URL construction stay real.
@@ -159,7 +167,7 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
     monkeypatch.setattr(workspace, "DAILY_SIZES", sizes)
     monkeypatch.setattr(workspace_views, "DAILY_SIZES", sizes)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        options = "?sort=date_desc&inactive=yes&size=2"
+        options = "?scope=historical&sort=date_desc&inactive=yes&size=2"
         # A bookmark from before #728 removed the inactive subtotal still
         # loads: the parameter is ignored and no subtotal is shown.
         response, page_one = read(browser, path + options)
@@ -183,7 +191,9 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
         # Every column heading sorts on the server; the date heading is the
         # sorted one here and says so.
         assert b'aria-sort="descending"' in page_one and b"Page 1 of " in page_one
-        response, by_count = read(browser, path + "?sort=-first&size=2")
+        response, by_count = read(
+            browser, path + "?scope=historical&sort=-first&size=2"
+        )
         assert response.status_code == 200 and b"sort=first" in by_count
         assert read(browser, path + "?sort=first_responses")[0].status_code == 400
         # An unrelated discovery result must never change this report's guard.

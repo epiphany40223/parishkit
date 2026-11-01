@@ -47,7 +47,7 @@ def test_count_ignores_defaults_sort_page_and_zone():
 def test_count_reads_each_report_query_s_own_defaults():
     """A report's default view is unfiltered even when its default narrows it."""
     assert applied_filters(DirectoryQuery()) == 0
-    # Responses shown (mode) is a page mode outside the panel (#1535).
+    # The mode is the site's, never one of the panel's filters (#2324).
     assert applied_filters(DirectoryQuery(search="Example", mode="testing")) == 1
     # "Current actionable requests" is Additional information's normal list.
     assert applied_filters(InformationQuery()) == 0

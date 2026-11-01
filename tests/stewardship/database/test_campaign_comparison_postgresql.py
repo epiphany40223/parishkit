@@ -1,7 +1,7 @@
 """The Campaign comparison report (#1018, slice 3), on PostgreSQL.
 
 A real campaign with Financial stewardship gets live pledges from four
-households, a materialized "Historical as of day" fact set and synthetic
+households, a materialized "Including Families that left" fact set and synthetic
 imported archives (``archive_factory``; every value invented). The SQL
 functions are called as the restricted web login, where their grants
 apply; the page and ``pk-admin report comparison`` read the same figures.

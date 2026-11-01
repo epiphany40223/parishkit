@@ -2452,8 +2452,8 @@ pk-admin report roster --show all --ministry 9
 The options are the pages' own, and a value the page would refuse is exit 1
 (`invalid`):
 
-- `report participation`: `--scope` (`historical`, the default, or
-  `current`).
+- `report participation`: `--scope` (`current`, the default, as on the
+  page, or `historical`).
 - `report comparison`: `--day` (a campaign day from 1 to the comparison
   day; a later day is `not_available`).
 - `report responses`: `--mode` (`production`, the default, or `testing`)

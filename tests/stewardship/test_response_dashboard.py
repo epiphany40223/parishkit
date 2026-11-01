@@ -25,12 +25,17 @@ from parishkit.stewardship.reports.digest_presentation import (
     participation_table_context,
 )
 from parishkit.stewardship.reports.facts import FactUnavailable
+from parishkit.stewardship.reports.participation import (
+    SCOPE_CHOICE_LABEL,
+    SCOPE_LABELS,
+)
 from parishkit.stewardship.reports.response_dashboard import (
     HOURLY_SPAN,
     DashboardQuery,
     at_grain,
     chosen_grain,
     funnel_panels,
+    scoped_metrics,
     tiles,
 )
 from parishkit.stewardship.reports.statistics import StatisticsUnavailable
@@ -38,7 +43,6 @@ from parishkit.stewardship.reports.workspace import ReportQuery
 from parishkit.stewardship.reports.workspace_views import (
     daily_table,
     figures_status,
-    mode_links,
     scope_links,
     statistics_panel,
 )
@@ -54,11 +58,12 @@ PATH = reverse("admin:response_dashboard")
 REGION = "response-dashboard"
 
 
-def page_context(query=None, funnel=..., *, can_test=True, value=None):
+def page_context(query=None, funnel=..., *, testing=False, value=None):
     """The context the view gives the template, from synthetic values.
 
-    ``funnel`` is the mode's metrics (None: a Testing view with no
-    rehearsal; by default the chart tests' metrics). A Production view also
+    ``funnel`` is the mode's metrics (None: the rehearsal ended while the
+    page was read; by default the chart tests' metrics). ``testing`` is a
+    site in Testing mode with a rehearsal (#2324). A Production page also
     carries the statistics, the daily chart and table, and the export.
     """
     query = query or ReportQuery()
@@ -74,15 +79,16 @@ def page_context(query=None, funnel=..., *, can_test=True, value=None):
     context = {
         "campaign": campaign,
         "query": query,
-        "testing": query.mode == "testing",
-        "can_test": can_test,
-        "mode_links": mode_links(query),
+        "testing": testing,
         "metrics": None,
+        "scope_choice_label": SCOPE_CHOICE_LABEL,
+        "scope_labels": SCOPE_LABELS,
+        "scope_label": SCOPE_LABELS[query.scope],
     }
     funnel = metrics() if funnel is ... else funnel
     if funnel is not None:
         context |= funnel_panels(funnel)
-    if query.mode == "testing":
+    if testing:
         return context
     presented = participation_table_context(chart)
     return context | {
@@ -90,7 +96,7 @@ def page_context(query=None, funnel=..., *, can_test=True, value=None):
         "scope_links": scope_links(query),
         "selection": SimpleNamespace(updating=False, expected=True),
         "statistics": value.statistics,
-        **statistics_panel(value.statistics),
+        **statistics_panel(value.statistics, query.scope),
         "export_key": UUID(int=10),
         "export_allowed": True,
         "row_count": len(chart.days),
@@ -161,7 +167,7 @@ def test_tiles_carry_every_stage_count():
 
 
 # The Summary panel's tiles in order (Administrator, 2026-10-18, #1537):
-# the active population row, then Families by stage.
+# the Population row, then Families by stage.
 SUMMARY_KEYS = [
     "active_families",
     "active_members",
@@ -194,15 +200,15 @@ def test_page_shows_one_summary_then_the_chart_and_export():
         r'<ul class="stat-tiles" aria-label="([^"]+)">(.*?)</ul>', summary
     )
     assert [(name, body.count('class="stat-tile"')) for name, body in rows] == [
-        ("Active population", 4),
+        ("Population", 4),
         ("Families by stage", 5),
     ]
     assert re.findall(r'data-stat="(\w+)"', page) == SUMMARY_KEYS
     labels = re.findall(r'<span class="stat-label">([^<]+)</span>', summary)
     assert labels == [
-        "Campaign Families",
+        "Families",
         "Active Members",
-        "Current annual pledges",
+        "Annual pledges",
         "Last year&#x27;s pledges (all Families)",
         "Invited",
         "Link followed",
@@ -277,55 +283,83 @@ def test_export_panel_is_small_with_xlsx_first():
         assert gone not in panel, gone
 
 
-def test_choices_are_in_place_links_carrying_the_view():
-    """The Production / Testing rehearsal pair (Administrators only) and the
-    Chart population pair each link to this page and land on its region; a
-    mode link keeps the population, sort and size (#1535, #1537)."""
+def test_families_counted_is_at_the_top_carrying_the_view():
+    """The Families counted pair (#2324) sits at the top of the region,
+    before the Summary, and each segment links to this page with that scope,
+    keeping the sort, size and zone (#1535). No Responses shown pair and no
+    mode in any link: the site's mode decides."""
     query = ReportQuery(scope="current", sort="date_asc", size="25")
     page = render(query)
-    common = "scope=current&amp;page=1&amp;sort=date_asc&amp;size=25&amp;timezone=UTC"
-    production = f'<a href="{PATH}?{common}#{REGION}" data-in-place="mode-production"'
-    assert production + ' aria-current="page">Production' in page
-    testing = (
-        f'<a href="{PATH}?scope=current&amp;page=1&amp;mode=testing&amp;sort=date_asc'
-        f'&amp;size=25&amp;timezone=UTC#{REGION}" data-in-place="mode-testing">'
-        "Testing rehearsal"
+    common = "page=1&amp;sort=date_asc&amp;size=25&amp;timezone=UTC"
+    current = f'<a href="{PATH}?scope=current&amp;{common}#{REGION}"'
+    assert current + ' data-in-place="scope-current" aria-current="page">' in page
+    historical = f'<a href="{PATH}?scope=historical&amp;{common}#{REGION}"'
+    assert historical + ' data-in-place="scope-historical">' in page
+    region = page[page.index(f'<div id="{REGION}"') :]
+    choice = region.index('id="participation-scope"')
+    assert choice < region.index('id="response-summary"')
+    assert 'id="participation-scope-label">Families counted</span>' in page
+    assert ">Including Families that left</a>" in page
+    assert ">In this campaign today</a>" in page
+    # The daily chart's heading and table caption use the same words.
+    assert "<h2>Daily participation — In this campaign today</h2>" in page
+    # (The fixture's chart is the historical one.)
+    caption = ">Including Families that left — exact daily values</caption>"
+    assert caption in render()
+    # The shared spinner, in space the pair always keeps (#2324).
+    pair = region[choice : region.index("</div>", choice)]
+    assert "data-busy-control" in pair
+    assert '<span class="spinner" aria-hidden="true"></span>' in pair
+    gone = ("dashboard-mode", "Responses shown", "Testing rehearsal", "&amp;mode=")
+    for text in gone:
+        assert text not in region, text
+
+
+def test_population_tiles_follow_families_counted():
+    """Each scope's tiles are its own population's figures (#2324): the
+    historical cohort's by default, and today's campaign Families' under
+    current, each Members tile saying whose Members it counts."""
+    value = document()
+
+    def population(scope):
+        page = render(ReportQuery(scope=scope), value=value)
+        row = re.search(r'aria-label="Population">(.*?)</ul>', page).group(1)
+        return (
+            re.findall(r'<span class="stat-value">([^<]+)</span>', row),
+            re.findall(r'<span class="stat-detail">([^<]+)</span>', row),
+        )
+
+    assert population("historical") == (
+        ["1,010", "2,350", "$2,334.56", "$1,000.00"],
+        ["Members of the Families still in ParishSoft"],
     )
-    assert testing in page
-    current = f'<a href="{PATH}?{common}#{REGION}" data-in-place="scope-current"'
-    assert current + ' aria-current="page">Current population' in page
-    # The Chart population sits in the Daily participation panel.
-    chart = page[page.index('id="participation-chart"') :]
-    assert 'id="participation-scope"' in chart
-    assert page.index('id="dashboard-mode"') < page.index('id="response-summary"')
-    # Staff are never offered Testing.
-    staff = render(can_test=False)
-    assert "Testing rehearsal" not in staff and "mode=testing" not in staff
+    assert population("current") == (
+        ["1,000", "2,345", "$2,234.56", "$1,000.00"],
+        ["Members of the Families in this campaign"],
+    )
 
 
 def test_testing_view_shows_the_rehearsal_stages_only():
-    """The Summary's Families by stage row shows the rehearsal; the Active
-    population row and the Production panels are left out with one line
-    saying why (#1537)."""
-    page = render(ReportQuery(mode="testing"))
+    """The Summary's Families by stage row shows the rehearsal; the
+    Population row, the Families counted choice and the Production panels
+    are left out with one line saying why (#1537, #2324)."""
+    page = render(testing=True)
     assert "never counted in Production" in page
     assert 'aria-label="Families by stage"' in page and "data-chart=" not in page
-    assert 'aria-label="Active population"' not in page
+    assert 'aria-label="Population"' not in page
     assert re.findall(r'data-stat="(\w+)"', page) == SUMMARY_KEYS[4:]
-    assert "Data as of" not in page
+    assert "Data as of" not in page and "participation-scope" not in page
     reason = (
         '<p id="production-only">Population statistics, daily participation and '
-        "the export count Production responses only. Choose Production to see "
-        "them.</p>"
+        "the export count Production responses only, so they are shown once "
+        "this site is in Production mode.</p>"
     )
     assert reason in page
-    for gone in ("participation-chart", "export-format"):
+    for gone in ("participation-chart", "export-format", "Choose Production"):
         assert gone not in page
-    testing = f'<a href="{PATH}?scope=historical&amp;page=1&amp;mode=testing'
-    assert testing in page and 'aria-current="page">Testing rehearsal' in page
-    # With no rehearsal the view says there is nothing to show.
-    empty = render(ReportQuery(mode="testing"), None)
-    assert "no Testing responses to show" in empty and reason in empty
+    # A rehearsal that ended while the page was read: nothing to show.
+    empty = render(None, None, testing=True)
+    assert "no Testing responses to show." in empty and reason in empty
     assert "stat-tile" not in empty and "data-chart=" not in empty
     assert "never counted in Production" not in empty
     # Production never says it.
@@ -352,7 +386,7 @@ def test_no_invitations_yet_says_so_instead_of_shares():
 def test_tiles_draw_their_share_of_invited_as_bars():
     """Each stage tile's share bar runs against Invited and is hidden from
     AT (#720); with nothing invited no stage tile has a bar."""
-    page = render(ReportQuery(mode="testing"))
+    page = render(testing=True)
     bars = re.findall(
         r'<span class="stat-bar" aria-hidden="true">'
         r'<progress value="(\d+)" max="(\d+)"></progress></span></li>',
@@ -360,16 +394,17 @@ def test_tiles_draw_their_share_of_invited_as_bars():
     )
     assert bars == [("4", "4"), ("5", "4"), ("4", "4"), ("3", "4"), ("3", "4")]
     rows = tuple(replace(row, invited_at=None) for row in metrics().families)
-    uninvited = render(ReportQuery(mode="testing"), metrics(families=rows))
+    uninvited = render(None, metrics(families=rows), testing=True)
     assert "<progress" not in uninvited
 
 
-def test_daily_table_links_keep_the_mode_and_population():
-    """A daily-table navigator or heading keeps the page's view (#1537)."""
+def test_daily_table_links_keep_the_population():
+    """A daily-table navigator or heading keeps the page's population
+    (#1537); no link carries a mode, which the site decides (#2324)."""
     query = ReportQuery(scope="current", size="5")
     links = [urlsplit(href).query for href in scope_links(query).values()]
     assert all("mode" not in link for link in links)
-    assert ("mode", "testing") in ReportQuery(mode="testing").carried()
+    assert query.carried() == [("scope", "current"), ("timezone", "UTC")]
 
 
 def test_unreadable_statistics_leave_the_stages_and_say_so():
@@ -379,7 +414,7 @@ def test_unreadable_statistics_leave_the_stages_and_say_so():
     themselves: the slow figures status sits after the line, which never
     tells the reader to reload (#1586)."""
     context = (
-        page_context(ReportQuery(mode="testing"))
+        page_context(testing=True)
         | {
             "query": ReportQuery(),
             "testing": False,
@@ -390,7 +425,7 @@ def test_unreadable_statistics_leave_the_stages_and_say_so():
     with using("us_long"):
         page = render_to_string("stewardship/response-dashboard.html", context)
     assert 'aria-label="Families by stage"' in page
-    assert 'aria-label="Active population"' not in page and "Data as of" not in page
+    assert 'aria-label="Population"' not in page and "Data as of" not in page
     assert '<p id="production-unavailable">' in page
     assert "no zero values have been assumed" in page
     assert "appear here by themselves once they can be read" in page
@@ -514,7 +549,7 @@ def test_retry_figures_status_is_slow_and_says_nothing():
 
 def test_no_parishsoft_data_wording_differs_from_a_pending_chart():
     """No ParishSoft data yet is not a wait of a few minutes (#1537)."""
-    context = page_context(ReportQuery(mode="testing")) | {
+    context = page_context(testing=True) | {
         "query": ReportQuery(),
         "testing": False,
         "participation_unavailable": True,
@@ -524,3 +559,27 @@ def test_no_parishsoft_data_wording_differs_from_a_pending_chart():
         page = render_to_string("stewardship/response-dashboard.html", context)
     assert "none is available yet" in page and "few minutes" not in page
     assert "appear here by themselves after the first ParishSoft update" in page
+
+
+def test_scoped_metrics_count_only_the_chosen_families():
+    """The funnel under a population (#2324) counts only the rows whose DUID
+    is in it, every stage, figure beside it and activity bucket alike; no
+    population (the statistics could not be read) keeps every row."""
+    value = metrics()
+    assert scoped_metrics(value, None) is value
+    kept = {family.family_duid for family in value.families[:2]}
+    scoped = scoped_metrics(value, kept)
+    assert scoped.families == value.families[:2]
+    for stage in scoped.stages:
+        assert stage.count == sum(
+            1 for family in value.families[:2] if stage.key in family.stages
+        )
+    assert scoped.submitted_again == sum(
+        1 for family in value.families[:2] if family.submissions > 1
+    )
+    assert sum(bucket.submissions for bucket in scoped.activity) == scoped.stage(
+        "submitted"
+    )
+    # Nothing chosen: every count is zero, never the whole funnel.
+    empty = scoped_metrics(value, frozenset())
+    assert empty.families == () and {stage.count for stage in empty.stages} == {0}
