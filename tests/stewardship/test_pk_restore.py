@@ -1957,24 +1957,30 @@ def test_a_linked_uploader_file_is_never_followed(host, tmp_path):
     assert "no moved-aside tree has one" in result.stdout
 
 
-def test_a_planted_temporary_name_is_refused_not_written_through(host, tmp_path):
+@pytest.mark.parametrize("kind", ["link", "file"])
+def test_a_planted_temporary_name_is_refused_not_written_through(host, tmp_path, kind):
     """A set's backup-uploader.copying link (or file) is never written into.
 
     Root's cp would otherwise write the host's password through the link,
     and chown and chmod would re-own and re-mode the link's target.
+
+    Each kind runs on a fresh host: a second run on the same host within
+    the same UTC second reuses the first run's pre-restore stamp, and
+    step 4 then refuses the existing moved-aside config tree before it
+    reaches the temporary name (#2344).
     """
     victim = tmp_path / "victim"
     victim.write_bytes(b"untouched\n")
     victim.chmod(0o644)
-    for planted in (victim, b"a planted file\n"):
-        uploader_set(host, extra={f"{UPLOADER_FILE}.copying": planted})
-        host_password(host)
-        result, _ = restore(host, FAKE_HELP=HELP_UPLOADER)
-        assert result.returncode == 1, output(result)
-        assert "backup-uploader.copying already exists" in output(result)
-        assert victim.read_bytes() == b"untouched\n"
-        assert victim.stat().st_mode & 0o777 == 0o644
-        assert not (host["root"] / UPLOADER_FILE).exists()
+    planted = victim if kind == "link" else b"a planted file\n"
+    uploader_set(host, extra={f"{UPLOADER_FILE}.copying": planted})
+    host_password(host)
+    result, _ = restore(host, FAKE_HELP=HELP_UPLOADER)
+    assert result.returncode == 1, output(result)
+    assert "backup-uploader.copying already exists" in output(result)
+    assert victim.read_bytes() == b"untouched\n"
+    assert victim.stat().st_mode & 0o777 == 0o644
+    assert not (host["root"] / UPLOADER_FILE).exists()
 
 
 def test_a_linked_restored_database_directory_is_refused(host, tmp_path):
