@@ -421,6 +421,38 @@ def test_the_data_line_names_the_years_the_averages_cover():
     assert not context["can_import"]
 
 
+@pytest.mark.parametrize("compared", [True, False])
+def test_the_page_names_its_fixed_population_and_day(compared):
+    """Comparison always counts Including Families that left (#2324).
+
+    Its fixed line names that population in the Families counted words and
+    the day compared, as of that day's end, and says why the other report
+    pages (which start at In this campaign today) can differ. Before day 1
+    ends there is no day to name. The data line no longer repeats the date.
+    """
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.accounts.policy import Principal
+    from parishkit.stewardship.reports.comparison_views import page_context
+
+    found = comparison([year(2054, day(3, 30))])
+    if not compared:
+        found = replace(found, day=None, report_date=None)
+    principal = Principal(uuid4(), frozenset({"staff"}), frozenset())
+    html = render_to_string(
+        "stewardship/campaign-comparison.html", page_context(found, principal)
+    )
+    line = html.split("<p data-report-population>")[1].split("</p>")[0]
+    shown = ", as of the end of October 6, 2054" if compared else ""
+    assert line == (
+        f"Families counted: Including Families that left{shown}. This page "
+        "always counts them, as the past campaigns' archives do; the other "
+        "report pages start at In this campaign today and count up to now, so "
+        "their figures can differ."
+    )
+    assert "· through" not in html
+
+
 def test_data_notes_show_the_shared_notes_once_then_each_years_own():
     """Notes every year has alike show once; each year keeps only its own.
 
