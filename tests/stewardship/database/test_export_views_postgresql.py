@@ -79,7 +79,12 @@ def post(browser, url, data=None, **extra):
 
 
 def create(http_scenario, *, format="csv"):
-    """Select a complete pinned generation through the export page's form."""
+    """Select the scenario's complete generation through the export page's form.
+
+    It is the generation in the Response dashboard's default scope that
+    ``http_scenario``'s report email send built: its pinned one or its
+    comparison's, whichever that scope is.
+    """
     setup, browser = http_scenario
     facts = setup[2]
     key = str(uuid4())

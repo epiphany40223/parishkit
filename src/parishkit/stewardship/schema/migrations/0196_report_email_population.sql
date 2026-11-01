@@ -483,6 +483,7 @@ BEGIN
        OR NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.stewardship_report_email_snapshot_guard_v1()'::regprocedure
             AND prosrc LIKE '%public.stewardship_report_email_requests_v2(%'
             AND prosrc NOT LIKE '%stewardship_report_email_requests_v1(%'
+            AND prosrc LIKE '%item->4,%item->5)%item->4,%item->5)%'
             AND prosrc LIKE '%ROW(p.campaign_id,''current''::varchar,p.source_id,p.submission_watermark,%')
        OR NOT EXISTS(SELECT 1 FROM pg_proc WHERE oid='public.stewardship_fact_runtime_binding_v1()'::regprocedure
             AND prosrc LIKE '%IF NOT FOUND OR NEW.population_scope NOT IN (''current'',''historical'')%'

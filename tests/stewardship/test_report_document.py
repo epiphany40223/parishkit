@@ -310,3 +310,24 @@ def test_other_names_and_a_test_send():
         "campaign, Example Parish)"
     )
     assert INSTANT.date().isoformat() == "2026-11-02"
+
+
+def test_a_saved_comparison_shows_only_the_line_its_email_drew():
+    """A report email's comparison keeps its Families counted line (#2331).
+
+    The saved copy shows the kept line; a section captured before 0196
+    kept none, and its copy shows none, as its email did.
+    """
+    from parishkit.stewardship.reports.report_blocks import REGISTRY
+
+    report = from_daily(with_comparison())
+    (captured,) = capture_report(
+        report, [{"block": "compared_with_past_campaigns", "version": 1, "options": {}}]
+    )
+    data = json.loads(json.dumps(captured["data"]))
+    assert data["families_counted"] == COMPARISON_COUNTED
+    older = {key: value for key, value in data.items() if key != "families_counted"}
+    assert older == json.loads(json.dumps(report.comparison))
+    copy = REGISTRY["compared_with_past_campaigns"].copy
+    assert copy(data, None)["comparison_population"] == COMPARISON_COUNTED
+    assert copy(older, None)["comparison_population"] == ""

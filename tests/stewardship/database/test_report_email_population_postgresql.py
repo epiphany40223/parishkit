@@ -131,70 +131,120 @@ def test_the_email_counts_todays_campaign_families_and_compares_like_for_like(
     assert "Families that have responded: 0 out of 0" in snapshot.text
 
 
-MIGRATION = (
-    Path(__file__).resolve().parents[3]
-    / "src/parishkit/stewardship/schema/migrations/0196_report_email_population.sql"
+MIGRATIONS = (
+    Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema/migrations"
 )
-# Each body 0196 installs, with its #2331 change undone as an older or
-# partial install would lack it: (function, new text, old text).
+MIGRATION = MIGRATIONS / "0196_report_email_population.sql"
+# stewardship_fact_input_pin_commit_v1 before 0196, exactly as the schema
+# baseline (report_facts.sql) installed it: no frozen file replaced it, so
+# its old body lives in no other file (only its header is rewrapped).
+OLD_PIN_COMMIT = """CREATE OR REPLACE FUNCTION
+public.stewardship_fact_input_pin_commit_v1()
+RETURNS trigger
+LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
+BEGIN
+    IF current_user='pk_stewardship_worker' AND NEW.parent_kind='facts'
+        AND NOT EXISTS(SELECT 1 FROM stewardship_daily_fact_set f
+            JOIN stewardship_task_run t ON t.id=f.task_id
+            WHERE f.id=NEW.parent_id AND f.source_id=NEW.snapshot_id
+                AND f.population_scope='current' AND f.state='building'
+                AND t.task_type IN ('report_facts','report_exact_export')
+                AND stewardship_fact_live(f.task_id,f.task_fence,f.worker_id)) THEN
+        RAISE EXCEPTION 'Worker fact input pin requires its exact retained builder'
+            USING ERRCODE='23514';
+    END IF;
+    RETURN NULL;
+END $$;"""
+
+
+def frozen_body(name, function):
+    """The last definition of ``function`` in frozen file ``name``.
+
+    It is the body a database that applied the file (and no later one
+    replacing it) holds, as CREATE OR REPLACE.
+    """
+    text = (MIGRATIONS / name).read_text(encoding="utf-8")
+    found = list(
+        re.finditer(
+            rf"^CREATE (?:OR REPLACE )?FUNCTION public\.{function}\(", text, re.M
+        )
+    )
+    start = found[-1].start()
+    body = text[start : text.index("$$;", start) + 3]
+    return body.replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1)
+
+
+def stageless_guard():
+    """0185's snapshot guard moved to requests v2 and the current scope.
+
+    Only its stage comparison (``item->5``) is missing, so the DO block's
+    stage check alone must refuse it.
+    """
+    body = frozen_body(
+        "0185_series_in_force.sql", "stewardship_report_email_snapshot_guard_v1"
+    )
+    for old, new in (
+        (
+            "stewardship_report_email_requests_v1(",
+            "stewardship_report_email_requests_v2(",
+        ),
+        (
+            "ROW(p.campaign_id,'historical'::varchar",
+            "ROW(p.campaign_id,'current'::varchar",
+        ),
+    ):
+        assert body.count(old) == 1
+        body = body.replace(old, new)
+    return body
+
+
+# Each install 0196's DO block must refuse: the real bodies a database
+# held before 0196 (the latest frozen file defining each, or the schema
+# baseline's), one at a time, and two partial installs.
 STALE_0196 = {
-    "requests-v2": (
-        "stewardship_report_email_requests_v2",
-        "SELECT coalesce(r.review_decision,'ignored')='ignored'",
-        "SELECT coalesce(r.review_decision,'ignored')='accepted'",
+    "requests-v2-missing": lambda: (
+        "DROP FUNCTION public.stewardship_report_email_requests_v2"
+        "(uuid,uuid,timestamptz);"
     ),
-    "snapshot-guard-requests": (
-        "stewardship_report_email_snapshot_guard_v1",
-        "public.stewardship_report_email_requests_v2(",
-        "public.stewardship_report_email_requests_v1(",
+    "requests-v2-as-v1": lambda: frozen_body(
+        "0156_report_pipeline.sql", "stewardship_report_email_requests_v1"
+    ).replace(
+        "stewardship_report_email_requests_v1(",
+        "stewardship_report_email_requests_v2(",
+        1,
     ),
-    "snapshot-guard-scope": (
-        "stewardship_report_email_snapshot_guard_v1",
-        "ROW(p.campaign_id,'current'::varchar,p.source_id,p.submission_watermark,",
-        "ROW(p.campaign_id,'historical'::varchar,p.source_id,p.submission_watermark,",
+    "snapshot-guard-0185": lambda: frozen_body(
+        "0185_series_in_force.sql", "stewardship_report_email_snapshot_guard_v1"
     ),
-    "runtime-binding": (
-        "stewardship_fact_runtime_binding_v1",
-        "IF NOT FOUND OR NEW.population_scope NOT IN ('current','historical')",
-        "IF NOT FOUND OR NEW.population_scope NOT IN ('historical')",
+    "snapshot-guard-without-stages": stageless_guard,
+    "runtime-binding-0185": lambda: frozen_body(
+        "0185_series_in_force.sql", "stewardship_fact_runtime_binding_v1"
     ),
-    "source-pin-guard": (
-        "stewardship_source_pin_guard",
-        "WHERE t.task_type='report_email_prepare' AND p.phase='capture'",
-        "WHERE t.task_type='report_email_prepare' AND p.phase='inputs'",
+    "source-pin-guard-0161": lambda: frozen_body(
+        "0161_report_conversion.sql", "stewardship_source_pin_guard"
     ),
-    "pin-commit": (
-        "stewardship_fact_input_pin_commit_v1",
-        "'report_email_prepare')",
-        "'report_facts')",
-    ),
+    "pin-commit-baseline": lambda: OLD_PIN_COMMIT,
 }
 
 
 @pytest.mark.parametrize("stale", STALE_0196)
 def test_migration_0196_self_check_refuses_a_stale_install(stale):
     """0196's DO block passes on the installed schema and fails when any one
-    body lacks #2331's change. The file's own transaction-local ACL capture
-    runs first, as in the migration; each stale install runs in a
-    rolled-back transaction."""
+    function is as it was before 0196 (or v2 is missing, or the guard
+    ignores the stages). The file's own transaction-local ACL capture runs
+    first, as in the migration; each stale install runs in a rolled-back
+    transaction."""
     text = MIGRATION.read_text(encoding="utf-8")
     acl = re.search(r"^SELECT set_config\(.*?, true\);", text, re.M | re.S)[0]
     check = re.search(r"^DO \$check\$.*?\$check\$;", text, re.M | re.S)[0]
-    function, new, old = STALE_0196[stale]
-    start = re.search(
-        rf"^CREATE (?:OR REPLACE )?FUNCTION public\.{function}\(", text, re.M
-    ).start()
-    body = text[start : text.index("$$;", start) + 3]
-    assert body.count(new) == 1
-    stale_body = body.replace(new, old).replace(
-        "CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1
-    )
+    # A missing v2 fails the block's regprocedure cast, not its message.
+    refused = "does not exist" if stale == "requests-v2-missing" else "Migration 0196"
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(acl)
         cursor.execute(check)
-        cursor.execute(stale_body)
+        cursor.execute(STALE_0196[stale]())
         with (
-            pytest.raises(DatabaseError, match="Migration 0196"),
+            pytest.raises(DatabaseError, match=refused),
             transaction.atomic(),
         ):
             cursor.execute(check)

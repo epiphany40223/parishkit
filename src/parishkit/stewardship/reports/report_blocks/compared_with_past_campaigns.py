@@ -47,12 +47,23 @@ def draw(document, frame, options):
 
 
 def capture(document, options):
-    """The section's retained figures, or None when it is left out."""
-    return document.comparison
+    """The section's retained figures, or None when it is left out.
+
+    A report email's section keeps the Families counted line its email
+    drew (#2331), so its saved copy shows the line only for a send that
+    had it; a send captured before keeps no line and its copy shows none.
+    """
+    section = document.comparison
+    if section is None or not isinstance(document, ReportDocument):
+        return section
+    return {**section, "families_counted": FAMILIES_COUNTED}
 
 
 def copy(data, frame):
-    """The retained section as the saved daily report page draws it (#1018)."""
+    """The retained section as the saved daily report page draws it (#1018).
+
+    Its Families counted line is the one the send kept (none before #2331).
+    """
     from ..digest_comparison import data_line
     from ..digest_presentation import comparison_path, saved_tiles
 
@@ -61,7 +72,7 @@ def copy(data, frame):
         "comparison_line": data_line(data),
         "comparison_tiles": saved_tiles(data),
         "comparison_url": comparison_path(data),
-        "comparison_population": FAMILIES_COUNTED,
+        "comparison_population": data.get("families_counted", ""),
     }
 
 

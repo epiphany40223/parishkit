@@ -120,10 +120,12 @@ Administrator's sign-off. Each is referred to below by its number.
     default ([#2324](https://github.com/epiphany40223/parishkit/issues/2324)),
     rather than the historical cohort (Families that left included), and the
     [Campaign totals block](#campaign-totals-block) names the Families it
-    counts and the report day in a fixed line. The
+    counts and the report day in a fixed line. One stated exception: the
     [Compared with past campaigns block](#compared-with-past-campaigns-block)
-    stays like for like with the archives, as the Campaign comparison page
-    does, and says so in its own fixed line.
+    keeps counting Families that left (the historical cohort), because past
+    campaigns' archives have no "in this campaign today" Families to compare
+    with; it stays like for like with them, as the Campaign comparison page
+    does, and its own fixed line says whom it counts.
 19. **The requests block names its stages** (the Administrator,
     2026-10-31, #2331): "Open" is not a stage, so its heading names the two
     it adds up, "To review 10 · To handle 3", and it leaves out Ignored
@@ -934,7 +936,10 @@ reads the request's latest Staff revision as the page does and leaves out an
 Ignored one; the snapshot keeps each request's stage after its text. A send
 captured before 0196 kept no stage: its saved copy and Past sends still say
 "N open requests", as its email did, and that send may have listed an
-Ignored request, since v1 never read the review decision.
+Ignored request, since v1 never read the review decision. A send that
+listed no request keeps no list (its email drew the empty statement), so
+its saved copy draws that statement and Past sends shows no count for it,
+never "0 open requests".
 
 This block's scope is one of the converted Weekly's three changes at
 deploy ([conversion](#conversion)): the Weekly's heading said "N new
@@ -1073,7 +1078,10 @@ that section's rules say), with its own charts and link to the Campaign
 comparison report, its computed aggregates retained with the snapshot so its
 saved copy shows it unchanged. Under the section a fixed line says
 whom it counts: "Families counted: Including Families that left, as the past
-campaigns' archives count them", and the saved copy shows it too. With no
+campaigns' archives count them". The snapshot keeps the line with the
+section, and the saved copy shows it only for a send that kept it: a send
+captured before frozen migration 0196 drew no line, so its copy has none.
+With no
 imported years it is left out
 entirely, as today, rather than drawing an empty statement, since the
 Administrator chose it knowing it compares with imports. Left out, it has no
@@ -1440,7 +1448,13 @@ Its details ([#2035](https://github.com/epiphany40223/parishkit/issues/2035)):
   figures are still being prepared, so this preview shows the latest
   complete ones. A send uses the newest."). With no ready generation, the
   fact blocks show their empty statement and the notice says so. Preview
-  never builds or pins a generation.
+  never builds or pins a generation. The figures count today's campaign
+  Families, as a send's do (decision 18); the Compared with past campaigns
+  block reads a historical generation chosen by the same rule, and the
+  Preview is Updating when either generation is not the one a send would
+  build now. A dialog's chart images opened before #2331 was deployed
+  named only one generation, then the historical one, so its comparison
+  chart is drawn from that generation, as the dialog showed it.
 - **The dialog.** The review dialog titled "Preview — not sent", with no
   Apply and a **Close** button. Its body names the subject, the
   recipients it would go to now (users by name, groups with how many
@@ -2211,6 +2225,13 @@ refuses as the last safeguard. Nightly release windows do not move report send t
 release notes tell operators to run the scripted upgrade with
 `STEWARDSHIP_SCHEMA_CHANGE=1` and that Reports › Emailed reports moves when
 the page ships.
+
+Frozen migration 0196 (#2331) is not backward compatible: a release before
+it cannot capture a report email on a schema that has 0196 (the snapshot
+guard needs the current generation and each request's stage), so going back
+to such a release needs the pre-upgrade backup restored with it, as the
+[fail-forward policy](../operations/spec.md#production-upgrades) says;
+otherwise every report email fails its capture.
 
 The retirement file ([database functions](#database-functions)) needs no
 window of its own beyond the schema-change upgrade, but only after the

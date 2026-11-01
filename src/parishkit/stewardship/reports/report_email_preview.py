@@ -341,9 +341,12 @@ def preview_report(values, system, campaign, *, public_origin):
         )
         fact_set_id, updating = select_facts(campaign.pk, expected)
         if any(entry["block"] == COMPARISON_BLOCK for entry in values["blocks"]):
-            comparison_id, _ = select_facts(
+            comparison_id, comparison_updating = select_facts(
                 campaign.pk, replace(expected, population_scope=COMPARISON_SCOPE)
             )
+            # The comparison's figures are Updating too when its exact
+            # historical generation is not ready (or none is).
+            updating = updating or comparison_updating
     version = system.active_configuration
     document = build_document(
         values,
@@ -425,6 +428,18 @@ def image_token(preview, values, campaign_id, actor_id):
     )
 
 
+def _comparison_generation(recipe):
+    """The historical generation an image recipe's comparison chart reads.
+
+    A recipe signed since #2331 names it (``h``, None without one). One
+    signed before has no ``h``; its own generation (``f``) was the
+    historical one then, which its comparison read, so a dialog opened
+    before the deploy keeps its comparison chart.
+    """
+    found = recipe["h"] if "h" in recipe else recipe["f"]
+    return UUID(found) if found else None
+
+
 def preview_image(token, actor_id, system, campaign, name):
     """Draw one chart image of a preview again from its signed recipe.
 
@@ -454,7 +469,7 @@ def preview_image(token, actor_id, system, campaign, name):
         fact_set_id=UUID(recipe["f"]),
         lists=False,
         watermark=recipe.get("w"),
-        comparison_fact_set_id=UUID(recipe["h"]) if recipe.get("h") else None,
+        comparison_fact_set_id=_comparison_generation(recipe),
     )
     if document.participation is None:
         raise LookupError("The preview's facts are no longer kept.")
