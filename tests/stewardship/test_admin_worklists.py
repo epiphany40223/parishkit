@@ -59,8 +59,8 @@ def test_the_command_line_vocabularies_are_the_pages():
         "Family": "family",
         "ParishSoft status": "parishsoft_status",
         "Family DUID": "family_duid",
-        "Cannot participate in ministries": "cannot_participate",
-        "Latest response": "latest_response",
+        "Cannot participate in Ministries": "cannot_participate",
+        "Submitted": "latest_response",
         "Stage": "stage",
     }
     assert dict(
@@ -74,7 +74,7 @@ def test_the_command_line_vocabularies_are_the_pages():
         "ParishSoft status": "parishsoft_status",
         "Family DUID": "family_duid",
         "Limitation": "limitation",
-        "Latest response": "latest_response",
+        "Submitted": "latest_response",
         "Stage": "stage",
     }
 

@@ -418,7 +418,7 @@ def other_tab(row, members, *, ministry, information, family_duid=None):
             name = labels.get(entity) or str(NAME_NOT_RECORDED)
             rows.append(
                 cannot_row(
-                    _("Cannot participate in ministries: %(name)s") % {"name": name},
+                    _("Cannot participate in Ministries: %(name)s") % {"name": name},
                     (entry or {}).get("cannot_serve") is True,
                     item(*entity),
                 )

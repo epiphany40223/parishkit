@@ -278,7 +278,7 @@ def queue_document(
             "as of the source time above. Ministry leaders receive the email "
             "and phones of each Member who asked to join or leave their "
             "Ministry, except a Member who cannot participate in any "
-            "ministries, and otherwise only published values.",
+            "Ministries, and otherwise only published values.",
         ),
         (
             "Addresses",

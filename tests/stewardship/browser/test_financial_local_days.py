@@ -53,7 +53,7 @@ def test_response_dates_are_days_in_the_browser_zone(browser_engine, component_o
         # The export's zone menu offers UTC (the recorded exception); the
         # filters never name a fixed zone.
         assert form.get_by_text("UTC", exact=True).count() == 0
-        for legend in ("First response date", "Latest response date"):
+        for legend in ("First response date", "Submitted date"):
             assert form.locator("legend", has_text=legend).count() == 1
         assert form.locator("[name=zone]").input_value() == zone
         for field_id, day in zip(DATES, ("2026-11-01", "2026-11-02") * 2, strict=True):

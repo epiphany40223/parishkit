@@ -51,7 +51,7 @@ MARKS = {
     # the addition's, never a second Joined one for the same person.
     "entered": (
         _("New Member"),
-        _("Added by the Family; staff entered them in ParishSoft by hand."),
+        _("Added by the Family; Staff entered them in ParishSoft by hand."),
     ),
     "moved": (
         _("No longer in this household"),

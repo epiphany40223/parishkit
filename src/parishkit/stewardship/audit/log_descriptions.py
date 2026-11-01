@@ -1451,7 +1451,7 @@ VALUE_LABELS = {
         "unfollowed": _("Link not followed"),
         "mailing-name": _("Blank mailing name"),
         "envelope": _("Envelope number 0"),
-        "cannot_serve": _("Cannot participate in ministries"),
+        "cannot_serve": _("Cannot participate in Ministries"),
         "cannot_attend": _("Families that cannot attend Mass"),
         "option": _("One talent"),
     },

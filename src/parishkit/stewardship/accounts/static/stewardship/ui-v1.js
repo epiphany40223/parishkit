@@ -3440,11 +3440,11 @@
   const EXPORT_DOWNLOAD_TRIES = 5;
   const EXPORT_TEXT = {
     waiting: "Still working… If a ParishSoft refresh is finishing, this can take up to two minutes. Keep this page open.",
-    failed: "The file could not be created. Try again; if it fails again, check System logs or ask your system administrator.",
+    failed: "The file could not be created. Try again; if it fails again, check System logs or ask whoever runs the server.",
     gone: "This export ended before it was downloaded. Try again.",
     cancelled: "This export was cancelled. Try again.",
     signedOut: "Couldn't check on the file: your sign-in may have ended. Reload the page or sign in again.",
-    slow: "The file is taking longer than usual. Try again later; if it keeps happening, ask your system administrator.",
+    slow: "The file is taking longer than usual. Try again later; if it keeps happening, ask whoever runs the server.",
     noAnswer: "No response from the server yet. Your export may still have been started; try again in a few minutes.",
     unreachable: "The server could not be reached. Check your connection, then try again.",
     empty: "No file came back. Reload the page, then try again.",
@@ -9568,7 +9568,7 @@
       });
       if (!acknowledgment.hidden && box.checked) body.set("acknowledge_unknown", "on");
       let text = "The server could not be reached, so a test may or may not be on its way. "
-        + "Check the Testing mailbox before sending another.";
+        + "Check the Testing recipient's inbox before sending another.";
       let error = true;
       let unknown = false;
       try {
@@ -9585,9 +9585,9 @@
           // The shared clock (date-format-v1.js); without it the time is left out.
           const time = clockTime();
           text = time
-            ? fillIn("Test queued at {time} for the Testing recipient. Check the Testing mailbox.",
+            ? fillIn("Test queued at {time} for the Testing recipient. Check the Testing recipient's inbox.",
               {time})
-            : "Test queued for the Testing recipient. Check the Testing mailbox.";
+            : "Test queued for the Testing recipient. Check the Testing recipient's inbox.";
           error = false;
         } else if (response.status === 400 && problems.length) {
           text = "This text can't be sent as a test. " + problems

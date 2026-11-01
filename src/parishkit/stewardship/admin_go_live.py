@@ -31,7 +31,7 @@ preview, Confirm Production's review), or for Cancel go-live the page's
 review binding with the reason beside it, signed (not encrypted) under
 ``CANCEL_SALT``: Cancel go-live's dialog takes its reason at Apply, the
 command at its preview. Nothing here prints a Family name except the
-streamed Testing submissions file.
+streamed Testing responses file.
 """
 
 import csv
@@ -56,7 +56,7 @@ CANCEL_COUNTS = (
     "delivered",
     "blocking",
 )
-# The Testing submissions file: one page of the list at a time, as the page
+# The Testing responses file: one page of the list at a time, as the page
 # reads it (``PageWindow``'s largest size).
 FAMILY_PAGE = 100
 FAMILY_HEADINGS = ("duid", "name")
@@ -386,8 +386,8 @@ def start_prompt_lines(caller, service, token):
         "Start go-live for the current Testing draft. Testing data is deleted; "
         "the system refreshes ParishSoft data and prepares new Family links by "
         "itself. Nothing reaches Families until you confirm.",
-        f"Testing submissions: {cleanup.submissions}. Families with Testing "
-        f"submissions: {cleanup.families}. Testing messages: {cleanup.messages}. "
+        f"Form submissions in Testing: {cleanup.submissions}. Families with "
+        f"Testing responses: {cleanup.families}. Testing messages: {cleanup.messages}. "
         f"Testing records to delete: {cleanup.inventory.total}.",
         "Deleted Testing data cannot be restored, even if you stop going live "
         "later. Testing links and codes stop working now.",
@@ -1012,7 +1012,7 @@ def cancel(caller, service, *, token, context):
 
 @dataclass(frozen=True)
 class FamiliesExport(ReadModel):
-    """The Testing submissions file ``go-live families`` wrote, described.
+    """The Testing responses file ``go-live families`` wrote, described.
 
     ``count`` is how many Families it lists; ``size`` and ``sha256`` are of
     exactly the bytes written.
@@ -1038,7 +1038,7 @@ def families_csv(rows):
 
 
 def export_families(caller, service, *, context):
-    """``go-live families``: the Testing submissions list, as CSV bytes.
+    """``go-live families``: the Testing responses list, as CSV bytes.
 
     Passive, for any session, recording nothing, as the page. Every page of
     the list is read in one work transaction through the page's own

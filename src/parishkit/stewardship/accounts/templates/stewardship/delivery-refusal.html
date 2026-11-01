@@ -9,7 +9,7 @@
 {% if refusal.kind == 'reported_bounce' %}<p>{% translate "Reported as bounced by an Administrator" %} · <time datetime="{{ refusal.created_at|instant }}" data-local-instant>{{ refusal.created_at|instant }}</time></p>
 <p>{{ refusal.evidence_note }}</p>{% endif %}
 <p><a href="{% url 'admin:delivery_refusals' %}?duid={{ refusal.family_duid }}">{% translate "See this Family's refused addresses" %}</a>{% if message_id %} · <a href="{% url 'admin:delivery' message_id %}">{% translate "Open the email that recorded this refusal" %}</a>{% endif %}</p>
-<p class="notice">{% translate "Clearing removes only this refusal, not any other refusal for the same address." %} {% translate "It does not resend an invitation another member of the Family already received." %}</p>
+<p class="notice">{% translate "Clearing removes only this refusal, not any other refusal for the same address." %} {% translate "It does not resend an invitation another Member of the Family already received." %}</p>
 {% comment %}Clearing acts in place (#935, #519): the form posts in place
 and the server's Post/Redirect/Get answer (this page) is swapped into this
 region, which then shows the resolution, with focus on its heading.{% endcomment %}<div id="refusal-clearance" data-in-place-region>

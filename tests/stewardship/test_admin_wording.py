@@ -211,81 +211,9 @@ KNOWN = {
     ("Status: New, In progress, Resolved", "reports/ministries.py"): 2,
     ("Status: New, In progress, Resolved", "reports/ministry_followup.py"): 2,
     ("Status: New, In progress, Resolved", "reports/ministry_followup_views.py"): 1,
-    ("Testing submissions", "accounts/admin_navigation.py"): 1,
-    ("Testing submissions", "accounts/go_live_views.py"): 2,
-    ("Testing submissions", "accounts/templates/stewardship/go-live-check.html"): 3,
-    ("Testing submissions", "accounts/templates/stewardship/go-live-families.html"): 4,
-    (
-        "Testing submissions",
-        "accounts/templates/stewardship/go-live-start-review.html",
-    ): 3,
-    ("Latest response", "accounts/templates/stewardship/financial-report.html"): 3,
-    ("Latest response", "reports/financial_documents.py"): 1,
-    ("Latest response", "reports/limitations.py"): 2,
-    ("Test recipient", "accounts/templates/stewardship/parish-settings.html"): 1,
-    ("Test recipient", "accounts/templates/stewardship/setup-mail.html"): 1,
-    ("Testing email address", "accounts/setup_forms.py"): 2,
-    ("Testing email address", "accounts/templates/stewardship/restore-review.html"): 2,
-    ("Testing email address", "accounts/templates/stewardship/setup-mail.html"): 1,
-    ("Testing email address", "accounts/templates/stewardship/setup-step.html"): 1,
-    ("Testing mailbox", "accounts/schedule_email_test.py"): 1,
-    ("Testing mailbox", "accounts/static/stewardship/ui-v1.js"): 3,
-    ("Testing mailbox", "accounts/templates/stewardship/campaign-mail.html"): 2,
-    ("Testing mailbox", "accounts/templates/stewardship/setup-mail.html"): 1,
-    ("Giving is turned on", "reports/participation_summary.py"): 1,
-    (
-        "Financial result pages",
-        "accounts/templates/stewardship/financial-report.html",
-    ): 1,
-    ("Financial page", "accounts/artwork_views.py"): 2,
-    ("Financial page", "accounts/content_forms.py"): 2,
-    ("Financial page", "accounts/templates/stewardship/artwork-settings.html"): 2,
-    (
-        "Entered by Staff for the Family",
-        "accounts/templates/stewardship/open-form-handoff.html",
-    ): 1,
-    (
-        "Entered by Staff for the Family",
-        "accounts/templates/stewardship/timeline-family-fields.html",
-    ): 2,
-    ("Entered by Staff for the Family", "reports/timelines.py"): 1,
     # The operational alert's title is also rendered by frozen SQL
     # (schema/operational_render.sql); it changes with a later migration.
     ("Family login", "jobs/operational_content.py"): 1,
-    ("member", "accounts/templates/stewardship/delivery-refusal.html"): 1,
-    ("member", "accounts/templates/stewardship/directory.html"): 1,
-    ("member", "accounts/templates/stewardship/find-family-results.html"): 1,
-    ("member", "accounts/templates/stewardship/find-family.html"): 1,
-    ("member", "accounts/templates/stewardship/user-timeline.html"): 3,
-    ("member", "reports/timelines.py"): 1,
-    ("ministry", "accounts/ministry_activity.py"): 1,
-    ("ministry", "accounts/templates/stewardship/limitations-report.html"): 1,
-    ("ministry", "accounts/templates/stewardship/limitations-worklist-filters.html"): 1,
-    ("ministry", "accounts/templates/stewardship/ministry-followup.html"): 2,
-    ("ministry", "accounts/templates/stewardship/ministry-packet.html"): 1,
-    ("ministry", "accounts/templates/stewardship/ministry-requests.html"): 1,
-    ("ministry", "accounts/templates/stewardship/ministry-worklist-export.html"): 1,
-    ("ministry", "accounts/templates/stewardship/refresh-schedule-editor.html"): 1,
-    ("ministry", "admin_cli.py"): 1,
-    ("ministry", "audit/log_descriptions.py"): 1,
-    ("ministry", "reports/hub_streams.py"): 1,
-    ("ministry", "reports/limitations.py"): 4,
-    ("staff", "accounts/setup_help.py"): 3,
-    ("staff", "accounts/templates/stewardship/logs.html"): 1,
-    ("staff", "accounts/templates/stewardship/reminder-workgroup.html"): 2,
-    ("staff", "accounts/templates/stewardship/setup-step.html"): 1,
-    ("staff", "accounts/templates/stewardship/setup.html"): 1,
-    # #2321: "staff entered them in ParishSoft by hand" is a Family-facing
-    # sentence about the parish office, not an Administrator role label.
-    ("staff", "reports/hub_census.py"): 1,
-    ("administrator", "accounts/role_refusal.py"): 1,
-    ("administrator", "accounts/setup_help.py"): 1,
-    ("administrator", "accounts/static/stewardship/ui-v1.js"): 2,
-    ("administrator", "accounts/templates/stewardship/delivery-control.html"): 1,
-    ("administrator", "accounts/templates/stewardship/report-export.html"): 1,
-    ("administrator", "accounts/templates/stewardship/setup-step.html"): 1,
-    ("administrator", "backup_drive.py"): 1,
-    ("administrator", "web/error_pages.py"): 3,
 }
 
 
@@ -512,7 +440,7 @@ def test_the_scan_reads_every_kind_of_admin_text():
     for path, strings in _admin_strings():
         counts[path.suffix[1:]] += len(strings)
     assert counts["html"] > 4000 and counts["py"] > 3000 and counts["js"] > 250
-    assert "Testing submissions" in [
+    assert "Testing responses" in [
         text for path, strings in _admin_strings() for text in strings
     ]
 

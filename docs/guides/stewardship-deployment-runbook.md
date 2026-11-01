@@ -230,7 +230,7 @@ mailing the whole parish:
    acknowledgment and choose **Send these Family tests**. If the page says
    Testing credentials are not ready, wait for the scheduler's next pass.
    At most ten such tests are in progress per campaign.
-3. Each chosen Family's real message arrives at the Testing mailbox (subject
+3. Each chosen Family's real message arrives at the Testing recipient's inbox (subject
    `[TEST]`, a banner naming the intended Family) with that Family's Testing
    code (it starts with `I`) and Testing link (`/access/test.…`). Sign in by
    the link, or by the code on the portal's home page `/`, choose **Continue
@@ -239,9 +239,9 @@ mailing the whole parish:
    mailbox. Test answers never count, never appear in reports and are
    deleted at activation.
 4. Check the daily and weekly Admin reports and a manual weekly report at the
-   Testing mailbox (they show zero participation: they count only live
+   Testing recipient's inbox (they show zero participation: they count only live
    answers), the reports and exports pages (which exclude Testing answers by
-   design), and the Go live page's Testing submissions list.
+   design), and the Go live page's Testing responses list.
 5. Before going live, move the start date back to its real date,
    send the fictional sample test again (any configuration change voids the
    earlier one as readiness evidence), and wait until every Testing message
@@ -254,7 +254,7 @@ mailing the whole parish:
 
 Moving the invitation itself into the validation window instead would send a
 Testing invitation for every Family with a deliverable email address to the
-one Testing mailbox; the chosen-Family send makes that unnecessary. The
+one Testing recipient's inbox; the chosen-Family send makes that unnecessary. The
 [chosen-Family test guide](stewardship-family-test-send.md) records the
 design.
 

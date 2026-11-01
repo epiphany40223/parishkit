@@ -25,8 +25,8 @@ REQUEST_SCHEMA = "ministry-activity-patch-v4"
 RECOVERY_SCHEMA = "operator-recovery-ministry-v4"
 
 RETIRED_MESSAGE = (
-    "The configuration's ministries section (local Ministry activity) was "
-    "removed (#1267); delete its records and try again."
+    "The configuration's local Ministry activity section was removed "
+    "(#1267); delete its records and try again."
 )
 
 

@@ -72,7 +72,7 @@ def test_directories_are_accessible_and_keep_filters_in_post(
     visible(page.get_by_role("link", name="head@example.org", exact=True))
     visible(page.get_by_text("1 Example Street", exact=False))
     search = page.get_by_label(
-        "Search by Family name, any member's name, DUID, envelope number or address"
+        "Search by Family name, any Member's name, DUID, envelope number or address"
     )
     search.fill("Private name")
     search.focus()
@@ -185,7 +185,7 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
         # No count line above the buttons (R37).
         assert page.get_by_text("estimated matching", exact=False).count() == 0
         page.get_by_label(
-            "Search by Family name, any member's name, DUID, envelope number or address"
+            "Search by Family name, any Member's name, DUID, envelope number or address"
         ).fill("Unsaved private edit")
         page.route(
             "**" + reverse("admin:family_directory_export"),
