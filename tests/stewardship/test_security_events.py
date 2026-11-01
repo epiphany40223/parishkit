@@ -122,3 +122,31 @@ def test_a_key_change_is_never_settled_by_its_own_maker():
     )
     assert not cleared(both, own, viewer_email=NEWCOMER)
     assert cleared(both, [acknowledgement(OTHER)], viewer_email=NEWCOMER)
+
+
+def test_a_match_is_never_settled_by_the_matched_person():
+    """Only an Administrator other than the matched person settles a match.
+
+    The matched account is the event's actor and the user's address its
+    target, and that user may be an Administrator among the recipients. Its
+    own acknowledgement, through the match (the target address) or after the
+    match ended (its sign-in address), and one from the user's address clear
+    the event for that reader alone, even when at most one other
+    Administrator, or none, was told (#2343).
+    """
+    matched = "staff@example.org"
+    for recipients in ([matched, ACTOR], [matched]):
+        value = event(recipients, target=matched, kind="address_matched")
+        for own in (
+            acknowledgement(matched, own=True),
+            acknowledgement("person@personal.example", own=True),
+            acknowledgement(matched),
+        ):
+            assert cleared(value, [own], viewer_email=own["email"])
+            for viewer in (ACTOR, OTHER, NEWCOMER):
+                assert not cleared(value, [own], viewer_email=viewer)
+    told = event([matched, ACTOR], target=matched, kind="address_matched")
+    for viewer in (matched, OTHER, NEWCOMER):
+        assert cleared(told, [acknowledgement(ACTOR)], viewer_email=viewer)
+    alone = event([matched], target=matched, kind="address_matched")
+    assert cleared(alone, [acknowledgement(NEWCOMER)], viewer_email=OTHER)
