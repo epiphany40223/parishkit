@@ -342,7 +342,7 @@ def duid(heading, value):
     """A name cell's DUID line (#2124): muted, under the name, its heading
     hidden but read."""
     return (
-        '<span class="stack-line cell-detail"><span class="visually-hidden">'
+        '<span class="stack-line cell-detail nowrap"><span class="visually-hidden">'
         f"{heading} </span>{value}</span>"
     )
 

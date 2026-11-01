@@ -33,7 +33,7 @@
     <th scope="row"><a href="{% url 'admin:background_task_page' task.id %}">{{ task.name }}</a>{% if task.refresh_label %} ({{ task.refresh_label }}){% endif %}</th>
     <td>{% include "stewardship/task-state.html" with state=task.state %}</td>
     <td>{{ task.phase_text }}</td>
-    <td>{% if task.progress.total %}{{ task.progress.display|out_of }}<br><progress value="{{ task.progress.current }}" max="{{ task.progress.total }}" aria-label="{% translate 'Task progress' %}"></progress>{% else %}{% translate "Waiting for progress details." %}{% endif %}</td>
+    <td>{% if task.progress.total %}{{ task.progress.display|out_of|keep_numbers }}<br><progress value="{{ task.progress.current }}" max="{{ task.progress.total }}" aria-label="{% translate 'Task progress' %}"></progress>{% else %}{% translate "Waiting for progress details." %}{% endif %}</td>
     <td class="nowrap">{% if task.heartbeat_at %}<time datetime="{{ task.heartbeat_at }}" data-local-instant data-compact>{{ task.heartbeat_at }}</time>{% else %}—{% endif %}</td>
     <td class="nowrap"><time datetime="{{ task.created_at }}" data-local-instant data-compact>{{ task.created_at }}</time></td>
   </tr>{% empty %}<tr><td colspan="6">{% translate "No tasks match this view. Choose All in Task state to include finished tasks." %}</td></tr>{% endfor %}

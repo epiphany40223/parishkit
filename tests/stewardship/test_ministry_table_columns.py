@@ -137,7 +137,10 @@ def test_campaign_ministries_review_names_ministries_without_duids():
     )
     assert in_order(html, ">Ministry</th>", ">Submitted answers")
     assert "<li>Choir</li>" in html
-    row = '<th scope="row">Food pantry</th><td>1</td><td>1</td>'
+    row = (
+        '<th scope="row">Food pantry</th>'
+        '<td class="numeric">1</td><td class="numeric">1</td>'
+    )
     assert row in html
     assert "DUID" not in html
 

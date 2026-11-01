@@ -94,6 +94,22 @@ def test_preview_and_settle_in_place(page, component_origin, width):
     )
 
 
+@pytest.mark.parametrize("width", [320, 1280])
+def test_a_rows_two_buttons_keep_their_size_and_gap(page, component_origin, width):
+    """The Actions cell's stacked buttons never touch and keep the 44px
+    target, although the whole-words data-table shrinks its buttons (#2342)."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + PAGE)
+    row = page.locator(f"{REGION} tr[data-restore-group]").first
+    assume = row.get_by_role("button", name="Assume these were sent", exact=True)
+    resend = row.get_by_role("button", name="Send these again", exact=True)
+    first, second = assume.bounding_box(), resend.bounding_box()
+    assert first["height"] >= 44 - 0.5
+    assert second["height"] >= 44 - 0.5
+    # Stacked, with at least a .5rem (8px) gap between them.
+    assert second["y"] - (first["y"] + first["height"]) >= 8 - 0.5
+
+
 def test_refusals_answer_inside_the_region(page, component_origin):
     """An ended session says to sign in again in place, moving nothing."""
     _route(

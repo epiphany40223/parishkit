@@ -160,19 +160,33 @@ Y" also show a percentage; percentages use one fractional digit unless they
 are exact integers. A zero denominator displays an em dash rather than a
 misleading percentage.
 
-**Money on one line.** A shown amount of money never breaks across lines: an
-amount up to "$99,999.99" (and any larger one) stays on one line in every
-Admin table at laptop width, whether it fills its cell or sits in mixed text
-("Monthly ($8,333.33 each)"). The words and names around it wrap first, and
-a table that then cannot fit a phone scrolls sideways inside its own
-focusable, named box (see
-[table fit and row height](#table-fit-and-row-height)), never the page.
-Downloads keep plain text. **Why.** "$3,000.00" broken after "$3," reads as
-two figures (Administrator, 2026-10-26). **Shared code.** The `keep_money`
-template filter (each amount in a `money` span, `white-space: nowrap` in
-`ui-v1.css`) on every money cell that is not already `nowrap` in a
-`whole-words` table; the money-width browser test (`test_money_width.py`). **Precedent.**
-[#2258](https://github.com/epiphany40223/parishkit/issues/2258).
+**Numbers on one line.** A shown number never breaks across lines: an
+amount of money, a count, a percentage, or a numeric identifier such as a
+Family or Member DUID or an envelope number. An amount up to "$99,999.99"
+(and any larger one), a count up to "9,999" and a seven-digit DUID each stay
+on one line in every Admin table at laptop width, whether the number fills
+its cell or sits in mixed text ("Monthly ($8,333.33 each)") or on a line of
+its own under a name. The words and names around it wrap first, and a table
+that then cannot fit a phone scrolls sideways inside its own focusable,
+named box (see [table fit and row height](#table-fit-and-row-height)),
+never the page. Downloads keep plain text. **Why.** "$3,000.00" broken
+after "$3," reads as two figures (Administrator, 2026-10-26), and so does a
+Member DUID broken six digits and one (Administrator, 2026-11-01).
+**Shared code.** A table cell that holds one number is `numeric`, which
+keeps it on one line in any table (and right-aligns it in a `data-table`);
+a number on a line of its own that is not a whole cell, such as the DUID
+`stack-line` under a name, is `nowrap`; money in mixed or plain text goes
+through the `keep_money` template filter (each amount in a `money` span,
+`white-space: nowrap` in `ui-v1.css`), unless its cell is already `nowrap`
+in a `whole-words` table; a count or percentage in a table cell's mixed
+text ("1,234 emails delivered", "3 out of 10 (30%)") goes through the
+`keep_numbers` template filter (each number in a `num` span, also
+`white-space: nowrap`). The money-width and number-width browser tests
+(`test_money_width.py`, `test_number_width.py`) and the numeric-cell guard
+(`test_number_cells.py`). **Precedent.**
+[#2258](https://github.com/epiphany40223/parishkit/issues/2258) (money),
+[#2342](https://github.com/epiphany40223/parishkit/issues/2342) (every
+number).
 
 **Money inputs.** Every field that takes an amount of money shows a "$"
 attached before it: a visual prefix the field sits beside, not text the reader
@@ -5576,7 +5590,7 @@ text that goes with one sits in a [toggletip](#page-help) beside it. A chip
 names its item by a short label where the item has one, so a cell can show
 every chip; the chips may wrap onto a second line within their cell, making
 that row taller, which is acceptable where most rows have one chip. So a
-chip cell is not `nowrap`; money ([numbers and money](#numbers-and-money))
+chip cell is not `nowrap`; numbers ([numbers on one line](#numbers-and-money))
 and date cells still never wrap.
 Where two related values would each need a column, one cell may stack them,
 one line each, when the heading names them in the same order and each value
@@ -5596,10 +5610,10 @@ its box, keeps its Actions column in view at the box's end while the rest
 scrolls sideways beneath it (`sticky-actions`), with its icons two to a
 line so it takes little of a narrow box. A money cell may show whole dollars,
 rounded half away from zero, where cents would widen a table; screen readers
-hear the exact amount, and exports and totals keep the cents. Money
-and date cells never wrap (`nowrap`), and a cell that holds only money is
-right-aligned (`numeric`) in tabular figures; money inside a mixed text cell
-stays left-aligned with its text. **Why.** A page that scrolls sideways hides
+hear the exact amount, and exports and totals keep the cents. Number
+and date cells never wrap (`numeric`, `nowrap`), and a cell that holds only
+a number (money, a count, a DUID) is right-aligned (`numeric`) in tabular
+figures; money inside a mixed text cell stays left-aligned with its text. **Why.** A page that scrolls sideways hides
 its own controls; tall rows make a table unscannable; a sum or a date broken
 across two lines is easy to misread. **Shared code.** The `table-scroll`
 class in `ui-v1.css`, and the `data-table whole-words` classes with their

@@ -1,7 +1,7 @@
 """The Users page's ParishSoft Ministry leaders table in real browsers (#952 slice 6).
 
 Below the users table: a selection column, Member, Member DUID, Email,
-Ministries led (a short list, the whole list in its tooltip) and Role. The
+Ministries led (the whole list, #2342) and Role. The
 bulk bar is the shared one (table-selection.html, #879), its reason visible
 text in a reserved line (Administrator decision B2): ticking a row enables
 Import selected and hides the reason without moving anything. With nobody
@@ -92,12 +92,10 @@ def test_columns_follow_the_shared_order(page, component_origin):
     assert region(page).locator("tbody td.numeric").all_inner_texts() == [
         str(row["member_duid"]) for row in LEADERS
     ]
-    # A long Ministry list is cut short, whole in its tooltip.
-    many = region(page).locator(".cell-ellipsis[title^='Choir, Food pantry']")
-    assert many.inner_text() == "Choir, Food pantry and 3 more"
-    assert many.get_attribute("title") == (
-        "Choir, Food pantry, Lectors, Ushers, Youth ministry"
-    )
+    # A long Ministry list is shown whole, never cut short (#2342).
+    assert region(page).locator(".name-list").all_inner_texts() == [
+        ", ".join(row["ministry_names"]) for row in LEADERS
+    ]
     visible(page.get_by_text("2 ParishSoft Ministry leaders have no email address"))
 
 

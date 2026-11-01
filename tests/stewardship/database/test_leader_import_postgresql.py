@@ -383,11 +383,11 @@ def test_the_page_lists_the_leaders_below_the_users(deployment):
     for email in LISTED:
         assert f'name="email" value="{email}"' in region
     assert "staff@example.org" not in region and "inactive@example.org" not in region
-    # The Ministries cell names them by name, the full list in its tooltip
-    # (Ministry 9 has the leader fixture's plain name).
+    # The Ministries cell names every one, each name one unit (#2342;
+    # Ministry 9 has the leader fixture's plain name).
     assert (
-        '<span class="cell-ellipsis" title="Choir, Ministry 9">Choir, Ministry 9'
-        in region
+        '<span class="name-list"><span class="nowrap">Choir,</span> '
+        '<span class="nowrap">Ministry 9</span></span>' in region
     )
     assert '<td class="numeric">901</td>' in region
     assert "Ministry leader" in region

@@ -649,6 +649,34 @@ def keep_money(value):
     return mark_safe(MONEY_AMOUNT.sub(r'<span class="money">\g<0></span>', text))
 
 
+# A markup tag or HTML character entity (left as it is, so digits in an
+# attribute or in an entity such as "&#x27;" are never wrapped), or one
+# shown number: a count, a decimal or a percentage as the number,
+# percentage and out_of filters write them ("9,999", "12.5%"), with any
+# minus and "$" kept with it.
+NUMBER_OR_TAG = re.compile(r"(<[^>]*>|&#?\w+;)|-?\$?\d[\d,]*(?:\.\d+)?%?")
+
+
+@register.filter
+def keep_numbers(value):
+    """Text with each number in it kept on one line (#2342).
+
+    Usage: ``shown=row.delivered|number|keep_numbers`` in a blocktranslate,
+    or ``{{ task.progress.display|out_of|keep_numbers }}``. Each number is
+    wrapped in ``<span class="num">`` (``white-space: nowrap`` in ui-v1.css),
+    so main's ``overflow-wrap: anywhere`` never breaks a count in a squeezed
+    table cell's mixed text, while the words around it still wrap
+    (ui-conventions "Numbers on one line"). Plain text is escaped first;
+    text already marked safe keeps its markup untouched.
+    """
+    return mark_safe(
+        NUMBER_OR_TAG.sub(
+            lambda m: m[1] or f'<span class="num">{m[0]}</span>',
+            str(conditional_escape(value)),
+        )
+    )
+
+
 @register.filter
 def edited_chips(value):
     """A decision's words with "Accepted (edited)" drawn as "Accepted" and

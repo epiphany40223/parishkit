@@ -12,8 +12,10 @@
   moves to the region's heading and the outcome is announced.
   The table scrolls horizontally inside its own focusable region on a phone
   (ui-conventions "Table fit and row height"), since a send's due time
-  never wraps (#2179).
-{% endcomment %}<div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Sends with held emails' %}"><table>
+  never wraps (#2179), nor does a count (#2342). It is a whole-words table,
+  so its headings and the inert-mail aside wrap only between words, and a
+  count growing from 0 to 12 never changes a heading's lines on a phone.
+{% endcomment %}<div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Sends with held emails' %}"><table class="data-table whole-words">
 <thead><tr><th scope="col">{% translate "Send" %}</th><th scope="col" class="numeric">{% translate "Not decided" %}</th><th scope="col" class="numeric">{% translate "Assumed sent" %}</th><th scope="col" class="numeric">{% translate "Send again" %}</th><th scope="col">{% translate "Actions" %}</th></tr></thead>
 <tbody>{% for group in groups %}<tr data-restore-group="{{ group.definition_id }}"{% if step.group.definition_id == group.definition_id %} aria-current="true"{% endif %}>
 <th scope="row">{% if group.kind == "initial" %}{% translate "Invitation" %}{% else %}{% translate "Reminder" %}{% endif %}, {% if group.due_at %}{% translate "due" %} <time class="nowrap" datetime="{{ group.due_at|instant }}" data-local-instant data-compact>{{ group.due_at|instant }}</time>{% else %}{% translate "schedule removed" %}{% endif %}</th>
