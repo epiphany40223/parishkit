@@ -1,6 +1,7 @@
-{% load i18n %}{# The Compared with past campaigns panel of a saved report page (#1018 slice 7): the retained section (``comparison``), its data line, its figures as stat tiles and its link to the Campaign comparison report (reports/digest_presentation.py). The saved daily report and a report email's saved copy (#1946) share it. #}<section class="panel" aria-labelledby="digest-comparison-heading" data-digest-comparison>
+{% load i18n %}{# The Compared with past campaigns panel of a saved report page (#1018 slice 7): the retained section (``comparison``), its data line, its figures as stat tiles and its link to the Campaign comparison report (reports/digest_presentation.py). The saved daily report and a report email's saved copy (#1946) share it; only the copy passes ``comparison_population``, the line its email showed (#2331). #}<section class="panel" aria-labelledby="digest-comparison-heading" data-digest-comparison>
 <h2 id="digest-comparison-heading">{% translate "Compared with past campaigns" %}</h2>
 <p>{{ comparison_line }}</p>
+{% if comparison_population %}<p data-report-population>{{ comparison_population }}</p>{% endif %}
 {% for chart in comparison.charts %}<section aria-labelledby="{{ chart.key }}-heading"><h3 id="{{ chart.key }}-heading">{{ chart.title }}</h3>
 {% include 'stewardship/components/chart.html' %}</section>{% endfor %}
 {% include "stewardship/components/stat-tiles.html" with tiles=comparison_tiles tiles_label=_("Headline figures") %}

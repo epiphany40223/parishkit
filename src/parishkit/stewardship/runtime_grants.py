@@ -882,6 +882,13 @@ CLOSURE_COLUMNS = {
         "stewardship_reports",
         "0052_series_in_force",
     ),
+    # A Staff revision's review decision (0126, #1685), which the general
+    # worker's report email requests read (v2, 0196, #2331) to leave out
+    # the Ignored ones.
+    ("stewardship_information_revision", "review_decision"): (
+        "stewardship_responses",
+        "0013_information_limitation_review",
+    ),
 }
 
 

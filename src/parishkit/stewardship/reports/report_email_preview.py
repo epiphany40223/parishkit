@@ -12,7 +12,10 @@ read now:
 - the open requests and the funnel come from the readers a send uses;
 - the fact blocks read one ready fact generation, never built or pinned
   here (``select_facts``): the one a send would build now when it is ready,
-  else the newest ready one, cut at the report day and marked Updating.
+  else the newest ready one, cut at the report day and marked Updating. It
+  counts today's campaign Families, as a send's does (#2331); the Compared
+  with past campaigns block reads a historical generation chosen the same
+  way.
 
 Nothing is written but the caller's audit event: no occurrence, outbox
 row, snapshot or fact pin. The page's content policy admits no inline
@@ -49,6 +52,8 @@ from .models import CampaignDailyFactSet
 from .report_blocks.compiler import compile_report
 from .report_document import ReportDocument
 from .report_email_capture import (
+    COMPARISON_BLOCK,
+    COMPARISON_SCOPE,
     OBSERVE,
     comparison_for,
     compile_report_email,
@@ -57,8 +62,9 @@ from .report_email_capture import (
 from .report_email_cohort import frozen_cohort
 from .report_email_inputs import report_days, send_inputs
 
-# The population a report's fact blocks count (the preparations' scope).
-SCOPE = "historical"
+# The population a report's fact blocks count (the preparations' scope,
+# today's campaign Families since #2331).
+SCOPE = "current"
 # The blocks whose drawing carries an inline image the dialog redraws.
 IMAGE_BLOCKS = ("participation_charts", "compared_with_past_campaigns")
 # How long a preview's image addresses stay valid: a dialog left open
@@ -86,7 +92,8 @@ class Preview:
     generation drawn (None without one); ``observed_at`` is the database
     clock the as-of moment was derived from, and ``watermark`` the live
     submission watermark observed with it, which holds the report end
-    (#2298).
+    (#2298). ``comparison_fact_set_id`` is the historical generation the
+    Compared with past campaigns block drew (None without one, #2331).
     """
 
     subject: str
@@ -102,6 +109,7 @@ class Preview:
     covered_dates: tuple
     mode: str
     watermark: int | None = None
+    comparison_fact_set_id: UUID | None = None
 
 
 def _observe(campaign_id):
@@ -118,14 +126,17 @@ def _observe(campaign_id):
 def select_facts(campaign_id, expected):
     """The ready generation a preview draws, and whether it is Updating.
 
-    ``expected`` are the inputs a send would record now (``FactInputs``).
-    Their exact ready generation is current; otherwise the newest ready
-    generation of the campaign's scope (by source, then responses, then
-    last day) is drawn, Updating. Returns ``(fact_set_id, updating)``,
-    ``(None, True)`` when no generation is ready.
+    ``expected`` are the inputs a send would record now (``FactInputs``),
+    in the scope the block reads. Their exact ready generation is current;
+    otherwise the newest ready generation of the campaign in that scope (by
+    source, then responses, then last day) is drawn, Updating. Returns
+    ``(fact_set_id, updating)``, ``(None, True)`` when no generation is
+    ready.
     """
     ready = CampaignDailyFactSet.objects.filter(
-        campaign_id=campaign_id, population_scope=SCOPE, state="ready"
+        campaign_id=campaign_id,
+        population_scope=expected.population_scope,
+        state="ready",
     )
     exact = (
         ready.filter(
@@ -172,8 +183,11 @@ def _participation(fact_set_id, report_day, *, parish_name, requested_at):
     """
 
     def admit(action, inputs):
-        """Only a read of this campaign's report scope."""
-        return action == "read" and inputs.population_scope == SCOPE
+        """Only a read of a report's scope, or its comparison's."""
+        return action == "read" and inputs.population_scope in (
+            SCOPE,
+            COMPARISON_SCOPE,
+        )
 
     try:
         with read_fact_set(fact_set_id, admit=admit) as facts:
@@ -206,6 +220,7 @@ def build_document(
     fact_set_id=None,
     lists=True,
     watermark=None,
+    comparison_fact_set_id=None,
 ):
     """The report's source as a send now would draw it (``ReportDocument``).
 
@@ -216,7 +231,9 @@ def build_document(
     which only the dialog's email draws, never its redrawn images.
     ``watermark`` is the observed submission watermark the report end is
     counted under (#2298), the Preview's own for its redrawn images; None
-    counts every live response.
+    counts every live response. ``comparison_fact_set_id`` is the
+    historical generation the Compared with past campaigns block reads
+    (None: the block is left out).
     """
     projection = campaign.active_configuration
     inputs = send_inputs(
@@ -261,11 +278,23 @@ def build_document(
         held=inputs.held,
         date_format=version.parish.date_format,
     )
-    if "compared_with_past_campaigns" in keys and participation is not None:
+    cohort = None
+    if (
+        COMPARISON_BLOCK in keys
+        and inputs.through_date is not None
+        and comparison_fact_set_id is not None
+    ):
+        cohort = _participation(
+            comparison_fact_set_id,
+            inputs.through_date,
+            parish_name=version.parish.name,
+            requested_at=observed_at,
+        )
+    if cohort is not None:
         local_day = inputs.as_of.astimezone(ZoneInfo(projection.timezone)).date()
         document = replace(
             document,
-            comparison=comparison_for(participation, projection, values, local_day),
+            comparison=comparison_for(cohort, projection, values, local_day),
         )
     return document
 
@@ -299,7 +328,7 @@ def preview_report(values, system, campaign, *, public_origin):
         campaign_id=campaign.pk,
         watermark=watermark,
     )
-    fact_set_id, updating = None, False
+    fact_set_id, updating, comparison_id = None, False, None
     if inputs.through_date is not None:
         expected = FactInputs(
             campaign.pk,
@@ -311,6 +340,13 @@ def preview_report(values, system, campaign, *, public_origin):
             review_watermark=reviews,
         )
         fact_set_id, updating = select_facts(campaign.pk, expected)
+        if any(entry["block"] == COMPARISON_BLOCK for entry in values["blocks"]):
+            comparison_id, comparison_updating = select_facts(
+                campaign.pk, replace(expected, population_scope=COMPARISON_SCOPE)
+            )
+            # The comparison's figures are Updating too when its exact
+            # historical generation is not ready (or none is).
+            updating = updating or comparison_updating
     version = system.active_configuration
     document = build_document(
         values,
@@ -321,6 +357,7 @@ def preview_report(values, system, campaign, *, public_origin):
         source_id=source_id,
         fact_set_id=fact_set_id,
         watermark=watermark,
+        comparison_fact_set_id=comparison_id,
     )
     if document.participation is None and fact_set_id is not None:
         # The generation vanished or ends before the campaign's first day.
@@ -349,6 +386,7 @@ def preview_report(values, system, campaign, *, public_origin):
         covered_dates=document.covered_dates,
         mode=system.mode,
         watermark=watermark,
+        comparison_fact_set_id=comparison_id,
     )
 
 
@@ -360,7 +398,8 @@ def _salt(actor_id):
 def image_token(preview, values, campaign_id, actor_id):
     """A short-lived signed recipe for the preview's chart images, or None.
 
-    It names the generation, the observed clock and submission watermark
+    It names the generation (and the comparison's historical one, #2331),
+    the observed clock and submission watermark
     (so a response entered after the close between the Preview and the
     image's fetch cannot move its report day, #2298) and the image-drawing
     blocks with their options, so ``preview_image`` draws the same images
@@ -376,6 +415,9 @@ def image_token(preview, values, campaign_id, actor_id):
         {
             "c": str(campaign_id),
             "f": str(preview.fact_set_id),
+            "h": None
+            if preview.comparison_fact_set_id is None
+            else str(preview.comparison_fact_set_id),
             "t": preview.observed_at.isoformat(),
             "w": preview.watermark,
             "a": values["as_of"],
@@ -384,6 +426,18 @@ def image_token(preview, values, campaign_id, actor_id):
         salt=_salt(actor_id),
         compress=True,
     )
+
+
+def _comparison_generation(recipe):
+    """The historical generation an image recipe's comparison chart reads.
+
+    A recipe signed since #2331 names it (``h``, None without one). One
+    signed before has no ``h``; its own generation (``f``) was the
+    historical one then, which its comparison read, so a dialog opened
+    before the deploy keeps its comparison chart.
+    """
+    found = recipe["h"] if "h" in recipe else recipe["f"]
+    return UUID(found) if found else None
 
 
 def preview_image(token, actor_id, system, campaign, name):
@@ -415,6 +469,7 @@ def preview_image(token, actor_id, system, campaign, name):
         fact_set_id=UUID(recipe["f"]),
         lists=False,
         watermark=recipe.get("w"),
+        comparison_fact_set_id=_comparison_generation(recipe),
     )
     if document.participation is None:
         raise LookupError("The preview's facts are no longer kept.")

@@ -210,20 +210,31 @@ def _wait_for_settlement(execution):
         )
 
 
-def _capture(execution, public_origin):
-    """Build or reuse the facts, compile the email, then commit the snapshot."""
+def _report_facts(execution, *, comparison=False):
+    """One generation the send reads, built or reused and made ready; or None.
+
+    ``comparison`` names the historical generation of the Compared with
+    past campaigns block rather than the one the snapshot pins (#2331).
+    """
     with execution.effect():
-        facts = begin_report_facts(execution.claim)
+        facts = begin_report_facts(execution.claim, comparison=comparison)
     if facts is not None and facts.state != "ready":
         materialize_fact_set(
             facts.pk,
             execution.claim,
             admit=partial(admit_report_facts, execution.claim),
         )
+    return facts
+
+
+def _capture(execution, public_origin):
+    """Build or reuse the facts, compile the email, then commit the snapshot."""
+    facts = _report_facts(execution)
+    comparison = _report_facts(execution, comparison=True)
     with execution.effect():
         row = bound_preparation(_status(lock_task_claim(execution.claim)))
         scope = current_preparation(row)
-        document = load_report_document(execution.claim, facts)
+        document = load_report_document(execution.claim, facts, comparison)
         values = ScheduleRevision.objects.values_list("values", flat=True).get(
             pk=row.revision_id
         )

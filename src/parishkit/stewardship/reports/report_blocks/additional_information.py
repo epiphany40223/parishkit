@@ -8,6 +8,10 @@ the send's saved copy. The spec's "every open request" scope and its "N open
 requests" heading replace today's selection only when the digests are
 converted (report-emails spec, "Delivery plan", item 4); until then the
 weekly watermark still decides which rows the document holds.
+
+A report email's requests are ``OpenRequest`` rows, each with its stage, and
+its heading names the stages it adds up ("To review 10 · To handle 3",
+#2331) rather than calling them open.
 """
 
 from datetime import datetime
@@ -18,9 +22,22 @@ from django.utils.translation import ngettext
 
 from parishkit.stewardship.web.dates import format_local
 
+from ..report_document import STAGES
 from ..weekly_digest import WeeklyInformation, shorten
 from .markup import TABLE, plain, style
 from .registry import LIST, Block, Section
+
+
+def stage_heading(stages):
+    """The heading naming each stage's count: "To review 10 · To handle 3".
+
+    ``stages`` are the listed requests' stage values. Both stages are named,
+    a zero too, so the heading always says what it adds up.
+    """
+    return " · ".join(
+        f"{stage.label} {sum(value == stage.value for value in stages):,}"
+        for stage in STAGES
+    )
 
 
 def sections(document):
@@ -33,13 +50,14 @@ def sections(document):
     information, corrections = document.information, document.corrections
     # A report email lists every open request (decisions 14 and 15); the
     # Weekly digest lists what is new or current until it is converted.
-    kind = "open" if getattr(document, "open_requests", False) else f"{new} actionable"
+    if getattr(document, "open_requests", False):
+        heading = stage_heading([row.stage for row in information])
+    else:
+        heading = f"{len(information):,} {new} actionable request" + (
+            "" if len(information) == 1 else "s"
+        )
     candidates = (
-        (
-            f"{len(information):,} {kind} request"
-            + ("" if len(information) == 1 else "s"),
-            information,
-        ),
+        (heading, information),
         (
             f"{len(corrections):,} correction"
             + ("" if len(corrections) == 1 else "s")
@@ -105,7 +123,11 @@ def draw(document, frame, options):
 
 
 def capture(document, options):
-    """Each listed request: id, Family DUID and name, submitted time and text."""
+    """Each listed request: id, Family DUID and name, submitted time, text, stage.
+
+    The stage is last (since frozen file 0196, #2331): the snapshot guard
+    compares the list with ``stewardship_report_email_requests_v2``'s.
+    """
     return {
         "items": [
             [
@@ -114,6 +136,7 @@ def capture(document, options):
                 row.family_name,
                 row.submitted_at.isoformat(),
                 row.text,
+                row.stage,
             ]
             for row in document.information
         ]
@@ -125,10 +148,13 @@ def copy(data, frame):
 
     The rows keep the email's order and numbers (oldest first) and its
     shortened text; the Family's name links its Timeline when the page
-    found its campaign record (``CopyFrame.requests``).
+    found its campaign record (``CopyFrame.requests``). A send captured
+    since #2331 keeps each request's stage, so its heading names the stages
+    as the email did; an earlier send's says "N open requests", as its
+    email did.
     """
     rows = []
-    for number, (item_id, duid, name, submitted, text) in enumerate(
+    for number, (item_id, duid, name, submitted, text, *_stage) in enumerate(
         data["items"], start=1
     ):
         shown, shortened = shorten(text)
@@ -146,9 +172,12 @@ def copy(data, frame):
             }
         )
     count = len(rows)
-    heading = ngettext("%(count)s open request", "%(count)s open requests", count) % {
-        "count": f"{count:,}"
-    }
+    if all(len(item) == 6 for item in data["items"]) and data["items"]:
+        heading = stage_heading([item[5] for item in data["items"]])
+    else:
+        heading = ngettext(
+            "%(count)s open request", "%(count)s open requests", count
+        ) % {"count": f"{count:,}"}
     return {"heading": heading, "rows": rows}
 
 
