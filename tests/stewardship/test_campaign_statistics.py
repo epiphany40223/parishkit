@@ -11,10 +11,15 @@ from parishkit.stewardship.reports.statistics import (
     StatisticsUnavailable,
     calculate_statistics,
 )
+from parishkit.stewardship.reports.statistics_selection import PROJECTED
 from parishkit.stewardship.reports.workspace_views import statistics_panel
 from parishkit.stewardship.responses.financial_inputs import financial_definition
+from parishkit.stewardship.source.corpus import normalize_core
+from parishkit.stewardship.source.families import family_recipients
 
+from .campaign_families_fixture import parish
 from .financial_factory import CAMPAIGN, configuration, cursor, record
+from .test_campaign_families import ACTIVE, TODAY, advanced
 
 
 def observation(*, count=3, financial=True):
@@ -357,3 +362,28 @@ def test_source_observation_is_independent_of_later_parish_timezone():
     changed["configuration"]["timezone"] = "Pacific/Honolulu"
     assert calculate(original) == calculate(changed)
     assert calculate(original).campaign_id == UUID(original["campaign_id"])
+
+
+@pytest.mark.parametrize("rule", [None, ACTIVE, advanced([9])])
+def test_the_detached_corpus_keeps_what_family_eligibility_reads(rule):
+    """The capture's projections keep every field the Families check reads,
+    the Families rule marker included (#2338): the detached corpus gives the
+    same Family statuses as the full one, for a configured rule whose
+    Families differ from the legacy rule's as for the legacy rule."""
+    corpus = normalize_core(parish(), as_of=TODAY, families=rule)
+    detached = {
+        kind: {
+            key: {name: row.get(name) for name in fields}
+            for key, row in corpus[kind].items()
+        }
+        for kind, fields in PROJECTED.items()
+    }
+    # The rule's Families are not the legacy rule's: Portal eligibility is
+    # not "active and registered" for at least one Family.
+    differs = any(
+        row["portal_eligible"] != (row["active"] and row["parishioner"])
+        for row in corpus["family"].values()
+    )
+    assert differs is (rule is not None)
+    full = family_recipients(corpus, suppressed_addresses=frozenset())
+    assert family_recipients(detached, suppressed_addresses=frozenset()) == full
