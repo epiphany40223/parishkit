@@ -1190,7 +1190,7 @@ CLOSURE_CREATED = {
     # replaced guards.
     "public.stewardship_report_email_requests_v2(uuid,uuid,timestamp with time zone)": (
         "stewardship_reports",
-        "0054_report_email_population",
+        "0055_report_email_population",
     ),
 }
 
@@ -1922,7 +1922,7 @@ CLOSURE_REPLACED_ONLY = {
     # 0161's source pin guard, so the restore installs 0196's bodies: a
     # report email counts today's campaign Families.
     **{
-        name: (("stewardship_reports", "0054_report_email_population"), phrase)
+        name: (("stewardship_reports", "0055_report_email_population"), phrase)
         for name, phrase in (
             ("stewardship_report_email_snapshot_guard_v1", "requests_v2("),
             (
