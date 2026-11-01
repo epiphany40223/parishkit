@@ -70,3 +70,45 @@ def test_ministries_led_lists_every_name_as_one_unit():
     assert "ministries_label" not in source
     css = CSS.read_text(encoding="utf-8")
     assert re.search(r"^\.name-list \{[^}]*min-width: 12rem", css, re.M)
+
+
+def test_keep_numbers_wraps_each_number_and_escapes_the_rest():
+    """Each count, decimal and percentage is one ``num`` unit; tags and the
+    words around them are kept as they are (#2342)."""
+    from django.utils.safestring import mark_safe
+
+    from parishkit.stewardship.accounts.templatetags.stewardship import keep_numbers
+
+    def span(text):
+        """The markup keep_numbers puts around one number."""
+        return f'<span class="num">{text}</span>'
+
+    assert keep_numbers("1,234") == span("1,234")
+    assert keep_numbers("3 out of 10 (30.5%) <b>") == (
+        f"{span('3')} out of {span('10')} ({span('30.5%')}) &lt;b&gt;"
+    )
+    assert keep_numbers("None yet") == "None yet"
+    # Digits inside a tag of safe markup are never wrapped.
+    assert keep_numbers(mark_safe('<a href="/x?page=22">9,999</a>')) == (
+        f'<a href="/x?page=22">{span("9,999")}</a>'
+    )
+    css = CSS.read_text(encoding="utf-8")
+    assert re.search(r"^\.num \{ white-space: nowrap; \}", css, re.M)
+
+
+# Each table cell whose count sits in mixed text, with how often the cell
+# passes it through keep_numbers.
+MIXED_TEXT_COUNTS = {
+    "schedule-table.html": 2,
+    "schedule-settings.html": 2,
+    "background.html": 1,
+    "background-task.html": 1,
+    "components/report-sends.html": 2,
+}
+
+
+def test_counts_in_mixed_text_cells_go_through_keep_numbers():
+    """Every listed cell's counts are kept on one line (#2342)."""
+    for name, count in MIXED_TEXT_COUNTS.items():
+        source = (TEMPLATES / name).read_text(encoding="utf-8")
+        assert source.count("|keep_numbers") == count, name

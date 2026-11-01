@@ -178,7 +178,10 @@ a number on a line of its own that is not a whole cell, such as the DUID
 `stack-line` under a name, is `nowrap`; money in mixed or plain text goes
 through the `keep_money` template filter (each amount in a `money` span,
 `white-space: nowrap` in `ui-v1.css`), unless its cell is already `nowrap`
-in a `whole-words` table. The money-width and number-width browser tests
+in a `whole-words` table; a count or percentage in a table cell's mixed
+text ("1,234 emails delivered", "3 out of 10 (30%)") goes through the
+`keep_numbers` template filter (each number in a `num` span, also
+`white-space: nowrap`). The money-width and number-width browser tests
 (`test_money_width.py`, `test_number_width.py`) and the numeric-cell guard
 (`test_number_cells.py`). **Precedent.**
 [#2258](https://github.com/epiphany40223/parishkit/issues/2258) (money),

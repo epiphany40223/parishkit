@@ -1198,9 +1198,13 @@ table .nowrap, .data-table .cell-line { white-space: nowrap; }
    wraps in any table, data-table or plain; its heading may still wrap
    between words. A muted aside in the same cell (held mail's "(and 2 that
    would not be sent now)") and a toggletip bubble wrap as ordinary text.
-   A DUID on its own line under a name is a .nowrap stack-line instead. */
+   A DUID on its own line under a name is a .nowrap stack-line instead. A
+   count in a cell's mixed text ("1,234 emails delivered", "3 out of 10
+   (30%)") goes through the keep_numbers template filter, which puts each
+   number in .num, so the words around it wrap first. */
 table td.numeric, table tbody th.numeric, table tfoot th.numeric { white-space: nowrap; }
 table td.numeric :is(.help, .toggletip-bubble) { white-space: normal; }
+.num { white-space: nowrap; }
 .data-table .cell-line { display: block; }
 .data-table .cell-detail { display: block; color: var(--muted); font-size: .875rem; font-weight: 400; }
 .data-table dl.cell-pairs { display: grid; grid-template-columns: auto max-content; gap: .1rem .6rem; margin: 0; }
