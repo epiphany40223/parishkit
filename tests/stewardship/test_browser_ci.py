@@ -1350,3 +1350,60 @@ def test_the_plugin_logs_each_tests_start_and_end(selection_config, tmp_path_fac
         "START tests/x.py::t",
         "END tests/x.py::t elapsed=3.500s",
     ]
+
+
+def test_progress_state_skips_lines_cut_off_by_the_kill():
+    """A truncated START or END (no node, no elapsed=) is not reported."""
+    running, done = quality_browser.progress_state(
+        [*PROGRESS, "START ", "END tests/c.py::cut", "END tests/c.py::cut elapsed"]
+    )
+    assert running == ["tests/b.py::three"]
+    assert [node for node, _ in done] == ["tests/a.py::one", "tests/a.py::two"]
+
+
+def test_a_progress_file_with_a_cut_final_line_still_reports(probe, monkeypatch, capfd):
+    """Bytes cut mid-character decode with replacement and the kill proceeds."""
+
+    def log_progress(command):
+        """Write progress whose last line ends in half a UTF-8 character."""
+        receipt = Path(
+            next(a for a in command if a.startswith("--ci-browser-evidence=")).split(
+                "=", 1
+            )[1]
+        )
+        progress_path(receipt).write_bytes(
+            ("\n".join(PROGRESS) + "\nEND tests/c.py::\u00e9").encode()[:-1]
+        )
+
+    monkeypatch.delenv(quality_browser.PROGRESS_DIR_ENV, raising=False)
+    monkeypatch.setattr(
+        quality_browser.subprocess,
+        "Popen",
+        lambda command, **kwargs: HungPytest(command, log_progress),
+    )
+    monkeypatch.setattr(quality_browser.os, "killpg", Mock())
+    with pytest.raises(quality_browser.BudgetExhausted):
+        quality_browser.run_engine(probe, "firefox", 4, 4, 900)
+    out = capfd.readouterr().out
+    assert "  running: tests/b.py::three" in out
+    assert "2 test(s) had completed" in out
+
+
+@pytest.mark.parametrize(
+    "error", [OSError("disk full"), UnicodeDecodeError("utf-8", b"", 0, 1, "bad")]
+)
+def test_a_failing_log_copy_never_replaces_the_budget_kill(
+    probe, monkeypatch, capfd, error
+):
+    """A copy that raises is warned about; BudgetExhausted still propagates."""
+    monkeypatch.setattr(quality_browser, "keep_progress_log", Mock(side_effect=error))
+    monkeypatch.setattr(
+        quality_browser.subprocess,
+        "Popen",
+        lambda command, **kwargs: HungPytest(command),
+    )
+    monkeypatch.setattr(quality_browser.os, "killpg", Mock())
+    with pytest.raises(quality_browser.BudgetExhausted):
+        quality_browser.run_engine(probe, "firefox", 4, 4, 900)
+    out = capfd.readouterr().out
+    assert "CI_BROWSER_KILL_REPORT firefox 4/4: unavailable" in out

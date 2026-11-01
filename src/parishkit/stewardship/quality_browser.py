@@ -63,7 +63,10 @@ class BudgetExhausted(ValueError):
 
 def sidecar_lines(path):
     """The lines of a receipt sidecar the child pytest wrote, if it wrote one."""
-    return path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    if not path.exists():
+        return []
+    # errors="replace": a line cut mid-character by a kill must still read.
+    return path.read_text(encoding="utf-8", errors="replace").splitlines()
 
 
 def partition_limit(remaining, later, count, budget=JOB_SECONDS):
@@ -114,12 +117,14 @@ def progress_state(lines):
     running, done = {}, []
     for line in lines:
         kind, _, rest = line.partition(" ")
-        if kind == "START":
+        if kind == "START" and rest:
             running[rest] = None
         elif kind == "END":
-            node, _, seconds = rest.rpartition(" elapsed=")
-            running.pop(node, None)
-            done.append((node, seconds))
+            node, found, seconds = rest.rpartition(" elapsed=")
+            # A line cut off by the kill has no node or no elapsed time: skip.
+            if found and node:
+                running.pop(node, None)
+                done.append((node, seconds))
     return list(running), done
 
 
@@ -150,6 +155,21 @@ def keep_progress_log(label, lines):
         Path(directory, f"{name}.progress.log").write_text(
             "".join(f"{line}\n" for line in lines), encoding="utf-8"
         )
+
+
+def report_progress(label, what, limit, elapsed, receipt):
+    """Print the kill report and keep the progress log; never raise.
+
+    This runs while a BudgetExhausted or an interrupt is being handled, so a
+    failure here (an unreadable or unwritable file) is logged as a one-line
+    warning and must not replace the exception being handled.
+    """
+    try:
+        progress = sidecar_lines(progress_path(receipt))
+        print(kill_report(label, what, limit, elapsed, progress), flush=True)
+        keep_progress_log(label, progress)
+    except Exception as error:
+        print(f"CI_BROWSER_KILL_REPORT {label}: unavailable ({error!r})", flush=True)
 
 
 def timeout_message(limit, elapsed, failures):
@@ -245,14 +265,9 @@ def run_engine(root, engine, index=1, count=1, timeout=JOB_SECONDS):
         except subprocess.TimeoutExpired as error:
             kill_group(process)
             elapsed = time.monotonic() - started
-            progress = sidecar_lines(progress_path(receipt))
-            print(
-                kill_report(
-                    label, "partition budget ran out", timeout, elapsed, progress
-                ),
-                flush=True,
+            report_progress(
+                label, "partition budget ran out", timeout, elapsed, receipt
             )
-            keep_progress_log(label, progress)
             failures = sidecar_lines(failures_path(receipt))
             running = next(iter(sidecar_lines(running_path(receipt))), None)
             raise BudgetExhausted(
@@ -266,18 +281,13 @@ def run_engine(root, engine, index=1, count=1, timeout=JOB_SECONDS):
             # The new session no longer gets the job's interrupt signals, so
             # a cancel or interrupt here must not leave pytest running.
             kill_group(process)
-            progress = sidecar_lines(progress_path(receipt))
-            print(
-                kill_report(
-                    label,
-                    "interrupted or cancelled",
-                    timeout,
-                    time.monotonic() - started,
-                    progress,
-                ),
-                flush=True,
+            report_progress(
+                label,
+                "interrupted or cancelled",
+                timeout,
+                time.monotonic() - started,
+                receipt,
             )
-            keep_progress_log(label, progress)
             raise
         # Kept on any exit, so a failed partition's log is uploaded too.
         keep_progress_log(label, sidecar_lines(progress_path(receipt)))
