@@ -1967,7 +1967,7 @@ CLOSURE_REPLACED_ONLY = {
             "stewardship_ministry_report_v3",
         ),
         (
-            ("stewardship_reports", "0054_ministry_edit_once"),
+            ("stewardship_reports", "0057_ministry_edit_once"),
             "(VALUES (coalesce(r.reviewed_ministry_duid,r.ministry_duid))) d(duid)",
         ),
     ),

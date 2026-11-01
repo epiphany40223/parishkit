@@ -10,11 +10,9 @@ Ministry in force, alone (Administrator decision, 2026-11-01). It ends with
 a DO block that refuses to commit unless all of it is installed as declared.
 Reversing needs its own forward migration.
 
-Numbering: frozen 0198 follows the previous file in the repository-wide
-sequence on main when it was written, 0192 (late report totals, #2298,
-reports 0053), so the files apply in prefix order; a release train that
-lands 0193 to 0197 first re-points the second dependency at the migration
-that installs 0197.
+Numbering: frozen 0198 follows 0197 (financial eligibility, #2335,
+reports 0056), the previous file in the repository-wide sequence, so the
+files apply in prefix order.
 """
 
 from pathlib import Path
@@ -31,10 +29,10 @@ FROZEN_SQL = (
 
 class Migration(migrations.Migration):
     dependencies = [
-        # The reports app's previous migration (frozen 0192, #2298), so the
+        # The reports app's previous migration (frozen 0197, #2335), so the
         # app keeps one leaf; it also installs the previous frozen file, so
         # the files apply in prefix order.
-        ("stewardship_reports", "0053_late_report_totals"),
+        ("stewardship_reports", "0056_financial_eligibility"),
     ]
 
     operations = [migrations.RunSQL(FROZEN_SQL.read_text(encoding="utf-8"))]
