@@ -96,6 +96,9 @@
   <h2>{% translate "Correcting your information" %}</h2>
   <p>{% if facts.census %}{% translate "ParishSoft is the parish's record. A Family can correct its information on the form while the campaign is open. For anything else, including a request to remove information, contact the parish: the parish will tell you what it can change or remove." %}{% else %}{% translate "ParishSoft is the parish's record. To correct your information, or to ask the parish to remove it, contact the parish: the parish will tell you what it can change or remove." %}{% endif %}</p>
 
+  <h2>{% translate "About this software" %}</h2>
+  <p>{% blocktranslate trimmed %}This site runs <a href="https://github.com/epiphany40223/parishkit">ParishKit</a>, open-source software that anyone can read. The parish runs its own copy, and the site sends no information to the ParishKit project.{% endblocktranslate %}</p>
+
   {% include 'stewardship/public-contact.html' %}
   <p class="help">{% blocktranslate trimmed %}Last updated: {{ updated }}{% endblocktranslate %}</p>
 </article>{% endblock %}

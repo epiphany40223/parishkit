@@ -266,3 +266,20 @@ def test_the_terms_show_pledges_only_with_a_pledge(
 def test_the_privacy_policy_leaves_out_the_suspense_flag(client):
     """The Administrator's decision (#2360): no mention of ParishSoft's suspense."""
     assert "suspense" not in _html(client.get("/privacy/")).lower()
+
+
+@pytest.mark.parametrize("url", ["/privacy/", "/about/"])
+def test_the_pages_name_and_link_the_software(client, url):
+    """The Administrator's request (#2360): ParishKit, linked to its source.
+
+    On the Privacy policy the note sits near the bottom, before the contact
+    block and the "Last updated" line.
+    """
+    html = _html(client.get(url))
+    link = '<a href="https://github.com/epiphany40223/parishkit">ParishKit</a>'
+    assert html.count(link) == 1
+    assert "the site sends no information to the ParishKit project." in html
+    if url == "/privacy/":
+        note = html.index("<h2>About this software</h2>")
+        assert note < html.index("<h2>Contact the parish</h2>")
+        assert note > html.index("<h2>Correcting your information</h2>")

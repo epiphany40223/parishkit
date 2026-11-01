@@ -761,7 +761,9 @@ setting it describes is on; reads the source refresh makes for every campaign
 campaign to read (before setup, during a restore review, or before the first
 campaign), the page describes everything the site can collect and says so.
 The Terms of use shows its "Pledges" section on the same rule. The first
-"ParishSoft" on the Privacy policy links to the ParishSoft website. The pages
+"ParishSoft" on the Privacy policy links to the ParishSoft website, and the
+About page and the Privacy policy (in its closing "About this software" note)
+link "ParishKit" to its source repository. The pages
 name no campaign and show no Family data.
 
 **Parish values.** The pages are parish-neutral templates. The parish's name,

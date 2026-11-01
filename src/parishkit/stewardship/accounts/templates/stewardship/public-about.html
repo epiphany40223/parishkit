@@ -14,7 +14,7 @@
     <li>{% translate "Families sign in with the Family code or personal link the parish emails them. A Family sees and answers only its own form." %}</li>
     <li>{% translate "Parish staff, Administrators and Ministry leaders sign in with a Google account to see the responses they are responsible for and to follow up." %}</li>
   </ul>
-  <p>{% translate "The site runs on ParishKit Stewardship, free and open-source software written for Catholic parishes." %}</p>
+  <p>{% blocktranslate trimmed %}The site runs on <a href="https://github.com/epiphany40223/parishkit">ParishKit</a> Stewardship, free and open-source software written for Catholic parishes. The parish runs its own copy, and the site sends no information to the ParishKit project.{% endblocktranslate %}</p>
   <h2>{% translate "Your information" %}</h2>
   <ul>
     <li><a href="{% url 'public:privacy' %}">{% translate "Privacy policy" %}</a>: {% translate "what information the site uses, why, and who can see it." %}</li>
