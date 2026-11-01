@@ -226,7 +226,12 @@ def test_background_html_shows_exact_progress_and_does_not_renew_idle(
     activity = PortalSession.objects.get().last_activity_at
     response = browser.get("/admin/system/background/")
     assert response.status_code == 200
-    assert b"1,000 out of 3,000 (33.3%)" in response.content
+    # Each number is its own nowrap span (keep_numbers, #2342), so the
+    # words between them can still wrap in a squeezed cell.
+    assert (
+        b'<span class="num">1,000</span> out of <span class="num">3,000</span>'
+        b' (<span class="num">33.3%</span>)'
+    ) in response.content
     assert b"data-local-instant" in response.content
     assert PortalSession.objects.get().last_activity_at == activity
     assert response["Cache-Control"] == "no-store"
