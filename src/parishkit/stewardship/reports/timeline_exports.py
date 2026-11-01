@@ -171,7 +171,7 @@ def create_timeline_export(
         principal = authorize(store, user_id)
         if not _full(principal):
             raise PermissionError(
-                "The Family timeline export is for Administrators and Staff."
+                "The Timeline export is for Administrators and Staff."
             )
         admit_campaign(campaign_id, mutating=True)
         return principal

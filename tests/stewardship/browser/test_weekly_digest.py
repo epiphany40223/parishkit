@@ -62,11 +62,13 @@ def test_weekly_report_shows_the_response_funnel(
     visible(page.get_by_role("link", name="Next page"))
     if testing:
         assert "This report was generated in Testing mode." in main.inner_text()
-        assert "Testing digests leave out the response funnel." in main.inner_text()
+        assert (
+            "Testing report emails leave out the response funnel." in main.inner_text()
+        )
         assert page.locator("[data-digest-funnel]").count() == 0
     else:
         assert "generated in Testing mode" not in main.inner_text()
-        assert "Testing digests leave out" not in main.inner_text()
+        assert "Testing report emails leave out" not in main.inner_text()
         funnel = page.locator("[data-digest-funnel]")
         visible(funnel.get_by_role("heading", name="Response funnel"))
         assert funnel.locator("tbody tr").count() == 4

@@ -109,7 +109,7 @@ Implementation tracking: [plans](../../plans/stewardship/README.md) and
   version was started.
 - **Campaign-local day**: midnight through the instant before the following
   midnight in the Campaign's IANA timezone snapshot. Timestamps remain UTC in
-  storage. The mutable Parish timezone is used for non-campaign presentation
+  storage. The mutable Parish time zone is used for non-campaign presentation
   and is only the fallback zone for a new draft when the browser reports none
   it can use.
 - **Admin**: a user with the Administrator role. Administrator implies every
@@ -236,7 +236,7 @@ when creating it, starting on the browser's zone (see the admin portal's
 Admins may edit that campaign value while it remains `draft`. Production
 readiness resolves boundaries and future schedule instants from it and locks it
 for the remainder of the campaign's life, including closed, archived, and
-historical reporting. Changing the Parish timezone later affects only general
+historical reporting. Changing the Parish time zone later affects only general
 presentation and subsequently created drafts; it never rebuckets or reschedules
 an existing campaign. A `scheduled` campaign must use Cancel go-live
 to return to `draft` before its timezone can change.

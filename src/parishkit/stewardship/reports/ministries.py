@@ -80,7 +80,7 @@ ZONE_MESSAGE = (
 )
 # A Ministry an Administrator removed from a live campaign whose requests are
 # kept (#342); SQL marks it in_campaign false.
-NOT_IN_CAMPAIGN = "No longer in this campaign"
+NOT_IN_CAMPAIGN = "Removed from this campaign"
 # Outcome labels by request kind (#1132), shared by every screen, export and
 # packet, so they always agree. The stored code never changes: a leave
 # request's `declined` means the Member did not leave, so it reads "Stayed in

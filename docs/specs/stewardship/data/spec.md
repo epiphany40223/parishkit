@@ -1800,7 +1800,7 @@ mark By hand items resolved externally; only an Administrator publishes
 ### Content and email templates
 
 Named campaign content slots have immutable versions. Required slots include
-Family login help, pre-start, post-end, Family census introduction, Member
+Family sign-in help, pre-start, post-end, Family census introduction, Member
 census introduction, Ministry introduction, financial introduction,
 additional-information prompt, review/attestation introduction, Thank You page,
 access-denied contact help, and submission-confirmation text. Empty optional

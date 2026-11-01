@@ -2994,7 +2994,7 @@ At minimum, end-to-end tests demonstrate:
    guarded pre-start withdrawal cancels future live work, returns atomically to
    Testing/draft, and unlocks structural settings, while an active campaign and
    unresolved provider-submitting/delivery-unknown work cannot be withdrawn.
-   Production readiness locks the Campaign timezone snapshot; later Parish
+   Production readiness locks the Campaign time zone snapshot; later Parish
    timezone changes do not alter its boundaries, schedules, report emails, or
    historical report buckets.
 4. Full refresh success, interrupted/invalid load retaining prior truth,

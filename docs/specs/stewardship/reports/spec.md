@@ -1950,7 +1950,7 @@ zone, keeps its campaign-zone days and is retried unchanged. The export pane
 posts no dates; a pane drawn before #1888 still posts its empty ones, which
 are dropped unread. A file whose capture has no dates names no date range:
 its "Filters and sort" leaves out the empty days and zone, and it has no
-"Campaign date-filter timezone" line; a dated capture keeps both.
+"Campaign date-filter time zone" line; a dated capture keeps both.
 
 Every decision is checked against the request's version the row showed; a
 request someone else changed first is left as it is and the notice says so
@@ -2095,7 +2095,7 @@ The list filtered to Families no campaign mail can reach
 adds Phone numbers for follow-up calls, before Family head emails. In the
 [shared words](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft),
 ParishSoft status, the page's badge in a column of its own, reads
-"Inactive in ParishSoft" for a Family no longer active in ParishSoft (its
+"No longer in this campaign" for a Family that has left the campaign (its
 name stays in Family) and "Not in ParishSoft" for one the data no longer
 has (Family is blank); it is blank for every other Family. The PDF is the
 [shared design](#file-design)'s table: the columns share the page width, and long cells and headings wrap, so a file
@@ -2192,15 +2192,16 @@ rows are active Families only, and the page header reads "Active registered
 Families from ParishSoft data as of *time*". Under every other choice the
 header reads "Families from ParishSoft data as of *time*" and the rows are
 every campaign Family the funnel selects, so the matching count equals the
-[dashboard](#response-dashboard)'s figure. A campaign Family the current
-ParishSoft data no longer lists as active and registered is then listed too,
-marked with the shared **Inactive in ParishSoft** badge beside its name. Its
+[dashboard](#response-dashboard)'s figure. A Family that has left the
+campaign is then listed too, marked with the shared **No longer in this
+campaign** badge beside its name. Its
 name and envelope number come from the current data when that data still has
 the Family; otherwise the name cell holds only the **Not in ParishSoft**
 badge
 ([Members and Families no longer in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)).
 Campaign mail reaches it neither way: its email availability reads the same
-words as its name cell ("Inactive in ParishSoft" or "Not in ParishSoft"), it
+words as its name cell ("No longer in this campaign" or "Not in
+ParishSoft"), it
 counts as reachable by neither email nor postal mail, and the postal mail
 merge leaves it out when mailing columns are on, since that list covers only
 the Families postal mail is for
@@ -2496,13 +2497,13 @@ is in By Ministry. Rejected: the two stat tiles with resolved counts
 that #1676 first proposed, since the worklist would remove them again.
 
 **By Ministry** has the columns Ministry, Join requests, Leave requests and
-Unresolved (and, for Staff and Administrators, Leaders, described below),
+To review (and, for Staff and Administrators, Leaders, described below),
 with one row for every Ministry in the reader's scope. It does
 not follow the filters, because it is the way to choose one Ministry. The
 Ministry name is the row header and shows no Ministry DUID
 ([#1123](https://github.com/epiphany40223/parishkit/issues/1123)). Its
 counts are the summary selection's current counts: join requests and leave
-requests of any status, and unresolved requests of either kind. Counts use
+requests of any status, and requests of either kind still to review. Counts use
 the latest live request state. Requests for
 [Members no longer in ParishSoft](../admin-portal/spec.md#follow-up-workflows)
 are left out for everyone (#1217).
@@ -2511,9 +2512,8 @@ Each count that is not zero applies that Ministry and request type to the
 worklist below in place, when the reader may follow up that Ministry. It does
 not reload the page or jump to the top, and the filters then show what it
 applied. A join count sets Request to Join, and a leave count sets it to
-Leave; both set Stage to Every stage. An Unresolved count sets Request to
-Join or leave and Stage to To review, since an unresolved request is one
-still to review. Each count also clears the search. A count is also an
+Leave; both set Stage to Every stage. A To review count sets Request to
+Join or leave and Stage to To review. Each count also clears the search. A count is also an
 ordinary link carrying only the worklist's closed link filters
 (`?ministry=<DUID>&kind=join&stage=all` and the like; see
 [follow-up workflows](../admin-portal/spec.md#follow-up-workflows)), so
@@ -2527,7 +2527,7 @@ table. A long list scrolls inside a bounded box. By Ministry is redrawn with
 every in-place refresh, so the change a decision makes shows in its counts.
 
 **Leaders** ([#1594](https://github.com/epiphany40223/parishkit/issues/1594)).
-Staff and Administrators see one more column, Leaders, after Unresolved, so
+Staff and Administrators see one more column, Leaders, after To review, so
 they can tell which Ministries' requests nobody but Staff will work. A
 Ministry leader never sees it, on the page or from the command line. Each
 cell is one short status, shown as a
@@ -2547,8 +2547,8 @@ counts once per email address; an address that several leader
 Members list is one leader. A user counts when its role is Ministry leader,
 Staff or Administrator, the roles that give a leader's Ministries; a sign-in
 counts when it opened a session, as the Users page's Last successful sign-in
-does, from a Google identity that is not disabled. A Ministry marked "No
-longer in this campaign" or "Not in ParishSoft data" has no leaders, since
+does, from a Google identity that is not disabled. A Ministry marked
+"Removed from this campaign" or "Not in ParishSoft" has no leaders, since
 the leaders definition leaves it out, so it reads No leader. A reader whose
 scope holds one Ministry gets the same words after the counts on its single
 line. The cells are never links and name nobody: no leader's name, Member
@@ -2589,13 +2589,12 @@ eye, and By Ministry is short; it can be added later); and reading the
 coverage inside the guarded response (that read-only transaction cannot
 record the audit event).
 
-"Not in ParishSoft data" and "No longer in this campaign" are the
+"Not in ParishSoft" and "Removed from this campaign" are the
 Administrator's concern and change nothing a leader does with a request, so
 only Admin/Staff see them: each Ministry's notes in By Ministry and the page
 help about them
-([#1135](https://github.com/epiphany40223/parishkit/issues/1135)). Both
-marks are retired words: they become Not in ParishSoft and Removed from
-this campaign
+([#1135](https://github.com/epiphany40223/parishkit/issues/1135)).
+Until #2330 they read "Not in ParishSoft data" and "No longer in this campaign"
 ([campaign Families wording](../ui-conventions/spec.md#campaign-families-wording)).
 There is no Ministry activity filter (Active, Inactive) any more
 ([#1267](https://github.com/epiphany40223/parishkit/issues/1267)): the

@@ -180,7 +180,7 @@ def packet_document(payload, parameters, *, parish_name, requested_at, timezone)
         ("Source as of", moment(source["source_as_of"])),
         ("Captured at", moment(source["observed_at"])),
         ("Requested at", moment(requested_at)),
-        ("Display timezone", timezone),
+        ("Display time zone", timezone),
         (
             "Ministries",
             "All authorized Ministries"
@@ -203,8 +203,8 @@ def packet_document(payload, parameters, *, parish_name, requested_at, timezone)
         ),
         (
             "Blank cells",
-            "Nothing is recorded yet; complete them by hand. A blank outcome is an "
-            "unresolved request.",
+            "Nothing is recorded yet; complete them by hand. A blank outcome is a "
+            "request still to review.",
         ),
     )
     return PacketDocument(metadata, sections, count, requested_at)

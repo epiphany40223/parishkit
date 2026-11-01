@@ -499,7 +499,7 @@ def test_the_utc_scan_passes_zone_values_and_template_code():
         ('<th scope="col">Sent (UTC)</th>', 1),
         ("<summary>Times (parish time zone)</summary>", 1),
         # The campaign's own time zone setting is not a fixed-zone entry.
-        ('<label for="z">{% translate "Campaign timezone" %}</label>', 0),
+        ('<label for="z">{% translate "Campaign time zone" %}</label>', 0),
         ('<label for="d">{% translate "Send date" %}</label>', 0),
     ],
 )
@@ -561,7 +561,7 @@ def test_the_server_format_scan(code, flagged):
         ),
         ("CampaignForm", "start_date", forms.DateField(help_text="Eastern time"), True),
         # The campaign's own time zone setting names it, and is not a time.
-        ("F", "timezone", forms.CharField(label="Campaign timezone"), False),
+        ("F", "timezone", forms.CharField(label="Campaign time zone"), False),
         (
             "F",
             "send_time",

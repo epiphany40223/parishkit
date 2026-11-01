@@ -90,7 +90,7 @@ def test_save_confirms_in_the_dialog_and_apply_follows_the_change(auth_service, 
     assert digest(applied) == store.active().digest
     assert b'data-workgroup-status="pending"' in applied.content
     assert NAME in unescape(applied.content.decode())
-    # Clearing it says Reminders go to every eligible Family again.
+    # Clearing it says Reminders go to every campaign Family again.
     cleared = post(
         browser, URL, {"action": "preview", "name": "", "base_digest": digest(applied)}
     )

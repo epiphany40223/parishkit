@@ -203,7 +203,7 @@ def names_document(request):
         ("Campaign", campaign_name(request)),
         ("Captured at", snapshot.created_at.astimezone(zone)),
         ("Requested at", request.created_at.astimezone(zone)),
-        ("Display timezone", request.browser_timezone),
+        ("Display time zone", request.browser_timezone),
         ("Families", f"{snapshot.row_count:,}"),
         (
             "Privacy",

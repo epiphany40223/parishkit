@@ -135,7 +135,7 @@ def test_an_undated_capture_names_no_date_range():
     details = _information_details(
         {"search": "", "start": "", "end": "", "zone": "UTC", "sort": "name"}
     )
-    assert "Campaign date-filter timezone" not in details
+    assert "Campaign date-filter time zone" not in details
     assert details["Filters and sort"] == '{"search": "", "sort": "name"}'
 
 
@@ -144,7 +144,7 @@ def test_a_dated_capture_keeps_its_date_range():
     details = _information_details(
         {"search": "", "start": "2026-11-01", "end": "", "zone": "UTC"}
     )
-    assert details["Campaign date-filter timezone"] == "America/Detroit"
+    assert details["Campaign date-filter time zone"] == "America/Detroit"
     assert details["Filters and sort"] == (
         '{"end": "", "search": "", "start": "2026-11-01", "zone": "UTC"}'
     )

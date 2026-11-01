@@ -138,7 +138,7 @@ def save_sections(request, service, attempt_id, *, updates, expected_version):
             original = SetupDraftSection.objects.get(attempt=attempt, step="parish")
             if updates["parish"]["timezone"] != original.values["timezone"]:
                 raise UserFacingError(
-                    _("The parish data load fixes this setup's timezone."),
+                    _("The parish data load fixes this setup's time zone."),
                     fix=_("Cancel and start a new setup to change it."),
                 )
         if "branding" in updates:

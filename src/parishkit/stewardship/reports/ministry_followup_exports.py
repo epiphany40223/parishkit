@@ -260,7 +260,7 @@ def queue_document(
         ("Campaign", result["metadata"]["name"]),
         ("Source as of", instant(result["metadata"]["source_as_of"])),
         ("Requested at", instant(requested_at)),
-        ("Display timezone", zone.key),
+        ("Display time zone", zone.key),
         *(
             (("Age reference date", date.fromisoformat(min(report_dates))),)
             if report_dates

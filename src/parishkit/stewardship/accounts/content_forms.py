@@ -35,7 +35,7 @@ from .content_defaults import default_data, retired_data
 
 PAGE_LABELS = {
     "welcome": _("Family welcome"),
-    "login_help": _("Family login help"),
+    "login_help": _("Family sign-in help"),
     "pre_start": _("Before the campaign"),
     "post_end": _("After the campaign"),
     "census": _("Family census introduction"),

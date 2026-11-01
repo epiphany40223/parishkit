@@ -53,7 +53,7 @@ SALT = "stewardship-parish-profile-preview-v1"
 UNCHANGED = _("No settings have changed.")
 # The review's note when the change includes the timezone.
 TIMEZONE_NOTE = _(
-    "This timezone change is prospective. Existing campaign timezones, "
+    "This time zone change is prospective. Existing campaign time zones, "
     "boundaries, schedules and report buckets remain unchanged."
 )
 PROFILE_FIELDS = (
@@ -189,7 +189,7 @@ class ParishForm(AdminForm):
         ),
         WEBSITE,
     )
-    timezone = TimezoneField(label=_("Parish timezone"))
+    timezone = TimezoneField(label=_("Parish time zone"))
     phone = PhoneField(
         label=_("Parish telephone"),
         help_text=_("The ten-digit US number, such as (212) 555-1234."),

@@ -4169,7 +4169,7 @@ Each change is recorded in System logs as on the page
   `export information` and `export limitations` write have a `ParishSoft
   status` column right after `Family` (both of `export limitations`'
   tables): "Not in ParishSoft" for a Family the current data no longer
-  has, "Inactive in ParishSoft" for one ParishSoft marks inactive
+  has, "No longer in this campaign" for one that has left the campaign
   (`export financial` and `export information`), blank otherwise. Such a
   missing Family's `Family` cell is now blank; it read "Unavailable
   Family" (financial, limitations) or "Family" (information). A Family or

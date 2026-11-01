@@ -179,8 +179,8 @@ def test_rows_word_money_status_shares_and_local_instants():
     )
     assert metadata["Captured at"] == metadata["Source as of"]
     assert metadata["Requested at"] == metadata["Source as of"]
-    assert metadata["Display timezone"] == "America/New_York"
-    assert metadata["Campaign date-filter timezone"] == "America/Chicago"
+    assert metadata["Display time zone"] == "America/New_York"
+    assert metadata["Campaign date-filter time zone"] == "America/Chicago"
     assert metadata["ParishSoft comparison period"] == Span(
         date(2025, 7, 1), date(2026, 6, 30)
     )

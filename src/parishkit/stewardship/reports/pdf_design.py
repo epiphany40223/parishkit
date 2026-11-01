@@ -206,7 +206,7 @@ class PdfFrame:
         """The frame for a report document with the usual metadata pairs."""
         metadata = document.metadata
         key = stamp_key or _stamp_key(metadata)
-        zone = detail(metadata, "Display timezone")
+        zone = detail(metadata, "Display time zone")
         stamp = (
             f"{key.removesuffix(' at')} {dates.display_text(detail(metadata, key))}"
             + (f" ({zone})" if zone else "")
@@ -624,7 +624,7 @@ def _draw_row(canvas, table, y, cells, fill, *, heading=False):
 # time zones (the page stamp names the display zone). These are report
 # details, never table columns, so a card still shows every column. (The
 # digest-resolution note left with the digests, #2102.)
-HIDDEN_FIELDS = frozenset({"Display timezone", "Campaign date-filter timezone"})
+HIDDEN_FIELDS = frozenset({"Display time zone", "Campaign date-filter time zone"})
 # Report details the page frame already shows on every page (the parish and
 # campaign line, the title, the privacy and Testing-mode footer lines).
 FRAME_FIELDS = frozenset({"Report", "Parish", "Campaign", "Privacy", "Testing mode"})
