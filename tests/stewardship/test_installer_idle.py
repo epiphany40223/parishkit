@@ -245,3 +245,67 @@ def test_a_connection_the_server_ended_is_dropped_quietly():
     connections = SimpleNamespace(all=lambda initialized_only: [dead, alive, unopened])
     runtime_process.drop_unusable(connections)
     assert (dead.closed, alive.closed, unopened.closed) == (True, False, False)
+
+
+# Each target's own setup and access-check steps (#2347). Every other
+# target's steps, and the libraries they bring in, stay unloaded.
+TARGET_STEPS = {
+    "parishsoft": {"accounts.setup_lookups", "accounts.setup_checks"},
+    "google_workspace": {"accounts.setup_mail_exchange", "backup_probes"},
+    "slack": {"accounts.setup_notifications"},
+}
+ALL_STEPS = set().union(*TARGET_STEPS.values())
+# Loaded only through other targets' steps (forms, sign-in, phone numbers).
+STEP_LIBRARIES = ("redis", "jwt", "phonenumbers")
+
+INSTALLER_IMPORTS = """
+import json, sys
+from types import SimpleNamespace
+import django
+django.setup()
+# The modules serve_credential_installer loads for every target.
+from parishkit.stewardship import (
+    cli, credential_runtime, operator_commands, provider_checks, runtime_grants,
+    runtime_process, runtime_web, service_boundaries, service_status,
+)
+from parishkit.stewardship.accounts import credential_installation, handoff_discovery
+from parishkit.stewardship.accounts.setup_credential_installation import TARGETS
+runtime_process.installer_pending(SimpleNamespace(pending=lambda: False), sys.argv[1])
+print(json.dumps(sorted(sys.modules)))
+"""
+
+
+@pytest.mark.parametrize(
+    "target", ["django_signing", "parishsoft", "google_workspace", "slack"]
+)
+def test_an_installer_loads_only_its_own_targets_steps(target):
+    """An idle installer keeps only its own steps in memory (#2347).
+
+    A fresh interpreter, because this test process already imported every
+    step. The plain targets, 11 of the 14, also stay free of the libraries
+    that only other targets' steps need.
+    """
+    import json
+    import os
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-c", INSTALLER_IMPORTS, target],
+        env={
+            **os.environ,
+            "DJANGO_SETTINGS_MODULE": "parishkit.stewardship.settings.test",
+        },
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    loaded = set(json.loads(result.stdout))
+    prefix = "parishkit.stewardship."
+    steps = {name for name in ALL_STEPS if prefix + name in loaded}
+    assert steps == TARGET_STEPS.get(target, set())
+    if target not in TARGET_STEPS:
+        libraries = [name for name in loaded if name.split(".")[0] in STEP_LIBRARIES]
+        assert libraries == []
