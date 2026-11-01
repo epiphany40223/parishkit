@@ -500,9 +500,12 @@ def test_postal_mail_merge_leaves_out_families_without_a_mailing_address(
             "lastName": "Unmailable",
             "primaryCity": "",
         }
+        # The head shares the Family surname: a head with another surname
+        # would lead the staff-list name with that surname instead (#2320).
         data.members[1000 + duid] = data.members[3] | {
             "memberDUID": 1000 + duid,
             "familyDUID": duid,
+            "lastName": "Unmailable",
             "emailAddress": "",
         }
     snapshot, claim = prepare(data)
