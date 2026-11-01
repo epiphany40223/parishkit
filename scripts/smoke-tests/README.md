@@ -89,6 +89,52 @@ scripts/smoke-tests/google-api.py \
   --send
 ```
 
+## Google People API email addresses (#2352)
+
+`google-people-emails.py` shows what the Google People API returns for **your own** Google account's email addresses, to find out whether Stewardship sign-in could match a user by a verified alternate address ([#2352](https://github.com/epiphany40223/parishkit/issues/2352), for [#2343](https://github.com/epiphany40223/parishkit/issues/2343)). It changes nothing in ParishKit or Google. It signs you in with the OAuth 2.0 authorization-code flow and PKCE on a loopback redirect (`http://127.0.0.1:<port>/`), asks for `openid email https://www.googleapis.com/auth/user.emails.read`, and prints the ID token's `email` and `email_verified`, the scopes Google granted, and one row per address: the address, `metadata.verified`, `metadata.primary` and `metadata.source.type` (`-` means Google omitted the field). Nothing is written to disk or logged; at exit it revokes the access token. The module ([`src/parishkit/google/people_emails.py`](../../src/parishkit/google/people_emails.py)) uses only the Python standard library and imports nothing from ParishKit, so the one file can be copied to a host and run with `python3` 3.12 or newer.
+
+### Before you run it (Google Cloud console)
+
+Use a Google Cloud project where you can change the OAuth settings. Do not change Production's sign-in client.
+
+1. **APIs & Services → Library**: find **Google People API** and click **Enable**.
+2. **Google Auth Platform → Audience**: note the user type. *Internal* admits only accounts in the project's Workspace domain, and needs no test users or Google verification. *External* admits any Google account: leave the publishing status at **Testing** and add your Google account under **Test users** (Testing avoids Google's app verification for test users).
+3. **Google Auth Platform → Data Access → Add or remove scopes**: add `https://www.googleapis.com/auth/user.emails.read` (shown as "See and download all of your Google Account email addresses"), plus `openid` and `.../auth/userinfo.email`, and save.
+4. **Google Auth Platform → Clients → Create client**: application type **Desktop app**, any name (for example "People API smoke test"). Download its JSON. A Desktop client accepts `http://127.0.0.1` on any port, so it needs no redirect URI. This is the recommended client: the Production sign-in client stays unchanged.
+5. To use a **Web application** client instead (such as an existing sign-in client, whose file on a Stewardship host is `RUNTIME_ROOT/credentials/google_oauth/credential`), Google accepts only redirect URIs registered on it exactly: pick a port, add `http://127.0.0.1:<port>/` under its authorized redirect URIs, and pass `--port <port>`. Avoid this for Production's client.
+
+Keep the downloaded JSON outside every git checkout, readable only by you (`chmod 600`), and delete it, and the Desktop client in Google Cloud if you no longer need it, when you are done.
+
+### Run it
+
+On a laptop with a browser (the tool opens it and reads the redirect itself):
+
+```sh
+scripts/smoke-tests/google-people-emails.py --client-file ~/client_secret.json
+```
+
+On a headless host over ssh, copy the one file and the client JSON there, and use `--manual`:
+
+```sh
+scp src/parishkit/google/people_emails.py ~/client_secret.json root@HOST:/root/
+ssh -t root@HOST python3 /root/people_emails.py --manual \
+    --client-file /root/client_secret.json
+ssh root@HOST rm /root/people_emails.py /root/client_secret.json
+```
+
+`--manual` prints a URL. Open it in your laptop's browser and sign in with your Google account. After the consent screen the browser goes to `http://127.0.0.1:<port>/?state=…&code=…` and the page fails to load: that is expected. Copy the whole address from the address bar and paste it at the tool's prompt (pasting only the `code` value also works, but then the `state` check is skipped). The code is single-use and expires within minutes.
+
+Add `--redact` to print each address's domain only (`…@example.org`). Other options: `--no-browser` (print the URL, still listen), `--port N`, `--timeout SECONDS` (default 300). The tool exits `0`, or `2` with one `ERROR:` line.
+
+### What to report back
+
+Copy into the issue (addresses may be redacted to their domain):
+
+- the printed block: the `ID token email` / `email_verified` lines, the `Granted scopes` line, and the address table;
+- for each alternate address, whether it is confirmed in Google Account → Personal info → Email, and whether it is a Gmail "Send mail as" address or a Workspace alias;
+- what the consent screen said about the email-address permission, and whether Google showed an "unverified app" warning;
+- the project's user type (Internal or External) and publishing status (Testing or In production).
+
 ## Constant Contact (read-only)
 
 ```sh
