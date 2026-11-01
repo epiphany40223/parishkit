@@ -84,6 +84,7 @@ def test_the_contact_comes_from_the_parish_profile_and_reply_to(client, monkeypa
         configuration_id="configuration",
     )
     monkeypatch.setattr(public_pages, "display_parish", lambda request: parish)
+    monkeypatch.setattr(public_pages, "current_campaign_values", lambda: None)
     monkeypatch.setattr(
         "parishkit.stewardship.responses.page_content.reply_to",
         lambda configuration_id: "office@example.org",
@@ -127,3 +128,141 @@ def test_every_page_in_the_site_layout_ends_with_the_footer(client):
         assert footer.index("</footer>") < footer.index("</body>")
         assert all(link in footer for link in FOOTER_LINKS)
         assert html.count('<footer class="site-footer">') == 1
+
+
+# Each Privacy policy paragraph that follows the configuration, by the fact
+# that turns it on (architecture spec, "Configured content").
+CENSUS = "correct its household's information, add a household member"
+MINISTRY = "choose ministries to join or leave."
+LEADERS = "Ministry leaders see, for the ministries they lead only"
+FINANCIAL = "each Family's pledges and gifts (amount, date and fund)"
+PLEDGE = "make a pledge for the coming year"
+INTENTION = "A pledge records an intention only."
+ADDITIONAL = "write a note to the parish."
+GENERAL = "this page describes everything the site can collect"
+ATTEND_ONLY = "cannot attend Mass or prayer services because of physical limitations"
+WRITES_CONFIRMED = "The site copies approved changes into ParishSoft only after"
+WRITES_NEVER = "The site does not change ParishSoft"
+WRITES_MAYBE = "Copying approved changes into ParishSoft is off unless"
+
+
+def _privacy(client, monkeypatch, values, *, publication=False, url="/privacy/"):
+    """Render a page for a parish whose current campaign has ``values``."""
+    parish = SimpleNamespace(
+        name="St. Example Parish", website="", phone="", configuration_id="c"
+    )
+    monkeypatch.setattr(public_pages, "display_parish", lambda request: parish)
+    monkeypatch.setattr(public_pages, "current_campaign_values", lambda: values)
+    monkeypatch.setattr(
+        "parishkit.stewardship.responses.page_content.reply_to", lambda c: ""
+    )
+    monkeypatch.setattr(
+        "django.conf.settings.STEWARDSHIP_PARISHSOFT_PUBLICATION", publication
+    )
+    return _html(client.get(url))
+
+
+@pytest.mark.parametrize(
+    ("modules", "additional", "present", "absent"),
+    [
+        (
+            ["census", "ministry", "financial"],
+            True,
+            [CENSUS, MINISTRY, LEADERS, FINANCIAL, PLEDGE, INTENTION, ADDITIONAL],
+            [GENERAL, ATTEND_ONLY],
+        ),
+        (
+            ["census"],
+            False,
+            [CENSUS, ATTEND_ONLY],
+            [MINISTRY, LEADERS, FINANCIAL, PLEDGE, INTENTION, ADDITIONAL, GENERAL],
+        ),
+        (
+            ["ministry"],
+            False,
+            [MINISTRY, LEADERS],
+            [CENSUS, FINANCIAL, PLEDGE, INTENTION, ADDITIONAL, ATTEND_ONLY],
+        ),
+        (
+            ["financial"],
+            True,
+            [FINANCIAL, PLEDGE, INTENTION, ADDITIONAL, ATTEND_ONLY],
+            [CENSUS, MINISTRY, LEADERS],
+        ),
+    ],
+)
+def test_the_privacy_policy_follows_the_campaigns_modules(
+    client, monkeypatch, modules, additional, present, absent
+):
+    """Each step, read and audience shows only when the campaign uses it."""
+    values = {"modules": modules, "additional_information": additional}
+    html = _privacy(client, monkeypatch, values)
+    for text in present:
+        assert text in html, text
+    for text in absent:
+        assert text not in html, text
+    # The rosters and the household records are read for every campaign.
+    assert "the parish's ministries and who serves in them" in html
+    assert "No other ParishSoft family or member data is used." in html
+    assert "It does not copy Social Security numbers" not in html
+
+
+@pytest.mark.parametrize(
+    ("modules", "publication", "family", "service"),
+    [
+        (["census"], True, WRITES_CONFIRMED, "writes back only the changes"),
+        (["census"], False, WRITES_NEVER, "never writes to it"),
+        (["ministry"], True, None, "never writes to it"),
+    ],
+)
+def test_the_privacy_policy_follows_parishsoft_publication(
+    client, monkeypatch, modules, publication, family, service
+):
+    """Write-back is described as on only when census changes can publish."""
+    values = {"modules": modules, "additional_information": False}
+    html = _privacy(client, monkeypatch, values, publication=publication)
+    for text in (WRITES_CONFIRMED, WRITES_NEVER, WRITES_MAYBE):
+        assert (text in html) is (text == family), text
+    assert service in html
+
+
+@pytest.mark.parametrize("parish", [False, True])
+def test_without_a_current_campaign_the_privacy_policy_is_general(
+    client, monkeypatch, parish
+):
+    """Before setup, or with no campaign: everything, and a note saying so."""
+    if parish:
+        html = _privacy(client, monkeypatch, None, publication=True)
+    else:
+        html = _html(client.get("/privacy/"))
+    for text in (GENERAL, CENSUS, MINISTRY, LEADERS, FINANCIAL, PLEDGE, ADDITIONAL):
+        assert text in html, text
+    assert WRITES_MAYBE in html
+    assert "depending on what the parish asks this year" in html
+
+
+@pytest.mark.parametrize("modules", [["census"], ["ministry"], ["financial"], None])
+def test_the_first_parishsoft_links_to_its_website(client, monkeypatch, modules):
+    """Only the page's first "ParishSoft" is a link, in every variation."""
+    values = modules and {"modules": modules, "additional_information": False}
+    html = _privacy(client, monkeypatch, values)
+    body = html[html.index("<h1>") :]
+    link = '<a href="https://www.parishsoft.com/">ParishSoft</a>'
+    assert body.index("ParishSoft") == body.index(link) + link.index("ParishSoft")
+    assert body.count("parishsoft.com") == 1
+
+
+@pytest.mark.parametrize(("financial", "shown"), [(True, True), (False, False)])
+def test_the_terms_show_pledges_only_with_a_pledge(
+    client, monkeypatch, financial, shown
+):
+    """The Terms' "Pledges" section follows the financial module."""
+    modules = ["census", "financial"] if financial else ["census"]
+    values = {"modules": modules, "additional_information": False}
+    html = _privacy(client, monkeypatch, values, url="/terms/")
+    assert ("<h2>Pledges</h2>" in html) is shown
+
+
+def test_the_privacy_policy_leaves_out_the_suspense_flag(client):
+    """The Administrator's decision (#2360): no mention of ParishSoft's suspense."""
+    assert "suspense" not in _html(client.get("/privacy/")).lower()

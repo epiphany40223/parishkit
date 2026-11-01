@@ -746,6 +746,24 @@ alternate addresses of
 [#2343](https://github.com/epiphany40223/parishkit/issues/2343) are added to
 the page when that work ships.
 
+**Configured content.** The Privacy policy describes only what this
+deployment does, so its wording follows the configuration rather than
+listing every feature. It reads the current campaign's form modules
+(`census`, `ministry`, `financial`) and its note-to-the-parish switch
+(`additional_information`), as defined in
+the [Campaign](../data/spec.md#campaign) record, and the
+deployment's `parishsoft_publication` setting (see the
+[publication guide](../../../guides/stewardship-member-requests.md#parishsoft-publication)). A
+paragraph about a form step, the pledge and giving history read, the
+Ministry leaders' view, or writing back to ParishSoft shows only when the
+setting it describes is on; reads the source refresh makes for every campaign
+(Family and Member records, ministry rosters) always show. With no current
+campaign to read (before setup, during a restore review, or before the first
+campaign), the page describes everything the site can collect and says so.
+The Terms of use shows its "Pledges" section on the same rule. The first
+"ParishSoft" on the Privacy policy links to the ParishSoft website. The pages
+name no campaign and show no Family data.
+
 **Parish values.** The pages are parish-neutral templates. The parish's name,
 website and main phone come from the applied
 [parish profile](../data/spec.md#parish-and-integrations), and the contact
