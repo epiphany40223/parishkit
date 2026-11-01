@@ -1140,7 +1140,11 @@ class UsersList(ReadModel):
     exact-address rules that grant a role, each with its highest role and a
     null ``name`` (``user_reads.user_list``). ``version`` is the applied
     configuration's digest, which ``users preview --expected-version``
-    takes; each user's ``id`` is what its change document names.
+    takes; each user's ``id`` is what its change document names. Each
+    user's ``address_match`` is null, or the standing verified-address
+    match of its address (#2343): ``match_id`` (what ``users end-match``
+    takes), the Google account's ``id`` and ``sign_in_email``,
+    ``matched_at`` and ``confirmed_at``.
     """
 
     form: str

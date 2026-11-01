@@ -18,6 +18,9 @@ building its answer, so an Administrator demoted meanwhile is refused:
   configuration change at once, as Dates and mail schedules' Delete does.
 - ``user_name_suggestions`` answers the New page's Email field in place: is
   the address valid and new, and which ParishSoft Members list it.
+- ``user_match_end`` answers Edit user's End match dialog (#2343): it ends
+  the user's verified-address match (``address_matching.end_by_administrator``)
+  and answers with Edit user, whose match line has become its status line.
 
 Below the users table, ``users`` also draws the ParishSoft Ministry leaders
 who have no user yet, and its Apply records their import
@@ -49,6 +52,7 @@ from uuid import UUID, uuid4
 from django import forms
 from django.core import signing
 from django.db import DatabaseError, transaction
+from django.db.models import Q
 from django.http import HttpResponseRedirect, JsonResponse
 from django.shortcuts import render
 from django.urls import reverse
@@ -64,6 +68,7 @@ from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.field_rules import EMAIL, email_input
 from parishkit.stewardship.web.refusals import (
+    UserFacingDenied,
     UserFacingError,
     UserFacingMissing,
     unexpected_fields,
@@ -71,7 +76,7 @@ from parishkit.stewardship.web.refusals import (
 )
 from parishkit.stewardship.web.tables import paginate, table_parameters
 
-from . import admin_navigation
+from . import address_matching, admin_navigation
 from .admin_editing import (
     confirm,
     confirm_intent,
@@ -143,6 +148,14 @@ OWN_ROLE = _(
 OWN_DELETE = _(
     "Your own user has no Delete: you can't delete yourself. Another Administrator can."
 )
+# Edit user's End match (#2343): the match the reader's own session signs in
+# through is another Administrator's to end, and the status line once ended.
+OWN_MATCH = _(
+    "You can't end the match you are signed in through; another Administrator "
+    "does that."
+)
+MATCH_ENDED = _("Ended the match for %(address)s.")
+MATCH_ALREADY_ENDED = _("This match had already ended; the page is up to date.")
 
 
 class UserForm(AdminForm):
@@ -453,13 +466,47 @@ def _carried(paging, *prefixes):
 
 
 def recorded_identities(email):
-    """The recorded Google identities of one address, in ID order."""
+    """The recorded Google identities of one address, in ID order.
+
+    The accounts that sign in with the address, and the one whose standing
+    verified-address match names it (#2343), whatever address that account
+    acts as at the moment: it holds the user's address, so it is listed
+    with them.
+    """
+    from .policy_models import AddressMatch
+
+    matched = AddressMatch.objects.filter(email=email, ended_at__isnull=True).values(
+        "portal_user_id"
+    )
     return [
         {"id": str(row["id"]), "disabled": row["disabled"]}
-        for row in PortalUser.objects.filter(email=email)
+        for row in PortalUser.objects.filter(
+            Q(email=email) | Q(sign_in_email=email) | Q(pk__in=matched)
+        )
         .order_by("id")
         .values("id", "disabled")
     ]
+
+
+def match_context(user_id, email, actor_id, outcome=None, *, already=False):
+    """Edit user's verified-address match line (#2343), or its status line.
+
+    ``match`` is the user's standing match, or None; ``own_match`` says the
+    reader's own session signs in through it, so End match is unavailable
+    with the reason beside it. ``outcome`` is the status line that takes
+    the line's place once End match answered, drawn after any newer match
+    that now stands; ``already`` says the match had ended before, so the
+    dialog says that line instead of its own.
+    """
+    match = address_matching.standing_for(email, user_id)
+    return {
+        "match": match,
+        "own_match": match is not None and match.portal_user_id == actor_id,
+        "own_match_reason": OWN_MATCH,
+        "match_outcome": outcome,
+        "match_already_ended": already,
+        "match_end_url": reverse("admin:user_match_end", args=[user_id]),
+    }
 
 
 def _entry_context(
@@ -502,7 +549,9 @@ def _entry_context(
         "identities": identities,
         "disabled_count": sum(row["disabled"] for row in identities),
         "base_digest": digest,
-        "post_url": request.path,
+        "post_url": request.path
+        if user_id is None
+        else reverse("admin:user_edit", args=[user_id]),
         # The review dialog's Apply posts to Users, then returns there.
         "apply_url": reverse("admin:users"),
         "list_url": reverse("admin:users"),
@@ -621,7 +670,7 @@ def _review(request, service, actor, configuration, changes, patch):
     )
 
 
-def _entry(request, service, actor, user_id=None):
+def _entry(request, service, actor, user_id=None, *, outcome=None, already=False):
     """New user (``user_id`` None) or Edit user, GET or POST (Review).
 
     A POST reviews the change and answers with the review dialog's fragment
@@ -629,13 +678,15 @@ def _entry(request, service, actor, user_id=None):
     value shows this page again with each error at its field (status 400),
     which the page script turns into marks on the form it already shows.
     Any other refusal (``_refuse``, an invalid resulting configuration) is
-    a plain refusal for the dialog.
+    a plain refusal for the dialog. ``outcome`` (End match's answer, #2343)
+    draws Edit user as a GET would, with that status line in place of the
+    match line.
     """
     filters(request.GET, allowed=set())
     if request.FILES:
         raise unexpected_fields(request.FILES, allowed=())
     new = user_id is None
-    posted = request.POST if request.method == "POST" else None
+    posted = request.POST if request.method == "POST" and outcome is None else None
     if posted is not None and (
         form_action(
             posted,
@@ -671,6 +722,10 @@ def _entry(request, service, actor, user_id=None):
             identities=() if new else recorded_identities(user["email"]),
             own_email=own,
         )
+        if not new:
+            context |= match_context(
+                str(user_id), user["email"], actor.identity, outcome, already=already
+            )
         request._stewardship_display_configuration = configuration
         admin_navigation.place(request, flow="change", step="edit")
         if posted is None:
@@ -721,6 +776,70 @@ def user_new(request):
 def user_edit(request, user_id):
     """Edit user: the New page filled in, its Email fixed."""
     return _answer(request, user_id)
+
+
+def _chosen_match(parameters):
+    """The one match End match names, by its ID (#2343)."""
+    allowed = {"csrfmiddlewaretoken", "match_id"}
+    if set(parameters) != allowed or any(
+        len(values) != 1 for _name, values in parameters.lists()
+    ):
+        raise unexpected_fields(parameters, allowed=allowed)
+    try:
+        return UUID(parameters["match_id"])
+    except ValueError:
+        # No sources: the fields were allowed; a value is malformed.
+        raise unexpected_fields() from None
+
+
+@require_POST
+def user_match_end(request, user_id):
+    """End match on Edit user (#2343): end the user's verified-address match.
+
+    The dialog posts the match's ID, so a newer match is never ended by an
+    old page. The answer is Edit user drawn afresh, which the dialog redraws
+    from (``answer_page``), with the status line "Ended the match for ..."
+    in place of the line, or "This match had already ended ..." when it had,
+    which then changes nothing. The match the reader's own session signs in
+    through is refused (403, ``OWN_MATCH``); a match that is not this
+    user's, or a user deleted meanwhile, is not found.
+    """
+    try:
+        service = runtime()
+        actor = principal(request, service, capability=Capability.MANAGE_USERS)
+        filters(request.GET, allowed=set())
+        if request.FILES:
+            raise unexpected_fields(request.FILES, allowed=())
+        match_id = _chosen_match(request.POST)
+        with read_transaction():
+            _configuration, records = _users(service)
+            user = saved_users(records).get(str(user_id))
+        if user is None:
+            raise _missing()
+        try:
+            ended = address_matching.end_by_administrator(
+                match_id,
+                user["email"],
+                actor_id=actor.identity,
+                session_id=request.portal_session.pk,
+            )
+        except address_matching.OwnMatch:
+            raise UserFacingDenied(OWN_MATCH, fix=_("Nothing was changed.")) from None
+        except LookupError:
+            raise _missing() from None
+        outcome = (
+            MATCH_ALREADY_ENDED
+            if ended.already
+            else MATCH_ENDED % {"address": ended.sign_in_email}
+        )
+        response = _entry(
+            request, service, actor, user_id, outcome=outcome, already=ended.already
+        )
+        _recheck(request, service, actor)
+        response["Cache-Control"] = "no-store"
+        return response
+    except ERRORS as error:
+        return error_response(error)
 
 
 def _chosen(parameters):

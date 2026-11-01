@@ -39,6 +39,20 @@ Administrator never demotes themselves, Administrator decision 2026-10-11)
 and for the only Administrator, with the reason in the line under the roles,
 which is always there (#563); the server refuses that change anyway. The recorded Google identities of the address each get a
 Sign-in activity button (#953), posting the identity, never in an address.
+While the user has a standing verified-address match (#2343), and only then,
+the "Google account matched through this address" line follows, with a red
+End match (UX conventions, Button emphasis) that opens the shared
+confirmation dialog; confirming posts the match's ID to user_match_end, whose
+answer is this page with a status line in place of the line (answer_page),
+which takes focus (#488, in place). The status line is drawn whenever End
+match answered, also when that match had already ended and a newer one now
+stands: it then follows the newer match's line, near the pressed button, so
+focus never falls back to the heading, and its hidden announce line says it
+had already ended instead of the dialog's "Ended the match" words. The
+region keeps the height the reader's place needs (data-keep-height): the
+line ends the page, so the shorter status line would otherwise shorten the
+page and the window would scroll. The match the reader's own session signs
+in through has End match unavailable, with the reason under it.
 {% endcomment %}
 <h1>{% if new %}{% translate "New user" %}{% else %}{% translate "Edit user" %}{% endif %}</h1>
 {% aboutpage "user-entry" %}<p>{% translate "A user is one email address with a Name and one role. The person signs in with the account of that address. The Name is a label for this portal; it is not tied to a ParishSoft Member." %}</p>
@@ -71,4 +85,13 @@ Sign-in activity button (#953), posting the identity, never in an address.
 <p>{% blocktranslate count counter=identities|length %}This address has one recorded sign-in account.{% plural %}This address has {{ counter }} recorded sign-in accounts.{% endblocktranslate %}</p>
 <ul>{% for account in identities %}<li><form method="post" action="{% url 'admin:logs' %}" class="inline-form">{% csrf_token %}<input type="hidden" name="applied" value="yes"><input type="hidden" name="audit" value="yes"><input type="hidden" name="activity" value="sign_in"><input type="hidden" name="actor" value="{{ account.id }}">{% if identities|length > 1 %}{% blocktranslate with number=forloop.counter asvar account_label %}Sign-in activity of account {{ number }}{% endblocktranslate %}{% else %}{% translate "Sign-in activity" as account_label %}{% endif %}{% button type="submit" variant="link" %}{{ account_label }}{% endbutton %}{% if account.disabled %} <span class="status-badge">{% translate "Disabled" %}</span>{% endif %}</form></li>{% endfor %}</ul>
 </section>{% endif %}
-{% endblock %}
+{% if match or match_outcome %}<div id="user-match" class="user-match" data-in-place-region data-keep-height>{% if match %}<section class="panel" aria-labelledby="user-match-title">
+<h2 id="user-match-title">{% translate "Google account matched through this address" %}</h2>
+<form method="post" action="{{ match_end_url }}" id="user-match-actions">{% csrf_token %}
+<p>{% blocktranslate with address=match.sign_in_email %}<strong>{{ address }}</strong> signs in through this address since{% endblocktranslate %} <time datetime="{{ match.matched_at|instant }}" data-local-instant>{{ match.matched_at|instant }}</time>. {% translate "Google last confirmed it on" %} <time datetime="{{ match.confirmed_at|instant }}" data-local-instant>{{ match.confirmed_at|instant }}</time>.</p>
+<p>{% if own_match %}{% button type="button" class="button-danger" enabled=False aria-describedby="user-match-own" %}{% translate "End match" %}{% endbutton %}{% else %}{% button type="button" class="button-danger" name="match_id" value=match.pk data-confirm-open="user-match-end" data-confirm-name=match.sign_in_email %}{% translate "End match" %}{% endbutton %}{% endif %}</p>
+{% if own_match %}<p class="help" id="user-match-own">{{ own_match_reason }}</p>{% endif %}
+</form></section>{% endif %}{% if match_outcome %}<p class="notice" id="user-match-status" tabindex="-1">{{ match_outcome }}</p>{% if match_already_ended %}<p hidden data-confirm-announce>{{ match_outcome }}</p>{% endif %}{% endif %}</div>
+{% endif %}{% if match %}{% translate "End the match for {name}?" as match_title %}{% translate "That Google account can no longer sign in as this user, and its Admin sessions, including command-line sessions, end now." as match_body %}{% translate "If Google still confirms the address, its owner can sign in through it again, and every Administrator is told again." as match_caution %}{% translate "End match" as match_accept %}
+{% include "stewardship/components/confirm-dialog.html" with dialog_id="user-match-end" form_id="user-match-actions" fallback="user-match-status" title_one=match_title title_many=match_title body=match_body caution=match_caution accept=match_accept done_one=_("Ended the match for {name}.") done_many=_("Ended the match for {name}.") answer_page=True %}
+{% endif %}{% endblock %}

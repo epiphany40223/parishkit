@@ -542,6 +542,8 @@ LEDGER = {
     "user_new": command("users preview", "users confirm"),
     "user_edit": command("users list", "users preview", "users confirm"),
     "user_delete": command("users preview", "users confirm"),
+    # Edit user's End match (#2343): ends a verified-address match.
+    "user_match_end": command("users list", "users end-match"),
     "user_name_suggestions": command("users preview"),
     # One user's Timeline (#1866): the same summary and lines.
     "user_timeline": command("users timeline"),

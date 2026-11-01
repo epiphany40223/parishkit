@@ -41,6 +41,10 @@ only counted (personal data on the command line). A saved user named by
 ``id`` keeps every field the entry leaves out; ``delete`` removes it. Users
 the document does not name stay as they are.
 
+``users end-match`` (#2343) is Edit user's End match: it prompts as the
+page's confirmation dialog asks, naming the user's record ID and the match
+ID (never an address), and ends the match through the page's own function.
+
 The commands act as the Administrator who approved the automation session,
 so the page's own-Administrator guard applies to them too: no entry may
 demote or delete that Administrator's own user (Administrator decision,
@@ -761,3 +765,122 @@ def confirm_leader_emails(caller, service, *, token, context):
         request_id=intent["key"],
         recipient_count=len(intent["addresses"]),
     )
+
+
+# ------------------------------------------------------------- End match
+
+
+@dataclass(frozen=True)
+class UsersEndMatch(ReadModel):
+    """``users end-match``: Edit user's End match (#2343).
+
+    ``user_id`` and ``match_id`` are the ended match's user record and ID,
+    as ``users list`` prints them; ``ended`` is True once it has ended.
+    """
+
+    user_id: str
+    match_id: str
+    ended: bool
+
+
+class OwnMatchRefused(ValueError):
+    """The command session's own sign-in goes through this match.
+
+    ``invalid`` (exit 1) with the closed reason ``match_own_account``, as
+    the page refuses it: another Administrator ends that match.
+    """
+
+    command_code = "invalid"
+    command_reason = "match_own_account"
+
+    def __init__(self, message):
+        """Keep the page's message as the refused field's."""
+        super().__init__("The match is the session's own.")
+        self.fields = [{"field": "match", "code": "invalid", "message": message}]
+
+
+def _match_user(service, user_id):
+    """The user's address in the applied users, or ``not_available``."""
+    from .accounts.user_changes import saved_users
+    from .accounts.user_views import _users
+    from .campaigns.work_locks import read_transaction
+
+    with read_transaction():
+        _configuration, records = _users(service)
+        user = saved_users(records).get(str(user_id))
+    if user is None:
+        raise NotAvailable("The user no longer exists.")
+    return user["email"]
+
+
+def preview_end_match(caller, service, *, user_id, match_id):
+    """Check ``users end-match`` before its prompt; returns the match.
+
+    Admits as the page's End match does (``MANAGE_USERS``, recording
+    activity). An unknown user, or a match that is not that user's, is
+    ``not_available``; one already ended ``stale_version``, so an old
+    ``users list`` never ends a newer match; the match the command session
+    itself signs in through ``invalid`` with ``match_own_account``.
+    """
+    from .accounts.policy_models import AddressMatch
+    from .accounts.user_views import OWN_MATCH
+    from .storage import StaleRecordError
+
+    actor = _admit(caller, service)
+    email = _match_user(service, user_id)
+    match = AddressMatch.objects.filter(pk=match_id, email=email).first()
+    if match is None:
+        raise NotAvailable("The match is not this user's.")
+    if match.ended_at is not None:
+        raise StaleRecordError("The match has already ended.")
+    if match.portal_user_id == actor.identity:
+        raise OwnMatchRefused(str(OWN_MATCH))
+    return match
+
+
+def end_match(caller, service, *, user_id, match_id, context):
+    """``users end-match``: end the match as the page's End match does.
+
+    Through the page's own ``address_matching.end_by_administrator``, in one
+    transaction with the command's ``admin_cmd_users_end_match``: the
+    account acts as its sign-in address again, the match ends naming this
+    Administrator and the command's session, and the match guard records
+    ``admin_address_match_ended`` and revokes the account's Admin and
+    automation sessions. A match that ended meanwhile is ``stale_version``
+    and records nothing.
+    """
+    from django.db import transaction
+
+    from .accounts import address_matching
+    from .accounts.policy import Capability
+    from .accounts.user_views import OWN_MATCH
+    from .audit.schemas import Action, ActorKind, Outcome
+    from .audit.services import record_action
+    from .storage import StaleRecordError
+
+    actor = _admit(caller, service)
+    email = _match_user(service, user_id)
+    try:
+        with transaction.atomic():
+            ended = address_matching.end_by_administrator(
+                match_id,
+                email,
+                actor_id=actor.identity,
+                session_id=caller.portal_session.pk,
+            )
+            if ended.already:
+                raise StaleRecordError("The match has already ended.")
+            record_action(
+                Action.ADMIN_CMD_USERS_END_MATCH,
+                actor_kind=ActorKind.PORTAL_USER,
+                actor_id=actor.identity,
+                subject_id=caller.automation_session_id,
+                context={"outcome": Outcome.SUCCEEDED},
+            )
+    except address_matching.OwnMatch:
+        raise OwnMatchRefused(str(OWN_MATCH)) from None
+    except LookupError:
+        raise NotAvailable("The match is not this user's.") from None
+    context["committed"] = True
+    _recheck(caller, service.store, actor, Capability.MANAGE_USERS)
+    return UsersEndMatch(user_id=str(user_id), match_id=str(match_id), ended=True)

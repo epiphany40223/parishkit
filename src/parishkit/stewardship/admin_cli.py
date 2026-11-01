@@ -3346,6 +3346,37 @@ def users_timeline(args, preamble, runtime, context):
     )
 
 
+def users_end_match(args, preamble, runtime, context):
+    """Edit user's End match (#2343), after the page's confirmation.
+
+    The match is checked first, so an unknown user, an ended match and the
+    session's own match are refused before the prompt, which names the
+    user's record ID and the match ID, never an address.
+    """
+    from .admin_users import end_match, preview_end_match
+
+    preview_end_match(
+        context["caller"], runtime, user_id=args.user, match_id=args.match
+    )
+    confirm(
+        context,
+        (
+            f"End match {args.match} of user {args.user}.",
+            "That Google account can no longer sign in as this user, and its "
+            "Admin sessions, including command-line sessions, end now.",
+            "If Google still confirms the address, its owner can sign in "
+            "through it again, and every Administrator is told again.",
+        ),
+    )
+    return end_match(
+        context["caller"],
+        runtime,
+        user_id=args.user,
+        match_id=args.match,
+        context=context,
+    )
+
+
 def users_preview(args, preamble, runtime, context):
     """Review a change to Admin portal users (#952 slice 5)."""
     from .admin_users import CHANGES_LIMIT, preview_users
@@ -5278,6 +5309,19 @@ def _users_list_options(parser):
         "--sort",
         help="email, name, role or last_login; --sort=-NAME (with =) reverses "
         "it (default email; role and last_login start highest and newest)",
+    )
+
+
+def _users_end_match_options(parser):
+    """Options of ``users end-match``: the user and its match (#2343)."""
+    parser.add_argument(
+        "--user", required=True, type=_uuid, help="the user's ID, as users list prints"
+    )
+    parser.add_argument(
+        "--match",
+        required=True,
+        type=_uuid,
+        help="the match's ID, address_match.match_id as users list prints it",
     )
 
 
@@ -7475,10 +7519,17 @@ def _users_specs():
     (slice 5) and need a full-scope session, as
     does ``users import-leaders``, the page's leaders table and import
     (slice 6), and ``users email-leaders``, its Email Ministry leaders
-    review and Apply (#1622).
+    review and Apply (#1622). ``users end-match`` is Edit user's End match
+    (#2343): full scope, prompting as the page's dialog asks.
     """
     from .admin_reads import UsersList, UsersUpgradePreview, UserTimelineRead
-    from .admin_users import LeaderEmails, LeaderImport, UsersConfirm, UsersPreview
+    from .admin_users import (
+        LeaderEmails,
+        LeaderImport,
+        UsersConfirm,
+        UsersEndMatch,
+        UsersPreview,
+    )
 
     return (
         CommandSpec(
@@ -7555,6 +7606,18 @@ def _users_specs():
             11,
             options=(_users_email_options,),
             # Apply queues outbound mail, as test sample and send confirm do.
+            prompts=True,
+        ),
+        CommandSpec(
+            "users end-match",
+            "End a Google account's match to a user through another address.",
+            users_end_match,
+            "full",
+            True,
+            UsersEndMatch.field_names(),
+            11,
+            options=(_users_end_match_options,),
+            # It ends sessions, as the page's confirmation dialog says.
             prompts=True,
         ),
     )

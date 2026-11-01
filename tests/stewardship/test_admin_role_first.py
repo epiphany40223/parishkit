@@ -27,6 +27,7 @@ from parishkit.stewardship import (
     admin_report_emails,
     admin_roster_tick,
     admin_tests,
+    admin_users,
     admin_worklists,
     mail_halt_clear,
     system_health,
@@ -108,6 +109,12 @@ ADMITTING_READ = {
     # The worklist pages' own admission: Administrators and Staff only
     # (#1733).
     "pledges decide": (admin_pledges, "admit_decide", {}),
+    # Edit user's End match (#2343): the page's admission, then the match.
+    "users end-match": (
+        admin_users,
+        "preview_end_match",
+        {"user": "user", "match": "match"},
+    ),
 }
 # Commands above that no longer prompt but still check the role before any
 # input: Entered by hand stopped being final (#1840), so ``pledges decide``

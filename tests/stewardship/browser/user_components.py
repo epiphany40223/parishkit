@@ -53,6 +53,15 @@ The browser checks need no database:
   while another Administrator remains, the same; ``EDIT``: Edit user for
   the Ministry leader, with two identities, one disabled, whose Review posts
   to ``EDIT_REVIEW``, which answers with the change of that user's role.
+- ``EDIT_MATCH``: that Edit user while a Google account signs in through
+  the address (a verified-address match, #2343), with End match, whose
+  dialog posts to ``MATCH_END``, which answers with Edit user whose match
+  line is now its status line; ``EDIT_MATCH_OWN``: the same page for the
+  reader whose own session signs in through the match, so End match is
+  unavailable with the reason; ``EDIT_MATCH_NEWER``: the same page whose
+  End match posts to ``MATCH_END_NEWER``, which answers as for a match that
+  had already ended while a newer one now stands: the newer match's line,
+  then the "already ended" status line.
 
 ``POSTS`` lists the fixture server's answers to the pages' POSTs; it is
 filled in by ``components``, before the server starts.
@@ -60,6 +69,7 @@ filled in by ``components``, before the server starts.
 
 import json
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from django import forms
@@ -84,7 +94,10 @@ from parishkit.stewardship.accounts.leader_import_views import PREFIX as LEADER_
 from parishkit.stewardship.accounts.user_changes import plan_changes, saved_users
 from parishkit.stewardship.accounts.user_reads import USER_SORTING, user_list
 from parishkit.stewardship.accounts.user_views import (
+    MATCH_ALREADY_ENDED,
+    MATCH_ENDED,
     OWN_DELETE,
+    OWN_MATCH,
     PREFIX,
     UserForm,
     _entry_context,
@@ -126,6 +139,14 @@ STALE_REFUSAL = "Another Administrator changed the users meanwhile."
 EDIT = "/user-edit"
 EDIT_ONLY = "/user-edit-only"
 EDIT_OWN = "/user-edit-own"
+# Edit user with a verified-address match (#2343), and its End match answer.
+EDIT_MATCH = "/user-edit-match"
+EDIT_MATCH_OWN = "/user-edit-match-own"
+MATCH_END = "/user-edit-match/end"
+EDIT_MATCH_NEWER = "/user-edit-match-newer"
+MATCH_END_NEWER = "/user-edit-match-newer/end"
+MATCHED_ACCOUNT = "person@personal.example"
+NEWER_ACCOUNT = "other@personal.example"
 # The signed-in Administrator the pages are drawn for.
 READER = "admin@example.org"
 IMPORT = "/users/leaders/import"
@@ -319,9 +340,18 @@ def _entry(
     apply=APPLY,
     form=None,
     errors=None,
+    match=None,
+    own_match=False,
+    outcome=None,
+    already=False,
+    end=MATCH_END,
 ):
     """New user, or Edit user for ``record``; ``form`` and ``errors`` draw a
-    refused Review as ``user_views._entry_page`` does."""
+    refused Review as ``user_views._entry_page`` does. ``match``,
+    ``own_match``, ``outcome`` and ``already`` are
+    ``user_views.match_context``'s: the standing verified-address match, the
+    reader's own, End match's status line and whether the match had already
+    ended (#2343); ``end`` is where End match posts."""
     users = saved_users(records)
     current = None if record is None else users[record["id"]]
     initial = (
@@ -353,6 +383,15 @@ def _entry(
     }
     if errors:
         context["errors"] = errors
+    if match is not None or outcome is not None:
+        context |= {
+            "match": match,
+            "own_match": own_match,
+            "own_match_reason": OWN_MATCH,
+            "match_outcome": outcome,
+            "match_already_ended": already,
+            "match_end_url": end,
+        }
     return (
         "text/html",
         render_to_string("stewardship/user-entry.html", values | context),
@@ -464,8 +503,28 @@ def components(context, admin):
         "stewardship/configuration-request.html",
         values | {"receipt": {"request_id": uuid4(), "state": "validating"}},
     )
+    match = SimpleNamespace(
+        pk=uuid5(NAMESPACE_URL, "address-match"),
+        sign_in_email=MATCHED_ACCOUNT,
+        matched_at=MOMENT,
+        confirmed_at=MOMENT,
+    )
+    # The match that stands once the page's own match had ended (#2343).
+    newer = SimpleNamespace(
+        pk=uuid5(NAMESPACE_URL, "address-match-newer"),
+        sign_in_email=NEWER_ACCOUNT,
+        matched_at=MOMENT,
+        confirmed_at=MOMENT,
+    )
     responses = {
         LIST: _list(values, records, refresh=DELETED),
+        EDIT_MATCH: _entry(values, records, record=LEADER, post=EDIT, match=match),
+        EDIT_MATCH_OWN: _entry(
+            values, records, record=LEADER, post=EDIT, match=match, own_match=True
+        ),
+        EDIT_MATCH_NEWER: _entry(
+            values, records, record=LEADER, post=EDIT, match=match, end=MATCH_END_NEWER
+        ),
         # A heading keeps the table's page size and starts at page 1.
         f"{LIST}?users_size=50&users_sort=-role": _list(values, records, sort="-role"),
         f"{LIST}?users_size=50&users_sort=email": _list(values, records),
@@ -564,6 +623,31 @@ def components(context, admin):
                         },
                     }
                 ),
+            ),
+            MATCH_END: (
+                200,
+                None,
+                _entry(
+                    values,
+                    records,
+                    record=LEADER,
+                    post=EDIT,
+                    outcome=MATCH_ENDED % {"address": MATCHED_ACCOUNT},
+                )[1],
+            ),
+            MATCH_END_NEWER: (
+                200,
+                None,
+                _entry(
+                    values,
+                    records,
+                    record=LEADER,
+                    post=EDIT,
+                    match=newer,
+                    outcome=MATCH_ALREADY_ENDED,
+                    already=True,
+                    end=MATCH_END_NEWER,
+                )[1],
             ),
             IMPORT: (200, None, leader_review),
             IMPORT_CONFIRM: (200, None, leader_confirm),
