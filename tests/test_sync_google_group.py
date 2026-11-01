@@ -28,6 +28,43 @@ from parishkit.pk_sync_ps_to_ggroup import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _restore_parishkit_logging():
+    """Undo the package logging setup that ``sync_google_group_main`` performs.
+
+    ``setup_logging`` replaces the handlers of the ``parishkit`` logger and its
+    children, binds a console handler to this test's captured stderr, and stops
+    propagation. Left in place, later tests in the same process log through a
+    handler whose stream pytest has closed (#2364), so restore the snapshot and
+    close any handler this test added.
+    """
+    manager = logging.Logger.manager
+    loggers = [logging.getLogger("parishkit")] + [
+        logger
+        for name, logger in manager.loggerDict.items()
+        if name.startswith("parishkit.") and isinstance(logger, logging.Logger)
+    ]
+    saved = {
+        logger: (list(logger.handlers), logger.level, logger.propagate, logger.disabled)
+        for logger in loggers
+    }
+    yield
+    for name, logger in list(manager.loggerDict.items()):
+        if (name == "parishkit" or name.startswith("parishkit.")) and isinstance(
+            logger, logging.Logger
+        ):
+            handlers, level, propagate, disabled = saved.get(
+                logger, ([], logging.NOTSET, True, False)
+            )
+            for handler in logger.handlers:
+                if handler not in handlers:
+                    handler.close()
+            logger.handlers = handlers
+            logger.setLevel(level)
+            logger.propagate = propagate
+            logger.disabled = disabled
+
+
 class Request:
     """Fake Google API request whose execute() returns a canned response."""
 
