@@ -5,7 +5,9 @@
   behavior (architecture spec, "Public information pages", lists them), and a
   change to that behavior updates this page in the same pull request. Planned
   work is not described until it ships (#2343's Google-verified alternate
-  addresses are added then). Change public_pages.UPDATED with the wording.
+  addresses are added then). Ended Family and anonymous sessions are not
+  deleted today (#2362): change the sessions sentence when #2362 ships.
+  Change public_pages.UPDATED with the wording.
 {% endcomment %}
 {% block title %}{% translate "Privacy policy" %}{% endblock %}
 {% block content %}<article class="flow panel public-page">
@@ -15,12 +17,12 @@
   <h2>{% translate "Information from the parish's records" %}</h2>
   <p>{% translate "The site reads the parish's own membership records from ParishSoft, the parish's membership system. It copies only what the stewardship form and the parish's follow-up need:" %}</p>
   <ul>
-    <li>{% translate "for each Family: its name, envelope number, registration status, home address, email addresses and phone numbers, and whether it asked for no mail;" %}</li>
-    <li>{% translate "for each household member: name, birth date, gender, marital status, language, email address and phone numbers, and a date of death where the parish recorded one;" %}</li>
-    <li>{% translate "the parish's ministries and who serves in them, including ministry leader roles; and" %}</li>
-    <li>{% translate "each Family's pledges and gifts to the funds the parish chose for the campaign. Gifts recorded as anonymous are left out." %}</li>
+    <li>{% translate "for each Family: ParishSoft's ID numbers for it, its name and mailing name, envelope number, family group, registration and participation status, home address, email addresses and phone numbers, whether the parish may publish its address, email and phone, and whether it asked for no mail;" %}</li>
+    <li>{% translate "for each household member: ParishSoft's ID number, full name (including middle, maiden and nickname, salutation and suffix), place in the household (such as head, spouse or child), member status, birth date, gender, marital status, language, email address and home, mobile and work phone numbers, and a date of death where the parish recorded one;" %}</li>
+    <li>{% translate "the parish's ministries and who serves in them: each person's ministry role (including ministry leader roles), the event they serve at, start and end dates, and whether the person is trained or a substitute only; and" %}</li>
+    <li>{% translate "each Family's pledges and gifts (amount, date and fund) to the funds the parish chose, for the campaign's year and for the earlier period the parish chose to compare it with. Gifts recorded as anonymous are only counted, never linked to anyone." %}</li>
   </ul>
-  <p>{% translate "The site does not copy Social Security numbers or other details the form does not use." %}</p>
+  <p>{% translate "About people, it copies only the fields listed here. It does not copy Social Security numbers, sacraments or other ParishSoft records." %}</p>
 
   <h2>{% translate "Information Families give" %}</h2>
   <p>{% translate "When a Family signs in, it can, depending on what the parish asks this year:" %}</p>
@@ -31,7 +33,7 @@
     <li>{% translate "write a note to the parish." %}</li>
   </ul>
   <p>{% translate "A pledge records an intention only. The site never takes a payment and never asks for bank or card details." %}</p>
-  <p>{% translate "The site keeps every response a Family submits. Parish staff review the changes a Family suggests, and only the changes they approve are copied into ParishSoft. The site also notes when a Family first opened its form and how far it got, so the parish knows whom to remind." %}</p>
+  <p>{% translate "The site keeps every response a Family submits. Parish staff review the changes a Family suggests. Copying approved changes into ParishSoft is off unless the parish turns it on, and then only the changes an Administrator confirms are copied. The site also notes when a Family first opened its form and how far it got, so the parish knows whom to remind." %}</p>
 
   <h2>{% translate "Family codes and links" %}</h2>
   <p>{% translate "The parish emails each Family its own code and personal link. Anyone who has them can open that Family's form while the campaign is open, so please keep them private. A Family's session ends after 60 minutes without activity, and after four hours at most." %}</p>
@@ -45,13 +47,13 @@
   <ul>
     <li>{% translate "A Family sees only its own information, after signing in with its code or link." %}</li>
     <li>{% translate "Parish staff and Administrators can see every Family's information and responses." %}</li>
-    <li>{% translate "Ministry leaders see information about the ministries they lead, such as who asked to join or leave them." %}</li>
+    <li>{% translate "Ministry leaders see, for the ministries they lead only, the people serving in them or asking to join or leave them, with each person's name, gender, age, phone numbers, email addresses and home address, and how each request was followed up. They never see pledges, gifts or Family codes." %}</li>
     <li>{% translate "The people who run the site's server for the parish can reach the stored information in order to keep the site working." %}</li>
   </ul>
 
   <h2>{% translate "Other services the site uses" %}</h2>
   <ul>
-    <li>{% translate "ParishSoft, the parish's membership system: the site reads it, and writes back only the changes parish staff approve." %}</li>
+    <li>{% translate "ParishSoft, the parish's membership system: the site reads it. It writes back to ParishSoft only if the parish turns that on, and then only the changes an Administrator confirms." %}</li>
     <li>{% translate "Google Workspace: the site sends its email from the parish's own Google account, signs staff in with Google, and, if the parish turns it on, keeps encrypted backup copies in the parish's Google Drive." %}</li>
     <li>{% translate "Slack, if the parish turns it on: short alerts about the site's health for the people who run it. They never contain Family information." %}</li>
     <li>{% translate "A hosting company provides the server the site runs on." %}</li>
@@ -59,18 +61,18 @@
   <p>{% translate "The site does not sell information, show advertising, or share information for marketing." %}</p>
 
   <h2>{% translate "Where information is kept, and for how long" %}</h2>
-  <p>{% translate "Information is kept in a database on the server that runs the site for the parish. Backups are encrypted before they leave the server, and only the people who hold the parish's backup key can open them. Backups are kept for about a year: every backup from the last seven days, one a day for 30 days and one a month for 12 months." %}</p>
-  <p>{% translate "Campaign records (responses, pledges, a copy of each email sent without its code or link, and a record of who did what) are kept as part of the parish's records, with no fixed end date, so the parish can compare one year with the next. Copies of ParishSoft records are kept the same way, thinned over time to one a day and later one a month. Signed-in sessions are deleted when they end, and downloaded report files after a short time." %}</p>
+  <p>{% translate "Information is kept in a database on the server that runs the site for the parish. Backups are encrypted before they leave the server, and only the people who hold the parish's backup key can open them. Backups are kept for about a year: every backup from the last seven days, one a day for 30 days and one a month for 12 months, and always at least the 14 newest." %}</p>
+  <p>{% translate "Campaign records (responses, pledges, a copy of each email sent without its code or link, and a record of who did what) are kept as part of the parish's records, with no fixed end date, so the parish can compare one year with the next. Copies of ParishSoft records are kept the same way, thinned over time to one a day and later one a month. Signed-in sessions stop working when they end. A session on the parish's pages is deleted within about an hour after it ends; ended Family sessions are currently kept in the database. Downloaded report files are deleted after a short time." %}</p>
 
   <h2>{% translate "Cookies and browser storage" %}</h2>
   <p>{% translate "The site uses only the cookies it needs to work:" %}</p>
   <ul>
-    <li>{% translate "pk_family and pk_admin keep you signed in to the Family form or to the parish's pages;" %}</li>
-    <li>{% translate "pk_family_csrf and pk_admin_csrf stop another website from sending forms in your name; and" %}</li>
+    <li>{% translate "pk_family and pk_admin keep you signed in to the Family form or to the parish's pages, until you sign out or the session ends: at most four hours on the Family form and twelve hours on the parish's pages;" %}</li>
+    <li>{% translate "pk_family_csrf and pk_admin_csrf stop another website from sending forms in your name. Your browser keeps them for up to a year; they hold no information about you; and" %}</li>
     <li>{% translate "pk_assist_binding lasts one minute, when parish staff open a Family's form to help them." %}</li>
   </ul>
-  <p>{% translate "On the parish's pages, your browser also remembers a few display choices, such as light or dark appearance and which menus and help panels are open. They stay in your browser and are not sent to the site." %}</p>
-  <p>{% translate "The site has no analytics, advertising or tracking, and it loads nothing from other websites. The web server does not record which pages you visit or your IP address. Signing in with Google takes you to Google's own page, where Google's privacy policy applies." %}</p>
+  <p>{% translate "On the parish's pages, your browser also remembers a few display choices, such as light or dark appearance and which menus and help panels are open, and a short status message carried from one page to the next. They stay in your browser and are not sent to the site." %}</p>
+  <p>{% translate "The site has no analytics, advertising or tracking, and it loads nothing from other websites. The web server does not record which pages you visit or your IP address. To slow down anyone guessing codes, the site keeps a scrambled (keyed hash) form of your IP address while you sign in or open a Family link, for at most 15 minutes after your last attempt. It is never stored with your information. Signing in with Google takes you to Google's own page, where Google's privacy policy applies." %}</p>
 
   <h2>{% translate "Correcting your information" %}</h2>
   <p>{% translate "ParishSoft is the parish's record. A Family can correct its information on the form while the campaign is open. For anything else, including a request to remove information, contact the parish: the parish will tell you what it can change or remove." %}</p>
