@@ -221,7 +221,7 @@ def assert_no_refresh_wording(page):
     assert page.get_by_text(QUEUE, exact=False).count() == 0
 
 
-@pytest.mark.parametrize("width", [320, 660, 1024, 1280])
+@pytest.mark.parametrize("width", [320, 360, 400, 416, 420, 660, 1024, 1280])
 def test_load_step_loads_then_continues_in_place(
     page, component_origin, axe_source, width
 ):
@@ -271,6 +271,9 @@ def test_load_step_loads_then_continues_in_place(
     # The action row below the button: its Back must not move up when the
     # pressed button goes (#1517 review, L1).
     below = back.bounding_box()
+    # Nor may the row grow when Continue comes: its slot holds an invisible
+    # copy of Continue's label until then, as tall as Continue at every width.
+    actions = row.bounding_box()
     page.evaluate(SNAPSHOT_SPOKEN)
     start.click()
     has_text(summary, "Loading the campaign's ParishSoft data…")
@@ -317,6 +320,7 @@ def test_load_step_loads_then_continues_in_place(
     assert_same_box(above, summary.bounding_box())
     assert_same_box(first_box, region.locator("[data-load-stage]").first.bounding_box())
     assert_same_box(below, back.bounding_box())
+    assert_same_box(actions, row.bounding_box())
     assert boxes_sizes(stage_boxes) == sizes
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert page.evaluate(MARKED) == "kept"
