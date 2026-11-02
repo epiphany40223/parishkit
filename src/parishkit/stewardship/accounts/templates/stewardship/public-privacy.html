@@ -5,10 +5,8 @@
   behavior (architecture spec, "Public information pages", lists them), and a
   change to that behavior updates this page in the same pull request. Planned
   work is not described until it ships (#2343's Google-verified alternate
-  addresses are added then). Ended Family and anonymous sessions are not
-  deleted today (#2362): change the sessions sentence when #2362 ships.
-  The page follows this deployment's configuration (public_pages
-  .campaign_facts): a paragraph about a form step, a ParishSoft read or
+  addresses are added then). The page follows this deployment's
+  configuration (public_pages.campaign_facts): a paragraph about a form step, a ParishSoft read or
   write-back, or Ministry leaders shows only when the current campaign or
   the publication setting turns that on; with no current campaign
   (facts.general) every paragraph shows, with a note saying so. The first
@@ -81,7 +79,7 @@
 
   <h2>{% translate "Where information is kept, and for how long" %}</h2>
   <p>{% translate "Information is kept in a database on the server that runs the site for the parish. Backups are encrypted before they leave the server, and only the people who hold the parish's backup key can open them. Backups are kept for about a year: every backup from the last seven days, one a day for 30 days and one a month for 12 months, and always at least the 14 newest." %}</p>
-  <p>{% translate "Campaign records (responses, pledges, a copy of each email sent without its code or link, and a record of who did what) are kept as part of the parish's records, with no fixed end date, so the parish can compare one year with the next. Copies of ParishSoft records are kept the same way, thinned over time to one a day and later one a month. Signed-in sessions stop working when they end. A signed-in session on the parish's pages is deleted within about an hour after it ends; ended Family sessions are currently kept in the database. Downloaded report files are deleted after a short time." %}</p>
+  <p>{% translate "Campaign records (responses, pledges, a copy of each email sent without its code or link, and a record of who did what) are kept as part of the parish's records, with no fixed end date, so the parish can compare one year with the next. Copies of ParishSoft records are kept the same way, thinned over time to one a day and later one a month. Signed-in sessions stop working when they end. A signed-in session, on the Family form or the parish's pages, is deleted within about an hour after it ends. Downloaded report files are deleted after a short time." %}</p>
 
   <h2>{% translate "Cookies and browser storage" %}</h2>
   <p>{% translate "The site uses only the cookies it needs to work:" %}</p>
