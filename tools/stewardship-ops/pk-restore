@@ -1896,16 +1896,29 @@ else
     step "8. Starting web and caddy for the Restore review"
     limited "$LIMIT_START" "starting web and caddy" "${dc[@]}" up --detach --wait web caddy
 fi
+# Each try is a fresh health process whose probe waits at most 2 seconds,
+# so on web's cold start an early try can print an ERROR and fail before
+# web is ready (#2378). An expected retry must not teach the operator to
+# ignore ERROR lines: each try's standard error is kept, an earlier failed
+# try prints a plain progress line, and only a final failure prints the
+# last try's diagnostics. A killed try's TIMEOUT line (from `limited`) is
+# never held back.
 healthy=0
+health_err="$work/health.err"
 for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
     if limited "$LIMIT_QUERY" "web's health check" "${dc[@]}" exec -T web \
-        timeout "$LIMIT_QUERY" pk-stewardship health --config "$services/web.yaml" >/dev/null; then
+        timeout "$LIMIT_QUERY" pk-stewardship health --config "$services/web.yaml" \
+        >/dev/null 2>"$health_err"; then
         healthy=1
         break
     fi
-    [ "$attempt" -eq 12 ] || sleep 5
+    grep '^TIMEOUT: ' "$health_err" >&2 || true
+    [ "$attempt" -eq 12 ] || { echo "    waiting for web (try $attempt of 12)"; sleep 5; }
 done
-[ "$healthy" -eq 1 ] || refuse "web did not turn healthy; see docker compose ... logs web"
+if [ "$healthy" -ne 1 ]; then
+    grep -v '^TIMEOUT: ' "$health_err" >&2 || true
+    refuse "web did not turn healthy; see docker compose ... logs web"
+fi
 if has_command database-sources; then
     # The source check (operations specification, "Source check"), from the
     # two services a restore starts: web and the admin-recovery one-off. It

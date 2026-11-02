@@ -58,7 +58,8 @@ HELP = (
 # long tail after it), FAKE_HELP the image's help text, FAKE_CHECK
 # restore-check's exit status, FAKE_VALIDATE validate-deployment's,
 # FAKE_BACKUP a running backup-worker's id, FAKE_PS_FAIL a failed listing,
-# FAKE_LOAD_STATUS the load's exit status after it committed, FAKE_HANG a
+# FAKE_LOAD_STATUS the load's exit status after it committed,
+# FAKE_HEALTH_FAILS how many health tries fail first, FAKE_HANG a
 # pattern whose call records its pid and sleeps, FAKE_FAIL a pattern whose
 # call exits 1. An `exec` into the postgres container runs its command here
 # (psql is emulated, pg_restore is a stand-in), with paths inside the container
@@ -126,7 +127,17 @@ if [[ " $* " == *" exec -T "* ]]; then
                         "$FAKE_STORE"/pk-restore-*/suffix.sql >"$FAKE_STATE/comment"
                     exit "${FAKE_LOAD_STATUS:-0}" ;;
             esac ;;
-        pk-stewardship) ;;
+        pk-stewardship)
+            # FAKE_HEALTH_FAILS: how many health tries fail first, each
+            # with the probe's cold-start ERROR on standard error.
+            if [ "${cmd[1]}" = health ] && [ -n "${FAKE_HEALTH_FAILS:-}" ]; then
+                echo x >>"$FAKE_STATE/health"
+                if [ "$(wc -l <"$FAKE_STATE/health")" -le "$FAKE_HEALTH_FAILS" ]; then
+                    echo "ERROR: dependency observation incomplete;" \
+                        "retry diagnostics" >&2
+                    exit 3
+                fi
+            fi ;;
         *) exec "${cmd[@]}" ;;
     esac
     exit 0
@@ -1728,6 +1739,39 @@ def test_a_source_difference_fails_the_restore_but_leaves_web_up(host):
     assert "do not release the Restore review" in output(result)
     assert "Stopped in step" not in output(result)
     assert not any(c.startswith(("rm ", "stop ")) for c in calls)
+
+
+def test_a_cold_start_health_retry_prints_progress_not_error(host):
+    """Two failed tries then a pass: progress lines, no ERROR (#2378)."""
+    result, calls = restore(host, FAKE_HEALTH_FAILS="2")
+    assert result.returncode == 0, output(result)
+    assert sum("pk-stewardship health" in c for c in calls) == 3
+    assert "ERROR" not in output(result)
+    assert "    waiting for web (try 1 of 12)\n" in result.stdout
+    assert "    waiting for web (try 2 of 12)\n" in result.stdout
+    assert "try 3 of 12" not in output(result)
+    assert "web is healthy" in output(result)
+
+
+def test_web_never_healthy_prints_the_last_tries_diagnostics(host):
+    """Twelve failed tries: the captured ERROR is shown, then the refusal."""
+    result, calls = restore(host, FAKE_HEALTH_FAILS="12")
+    assert result.returncode == 1, output(result)
+    assert sum("pk-stewardship health" in c for c in calls) == 12
+    assert "waiting for web (try 11 of 12)" in result.stdout
+    assert "try 12 of 12" not in output(result)
+    # Only the last try's diagnostics, then the refusal.
+    error = "ERROR: dependency observation incomplete; retry diagnostics\n"
+    refusal = "pk-restore: web did not turn healthy"
+    assert result.stdout.count(error) == 1
+    assert result.stdout.index(error) < result.stdout.index(refusal)
+
+
+def test_a_killed_health_try_is_logged_at_once(host):
+    """A try killed at its limit prints its TIMEOUT line even when retried."""
+    result, _ = restore(host, FAKE_TIMEOUT="pk-stewardship health")
+    assert result.returncode == 1, output(result)
+    assert result.stdout.count("TIMEOUT: web's health check killed after") == 12
 
 
 def test_a_stopped_caddy_keeps_its_networks(host):
