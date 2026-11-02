@@ -39,9 +39,13 @@ Collect, outside the runtime root and outside the repository:
   `ghcr.io/<owner>/<repository>/stewardship@sha256:<64 hex>` reference. The
   release workflow writes that line when the human pushes a
   `stewardship-vX.Y.Z` tag (`vX.Y.Z` up to 1.23.0); a
-  tag such as `:1.2.3` is never deployed, only the digest. The host pulls it
-  without a registry credential, so the package must be public, a one-time
-  step after the first release (see the
+  tag such as `:1.2.3` is never deployed, only the digest. Do not assume the
+  host can pull it anonymously: on 2026-11-02 a pull without credentials was
+  refused as `unauthorized`, so the package is not anonymously pullable now.
+  A host needs a registry login with a short-lived `read:packages` token
+  (see
+  [Log in to the registry first](stewardship-backup-runbook.md#scripted-replacement-and-drill-restore)
+  and the
   [release image guide](stewardship-release-image.md#the-image-is-published-by-the-release-tag-and-only-then)).
 - The **deployment YAML**: schema version 1, `profile: production`, the HTTPS
   `public_origin`, `trusted_proxy_hops: 1`, and the absolute `paths.root`.
@@ -627,7 +631,10 @@ sequence with the commands that exist.
      not built by this repository's release workflow for that tag. The
      [release image guide](stewardship-release-image.md#the-pushed-digest-is-smoke-tested-and-attested)
      says what it checks.
-   - Pull it: `docker pull NEW_DIGEST`.
+   - Pull it: `docker pull NEW_DIGEST`. The package is not anonymously
+      pullable, so log in first as the
+      [backup runbook](stewardship-backup-runbook.md#scripted-replacement-and-drill-restore)
+      describes, and log out afterwards.
    - Collect its static files: create an empty `cache/static.next` owned by
      `10001:10001` with mode `0700` and run `collect-static` into it in the
      new image, exactly as first installation does. Nothing serves that
