@@ -71,6 +71,15 @@ recompiles the content from the event's facts after the pipe; the envelope
 carries no rendered text, and the operational and security envelopes refuse
 each other's schema.
 
+A verified-address match raises its own `address_matched` event, whose
+email adds the **Signs in through Google account** row (and a **Replaced
+Google account** row for a takeover); an Administrator grant whose address
+a standing match signs in through carries the same **Signs in through
+Google account** row after Target
+([#2343](https://github.com/epiphany40223/parishkit/issues/2343),
+[#2363](https://github.com/epiphany40223/parishkit/issues/2363); see
+[verified-address match records](../specs/stewardship/data/spec.md#verified-address-match-records)).
+
 ### Schema and grants
 
 Two relations are added, the security cohort and recipient tables, with the
