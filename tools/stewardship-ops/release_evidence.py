@@ -13,14 +13,17 @@ ci.yml's main-tree-evidence job (on every push to main, #158) and
 merge-train.sh (before a train merges) ask it the same question about main's
 head and a train head:
 
-- Only runs named exactly "CI (jobs: all)" from a workflow_dispatch count; a
-  jobs=affected dispatch may have skipped job groups (#626).
+- Only a full run of the product being released counts: a workflow_dispatch
+  named exactly as FULL_RUN_TITLES lists for it ("CI (jobs: all)" for
+  Stewardship); a jobs=affected dispatch may have skipped job groups (#626).
 - Only the newest such run on each commit counts, so a later failed or
   cancelled full run on X withdraws X's older success.
 - Runs are considered newest first, and the first whose commit qualifies
   decides, whatever its state: a pending run is waited for, a failed one
   refuses the release. Its commit qualifies when the two trees differ in no
-  path outside the docs-safe allowlist (or not at all).
+  path outside the docs-safe allowlist (or not at all), apart from paths
+  that belong only to another product and cannot affect this one's jobs
+  (#2208, see other_product_only; none do until #2207's classifier lands).
 - A run whose commit cannot be read (not fetchable from the remote, such as
   a deleted train branch) and that is newer than any qualifying run decides
   as "unreadable", which callers refuse: it might have been a newer failure.
@@ -42,6 +45,7 @@ tree whenever the deciding run's tree differs.
 
 Usage:
     release_evidence.py select --repo OWNER/NAME --commit SHA
+        [--product stewardship|sync]
         [--checkout DIR] [--remote NAME] [--limit N]
         [--run ID [--retry-seconds N]]
     release_evidence.py docs-tests
@@ -50,11 +54,11 @@ Usage:
 
 prints "RUN_ID STATUS CONCLUSION HEAD_SHA DOCS_PATHS ATTEMPT" (tab
 separated; STATUS is "unreadable" for an unreadable run; DOCS_PATHS counts
-the docs-safe paths that differ; ATTEMPT is the run's latest attempt, more
-than 1 when failed jobs were re-run, #158) for the deciding run, or nothing
-when no full run qualifies. Progress and failures go to stderr. Exit status
-3 means a git or gh call passed its time limit; 1 means gh failed every
-attempt.
+the paths that differ, all docs-safe or another product's own; ATTEMPT is
+the run's latest attempt, more than 1 when failed jobs were re-run, #158)
+for the deciding run, or nothing when no full run qualifies. Progress and
+failures go to stderr. Exit status 3 means a git or gh call passed its time
+limit; 1 means gh failed every attempt.
 
 release-order (#1834) checks the EARLIER_RELEASE_REQUIRED table against the
 remote's previous release tag: it prints each refusal on stderr and exits 1
@@ -72,7 +76,30 @@ import tempfile
 import time
 from pathlib import Path, PurePosixPath
 
+# The products a release can be of; --product defaults to Stewardship, so
+# release.sh, merge-train.sh, release.yml and ci.yml's main-tree-evidence
+# keep today's decision without passing it (#2208).
+PRODUCTS = ("stewardship", "sync")
+DEFAULT_PRODUCT = "stewardship"
+
+# The run names that are a full run of each product. "CI (jobs: all)" is
+# what ci.yml names every full dispatch today, and every recorded run keeps
+# counting for Stewardship. It runs no Sync job group yet, so it is not a
+# Sync run; the per-product names arrive with ci.yml's product input.
 FULL_RUN_TITLE = "CI (jobs: all)"
+FULL_RUN_TITLES = {
+    "stewardship": frozenset({FULL_RUN_TITLE, "CI (stewardship: all)"}),
+    "sync": frozenset({"CI (sync: all)"}),
+}
+
+# The paths each product owns alone. Everything else (shared src/parishkit
+# modules, top-level tests, tools, deploy, workflows, requirements,
+# pyproject.toml) is shared: a change there always needs a fresh full run of
+# every product it ships in, whatever a classifier believes (Administrator,
+# 2026-11-02, #2208).
+PRODUCT_ROOTS = {
+    product: (f"src/parishkit/{product}/", f"tests/{product}/") for product in PRODUCTS
+}
 CI_WORKFLOW_PATH = ".github/workflows/ci.yml"
 TIMEOUT_STATUS = 3
 GIT_SECONDS = 120
@@ -122,6 +149,36 @@ def docs_safe(path):
         return True
     parts = PurePosixPath(path).parts
     return len(parts) > 1 and parts[0] == "docs" and path.endswith(".md")
+
+
+def affects(product, path):
+    """Whether a changed path can affect any of product's CI job groups.
+
+    A conservative stand-in until #2207's per-product classifier is on main:
+    every path affects every product, so evidence is decided exactly as it
+    was before products existed. Wiring in the classifier is the first
+    change of behavior and gets its own reviews (#2208).
+    """
+    return True
+
+
+def other_product_only(product, path):
+    """Whether a changed path is another product's alone and cannot affect product.
+
+    Both must hold: the path lies under another product's own roots (never
+    shared code, see PRODUCT_ROOTS), and the classifier says it cannot
+    affect product's jobs.
+    """
+    owner = next(
+        (other for other, roots in PRODUCT_ROOTS.items() if path.startswith(roots)),
+        None,
+    )
+    return owner not in (None, product) and not affects(product, path)
+
+
+def ignorable(product, path):
+    """Whether a difference at path leaves a full product run valid evidence."""
+    return docs_safe(path) or other_product_only(product, path)
 
 
 def limited(what, limit, command):
@@ -218,8 +275,8 @@ def differing_paths(checkout, remote, base, target):
     return [path for path in diff.stdout.split("\0") if path]
 
 
-def select(runs, target, paths_between):
-    """Return (run, paths) for the deciding run, or None.
+def select(runs, target, paths_between, product=DEFAULT_PRODUCT):
+    """Return (run, paths) for the deciding run of product, or None.
 
     runs are newest first; paths_between(base, target) returns the differing
     paths, or None when base cannot be read. An unreadable newest-per-commit
@@ -227,14 +284,14 @@ def select(runs, target, paths_between):
     """
     seen = set()
     for run in runs:
-        if not is_full_run(run):
+        if not is_full_run(run, product):
             continue
         sha = run["headSha"]
         if sha in seen:
             continue
         seen.add(sha)
         paths = paths_between(sha, target)
-        if paths is None or all(docs_safe(path) for path in paths):
+        if paths is None or all(ignorable(product, path) for path in paths):
             return run, paths
     return None
 
@@ -280,10 +337,10 @@ def view_run(repo, run_id):
     }
 
 
-def is_full_run(run):
-    """Whether a run is a full CI dispatch (the listing filters workflow)."""
+def is_full_run(run, product=DEFAULT_PRODUCT):
+    """Whether a run is a full CI dispatch of product (the listing filters workflow)."""
     return (
-        run.get("displayTitle") == FULL_RUN_TITLE
+        run.get("displayTitle") in FULL_RUN_TITLES[product]
         and run.get("event") == "workflow_dispatch"
         and run.get("path", CI_WORKFLOW_PATH) == CI_WORKFLOW_PATH
     )
@@ -313,8 +370,16 @@ def listing_doubt(runs, named, chosen):
     return None
 
 
-def choose(repo, limit, target, paths_between, run_id=None, pause=LIST_RETRY_SECONDS):
-    """Return (chosen, runs) for select's command line.
+def choose(
+    repo,
+    limit,
+    target,
+    paths_between,
+    run_id=None,
+    pause=LIST_RETRY_SECONDS,
+    product=DEFAULT_PRODUCT,
+):
+    """Return (chosen, runs) for select's command line, for product's evidence.
 
     The deciding run always comes from the listing alone, exactly as
     release.yml will choose it. With run_id, that run is also read directly
@@ -337,22 +402,26 @@ def choose(repo, limit, target, paths_between, run_id=None, pause=LIST_RETRY_SEC
     named = None
     if run_id is not None:
         named = view_run(repo, run_id)
-        if not is_full_run(named):
+        if not is_full_run(named, product):
+            titles = " or ".join(repr(t) for t in sorted(FULL_RUN_TITLES[product]))
             log(
-                f"run {run_id} is not a {FULL_RUN_TITLE!r} workflow_dispatch of "
-                f"{CI_WORKFLOW_PATH}, so it cannot be release evidence"
+                f"run {run_id} is not a {titles} workflow_dispatch of "
+                f"{CI_WORKFLOW_PATH}, so it cannot be {product} release evidence"
             )
             named = None
         elif (paths := paths_once(named["headSha"], target)) is not None and not all(
-            docs_safe(path) for path in paths
+            ignorable(product, path) for path in paths
         ):
             # No listing can make it decide, so re-reading would only wait.
-            log(f"run {run_id}'s tree differs from {target} beyond docs-safe paths")
+            log(
+                f"run {run_id}'s tree differs from {target} beyond docs-safe "
+                "paths and other products' own paths"
+            )
             named = None
     start = time.monotonic()
     for attempt in range(1, LIST_ATTEMPTS + 1):
         runs = list_runs(repo, limit)
-        chosen = select(runs, target, paths_once)
+        chosen = select(runs, target, paths_once, product)
         doubt = named and listing_doubt(runs, named, chosen)
         if not doubt:
             break
@@ -519,6 +588,7 @@ def main(argv=None):
     pick = sub.add_parser("select")
     pick.add_argument("--repo", required=True)
     pick.add_argument("--commit", required=True)
+    pick.add_argument("--product", choices=PRODUCTS, default=DEFAULT_PRODUCT)
     pick.add_argument("--checkout", default=".")
     pick.add_argument("--remote", default="origin")
     pick.add_argument("--limit", type=int, default=100)
@@ -554,13 +624,14 @@ def main(argv=None):
             ),
             args.run,
             args.retry_seconds,
+            args.product,
         )
     except TimedOut:
         return TIMEOUT_STATUS
     except RuntimeError as error:
         log(str(error))
         return 1
-    log(f"scanned {len(runs)} dispatched CI runs for {args.commit}")
+    log(f"scanned {len(runs)} dispatched CI runs for {args.product} at {args.commit}")
     if chosen is not None:
         run, paths = chosen
         status = run["status"] if paths is not None else "unreadable"

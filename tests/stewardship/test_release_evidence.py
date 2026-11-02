@@ -479,7 +479,7 @@ def test_a_named_run_that_is_not_a_full_ci_dispatch_is_never_merged(
     """Another title, event or workflow file cannot become evidence."""
     calls, pauses = fake_gh(monkeypatch, record, [])
     assert choose(80) is None
-    assert "run 80 is not a 'CI (jobs: all)' workflow_dispatch" in (
+    assert "run 80 is not a 'CI (jobs: all)' or 'CI (stewardship: all)' " in (
         capsys.readouterr().err
     )
     assert len(calls) == 2 and pauses == []
@@ -668,3 +668,208 @@ def test_release_order_refuses_when_the_tags_cannot_be_listed(tmp_path, capsys):
     args = ["release-order", "--checkout", str(work), "--commit", head]
     assert evidence.main(args) == 1
     assert "cannot list the release tags on origin" in capsys.readouterr().err
+
+
+# Product-aware evidence (#2208). TREES diffs that add other products' paths.
+PRODUCT_TREES = {
+    "sync": ["src/parishkit/sync/models.py", "tests/sync/test_models.py", "docs/a.md"],
+    "stewardship": [
+        "src/parishkit/stewardship/views.py",
+        "tests/stewardship/test_x.py",
+    ],
+}
+SHARED_PATHS = [
+    "src/parishkit/config.py",
+    "src/parishkit/syncing.py",
+    "src/parishkit/sync",
+    "tests/test_config.py",
+    "tests/syncs/test_x.py",
+    "tools/ci/affected.py",
+    "deploy/stewardship/Dockerfile",
+    ".github/workflows/ci.yml",
+    "requirements/stewardship.txt",
+    "pyproject.toml",
+    "README.md",
+]
+
+
+def product_select(runs, product, trees):
+    """The deciding run's id for product, against the given diffs."""
+    chosen = evidence.select(runs, "tag", lambda base, target: trees[base], product)
+    return chosen and chosen[0]["databaseId"]
+
+
+@pytest.fixture
+def classifier(monkeypatch):
+    """A stand-in for #2207: a product's own paths affect only that product."""
+
+    def affects(product, path):
+        owned = path.startswith(evidence.PRODUCT_ROOTS[product])
+        others = [p for p in evidence.PRODUCTS if p != product]
+        return owned or not any(
+            path.startswith(evidence.PRODUCT_ROOTS[o]) for o in others
+        )
+
+    monkeypatch.setattr(evidence, "affects", affects)
+
+
+@pytest.mark.parametrize(
+    ("title", "products"),
+    [
+        ("CI (jobs: all)", {"stewardship"}),
+        ("CI (stewardship: all)", {"stewardship"}),
+        ("CI (sync: all)", {"sync"}),
+        ("CI (jobs: affected)", set()),
+        ("CI (stewardship: affected)", set()),
+        ("CI (sync: affected)", set()),
+        ("CI (Sync: all)", set()),
+    ],
+)
+def test_full_run_names_per_product(title, products):
+    """Each product counts only its own full run names; affected runs never.
+
+    "CI (jobs: all)" runs no Sync job group yet, so it is Stewardship's.
+    """
+    for product in evidence.PRODUCTS:
+        counted = product_select([run(1, "same", title=title)], product, TREES)
+        assert (counted == 1) == (product in products), product
+
+
+def test_stewardship_is_the_default_product():
+    """Callers that pass no product get exactly the Stewardship decision."""
+    assert evidence.DEFAULT_PRODUCT == "stewardship"
+    for base in ("same", "docs", "code", "gone"):
+        runs = [run(1, base), run(2, "same", title="CI (sync: all)")]
+        assert evidence.select(runs, "tag", lambda b, t: TREES[b]) == evidence.select(
+            runs, "tag", lambda b, t: TREES[b], "stewardship"
+        )
+
+
+def test_without_the_classifier_other_product_paths_still_break_the_match():
+    """Until #2207 lands, affects() says yes to every path: today's rule."""
+    trees = {**TREES, **PRODUCT_TREES}
+    assert product_select([run(1, "sync")], "stewardship", trees) is None
+    for path in [*PRODUCT_TREES["sync"], *SHARED_PATHS]:
+        if not evidence.docs_safe(path):
+            assert not evidence.ignorable("stewardship", path), path
+
+
+def test_another_products_own_paths_keep_a_run_valid(classifier):
+    """A Sync-only difference leaves a Stewardship run valid, and back."""
+    trees = {**TREES, **PRODUCT_TREES}
+    assert product_select([run(1, "sync")], "stewardship", trees) == 1
+    sync_run = run(2, "stewardship", title="CI (sync: all)")
+    assert product_select([sync_run], "sync", trees) == 2
+    # A product's own paths still break its own match.
+    assert product_select([run(3, "stewardship")], "stewardship", trees) is None
+    sync_run = run(4, "sync", title="CI (sync: all)")
+    assert product_select([sync_run], "sync", trees) is None
+
+
+@pytest.mark.parametrize("path", SHARED_PATHS)
+def test_shared_paths_always_need_a_fresh_run(monkeypatch, path):
+    """Shared code breaks every product's match, whatever a classifier says.
+
+    Administrator, 2026-11-02: a change outside the products' own roots
+    always needs a fresh full Stewardship run before a Stewardship release.
+    """
+    monkeypatch.setattr(evidence, "affects", lambda product, path: False)
+    for product in evidence.PRODUCTS:
+        assert not evidence.ignorable(product, path)
+        trees = {"shared": [path]}
+        title = "CI (sync: all)" if product == "sync" else "CI (jobs: all)"
+        assert product_select([run(1, "shared", title=title)], product, trees) is None
+
+
+def test_a_named_run_on_another_products_change_is_used(
+    monkeypatch, capsys, classifier
+):
+    """release.sh's --run path applies the same product rule as the listing."""
+    trees = {**TREES, **PRODUCT_TREES}
+    record = rest(80, "sync")
+    fake_gh(monkeypatch, record, [run(80, "sync")])
+    chosen, _ = evidence.choose("o/r", 100, "tag", lambda base, target: trees[base], 80)
+    assert chosen[0]["databaseId"] == 80 and len(chosen[1]) == 3
+
+
+def test_select_takes_a_product_on_the_command_line(monkeypatch, capsys):
+    """--product sync ignores Stewardship's full runs; a bad product exits 2."""
+    fake_gh(monkeypatch, None, [run(81, "same")])
+    monkeypatch.setattr(evidence, "differing_paths", lambda *args: TREES[args[2]])
+    argv = ["select", "--repo", "o/r", "--commit", "tag"]
+    assert evidence.main([*argv, "--product", "sync"]) == 0
+    assert capsys.readouterr().out == ""
+    assert evidence.main([*argv, "--product", "stewardship"]) == 0
+    assert capsys.readouterr().out == "81\tcompleted\tsuccess\tsame\t0\t1\n"
+    with pytest.raises(SystemExit) as raised:
+        evidence.main([*argv, "--product", "parish"])
+    assert raised.value.code == 2
+
+
+def test_a_product_never_ignores_its_own_paths(monkeypatch):
+    """Even a classifier that says "unaffected" cannot hide a product's own code.
+
+    The owner check in other_product_only is the only thing standing between
+    a wrong classifier answer and a Stewardship release shipping Stewardship
+    code that no full run ever saw.
+    """
+    monkeypatch.setattr(evidence, "affects", lambda product, path: False)
+    for product in evidence.PRODUCTS:
+        for path in PRODUCT_TREES[product]:
+            if not evidence.docs_safe(path):
+                assert not evidence.ignorable(product, path), (product, path)
+
+
+def test_a_mixed_diff_needs_a_fresh_full_stewardship_run(classifier):
+    """A Sync path plus a shared path is not ignorable: the shared path wins."""
+    trees = {
+        **TREES,
+        **PRODUCT_TREES,
+        "mixed": [PRODUCT_TREES["sync"][0], SHARED_PATHS[0]],
+    }
+    assert product_select([run(1, "mixed")], "stewardship", trees) is None
+    # The Sync path alone would have been ignored.
+    assert product_select([run(2, "sync")], "stewardship", trees) == 2
+
+
+def test_the_command_line_defaults_to_stewardship(monkeypatch, capsys):
+    """select with no --product decides exactly as --product stewardship."""
+    fake_gh(
+        monkeypatch, None, [run(83, "same"), run(84, "same", title="CI (sync: all)")]
+    )
+    monkeypatch.setattr(evidence, "differing_paths", lambda *args: TREES[args[2]])
+    argv = ["select", "--repo", "o/r", "--commit", "tag"]
+    assert evidence.main(argv) == 0
+    default = capsys.readouterr().out
+    assert evidence.main([*argv, "--product", "stewardship"]) == 0
+    assert capsys.readouterr().out == default
+    assert default.startswith("83\t")
+
+
+def test_full_run_titles_follow_ci_run_name():
+    """FULL_RUN_TITLES and ci.yml's run-name cannot drift apart (#2208).
+
+    A product is told apart only by the dispatch's title, which ci.yml builds
+    from its dispatch inputs. Evaluate that run-name for every input value:
+    only a jobs=all dispatch may carry a full-run title, and only
+    Stewardship accepts it. Adding a dispatch input (such as a product
+    selector) without a matching run-name and title change fails here.
+    """
+    import re
+
+    import yaml
+
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    # PyYAML reads the bare `on:` key as the boolean true.
+    inputs = workflow[True]["workflow_dispatch"]["inputs"]
+    assert set(inputs) == {"jobs"}, "a new dispatch input must reach run-name"
+    template = re.search(r"format\('([^']*)', inputs\.jobs\)", workflow["run-name"])
+    assert template, "run-name must still be built from inputs.jobs"
+    for choice in inputs["jobs"]["options"]:
+        title = template.group(1).replace("{0}", choice)
+        accepted = {
+            p for p, names in evidence.FULL_RUN_TITLES.items() if title in names
+        }
+        # Only a jobs=all dispatch runs every group, and today only
+        # Stewardship's groups exist, so nobody else may accept it.
+        assert accepted == ({"stewardship"} if choice == "all" else set()), title
