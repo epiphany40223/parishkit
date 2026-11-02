@@ -106,9 +106,9 @@ Administrator's sign-off. Each is referred to below by its number.
     (Campaign totals, Response funnel, Participation charts, Day by day
     table) always have content, so a report containing one always sends.
     The converted Weekly (requests and Response funnel) therefore sends
-    every week, its requests block showing "None to review or to handle." when nothing
-    is open. This is an accepted behavior change
-    from today's Weekly, which skips an empty week.
+    every week, its requests block showing "None to review or to handle."
+    when there is nothing to review or to handle. This is an accepted
+    behavior change from today's Weekly, which skips an empty week.
 17. **The migration rewords the Weekly's default introduction.** When the
     converted Weekly's introduction is still the built-in default ("Here
     are this week’s requests for follow-up."), the migration replaces it
