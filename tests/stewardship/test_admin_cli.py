@@ -240,6 +240,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "users confirm",
         "users import-leaders",
         "users email-leaders",
+        "users end-match",
         # Home's acknowledgements, with the users and follow-up of PR 11.
         "events list",
         "events acknowledge",
@@ -403,6 +404,14 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert {"--preview", "--confirm", "--all", "--email", "--token"} <= {
         option["name"] for option in emails["options"]
     }
+    # Edit user's End match (#2343): full scope, not fresh-gated, and it
+    # prompts as the page's confirmation dialog asks; it names IDs only.
+    ending = entries["users end-match"]
+    assert ending["scope"] == "full" and ending["changes_state"]
+    assert ending["prompts"] and not ending["fresh_gated"]
+    assert ending["audit_event"] == "admin_cmd_users_end_match"
+    assert ending["result_fields"] == ["user_id", "match_id", "ended"]
+    assert {option["name"] for option in ending["options"]} >= {"--user", "--match"}
     # The review changes nothing; its --names export records this (#817).
     assert not review["prompts"] and not review["changes_state"]
     assert review["audit_event"] == "admin_cmd_export_family_test_names"
@@ -1079,6 +1088,7 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_users_confirm",
         "admin_cmd_users_import_leaders",
         "admin_cmd_users_email_leaders",
+        "admin_cmd_users_end_match",
         "admin_cmd_events_acknowledge",
         # The Ministry follow-up queue's Save and bulk outcome (PR 11a).
         "admin_cmd_followup_update",

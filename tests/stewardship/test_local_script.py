@@ -128,7 +128,8 @@ def test_the_guide_and_specification_are_cross_linked():
     for command in (
         "`start`",
         "`deploy [--schema-change] [--bulk on\\|off] [--smtp-latency-ms N] "
-        "[--parishsoft real\\|fake] [--mail-redirect ADDRESS\\|off]`",
+        "[--parishsoft real\\|fake] [--mail-redirect ADDRESS\\|off] "
+        "[--alternate-sign-in on\\|off]`",
         "`rehearse [--due-in MIN] [--send-only] [--timeout MIN] [--label NAME]`",
         "`spike [--families N] [--sources S] [--during-send] [--wait MIN] "
         "[--label NAME]`",
@@ -301,6 +302,9 @@ def vm_commands(calls):
         ("deploy", "--mail-redirect", "a@example.org,b@example.org"),
         ("deploy", "--mail-redirect", "nobody"),
         ("deploy", "--rollback", "--mail-redirect", "jeff@example.org"),
+        ("deploy", "--alternate-sign-in"),
+        ("deploy", "--alternate-sign-in", "yes"),
+        ("deploy", "--rollback", "--alternate-sign-in", "on"),
         ("rehearse", "--bogus"),
         ("rehearse", "--due-in"),
         ("finish-setup", "x"),
@@ -475,6 +479,11 @@ def test_deploy_passes_the_rehearsal_rendering_choices(tmp_path):
     )
     _, calls, _ = run_local(tmp_path / "off", "deploy", "--mail-redirect", "off")
     assert vm_commands(calls)[-1].endswith(f" 0 {HOST_REMOTE} keep keep keep off")
+    # Sign-in through another verified address (#2343) is a fifth.
+    _, calls, _ = run_local(
+        tmp_path / "alternate", "deploy", "--alternate-sign-in", "on"
+    )
+    assert vm_commands(calls)[-1].endswith(f" 0 {HOST_REMOTE} keep keep keep keep on")
 
 
 def test_deploy_passes_the_users_upgrade_inputs_to_the_vm_half(tmp_path):
@@ -1526,6 +1535,10 @@ if [ -n "$FAKE_HOST_ENV" ]; then
     parishsoft=$PARISHKIT_LOCAL_PARISHSOFT redirect=$PARISHKIT_LOCAL_MAIL_REDIRECT
     echo "host bulk=$bulk latency=$latency parishsoft=$parishsoft" \
         "redirect=$redirect" >>"$FAKE_LOG"
+    # Set only by --alternate-sign-in (#2343): Production's own variable.
+    [ -z "${PARISHKIT_STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN+set}" ] ||
+        echo "host alternate=$PARISHKIT_STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN" \
+            >>"$FAKE_LOG"
 fi
 retarget() {
     echo '{"services": {"web": {"image": "'"$2"'"}}}' >"$3/config/services/compose.json"
@@ -1802,6 +1815,23 @@ def test_deploy_hands_the_rehearsal_choices_to_the_host_half(tmp_path):
         env={"FAKE_IMAGE_EXISTS": "1", "FAKE_HOST_ENV": "1"},
     )
     assert "bulk=keep latency=keep parishsoft=keep redirect=keep" in calls[-1]
+    # --alternate-sign-in (#2343) is the host half's Production variable.
+    for word, value in (("on", "1"), ("off", "0")):
+        calls, _, _ = run_vm(
+            tmp_path / word,
+            "deploy",
+            NEW_IMAGE,
+            "0",
+            str(tmp_path / word / "host.sh"),
+            "keep",
+            "keep",
+            "keep",
+            "keep",
+            word,
+            prepare=with_host_script(tmp_path / word),
+            env={"FAKE_IMAGE_EXISTS": "1", "FAKE_HOST_ENV": "1"},
+        )
+        assert f"host alternate={value}" in calls
 
 
 def test_rehearse_needs_a_seeded_set_up_deployment(tmp_path):

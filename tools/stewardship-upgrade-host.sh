@@ -58,6 +58,14 @@
 # A rollback never renders it, for the same reason as the latency: it is
 # 60 minutes there until the next upgrade sets it again.
 #
+# In both modes sign-in through another verified address (#2343,
+# alternate_address_sign_in) is carried over from the web document, and
+# PARISHKIT_STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN=1|0 turns it on or off.
+# Production keeps it off until Google has verified the OAuth app's
+# user.emails.read scope (admin-portal specification, "Sign-in through
+# another verified address"). A rollback never renders it: the previous
+# release may not know it, and off is where sign-in is today.
+#
 # In both modes, the release that converts sign-in rules to users (#952)
 # needs the offline conversion between two migrations (operations
 # specification, "Users upgrade from sign-in rules"). The operator supplies
@@ -858,6 +866,24 @@ fi
 if [ "$window" != 60 ]; then
     switches+=(-e "PARISHKIT_STEWARDSHIP_EXPORT_DOWNLOAD_WINDOW_MINUTES=$window")
     echo "    export download window is $window minutes; keeping it"
+fi
+# Carry sign-in through another verified address over too (#2343): a
+# retarget-image without the variable renders the web document with it off.
+# Only web reads it. Checked here, before anything stops, as the window is.
+alternate=$(jq -r '.deployment.alternate_address_sign_in // false' "$services/web.yaml")
+case "${PARISHKIT_STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN:-keep}" in
+    keep) ;;
+    1) alternate=true ;;
+    0) alternate=false ;;
+    *) echo "PARISHKIT_STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN must be 1 or 0; refusing." >&2; exit 1 ;;
+esac
+if [ "$mode" = rollback ] && [ "$alternate" = true ]; then
+    echo "    sign-in through another verified address is not carried into a rollback; it is off until the next upgrade turns it on again"
+    alternate=false
+fi
+if [ "$alternate" = true ]; then
+    switches+=(-e PARISHKIT_STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN=1)
+    echo "    sign-in through another verified address is on; keeping it on"
 fi
 if [ "$profile" = local ]; then
     # The rehearsal's modeled Gmail latency (BG-12), which the deployment
@@ -1705,6 +1731,8 @@ for role in web worker scheduler; do
     rendered=$(jq -r '.deployment.export_download_window_minutes // 60' "$services/$role.yaml")
     [ "$rendered" = "$window" ] || problems+=("$role: export download window is $rendered minutes, not $window")
 done
+rendered=$(jq -r '.deployment.alternate_address_sign_in // false' "$services/web.yaml")
+[ "$rendered" = "$alternate" ] || problems+=("web: sign-in through another verified address is $rendered, not $alternate")
 if [ "$profile" = local ]; then
     rendered=$(jq -r '.deployment.local_smtp_latency_ms // 0' "$services/mail-dispatch.yaml")
     [ "$rendered" = "$latency" ] || problems+=("mail-dispatch: SMTP latency is $rendered ms, not $latency")

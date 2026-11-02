@@ -6,7 +6,9 @@ table's confirmation dialog and the Name lookup answers the New page's
 script, so neither has a slashless form; nor has the Import Ministry
 leaders review, which answers only the leaders table's POST (#952 slice 6),
 nor the Email Ministry leaders review and its Apply (#1592).
-A user's Timeline (#1866) is a page under the user's record ID.
+A user's Timeline (#1866) is a page under the user's record ID, and Edit
+user's End match (#2343) answers only its confirmation dialog, so it has no
+slashless form either.
 The page names come from the admin-portal specification's placement table
 ("Page names and placement").
 The old Portal users addresses (``users/rules`` and its autosave routes)
@@ -54,6 +56,12 @@ patterns = [
         name="user_leader_emails",
     ),
     path("users/<uuid:user_id>/edit/", user_views.user_edit, name="user_edit"),
+    # Edit user's End match (#2343): answers only its confirmation dialog.
+    path(
+        "users/<uuid:user_id>/match/end/",
+        user_views.user_match_end,
+        name="user_match_end",
+    ),
     # One user's Timeline (#1866): sign-ins, actions, role changes, emails.
     path(
         "users/<uuid:user_id>/timeline/",

@@ -14,7 +14,7 @@
 #   up [--families N]                first-time install from this checkout
 #   start                            start a stopped deployment's services
 #   deploy [--schema-change] [--bulk on|off] [--smtp-latency-ms N] [--parishsoft real|fake]
-#          [--mail-redirect ADDRESS|off]
+#          [--mail-redirect ADDRESS|off] [--alternate-sign-in on|off]
 #                                    build this checkout and upgrade the running
 #                                    deployment to it by the Production upgrade's steps;
 #                                    --bulk renders the bulk Family send on or off,
@@ -22,7 +22,9 @@
 #                                    latency, --parishsoft which ParishSoft it reads,
 #                                    never writes, and --mail-redirect the one address
 #                                    every message goes to, which a real Workspace key
-#                                    needs (#1399; all carry over when not given)
+#                                    needs (#1399), and --alternate-sign-in sign-in
+#                                    through another verified address (#2343; all
+#                                    carry over when not given)
 #   deploy --rollback                image-only rollback to the image the last deploy replaced
 #                                    (deploy also passes the STEWARDSHIP_USERS_* variables
 #                                    of the users upgrade, #952, to the host half)
@@ -335,12 +337,14 @@ case "$command" in
         # --bulk and --smtp-latency-ms (BG-12's rehearsal) choose what the
         # host half renders in local mode, --parishsoft (#1399) whether it
         # reads the fake or the real ParishSoft API, and --mail-redirect
-        # (#1399) the one address every message goes to; "keep" carries the
-        # current value.
+        # (#1399) the one address every message goes to, and
+        # --alternate-sign-in (#2343) web's alternate_address_sign_in; "keep"
+        # carries the current value.
         # The users upgrade's four STEWARDSHIP_USERS_* variables (#952) are
         # passed through as Production's laptop half passes them; the host
         # half validates them.
         schema_change=0 rollback=0 bulk=keep latency=keep parishsoft=keep redirect=keep
+        alternate=keep
         users_env=$(users_env_prefix)
         while [ $# -gt 0 ]; do
             case "$1" in
@@ -366,6 +370,10 @@ case "$command" in
                     if [ "$2" != off ] && ! [[ $2 =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$ ]]; then usage; fi
                     redirect=$2
                     shift ;;
+                --alternate-sign-in)
+                    [ $# -ge 2 ] || usage
+                    case "$2" in on|off) alternate=$2 ;; *) usage ;; esac
+                    shift ;;
                 *) usage ;;
             esac
             shift
@@ -374,7 +382,7 @@ case "$command" in
         # A rollback never converts.
         if [ "$rollback" = 1 ] && [ -n "$users_env" ]; then usage; fi
         # A rollback renders nothing new: it takes neither rendering flag.
-        if [ "$rollback" = 1 ] && [ "$bulk$latency$parishsoft$redirect" != keepkeepkeepkeep ]; then usage; fi
+        if [ "$rollback" = 1 ] && [ "$bulk$latency$parishsoft$redirect$alternate" != keepkeepkeepkeepkeep ]; then usage; fi
         require_running
         if [ "$rollback" = 1 ]; then
             upload_host_script
@@ -385,8 +393,10 @@ case "$command" in
             upload_host_script
             # Only the deploy itself carries the users upgrade's inputs.
             remote_env=$users_env
-            if [ "$bulk$latency$parishsoft$redirect" = keepkeepkeepkeep ]; then
+            if [ "$bulk$latency$parishsoft$redirect$alternate" = keepkeepkeepkeepkeep ]; then
                 run_remote deploy "$tag" "$schema_change" "$host_remote"
+            elif [ "$alternate" != keep ]; then
+                run_remote deploy "$tag" "$schema_change" "$host_remote" "$bulk" "$latency" "$parishsoft" "$redirect" "$alternate"
             elif [ "$parishsoft$redirect" = keepkeep ]; then
                 run_remote deploy "$tag" "$schema_change" "$host_remote" "$bulk" "$latency"
             elif [ "$redirect" = keep ]; then

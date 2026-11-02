@@ -73,6 +73,21 @@ def _signed_out(error):
     return getattr(error.__cause__, "sqlstate", None) == "42501"
 
 
+def standing_matches():
+    """The standing verified-address matches, oldest first (#2343).
+
+    Each is the Google account's sign-in address, the user's address it
+    signs in through and since when, as the Restore review page lists them.
+    """
+    from .policy_models import AddressMatch
+
+    return list(
+        AddressMatch.objects.filter(ended_at__isnull=True)
+        .order_by("matched_at", "id")
+        .values("sign_in_email", "email", "matched_at")
+    )
+
+
 @require_http_methods(["GET", "HEAD", "POST"])
 def restore_review(request):
     """Show the review, or run one posted step and show it again in place."""
@@ -122,6 +137,9 @@ def restore_review(request):
             "release_ready": not refusal,
             "release_refusal": refusal,
             "page_url": reverse("admin:maintenance"),
+            # The restore brought back the backup's verified-address matches,
+            # including one ended after the backup (#2343): listed to check.
+            "matches": standing_matches(),
         },
         status=status,
     )

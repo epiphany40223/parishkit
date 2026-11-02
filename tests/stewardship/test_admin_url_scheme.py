@@ -428,10 +428,12 @@ def test_every_slashless_form_is_listed_once_and_expected():
 # (#952), the Import Ministry leaders review answers only the leaders
 # table's form (#952 slice 6), the Email Ministry leaders review only its
 # table's form and dialog (#1592), and Delete email templates only the Pages
-# and emails tables' dialog (#879).
+# and emails tables' dialog (#879), and End match only Edit user's dialog
+# (#2343).
 POSTED_ONLY = {
     "schedule_delete",
     "user_delete",
+    "user_match_end",
     "user_leader_import",
     "user_leader_emails",
     "content_delete",

@@ -340,6 +340,32 @@ def lacks_match_grant():
     return login in {login_name(role) for role in NO_MATCH_GRANT_LOGINS}
 
 
+def session_limit(user_id):
+    """The latest end an automation session approved by ``user_id`` may have.
+
+    None for an account that acts as its own sign-in address. An account
+    that acts through a verified-address match may not approve a session
+    that outlives the match's 30 days (admin-automation specification,
+    "Session rules"): the limit is the match's ``confirmed_at`` plus 30
+    days. An account that acts as another address without a standing match
+    of it (which ``current_principal`` has already refused) gets the
+    database's present time, so no session can be approved.
+    """
+    user = PortalUser.objects.only("email", "sign_in_email").get(pk=user_id)
+    if user.email == user.sign_in_email:
+        return None
+    match = (
+        AddressMatch.objects.filter(
+            portal_user_id=user_id, ended_at__isnull=True, email=user.email
+        )
+        .only("confirmed_at")
+        .first()
+    )
+    if match is None:
+        return now()
+    return match.confirmed_at + timedelta(days=CONFIRMATION_DAYS)
+
+
 def put_back(user_id):
     """Make an account act as its own sign-in address again.
 
@@ -617,3 +643,84 @@ def _refused(existing, kind):
     if existing:
         end(existing, "not_confirmed")
     return Outcome(kind)
+
+
+# ---------------------------------------------------------------------------
+# An Administrator's End match (Edit user and ``pk-admin users end-match``)
+
+
+class OwnMatch(PermissionError):
+    """The Administrator's own session signs in through this match."""
+
+
+@dataclass(frozen=True)
+class Ended:
+    """What an Administrator's End match did.
+
+    ``sign_in_email`` is the matched Google account's sign-in address as
+    matched; ``already`` is True when the match had ended before this call,
+    which then changed nothing.
+    """
+
+    sign_in_email: str
+    already: bool
+
+
+def standing_for(address, record_id):
+    """The standing match of one user (address and record ID), or None.
+
+    Edit user shows it and the command line lists it; a standing match
+    made for an earlier record with the same address (the user deleted and
+    added again) gives no access and ends at its account's next sign-in.
+    """
+    return (
+        AddressMatch.objects.filter(
+            email=address, user_record_id=record_id, ended_at__isnull=True
+        )
+        .only("id", "portal_user_id", "sign_in_email", "matched_at", "confirmed_at")
+        .first()
+    )
+
+
+def end_by_administrator(match_id, address, *, actor_id, session_id):
+    """End one user's match as an Administrator; returns an ``Ended``.
+
+    ``address`` is the user's address: a match of another address is
+    unknown (``LookupError``). The users' lock comes first, then the
+    matched account's ``PortalUser`` row, then the match row, as every
+    match write takes them (the notes on #2343). The match the
+    Administrator's own session signs in through is refused (``OwnMatch``),
+    as the own-Administrator guard refuses a self-demotion; a match that
+    has already ended changes nothing. Otherwise the account acts as its
+    sign-in address again and the match ends as ``ended_by_administrator``,
+    naming the Administrator and their live session (``session_id``), by a
+    plain update that leaves ``actor_id`` NULL. The match guard re-checks
+    that session, records ``admin_address_match_ended`` and revokes the
+    account's live Admin and automation sessions in the same statement.
+    """
+    with transaction.atomic():
+        take_users_lock()
+        found = (
+            AddressMatch.objects.filter(pk=match_id, email=address)
+            .values_list("portal_user_id", flat=True)
+            .first()
+        )
+        if found is None:
+            raise LookupError("The match is unavailable.")
+        PortalUser.objects.select_for_update().filter(pk=found).first()
+        match = AddressMatch.objects.select_for_update().get(pk=match_id)
+        if match.ended_at is not None:
+            return Ended(match.sign_in_email, already=True)
+        if match.portal_user_id == actor_id:
+            raise OwnMatch("You can't end the match you are signed in through.")
+        PortalUser.objects.filter(pk=match.portal_user_id).exclude(
+            email=F("sign_in_email")
+        ).update(email=F("sign_in_email"), version=F("version") + 1)
+        AddressMatch.objects.filter(pk=match.pk, ended_at__isnull=True).update(
+            ended_at=now(),
+            end_reason="ended_by_administrator",
+            ended_by_id=actor_id,
+            ended_session_id=session_id,
+            version=F("version") + 1,
+        )
+        return Ended(match.sign_in_email, already=False)

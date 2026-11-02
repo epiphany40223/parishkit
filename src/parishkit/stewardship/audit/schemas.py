@@ -300,6 +300,9 @@ class Action(StrEnum):
     # (#1786, ``report-email confirm``).
     ADMIN_CMD_REPORT_EMAIL_CONFIRM = "admin_cmd_report_email_confirm"
     ADMIN_CMD_USERS_CONFIRM = "admin_cmd_users_confirm"
+    # users end-match: Edit user's End match of a verified-address match
+    # (#2343), beside the match guard's admin_address_match_ended.
+    ADMIN_CMD_USERS_END_MATCH = "admin_cmd_users_end_match"
     # parish confirm: the Parish settings page's Apply (ADM-11 PR 10).
     ADMIN_CMD_PARISH_CONFIRM = "admin_cmd_parish_confirm"
     # artwork remove: Campaign images' Apply of a removal (ADM-11 PR 10).

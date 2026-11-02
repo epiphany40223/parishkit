@@ -33,6 +33,8 @@ from parishkit.stewardship.accounts.user_timelines import (
     audit_lines,
     email_lines,
     family_lines,
+    in_window,
+    match_lines,
     ordered,
     read_ministries,
     role_changes,
@@ -618,3 +620,55 @@ def test_what_happened_keeps_the_family_timelines_minimum_width():
     page = render(timeline())
     assert '<table class="data-table timeline-table">' in page
     assert '<th scope="col" class="timeline-what">What happened</th>' in page
+
+
+def test_a_match_is_two_role_lines_and_a_window():
+    """A verified-address match (#2343) is "Google account matched" and, once
+    it ended, "Match ended" with why; its account counts inside its window
+    only, both ends included."""
+    account = UUID(int=88)
+    standing = {
+        "portal_user_id": account,
+        "sign_in_email": "ann@personal.example",
+        "matched_at": START + 10 * MINUTE,
+        "ended_at": None,
+        "end_reason": None,
+    }
+    ended = standing | {
+        "matched_at": START,
+        "ended_at": START + 5 * MINUTE,
+        "end_reason": "ended_by_administrator",
+    }
+    lines = match_lines([ended, standing])
+    assert [
+        (line.at, str(line.what), str(line.detail), line.kind) for line in lines
+    ] == [
+        (START, "Google account matched", "ann@personal.example", "roles"),
+        (START + 5 * MINUTE, "Match ended", "an Administrator ended it", "roles"),
+        (
+            START + 10 * MINUTE,
+            "Google account matched",
+            "ann@personal.example",
+            "roles",
+        ),
+    ]
+    assert in_window([ended], account, START)
+    assert in_window([ended], account, START + 5 * MINUTE)
+    assert not in_window([ended], account, START + 6 * MINUTE)
+    assert not in_window([ended], account, START - MINUTE)
+    assert in_window([ended, standing], account, START + 600 * MINUTE)
+    assert not in_window([standing], UUID(int=89), START + 600 * MINUTE)
+
+
+def test_the_summary_names_the_matched_account():
+    """Matched Google account shows only while a match stands (#2343)."""
+    plain = render(timeline())
+    assert "Matched Google account" not in plain
+    value = timeline()
+    value = replace(
+        value,
+        summary=replace(value.summary, matched=("ann@personal.example", START)),
+    )
+    page = render(value)
+    assert "<dt>Matched Google account</dt>" in page
+    assert "ann@personal.example, since" in page

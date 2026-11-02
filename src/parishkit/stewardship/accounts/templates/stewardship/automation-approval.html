@@ -30,7 +30,8 @@
     <label for="automation-scope">{% translate "Scope" %}</label>
     <select id="automation-scope" name="scope">{% for value, label in scope_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>
     <label for="automation-days">{% translate "Days until it expires" %}</label>
-    <input id="automation-days" name="days" type="number" min="1" max="{{ pending.days }}" value="{{ pending.days }}" required>
+    <input id="automation-days" name="days" type="number" min="1" max="{{ pending.days }}" value="{{ pending.days }}" required{% if limit %} aria-describedby="automation-days-limit"{% endif %}>
+    {% if limit %}<p class="help" id="automation-days-limit">{% translate "You sign in through another address, which Google confirms every 30 days, so this session ends by" %} <time datetime="{{ limit|instant }}" data-local-instant>{{ limit|instant }}</time>.</p>{% endif %}
     {% button type="submit" %}{% translate "Approve" %}{% endbutton %}
   </form>
   <p><a href="{{ back }}">{% translate "Cancel" %}</a></p>
