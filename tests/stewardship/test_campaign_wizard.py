@@ -1269,30 +1269,76 @@ def test_the_action_row_draws_the_discard_dialog_outside_its_region():
         assert "campaign-step-discard" not in actions(page)
 
 
-def test_in_place_focus_lands_on_the_count_line_only_when_it_has_text():
-    """Focus goes to the count line when it holds text, else to the summary.
+# Each load state the region draws, with the line that should take the
+# in-place focus: the count line when it holds text, else the summary.
+FOCUS_STATES = {
+    "offer": (
+        lambda task: {"load": "offer", "stages": wizard.load_stages("offer", None)},
+        "summary",
+    ),
+    "loading queued": (
+        lambda task: wizard.load_status(
+            task_values("queued", task, "unspecified"), families=0
+        ),
+        "count",
+    ),
+    "loading with progress": (
+        lambda task: {
+            "load": "loading",
+            "load_task": task,
+            "stages": wizard.load_stages("loading", "fetching"),
+            "progress": ("fetching", 1000, 4000),
+        },
+        "count",
+    ),
+    "loading without progress": (
+        lambda task: {
+            "load": "loading",
+            "load_task": task,
+            "stages": wizard.load_stages("loading", "fetching"),
+            "progress": None,
+        },
+        "summary",
+    ),
+    "failed": (
+        lambda task: {
+            "load": "failed",
+            "load_task": task,
+            "stages": wizard.load_stages("failed", "staging"),
+        },
+        "summary",
+    ),
+    "empty": (
+        lambda task: wizard.load_status(task_values("succeeded", task), families=False),
+        "summary",
+    ),
+    "loaded": (
+        lambda task: {
+            "load": "loaded",
+            "stages": wizard.load_stages("loaded", None),
+            "families": 1234,
+            "as_of": datetime(2026, 10, 17, 12, 0, tzinfo=UTC),
+        },
+        "count",
+    ),
+    # A poll's settled answer: loaded, but the count waits for the re-read.
+    "done without families": (
+        lambda task: wizard.load_status(task_values("succeeded", task), families=True),
+        "summary",
+    ),
+}
 
-    An empty count line would give a screen reader nothing to speak, so the
-    offer, failed and empty answers keep focus on the summary line.
+
+@pytest.mark.parametrize("state", FOCUS_STATES)
+def test_in_place_focus_lands_on_the_count_line_only_when_it_has_text(state):
+    """Exactly one line takes focus: the count line with text, else the summary.
+
+    An empty count line would give a screen reader nothing to speak, so a
+    state with no count keeps focus on the summary line.
     """
-    from parishkit.stewardship.accounts.stages import QUEUED
-
-    task = uuid4()
-
-    def focus_on(html):
-        """Return which of the two lines carries the in-place focus target."""
-        tags = re.findall(r'<p class="campaign-load-(summary|count)"([^>]*)>', html)
-        return [name for name, attrs in tags if "data-in-place-focus" in attrs]
-
-    offer = load_region(load="offer", stages=wizard.load_stages("offer", None))
-    failed = load_region(
-        load="failed", load_task=task, stages=wizard.load_stages("failed", "staging")
-    )
-    waiting = load_region(
-        **wizard.load_status(task_values("queued", task, "unspecified"), families=0)
-    )
-    assert count_line(waiting) == str(QUEUED)
-    assert focus_on(waiting) == ["count"]
-    for html in (offer, failed):
-        assert count_line(html) == ""
-        assert focus_on(html) == ["summary"]
+    build, target = FOCUS_STATES[state]
+    html = load_region(**build(uuid4()))
+    tags = re.findall(r'<p class="campaign-load-(summary|count)"([^>]*)>', html)
+    assert html.count("data-in-place-focus") == 1
+    assert [name for name, attrs in tags if "data-in-place-focus" in attrs] == [target]
+    assert (count_line(html) != "") == (target == "count")
