@@ -84,6 +84,9 @@ GOLDEN_ROOT = Path("/opt/parishkit")
 # exactly the "configured" topology, so its digests are configured's; the
 # configured and configured-slack renderings, which Production runs, are
 # unchanged by it.
+# #2380 adds the runtime budget's web_spare_connections field to every
+# rendered service document (the document digests only; the Compose digests
+# and fixtures are unchanged).
 # The "configured" Compose document and the Caddyfile are also committed in
 # full under fixtures/ so a difference can be read, not just detected.
 GOLDEN_DIGESTS = {
@@ -91,19 +94,19 @@ GOLDEN_DIGESTS = {
         "639dbe4ca02cbf24eb292a4f20909dd66fd18e04e963def2fb405dd1f0127e1c"
     ),
     ("initial", "documents"): (
-        "12cb572114939fbb76dda907148aa56dd0a3cad419d1e39accd9b9429d029b9d"
+        "b8297249c5e4695e1bb0fa70fa3ff89647a6b99a6f10a4a5921996791a7dfb8e"
     ),
     ("configured", "compose"): (
         "639dbe4ca02cbf24eb292a4f20909dd66fd18e04e963def2fb405dd1f0127e1c"
     ),
     ("configured", "documents"): (
-        "12cb572114939fbb76dda907148aa56dd0a3cad419d1e39accd9b9429d029b9d"
+        "b8297249c5e4695e1bb0fa70fa3ff89647a6b99a6f10a4a5921996791a7dfb8e"
     ),
     ("configured-slack", "compose"): (
         "7e53c2d9f207a8a220f97388127ad13864b3a3293e3ee032f68bdad51974f21b"
     ),
     ("configured-slack", "documents"): (
-        "983d1e04f66b30d5a97ff3fb103ebe64ecc0361a4f3245cf38cab6f2ae5d6d30"
+        "557cbdeb3f3a68ea38ad1c4fdae3fd1ec5191179bbfd9dbb2f2f35f5d91ee431"
     ),
 }
 
