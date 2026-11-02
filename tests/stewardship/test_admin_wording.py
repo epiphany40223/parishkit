@@ -109,14 +109,18 @@ FAMILY_TEMPLATES = {
     "family-maintenance.html",
     "family-unavailable.html",
     "hosted-file-unavailable.html",
-    # The public About, Contact, Privacy and Terms pages (#2360) are read by
-    # Families and visitors, not by Administrators, so they keep plain
-    # parish wording ("ministries", "staff") rather than the Admin terms.
+}
+# The public About, Contact, Privacy and Terms pages (#2360), whose reader
+# may hold no role, keep everyday "ministry", "staff" and "publish"
+# (ui-conventions, Capitalization and Retired words); every other retired
+# word is still checked there.
+PUBLIC_TEMPLATES = {
     "public-about.html",
     "public-contact.html",
     "public-privacy.html",
     "public-terms.html",
 }
+PUBLIC_KEPT_TERMS = {"ministry", "staff", "publish"}
 # The Family sign-in page's title, which Python builds; the Family portal
 # keeps its own wording there too.
 FAMILY_FUNCTIONS = {"family_login_title", "_login_title"}
@@ -396,6 +400,8 @@ def _occurrences():
     for path, strings in _admin_strings():
         name = path.relative_to(PACKAGE).as_posix()
         for term, rule in RETIRED.items():
+            if path.name in PUBLIC_TEMPLATES and term in PUBLIC_KEPT_TERMS:
+                continue
             pattern, scope = rule if isinstance(rule, tuple) else (rule, None)
             if scope is not None and not scope.search(name):
                 continue

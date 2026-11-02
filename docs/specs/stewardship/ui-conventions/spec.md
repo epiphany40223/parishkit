@@ -3667,11 +3667,13 @@ ParishSoft record. A person who is not a portal role is not called an
 administrator: the person who runs the server is "whoever runs the server".
 Exempt: the Family portal; quotations of the Family form's own wording;
 Google's words (a "Google Workspace administrator", a "super
-administrator", a shared drive's members); and "parish staff member" on the
+administrator", a shared drive's members); "parish staff member" on the
 sign-in and access-denied pages, whose reader may hold no role
-(Administrator, 2026-10-31). **Why.** Lower-case "member", "ministries",
-"staff" and "administrator" read as everyday words where the page means
-the record or the role. **Precedent.**
+(Administrator, 2026-10-31); and the everyday "ministry", "staff" and
+"publish" on the public About, Contact, Privacy policy and Terms of use
+pages, whose reader may also hold no role (#2360). **Why.** Lower-case
+"member", "ministries", "staff" and "administrator" read as everyday words
+where the page means the record or the role. **Precedent.**
 [#2330](https://github.com/epiphany40223/parishkit/issues/2330) (Status: built).
 
 ### Retired words
@@ -3694,9 +3696,12 @@ strings in Python, the text of upper-case constants (label maps, heading
 tuples and captions, wherever they live), downloaded-file headings, CLI
 help and descriptions, and the sentences in `ui-v1.js`. It skips code
 (data keys, CLI option names) and the Family portal, including the Family
-sign-in page's title. It does not see other untranslated Python text,
-such as a plain string built inside a function or a CLI command's printed
-output; the #2330 string changes swept those by hand. Its allowlist is
+sign-in page's title. On the public About, Contact, Privacy policy and
+Terms of use pages (#2360) it checks every row except "ministry", "staff"
+and "publish", which keep their everyday sense there because the reader
+may hold no role. It does not see other untranslated Python text, such as
+a plain string built inside a function or a CLI command's printed output;
+the #2330 string changes swept those by hand. Its allowlist is
 empty: the last entry, the Family sign-in abuse alert's title, which
 frozen SQL also renders, became "Sustained Family sign-in abuse" with
 frozen migration 0202. A new occurrence fails.
