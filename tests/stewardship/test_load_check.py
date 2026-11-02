@@ -79,14 +79,22 @@ def test_bounded_option_refuses_out_of_range_and_non_decimal_input(value):
         ),
     ],
 )
-def test_headroom_is_the_web_role_limit_minus_the_serving_generation(budget):
-    """The same provisioning formula bounds the login and the check's readers."""
+def test_headroom_is_the_web_role_limit_minus_the_serving_processes(budget):
+    """The same provisioning formula bounds the login and the check's readers.
+
+    Compose never runs two web generations at once (#2333), so the login's
+    limit is the serving processes' share plus the spare connections, and
+    only the spare ones are free for the check, less a timeout-log slot per
+    serving process and a kill-record slot per container's master.
+    """
     limit = role_limit(SimpleNamespace(runtime_budget=budget), ServiceRole.WEB)
-    serving = budget.web_processes * budget.replicas * (budget.web_threads + 3)
-    assert limit == serving * budget.rollout_overlap
-    assert load_check.web_headroom(budget) == limit - serving
-    assert load_check.web_headroom(RuntimeBudget(rollout_overlap=1)) == 0
-    assert load_check.web_headroom(RuntimeBudget()) == 22
+    processes = budget.web_processes * budget.replicas
+    serving = processes * (budget.web_threads + 3)
+    assert limit == serving + budget.web_spare_connections
+    assert load_check.web_headroom(budget) == limit - serving - processes - 1
+    assert load_check.web_headroom(RuntimeBudget()) == 7
+    assert load_check.web_headroom(RuntimeBudget(web_spare_connections=4)) == 1
+    assert load_check.web_headroom(RuntimeBudget(web_spare_connections=3)) == 0
 
 
 @pytest.mark.parametrize(

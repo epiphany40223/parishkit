@@ -1018,7 +1018,13 @@ refuse_rollback() {
     echo "The previous image's upgrade check answered: $(head -3 <<<"$1")" >&2
     echo "The schema or a grant differs from what $image expects, so an image-only" >&2
     echo "rollback is not possible; this script never restores a database." >&2
-    echo "Follow the database-restore rollback in $runbook#rollback." >&2
+    # Since #2333 a newer release's database-grants may have changed only
+    # the logins' connection limits, which a restore does not undo: the
+    # old-limits block is then all an image-only rollback needs.
+    echo "If a newer release only changed the logins' connection limits (no migration" >&2
+    echo "committed), put the old limits back first and repeat this rollback:" >&2
+    echo "see $runbook#connection-limits-2333. Otherwise follow the" >&2
+    echo "database-restore rollback in $runbook#rollback." >&2
     exit 1
 }
 advisory=$(check)
@@ -1030,6 +1036,15 @@ case "$advisory" in
     "The inspection login owns objects"*)
         echo "The inspection login owns objects; clean them up before upgrading:" >&2
         echo "see $runbook#clean-up-when-the-inspection-login-owns-objects." >&2
+        exit 1
+        ;;
+    # Connection limits the server cannot honour (#2333) answer
+    # database-grants' own refusal, which step 4's --limits-only would raise
+    # only after everything stopped, so refuse now, whatever the override.
+    *"(connection_budget_exceeded)"* | *"(unlimited_login)"*)
+        echo "The database logins' connection limits do not fit this server:" >&2
+        echo "$advisory" >&2
+        echo "Nothing has stopped. See $runbook#connection-limits-2333." >&2
         exit 1
         ;;
 esac
@@ -1047,10 +1062,12 @@ if [ "$advisory" != t ]; then
         # parameter privilege (#845)) or an excess grant (CREATE among
         # them). The services' identity check would refuse that. It also
         # answers f for an operator outside pg_catalog that is not pg_trgm's
-        # (#2166). An inspection login that owns objects was refused above.
+        # (#2166), and for a login whose connection limit is not this
+        # release's (#2333). An inspection login that owns objects, or
+        # limits the server cannot honour, were refused above.
         echo "Or the database has drifted from its provisioned grants or login isolation" >&2
         echo "(a member role, an owned object, foreign-data USAGE, a parameter privilege," >&2
-        echo "an excess grant), which the services' identity check or database-grants" >&2
+        echo "an excess grant, a login's connection limit), which the services' identity check or database-grants" >&2
         echo "would refuse, or has an operator outside pg_catalog that is not pg_trgm's:" >&2
         echo "find and repair that drift before upgrading; see $runbook#upgrade." >&2
         if [ "$profile" = local ]; then
@@ -1769,6 +1786,16 @@ if [ "$mode" = upgrade ]; then
             oneoff 600 "database-grants" "$1" database-provision database-grants \
                 --config "$services/database-provision.yaml" --confirm-deployment "$uuid"
         }
+        # Connection limits (#2333): the migration login checks its own limit
+        # at startup, so a release that changes any login's limit sets them
+        # all first. It changes no grant and needs no migrated table; with
+        # the limits already right it changes nothing. A server too small
+        # for them was refused in step 1, before anything stopped; should
+        # it refuse here anyway (connection_budget_exceeded), no migration
+        # has committed.
+        step "4. Connection limits"
+        oneoff 600 "database-grants --limits-only" limits database-provision database-grants \
+            --limits-only --config "$services/database-provision.yaml" --confirm-deployment "$uuid"
         if [ "$users_upgrade" = 1 ]; then
             # The users upgrade's fixed order (#952): every migration but the
             # swap, the grants its conversion reads with, the preview, the

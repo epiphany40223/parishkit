@@ -160,7 +160,7 @@ class InvalidOptions(LoadCheckRefused):
 
 
 class NoConnectionHeadroom(LoadCheckRefused):
-    """The deployment's rollout_overlap leaves the web login no spare connection."""
+    """The deployment's web_spare_connections leave no reader a connection."""
 
 
 class NoEligibleFamilies(LoadCheckRefused):
@@ -198,25 +198,19 @@ def bounded_option(value, *, default, bounds):
     return int(value)
 
 
-@dataclass(frozen=True)
-class _Budgeted:
-    """The one attribute database provisioning reads from a deployment."""
-
-    runtime_budget: object
-
-
 def web_headroom(budget):
     """Spare web-login connections while the web service itself is running.
 
-    Provisioning bounds the web login for ``rollout_overlap`` simultaneous
-    service generations; one generation is serving and holds its whole share,
-    so only the remaining generations' share is free for the check's readers.
-    The same function computes the limit, so the two cannot drift apart.
+    The web login's limit is its serving processes' share plus
+    ``web_spare_connections`` (``RuntimeBudget.login_limit``, #2333). The
+    serving share is held whole while the service runs, so only the spare
+    connections are free for the check's readers, less one for each serving
+    process's private timeout-log connection and one for each container's
+    gunicorn master's kill record (``web_supervisor``): at saturation those
+    are when timeout entries fire, so their durable copies keep a slot.
     """
-    from .database_provisioning import role_limit
-
-    limit = role_limit(_Budgeted(budget), ServiceRole.WEB)
-    return limit - limit // budget.rollout_overlap
+    serving = budget.web_processes * budget.replicas
+    return budget.web_spare_connections - serving - budget.replicas
 
 
 def effective_concurrency(requested, web_threads, headroom):
@@ -1013,8 +1007,8 @@ def _refusal(error):
         )
     if isinstance(error, NoConnectionHeadroom):
         return (
-            "no spare web database connections; the deployment's rollout_overlap "
-            "leaves no headroom for a reader"
+            "no spare web database connections; the deployment's "
+            "web_spare_connections leave no headroom for a reader"
         )
     if isinstance(error, NoEligibleFamilies):
         return "no portal-eligible Families in the current campaign; nothing to measure"

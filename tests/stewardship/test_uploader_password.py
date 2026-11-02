@@ -257,7 +257,7 @@ def test_grants_create_a_missing_uploader_login_from_its_file(uploader_deploymen
     sql = "\n".join(cursor.statements)
     assert 'CREATE ROLE "pk_stewardship_backup_uploader" LOGIN NOINHERIT' in sql
     assert " NOSUPERUSER NOBYPASSRLS NOCREATEDB " in sql
-    limit = configuration.runtime_budget.operator_connections
+    limit = 2  # Django plus the timeout log (#2333).
     assert f"CONNECTION LIMIT {limit} PASSWORD 'SCRAM-SHA-256$" in sql
     assert PASSWORD.decode() not in sql
     assert """COMMENT ON ROLE "pk_stewardship_backup_uploader" IS 'marker'""" in sql

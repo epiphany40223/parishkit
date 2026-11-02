@@ -609,6 +609,10 @@ case "$*" in
             exit 1
         fi
         echo "CREATE EXTENSION" ;;
+    *"database-grants --limits-only"*)
+        # The connection limits before the migration (#2333).
+        [ -z "$FAKE_LIMITS_FAIL" ] || { echo "limits refused" >&2; exit 1; }
+        echo '{"connection_limits_changed": 7}' ;;
     *"database-grants"*)
         if [ -n "$FAKE_GRANTS_FAIL" ]; then
             # The cause, then an empty last line, as a real traceback ends.
@@ -1017,12 +1021,49 @@ def test_an_owning_inspection_login_refuses_before_anything_stops(tmp_path):
     assert not any(" retarget-image " in call for call in calls)
 
 
+@pytest.mark.parametrize("code", ["connection_budget_exceeded", "unlimited_login"])
+def test_limits_the_server_cannot_honour_refuse_before_anything_stops(tmp_path, code):
+    """The capacity cause (#2333) stops step 1 even with the override.
+
+    Step 4's --limits-only would refuse it only after web stopped and the
+    documents were retargeted.
+    """
+    cause = f"The database logins' connection limits ... ({code}); raise ..."
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", noop=cause, schema_change="1", status=1
+    )
+    assert f"advisory answer: {cause}" in output
+    assert "#connection-limits-2333" in output
+    assert "Failed before anything stopped; nothing changed" in output
+    assert not any(" stop " in call for call in calls)
+    assert not any(" retarget-image " in call for call in calls)
+
+
+def test_a_refused_limits_step_stops_before_the_migration(tmp_path):
+    """A --limits-only refusal leaves the maintenance page up, nothing migrated."""
+    calls, output, _ = run_host(
+        tmp_path, "upgrade", noop="f", schema_change="1", status=1, limits_fail=True
+    )
+    assert any("database-grants --limits-only" in call for call in calls)
+    assert not any("--rm -T migration" in call for call in calls)
+    assert not any("database-grants --config" in call for call in calls)
+    assert "FAILED: database-grants --limits-only exited with status 1" in output
+    assert "    | limits refused" in output
+    assert "caddy serves the maintenance page" in output
+
+
 def test_an_upgrade_with_the_override_runs_migration_and_grants(tmp_path):
     """With the override, both commands run after the retarget, before web."""
     calls, output, _ = run_host(tmp_path, "upgrade", noop="f", schema_change="1")
     retarget = first(calls, " retarget-image ")
     migration = first(calls, "--rm -T migration")
-    assert retarget < migration < first(calls, "database-grants")
+    limits = first(calls, "database-grants --limits-only")
+    assert retarget < limits < migration < first(calls, "database-grants --config")
+    assert calls[limits].endswith(
+        f"--config {tmp_path}/root/config/services/database-provision.yaml "
+        f"--confirm-deployment {UUID}"
+    )
+    assert "4. Connection limits" in output
     assert migration < first(calls, "up --detach --wait web")
     assert "running migration and grants: the check answered: f" in output
 
@@ -2065,7 +2106,9 @@ def test_the_users_upgrade_converts_between_the_two_migrations(tmp_path):
         "--rm -T migration migrate --config "
         f"{tmp_path}/root/config/services/migration.yaml --users-upgrade-base"
     )
-    grants = [i for i, call in enumerate(calls) if "database-grants" in call]
+    grants = [i for i, call in enumerate(calls) if "database-grants --config" in call]
+    # The connection limits (#2333) come before every migration.
+    assert first(calls, "database-grants --limits-only") < base
     preview = first(calls, " upgrade-users ")
     convert = first(calls, "--operation-id ")
     full = next(i for i, call in enumerate(calls) if call.endswith("--rm -T migration"))
@@ -2166,7 +2209,7 @@ def test_a_release_needing_the_conversion_without_it_stops_at_its_swap(tmp_path)
     assert "repeat the run with the" in output and "STEWARDSHIP_USERS_*" in output
     assert "caddy serves the maintenance page" in output
     assert not any("upgrade-users" in call for call in calls)
-    assert not any("database-grants" in call for call in calls)
+    assert not any("database-grants --config" in call for call in calls)
     assert not any("up --detach --wait web" in call for call in calls)
 
 
@@ -2312,7 +2355,13 @@ def test_a_normal_run_still_restarts_what_it_stopped(tmp_path):
             1800,
             124,
         ),
-        ("database-grants", "database-grants", 600, 124),
+        ("database-grants --config", "database-grants", 600, 124),
+        (
+            "database-grants --limits-only",
+            "database-grants --limits-only",
+            600,
+            124,
+        ),
         (" upgrade-users ", "the users upgrade preview", 600, 124),
         ("--operation-id", "the users upgrade", 900, 1),
     ],
@@ -2426,14 +2475,14 @@ def test_each_step_4_one_off_container_has_its_own_name(tmp_path):
     """Named after the project, mode, run and step; no two alike."""
     calls, _, _ = run_host(tmp_path, "upgrade", noop="f", schema_change="1", env=USERS)
     names = [one_off_name(call) for call in calls if " run --name " in call]
-    # The sixth and seventh: the grants, then the report email conversion
-    # (#1786).
-    assert len(names) == 7 == len(set(names))
+    # The connection limits first (#2333); the seventh and eighth: the
+    # grants, then the report email conversion (#1786).
+    assert len(names) == 8 == len(set(names))
     assert names[-1].endswith("-reports-upgrade")
     assert all(
         re.fullmatch(r"stewardship-upgrade-\d{8}T\d{6}Z-\d+-[a-z-]+", n) for n in names
     )
-    assert [name.rsplit("-", 1)[-1] for name in names[:1]] == ["migration"]
+    assert [name.rsplit("-", 1)[-1] for name in names[:2]] == ["limits", "migration"]
 
 
 @pytest.mark.parametrize(
@@ -2462,7 +2511,7 @@ def test_a_signal_kills_and_removes_the_running_one_off_container(
     container = one_off_name(hung)
     assert calls.index(f"kill {container}") < calls.index(f"rm --force {container}")
     assert not any(" up --detach " in call for call in calls)
-    assert not any("database-grants" in call for call in calls)
+    assert not any("database-grants --config" in call for call in calls)
     log = next((tmp_path / "logs").glob("stewardship-upgrade-*.log")).read_text()
     assert f"INTERRUPTED: SIG{name} received in phase offline" in log
     assert f"one-off container {container} killed and removed (SIG{name})" in log

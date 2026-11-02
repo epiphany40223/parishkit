@@ -234,11 +234,14 @@ def test_remaining_operator_dispatch_is_explicit_and_profile_scoped(
     assert procedure.call_args.args[0] is configuration
     if command == "database-grants":
         # Ordinary grants never pass a restore admission.
-        assert procedure.call_args.kwargs == {"after_restore": None}
+        assert procedure.call_args.kwargs == {
+            "after_restore": None,
+            "limits_only": False,
+        }
 
 
 def test_only_database_grants_takes_after_restore(tmp_path, monkeypatch, capsys):
-    """pk-restore step 7's option reaches provision_grants and nothing else."""
+    """pk-restore's and the upgrade's options reach provision_grants alone."""
     from dataclasses import replace
     from unittest.mock import Mock
     from uuid import uuid4
@@ -262,12 +265,19 @@ def test_only_database_grants_takes_after_restore(tmp_path, monkeypatch, capsys)
     base = ["--config", "synthetic", "--confirm-deployment", identifier]
     restore = ["--after-restore", "20261020T020000Z"]
     assert main(["database-grants", *base, *restore]) == 0
-    assert procedure.call_args.kwargs == {"after_restore": "20261020T020000Z"}
-    for command in ("database-roles", "migrate", "upgrade-check"):
-        with pytest.raises(SystemExit) as exit_:
-            main([command, *base, *restore])
-        assert exit_.value.code == 2
-        assert "--after-restore" in capsys.readouterr().err
+    assert procedure.call_args.kwargs == {
+        "after_restore": "20261020T020000Z",
+        "limits_only": False,
+    }
+    # The upgrade's limits step before its migration (#2333).
+    assert main(["database-grants", *base, "--limits-only"]) == 0
+    assert procedure.call_args.kwargs == {"after_restore": None, "limits_only": True}
+    for option in (restore, ["--limits-only"]):
+        for command in ("database-roles", "migrate", "upgrade-check"):
+            with pytest.raises(SystemExit) as exit_:
+                main([command, *base, *option])
+            assert exit_.value.code == 2
+            assert option[0] in capsys.readouterr().err
 
 
 def test_recovery_wrappers_refuse_wrong_identity_and_nonapplied_receipt(

@@ -221,8 +221,13 @@ def test_migration_and_grants_run_without_a_clear_no_op(tmp_path):
     """Anything but "t" from the check runs both commands, after retarget."""
     calls, _ = run_remote(tmp_path, "f")
     retarget = first(calls, " retarget-image ")
+    limits = first(calls, "database-grants --limits-only")
     migration = first(calls, "run --rm -T migration")
-    assert retarget < migration < first(calls, "database-grants")
+    # The migration login checks its own connection limit at startup, so
+    # the limits come first (#2333); the full grants follow the migration.
+    assert retarget < limits < migration < first(calls, "database-grants --config")
+    assert "--confirm-deployment 00000000-0000-4000-8000-000000000000" in calls[limits]
+    assert "database-provision.yaml" in calls[limits]
     assert migration < first(calls, "up --detach --wait web")
 
 
@@ -236,7 +241,9 @@ def test_a_failed_render_runs_both_commands(tmp_path):
     """Without a rendered query there is no proof, so both commands run."""
     calls, output = run_remote(tmp_path, "t", render_fail=True)
     assert not any("PGOPTIONS" in call for call in calls)
-    assert first(calls, "run --rm -T migration") < first(calls, "database-grants")
+    migration = first(calls, "run --rm -T migration")
+    assert first(calls, "database-grants --limits-only") < migration
+    assert migration < first(calls, "database-grants --config")
     assert "upgrade check could not be rendered" in output
     assert "answered: no query (the render failed)" in output
 

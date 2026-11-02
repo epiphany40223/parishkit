@@ -16,10 +16,33 @@ from parishkit.config import ConfigError
 # (the entry's own connection and statement limits are two seconds each).
 STOP_MARGIN_SECONDS = 15
 
+# What each one-shot login can open at once (#2333): its Django connection
+# and its process's private timeout-log connection (audit.timeouts).
+ONE_SHOT_CONNECTIONS = 2
+# The backup login runs several processes at once by design: a running
+# backup holds Django plus pg_dump (2), a scheduled run waits up to 30
+# minutes for the backup lock holding its Django connection (1), a
+# request-mode poll connects before it checks the lock (1), and a timed-out
+# wait still needs its timeout-log connection to record the timeout (1).
+BACKUP_CONNECTIONS = 5
+# Each web process's observers beside its request threads: readiness,
+# metrics and the periodic authentication health check.
+WEB_OBSERVER_CONNECTIONS = 3
+
 
 @dataclass(frozen=True)
 class RuntimeBudget:
-    """Reserve interactive, background and operator capacity even at saturation."""
+    """Reserve interactive, background and operator capacity even at saturation.
+
+    Every database login's connection limit comes from ``login_limit``, and
+    ``total_connections`` adds them all up (#2333): the limits must fit
+    outside PostgreSQL's superuser-reserved slots, and the operator
+    superuser's ``operator_connections`` must still fit on top of them, so
+    the operator can connect in an incident even when every login is at its
+    limit. ``background_connections`` and ``auxiliary_connections`` bound
+    the rendered topology (``validate_topology``) and the web observers;
+    they are not added to the total, which counts the logins themselves.
+    """
 
     web_processes: int = 2
     web_threads: int = 8
@@ -30,6 +53,10 @@ class RuntimeBudget:
     background_connections: int = 36
     operator_connections: int = 8
     auxiliary_connections: int = 12
+    # Web-login connections beyond the serving processes: pk-admin sessions
+    # and the Testing load check's readers run in the web container on the
+    # web login (#2333).
+    web_spare_connections: int = 10
     database_connections: int = 100
     database_reserved: int = 3
     download_seconds: int = 300
@@ -60,7 +87,10 @@ class RuntimeBudget:
             or self.drain_seconds <= 60
             or self.download_idle_seconds > 1200
             or self.drain_seconds > 1800
-            or self.total_connections > self.database_connections
+            or self.total_connections
+            > self.database_connections - self.database_reserved
+            or self.total_connections + self.operator_connections
+            > self.database_connections
             # An in-flight download must be able to finish in a web stop.
             or self.download_seconds >= self.web_grace_seconds
             or not (
@@ -95,16 +125,48 @@ class RuntimeBudget:
         """
         return self.drain_seconds - STOP_MARGIN_SECONDS
 
+    def login_limit(self, role):
+        """The connection limit of one database login, for ``role``.
+
+        ``role`` is a ``ServiceRole`` or ``"download"`` (a ``StrEnum``
+        compares equal to its value, so no import is needed here). Compose
+        stops a container before starting its replacement, so no two
+        generations of a service ever hold connections at once (#2333);
+        the background formulas below keep the overlap factor only because
+        its slots serve each container's second process or timeout log.
+        """
+        serving = self.web_processes * self.replicas
+        if role == "download":
+            return serving * self.download_pool_per_process
+        if role == "web":
+            return (
+                serving * (self.web_threads + WEB_OBSERVER_CONNECTIONS)
+                + self.web_spare_connections
+            )
+        if role in {"worker", "mail-dispatch"}:
+            # Two consumer processes (#336, and the two mail consumers),
+            # each with a task, a lease-renewal and a timeout-log
+            # connection (runtime_process.split_source and split_mail).
+            return self.rollout_overlap * 3
+        if role in {"scheduler", "config-installer", "credential-installer"}:
+            # One loop or singleton session plus its timeout-log slot.
+            return self.rollout_overlap
+        if role == "backup-worker":
+            return BACKUP_CONNECTIONS
+        return ONE_SHOT_CONNECTIONS
+
     @property
     def total_connections(self):
-        """Count every replica/process, including simultaneous old/new rollouts."""
-        web = self.web_processes * (self.web_threads + self.download_pool_per_process)
-        return (
-            self.replicas * self.rollout_overlap * web
-            + self.background_connections
-            + self.operator_connections
-            + self.auxiliary_connections
-            + self.database_reserved
+        """The sum of every database login's limit, the inspect login's included.
+
+        The login inventory is ``runtime_identities.database_identities``, so a
+        login a release adds is counted without touching this function.
+        """
+        from .inspect_login import INSPECT_CONNECTIONS
+        from .runtime_identities import database_identities
+
+        return INSPECT_CONNECTIONS + sum(
+            self.login_limit(role) for _, _, role, _ in database_identities()
         )
 
     def validate_database(self, *, maximum, reserved):

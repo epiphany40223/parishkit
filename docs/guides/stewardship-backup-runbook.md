@@ -1039,6 +1039,14 @@ does not match is refused; one that opens the set prints the same
 
 ## Restore for real
 
+Restoring a set taken under v1.28.0 or earlier onto a deployment that has
+run a later release needs the old connection limits first: database roles
+belong to the cluster, so the restore keeps the later limits, and the
+set's image refuses them in step 7 (`database-grants --after-restore`) and
+at every service's start. Run the block in the deployment runbook's
+[Connection limits (#2333)](stewardship-deployment-runbook.md#connection-limits-2333)
+before step 1, by hand or before `pk-restore`.
+
 A real restore follows the launch scope's
 [manual restore procedure](../plans/stewardship/v1-launch.md#manual-restore-for-v1-replaces-item-2)
 and the deployment runbook's [rollback](stewardship-deployment-runbook.md#rollback).

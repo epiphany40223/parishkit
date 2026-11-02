@@ -604,6 +604,7 @@ def execute_operator(args):
                         configuration,
                         _uuid(args.confirm_deployment),
                         after_restore=args.after_restore,
+                        limits_only=bool(args.limits_only),
                     )
         elif args.command == "preview-admin-recovery":
             result = preview_recovery_command(

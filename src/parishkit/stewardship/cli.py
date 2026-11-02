@@ -72,7 +72,8 @@ _COMMAND_OPTIONS = {
     },
     "database-roles": {"config", "confirm_deployment"},
     # --after-restore: pk-restore step 7 only (#235, "Restore admission").
-    "database-grants": {"config", "confirm_deployment", "after_restore"},
+    # --limits-only: the upgrade's connection limits before its migration (#2333).
+    "database-grants": {"config", "confirm_deployment", "after_restore", "limits_only"},
     # The off-site uploader's password against a stored verifier on stdin
     # (#235); also the upgrade script's "image has the uploader" marker.
     "uploader-password-check": {"config"},
@@ -289,6 +290,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             "smoke only: post the one fixed Slack message, copy the newest "
             "backup set to the Drive folder, or round-trip one test Member's "
             "contact field, after a valid check"
+        ),
+    )
+    parser.add_argument(
+        "--limits-only",
+        action="store_true",
+        default=None,
+        help=(
+            "database-grants only: set the logins' connection limits to this "
+            "release's and grant nothing (the upgrade runs it before migrating)"
         ),
     )
     parser.add_argument(

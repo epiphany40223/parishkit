@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from types import SimpleNamespace
+from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
@@ -278,6 +279,11 @@ def test_role_creation_preflights_all_identities_and_never_emits_plaintext(
 
     monkeypatch.setattr(provisioning, "_check_role", role_check)
     monkeypatch.setattr(provisioning, "_connection", connect)
+    # The capacity check reads the live server; it has its own tests.
+    monkeypatch.setattr(
+        provisioning, "require_cluster_capacity", lambda *args: capacity.append(1)
+    )
+    capacity = []
     verified = []
     monkeypatch.setattr(
         uploader_password,
@@ -293,6 +299,7 @@ def test_role_creation_preflights_all_identities_and_never_emits_plaintext(
         "database_roles_provisioned"
     ]
     assert len(admissions) == len(database_identities())
+    assert capacity == [1]
     # The inspection login (#2148) is ensured on the same operator cursor.
     assert inspected == [
         (cursor, f"parishkit-stewardship:{deployment}", configuration.postgres.name)
@@ -332,6 +339,7 @@ def grant_statements(tmp_path, monkeypatch, applied):
     monkeypatch.setattr(provisioning, "grant_inspect", lambda *args: None)
     # The uploader's creation and password check have their own tests.
     monkeypatch.setattr(provisioning, "_ensure_uploader", lambda *args: None)
+    monkeypatch.setattr(provisioning, "reconcile_limits", lambda *args: 0)
     assert provisioning.provision_grants(configuration, uuid4())[
         "database_grants_provisioned"
     ]
@@ -484,6 +492,7 @@ def test_grants_tolerate_a_closure_revoke_only_until_it_applies(
     monkeypatch.setattr(provisioning, "ensure_inspect_login", lambda *args: None)
     monkeypatch.setattr(provisioning, "grant_inspect", lambda *args: None)
     monkeypatch.setattr(provisioning, "_ensure_uploader", lambda *args: None)
+    monkeypatch.setattr(provisioning, "reconcile_limits", lambda *args: 0)
     provisioning.provision_grants(configuration, uuid4())
     mail = admitted[login_name(ServiceRole.MAIL_DISPATCH)]
     assert ("ciphertext" in mail["stewardship_family_token"]["SELECT"]) is not applied
@@ -708,10 +717,8 @@ def test_operator_connection_uses_separate_password_argument(tmp_path, monkeypat
         with pytest.raises(ConfigError, match="UUID"):
             operation(configuration, "invalid")
     configuration = replace(configuration, service_role=ServiceRole.MIGRATION)
-    assert (
-        provisioning.role_limit(configuration, ServiceRole.MIGRATION)
-        == configuration.runtime_budget.operator_connections
-    )
+    # Django plus the timeout log (#2333).
+    assert provisioning.role_limit(configuration, ServiceRole.MIGRATION) == 2
 
 
 @pytest.mark.parametrize(
@@ -896,6 +903,7 @@ def test_grants_pass_after_restore_through_and_report_it(tmp_path, monkeypatch):
     monkeypatch.setattr(provisioning, "ensure_inspect_login", lambda *args: None)
     monkeypatch.setattr(provisioning, "grant_inspect", lambda *args: None)
     monkeypatch.setattr(provisioning, "_ensure_uploader", lambda *args: None)
+    monkeypatch.setattr(provisioning, "reconcile_limits", lambda *args: 0)
     assert provisioning.provision_grants(configuration, uuid4(), after_restore=SET) == {
         "database_grants_provisioned": True,
         "after_restore": SET,
@@ -905,3 +913,120 @@ def test_grants_pass_after_restore_through_and_report_it(tmp_path, monkeypatch):
         "database_grants_provisioned": True
     }
     assert seen == {"initial": False, "after_restore": None}
+
+
+class CapacityCursor(Cursor):
+    """Answers the capacity check's two reads: the server, then the logins."""
+
+    def __init__(self, server, logins):
+        super().__init__([server])
+        self.logins = logins
+
+    def fetchall(self):
+        return list(self.logins)
+
+
+def own_logins(configuration):
+    """This deployment's logins at this release's limits, as pg_roles lists them."""
+    return list(provisioning.expected_limits(configuration).items())
+
+
+@pytest.mark.parametrize(
+    "server,extra,error",
+    [
+        # #2333's defaults: 92 of 97 ordinary slots, 100 with the operator's 8.
+        ((100, 3), [], None),
+        ((100, 3), [("pk_foreign", 0)], None),
+        ((100, 3), [("pk_foreign", 1)], "connection_budget_exceeded"),
+        ((99, 3), [], "connection_budget_exceeded"),
+        ((100, 9), [], "connection_budget_exceeded"),
+        ((200, 3), [("pk_foreign", -1)], "unlimited_login"),
+    ],
+)
+def test_cluster_capacity_counts_every_login_against_the_server(
+    tmp_path, server, extra, error
+):
+    """The limits must fit the live server's slots, foreign logins included."""
+    configuration = configuration_at(tmp_path)
+    cursor = CapacityCursor(server, own_logins(configuration) + extra)
+    if error is None:
+        provisioning.require_cluster_capacity(cursor, configuration)
+    else:
+        with pytest.raises(ConfigError, match=rf"\({error}\)"):
+            provisioning.require_cluster_capacity(cursor, configuration)
+    assert "max_connections" in cursor.statements[0]
+    assert "NOT rolsuper" in cursor.statements[1]
+
+
+def test_the_budget_refusal_names_its_numbers(tmp_path):
+    """The operator can size the fix from the message alone (#2333)."""
+    configuration = configuration_at(tmp_path)
+    cursor = CapacityCursor((99, 3), own_logins(configuration))
+    with pytest.raises(ConfigError) as refused:
+        provisioning.require_cluster_capacity(cursor, configuration)
+    assert str(refused.value) == (
+        "The database logins' connection limits add up to 92, but the server's "
+        "max_connections 99 leaves room for 91 beside its 3 reserved slots and "
+        "the operator's 8 (connection_budget_exceeded); raise max_connections or "
+        "lower a login's limit before database-grants."
+    )
+
+
+def test_capacity_counts_this_releases_limits_not_the_catalogs(tmp_path):
+    """A login still at an earlier release's limit counts at the new one.
+
+    database-grants is about to set it, so v1.28.0's 44 for the web login
+    must not refuse a server the new limits fit.
+    """
+    configuration = configuration_at(tmp_path)
+    logins = dict(own_logins(configuration))
+    logins[login_name(ServiceRole.WEB)] = 44
+    logins["pk_stewardship_migration"] = 8
+    cursor = CapacityCursor((100, 3), logins.items())
+    provisioning.require_cluster_capacity(cursor, configuration)
+
+
+def test_reconcile_alters_only_mismatched_limits(tmp_path, monkeypatch):
+    """One ALTER per login whose limit differs, after checking its other attributes."""
+    configuration = configuration_at(tmp_path)
+    checked = []
+    monkeypatch.setattr(provisioning, "require_cluster_capacity", lambda *args: None)
+    monkeypatch.setattr(
+        provisioning,
+        "_check_role",
+        lambda cursor, login, marker, limit, **kwargs: checked.append(
+            (login, limit, kwargs)
+        ),
+    )
+    current = {
+        login: (44 if login == login_name(ServiceRole.WEB) else limit)
+        for login, limit in provisioning.expected_limits(configuration).items()
+    }
+    current[login_name(ServiceRole.BACKUP_UPLOADER)] = None  # Not created yet.
+    rows = [
+        None if current[login] is None else (current[login],)
+        for _, login, _, _ in database_identities()
+    ]
+    cursor = Cursor(rows)
+    assert provisioning.reconcile_limits(cursor, configuration, "marker") == 1
+    web = login_name(ServiceRole.WEB)
+    assert checked == [(web, 44, {"reader": False, "exempt": frozenset()})]
+    assert [s for s in cursor.statements if s.startswith("ALTER")] == [
+        f'ALTER ROLE "{web}" CONNECTION LIMIT 32'
+    ]
+
+
+def test_limits_only_grants_nothing(tmp_path, monkeypatch):
+    """--limits-only stops after the limits: no guard, uploader or grant."""
+    configuration = configuration_at(tmp_path)
+    cursor = Cursor()
+    monkeypatch.setattr(provisioning, "_password", lambda path: b"private-password")
+    monkeypatch.setattr(provisioning, "_admit_operator", lambda *args, **kwargs: None)
+    monkeypatch.setattr(provisioning, "_connection", lambda *args: Database(cursor))
+    monkeypatch.setattr(provisioning, "reconcile_limits", lambda *args: 3)
+    for name in ("_admit_writer_guard", "_ensure_uploader", "ensure_inspect_login"):
+        monkeypatch.setattr(provisioning, name, Mock(side_effect=AssertionError))
+    assert provisioning.provision_grants(configuration, uuid4(), limits_only=True) == {
+        "connection_limits_changed": 3
+    }
+    assert cursor.statements == []
