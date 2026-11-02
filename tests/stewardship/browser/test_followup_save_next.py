@@ -78,7 +78,7 @@ def test_save_and_next_waits_for_a_valid_save(page, component_origin):
     valid, and the page says where it leads."""
     page.goto(component_origin + followup.ADVANCE_ITEM)
     save, advance = page.locator("#followup-save"), page.locator("#followup-save-next")
-    has_text(page.locator("#followup-next-help"), re.compile("opens the next open"))
+    has_text(page.locator("#followup-next-help"), re.compile("next request to review"))
     page.get_by_label("How").select_option("phone")
     assert save.is_disabled() and advance.is_disabled()
     has_text(
