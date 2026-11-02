@@ -794,7 +794,9 @@ def test_load_step_continues_once_the_data_is_loaded(load, done, continues):
     "We're loading the data... ok, now it's done, and we can continue"), so
     the row has Back only; once the campaign has its Families the row
     offers Continue to the next step, a plain link: the step stores no
-    review.
+    review. Until then the Continue slot holds an invisible, aria-hidden
+    copy of its label, so the row does not grow on a phone when Continue
+    comes (no layout shift).
     """
     html = actions(
         wizard.build(
@@ -802,7 +804,13 @@ def test_load_step_continues_once_the_data_is_loaded(load, done, continues):
         )
     )
     assert f'href="{reverse("admin:campaign_settings")}"' in html
-    assert ("Continue to Share options" in html) is continues
+    assert ("Continue to Share options</a>" in html) is continues
+    assert ("data-campaign-continue" in html) is continues
+    ghost = (
+        '<span class="button campaign-load-ghost" aria-hidden="true" '
+        'data-nav-slot="next" data-label="Continue to Share options"></span>'
+    )
+    assert (ghost in html) is not continues
     assert (f'href="{reverse("admin:share_settings")}"' in html) is continues
     assert "<form" not in html and "campaign_step_continue" not in html
 

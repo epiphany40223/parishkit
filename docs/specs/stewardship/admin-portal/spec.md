@@ -5894,7 +5894,8 @@ changed. A staged image that can no longer be saved (it expired after a
 day, the settings changed since, another sign-in) is refused in the row's
 status line with a request to reload the page and choose it again.
 Load ParishSoft data offers Continue only once the campaign has its Families
-(above). Preview and test
+(above); until then its slot keeps Continue's room, so the row does not grow
+when Continue comes. Preview and test
 email offers Continue to Go live only once its test is accepted,
 because the test is the step's purpose; Go live, the last step,
 has Back only (on its Check step's own action row). Back and Continue never save, discard or submit the page's
