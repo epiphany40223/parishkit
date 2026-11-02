@@ -2513,7 +2513,14 @@ counts are the summary selection's current counts: join requests and leave
 requests of any status, and requests of either kind still to review. Counts use
 the latest live request state. Requests for
 [Members no longer in ParishSoft](../admin-portal/spec.md#follow-up-workflows)
-are left out for everyone (#1217).
+are left out for everyone (#1217). For Staff and Administrators, Join
+requests and Leave requests also count the roster rows their Every stage
+list holds: accepted requests with
+[roster entry](../admin-portal/spec.md#roster-entry-on-ministry-requests)
+for a Member no longer in ParishSoft, or that a later Family response
+replaced. Each count then equals the list it opens
+([#2331](https://github.com/epiphany40223/parishkit/issues/2331)). A
+Ministry leader has no roster rows, so their counts are unchanged.
 
 Each count that is not zero applies that Ministry and request type to the
 worklist below in place, when the reader may follow up that Ministry. It does
