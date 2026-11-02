@@ -271,7 +271,7 @@ def test_families_complete_the_load_step(auth_service, google):
             ]
         )
     )
-    assert "Continue to Share options" in actions(html)
+    assert "Continue to Share options</a>" in actions(html)
     # Every other step drops the load notice, and Home goes on past it.
     assert "data-campaign-load" not in page(browser, reverse("admin:content_catalog"))
     assert "Continue campaign setup: Share options" in page(browser, "/admin/")
