@@ -156,7 +156,7 @@ def test_load_step_shows_one_state_at_a_time(auth_service, google):
     assert "data-campaign-load " not in html and "data-campaign-load>" not in html
     row_html = actions(html)
     assert f'href="{reverse("admin:campaign_settings")}"' in row_html
-    assert "Continue" not in row_html
+    assert "data-campaign-continue" not in row_html
     # Just requested, no worker has the run yet: Start the load is in
     # progress and the line after the boxes says it waits (#1916).
     refresh_run("queued")
@@ -196,7 +196,7 @@ def test_load_step_shows_one_state_at_a_time(auth_service, google):
         )
     )
     assert "Refresh now" not in html and QUEUE not in html
-    assert "Continue" not in actions(html)
+    assert "data-campaign-continue" not in actions(html)
     # The poll draws the same region from the run alone, and is passive:
     # polling never renews the session's idle time (#1517 review, L4).
     before = PortalSession.objects.get().last_activity_at
@@ -229,7 +229,7 @@ def test_failed_load_says_so_and_offers_try_again(auth_service, google):
     assert state(html) == "failed" and ">See what went wrong<" in html
     assert "data-campaign-load-start>Try again</button>" in html
     assert 'data-stage-state="failed"' in html and "Refresh now" not in html
-    assert "Continue" not in actions(html)
+    assert "data-campaign-continue" not in actions(html)
     content = page(browser, reverse("admin:content_catalog"))
     assert "The campaign's ParishSoft data did not load." in content
     assert task_link in content and ">Try again<" in content
@@ -242,7 +242,7 @@ def test_failed_load_says_so_and_offers_try_again(auth_service, google):
     refresh_run("queued")
     html = page(browser)
     assert state(html) == "loading" and "did not load" not in summary(html)
-    assert "Continue" not in actions(html)
+    assert "data-campaign-continue" not in actions(html)
 
 
 def test_families_complete_the_load_step(auth_service, google):
@@ -292,7 +292,7 @@ def test_only_refreshes_since_creation_and_families_count(auth_service, google):
     refresh_run("failed", created_at=row.created_at - timedelta(days=1))
     html = page(browser)
     assert OFFER in html and "did not load" not in summary(html)
-    assert "Continue" not in actions(html)
+    assert "data-campaign-continue" not in actions(html)
     succeeded = refresh_run("succeeded")
     html = page(browser)
     region = stepper(html.encode())
@@ -306,7 +306,7 @@ def test_only_refreshes_since_creation_and_families_count(auth_service, google):
             'id="campaign-step-actions"'
         )[0]
     )
-    assert "Continue" not in actions(html)
+    assert "data-campaign-continue" not in actions(html)
     # Every stage is done; the run and Refresh from ParishSoft are linked.
     assert html.count('data-stage-state="done"') == 5
     assert f'href="{reverse("admin:background_task_page", args=[succeeded])}"' in html
@@ -367,7 +367,7 @@ def test_a_new_campaign_shows_the_load_the_system_starts(auth_service, google):
     assert f"data-campaign-load-count>{QUEUED}</p>" in html
     assert f'data-live-url="{AWAITED}"' in html and "data-live-pending" in html
     assert OFFER not in html and "data-campaign-load-start" not in html
-    assert "Continue" not in actions(html)
+    assert "data-campaign-continue" not in actions(html)
     # Every other step says the data is loading rather than offering it.
     content = page(browser, reverse("admin:content_catalog"))
     assert "ParishSoft data is loading; going live waits for it." in content
