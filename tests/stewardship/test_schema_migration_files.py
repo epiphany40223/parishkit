@@ -641,6 +641,9 @@ FROZEN = {
     "0202_family_signin_abuse_title.sql": (
         "4df6bf626a3b6bc7f22630c13ac2fc3f876530e8a4d1b6d2f253ac198873337e"
     ),
+    "0203_address_check_context.sql": (
+        "a23004b8e4c5356532a9ced933f5e25cb050f6e6d5da431e52066d9226049111"
+    ),
 }
 
 

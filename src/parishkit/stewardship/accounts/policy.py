@@ -246,16 +246,25 @@ def report_columns(principal, requested, *, ministry_id=None):
 
 
 def current_principal(store, user_id):
-    """Reload verified YAML-backed policy and ParishSoft leadership every request."""
+    """Reload verified YAML-backed policy and ParishSoft leadership every request.
+
+    An account that acts as another address than its sign-in address (a
+    verified-address match, #2343) keeps a role only while that match is
+    usable now (``address_matching.usable``, which also puts the account's
+    address back when it is not), so turning the deployment setting off or a
+    lapsed 30-day check cuts its sessions at their next request. Only that
+    path reads the match table; every other account reads nothing more.
+    """
+    from . import address_matching
     from .configuration_installation import coherent_configuration
     from .policy_models import PortalUser
 
     if not isinstance(user_id, UUID):
         raise TypeError("An opaque user identity is required.")
     runtime = coherent_configuration(store)
-    user = PortalUser.objects.only("id", "email", "hosted_domain", "disabled").get(
-        pk=user_id, disabled=False
-    )
+    user = PortalUser.objects.only(
+        "id", "email", "sign_in_email", "hosted_domain", "disabled"
+    ).get(pk=user_id, disabled=False)
     email = normalized_email(user.email)
     # Coherence already verified this exact canonical document against every
     # normalized projection. Filter once, without a second corpus materialization.
@@ -267,6 +276,9 @@ def current_principal(store, user_id):
         if record["values"].get("email") == email
         or record["values"].get("domain") == email.rsplit("@", 1)[1]
     ]
+    if user.email != user.sign_in_email and not address_matching.usable(user, records):
+        # No role, before leader_scope, whose SQL reads the matched address.
+        return Principal(user.pk)
     roles, ministries = resolve_roles(
         email, user.hosted_domain, records, leader_scope(user.pk)
     )

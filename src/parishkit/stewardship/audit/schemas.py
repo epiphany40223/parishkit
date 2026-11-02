@@ -273,6 +273,15 @@ class Action(StrEnum):
     # is the organization lookup, its context counts only. Written by the
     # lookup's guard.
     SETUP_PARISHSOFT_ORGANIZATION_CHOSEN = "setup_parishsoft_organization_chosen"
+    # Sign-in through another verified address (#2343): a new match and a
+    # match's end, both written by the match guard
+    # (stewardship_address_match_guard_v1, IDs only), and every other outcome
+    # of a check of a Google account's other verified addresses, written by
+    # the sign-in with the account as actor and ``address_check`` (and, for a
+    # re-check, ``match_id``) as context, never an address.
+    ADMIN_ADDRESS_MATCHED = "admin_address_matched"
+    ADMIN_ADDRESS_CHECKED = "admin_address_checked"
+    ADMIN_ADDRESS_MATCH_ENDED = "admin_address_match_ended"
     # Admin automation sessions (ADM-11): approval, ending (the reason is on
     # the session row), refused use, and an Administrator acknowledging the
     # automation notices on their own dashboard.
@@ -652,6 +661,12 @@ FIELDS = {
         "organizations_reached",
         "organizations_without_families",
         "organizations_unknown",
+        # A check of a Google account's other verified addresses (#2343):
+        # its closed outcome word (``ADDRESS_CHECKS``), and the
+        # verified-address match a re-check or a matched sign-in used.
+        # Mirrored in stewardship_safe_context_v1 (frozen migration 0203).
+        "address_check",
+        "match_id",
     },
 }
 
@@ -669,6 +684,13 @@ REVIEW_DECISIONS = frozenset({"keep_role", "restore", "remove"})
 # (#1353); mirrored in stewardship_safe_context_v1.
 VOID_REASONS = frozenset({"key_changed", "organization_changed", "reload"})
 VOIDED_TASK_STATES = frozenset({"succeeded", "failed"})
+# The outcomes of a check of a Google account's other verified addresses
+# that record admin_address_checked (#2343; admin-portal spec
+# "Verified-address outcomes"); a new match records admin_address_matched
+# instead. Mirrored in stewardship_safe_context_v1 (frozen migration 0203).
+ADDRESS_CHECKS = frozenset(
+    {"rechecked", "declined", "none", "several", "own_account_only", "taken"}
+)
 # An export's report kind and file format (#1398), as export_report_known
 # admits them; mirrored in stewardship_safe_context_v1 (frozen migration 0109).
 EXPORT_REPORTS = frozenset(
@@ -1017,6 +1039,9 @@ def sanitize(kind, values):
             safe[key] = value
         elif key == "decision":
             valid = type(value) is str and value in REVIEW_DECISIONS
+            safe[key] = value
+        elif key == "address_check":
+            valid = type(value) is str and value in ADDRESS_CHECKS
             safe[key] = value
         elif key == "void_reason":
             valid = type(value) is str and value in VOID_REASONS

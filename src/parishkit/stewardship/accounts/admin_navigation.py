@@ -780,6 +780,8 @@ NON_PAGES = frozenset(
         "information_export",
         "integration_status",
         "login",
+        # The second sign-in step of a verified-address check (#2343).
+        "login_addresses",
         "logout",
         "logs_export",
         "limitations_export",
