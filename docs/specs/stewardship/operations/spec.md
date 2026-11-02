@@ -2000,6 +2000,17 @@ fresh PostgreSQL, as the backup runbook's
 [restore drill](../../../guides/stewardship-backup-runbook.md#restore-drill)
 describes ([#305](https://github.com/epiphany40223/parishkit/issues/305)).
 
+The first drill on a real Production set ran on 2026-11-02
+([#2329](https://github.com/epiphany40223/parishkit/issues/2329)): `pk-restore
+--drill` from `stewardship-v1.27.0` restored a set from before the uploader
+login (about 5 minutes) and a v1.27.0 set (about 5 minutes), and recovered a
+lost uploader password file (1 minute 9 seconds), all with the checks the
+runbook lists passing. The runbook's
+[Drill record](../../../guides/stewardship-backup-runbook.md#drill-record)
+holds the details and what the drill changed in the procedure; a
+replacement or drill host needs a registry login for `pk-restore`'s image
+pull.
+
 Campaign purge accepts only the verified, post-quiescence backup created for
 that PurgeRequest. Ordinary scheduled backup references never satisfy purge
 readiness.

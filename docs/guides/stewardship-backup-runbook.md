@@ -942,7 +942,8 @@ Three more guards on every drill host:
 - **Block outbound traffic** as a backstop, so nothing on the host can
   reach Google. A host firewall such as `ufw` does not stop containers,
   because Docker's own rules bypass it. For a manual drill, once step 3 has
-  pulled the image, use the provider's firewall (for example a
+  pulled the image (which needs the registry login described under
+  [scripted replacement](#scripted-replacement-and-drill-restore)), use the provider's firewall (for example a
   DigitalOcean Cloud Firewall on the droplet) and allow outbound traffic
   only for your SSH session. Step 7's `pull` then fails harmlessly: the
   image is already there from step 3. A
@@ -1169,7 +1170,9 @@ layout; where the deployment YAML overrides a path, use that path instead.
    exactly the line `parishkit-stewardship-startup-v1`. Pull the image the
    backup was taken under by its complete digest reference, the manifest's
    `image` (for a set taken before the manifest recorded it, the one in the
-   operators' notes), `docker pull IMAGE@sha256:DIGEST`: the Compose files
+   operators' notes), `docker pull IMAGE@sha256:DIGEST` (after the
+   [registry login](#scripted-replacement-and-drill-restore); the package is
+   not anonymously pullable): the Compose files
    that name it come back only in step 4. For a real replacement, point the public
    origin's DNS at this host (`caddy` obtains a new certificate; its store is
    not backed up); a drill host stays off the public DNS.
@@ -1420,12 +1423,22 @@ the Restore review waits for a fix.
 
 The [off-site uploader's login](#the-off-site-uploaders-login) (#235) adds
 three things for an image that has it (its command list names
-`uploader-password-check`); an older image does none of them. In step 4,
-when the set's credentials tree has no uploader password file (a set from
+`uploader-password-check`); an older image does none of them. Step 4
+itself does not look at the image, and prints one of three things.
+When the set's credentials tree has no uploader password file (a set from
 before the login), the host's own file is copied in from the tree just
 moved aside (a regular file, never a link, owner-only), or, on a resumed
 run, from the newest other `credentials.pre-restore-*` tree that has one;
-the log says which. A linked tree or `database/` directory on either side,
+the log says `kept the host's off-site uploader password file from PATH`.
+When no tree has one, as on a fresh replacement or drill host (nothing was
+moved aside), it prints `the set has no off-site uploader password file,
+and no moved-aside tree has one`, even when the set's image is from before
+the login. That line is harmless with an image from before the login. With an image that has the login and a
+set that should have had the file, the same line means step 7 creates the
+password (`passwords_created: [backup-uploader]`), as in the lost-file
+recovery. When the set carries its own file
+(a v1.27.0 set), step 4 keeps it and prints nothing about it. A linked tree
+or `database/` directory on either side,
 or an existing `backup-uploader.copying`, refuses instead. In step 7,
 after the retarget, the full stop and the hba reload, it runs
 `database-grants --after-restore SET_NAME`: the restored set's load
@@ -1460,6 +1473,36 @@ path under it; a set with a path elsewhere, or one provisioned with
 set's `config/services/compose.json`. `--project` defaults to
 `stewardship`, the name the deploy tool and `pk-admin` use; pass the lost
 host's if it differed.
+
+**Log in to the registry first.** The image's GHCR package is not
+anonymously pullable (a pull without credentials on 2026-11-02 was refused
+as `unauthorized`), and the checks always run `docker pull` (even with the
+image already on the host, and also with `--drill`), so a replacement or
+drill host needs a registry login before `pk-restore` runs. Create a
+short-lived token with only the `read:packages` scope. Type it at a prompt
+so it never reaches a command line, a file or the shell history:
+
+```sh
+read -rs TOKEN
+printf '%s' "$TOKEN" | sudo docker login ghcr.io -u USER --password-stdin
+unset TOKEN
+```
+
+`docker login` stores the token (base64, not encrypted) in
+`/root/.docker/config.json` until you log out. When to log out depends on
+the mode:
+
+- `--drill`: log out once the checks have passed
+  (`sudo docker logout ghcr.io`).
+- A real replacement: stay logged in until `pk-restore` has finished,
+  because step 7 pulls the image again and fails on a logged-out host. Then
+  log out.
+
+Log in again before every run that repeats the checks, including a resume
+with `--from N`. After logging out, check that `/root/.docker/config.json`
+has no `ghcr.io` entry. The login is a host credential only: no container
+can use it. Revoke the token after the restore. Postgres and Valkey come
+from Docker Hub with no login.
 
 ```text
 sudo tools/stewardship-ops/pk-restore plan --replacement \
@@ -1551,6 +1594,79 @@ All of the replacement checks above apply as well. Only `postgres`,
 `backup-worker` are never created. After web's health check, it refuses if
 any other container of the project exists. Record the evidence, then go
 straight to step 10: destroy the host and its disks.
+
+**One `ERROR` line is expected.** Web's first start after a restore usually
+makes `pk-restore` print `ERROR: dependency observation incomplete; retry
+diagnostics` once, before web turns healthy. It comes from
+`pk-stewardship health`, which `pk-restore` polls up to 12 times, five
+seconds apart, with only its standard output hidden. Each poll is a fresh
+process whose probe waits at most 2 seconds, and on a cold start (first
+imports, first database and Valkey connections) the probe can miss that
+deadline, so the poll prints the `ERROR` and is retried. It is not a fault
+if a later poll passes and the run goes on to check the sources; a slow
+host may print two or three. The fault is a run that ends with `web did not
+turn healthy`: read `docker compose ... logs web`.
+
+**Two sets on one drill host.** Rebuilding the operating system between
+sets is the safest reset. The runbook also accepts an in-place wipe of the
+same drill host, which needs no console. The order matters: run `docker
+compose -p PROJECT -f COMPOSE_FILE down -v --remove-orphans` first, because
+it needs the Compose file that the next step removes. If `down` cannot run
+(the file is missing, or an earlier run failed), rebuild the operating
+system instead. Then remove the runtime root and the set's directory (the
+decrypted files, `*.pgdump`, `files.tar`) and every `*pre-restore*` tree,
+including `credentials.pre-restore-*` and `config.pre-restore-*`. The
+`*pre-restore*` trees must go: step 4 copies the uploader password file
+from the newest other moved-aside tree, so a leftover tree would carry the
+first set's password file into the second restore. Keep Docker, the images,
+the drill marker, the `DOCKER-USER` rule and `/etc/parishkit/` with the
+deployment YAML. Check that `docker ps -a`, `docker volume ls` and `docker
+network ls` show only the defaults, that no decrypted file remains anywhere
+on the root filesystem, and that the rule is still present before the next
+run. Use it only on a host that has only ever held drill sets, which you
+can check from the drill marker and from `ls /opt/parishkit` showing only
+drill artefacts; when in doubt, rebuild. Never use it on a host that ran a
+backup job or holds a live deployment's data. The wipe tests restoring from
+a set, not host provisioning: with the images kept, the second run did not
+exercise step 5's PostgreSQL and Valkey pulls or a fresh install of Docker
+and the rule, so the first drill on a new operating system image still
+needs a rebuild.
+
+### Drill record
+
+The restore drill for [#2329](https://github.com/epiphany40223/parishkit/issues/2329)
+passed on 2026-11-02, on a fresh disposable host with `pk-restore run
+--drill` from `stewardship-v1.27.0` and both sets downloaded from the
+off-site folder. Each manifest SHA-256 matched the digest the backup
+printed, each set opened on the key holder's machine with `--network none`
+and `restore-check` answered `match` for both. Container egress was
+blocked by the `DOCKER-USER` rule throughout.
+
+| Run | Elapsed | Result |
+| --- | --- | --- |
+| Set from before the uploader (v1.26.0 image) | 4 min 57 s (load 209 s) | pass |
+| v1.27.0 set (hand backup after the upgrade) | 5 min 06 s | pass |
+| Uploader lost-file recovery, `run --drill --from 7` | 1 min 09 s | pass |
+
+`pk-restore` needs a terminal on its standard input for the typed
+deployment UUID, so run it from an interactive session; a redirected
+stdin is refused before anything changes.
+
+What was checked, for both sets: the drill marker, the manifest digest, the
+typed deployment UUID and `restore-check`; the schema comment naming the
+set; the hba check answering `t`; the source check from `web` and
+`admin-recovery` (and from `backup-uploader` for the v1.27.0 set); web
+healthy with no restarts, on internal networks only with no published
+port; only `postgres`, `valkey` and `web` created; and all 269 tables' row
+counts equal to the dump's, except the rows the restore itself wrote (the
+Restore review, audit and status rows). The v1.27.0 set also ran
+`database-grants --after-restore` and `uploader-password-check` printed
+`match`. The recovery run recreated the uploader login and password file
+(`passwords_created: [backup-uploader]`), found the review already open,
+and matched again. Only one copy of the key was used.
+
+The drill found four differences, now described above: the registry login,
+step 4's lines, the one expected `ERROR` line, and the in-place wipe.
 
 ## Comparing a set with another release
 

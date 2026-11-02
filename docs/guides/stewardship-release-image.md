@@ -49,12 +49,14 @@ release notes carry it, so the value the operator deploys is the value the
 workflow pushed.
 
 GitHub creates the container package private on its first publication, even
-for a public repository. The deployment hosts and the backup key machine pull
-without a registry credential, so once, after the first release, a repository
-administrator makes the package public: on the repository's **Packages** entry
-for `parishkit/stewardship`, open **Package settings**, choose **Change
-visibility**, then **Public**. The image holds only the repository's public
-code; no secret is built into it. Later releases keep that visibility.
+for a public repository, and a repository administrator can change its
+visibility under the package's **Package settings**. As of 2026-11-02 the
+package is not anonymously pullable: a pull without credentials was refused
+as `unauthorized`. A host or the backup key machine that pulls the image
+therefore needs a registry login with a short-lived token that has only the
+`read:packages` scope; the
+[backup runbook](stewardship-backup-runbook.md#scripted-replacement-and-drill-restore)
+shows how to take it, use it and remove it.
 
 ### The pushed digest is smoke-tested and attested
 
@@ -103,8 +105,8 @@ Releases up to 1.23.0 were tagged `vX.Y.Z`, so verify one of those (for a
 rollback, say) with `--source-ref refs/tags/vX.Y.Z`. The image tag is the
 bare version either way (`stewardship:1.24.0`).
 
-It needs `gh` signed in to GitHub, but no registry login: the package and
-the repository are public. The
+It needs `gh` signed in to GitHub, but needs no registry login of its own;
+the repository is public. The
 [release helper](stewardship-operator-scripts.md#releases) runs exactly this
 before it prints the digest, and refuses if it fails; the
 [upgrade](stewardship-deployment-runbook.md#upgrade) runs it for a digest
