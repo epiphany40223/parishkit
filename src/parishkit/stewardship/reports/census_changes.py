@@ -1219,35 +1219,41 @@ def select(rows, query, *, administrator):
     ``status_counts`` counts every row of the campaign by status key,
     whatever the other filters, with the history statuses only when
     ``history`` is on (zero otherwise): ``report census`` reads it.
-    ``stage_counts`` counts every row by review stage, for the Stage
-    filter's choices.
+    ``stage_counts`` counts, by review stage, the rows the other filters
+    (route, kind, dates and search) keep, for the Stage filter's choices,
+    as every review worklist counts them (#2331).
     """
     lower, upper = query.bounds
     needle = query.search.casefold()
-    kept = [
-        row
-        for row in rows
-        if wanted(row, query, administrator=administrator)
-        and (query.route == "any" or (query.route == "automatic") == row["automatic"])
-        and (query.kind == "any" or query.kind == row["kind"])
-        and (lower is None or row["submitted_at"] >= lower)
-        and (upper is None or row["submitted_at"] < upper)
-        and (
-            not needle
-            or needle in (row["family_name"] or "").casefold()
-            or needle in row["who"].casefold()
-            or needle in str(row["family_duid"])
+
+    def matches(row):
+        """Whether every filter but the Stage (and status) keeps ``row``."""
+        return (
+            (query.route == "any" or (query.route == "automatic") == row["automatic"])
+            and (query.kind == "any" or query.kind == row["kind"])
+            and (lower is None or row["submitted_at"] >= lower)
+            and (upper is None or row["submitted_at"] < upper)
+            and (
+                not needle
+                or needle in (row["family_name"] or "").casefold()
+                or needle in row["who"].casefold()
+                or needle in str(row["family_duid"])
+            )
         )
-    ]
+
+    matching = [row for row in rows if matches(row)]
+    kept = [row for row in matching if wanted(row, query, administrator=administrator)]
     # Every status is counted, and history only when it is shown.
     counts = {key: 0 for key in STATUSES}
     for row in rows:
         if row["status"] not in HISTORY or query.history:
             counts[row["status"]] += 1
-    # The Stage filter's counts: every row at each stage, whatever the
-    # other filters, as the review worklist's choices count them.
+    # The Stage filter's counts: the rows the other filters keep, at each
+    # stage, so a choice's count is what choosing it lists, as on the
+    # other review worklists. With no other filter (the page's default)
+    # they count every row, as the menu's badge and Home do.
     stages = {}
-    for row in rows:
+    for row in matching:
         stages[row["stage"]] = stages.get(row["stage"], 0) + 1
         if row["not_seen"]:
             # A flag on Entered by hand, counted beside it.

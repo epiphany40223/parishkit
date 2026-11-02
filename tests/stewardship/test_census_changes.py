@@ -2,6 +2,7 @@
 
 import csv
 import io
+from dataclasses import replace
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
@@ -210,6 +211,28 @@ def test_filters_narrow_the_rows():
     assert counts["to_do"] == 2 and counts["superseded"] == 0
     counts = select(rows(), history, administrator=True)["status_counts"]
     assert counts["superseded"] == 1
+
+
+def test_stage_counts_count_what_each_stage_choice_lists():
+    """Each Stage choice's count is the rows choosing it lists (#2331).
+
+    The other filters (route, kind, search) narrow the counts as they
+    narrow the table, as on every other review worklist; with none of them
+    the counts are every row's, the number the menu's badge and Home show.
+    """
+    every = select(rows(), CensusQuery(stage="all"), administrator=True)
+    assert sum(every["stage_counts"].values()) == len(rows())
+    for query in (
+        CensusQuery(stage="all", route="by_hand"),
+        CensusQuery(stage="all", kind="moved"),
+        CensusQuery(stage="all", search="nobody"),
+    ):
+        counts = select(rows(), query, administrator=True)["stage_counts"]
+        for stage in {row["stage"] for row in rows()}:
+            chosen = select(rows(), replace(query, stage=stage), administrator=True)
+            assert counts.get(stage, 0) == len(chosen["rows"]), (query, stage)
+    narrowed = select(rows(), CensusQuery(route="by_hand"), administrator=True)
+    assert sum(narrowed["stage_counts"].values()) == 2
 
 
 def test_dates_are_days_in_the_browser_zone():

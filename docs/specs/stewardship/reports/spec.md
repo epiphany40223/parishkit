@@ -2989,7 +2989,11 @@ Confirmed, Ignored, History for superseded and cancelled rows, and Every
 stage, which counts everything but History), then a Family name or DUID
 search, how the change reaches ParishSoft (Automatic and by hand, Automatic
 only, By hand only) and kind of change (contact details, moved, deceased,
-new Member). There is no submitted-date filter, as on
+new Member). Each Stage count counts the changes the other filters keep, so
+it is the number of rows choosing that Stage lists, as on the other review
+worklists; under the default filters it is every change's
+([#2331](https://github.com/epiphany40223/parishkit/issues/2331)). There is
+no submitted-date filter, as on
 [Additional information](#additional-information) (#1888). The page has no
 summary: the counts are the Stage filter's. Sorting, paging and filters act
 [in place](../ui-conventions/spec.md#in-place-controls), and the address
