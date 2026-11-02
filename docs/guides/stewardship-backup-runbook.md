@@ -1603,17 +1603,18 @@ All of the replacement checks above apply as well. Only `postgres`,
 any other container of the project exists. Record the evidence, then go
 straight to step 10: destroy the host and its disks.
 
-**One `ERROR` line is expected.** Web's first start after a restore usually
-makes `pk-restore` print `ERROR: dependency observation incomplete; retry
-diagnostics` once, before web turns healthy. It comes from
-`pk-stewardship health`, which `pk-restore` polls up to 12 times, five
-seconds apart, with only its standard output hidden. Each poll is a fresh
-process whose probe waits at most 2 seconds, and on a cold start (first
-imports, first database and Valkey connections) the probe can miss that
-deadline, so the poll prints the `ERROR` and is retried. It is not a fault
-if a later poll passes and the run goes on to check the sources; a slow
-host may print two or three. The fault is a run that ends with `web did not
-turn healthy`: read `docker compose ... logs web`.
+**Expect a few "waiting for web" lines.** Web's first start after a restore
+usually makes `pk-restore` print `waiting for web (try N of 12)` once or
+twice before web turns healthy. `pk-restore` polls `pk-stewardship health`
+up to 12 times, five seconds apart. Each poll is a fresh process whose probe
+waits at most 2 seconds, and on a cold start (first imports, first database
+and Valkey connections) the probe can miss that deadline. `pk-restore` keeps
+each poll's diagnostics and prints only the progress line while a later poll
+can still pass, so no `ERROR` line appears for an ordinary cold start. A slow
+host may print several of these lines. It is not a fault if a later poll
+passes and the run goes on to check the sources. The fault is a run that
+prints the last poll's diagnostics and then `web did not turn healthy`: read
+those diagnostics and `docker compose ... logs web`.
 
 **Two sets on one drill host.** Rebuilding the operating system between
 sets is the safest reset. The runbook also accepts an in-place wipe of the
