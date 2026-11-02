@@ -546,8 +546,11 @@ def export_body(campaign_id, result, fmt, zone):
     parish, campaign and download time; the PDF dates itself in the
     parish's date format, lent explicitly so the file never depends on the
     request's date middleware (as the response lists' downloads do). The
-    CSV is only the table, so it reads none of them.
+    CSV is only the table, so it reads none of them. Every format marks
+    the Families no longer in this campaign, as the page does (#2331): one
+    read for all the rows.
     """
+    link_families(campaign_id, result["rows"])
     if fmt == "csv":
         return census_csv(result, zone)
     parish = (

@@ -305,11 +305,13 @@ def iso_time(moment):
 def _family(row):
     """A row's Family name and ParishSoft status cells (#1216).
 
-    The report reads no activity, so the only mark is a Family the data no
-    longer has, whose name is blank.
+    A Family the data no longer has has a blank name; one no longer in this
+    campaign says so, as the page's badge does, once ``link_families`` has
+    set ``family_active`` (#2331).
     """
     name = row["family_name"]
-    return name or "", source_status_label(family_status(name))
+    active = row.get("family_active") is not False
+    return name or "", source_status_label(family_status(name, active=active))
 
 
 def export_tables(result, zone, *, time_text=iso_time):

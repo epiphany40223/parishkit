@@ -998,6 +998,9 @@ def decorate(rows):
                 "family": row["family_name"] or source_status_label("missing"),
                 "family_name": row["family_name"],
                 "family_id": row.get("family_id") if row["family_name"] else None,
+                # The selection's own in-campaign flag: False marks a Family
+                # no longer in this campaign with the shared badge (#2331).
+                "family_active": row.get("active"),
                 "family_duid": row["family_duid"],
                 "baseline": "",
                 "family_answer": family_answer(row),

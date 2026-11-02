@@ -264,3 +264,23 @@ def test_the_document_names_no_person():
     }
     for name in members(document):
         assert FORBIDDEN.search(name) is None, name
+
+
+def left(campaign_id, rows):
+    """A ``link_families`` stand-in: every Family has left the campaign."""
+    assert campaign_id == 7
+    for each in rows:
+        each["family_active"] = False
+    return rows
+
+
+def test_the_download_says_a_family_left_the_campaign(monkeypatch):
+    """Every format reads the rows' in-campaign flag once, so the file's
+    ParishSoft status column says "No longer in this campaign" where the
+    page draws that badge (#2331); a Family still in the campaign stays
+    blank."""
+    monkeypatch.setattr(census_change_views, "link_families", left)
+    body = census_change_views.export_body(7, {"rows": [row()]}, "csv", ZoneInfo("UTC"))
+    line = body.decode().splitlines()[1]
+    assert line.startswith('"Example, Pat",No longer in this campaign,1234,')
+    assert export_rows({"rows": [row()]}, ZoneInfo("UTC"))[0][1] == ""

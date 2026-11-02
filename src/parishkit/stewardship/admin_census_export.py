@@ -233,6 +233,7 @@ def export_census(caller, service, filters, *, fmt, zone_name, context):
     from .admin_report_reads import _report
     from .reports.census_change_views import _audit, _principal, export_body
     from .reports.census_changes import CensusQuery, census_changes
+    from .reports.family_links import link_families
 
     given = {key: value for key, value in filters.items() if value is not None}
     principal = partial(_principal, export=True)
@@ -253,6 +254,9 @@ def export_census(caller, service, filters, *, fmt, zone_name, context):
         chosen, zone = holder["choice"]
         result = census_changes(campaign_id, holder["query"], actor)
         if chosen == "jsonl":
+            # The file's status cells mark Families no longer in this
+            # campaign, as export_body's do (#2331).
+            link_families(campaign_id, result["rows"])
             body = census_jsonl(result, zone, actor, mutable=_mutable(campaign_id))
         else:
             body = export_body(campaign_id, result, chosen, zone)

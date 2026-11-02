@@ -158,6 +158,7 @@ def export_limitations(caller, service, *, show, fmt, zone_name, context, stage=
         audit_choices,
         export_body,
         export_file_name,
+        mark_left,
     )
     from .reports.limitations import (
         LimitationsQuery,
@@ -201,6 +202,9 @@ def export_limitations(caller, service, *, show, fmt, zone_name, context, stage=
         result = at_stage(whole, stage)
         count = row_count(result)
         if choice["format"] == "jsonl":
+            # The file's status cells mark Families no longer in this
+            # campaign, as export_body's do (#2331).
+            mark_left(campaign_id, result)
             body = limitations_jsonl(
                 result, choice["zone"], mutable=mutable(campaign_id)
             )

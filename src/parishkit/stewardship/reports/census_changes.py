@@ -1292,9 +1292,15 @@ def export_rows(result, zone, *, time_text=iso_time):
     return [
         (
             # A Family the data no longer has: a blank name and the shared
-            # words in their own column (#1216).
+            # words in their own column (#1216). A Family no longer in this
+            # campaign says so too, as the page's badge does, once
+            # ``link_families`` has set ``family_active`` (#2331).
             row["family_name"] or "",
-            source_status_label(family_status(row["family_name"])),
+            source_status_label(
+                family_status(
+                    row["family_name"], active=row.get("family_active") is not False
+                )
+            ),
             str(row["family_duid"]),
             row["who"],
             # The Who cell's badge (rule 4, #1738) in its own column (#1752).

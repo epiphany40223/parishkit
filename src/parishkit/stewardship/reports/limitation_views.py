@@ -379,6 +379,12 @@ def export_file_name(fmt, now):
     return f"stewardship-limitations-{now.strftime('%Y%m%d-%H%M%SZ')}.{fmt}"
 
 
+def mark_left(campaign_id, result):
+    """Set ``family_active`` on every row of ``result``, in one read (#2331)."""
+    rows = result["members"] + result["families"] + result.get("contributions", [])
+    link_families(campaign_id, rows)
+
+
 def export_body(campaign_id, result, fmt, zone):
     """The filtered report as the chosen file's bytes, times in ``zone``.
 
@@ -387,8 +393,11 @@ def export_body(campaign_id, result, fmt, zone):
     page header and the XLSX's "Report information" sheet also name the
     parish, campaign and download time; the PDF dates itself in the
     parish's date format, lent explicitly, as the Census changes download
-    does. The CSV is only the two tables, so it reads none of them.
+    does. The CSV is only the two tables, so it reads none of them. Every
+    format marks the Families no longer in this campaign, as the page does
+    (#2331): one read for all the rows.
     """
+    mark_left(campaign_id, result)
     if fmt == "csv":
         return limitations_csv(result, zone)
     parish = (
