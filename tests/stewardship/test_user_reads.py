@@ -66,6 +66,7 @@ def test_rules_form_lists_granting_address_rules_with_their_highest_role():
             "role": "administrator",
             "last_login": None,
             "identities": [],
+            "address_match": None,
         },
         {
             "id": staff["id"],
@@ -82,8 +83,29 @@ def test_rules_form_lists_granting_address_rules_with_their_highest_role():
                 ),
                 key=lambda item: item["id"],
             ),
+            "address_match": None,
         },
     ]
+
+
+def test_a_matched_account_counts_for_the_user_it_matches():
+    """A Google account matched through another verified address (#2343) is
+    one of the user's identities: its sign-in counts for Last successful
+    sign-in, and the user's row names the standing match."""
+    staff = user("staff@example.org", "staff", "Staff")
+    matched = seen("staff@example.org", LATE) | {
+        "match": {
+            "match_id": str(uuid4()),
+            "id": "account",
+            "sign_in_email": "person@personal.example",
+            "matched_at": EARLY,
+            "confirmed_at": LATE,
+        }
+    }
+    rows = user_list([staff], [seen("staff@example.org", EARLY), matched])
+    assert rows[0]["last_login"] == LATE
+    assert rows[0]["address_match"] == matched["match"]
+    assert len(rows[0]["identities"]) == 2
 
 
 def test_users_form_lists_every_user_with_its_name():

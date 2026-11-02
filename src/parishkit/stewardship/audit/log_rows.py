@@ -222,6 +222,7 @@ ACTIVITY_TYPES = {
         "roles_applied",
         "user_change_requested",
         "admin_cmd_users_confirm",
+        "admin_cmd_users_end_match",
         "admin_cmd_parish_confirm",
         "admin_cmd_artwork_remove",
         "admin_cmd_branding_preview",

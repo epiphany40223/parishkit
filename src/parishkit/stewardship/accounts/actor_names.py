@@ -260,3 +260,62 @@ class ActorSentence(str):
             drawn_before, _who, drawn_after = markup.partition(WHO)
             value.before, value.after = mark_safe(drawn_before), mark_safe(drawn_after)
         return value
+
+
+def match_windows(identities):
+    """The verified-address matches of these accounts, by account id (#2343).
+
+    One query for all of them, none when ``identities`` names none; each
+    account's matches, standing or ended, oldest first, as ``through``
+    reads them.
+    """
+    from .policy_models import AddressMatch
+
+    wanted = {str(value) for value in identities if value}
+    if not wanted:
+        return {}
+    found = {}
+    for row in (
+        AddressMatch.objects.filter(portal_user_id__in=wanted)
+        .order_by("matched_at", "id")
+        .values(
+            "portal_user_id",
+            "email",
+            "user_record_id",
+            "sign_in_email",
+            "matched_at",
+            "ended_at",
+        )
+    ):
+        found.setdefault(str(row["portal_user_id"]), []).append(row)
+    return found
+
+
+def through(actor, matches, at):
+    """How a matched Google account's entry at ``at`` names its actor.
+
+    Inside one of its match windows (from the match to its end) it reads
+    "_user address_ through _sign-in address_", from that match record,
+    linked to the user's Timeline; outside every window, when the account
+    acts as a user's address only now, it reads its sign-in address. So the
+    label of an entry never changes when a match ends (admin-portal
+    specification, "Verified-address matches", Where it shows). Any other
+    actor is returned as it is.
+    """
+    from django.utils.translation import gettext as _
+
+    if not matches or actor is None:
+        return actor
+    for match in matches:
+        if match["matched_at"] <= at and (
+            match["ended_at"] is None or at <= match["ended_at"]
+        ):
+            label = _("%(user)s through %(account)s") % {
+                "user": match["email"],
+                "account": match["sign_in_email"],
+            }
+            return Actor(label, match["email"], match["user_record_id"])
+    if actor.email in {match["email"] for match in matches}:
+        address = matches[-1]["sign_in_email"]
+        return Actor(address, address)
+    return actor

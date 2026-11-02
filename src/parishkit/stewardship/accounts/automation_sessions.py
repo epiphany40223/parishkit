@@ -348,9 +348,14 @@ def approve(principal, portal_session, request, *, scope, days):
     signed-in Administrator. The approver may lower the requested scope and
     lifetime, never raise them, and must be the address the operator
     expected. The SQL guard re-checks the live browser session, its recorded
-    sign-in instant and the Administrator role.
+    sign-in instant and the Administrator role. An Administrator who signs
+    in through a verified-address match (#2343) gets a session that ends no
+    later than the match's 30 days (``address_matching.session_limit``),
+    whatever lifetime was asked for.
     """
     from parishkit.stewardship.jobs.operational_content import IncidentKind
+
+    from .address_matching import session_limit
 
     if not connection.in_atomic_block:
         raise RuntimeError("Approval requires its owning transaction.")
@@ -366,13 +371,19 @@ def approve(principal, portal_session, request, *, scope, days):
     if type(days) is not int or not 1 <= days <= request["days"]:
         raise ValueError("The lifetime can be shortened, not lengthened.")
     now = database_now()
+    expires_at = now + timedelta(days=days)
+    limit = session_limit(principal.identity)
+    if limit is not None:
+        if limit <= now:
+            raise PairingRefused("Approval is unavailable.")
+        expires_at = min(expires_at, limit)
     try:
         with transaction.atomic():
             session = AutomationSession.objects.create(
                 principal_id=principal.identity,
                 approving_session_id=portal_session.pk,
                 authenticated_at=portal_session.authenticated_at,
-                expires_at=now + timedelta(days=days),
+                expires_at=expires_at,
                 scope=scope,
                 label=request["label"],
                 secret_digest=request["secret_digest"],

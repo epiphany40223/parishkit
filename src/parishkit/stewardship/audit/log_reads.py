@@ -17,7 +17,12 @@ from zoneinfo import ZoneInfo
 from django.db import DatabaseError, connection, transaction
 from django.urls import reverse
 
-from parishkit.stewardship.accounts.actor_names import actor_names, actor_text
+from parishkit.stewardship.accounts.actor_names import (
+    actor_names,
+    actor_text,
+    match_windows,
+    through,
+)
 from parishkit.stewardship.campaigns.read_guards import DEFAULT_LIMITS
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.observability import Event
@@ -226,6 +231,9 @@ def _annotate(page):
     # page to the user's Timeline (#2259); downloads keep the address.
     identities = {row["actor_id"] for row in page if row["actor_id"]}
     actors = actor_names(identities)
+    # A Google account matched through another verified address (#2343) is
+    # named by the match its entry's instant falls in, one read for the page.
+    windows = match_windows(identities)
     # Most other actors are background worker processes (each task claim is
     # recorded under the claiming worker's identity), not people.
     workers = set(
@@ -236,7 +244,11 @@ def _annotate(page):
         .distinct()
     )
     for row in page:
-        row["actor"] = actors.get(str(row["actor_id"]))
+        row["actor"] = through(
+            actors.get(str(row["actor_id"])),
+            windows.get(str(row["actor_id"])),
+            row["created_at"],
+        )
         row["actor_worker"] = row["actor_id"] in workers
         row["task_subject"] = task_subject(row)
     return page

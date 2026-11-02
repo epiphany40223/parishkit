@@ -187,6 +187,10 @@ DESCRIPTIONS = {
         "An automation session confirmed a reviewed change to Admin portal "
         "users, which became a configuration request."
     ),
+    "admin_cmd_users_end_match": _(
+        "An automation session ended the match of a Google account that "
+        "signed in as a user through another of its email addresses."
+    ),
     "admin_cmd_parish_confirm": _(
         "An automation session confirmed a reviewed change to the parish "
         "profile, which became a configuration request."

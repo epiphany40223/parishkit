@@ -65,25 +65,42 @@ def live_sessions(now, current_id):
 
     ``current_id`` is the reader's own PortalSession: that row is marked
     ``current`` and is never offered Sign out (the page's own Sign out ends
-    it). Rows hold no session key, only the opaque PortalSession id.
+    it). Rows hold no session key, only the opaque PortalSession id. A
+    session of an account that acts through a verified-address match
+    (#2343) has ``through``, its sign-in address; every other's is None.
     """
     email = PortalUser.objects.filter(pk=OuterRef("principal_id")).values("email")[:1]
+    # A Google account acting as a user's address through a verified-address
+    # match (#2343) is named "user address through sign-in address".
+    sign_in = PortalUser.objects.filter(pk=OuterRef("principal_id")).values(
+        "sign_in_email"
+    )[:1]
     # Only the shown columns are read: never the Django session key
     # (``session_id``), which must not reach a page.
     rows = (
         _live(PortalSession.objects.all(), now)
-        .annotate(email=Subquery(email))
+        .annotate(email=Subquery(email), sign_in_email=Subquery(sign_in))
         .order_by("-last_activity_at", "-id")
         .values(
             "id",
             "principal_id",
             "email",
+            "sign_in_email",
             "authenticated_at",
             "last_activity_at",
             "expires_at",
         )
     )
-    return [row | {"current": row["id"] == current_id} for row in rows]
+    return [
+        row
+        | {
+            "current": row["id"] == current_id,
+            "through": row["sign_in_email"]
+            if row["sign_in_email"] and row["sign_in_email"] != row["email"]
+            else None,
+        }
+        for row in rows
+    ]
 
 
 # The table's sort orders: every data column, both directions; times sort

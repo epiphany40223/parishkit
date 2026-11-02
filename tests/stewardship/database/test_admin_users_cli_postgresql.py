@@ -75,6 +75,7 @@ def test_users_list_prints_each_user_sorted_as_the_page(admin, google):  # noqa:
         "role": "ministry_leader",
         "last_login": None,
         "identities": [],
+        "address_match": None,
     }
     assert result["version"] == admin.service.store.active().digest
     # The Administrator signed in to approve the session.

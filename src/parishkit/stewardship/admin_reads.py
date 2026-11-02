@@ -1140,7 +1140,11 @@ class UsersList(ReadModel):
     exact-address rules that grant a role, each with its highest role and a
     null ``name`` (``user_reads.user_list``). ``version`` is the applied
     configuration's digest, which ``users preview --expected-version``
-    takes; each user's ``id`` is what its change document names.
+    takes; each user's ``id`` is what its change document names. Each
+    user's ``address_match`` is null, or the standing verified-address
+    match of its address (#2343): ``match_id`` (what ``users end-match``
+    takes), the Google account's ``id`` and ``sign_in_email``,
+    ``matched_at`` and ``confirmed_at``.
     """
 
     form: str
@@ -1253,7 +1257,9 @@ class UserTimelineRead(ReadModel):
 
     ``user`` is the person (record ID, email, Name, ``role`` or null for a
     former user with ``removed_at``); ``summary`` the page's summary
-    (``last_sign_in``, ``last_email`` and ``ministries``); ``families`` the
+    (``last_sign_in``, ``last_email``, ``ministries`` and
+    ``matched_account``, the standing verified-address match's Google
+    account ``sign_in_email`` and ``matched_at``, or null, #2343); ``families`` the
     ParishSoft Families the address belongs to, by ``duid`` and
     ``family_id`` (the Family's record in the current campaign, or null)
     only: their names and codes are Family-level personal data, which the
@@ -1348,6 +1354,13 @@ def read_user_timeline(
             if summary.last_email is None
             else _timeline_line(summary.last_email),
             "ministries": list(summary.ministries),
+            # The standing verified-address match's Google account (#2343).
+            "matched_account": None
+            if summary.matched is None
+            else {
+                "sign_in_email": summary.matched[0],
+                "matched_at": summary.matched[1],
+            },
         },
         families=[
             # ``state`` says why a Family has no lines: ``shown``,

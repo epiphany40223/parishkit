@@ -55,10 +55,24 @@ def cleared(event, acknowledgements, *, viewer_email):
     told, but it was not an Administrator at activation and settles nothing.
     For a replaced backup key the actor's own acknowledgement settles
     nothing for anyone else, even as the only recipient.
+
+    A verified-address match (``address_matched``, #2343) is settled only by
+    an Administrator other than the matched person: its actor is the matched
+    Google account and its target the user's address, so neither the
+    account's own acknowledgement (made through the match or, after it
+    ended, through its sign-in address) nor one from the user's address
+    settles it for anyone else, even when no other recipient exists.
     """
     recipients = set(event.recipients) - {event.target}
+    matched = event.kind == "address_matched"
     for acknowledgement in acknowledgements:
-        if acknowledgement["email"] == viewer_email or not recipients:
+        if acknowledgement["email"] == viewer_email:
+            return True
+        if matched and (
+            acknowledgement["own"] or acknowledgement["email"] == event.target
+        ):
+            continue
+        if not recipients:
             return True
         if acknowledgement["email"] == event.target:
             continue

@@ -29,7 +29,7 @@
   <table><caption id="sessions-caption">{% translate "Browsers signed in to the Admin portal now" %}</caption>
   <thead><tr>{% translate "User" as heading %}{% sort_heading table "user" heading %}{% translate "Signed in" as heading %}{% sort_heading table "signed_in" heading %}{% translate "Last activity" as heading %}{% sort_heading table "activity" heading %}{% translate "Expires" as heading %}{% sort_heading table "expires" heading %}<th scope="col">{% translate "Actions" %}</th></tr></thead>
   <tbody>{% for row in table.rows %}<tr>
-    <th scope="row">{{ row.email|default:_("unknown") }}{% if row.current %} ({% translate "you, this browser" %}){% endif %}</th>
+    <th scope="row">{{ row.email|default:_("unknown") }}{% if row.through %} {% blocktranslate with address=row.through %}through {{ address }}{% endblocktranslate %}{% endif %}{% if row.current %} ({% translate "you, this browser" %}){% endif %}</th>
     <td class="nowrap"><time datetime="{{ row.authenticated_at|instant }}" data-local-instant data-compact>{{ row.authenticated_at|instant }}</time></td>
     <td class="nowrap"><time datetime="{{ row.last_activity_at|instant }}" data-local-instant data-compact>{{ row.last_activity_at|instant }}</time></td>
     <td class="nowrap"><time datetime="{{ row.expires_at|instant }}" data-local-instant data-compact>{{ row.expires_at|instant }}</time></td>

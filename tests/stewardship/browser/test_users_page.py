@@ -18,25 +18,30 @@ import pytest
 from .test_components import axe_violations
 from .user_components import (
     EDIT,
+    EDIT_MATCH,
+    EDIT_MATCH_NEWER,
+    EDIT_MATCH_OWN,
     EDIT_ONLY,
     EDIT_OWN,
     LIST,
     LIST_PENDING,
     LONG_EMAIL,
     LONG_NAME,
+    MATCHED_ACCOUNT,
     NAMES,
     NEW,
     NEW_TAKEN,
+    NEWER_ACCOUNT,
     PENDING,
     SINGLE,
     SUGGESTED,
 )
-from .waits import eventually, has_attribute, hidden, visible
+from .waits import eventually, has_attribute, has_text, hidden, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
-PAGES = (LIST, SINGLE, NEW, EDIT, EDIT_ONLY, EDIT_OWN)
+PAGES = (LIST, SINGLE, NEW, EDIT, EDIT_ONLY, EDIT_OWN, EDIT_MATCH, EDIT_MATCH_OWN)
 # Whether the user form's Review is held unavailable.
 REVIEW_HELD = "document.querySelector('#user-entry-form button[type=submit]').disabled"
 
@@ -552,3 +557,116 @@ def test_google_account_guidance_shows_where_sign_in_fails(page, component_origi
     about = page.locator("details[data-about-page]")
     about.locator("summary").click()
     visible(about.locator("[data-google-account-help]"))
+
+
+# The match line's top against the window's height: below the fold first.
+MATCH_BELOW_FOLD = (
+    "document.querySelector('#user-match').getBoundingClientRect().top"
+    " > window.innerHeight"
+)
+
+
+def test_end_match_asks_then_leaves_its_line_in_place(
+    page, component_origin, axe_source
+):
+    """End match (#2343) is red, opens the shared confirmation dialog whose
+    confirm is the red End match, posts the match's ID alone, and the line
+    becomes its status line in place, which takes focus; the form above
+    never moves, the window never scrolls (at a width just above the 40rem
+    breakpoint, with the line below the fold) and the page never reloads."""
+    page.set_viewport_size({"width": 700, "height": 500})
+    page.goto(component_origin + EDIT_MATCH)
+    failures = watch(page)
+    line = page.locator("#user-match")
+    visible(line)
+    assert page.evaluate(MATCH_BELOW_FOLD)
+    assert f"{MATCHED_ACCOUNT} signs in through this address since" in line.inner_text()
+    # The form's place in the document (focus may scroll the window).
+    where = (
+        "document.querySelector('#user-entry-form').getBoundingClientRect().top"
+        " + window.scrollY"
+    )
+    form_top = page.evaluate(where)
+    button = line.get_by_role("button", name="End match")
+    button.scroll_into_view_if_needed()
+    scrolled = page.evaluate("window.scrollY")
+    assert scrolled > 0
+    assert "button-danger" in button.get_attribute("class")
+    identifier = button.get_attribute("value")
+    button.click()
+    dialog = page.locator("#user-match-end")
+    visible(dialog)
+    assert dialog.locator("h2").inner_text() == (
+        f"End the match for {MATCHED_ACCOUNT}?"
+    )
+    assert "its Admin sessions, including command-line sessions, end now" in (
+        dialog.inner_text()
+    )
+    accept = dialog.get_by_role("button", name="End match")
+    assert "button-danger" in accept.get_attribute("class")
+    assert axe_violations(page, axe_source) == []
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        accept.click()
+    fields = parse_qs(sent.value.post_data or "")
+    assert set(fields) == {"csrfmiddlewaretoken", "match_id"}
+    assert fields["match_id"] == [identifier]
+    hidden(dialog)
+    eventually(
+        page,
+        "document.activeElement && document.activeElement.id === 'user-match-status'",
+    )
+    status = page.locator("#user-match-status")
+    assert status.inner_text() == f"Ended the match for {MATCHED_ACCOUNT}."
+    assert page.locator("#user-match").get_by_role("button").count() == 0
+    assert page.evaluate(where) == form_top
+    assert page.evaluate("window.scrollY") == scrolled
+    assert page.evaluate("window.notReloaded === true")
+    assert not failures
+
+
+def test_end_match_of_an_ended_match_says_so_in_place(page, component_origin):
+    """End match on a page whose match had already ended while a newer one
+    now stands (#2343): the answer draws the newer match's line and, after
+    it, the status line, which takes focus where the reader was (never the
+    heading, no scroll); the dialog says the match had already ended, not
+    its own "Ended the match" words."""
+    page.set_viewport_size({"width": 700, "height": 500})
+    page.goto(component_origin + EDIT_MATCH_NEWER)
+    failures = watch(page)
+    line = page.locator("#user-match")
+    visible(line)
+    assert page.evaluate(MATCH_BELOW_FOLD)
+    button = line.get_by_role("button", name="End match")
+    button.scroll_into_view_if_needed()
+    scrolled = page.evaluate("window.scrollY")
+    assert scrolled > 0
+    button.click()
+    dialog = page.locator("#user-match-end")
+    visible(dialog)
+    dialog.get_by_role("button", name="End match").click()
+    hidden(dialog)
+    eventually(
+        page,
+        "document.activeElement && document.activeElement.id === 'user-match-status'",
+    )
+    already = "This match had already ended; the page is up to date."
+    assert page.locator("#user-match-status").inner_text() == already
+    # The newer match stands, with its own End match, before the status line.
+    assert f"{NEWER_ACCOUNT} signs in through this address since" in line.inner_text()
+    assert line.get_by_role("button", name="End match").count() == 1
+    has_text(page.get_by_role("status").filter(has_text="already ended"), already)
+    assert page.get_by_role("status").filter(has_text="Ended the match").count() == 0
+    assert page.evaluate("window.scrollY") == scrolled
+    assert page.evaluate("window.notReloaded === true")
+    assert not failures
+
+
+def test_the_readers_own_match_has_no_end_match(page, component_origin):
+    """The match the reader signs in through is another Administrator's to
+    end: End match stays drawn, unavailable, with the reason (#2343)."""
+    page.goto(component_origin + EDIT_MATCH_OWN)
+    button = page.locator("#user-match").get_by_role("button", name="End match")
+    assert button.is_disabled()
+    reason = page.locator("#user-match-own")
+    assert "another Administrator does that" in reason.inner_text()
+    assert button.get_attribute("aria-describedby") == "user-match-own"

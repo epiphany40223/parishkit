@@ -139,6 +139,8 @@ VIEW_NAMED = {"reports", "daily_digest_snapshot"}
 NOT_PAGES = {
     "schedule_delete",
     "user_delete",
+    # Edit user's End match dialog (#2343).
+    "user_match_end",
     "hosted_file_delete",
     "content_delete",
     "user_leader_import",

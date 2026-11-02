@@ -22,7 +22,8 @@ that holds the record. Its lines come from four sources, each one read:
   All never lists them (``reports.timelines.narrow``): a busy
   Administrator opens hundreds of pages a week, which would drown the rest;
 - role changes: the record's role in each activated configuration, in
-  activation order;
+  activation order, and each verified-address match of the address
+  (#2343): "Google account matched" and "Match ended", with its reason;
 - emails: every email whose intended recipients include the address,
   through the Administrator-only definer read of frozen migration 0116
   (``jobs.delivery_reads.address_deliveries``), then the messages by id.
@@ -35,6 +36,12 @@ role history reads the record's rows by ``record_id``, which no index
 leads with (the unique key leads with the configuration): one row per
 user per configuration version is a few thousand rows at parish scale,
 so the scan is cheap and #1866 adds no index for it.
+
+A Google account matched to the address through another of its verified
+addresses (#2343) counts only inside each of its match windows, from the
+match to its end, read from the match records (``read_matches``), never
+from the account's current address, so ending a match never hides what was
+done through it and the account's own life before or after does not show.
 
 Sign-ins, actions and emails follow the address (its Google accounts and
 the emails meant for it), while role changes follow the record: an
@@ -57,6 +64,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from uuid import UUID
 
+from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.audit.log_descriptions import describe
@@ -65,7 +73,7 @@ from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.jobs.delivery_metadata import LISTED_PURPOSES, OUTCOMES
 from parishkit.stewardship.reports.timelines import Event
 
-from .policy_models import AddressRule, PortalUser
+from .policy_models import AddressMatch, AddressRule, PortalUser
 from .runtime_models import ConfigurationActivation, SystemConfiguration
 from .user_rows import ROLE_LABELS
 from .users_upgrade import highest_role
@@ -100,8 +108,9 @@ SESSION_WORDS = {
     "admin_privileges_changed": _("Session replaced"),
     "admin_login_refused": _("Sign-in refused"),
     "admin_login_denied": _("Sign-in refused"),
-    # Sign-in through another verified address (#2343). Their Role changes
-    # lines and match windows come with the Timeline's slice 3 work.
+    # Sign-in through another verified address (#2343). A match and its end
+    # are also Role changes lines from the match records (``match_lines``),
+    # so the matched user's Timeline leaves these two records out.
     "admin_address_checked": _("Checked the Google account's other addresses"),
     "admin_address_matched": _("Google account matched"),
     "admin_address_match_ended": _("Match ended"),
@@ -119,6 +128,17 @@ SESSION_DETAILS = {
         "was removed during the sign-in"
     ),
 }
+# Why a verified-address match ended (#2343), as its Role changes line says.
+MATCH_ENDS = {
+    "sign_in_address_matches": _("the Google account's own address became a user"),
+    "not_confirmed": _("Google no longer confirmed the address"),
+    "user_gone": _("the user was removed"),
+    "replaced": _("another Google account took the address over"),
+    "ended_by_administrator": _("an Administrator ended it"),
+}
+# The match guard's records of a match and its end, which the Role changes
+# lines from the match records say instead on the matched user's Timeline.
+MATCH_EVENTS = frozenset({"admin_address_matched", "admin_address_match_ended"})
 # An Admin action's recorded outcome, when it is not plain success.
 OUTCOME_WORDS = {"denied": _("Refused"), "failed": _("Failed")}
 # Each outbox purpose as an email line names it (``OutboxMessage.purpose``).
@@ -184,12 +204,16 @@ class Summary:
 
     ``last_email`` is the newest email line that was not cancelled (a
     cancelled email was never sent, as on a Family's Timeline);
-    ``ministries`` are the names of the Ministries the person leads now.
+    ``ministries`` are the names of the Ministries the person leads now;
+    ``matched`` is the standing verified-address match's Google account
+    sign-in address and when it was made, ``(address, instant)`` (#2343), or
+    None.
     """
 
     last_sign_in: datetime | None = None
     last_email: Event | None = None
     ministries: tuple = ()
+    matched: tuple | None = None
 
 
 @dataclass(frozen=True)
@@ -297,6 +321,44 @@ def role_changes(activations, roles):
     return lines
 
 
+def match_lines(matches):
+    """The Role changes lines of the address's verified-address matches.
+
+    "Google account matched" with the account's sign-in address when it was
+    made, and "Match ended" with why when it ended (#2343).
+    """
+    lines = []
+    for match in matches:
+        lines.append(
+            Event(
+                match["matched_at"],
+                _("Google account matched"),
+                match["sign_in_email"],
+                kind="roles",
+            )
+        )
+        if match["ended_at"] is not None:
+            lines.append(
+                Event(
+                    match["ended_at"],
+                    _("Match ended"),
+                    MATCH_ENDS.get(match["end_reason"], ""),
+                    kind="roles",
+                )
+            )
+    return lines
+
+
+def in_window(matches, actor, at):
+    """Whether ``at`` lies inside one of ``actor``'s match windows."""
+    return any(
+        str(match["portal_user_id"]) == str(actor)
+        and match["matched_at"] <= at
+        and (match["ended_at"] is None or at <= match["ended_at"])
+        for match in matches
+    )
+
+
 def timeline_sentence(event_type, outcome=None):
     """A record's System logs sentence as a line of the actor's own Timeline.
 
@@ -389,8 +451,11 @@ def ordered(lines):
     return tuple(replace(line, rank=rank) for rank, line in enumerate(lines))
 
 
-def summarize(rows, emails, ministries=()):
-    """The summary from the audit rows, the email rows and the Ministries."""
+def summarize(rows, emails, ministries=(), matched=None):
+    """The summary from the audit rows, the email rows and the Ministries.
+
+    ``matched`` is the standing match's ``(sign-in address, instant)``.
+    """
     sign_ins = [at for at, event_type, _outcome in rows if event_type == "admin_login"]
     # The newest line of an email not cancelled: by the instant its line
     # shows (its outcome's, or when it was planned while on its way), so the
@@ -403,6 +468,7 @@ def summarize(rows, emails, ministries=()):
         max(sign_ins) if sign_ins else None,
         sent[-1] if sent else None,
         tuple(sorted(ministries, key=str.casefold)),
+        matched,
     )
 
 
@@ -472,6 +538,59 @@ def audit_records(accounts, *, views=False):
 def read_audit(accounts, *, views=False):
     """Every audit record by the accounts (``audit_records``), as a list."""
     return list(audit_records(accounts, views=views)) if accounts else []
+
+
+def read_matches(address):
+    """Every verified-address match of ``address``, standing or ended (#2343).
+
+    Oldest first, through the ``(email, matched_at)`` index of frozen
+    migration 0200.
+    """
+    return list(
+        AddressMatch.objects.filter(email=address)
+        .order_by("matched_at", "id")
+        .values(
+            "id",
+            "portal_user_id",
+            "sign_in_email",
+            "matched_at",
+            "ended_at",
+            "end_reason",
+        )
+    )
+
+
+def read_windowed(matches, *, whole=(), views=False):
+    """The matched accounts' audit records inside their match windows.
+
+    As ``audit_records`` reads them, one statement for every matched
+    account not in ``whole`` (the accounts read whole, such as one whose own
+    sign-in address has since become the user's), keeping a record only
+    when its instant lies inside one of its actor's windows
+    (``in_window``). The match guard's own records of these matches are
+    left out: their Role changes lines say them.
+    """
+    actors = {match["portal_user_id"] for match in matches} - set(whole)
+    if not actors:
+        return []
+    ours = {match["id"] for match in matches}
+    records = AuditEvent.objects.filter(actor_id__in=actors)
+    if not views:
+        records = records.exclude(event_type__in=PAGE_READS)
+    return [
+        (at, event_type, outcome)
+        for at, event_type, outcome, actor, subject in records.order_by(
+            "created_at", "id"
+        ).values_list(
+            "created_at",
+            "event_type",
+            "auditcontext__context__outcome",
+            "actor_id",
+            "subject_id",
+        )
+        if not (event_type in MATCH_EVENTS and subject in ours)
+        and in_window(matches, actor, at)
+    ]
 
 
 def read_emails(address, actor_id):
@@ -687,13 +806,34 @@ def read_timeline(user_id, actor_id, *, codes=False, test_link=False, views=Fals
     counts it.
     """
     person, activations, roles = read_person(user_id)
-    accounts = tuple(
-        {"id": row["id"], "disabled": row["disabled"]}
-        for row in PortalUser.objects.filter(email=person.email)
+    matches = read_matches(person.email)
+    matched = {match["portal_user_id"] for match in matches}
+    standing = next((match for match in matches if match["ended_at"] is None), None)
+    # The address's own accounts, and the one its standing match names: the
+    # page's Sign-in activity controls. A matched account's records count
+    # only inside its match windows (read_windowed), never whole.
+    found = (
+        PortalUser.objects.filter(
+            Q(sign_in_email=person.email)
+            | Q(email=person.email)
+            | Q(pk=standing["portal_user_id"] if standing else None)
+        )
         .order_by("id")
-        .values("id", "disabled")
+        .values("id", "disabled", "sign_in_email")
     )
-    rows = read_audit([account["id"] for account in accounts], views=views)
+    accounts = tuple({"id": row["id"], "disabled": row["disabled"]} for row in found)
+    # Read whole: the accounts that sign in with the address, and any other
+    # with the address that no match names (none, while the guards hold).
+    whole = [
+        row["id"]
+        for row in found
+        if row["sign_in_email"] == person.email or row["id"] not in matched
+    ]
+    rows = sorted(
+        read_audit(whole, views=views)
+        + read_windowed(matches, whole=whole, views=views),
+        key=lambda row: row[0],
+    )
     emails = read_emails(person.email, actor_id)
     ministries = (
         read_ministries(accounts, person.email, actor_id) if person.role else ()
@@ -703,13 +843,19 @@ def read_timeline(user_id, actor_id, *, codes=False, test_link=False, views=Fals
     listed = {line.message_id for line in tagged if line.message_id}
     lines = [
         *role_changes(activations, roles),
+        *match_lines(matches),
         *audit_lines(rows),
         *email_lines(row for row in emails if row["id"] not in listed),
         *tagged,
     ]
     return UserTimeline(
         person,
-        summarize(rows, emails, ministries),
+        summarize(
+            rows,
+            emails,
+            ministries,
+            (standing["sign_in_email"], standing["matched_at"]) if standing else None,
+        ),
         ordered(lines),
         accounts,
         families,
