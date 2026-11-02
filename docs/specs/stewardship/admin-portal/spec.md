@@ -9088,10 +9088,11 @@ or leave the Ministries they lead, and links the Admin portal's sign-in
 page at the deployment's public address. It names the address the leader
 signs in with, the one the email was sent to, followed by the shared
 [Google Account guidance](#login-and-denial-behavior)'s which-address line
-([#1593](https://github.com/epiphany40223/parishkit/issues/1593)). It lists each of the leader's Ministries with its open
-requests to join and to leave, or "No open requests", counted as the
-leader's [My review work](../review-pipeline/spec.md#role-views) counts
-them, then links
+([#1593](https://github.com/epiphany40223/parishkit/issues/1593)). It lists each of the leader's Ministries with its
+requests to join and to leave still To review, or "None to review", counted
+as the leader's [My review work](../review-pipeline/spec.md#role-views)
+counts them, and names that stage rather than calling them open
+([#2331](https://github.com/epiphany40223/parishkit/issues/2331)), then links
 [Ministry requests](../reports/spec.md#ministry-change-summary), and it
 ends with the guidance's line on whom to ask when sign-in still fails. It
 names no parishioner and carries no contact or request detail: email is not

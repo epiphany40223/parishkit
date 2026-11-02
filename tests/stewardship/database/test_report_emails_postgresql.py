@@ -73,7 +73,7 @@ def test_a_weekly_report_with_nothing_open_sends_with_its_funnel(
         assert preparation.phase == "complete"
         snapshot = ReportEmailSnapshot.objects.get(preparation=preparation)
         assert snapshot.has_content
-        assert "No open requests." in snapshot.text
+        assert "None to review or to handle." in snapshot.text
         deliver_all(harness, path)
         run_finalizers()
     assert len(sent) == 1 and isinstance(sent[0], WeeklyDeliveryMail)

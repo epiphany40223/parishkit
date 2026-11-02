@@ -111,9 +111,10 @@ def recorded_ministries(recipients):
 
 
 def counts_text(ministry):
-    """A Ministry's open requests to join and to leave, in plain words."""
+    """A Ministry's requests to join and to leave still To review, in plain
+    words: the stage the count adds up, never "open" (#2331)."""
     if not (ministry.join or ministry.leave):
-        return "No open requests"
+        return "None to review"
     return f"{ministry.join} asking to join · {ministry.leave} asking to leave"
 
 
@@ -171,7 +172,7 @@ def render_leader_email(facts, address):
     address_line = f"Your sign-in address is {address}, the address this email went to."
     open_line = (
         "Requests from Families to join or leave your Ministries that are "
-        "still open (New or In progress) in the current campaign:"
+        "still To review in the current campaign:"
     )
     html = [
         "<p>Hello,</p>",

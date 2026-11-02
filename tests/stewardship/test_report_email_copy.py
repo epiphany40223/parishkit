@@ -155,7 +155,10 @@ def test_blocks_draw_in_order_from_their_kept_data():
         "from_a_later_release",
     ]
     requests, days, funnel, unknown = drawn
-    assert (requests["template"], requests["empty"]) == ("", "No open requests.")
+    assert (requests["template"], requests["empty"]) == (
+        "",
+        "None to review or to handle.",
+    )
     assert days["context"] == {"headings": ["Campaign date"], "rows": [["Oct 8, 2054"]]}
     assert funnel["context"]["funnel_testing_note"]
     assert funnel["context"]["funnel_stages"] == []

@@ -193,5 +193,5 @@ BLOCK = Block(
     draw=draw,
     capture=capture,
     copy=copy,
-    empty="No open requests.",
+    empty="None to review or to handle.",
 )

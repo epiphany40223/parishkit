@@ -146,7 +146,7 @@ entered and labelled as UTC. Since
 the browser's time zone, which the page script sends with the form, and
 displayed instants use the browser zone. Since
 [#534](https://github.com/epiphany40223/parishkit/issues/534), Save and next
-moves to the next open request, and "Return to Ministry follow-up" (since
+moves to the next request to review, and "Return to Ministry follow-up" (since
 [#1133](https://github.com/epiphany40223/parishkit/issues/1133), "Return to
 Ministry requests", the one page that now holds the queue) keeps the
 queue's filters, sort and page; see the
