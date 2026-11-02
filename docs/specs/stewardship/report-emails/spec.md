@@ -94,7 +94,8 @@ Administrator's sign-off. Each is referred to below by its number.
     entirely, so the block keeps no "since last sent" state. The converted
     Weekly changes to this at deploy and may list requests it listed
     before. For this block, Send now, test sends, pause and the first
-    send need no special rules. Its empty line is "No open requests", and
+    send need no special rules. Its empty line is "None to review or to handle" (it read "No open
+    requests" before #2331), and
     "send only when there is something new" means "only when at least one
     block has content".
 15. **Open means To review and To handle.** The additional information
@@ -105,7 +106,7 @@ Administrator's sign-off. Each is referred to below by its number.
     (Campaign totals, Response funnel, Participation charts, Day by day
     table) always have content, so a report containing one always sends.
     The converted Weekly (requests and Response funnel) therefore sends
-    every week, its requests block showing "No open requests." when nothing
+    every week, its requests block showing "None to review or to handle." when nothing
     is open. This is an accepted behavior change
     from today's Weekly, which skips an empty week.
 17. **The migration rewords the Weekly's default introduction.** When the
@@ -2037,7 +2038,7 @@ byte-identical:
 - **It sends every week** (decision 16): it keeps Send only when there is
   something to report on, but its Response funnel always has content, so
   it is never skipped as empty; a week with nothing open sends with the
-  requests block's "No open requests." line. Its post-close slot, today
+  requests block's "None to review or to handle." line. Its post-close slot, today
   considered only while items or corrections are still owed, is now an
   ordinary send and is made too.
 - **Its default introduction is reworded** (decision 17): an introduction
@@ -2194,7 +2195,7 @@ test builds the expected Weekly output by applying exactly those changes
 corrections section, and the reworded current or retired default intro, an
 edited intro staying as it was) to the old compiler's rows, and fails on any
 other difference. It also asserts that a Weekly with no open request now
-sends, with the "No open requests." line, where the old compiler recorded an
+sends, with the "None to review or to handle." line, where the old compiler recorded an
 empty interval. A second test runs the migration on a database seeded with
 both digests, their occurrences, fulfillments, skip dates and a post-close
 resolution, and asserts that the next sends planned are the same instants

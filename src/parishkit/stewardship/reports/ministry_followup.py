@@ -265,10 +265,10 @@ def in_scope(principal, authorized, ministries):
 
 
 def my_ministries(campaign_id, principal):
-    """A Ministry leader's Home panel: open join and leave requests per Ministry.
+    """A Ministry leader's Home panel: join and leave requests To review per Ministry.
 
     Reads the same selection as the follow-up queue, with its default
-    filters (open requests: New or In progress, current requests), so a
+    filters (requests To review, current requests), so a
     leader is never shown a count the queue would not list for them. Each
     count is the selection's exact ``total`` for one Ministry and action,
     read with no rows (``page_limit`` 0), so no request details are read
@@ -308,7 +308,7 @@ def my_ministries(campaign_id, principal):
         if count:
             # All reads share one snapshot, so a per-Ministry read can come
             # back unavailable or disabled only in a very narrow race; it
-            # then shows "No open requests" rather than failing Home.
+            # then shows no request to review rather than failing Home.
             for action in ("join", "leave"):
                 entry[action] = total(ministry=str(item["duid"]), action=action)[1] or 0
         # A removed Ministry stays only while it still has open requests.

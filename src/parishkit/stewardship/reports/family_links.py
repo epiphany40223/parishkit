@@ -28,6 +28,19 @@ def family_record_ids(campaign_id, duids):
     for pages outside any campaign (Refused addresses): a subquery, so it
     stays one read.
     """
+    return {
+        duid: pk for duid, (pk, _in_campaign) in _records(campaign_id, duids).items()
+    }
+
+
+def _records(campaign_id, duids):
+    """Map each Family DUID in ``duids`` to ``(record id, in this campaign)``.
+
+    The one read ``family_record_ids`` describes. "In this campaign" is the
+    record's ``portal_eligible``: the campaign's Families rule as of the
+    latest ParishSoft data, the set Home and the Response dashboard count as
+    the campaign's Families today (#2331).
+    """
     duids = {duid for duid in duids if duid is not None}
     if not duids:
         return {}
@@ -39,22 +52,26 @@ def family_record_ids(campaign_id, duids):
         campaign_id = Subquery(
             SystemConfiguration.objects.values("current_campaign_id")[:1]
         )
-    return dict(
-        FamilyCampaign.objects.filter(
+    return {
+        duid: (pk, in_campaign)
+        for duid, pk, in_campaign in FamilyCampaign.objects.filter(
             campaign_id=campaign_id, family_duid__in=duids
-        ).values_list("family_duid", "pk")
-    )
+        ).values_list("family_duid", "pk", "portal_eligible")
+    }
 
 
 def link_families(campaign_id, rows, key="family_duid"):
     """Give each row dict its Family's record id, as ``family_id``, in place.
 
     ``key`` names the row's DUID field. A row whose Family has no campaign
-    record gets None, so ``family_link`` draws its name unlinked. Pass only
-    the rows the page draws (its current page), so the one read stays small.
-    Returns ``rows``.
+    record gets None, so ``family_link`` draws its name unlinked. Each row
+    also gets ``family_active``: False for a Family no longer in this
+    campaign, which ``family_link`` marks with the shared "No longer in this
+    campaign" badge (#1393, #2331), True otherwise, None with no record.
+    Pass only the rows the page draws (its current page), so the one read
+    stays small. Returns ``rows``.
     """
-    ids = family_record_ids(campaign_id, (row.get(key) for row in rows))
+    records = _records(campaign_id, (row.get(key) for row in rows))
     for row in rows:
-        row["family_id"] = ids.get(row.get(key))
+        row["family_id"], row["family_active"] = records.get(row.get(key), (None, None))
     return rows

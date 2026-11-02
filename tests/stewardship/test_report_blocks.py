@@ -318,7 +318,7 @@ def test_the_registry_holds_the_six_spec_blocks():
     assert {key: (block.label, block.empty) for key, block in REGISTRY.items()} == {
         "additional_information": (
             "Open additional information requests",
-            "No open requests.",
+            "None to review or to handle.",
         ),
         "campaign_totals": ("Campaign totals", "No campaign day has ended yet."),
         "response_funnel": ("Response funnel", ""),

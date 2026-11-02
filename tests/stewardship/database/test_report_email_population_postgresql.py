@@ -80,7 +80,7 @@ def test_the_email_counts_the_requests_the_page_and_the_badge_count(
     listed = kept_requests(snapshot)
     assert [entry[5] for entry in listed] == ([] if stage == "ignored" else [stage])
     if stage == "ignored":
-        assert "No open requests." in snapshot.text
+        assert "None to review or to handle." in snapshot.text
         assert "To review" not in snapshot.text
     else:
         assert f"To review {review} · To handle {handle}" in snapshot.text

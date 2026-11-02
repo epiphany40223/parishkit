@@ -115,7 +115,10 @@ from .ministry_worklist import (
     EVERY,
     WorklistQuery,
     for_reader,
+    is_leader,
+    plain_view,
     read_rows,
+    roster_counts,
     row_name,
     worklist_context,
 )
@@ -607,9 +610,20 @@ def _page_response(
                 )
                 if not changed:
                     return iter((b"",))
+            extra = None
+            if not is_leader(principal):
+                # Staff's roster rows, which a Join or Leave count's list
+                # holds (#2331): the worklist's own read when its filters
+                # hide none of them, else one read of the default view.
+                every = result
+                if not plain_view(query):
+                    every = read_rows(
+                        campaign_id, WorklistQuery(), principal, empty=True
+                    )
+                extra = roster_counts(every["rows"])
             context = dict(
                 listed,
-                **_overview(campaign_id, principal, coverage),
+                **_overview(campaign_id, principal, coverage, extra),
                 campaign_id=campaign_id,
                 mutable=mutable,
                 notice=notice,
@@ -805,9 +819,10 @@ def _page_response(
 # What each By Ministry count applies to the worklist (#1133, #1684): its
 # own link filters (LINK_FILTERS) with closed values, so the worklist shows
 # exactly the requests counted. Join requests and Leave requests count every
-# current request of that kind, whatever its stage, so they choose Every
-# stage; Unresolved is To review, the worklist's default, with either
-# request: the Home panel's address.
+# current request of that kind, whatever its stage, plus, for Staff, the
+# roster rows Every stage also lists (``roster_counts``, #2331), so they
+# choose Every stage; Unresolved is To review, the worklist's default, with
+# either request: the Home panel's address.
 COUNT_FILTERS = {
     "joining": {"kind": "join", "stage": "all"},
     "leaving": {"kind": "leave", "stage": "all"},
@@ -835,7 +850,7 @@ def count_links(principal, summary):
     }
 
 
-def _overview(campaign_id, principal, coverage):
+def _overview(campaign_id, principal, coverage, extra=None):
     """Ministry requests' parts below the worklist (#1133).
 
     By Ministry and the packet's choices are every Ministry in the reader's
@@ -847,13 +862,20 @@ def _overview(campaign_id, principal, coverage):
     ``coverage`` is the Leaders column's counts read before the response
     (#1594), or None; it is shown only while the reader, rechecked inside
     the guard, still reads every Ministry, so a Staff user who became a
-    Ministry leader meanwhile never sees it.
+    Ministry leader meanwhile never sees it. ``extra`` is Staff's roster
+    rows by Ministry and request (``roster_counts``), added to the Join and
+    Leave counts so each equals the list it opens (#2331); None for a
+    Ministry leader, who has no roster rows.
     """
     summaries = ministry_page(campaign_id, MinistryQuery(), principal, every=True)[
         "summaries"
     ]
     show_leaders = coverage is not None and reads_every_ministry(principal)
     for summary in summaries:
+        if extra:
+            duid = int(summary["duid"])
+            summary["joining"] += extra.get((duid, "join"), 0)
+            summary["leaving"] += extra.get((duid, "leave"), 0)
         summary["count_links"] = count_links(principal, summary)
         if show_leaders:
             summary["leaders"] = leader_status(coverage.get(int(summary["duid"])))

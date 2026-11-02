@@ -215,7 +215,10 @@ def test_blocks_with_nothing_to_show_draw_their_empty_statements():
         "Here is yesterday’s report; all data is as of the end of October 4, "
         "2026 (EDT).\nOpen the Response dashboard"
     )
-    assert "Open additional information requests\nNo open requests." in compiled.text
+    assert (
+        "Open additional information requests\nNone to review or to handle."
+        in compiled.text
+    )
     assert compiled.text.count("No campaign day has ended yet.") == 2
     assert "Compared with past campaigns" not in compiled.text
     assert compiled.html.count("No campaign day has ended yet.") == 2

@@ -171,7 +171,7 @@ def test_email_selected_reviews_then_applies_in_place(page, component_origin):
     assert page.evaluate("document.activeElement.id") == "emails-review-title"
     visible(dialog.get_by_role("heading", name="2 emails"))
     visible(dialog.get_by_text("Choir: 2 asking to join · 1 asking to leave"))
-    visible(dialog.get_by_text("Food pantry: No open requests"))
+    visible(dialog.get_by_text("Food pantry: None to review"))
     visible(
         dialog.get_by_text(
             "Testing mode: every email goes to the Testing recipient, "

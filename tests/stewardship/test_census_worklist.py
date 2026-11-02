@@ -143,7 +143,7 @@ def test_each_row_takes_its_pipeline_stage(values, stage, decision, held):
 
 
 def test_the_stage_filter_lists_one_stage_and_counts_them_all():
-    """To review by default; each stage counted whatever the other filters;
+    """To review by default; each stage counted (no other filter applied);
     History is its own choice, left out of Every stage."""
     rows = [
         shaped(id="1"),

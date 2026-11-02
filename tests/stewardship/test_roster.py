@@ -342,6 +342,30 @@ def test_staff_views_keep_the_roster_rows_the_review_stages_leave_out():
     ]
 
 
+def test_by_ministry_adds_staffs_roster_rows_under_the_ministry_in_force():
+    """By Ministry's Join and Leave counts add the roster rows a Staff
+    view lists and the summary leaves out (#2331), each under its Ministry
+    in force (the Edit's, else the Family's); a plain view's own rows hold
+    them all, a filtered one does not."""
+    from parishkit.stewardship.reports.ministry_worklist import (
+        WorklistQuery,
+        plain_view,
+        roster_counts,
+    )
+
+    rows = [
+        request_row(state="in_progress", outcome=None),
+        request_row(source_mark=GONE),
+        request_row(latest=False, reviewed_ministry_duid=4),
+        request_row(action="leave", outcome="leave_confirmed", source_mark=GONE),
+    ]
+    assert roster_counts(rows) == {(9, "join"): 1, (4, "join"): 1, (9, "leave"): 1}
+    assert plain_view(WorklistQuery()) and plain_view(WorklistQuery(stage="all"))
+    for values in ({"search": "x"}, {"ministry": "9"}, {"kind": "join"}):
+        assert not plain_view(WorklistQuery(**values)), values
+    assert not plain_view(WorklistQuery(members="gone"))
+
+
 def test_a_roster_row_offers_entered_by_hand_alone_with_no_note():
     """At To enter by hand an ordinary accepted request offers Back to review
     (its pressed Accept, #2131) and Entered by hand; a Member no longer in

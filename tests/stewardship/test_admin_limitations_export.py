@@ -7,6 +7,7 @@ cover the shared choice check and the command's parser.
 """
 
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -73,3 +74,35 @@ def test_the_file_name_is_the_pages():
         limitation_views.export_file_name("xlsx", moment)
         == "stewardship-limitations-20541003-140506Z.xlsx"
     )
+
+
+def test_the_download_says_a_family_left_the_campaign(monkeypatch):
+    """Every format reads the in-campaign flag of every table's rows in one
+    read, so both tables' ParishSoft status cells say "No longer in this
+    campaign" where the page draws that badge (#2331)."""
+    placement = SimpleNamespace(stage=SimpleNamespace(label="To review"))
+    common = {
+        "family_name": "Example, Pat",
+        "family_duid": 1234,
+        "submitted_at": datetime(2054, 10, 3, 14, 5, tzinfo=UTC),
+        "placement": placement,
+    }
+    member = common | {"member_name": "Pat", "proposed": False, "member_duid": 5}
+    family = common | {"kind": "family"}
+    giving = common | {"kind": "cannot_give"}
+    read = []
+
+    def left(campaign_id, rows):
+        """A ``link_families`` stand-in: every Family has left the campaign."""
+        read.append((campaign_id, len(rows)))
+        for each in rows:
+            each["family_active"] = False
+
+    monkeypatch.setattr(limitation_views, "link_families", left)
+    result = {"members": [member], "families": [family], "contributions": [giving]}
+    lines = limitation_views.export_body(7, result, "csv", ZoneInfo("UTC"))
+    lines = lines.decode().splitlines()
+    assert read == [(7, 3)]
+    found = [line for line in lines if line.startswith(("Pat,", '"Example, Pat"'))]
+    assert len(found) == 3
+    assert all("No longer in this campaign" in line for line in found)

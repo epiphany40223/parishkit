@@ -25,6 +25,7 @@ What a reader may do is decided by ``pipeline`` and enforced by
 ``workflows.review`` and the SQL guards; this module only draws it.
 """
 
+from collections import Counter
 from dataclasses import dataclass, replace
 from urllib.parse import urlencode
 
@@ -77,6 +78,7 @@ from parishkit.stewardship.workflows.roster import eligible, mark, roster_marks
 
 from .information import parse_page
 from .ministries import NOT_IN_CAMPAIGN, outcome_label
+from .ministry_contacts import current_ministry
 from .ministry_followup import (
     NOT_IN_SOURCE,
     PAGE_SIZE,
@@ -345,6 +347,31 @@ def roster_only(row):
     response replaced. It offers only Entered by hand (admin-portal spec,
     "Roster entry on Ministry requests")."""
     return eligible(row) and (bool(row["source_mark"]) or row.get("latest") is False)
+
+
+def roster_counts(rows):
+    """Staff's roster-only rows of ``rows``, counted by Ministry and request.
+
+    Returns ``{(Ministry DUID, "join" or "leave"): count}``, each row under
+    its Ministry in force. By Ministry's summary counts only current
+    requests of Members ParishSoft still lists, but the Every stage list a
+    Join or Leave count opens for Staff also holds these roster rows
+    (``listed``), so the count adds them and equals what it opens (#2331).
+    """
+    return Counter(
+        (int(current_ministry(row)), row["action"]) for row in rows if roster_only(row)
+    )
+
+
+def plain_view(query):
+    """Whether ``query`` filters nothing By Ministry's counts would see:
+    no search, Ministry or Request, and the default Members choice."""
+    return (
+        not query.search
+        and not query.ministry
+        and query.kind == "any"
+        and query.members == "current"
+    )
 
 
 def listed(row, members):

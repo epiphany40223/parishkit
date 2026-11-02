@@ -1056,7 +1056,7 @@ def test_testing_emails_go_only_to_the_testing_recipient(testing):
             f"TEST — sent to {runtime.testing_recipient} instead of Ministry "
             f"leader {address}."
         )
-        assert "No open requests" in row.text
+        assert "None to review" in row.text
     message = rows["ann@example.org"].outbox
     with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
         execution = claim(message, store)
@@ -1149,7 +1149,7 @@ def test_the_users_page_reviews_and_applies_the_emails(testing):
     body = review.content.decode()
     assert "data-review-answer" in body and "2 emails" in body
     assert "Testing mode: every email goes to the Testing recipient" in body
-    assert "Choir: No open requests" in body or "No open requests" in body
+    assert "Choir: None to review" in body or "None to review" in body
     preview = re.search(r'name="preview" value="([^"]+)"', body)[1]
     for _ in range(2):
         with web():

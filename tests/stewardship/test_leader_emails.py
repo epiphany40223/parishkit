@@ -80,7 +80,7 @@ def test_a_production_email_says_how_to_sign_in_and_what_waits():
         assert str(line) in text
     assert "support.google.com" not in text + html
     assert "- Choir & <Bells>: 2 asking to join · 1 asking to leave" in text
-    assert "- Food pantry: No open requests" in text
+    assert "- Food pantry: None to review" in text
     assert (
         "Open Ministry requests: https://portal.example.org/admin/reports/ministries/"
         in text
@@ -141,8 +141,8 @@ def test_a_recorded_ministry_has_a_closed_shape(value):
 
 
 def test_the_counts_read_in_plain_words():
-    """A Ministry's open requests in plain words, "No open requests" for none."""
-    assert counts_text(LeaderMinistry(1, "A", 0, 0)) == "No open requests"
+    """A Ministry's requests To review in plain words, "None to review" for none."""
+    assert counts_text(LeaderMinistry(1, "A", 0, 0)) == "None to review"
     assert counts_text(LeaderMinistry(1, "A", 1, 0)) == (
         "1 asking to join · 0 asking to leave"
     )

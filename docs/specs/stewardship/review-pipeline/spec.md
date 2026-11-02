@@ -2072,6 +2072,23 @@ reader). **Review these one at a time** sits beside it and opens the
 [review wizard](#review-wizard) on the table's view
 ([wizard entry points](#wizard-entry-points)).
 
+Each Stage choice's count is the number of rows that choice lists under
+the other filters, so it changes as they do. A worklist lists every
+Family's items, Families no longer in this campaign included, since their
+answers still need a decision. The report pages count only the Families in
+this campaign today by default
+([population of report figures](../ui-conventions/spec.md#population-of-report-figures)),
+so a worklist can count more (Pledges more pledges than Financial
+stewardship). Each worklist's About says so, and on the Family-named
+worklists (Pledges, Limitations, Additional information, Census changes)
+such a Family's name carries the shared
+[No longer in this campaign](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
+badge, and the worklist's downloads say the same words in their
+ParishSoft status column. Ministry requests names Members, which that badge
+never names, so only its About says so (to a Ministry leader, without
+the comparison with the report pages, which a leader cannot open)
+([#2331](https://github.com/epiphany40223/parishkit/issues/2331)).
+
 ### Individual actions
 
 Each row draws its actions as

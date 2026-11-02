@@ -374,7 +374,7 @@ def test_the_converted_weekly_sends_with_its_documented_changes(
     assert "Here are the additional information requests that are still open." in (
         mail.text
     )
-    assert "No open requests." in mail.text
+    assert "None to review or to handle." in mail.text
     assert "correction" not in mail.text.lower()
     assert send_path(preparation.pk) in mail.html
     fulfillments = dict(

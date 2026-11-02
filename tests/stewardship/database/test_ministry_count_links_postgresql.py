@@ -14,10 +14,16 @@ import re
 from uuid import UUID, uuid4
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.deployment import ServiceRole
-from parishkit.stewardship.reports import ministry_followup, ministry_worklist
+from parishkit.stewardship.reports import (
+    ministry_followup,
+    ministry_followup_views,
+    ministry_worklist,
+)
 from parishkit.stewardship.web.tables import PAGE_SIZES
 from parishkit.stewardship.workflows.models import MinistryRequest
 
@@ -39,6 +45,10 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 PAGE = "/admin/reports/ministries/"
 ITEMS = "/admin/reports/ministries/follow-up/"
+# The statements a filtered Staff view adds for its roster counts (#2331):
+# one read_rows of the default view (its follow-up read, roster marks,
+# checks and holds).
+EXTRA = 6
 JOIN_9 = f"{PAGE}?ministry=9&kind=join&stage=all"
 LEAVE_4 = f"{PAGE}?ministry=4&kind=leave&stage=all"
 
@@ -277,3 +287,70 @@ def test_members_no_longer_in_parishsoft_stay_out_of_the_totals(
         assert listed(body) == set()
         _, gone = search(browser, PAGE, {"members": "gone"})
         assert listed(gone.decode()) == {join.pk, leave.pk}
+
+
+def join_cell(section):
+    """By Ministry's Join requests cell for Food pantry (9): the linked
+    count's text, or the plain zero."""
+    row = section.split(">Food pantry", 1)[1].split("</tr>", 1)[0]
+    return re.sub(r"<[^>]+>", "", re.findall(r'<td class="numeric">(.*?)</td>', row)[0])
+
+
+def test_staffs_join_count_equals_the_list_with_its_roster_rows(
+    response_service, google
+):
+    """A Join count opens Every stage for its Ministry, which for Staff also
+    lists roster rows: an accepted join whose Member ParishSoft no longer
+    lists still needs entering by hand (#1217). The count adds them, so it
+    equals the list it opens and that list's Stage count (#2331)."""
+    harness = setup(response_service)
+    browser, head = signed_in_as(harness, google, "staff@example.org", ["staff"])
+    join, _leave = requests()  # A join for Ministry 9, a leave for Ministry 4.
+    edit(harness, head, join, state="resolved", outcome="joined")
+    member_gone(harness, "inactive")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        section = by_ministry(page(browser, PAGE))
+        assert href(JOIN_9) in section and join_cell(section).strip() == "1"
+        queue = page(browser, JOIN_9)
+        assert listed(queue) == {join.pk}
+        assert stages(queue)[-1] == "Every stage (1)"
+        # A filtered view reads the counts the same (one more read).
+        _, filtered = search(browser, PAGE, {"search": "nobody"})
+        assert join_cell(by_ministry(filtered.decode())).strip() == "1"
+
+
+def test_a_filtered_staff_view_costs_one_more_follow_up_read(
+    response_service, google, monkeypatch
+):
+    """A filtered Staff view reads the default view once more for its roster
+    counts (#2331): exactly EXTRA statements, whatever the filter keeps,
+    never one per row. The plain view reuses its own read."""
+    harness = setup(response_service)
+    browser, _ = signed_in_as(harness, google, "staff@example.org", ["staff"])
+    requests()  # A join for Ministry 9, a leave for Ministry 4.
+    real = ministry_followup_views.read_rows
+    reads = []
+
+    def counted(campaign_id, query, principal, **options):
+        """The page's read, with the statements each call runs recorded."""
+        with CaptureQueriesContext(connection) as queries:
+            result = real(campaign_id, query, principal, **options)
+        reads.append((query, len(queries.captured_queries)))
+        return result
+
+    monkeypatch.setattr(ministry_followup_views, "read_rows", counted)
+
+    def extra_reads(values):
+        """The statements of each read beyond the worklist's own, for one
+        in-place Apply of ``values``."""
+        reads.clear()
+        response, _body = search(browser, PAGE, values)
+        assert response.status_code == 200, values
+        return [count for _query, count in reads[1:]]
+
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert extra_reads({}) == []
+        assert extra_reads({"search": "nobody"}) == [EXTRA]
+        assert extra_reads({"kind": "join"}) == [EXTRA]
+        # The one extra read is the default view's.
+        assert reads[1][0] == ministry_worklist.WorklistQuery()

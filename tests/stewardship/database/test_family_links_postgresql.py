@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import pytest
 from django.db import connection
+from django.db.models import F
 from django.test.utils import CaptureQueriesContext
 
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
@@ -56,4 +57,30 @@ def test_another_campaign_and_the_current_campaign(response_service):
         assert family_record_ids(None, [duid]) == {duid: pk}
     assert len(queries) == 1
     rows = link_families(None, [dict(code=duid)], key="code")
-    assert rows == [dict(code=duid, family_id=pk)]
+    eligible = FamilyCampaign.objects.get(pk=pk).portal_eligible
+    assert rows == [dict(code=duid, family_id=pk, family_active=eligible)]
+
+
+def test_a_family_no_longer_in_the_campaign_reads_false(response_service):
+    """``family_active`` is the record's ``portal_eligible`` (the Families
+    rule today, #2331), read in the same one query: a Family that leaves
+    reads False, every other its own flag, a row with no record None."""
+    campaign = response_service.campaign
+    left = FamilyCampaign.objects.filter(campaign=campaign, portal_eligible=True)[0]
+    assert link_families(campaign.pk, [dict(family_duid=left.family_duid)]) == [
+        dict(family_duid=left.family_duid, family_id=left.pk, family_active=True)
+    ]
+    FamilyCampaign.objects.filter(pk=left.pk).update(
+        portal_eligible=False, version=F("version") + 1
+    )
+    flags = dict(
+        FamilyCampaign.objects.filter(campaign=campaign).values_list(
+            "family_duid", "portal_eligible"
+        )
+    )
+    assert flags[left.family_duid] is False
+    rows = [dict(family_duid=duid) for duid in flags] + [dict(family_duid=0)]
+    with CaptureQueriesContext(connection) as queries:
+        link_families(campaign.pk, rows)
+    assert len(queries) == 1
+    assert [row["family_active"] for row in rows] == [*flags.values(), None]
