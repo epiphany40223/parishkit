@@ -637,6 +637,11 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0203 (#2343) creates nothing: it widens 0174's safe context in place, which
 # the reruns above bring back older, so its ``CLOSURE_REPLACED_ONLY`` entry
 # takes the place of 0174's and restores 0203's body instead.
+# 0204 (#2363) creates the grant match definer trigger (``CLOSURE_CREATED``;
+# not granted, so its file, whole, puts it back after 0200's, which
+# ``before_address_match`` and 0200's rerun leave with 0200's account check
+# and content compiler: 0204's file drops that check if present and replaces
+# both again).
 # The columns 0185 (#2202) adds, by table.
 SERIES_IN_FORCE_COLUMNS = (
     ("stewardship_daily_fact_set", "pledge_edits"),
@@ -1232,6 +1237,11 @@ CLOSURE_CREATED = {
             "public.stewardship_address_match_guard_v1()",
         ),
         ("stewardship_accounts", "0041_address_match"),
+    ),
+    # 0204 (#2363): the grant match trigger; see the note above.
+    "public.stewardship_grant_match_v1()": (
+        "stewardship_accounts",
+        "0043_grant_match",
     ),
 }
 

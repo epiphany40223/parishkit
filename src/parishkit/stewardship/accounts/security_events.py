@@ -122,6 +122,11 @@ def open_events(viewer):
                 "kind": event.kind,
                 "label": KINDS.get(event.kind, event.kind),
                 "target": event.target,
+                # The Google account an Administrator grant's address signs
+                # in through by a match standing at activation (#2363).
+                "account": event.account_email
+                if event.kind == "administrator_granted"
+                else None,
                 "before": role_labels(event.before_roles),
                 "after": role_labels(event.after_roles),
                 # Key IDs, for a replaced backup key only. Not "keys": the

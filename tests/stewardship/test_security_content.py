@@ -240,7 +240,9 @@ def test_a_takeover_names_the_replaced_account_and_its_last_sign_in():
     [
         {"account_email": None},
         {"account_email": ""},
-        {"kind": "administrator_granted"},
+        # A grant may name a matched account (#2363), never a replaced one.
+        {"kind": "administrator_granted", "replaced_account": "old@personal.example"},
+        {"kind": "administrator_granted", "account_email": ""},
         {"replaced_login_at": MOMENT},
         {"replaced_account": "", "replaced_login_at": None},
         {
@@ -253,5 +255,29 @@ def test_only_a_match_names_its_accounts(values):
     """Another kind names no account; a replaced sign-in needs its account."""
     with pytest.raises(ValueError):
         matched(**values)
-    with pytest.raises(ValueError):
-        alert(account_email="person@personal.example")
+    for kind in ("domain_created", "domain_staff_granted", "backup_key_replaced"):
+        with pytest.raises(ValueError):
+            alert(
+                kind=kind,
+                after_roles=("abc",),
+                account_email="person@personal.example",
+            )
+
+
+def test_a_grant_names_the_google_account_its_address_signs_in_through():
+    """A grant with a standing match has the account row after Target (#2363)."""
+    content = render_security_alert(alert(account_email="person@personal.example"))
+    assert (
+        "Target: new@example.org\n"
+        "Signs in through Google account: person@personal.example\n"
+        "Roles before: Staff\n"
+    ) in content.text
+    assert (
+        "<dt>Target</dt><dd>new@example.org</dd>"
+        "<dt>Signs in through Google account</dt>"
+        "<dd>person@personal.example</dd><dt>Roles before</dt>"
+    ) in content.html
+    # With no standing match the grant's alert is exactly as before.
+    plain = render_security_alert(alert())
+    assert "Google account" not in plain.text
+    assert render_security_alert(alert(account_email=None)) == plain

@@ -103,6 +103,9 @@ def test_a_match_alert_crosses_the_pipe_with_its_accounts():
     assert payload["replaced_login_at"] == "2026-08-01T16:00:00+00:00"
     assert decode_alert(payload) == sample
     assert decode_alert(alert_payload(alert())) == alert()
+    # An Administrator grant's matched account (#2363) crosses too.
+    granted = alert(account_email="person@personal.example")
+    assert decode_alert(alert_payload(granted)) == granted
 
 
 @pytest.mark.parametrize(
@@ -115,8 +118,10 @@ def test_a_match_alert_crosses_the_pipe_with_its_accounts():
         ("occurred_at", "2026-09-21"),
         ("before_roles", "staff"),
         ("extra", "x"),
-        # Only a verified-address match names accounts (#2343).
-        ("account_email", "person@personal.example"),
+        # Only a verified-address match names a replaced account (#2343);
+        # a grant may name only its matched account (#2363).
+        ("replaced_account", "old@personal.example"),
+        ("account_email", ""),
         ("replaced_login_at", 5),
     ],
 )

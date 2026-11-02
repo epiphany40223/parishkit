@@ -4109,7 +4109,8 @@ and critical-problem banner. `events list` admits passively with
 records no event, as Home records none, and reads both in one snapshot
 through the page's own pieces: `security_events.open_events` (the events
 still on the session Administrator's dashboard, the actor named by account
-ID rather than address) and the banner's `alert_counts`, `summary` and
+ID rather than address, and an Administrator grant's matched Google account
+as `account`, as the page names it) and the banner's `alert_counts`, `summary` and
 `sign` over its 24-hour window, whose signed list of the counted rows (at
 most 500) is printed as `critical.token`. `events acknowledge` needs a
 full-scope session and admits as the page's post does, with the page's

@@ -1742,6 +1742,42 @@ too): the audit row, which carries the match's ID
 user's Timeline, which labels by the match's window, are the durable
 record of who acted.
 
+**An Administrator grant names a standing match**
+([#2363](https://github.com/epiphany40223/parishkit/issues/2363)). A later
+frozen migration (0204, renumbered at train time if the sequence moved)
+lets an `administrator_granted` row carry `account_email` too, and creates
+`stewardship_grant_match_v1`, a `SECURITY DEFINER` BEFORE INSERT trigger
+on `stewardship_policy_security_event` (as `stewardship_recovery_recipient_v1`
+completes a row the activation trigger writes, so
+`stewardship_policy_activation_v1` is not replaced). For an
+`administrator_granted` row it sets `account_email` to the `sign_in_email`
+of the standing (not ended) match whose `email` is the row's `target` and
+whose `user_record_id` is the row's `rule_record_id`, or to null when none
+stands, whatever the insert supplied; every other row passes unchanged.
+The record ID matters because nothing ends a match when its user is
+removed (it ends as `user_gone` at the account's next sign-in), so an
+address removed and added again as a new Administrator record must not
+name the old account. It is a definer because only the web login is granted
+the match table and activation also runs from the command line. The
+`policy_security_event_account` check is replaced: an `address_matched`
+row is as above; an `administrator_granted` row has no `address_match_id`
+or `replaced_account_email` and a null or trimmed lower-case
+`account_email`; every other kind has none of the three. The match's own
+ID is not recorded: the match rows (address, matched and ended times)
+already identify it. Both content twins add a **Signs in through Google
+account** row (`account_email`) after Target when a grant carries it;
+`SecurityAlert` accepts `account_email` on `administrator_granted` as
+optional. The file's `DO` block raises unless the trigger (a BEFORE INSERT
+row trigger on that function), the definer with the pinned `search_path`
+and no PUBLIC EXECUTE, the replaced check and the replaced compiler (an
+invoker naming the new row) are installed. No match is made while
+`alternate_address_sign_in` is off, so while none was ever made
+(Production today) every grant row and alert is unchanged. A match that
+still stands is named even when it cannot sign in at that moment (the
+setting was turned off later, or its last confirmation is 30 days old or
+more): deliberately, because it signs in again once the setting is back on
+or it is re-checked, so naming it tells the Administrators of the link.
+
 **Grants.** The web login gets `SELECT` and `INSERT` on the table and
 `UPDATE` of `confirmed_at`, the end columns, `version`, `updated_at` and
 `correlation_id` only, and `EXECUTE` on `stewardship_address_in_use_v1`.

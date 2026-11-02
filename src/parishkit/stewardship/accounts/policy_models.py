@@ -278,7 +278,9 @@ class PolicySecurityEvent(ImmutableRecord):
     #2343) from a new verified-address match, never both. A match's event
     also names the matched Google account's sign-in address and, when the
     match took the address over from another account, that account's
-    sign-in address and last sign-in.
+    sign-in address and last sign-in. An Administrator grant names, in
+    ``account_email``, the Google account of a verified-address match of its
+    target standing at activation (#2363), and is null otherwise.
     """
 
     activation = models.ForeignKey(
@@ -325,8 +327,23 @@ class PolicySecurityEvent(ImmutableRecord):
                     )
                     & _trimmed_lower("account_email")
                 )
+                # An Administrator grant names the Google account of a
+                # match of its address standing at activation (#2363), set
+                # only by the SQL trigger stewardship_grant_match_v1.
+                | (
+                    models.Q(
+                        kind="administrator_granted",
+                        address_match__isnull=True,
+                        replaced_account_email__isnull=True,
+                    )
+                    & (
+                        models.Q(account_email__isnull=True)
+                        | _trimmed_lower("account_email")
+                    )
+                )
                 | (
                     ~models.Q(kind="address_matched")
+                    & ~models.Q(kind="administrator_granted")
                     & models.Q(
                         address_match__isnull=True,
                         account_email__isnull=True,

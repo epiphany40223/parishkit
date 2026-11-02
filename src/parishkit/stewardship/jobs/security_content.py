@@ -82,7 +82,9 @@ class SecurityAlert:
     # A verified-address match's own facts (#2343): the matched Google
     # account's sign-in address and, when the match took the address over
     # from another account, that account's sign-in address and last Admin
-    # sign-in (None when it never signed in). None on every other kind.
+    # sign-in (None when it never signed in). An Administrator grant may
+    # carry account_email too (#2363): the Google account of a match of its
+    # target standing at activation. None on every other kind.
     account_email: str | None = None
     replaced_account: str | None = None
     replaced_login_at: datetime | None = None
@@ -112,16 +114,27 @@ class SecurityAlert:
         self._check_match_facts()
 
     def _check_match_facts(self):
-        """Only a match names accounts: its own, and the one it replaced."""
+        """Only a match names accounts: its own, and the one it replaced.
+
+        An Administrator grant may name the matched account of its target
+        (#2363), never a replaced one; every other kind names none.
+        """
 
         def address(value):
             """Whether ``value`` is a non-empty address string."""
             return type(value) is str and bool(value)
 
         matched = self.kind == "address_matched"
+        account = self.account_email
+        if matched:
+            account_valid = address(account)
+        elif self.kind == "administrator_granted":
+            account_valid = account is None or address(account)
+        else:
+            account_valid = account is None
         replaced, login = self.replaced_account, self.replaced_login_at
         if (
-            matched is not address(self.account_email)
+            not account_valid
             or (replaced is not None and not (matched and address(replaced)))
             or (login is not None and replaced is None)
             or (
@@ -187,6 +200,13 @@ def render_security_alert(alert):
         instruction = INSTRUCTION
         rows = (
             ("Target", alert.target),
+            # A grant to an address a Google account signs in through by a
+            # standing match (#2363); only a grant carries account_email.
+            *(
+                (("Signs in through Google account", alert.account_email),)
+                if alert.account_email
+                else ()
+            ),
             ("Roles before", _roles(alert.before_roles)),
             ("Roles after", _roles(alert.after_roles)),
             *common,

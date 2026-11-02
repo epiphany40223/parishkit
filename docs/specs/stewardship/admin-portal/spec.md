@@ -8870,7 +8870,17 @@ in that activation transaction, a durable unacknowledged security event, and
 independently queues an operational email to every Administrator who existed
 immediately before activation. Other user changes keep the normal audit
 without this alert. The event names the actor, the target address, the time
-and the roles before and after, without session or provider credentials. It
+and the roles before and after, without session or provider credentials.
+When a [verified-address match](#verified-address-matches) of the target
+address and its user record stands at activation (even one that cannot
+sign in at that moment)
+([#2363](https://github.com/epiphany40223/parishkit/issues/2363)), the event
+also names that match's Google account: the email has a **Signs in through
+Google account** row after Target, and the Home line adds "(signs in
+through Google account _sign-in address_)" after the target, so the other
+Administrators learn it at the grant even if they acknowledged the match's
+own notice long before. A grant with no standing match is unchanged, and a
+match made after the grant raises its own notice. It
 remains prominent on every Admin dashboard until an existing Admin
 acknowledges it; when another Admin existed at activation, acknowledgement by
 the granting actor alone does not clear the event for those other recipients.
