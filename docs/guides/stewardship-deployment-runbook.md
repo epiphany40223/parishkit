@@ -718,7 +718,11 @@ sequence with the commands that exist.
    service still verifies the schema and its own grants when it starts. On
    anything else, including an error, first install the
    [text search extension](#text-search-extension-765) as the database
-   superuser (it changes nothing when already installed), then run both:
+   superuser (it changes nothing when already installed), then run
+   `run --rm database-provision database-grants --limits-only --config PROVISION_CONFIG --confirm-deployment UUID`,
+   which sets every login's [connection limit](#connection-limits-2333)
+   (the migration login checks its own when it starts, and with the limits
+   already right it changes nothing), and then both:
    `run --rm migration`, which applies forward migrations with the schema
    owner, and `run --rm database-provision database-grants --config PROVISION_CONFIG --confirm-deployment UUID`,
    which installs new runtime grants. On a deployment that has completed
@@ -960,13 +964,12 @@ host directly (`--keep N`, `--protect IMAGE`, `--dry-run`,
 ssh HOST bash -s -- --dry-run < tools/stewardship-prune-images.sh
 ```
 
-It does not do everything an upgrade may need. The one-time steps a
-release may require before its grants run, the
-[worker connection limit](#worker-connection-limit-339) and the
+It does not do everything an upgrade may need. Connection limits are no
+longer a one-time step: since #2333 step 4 sets them with
+`database-grants --limits-only` before the migration, which covers the
+earlier [worker connection limit](#worker-connection-limit-339) and
 [mail dispatch connection limit](#mail-dispatch-connection-limit)
-`ALTER ROLE`s, are the operator's: run them by hand first, because the
-advisory check answers `f` for such a release and `database-grants` would
-refuse after `web` stopped. It does not read the release notes for you,
+`ALTER ROLE`s too. It does not read the release notes for you,
 check the host's disk space or registry login, or repeat a runtime
 fallback (it refuses one instead). The operational log writer guard is
 among the things the upgrade check itself verifies. It does install the
@@ -1174,20 +1177,23 @@ offline between two migrations, in the order the operations specification's
 fixes. Its last migration refuses an unconverted configuration, so step 4
 becomes, with every online service stopped:
 
-1. `run --rm migration migrate --config MIGRATION_CONFIG --users-upgrade-base`:
+1. `run --rm database-provision database-grants --limits-only --config PROVISION_CONFIG --confirm-deployment UUID`:
+   the [connection limits](#connection-limits-2333), as step 4 always sets
+   them first.
+2. `run --rm migration migrate --config MIGRATION_CONFIG --users-upgrade-base`:
    every migration except the swap and what depends on it.
-2. `run --rm database-provision database-grants --config PROVISION_CONFIG --confirm-deployment UUID`.
-3. `run --rm admin-recovery upgrade-users --config RECOVERY_CONFIG --confirm-deployment UUID --preview`:
+3. `run --rm database-provision database-grants --config PROVISION_CONFIG --confirm-deployment UUID`.
+4. `run --rm admin-recovery upgrade-users --config RECOVERY_CONFIG --confirm-deployment UUID --preview`:
    read the Administrators it lists. Before the release, the Portal users
    page's Upgrade preview and `pk-admin users preview-upgrade` showed the
    same list, so any missing address was already added.
-4. `run --rm admin-recovery upgrade-users --config RECOVERY_CONFIG --confirm-deployment UUID --operation-id NEW_UUID --operator-name NAME --reason REASON --confirm-administrators ADDRESSES`,
+5. `run --rm admin-recovery upgrade-users --config RECOVERY_CONFIG --confirm-deployment UUID --operation-id NEW_UUID --operator-name NAME --reason REASON --confirm-administrators ADDRESSES`,
    with `ADDRESSES` exactly the preview's list, comma-separated.
-5. `run --rm migration` and `database-grants` again, as step 4 always does.
+6. `run --rm migration` and `database-grants` again, as step 4 always does.
 
 The configuration files are the services' own under `config/services/`
 (`migration.yaml`, `database-provision.yaml`, `admin-recovery.yaml`). The
-scripted upgrade runs these five when given the conversion's inputs, all
+scripted upgrade runs these six when given the conversion's inputs, all
 four or none, with `STEWARDSHIP_SCHEMA_CHANGE=1`:
 
 ```sh
@@ -1585,6 +1591,101 @@ What to watch after deploying it:
 - The container uses roughly one more Python process's memory (about 150 to
   250 MB), plus a second helper while sending.
 
+### Connection limits (#2333)
+
+The release after v1.28.0 sets every database login's connection limit to
+what its service can open at once, 92 in all (the
+[operations spec](../specs/stewardship/operations/spec.md#database-connection-limits)
+has the table and the rule). At v1.28.0 they add up to 135, more than
+`max_connections` (100). No migration changes and nothing is run by hand:
+
+- Run the [scripted upgrade](#scripted-upgrade) with
+  `STEWARDSHIP_SCHEMA_CHANGE=1`. The upgrade check answers `f`, because every
+  login's limit differs from the release's.
+- Step 4 runs `database-grants --limits-only` before the migration (the
+  migration login checks its own limit when it starts), then the migration
+  and `database-grants` as usual. A login that differs in anything but its
+  limit is refused, as before. `tools/stewardship-dev-deploy.sh` and the
+  [manual step 4](#upgrade) do the same.
+- A server too small for the limits, or another login without a limit,
+  stops step 1, before anything stops, with `connection_budget_exceeded`
+  (with the total, `max_connections` and the reserved slots) or
+  `unlimited_login` in the message. Nothing has changed then. Give the
+  other login a limit (`ALTER ROLE … CONNECTION LIMIT`, as the operator),
+  or raise the server's maximum: `max_connections` is rendered from the
+  deployment YAML's `runtime_budget.database_connections` as a PostgreSQL
+  command-line flag, so `ALTER SYSTEM` would be overridden; change the YAML
+  field, run `retarget-image` with the current digest, and recreate
+  `postgres` (a restart). Then repeat the run. Should step 4's
+  `--limits-only` still refuse, the database is unchanged but the services
+  stay stopped with the maintenance page up: repeat the run after fixing
+  it, or roll back image-only.
+
+Before the upgrade, check the server read-only (through `pk-inspect` or
+`psql` as the operator):
+
+```sql
+SELECT current_setting('max_connections'),
+       current_setting('superuser_reserved_connections'),
+       current_setting('reserved_connections');
+SELECT rolname, rolconnlimit FROM pg_roles
+WHERE rolcanlogin AND NOT rolsuper ORDER BY rolname;
+```
+
+Expect 100, 3 and 0, and only `pk_stewardship_*` logins, each with a limit
+(not -1). After the upgrade the second query shows the new limits: web 32,
+download 4, worker and mail dispatch 6, backup 5, inspection 3, and 2 for
+every other login.
+
+An image-only rollback to v1.28.0 or earlier is refused by its upgrade check,
+and its services would refuse the new limits. A restore does not bring the
+old limits back either, because roles belong to the cluster: a
+[database-restore rollback](#rollback), or `pk-restore` of a set taken
+under v1.28.0 or earlier, would stop at its step 7, whose older
+`database-grants --after-restore` refuses every login whose limit differs
+("Existing database role differs from initial provisioning"). Before such a
+rollback or restore, put the old limits back as the operator superuser:
+
+```sh
+docker compose -f COMPOSE -p PROJECT exec -T postgres \
+  psql -U pk_stewardship_operator -d DATABASE -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+ALTER ROLE pk_stewardship_web CONNECTION LIMIT 44;
+ALTER ROLE pk_stewardship_download CONNECTION LIMIT 8;
+ALTER ROLE pk_stewardship_migration CONNECTION LIMIT 8;
+ALTER ROLE pk_stewardship_bootstrap CONNECTION LIMIT 8;
+ALTER ROLE pk_stewardship_admin_recovery CONNECTION LIMIT 8;
+ALTER ROLE pk_stewardship_backup_worker CONNECTION LIMIT 8;
+ALTER ROLE pk_stewardship_backup_uploader CONNECTION LIMIT 8;
+DO $check$
+BEGIN
+    IF (SELECT sum(rolconnlimit) FROM pg_roles
+        WHERE rolname LIKE 'pk\_stewardship\_%' AND NOT rolsuper) <> 135 THEN
+        RAISE EXCEPTION 'the old connection limits do not add up to 135';
+    END IF;
+END
+$check$;
+COMMIT;
+SQL
+```
+
+When step 4's `--limits-only` committed but no migration did (the
+migration or a later command failed), this block is all the rollback
+needs: the old image's upgrade check then answers `t` and an image-only
+[scripted rollback](#scripted-rollback) works, with no restore. When a
+migration committed, run the block before the database restore.
+
+Run it right before the rollback, with nothing else in between. Once it
+has run, the current release's services refuse to start (their own limit
+differs), so if the rollback refuses before its step 3 and its exit trap
+starts the current release again, the site stays down. The undo is the
+forward fix: `run --rm database-provision database-grants --limits-only
+--config PROVISION_CONFIG --confirm-deployment UUID` in the current image,
+then start the services.
+
+Under [fail forward](#rollback) this is needed only for a catastrophic
+rollback.
+
 ### Text search extension (#765)
 
 The release with migration file 0117 adds trigram indexes for the System
@@ -1759,6 +1860,12 @@ with quick rules keeps them, ignored, until the next schedule change saved
 on the ParishSoft page drops them.
 
 ## Rollback
+
+Rolling back from a release after v1.28.0 to v1.28.0 or earlier, by image
+or by database restore (including `pk-restore` of an older set), first
+needs the old connection limits put back:
+[Connection limits (#2333)](#connection-limits-2333). Roles belong to the
+cluster, so a restore does not undo them.
 
 An application-only rollback is possible only when the new release changed
 neither the schema nor any runtime grant. Every release that carries a

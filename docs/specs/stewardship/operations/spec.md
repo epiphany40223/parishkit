@@ -644,8 +644,8 @@ or pasted statement fails in PostgreSQL itself. Its definition is
 `inspect_login.py`.
 
 - **Attributes.** `LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS NOCREATEDB
-  NOCREATEROLE NOREPLICATION`, connection limit 3 (outside the services'
-  connection budget, like the operator's own sessions, so kept small), the deployment's provisioning marker, and **no password**: every
+  NOCREATEROLE NOREPLICATION`, connection limit 3 (counted in the
+  [database connection limits](#database-connection-limits), so kept small), the deployment's provisioning marker, and **no password**: every
   TCP rule is `scram-sha-256`, so it can never sign in over TCP, whatever
   the rules say. It connects only through the PostgreSQL container's
   socket, which needs `docker exec` (host root). The stock rules trust the
@@ -899,15 +899,14 @@ measurement is in
   stopped", and a pass that hangs still turns the container unhealthy.
 - **One connection.** A loop keeps its database connection open between
   passes. The connection budget already reserves it: each installer login's
-  connection limit is the rollout overlap, one connection for each of the
-  old and new container while a rollout overlaps them, and the background
-  connection budget counts every installer process times that overlap.
-  Outside a rollout the second slot stays free for the process's private
-  timeout-log connection. While old and new containers overlap, each keeps
-  one connection, so both slots are used: a timeout entry written then
+  connection limit is 2 (the default `rollout_overlap`), and the
+  [database connection limits](#database-connection-limits) count it.
+  The second slot stays free for the process's private timeout-log
+  connection. If an old container's backend has not yet ended when its
+  replacement connects, both slots are used: a timeout entry written then
   cannot open its private connection, loses its durable copy, and is kept
   only in the process log, as for any
-  [entry that cannot be written](#observability-and-health). The overlap is
+  [entry that cannot be written](#observability-and-health). That window is
   short and the installers' passes rarely log timeouts. Each
   wake first drops a kept connection that no longer answers (one
   `SELECT 1`), so after a PostgreSQL restart the wake reconnects quietly
@@ -1696,9 +1695,9 @@ and separate finite connection budgets for interactive traffic, background
 services, and operator/recovery work. Follow the default cap and admission
 behavior in [campaign read guards](../data/spec.md#campaign-read-guards).
 Download pool capacity may not exceed its admission cap or spill into other
-pools. Budget all processes, replicas, rollout overlap, and auxiliary database
-connections; their combined configured maxima plus PostgreSQL-reserved slots
-must fit the database connection limit. Each non-download class retains
+pools. Every database login's connection limit, added up, must fit the
+database server's connection limit with room for the operator, as
+[database connection limits](#database-connection-limits) defines. Each non-download class retains
 positive dedicated headroom sized and load-tested for its configured worker
 concurrency and the architecture's reference load. Downloads must also leave
 web execution capacity for interactive requests; limiting database connections
@@ -1709,6 +1708,60 @@ or timeout budget. The admission cap remains deployment-wide during scaling,
 restarts, and rolling upgrades; a per-process semaphore alone is insufficient.
 Expose active downloads, busy rejections, pool utilization, and guard timeouts
 without recording downloaded data.
+
+### Database connection limits
+
+Each database login's connection limit is what its service can open at
+once, and nothing more (#2333). `RuntimeBudget.login_limit` defines them and
+`database_provisioning.role_limit` sets them; with the default budget
+(which Production uses):
+
+| Login | Limit | What it can open at once |
+| --- | --- | --- |
+| web | 32 | 2 processes × (8 request threads + 3 observers: readiness, metrics, authentication health) = 22, plus 10 spare (`web_spare_connections`) for `pk-admin` sessions and the Testing load check's readers |
+| download | 4 | 2 processes × a pool of 2 |
+| worker, mail dispatch | 6 each | 2 consumer processes × (task, lease renewal, timeout log) |
+| scheduler, config installer, 12 credential installers | 2 each (28) | the loop's connection plus its timeout log |
+| migration, bootstrap, admin recovery, off-site uploader | 2 each | Django plus the timeout log |
+| backup | 5 | a running backup's Django and `pg_dump` (2), a scheduled run waiting up to 30 minutes for the backup lock (1), a request-mode poll (1), and a timed-out wait's timeout log (1) |
+| inspection | 3 | [inspection sessions](#database-inspection-login) |
+| **Total** | **92** | |
+
+Compose stops a container before it starts the replacement, so two
+generations of a service are not budgeted to hold connections at the same
+time. PostgreSQL can still keep a killed process's backend until its
+current statement ends (`client_connection_check_interval` is off), so for
+that short time a replacement can be refused a connection (53300). Web's
+spare connections absorb it; a download replacement may answer busy until
+the old backend ends.
+
+The rule: every non-superuser login in the cluster (this deployment's logins
+at these limits, and any other login at its own) must fit outside
+PostgreSQL's superuser-reserved slots (`superuser_reserved_connections` plus
+`reserved_connections`), and the operator's `operator_connections` (8) must
+fit on top of them. With `max_connections` 100 and 3 reserved, 5 ordinary
+slots stay free of every login, so the operator has 8 in an incident even
+when every service is at its limit. A non-superuser login without a limit is
+refused. Deployment loading checks the budget's own total. `database-roles`
+and `database-grants` check the live server and refuse before any change
+with a stable code in the message, `connection_budget_exceeded` (with the
+total, the maximum and the reserved slots) or `unlimited_login`. The
+upgrade check answers the same refusal as a sentence instead of `t` or `f`,
+so the scripted upgrade refuses in its step 1, before anything stops.
+
+`max_connections` stays at 100. A busy backend can use about 20 MB (its own
+memory plus `work_mem` for each sort or hash), so 100 is about 2.35 GB at
+worst with shared buffers and autovacuum. 150 would be about 3.4 GB, nearly
+all the free memory on the 8 GB host, at the busy moment the limits exist
+for, and would need a PostgreSQL restart.
+
+A release that changes a limit changes it in `database-grants`: an existing
+login whose other attributes all match provisioning gets `ALTER ROLE …
+CONNECTION LIMIT`; any other difference is still refused, never repaired.
+The migration login checks its own limit when it starts, so the upgrade runs
+`database-grants --limits-only` before its migration (deployment runbook,
+[connection limits](../../../guides/stewardship-deployment-runbook.md#connection-limits-2333)).
+Lowering a limit ends no session that is already open.
 
 ### Kept mail connections
 

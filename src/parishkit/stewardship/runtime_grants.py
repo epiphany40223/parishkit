@@ -1786,11 +1786,5 @@ def admit_download_database(configuration, database):
         if cursor.fetchone() != (budget.download_capacity,):
             raise ConfigError("Download capacity requires offline reconciliation.")
         cursor.execute("SELECT rolconnlimit FROM pg_roles WHERE rolname=current_user")
-        expected = (
-            budget.replicas
-            * budget.rollout_overlap
-            * budget.web_processes
-            * budget.download_pool_per_process
-        )
-        if cursor.fetchone() != (expected,):
+        if cursor.fetchone() != (budget.login_limit("download"),):
             raise ConfigError("Download SQL connection limit differs from its budget.")

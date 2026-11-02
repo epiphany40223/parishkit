@@ -42,10 +42,13 @@ from importlib import import_module
 from . import inspect_login
 from .database_provisioning import (
     BACKUP_SEQUENCES,
+    BUDGET_REFUSAL,
     ISOLATION_DRIFT,
     READER_MEMBERSHIP,
+    UNLIMITED_REFUSAL,
     _writer_guard_digest,
     excess_authority_checks,
+    expected_limits,
     migration_exemption,
     role_limit,
 )
@@ -306,6 +309,65 @@ def no_create(login):
     return " AND ".join(f"NOT {authority[name]}" for name in CREATE_AUTHORITY)
 
 
+def connection_capacity(operator_connections):
+    """SQL boolean: the cluster's login limits fit, as database-grants requires.
+
+    ``database_provisioning.require_cluster_capacity`` in SQL (#2333): no
+    non-superuser login without a limit, and the limits of every
+    non-superuser login fit outside the superuser-reserved slots with
+    ``operator_connections`` to spare. Every login of this deployment must
+    also hold exactly this release's limit (``role_matches``), so a catalog
+    that drifted, or a foreign login that crowds the budget, answers ``f``
+    and the upgrade runs database-grants, which refuses it with its code.
+    """
+    logins = "FROM pg_roles WHERE rolcanlogin AND NOT rolsuper"
+    total = f"(SELECT coalesce(sum(rolconnlimit),0) {logins})"
+    maximum = "current_setting('max_connections')::int"
+    return (
+        f"NOT EXISTS(SELECT 1 {logins} AND rolconnlimit<0) "
+        f"AND {total}<={maximum}"
+        "-current_setting('superuser_reserved_connections')::int"
+        "-current_setting('reserved_connections')::int "
+        f"AND {total}+{int(operator_connections)}<={maximum}"
+    )
+
+
+def capacity_cause(configuration):
+    """SQL text: database-grants' capacity refusal, or NULL when the limits fit.
+
+    ``database_provisioning.require_cluster_capacity`` in SQL, with the same
+    sentence and code (#2333): this deployment's logins count at this
+    release's limits, any other non-superuser login at its own. The scripted
+    upgrade refuses on the sentence in its step 1, before anything stops,
+    instead of letting step 4's ``--limits-only`` refuse once the site is
+    already offline.
+    """
+    expected = expected_limits(configuration)
+    logins = "FROM pg_roles WHERE rolcanlogin AND NOT rolsuper"
+    foreign = (
+        f"(SELECT coalesce(sum(rolconnlimit),0) {logins} "
+        f"AND rolname<>ALL({text_array(sorted(expected))}))"
+    )
+    operator = int(configuration.runtime_budget.operator_connections)
+    reserved = (
+        "current_setting('superuser_reserved_connections')::int"
+        "+current_setting('reserved_connections')::int"
+    )
+    # The sentence's {fields} become SQL concatenations of the same values.
+    sentence = literal(BUDGET_REFUSAL)
+    for name in ("total", "maximum", "room", "reserved", "operator"):
+        sentence = sentence.replace("{" + name + "}", f"'||c.{name}||'")
+    return (
+        f"(SELECT CASE WHEN EXISTS(SELECT 1 {logins} AND rolconnlimit<0) "
+        f"THEN {literal(UNLIMITED_REFUSAL)} "
+        f"WHEN c.total>c.room THEN {sentence} END "
+        f"FROM (SELECT t.*,least(t.maximum-t.reserved,t.maximum-t.operator) AS room "
+        f"FROM (SELECT {sum(expected.values())}+{foreign} AS total,"
+        f"current_setting('max_connections')::int AS maximum,"
+        f"{reserved} AS reserved,{operator} AS operator) t) c)"
+    )
+
+
 def upgrade_noop_query(configuration, deployment_id):
     """Render the one query answering whether migrate and grants are both no-ops.
 
@@ -326,6 +388,7 @@ def upgrade_noop_query(configuration, deployment_id):
         f"IS NOT DISTINCT FROM {int(configuration.runtime_budget.download_capacity)}",
         writer_guard_installed(),
         no_foreign_operators(),
+        connection_capacity(configuration.runtime_budget.operator_connections),
     ]
     for _, login, role, target in database_identities():
         reader = role is ServiceRole.BACKUP_WORKER
@@ -349,10 +412,12 @@ def upgrade_noop_query(configuration, deployment_id):
     checks += [inspect_login.role_matches(marker), inspect_login.grants_exact()]
     proof = "\n AND ".join(f"({check})" for check in checks)
     # The answer is text, printed by psql exactly as the boolean was: t or
-    # f. An inspection login that owns objects answers its cause instead
-    # (#2291), which is not t either; coalesce evaluates left to right and
-    # stops at the first non-NULL argument, so the cause comes first.
+    # f. An inspection login that owns objects (#2291) or limits the server
+    # cannot honour (#2333) answer their cause instead, which is not t
+    # either; coalesce evaluates left to right and stops at the first
+    # non-NULL argument, so the causes come first.
     return (
         f"SELECT coalesce({inspect_login.ownership_cause()},\n"
+        f"{capacity_cause(configuration)},\n"
         f"CASE WHEN ({proof}) THEN 't' ELSE 'f' END);\n"
     )

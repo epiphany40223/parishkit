@@ -55,7 +55,7 @@ portal is open. Every read after admission runs in a read-only transaction
 with statement and lock timeouts, so it cannot write, lock rows or send
 mail; it builds no Valkey client, so it cannot touch the sign-in limits; its
 concurrency is capped at the web service's threads and the web database
-login's spare connections (it refuses when there are none); it stops a phase
+login's spare connections, less one slot for each web process's timeout log and one for each container's kill record (it refuses when none are left); it stops a phase
 after five failed reads and the whole run after 15 minutes; it refuses to
 publish a verdict if the parish data was refreshed during the run; and its
 output is limited to fixed keys, numbers, booleans and timestamps. Normal CI

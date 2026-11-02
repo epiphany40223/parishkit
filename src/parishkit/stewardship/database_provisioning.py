@@ -19,7 +19,12 @@ from parishkit.config import ConfigError
 
 from .accounts.key_files import read_private
 from .deployment import ServiceRole
-from .inspect_login import ensure_inspect_login, grant_inspect
+from .inspect_login import (
+    INSPECT_CONNECTIONS,
+    INSPECT_LOGIN,
+    ensure_inspect_login,
+    grant_inspect,
+)
 from .runtime_identities import database_identities
 from .runtime_paths import RuntimeLayout
 
@@ -33,37 +38,124 @@ def _password(path):
 
 
 def role_limit(configuration, role):
-    """Bound each role so background/stream work cannot spend interactive reserves."""
+    """Bound each role so background/stream work cannot spend interactive reserves.
+
+    The limits themselves are ``RuntimeBudget.login_limit``, so the budget's
+    own total adds up exactly what provisioning sets (#2333).
+    """
+    return configuration.runtime_budget.login_limit(role)
+
+
+# The stable codes in the two connection-capacity refusals (#2333). Operator
+# commands print a ConfigError's reviewed sentence whole, code included.
+CONNECTION_BUDGET_EXCEEDED = "connection_budget_exceeded"
+UNLIMITED_LOGIN = "unlimited_login"
+# The refusal sentences, shared with the upgrade check's SQL
+# (``upgrade_check.capacity_cause``), so the scripted upgrade can refuse
+# the same cause in its step 1, before anything stops.
+UNLIMITED_REFUSAL = (
+    "A database login other than the operator has no connection limit "
+    f"({UNLIMITED_LOGIN}); give it one before database-grants."
+)
+BUDGET_REFUSAL = (
+    "The database logins' connection limits add up to {total}, but the "
+    "server's max_connections {maximum} leaves room for {room} beside its "
+    "{reserved} reserved slots and the operator's {operator} "
+    f"({CONNECTION_BUDGET_EXCEEDED}); raise max_connections or lower a "
+    "login's limit before database-grants."
+)
+
+
+def expected_limits(configuration):
+    """Every foundation login's connection limit for this release, by login name."""
+    limits = {
+        login: role_limit(configuration, role)
+        for _, login, role, _ in database_identities()
+    }
+    limits[INSPECT_LOGIN] = INSPECT_CONNECTIONS
+    return limits
+
+
+def require_cluster_capacity(cursor, configuration):
+    """Refuse connection limits the live server cannot honour, before any change.
+
+    Every non-superuser login in the cluster counts (#2333): this
+    deployment's logins at the limits this release sets, whatever the
+    catalog holds now, and any other login at its own limit. A
+    non-superuser login without a limit (-1) could take every ordinary slot,
+    so one is refused outright. The sum must fit outside the
+    superuser-reserved slots, and the operator's ``operator_connections``
+    must fit on top of it (``RuntimeBudget``), so a service at its limit can
+    always connect and the operator can still connect in an incident.
+    """
     budget = configuration.runtime_budget
-    if role == "download":
-        return (
-            budget.web_processes
-            * budget.replicas
-            * budget.rollout_overlap
-            * budget.download_pool_per_process
+    expected = expected_limits(configuration)
+    cursor.execute(
+        "SELECT current_setting('max_connections')::int, "
+        "current_setting('superuser_reserved_connections')::int + "
+        "current_setting('reserved_connections')::int"
+    )
+    maximum, reserved = cursor.fetchone()
+    cursor.execute(
+        "SELECT rolname,rolconnlimit FROM pg_roles WHERE rolcanlogin AND NOT rolsuper"
+    )
+    limits = dict(cursor.fetchall())
+    if any(limit < 0 for limit in limits.values()):
+        raise ConfigError(UNLIMITED_REFUSAL)
+    total = sum(expected.values()) + sum(
+        limit for name, limit in limits.items() if name not in expected
+    )
+    operator = budget.operator_connections
+    room = min(maximum - reserved, maximum - operator)
+    if total > room:
+        # Only non-sensitive integers, so the operator can size the fix.
+        raise ConfigError(
+            BUDGET_REFUSAL.format(
+                total=total,
+                maximum=maximum,
+                room=room,
+                reserved=reserved,
+                operator=operator,
+            )
         )
-    if role is ServiceRole.WEB:
-        return (
-            budget.web_processes
-            * budget.replicas
-            * budget.rollout_overlap
-            * (budget.web_threads + 3)  # Readiness, metrics and periodic auth health.
+
+
+def reconcile_limits(cursor, configuration, marker):
+    """Set each existing foundation login's connection limit to this release's.
+
+    The one change database-grants makes to an existing login (#2333): a
+    login whose every other attribute matches provisioning (``_check_role``
+    at its current limit, so any other difference is still refused, never
+    repaired) gets ``ALTER ROLE ... CONNECTION LIMIT``. A missing login is
+    left to the caller: the uploader's creation, or the grants loop's
+    refusal. Lowering a limit ends no open session; a service started
+    later checks the new limit (``runtime_database.require_role_capacity``).
+    The inspection login's limit is fixed, so ``ensure_inspect_login``
+    checks it. Returns the number of logins changed.
+    """
+    require_cluster_capacity(cursor, configuration)
+    changed = 0
+    for _, login, role, _ in database_identities():
+        limit = role_limit(configuration, role)
+        cursor.execute("SELECT rolconnlimit FROM pg_roles WHERE rolname=%s", [login])
+        row = cursor.fetchone()
+        if row is None or row[0] == limit:
+            continue
+        _check_role(
+            cursor,
+            login,
+            marker,
+            row[0],
+            reader=role is ServiceRole.BACKUP_WORKER,
+            exempt=migration_exemption(role),
         )
-    if role in {ServiceRole.CONFIG_INSTALLER, ServiceRole.CREDENTIAL_INSTALLER}:
-        return configuration.runtime_budget.rollout_overlap
-    if role in {ServiceRole.WORKER, ServiceRole.MAIL_DISPATCH}:
-        # The worker container runs two consumer processes (#336), and so
-        # does mail dispatch (two Family mail consumers, one per batched
-        # helper). Each may hold a task connection, a lease-renewal
-        # connection and a private timeout-log connection (audit.timeouts),
-        # so three per process. Compose never overlaps two containers of
-        # either service, so the overlap factor's slots serve the second
-        # process (runtime_process.split_source and split_mail).
-        return budget.rollout_overlap * 3
-    if role is ServiceRole.SCHEDULER:
-        # The scheduler pins exactly one singleton session.
-        return budget.rollout_overlap
-    return configuration.runtime_budget.operator_connections
+        cursor.execute(
+            sql.SQL("ALTER ROLE {} CONNECTION LIMIT {}").format(
+                sql.Identifier(login), sql.Literal(limit)
+            )
+        )
+        changed += 1
+    return changed
 
 
 def _admit_operator(cursor, configuration, marker, *, initial, after_restore=None):
@@ -535,6 +627,7 @@ def provision_roles(configuration, deployment_id):
         database.cursor() as cursor,
     ):
         _admit_operator(cursor, configuration, marker, initial=True)
+        require_cluster_capacity(cursor, configuration)
         # Preflight every identity before the first role/password mutation.
         existing = {
             name: _check_role(
@@ -596,8 +689,16 @@ def provision_roles(configuration, deployment_id):
     return {"database_roles_provisioned": True}
 
 
-def provision_grants(configuration, deployment_id, *, after_restore=None):
+def provision_grants(
+    configuration, deployment_id, *, after_restore=None, limits_only=False
+):
     """Grant only the explicit foundation registry after its migrations exist.
+
+    Every existing login's connection limit is reconciled first
+    (``reconcile_limits``). ``limits_only`` (``database-grants
+    --limits-only``) stops there: the upgrade runs it before the migration,
+    whose login checks its own limit at startup (#2333), so it touches no
+    grant and needs no migrated table.
 
     ``after_restore`` is ``pk-restore`` step 7's set name: it replaces the
     recent-backup rule with that set's restore-load evidence and nothing else
@@ -637,6 +738,9 @@ def provision_grants(configuration, deployment_id, *, after_restore=None):
         _admit_operator(
             cursor, configuration, marker, initial=False, after_restore=after_restore
         )
+        changed = reconcile_limits(cursor, configuration, marker)
+        if limits_only:
+            return {"connection_limits_changed": changed}
         _admit_writer_guard(cursor)
         _ensure_uploader(database, cursor, configuration, marker)
         cursor.execute("SELECT app,name FROM public.django_migrations")

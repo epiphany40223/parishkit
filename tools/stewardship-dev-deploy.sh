@@ -371,6 +371,10 @@ else
     # operator superuser may create; an installed one is left alone.
     "${dc[@]}" exec -T postgres psql -U pk_stewardship_operator -d stewardship -At \
         -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public" 2>&1 | tail -1
+    # The migration login checks its own connection limit at startup, so
+    # the limits are set first (#2333, the upgrade's step 4).
+    "${dc[@]}" run --rm -T database-provision database-grants --limits-only \
+        --config "$services/database-provision.yaml" --confirm-deployment "$uuid" 2>&1 | tail -1
     "${dc[@]}" run --rm -T migration 2>&1 | tail -1
     "${dc[@]}" run --rm -T database-provision database-grants \
         --config "$services/database-provision.yaml" --confirm-deployment "$uuid" 2>&1 | tail -1

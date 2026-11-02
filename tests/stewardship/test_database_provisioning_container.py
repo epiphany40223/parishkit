@@ -1331,9 +1331,92 @@ def test_the_uploader_login_is_created_checked_and_recreated(
         False,
         False,
         True,
-        configuration.runtime_budget.operator_connections,
+        role_limit(configuration, ServiceRole.BACKUP_UPLOADER),
         f"parishkit-stewardship:{deployment}",
     )
+
+
+def test_database_grants_reconcile_connection_limits(empty_operator_database, tmp_path):
+    """#2333 on real PostgreSQL: the limits move to this release's, nothing else.
+
+    A catalog with an earlier release's limits answers the upgrade check's
+    f; ``--limits-only`` sets them (the upgrade runs it before migrating)
+    and the check answers t again. A login that also differs otherwise is
+    refused with nothing changed. A foreign login without a limit, or one
+    whose limit crowds the budget, is refused with its code, and the check
+    answers that same refusal while it exists.
+    """
+    configuration = empty_operator_database
+    deployment = uuid4()
+    migrated(configuration, deployment, tmp_path)
+    provision_grants(configuration, deployment)
+    assert raw_upgrade_answer(configuration, deployment, tmp_path) == "t"
+
+    def limits():
+        """Every foundation login's catalog limit, by name."""
+        with connect(configuration) as database:
+            return dict(
+                database.execute(
+                    "SELECT rolname,rolconnlimit FROM pg_roles "
+                    "WHERE rolname LIKE 'pk_stewardship_%' AND NOT rolsuper"
+                ).fetchall()
+            )
+
+    released = limits()
+    with connect(configuration) as database:
+        # v1.28.0's limits for two of the logins.
+        database.execute("ALTER ROLE pk_stewardship_web CONNECTION LIMIT 44")
+        database.execute("ALTER ROLE pk_stewardship_migration CONNECTION LIMIT 8")
+    assert raw_upgrade_answer(configuration, deployment, tmp_path) == "f"
+    assert provision_grants(configuration, deployment, limits_only=True) == {
+        "connection_limits_changed": 2
+    }
+    assert limits() == released
+    assert released["pk_stewardship_web"] == 32
+    assert raw_upgrade_answer(configuration, deployment, tmp_path) == "t"
+    assert provision_grants(configuration, deployment, limits_only=True) == {
+        "connection_limits_changed": 0
+    }
+
+    # Another difference on the same login: refused, and the transaction
+    # leaves the web login's earlier change undone too.
+    with connect(configuration) as database:
+        database.execute("ALTER ROLE pk_stewardship_web CONNECTION LIMIT 44")
+        database.execute("ALTER ROLE pk_stewardship_worker CONNECTION LIMIT 4 CREATEDB")
+    with pytest.raises(ConfigError, match="differs from initial provisioning"):
+        provision_grants(configuration, deployment, limits_only=True)
+    assert limits()["pk_stewardship_web"] == 44
+    assert limits()["pk_stewardship_worker"] == 4
+    with connect(configuration) as database:
+        database.execute(
+            "ALTER ROLE pk_stewardship_worker CONNECTION LIMIT 6 NOCREATEDB"
+        )
+    provision_grants(configuration, deployment)
+    assert limits() == released
+
+    with connect(configuration) as database:
+        database.execute("CREATE ROLE pk_foreign_2333 LOGIN")
+    # The upgrade check answers database-grants' own refusal (#2333), so
+    # the scripted upgrade refuses before anything stops.
+    with pytest.raises(ConfigError) as refused:
+        provision_grants(configuration, deployment)
+    assert "(unlimited_login)" in str(refused.value)
+    assert raw_upgrade_answer(configuration, deployment, tmp_path) == str(refused.value)
+    # The logins' 92 plus the operator's 8 is exactly the server's 100, so
+    # a foreign limit of 1 refuses, 0 fits.
+    with connect(configuration) as database:
+        database.execute("ALTER ROLE pk_foreign_2333 CONNECTION LIMIT 1")
+    with pytest.raises(ConfigError) as refused:
+        provision_grants(configuration, deployment, limits_only=True)
+    assert "add up to 93" in str(refused.value)
+    assert "(connection_budget_exceeded)" in str(refused.value)
+    assert raw_upgrade_answer(configuration, deployment, tmp_path) == str(refused.value)
+    with connect(configuration) as database:
+        database.execute("ALTER ROLE pk_foreign_2333 CONNECTION LIMIT 0")
+    assert raw_upgrade_answer(configuration, deployment, tmp_path) == "t"
+    with connect(configuration) as database:
+        database.execute("DROP ROLE pk_foreign_2333")
+    assert raw_upgrade_answer(configuration, deployment, tmp_path) == "t"
 
 
 def test_grants_after_a_restore_need_the_restored_sets_marker(

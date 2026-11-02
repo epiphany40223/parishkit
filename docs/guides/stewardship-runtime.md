@@ -262,11 +262,11 @@ event records the loop's retry; neither event includes exception text or paths.
 Readiness and metrics observations have short caches and bounded response waits;
 a hung dependency cannot spawn unlimited monitoring threads. Their two possible
 SQL observation connections per web process, plus the independent periodic
-authentication observer, are included across rollout overlap
-in the deployment's auxiliary reserve and actual web-role connection limit.
-The default total connection budget is now 99, including 12 auxiliary connections
-and 36 background connections. Mail-dispatch reserves its own execution/renewal
-connections across rollout overlap and receives only its individual SQL/Valkey
+authentication observer, are included in the web login's connection limit.
+Every login's limit, added up, is the deployment's connection total: 90 by
+default ([database connection limits](../specs/stewardship/operations/spec.md#database-connection-limits)).
+Mail-dispatch reserves its own execution/renewal
+connections and receives only its individual SQL/Valkey
 credentials plus the mail key inventory. The three provider credential installers
 have outbound access for their bounded validation and setup delivery checks;
 other target installers remain on the internal backend network.
@@ -428,28 +428,21 @@ ordinary backup output and retain the matching key material. Automated
 upgrade readiness checks beyond `upgrade-check` remain deferred by the
 pre-production policy.
 
-Phase 2 changes the scheduler limit to the rollout overlap. The worker's
-and mail dispatch's limits are three times the rollout overlap, since each
-container runs two consumer processes
-([source process](#the-workers-source-process)); a deployment provisioned
-before either change needs the one-time `ALTER ROLE` described in the
-deployment runbook's
-[worker connection limit](stewardship-deployment-runbook.md#worker-connection-limit-339)
-and
-[mail dispatch connection limit](stewardship-deployment-runbook.md#mail-dispatch-connection-limit)
-before the new process starts. Earlier
-development databases may still have the operator reserve as those role limits.
-Such databases intentionally fail both exact-role provisioning checks and runtime
-startup; rerunning first-deployment provisioning cannot upgrade them. Do not
-relax the checks or adopt an unrelated role to work around this mismatch.
-Retargeting the image does not change role limits either: preserve an existing
-database and use a separately provisioned, disposable development deployment
-for this version. A future authorized role-limit upgrade must verify the deployment/database
-and role ownership markers, compare every role against `role_limit()` for the
-new runtime budget, explicitly change only the owned mismatching connection
-limits, reapply runtime grants after migrations, and pass startup/readiness
-checks before restarting online services. This note grants no production
-upgrade or destructive development reset permission.
+Every login's connection limit is `role_limit()` for the runtime budget
+([database connection limits](../specs/stewardship/operations/spec.md#database-connection-limits)).
+Since #2333, `database-grants` is the role-limit upgrade: it verifies the
+deployment/database and role ownership markers, checks every other
+attribute of each owned login against provisioning (any other difference is
+still refused, never repaired), changes only the mismatching connection
+limits, and reapplies runtime grants after migrations; the scripted upgrade
+runs its `--limits-only` form before the migration
+([connection limits](stewardship-deployment-runbook.md#connection-limits-2333)).
+The earlier one-time `ALTER ROLE` steps for the worker's and mail
+dispatch's limits (#339) are covered by it. Do not relax the checks or
+adopt an unrelated role to work around a mismatch; retargeting the image
+alone does not change role limits.
+This note grants no production upgrade or destructive development reset
+permission.
 
 Before authorized real TLS issuance, verify DNS resolves to the VM, public TCP
 80/443 reach only Caddy, no database/broker port is published, and the Google origin

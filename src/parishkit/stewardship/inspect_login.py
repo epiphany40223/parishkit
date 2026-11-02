@@ -28,9 +28,9 @@ from psycopg import sql
 from parishkit.config import ConfigError
 
 INSPECT_LOGIN = "pk_stewardship_inspect"
-# An interactive session plus a script or two at once. Like the operator's
-# own sessions these are outside the services' connection budget, which is
-# why the limit is small; superuser_reserved_connections still keeps the
+# An interactive session plus a script or two at once. It counts in the
+# logins' connection budget (RuntimeBudget.total_connections, #2333), which
+# is why the limit is small; superuser_reserved_connections still keeps the
 # operator able to connect when every slot is in use.
 INSPECT_CONNECTIONS = 3
 # Role settings, as pg_db_role_setting stores them. Read-only by default;

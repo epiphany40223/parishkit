@@ -2801,7 +2801,9 @@ def provisioned_logins(monkeypatch):
                 cursor.execute(
                     psycopg_sql.SQL("GRANT pg_read_all_data TO {}").format(name)
                 )
-    for name in ("_password", "_admit_operator", "role_limit"):
+    # The connection limits' reconciliation (#2333) reads the whole
+    # cluster's logins; the Docker provisioning test covers it.
+    for name in ("_password", "_admit_operator", "role_limit", "reconcile_limits"):
         monkeypatch.setattr(provisioning, name, lambda *a, **k: None)
     monkeypatch.setattr(provisioning, "_check_role", lambda *a, **k: True)
     # The inspection login (#2148) is cluster-wide and has its own Docker

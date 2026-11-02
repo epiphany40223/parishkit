@@ -114,9 +114,11 @@ def test_an_owning_inspection_login_answers_its_cause_first(tmp_path):
     """
     from parishkit.stewardship import inspect_login
 
-    query = upgrade_check.upgrade_noop_query(configuration_at(tmp_path), uuid4())
+    configuration = configuration_at(tmp_path)
+    query = upgrade_check.upgrade_noop_query(configuration, uuid4())
     cause = inspect_login.ownership_cause()
-    assert query.startswith(f"SELECT coalesce({cause},\nCASE WHEN (")
+    capacity = upgrade_check.capacity_cause(configuration)
+    assert query.startswith(f"SELECT coalesce({cause},\n{capacity},\nCASE WHEN (")
     assert query.endswith(") THEN 't' ELSE 'f' END);\n")
     assert query.count(cause) == 1
 
@@ -179,3 +181,44 @@ def test_a_missing_login_answers_f_rather_than_an_error(tmp_path):
         branch = query[start : query.index(" ELSE false END", start)]
         assert f"r.rolname={upgrade_check.literal(login)}" in branch
     assert "pk_stewardship_backup_uploader" in query
+
+
+def test_the_cluster_login_limits_must_fit(tmp_path):
+    """#2333: a drifted or crowded cluster answers f, so database-grants runs.
+
+    The check is database-grants' own capacity rule in SQL: no
+    non-superuser login without a limit, and the limits fit the ordinary
+    slots with the operator's connections to spare. Its real answers are in
+    the Docker provisioning test.
+    """
+    configuration = configuration_at(tmp_path)
+    query = upgrade_check.upgrade_noop_query(configuration, uuid4())
+    capacity = upgrade_check.connection_capacity(8)
+    assert query.count(capacity) == 1
+    assert "rolconnlimit<0" in capacity
+    assert "superuser_reserved_connections" in capacity
+    assert "reserved_connections')::int " in capacity
+    assert capacity.endswith("+8<=current_setting('max_connections')::int")
+
+
+def test_limits_the_server_cannot_honour_answer_the_grants_refusal(tmp_path):
+    """#2333: the capacity cause is database-grants' own sentence and code.
+
+    The scripted upgrade refuses on it in step 1, before anything stops.
+    This release's logins count at its limits (their sum, 92), any other
+    login at its catalog limit. Its real answers are in the Docker
+    provisioning test.
+    """
+    from parishkit.stewardship import database_provisioning as provisioning
+
+    configuration = configuration_at(tmp_path)
+    cause = upgrade_check.capacity_cause(configuration)
+    assert f"THEN {upgrade_check.literal(provisioning.UNLIMITED_REFUSAL)} " in cause
+    assert "SELECT 92+(SELECT coalesce(sum(rolconnlimit),0)" in cause
+    assert "rolname<>ALL(ARRAY[" in cause
+    assert "'pk_stewardship_inspect'" in cause
+    for name in ("total", "maximum", "room", "reserved", "operator"):
+        assert "{" + name + "}" not in cause
+        assert f"'||c.{name}||'" in cause
+    assert "(connection_budget_exceeded); raise max_connections" in cause
+    assert " AS operator) t) c)" in cause and ",8 AS operator" in cause
