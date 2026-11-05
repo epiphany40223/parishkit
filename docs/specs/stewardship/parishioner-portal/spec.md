@@ -83,17 +83,18 @@ Invitation and reminder emails keep reaching Families after the campaign
 closes, so a followed link must not read as broken (the Family portal
 [keeps its emailed links working](../ui-conventions/spec.md#family-portal)).
 Whenever `/` shows the after-close page above, a rejected `/access/<token>`
-link or posted Family code shows that same page instead of the generic
-denial: the "Sorry, the campaign is over" heading, the parish's ended
-message, the Administrator's "After the campaign" content, and a "Check
-again" link to `/`. That content replaces the access-denied contact help on
-this page, so it is where after-close contact details belong (the default
-text includes them). The decision uses only
-campaign-wide state, never the submitted token or code, so it cannot reveal
-whether a link or code was ever valid: every link and every code, valid,
-revoked, unknown or malformed, gets byte-identical content. The page shows no
-Family information, creates no session, writes nothing beyond the ordinary
-failed-attempt accounting, and changes no emailed code or link.
+link or posted Family code shows that same page instead of the generic denial:
+the "Sorry, the campaign is over" heading, the parish's ended message and the
+Administrator's "After the campaign" content, with no "Check again" link,
+since nothing a Family can do changes the answer
+([#2385](https://github.com/epiphany40223/parishkit/issues/2385)). That
+content replaces the access-denied contact help on this page, so it is where
+after-close contact details belong (the default text includes them). The
+decision uses only campaign-wide state, never the submitted token or code, so
+it cannot reveal whether a link or code was ever valid: every link and every
+code, valid, revoked, unknown or malformed, gets byte-identical content. The
+page shows no Family information, creates no session, writes nothing beyond
+the ordinary failed-attempt accounting, and changes no emailed code or link.
 
 Only the page body changes. The status stays 403 with `Cache-Control:
 no-store`, and rate limiting, lockout, anti-flood and failed-attempt audit

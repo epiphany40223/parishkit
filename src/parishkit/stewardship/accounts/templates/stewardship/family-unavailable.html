@@ -2,11 +2,13 @@
 {% comment %}
   One campaign-wide page: / shows it outside the response window, and after
   close every rejected emailed link or code shows the same ended page (#1793).
+  The ended page has no "Check again" link: after close nothing a Family can
+  do changes the answer (#2385).
 {% endcomment %}
 {% block title %}{% if availability_ended %}{% translate "Sorry, the campaign is over" %}{% else %}{% translate "Campaign availability" %}{% endif %}{% endblock %}
 {% block content %}<section class="flow">
   <h1>{% if availability_ended %}{% translate "Sorry, the campaign is over" %}{% else %}{% translate "Campaign availability" %}{% endif %}</h1>
   <p class="notice">{{ availability_message }}</p>
   {% if availability_content %}<div class="content-block">{{ availability_content|safe }}</div>{% endif %}
-  <p><a href="/">{% translate "Check again" %}</a></p>
+  {% if not availability_ended %}<p><a href="/">{% translate "Check again" %}</a></p>{% endif %}
 </section>{% endblock %}

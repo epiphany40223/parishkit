@@ -593,7 +593,7 @@ def test_after_close_every_link_and_code_gets_one_identical_ended_page(
     ]
     page = responses[0].content
     assert ENDED_HEADING in page and ENDED in page
-    assert b'href="/">Check again' in page
+    assert b"Check again" not in page
     assert not [text for text in DENIAL_TEXTS if text in page]
     # The same page / shows, rendered with the same template and text.
     assert page == root.content
