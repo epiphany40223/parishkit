@@ -14,7 +14,7 @@ pytestmark = pytest.mark.parametrize(
 def test_the_ended_page_is_friendly_and_accessible(
     page, component_origin, axe_source, width
 ):
-    """#1793: the ended message, parish content and Check again, no denial text."""
+    """#1793: the ended message and parish content, no denial text or Check again."""
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/family-ended")
     expect(
@@ -24,7 +24,7 @@ def test_the_ended_page_is_friendly_and_accessible(
         page.get_by_text("This parish's census / stewardship campaign has ended.")
     ).to_be_visible()
     expect(page.get_by_text("Thank you for taking part.")).to_be_visible()
-    expect(page.get_by_role("link", name="Check again")).to_have_attribute("href", "/")
+    expect(page.get_by_role("link", name="Check again")).to_have_count(0)
     expect(page.get_by_text("cannot be found or used")).to_have_count(0)
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
