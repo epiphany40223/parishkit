@@ -20,6 +20,7 @@ from parishkit.parishsoft import (
     get_member_public_email,
     get_member_public_emails,
     get_member_public_phones,
+    is_plain_email_address,
     link_families_and_members,
     load_contribution_details,
     load_families_and_members,
@@ -27,6 +28,7 @@ from parishkit.parishsoft import (
     load_member_workgroup_memberships,
     member_email_addresses,
     member_is_active,
+    member_sync_email_addresses,
     ministry_membership_is_current,
     normalize_dates,
     normalize_family_email,
@@ -1109,6 +1111,66 @@ def test_public_emails_list_every_valid_address_in_field_order():
     unpublished = {"emailAddress": "a@example.org", "family_PublishEMail": False}
     assert get_member_public_emails(unpublished) == []
     assert get_member_public_emails({"family_PublishEMail": True}) == []
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "ann@example.org",
+        "first.last+tag@mail.example.co.uk",
+        "o'brien@example-parish.org",
+        "x_y@xn--bcher-kva.example",
+        "pat@example.xn--p1ai",
+    ],
+)
+def test_is_plain_email_address_accepts_ordinary_addresses(address):
+    """Ordinary addresses, including plus tags and hyphenated domains, pass."""
+    assert is_plain_email_address(address)
+
+
+@pytest.mark.parametrize(
+    "address",
+    [
+        "",
+        "x",
+        "a@example.org, b@example.org",
+        "a b@example.org",
+        "<a@example.org>",
+        "a@example",
+        "a@example.org.",
+        "a@example..org",
+        "a..b@example.org",
+        ".a@example.org",
+        "a.@example.org",
+        "a@-example.org",
+        "a@example-.org",
+        "a@example.c",
+        "a@example.123",
+        "a@@example.org",
+    ],
+)
+def test_is_plain_email_address_rejects_malformed_values(address):
+    """Values that are not one plain address never reach rosters or APIs."""
+    assert not is_plain_email_address(address)
+
+
+def test_member_sync_email_addresses_keeps_order_and_warns_on_invalid(caplog):
+    """The sync tools get every plain address in field order (#2389)."""
+    member = {
+        "memberDUID": 42,
+        "py emailAddresses": ["first@example.org", "bad..x@example.org", "b@x.net"],
+    }
+    log = logging.getLogger("test.member-sync-email")
+
+    with caplog.at_level(logging.WARNING, logger=log.name):
+        addresses = member_sync_email_addresses(member, log)
+
+    assert addresses == ["first@example.org", "b@x.net"]
+    assert caplog.messages == [
+        "Skipping invalid ParishSoft email address(es) for member DUID 42: "
+        "bad..x@example.org"
+    ]
+    assert member_sync_email_addresses({"memberDUID": 1}) == []
 
 
 def test_normalize_dates_reports_field_and_record_for_bad_api_value():

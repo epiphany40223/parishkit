@@ -234,7 +234,8 @@ endpoints back them):
   `get_member_public_emails` (honors `family_PublishEMail`; returns **all**
   of the member's normalized, plausibly valid addresses in field order. Only `;`
   separates addresses, so a comma-joined value is one fragment that fails the
-  plain-address check and is omitted, #2260).
+  shared plain-address check `is_plain_email_address` and is omitted, #2260;
+  the same check rejects typos such as doubled or trailing dots, #2389).
 - `member["birthdate"]` — used only when `include_birthday` is set.
 
 The salutation helper `salutation_for_members` is **not** used by this tool;
