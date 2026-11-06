@@ -249,6 +249,7 @@ def execute_google_request(
     retryable_statuses: Collection[int] | None = None,
     retryable_reasons: Collection[str] | None = None,
     retry_ambiguous_failures: bool = True,
+    expected_statuses: Collection[int] = (),
 ) -> Any:
     """Execute one Google API request under the shared ParishKit retry policy.
 
@@ -261,7 +262,10 @@ def execute_google_request(
     statuses and set ``retry_ambiguous_failures=False``. That preserves retries
     for explicit quota rejections while leaving timeouts, connection failures,
     and uncertain server errors one-shot. ``policy`` and ``sleep`` are forwarded
-    to :func:`retry_call`. Returns the request's parsed response.
+    to :func:`retry_call`. ``expected_statuses`` lists HTTP statuses the caller
+    handles as a normal outcome (such as 404 on a lookup); they still raise
+    :class:`GoogleAPIError` but are logged at debug level, not as a warning.
+    Returns the request's parsed response.
     """
 
     statuses = (
@@ -293,10 +297,19 @@ def execute_google_request(
         except Exception as exc:
             endpoint = str(getattr(request, "uri", request.__class__.__name__))
             if http_error is None or not isinstance(exc, http_error):
-                LOGGER.warning("Google API request failed for %s: %s", endpoint, exc)
+                # Already-typed errors (such as a GoogleAPIError from a wrapped
+                # client) carry their status; honor expected_statuses for them.
+                expected = getattr(exc, "status_code", None) in expected_statuses
+                LOGGER.log(
+                    logging.DEBUG if expected else logging.WARNING,
+                    "Google API request failed for %s: %s",
+                    endpoint,
+                    exc,
+                )
                 raise
             status = int(getattr(getattr(exc, "resp", None), "status", 0) or 0)
-            LOGGER.warning(
+            LOGGER.log(
+                logging.DEBUG if status in expected_statuses else logging.WARNING,
                 "Google API request failed for %s with HTTP %s: %s",
                 endpoint,
                 status,
