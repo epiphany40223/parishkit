@@ -3637,7 +3637,7 @@ pk-admin events list | jq -r '.result.critical.token // empty' \
 
 | `events list` field | What it holds |
 | --- | --- |
-| `security` | The security events still on your own dashboard, newest first: `id`, `kind`, `name` (as on the page), `target` (the address or domain it is about), `account` (for an Administrator grant, the Google account the address signs in through by a [verified-address match](../specs/stewardship/admin-portal/spec.md#verified-address-matches), as the page names it; otherwise null), `before` and `after` (role names), `key_before` and `key_after` (key IDs, for a replaced backup key only), `created_at` and `actor_id` (the account ID of the Administrator who made the change) |
+| `security` | The security events still on your own dashboard, newest first: `id`, `kind`, `name` (as on the page), `target` (the address or domain it is about), `before` and `after` (role names), `key_before` and `key_after` (key IDs, for a replaced backup key only), `created_at` and `actor_id` (the account ID of the Administrator who made the change) |
 | `critical` | The banner: `count` (problems not yet acknowledged), `all_ended` (every one of them has ended), `since` (the start of the 24 hours), `events` (`event`, `name`, `count` and `ended_at` for each kind of problem, most frequent first) and `token`, which `--critical` takes (null when nothing awaits), with `acknowledgeable`, how many problems it covers |
 
 A security event leaves your own list once you acknowledge it. When it

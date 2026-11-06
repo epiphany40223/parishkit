@@ -67,13 +67,7 @@ query the panel costs, so the page's budget is unchanged.
 Each open event is named by its kind in the specification's words, its
 target, its time, the granting Administrator's current address when the
 event has one, and the roles before and after in the fixed role order the
-Portal users page uses. A target is shown as text. The dashboard also
-lists the `address_matched` events of
-[verified-address matches](../specs/stewardship/data/spec.md#verified-address-match-records)
-([#2343](https://github.com/epiphany40223/parishkit/issues/2343)), and an
-Administrator grant whose address a standing match signs in through adds
-"(signs in through Google account _sign-in address_)" after its target
-([#2363](https://github.com/epiphany40223/parishkit/issues/2363)). An event the viewer has
+Portal users page uses. A target is shown as text. An event the viewer has
 acknowledged has left their dashboard, whatever it still awaits from others.
 Each row's button is a native form posting to the event's own route with a
 CSRF token, so the panel needs no script.

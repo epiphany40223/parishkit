@@ -110,10 +110,8 @@ statement below cites the Google page it was checked against on November 1,
   and their authorizations will not expire after 7 days." Stewardship asks for
   `openid` and `email` only, so today a Testing project neither blocks nor
   warns anyone. The test-user list, the 100-user limit, the warning and the
-  seven-day expiry apply once the project asks for any other scope, such as
-  `user.emails.read` for
-  [#2343](https://github.com/epiphany40223/parishkit/issues/2343). Add test
-  users with **Add users** on the Audience page. Select **Publish app** to
+  seven-day expiry would apply only if the project asked for any other
+  scope. Add test users with **Add users** on the Audience page. Select **Publish app** to
   move to *In production*, which admits any Google account (same page as
   above).
 - **App name.** On the Branding page, set the app name to exactly
@@ -143,9 +141,7 @@ statement below cites the Google page it was checked against on November 1,
   - **Brand verification** is needed before the consent screen shows the
     app's name or logo for an external app; it typically takes two to three
     business days. (Google: brand verification, above.)
-  - **Sensitive scopes**, such as `https://www.googleapis.com/auth/user.emails.read`
-    for the alternate-address lookup of
-    [#2343](https://github.com/epiphany40223/parishkit/issues/2343) (the Data
+  - **Sensitive scopes**, which Stewardship does not ask for (the Data
     Access page lists each scope as non-sensitive, sensitive or restricted:
     confirm it there), need Google's review, which can take up to ten days and
     needs a demonstration video. (Google: sensitive scope verification,
@@ -156,86 +152,27 @@ statement below cites the Google page it was checked against on November 1,
   - Until a sensitive scope is verified, a published app shows the "unverified
     app" screen and is limited to 100 new users in total. (Google:
     [Unverified apps](https://support.google.com/cloud/answer/7454865).)
-- **Keep Production's sign-in to basic scopes** until Google verifies
-  `user.emails.read` and the parish turns on `alternate_address_sign_in`:
-  while the setting is off, the sign-in asks Google for `openid` and `email`
-  only. Basic sign-in covers every leader whose Google account uses the
-  address ParishSoft holds; the lookup is for the others.
-- **Getting `user.emails.read` verified (#2343).** Google verifies only the
-  scopes listed on the project's Data Access page and submitted with the
-  request, so before submitting, enable the People API in the Production
-  project and add `https://www.googleapis.com/auth/user.emails.read` (and
-  `profile`, which `people/me` needs) on its Data Access page. Listing them
-  is harmless while the setting is off: no sign-in asks for them, so nobody
-  sees a new consent screen or the "unverified app" page.
-- **Turning on sign-in through another verified address (#2343).**
-  **Production gate:** the setting stays off in Production until Google has
-  verified the Production OAuth app's `user.emails.read` scope (#2354) and
-  the release with the last slice of #2343 is deployed: the Administrator's
-  End match, the fix that lets only another Administrator settle the
-  dashboard alert of a match (`security_events.cleared()`), and the Privacy
-  policy paragraph about the check. Then turn it on **on the host**, as the
-  [bulk Family send](stewardship-family-mail-dispatch.md#turning-on-the-bulk-family-send)
-  is turned on. The scripted upgrade cannot do it from the laptop: its
-  laptop half passes only the `STEWARDSHIP_USERS_*` variables over ssh, so
-  `PARISHKIT_STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN=1` set on the laptop
-  never reaches the host half, and the setting stays off (fail-closed).
-  1. With the online services stopped, run the `retarget-image` step
-     ([Commands and generated paths](#commands-and-generated-paths)) in the
-     release image, with the digest the deployment already runs, adding
-     `-e PARISHKIT_STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN=1` to that
-     `docker run`. Add the deployment's other switches too, as the host half
-     does, or the run renders them off: while
-     `jq .deployment.bulk_family_send RUNTIME_ROOT/config/services/worker.yaml`
-     prints `true`, `-e PARISHKIT_STEWARDSHIP_BULK_FAMILY_SEND=1` and
-     `-e PARISHKIT_STEWARDSHIP_BULK_SEND_BATCH=B` (B is that file's
-     `bulk_send_batch`), and while its `export_download_window_minutes` is
-     set, `-e PARISHKIT_STEWARDSHIP_EXPORT_DOWNLOAD_WINDOW_MINUTES=M`.
-  2. Start the services as usual.
-  3. Check: `jq .deployment.alternate_address_sign_in RUNTIME_ROOT/config/services/web.yaml`
-     prints `true`, and the public Privacy policy page shows the paragraphs
-     about the check of other email addresses.
-
-  Later scripted upgrades carry it over from web's document. To turn it
-  off, run the same step with `-e PARISHKIT_STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN=0`
-  (the check then prints `null`); a rollback renders it off.
-- **End match is not a block.** An Administrator's End match (Edit user)
-  ends the match and its sessions, but the owner can match again at their
-  next sign-in if Google still confirms the address, as End match's dialog
-  says. It is not containment: to keep someone out, change the user's
-  address or delete the user on Users.
+- **Keep Production's project to basic scopes.** On the Production project's
+  Data Access page, list only `openid` and `email`. Stewardship needs no
+  more: sign-in through another verified address, which needed the
+  sensitive `user.emails.read` scope, was dropped
+  ([#2387](https://github.com/epiphany40223/parishkit/issues/2387)). A
+  person whose Google account uses an address the parish doesn't know gets
+  that address added to their ParishSoft Member record instead
+  ([leader sign-in guide](stewardship-leader-sign-in.md#a-google-account-with-another-address)).
 - **A separate project for experiments.** Try new scopes in a second Cloud
-  project (External, Testing, with yourself as a test user), as the #2352
-  test did, never in Production's project.
+  project (External, Testing, with yourself as a test user), never in
+  Production's project.
 
 #### The "Google hasn't verified this app" page
 
-With today's basic scopes (`openid` and `email`) Google does not show this
-page, in Testing or in production (see **Publishing status** above). It
-applies only once the sign-in asks for a scope beyond basic sign-in, such as
-`user.emails.read` for
-[#2343](https://github.com/epiphany40223/parishkit/issues/2343): then Google
-shows it before its consent screen while the project is in Testing (to test
-users), or while a published app's sensitive scope is not yet verified. It
-names the app's domain and says Google hasn't
-verified the app. To continue, the person selects **Advanced**, then **Go to
-\<domain\> (unsafe)**, and then sees Google's usual consent screen. (Check the
-exact link names against
-[Unverified apps](https://support.google.com/cloud/answer/7454865) before
-sending; Google's own page did not show them when this was written.)
-
-Text to paste into a Ministry leader's sign-in email while the warning can
-appear, that is, once the sign-in asks for `user.emails.read` (#2343) and
-until Google verifies it (adjust the parish name and address):
-
-> When you sign in with Google, Google may first show a page saying "Google
-> hasn't verified this app". That is expected: it means the parish's sign-in
-> is still waiting for Google's review, not that anything is wrong. Select
-> **Advanced**, then **Go to stewardship.example.org (unsafe)**, and continue
-> to sign in. The site asks Google only for your account's email addresses,
-> so the parish knows it is you. Once Google finishes its review, this page
-> goes away. If anything looks different, or you are unsure, reply to this
-> email before you continue.
+With Stewardship's basic scopes (`openid` and `email`) Google does not show
+this page, in Testing or in production (see **Publishing status** above).
+Google shows it only to an app that asks for a scope beyond basic sign-in
+while the project is in Testing, or while a published app's sensitive scope
+is not yet verified. Stewardship asks for no such scope
+([#2387](https://github.com/epiphany40223/parishkit/issues/2387)), so
+leaders' sign-in emails need no warning about it.
 
 ## Commands and generated paths
 
@@ -911,11 +848,7 @@ period) while `web` keeps serving. Only then does it stop `web`, and from
 there it follows
 steps 3–6: `retarget-image` in the new image with the deployment's current
 bulk Family send switch and batch size carried over, so an upgrade never
-turns the bulk send off (and the web's `alternate_address_sign_in` carried
-over likewise, #2343: a rollback renders it off, and only the host half's
-own environment can change it, which the laptop half does not forward; see
-[Google sign-in project](#google-sign-in-project)); migration and grants
-only when step 4's check
+turns the bulk send off; migration and grants only when step 4's check
 answers anything but `t`; the static tree refreshed in place with the
 replaced tree kept at `cache/static.PREVIOUS_DIGEST`; `web`, then `caddy`
 (recreated only when its loaded Caddyfile differs), then the remaining
