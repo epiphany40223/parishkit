@@ -118,9 +118,10 @@ sync:
         - type: all_ministry_chairs
           purpose: Chairs for numbered ministries
           ministry_pattern: '^\d\d\d.*'
-          # staff_owner_domains is used only by all_ministry_chairs. Matching
-          # chairs whose primary email domain appears here become group OWNERs;
-          # other matching chairs remain regular MEMBERS.
+          # staff_owner_domains is used only by all_ministry_chairs. Each of a
+          # matching chair's email addresses whose domain appears here is added
+          # as a group OWNER; the chair's other addresses, and other matching
+          # chairs, remain regular MEMBERS.
           staff_owner_domains:
             - example.org
 
