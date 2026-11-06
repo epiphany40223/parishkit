@@ -719,11 +719,22 @@ def _extract_page(data: Any) -> tuple[list[dict[str, Any]], bool]:
     raise ParishSoftAPIError(500, "pagination", f"unexpected page shape: {data!r}")
 
 
-# A deliberately plain shape check for roster output: one "@", a dotted
-# domain, and no whitespace, commas, semicolons or angle brackets. It keeps
-# obvious non-addresses (such as a comma-joined value, which stays one
-# fragment because only ";" separates addresses) off printed rosters.
-_PLAIN_EMAIL = re.compile(r"[^@\s,;<>()]+@[^@\s,;<>()]+\.[^@\s,;<>()]+")
+# A deliberately plain shape check for rosters and the sync tools: a
+# dot-separated local part of ordinary address characters, one "@", and a
+# domain of letter/digit/hyphen labels ending in a letters-only top-level
+# label or an ASCII-encoded internationalized one ("xn--..."). It keeps
+# obvious non-addresses (a comma-joined value, which stays one fragment
+# because only ";" separates addresses, or a typo such as a doubled
+# or trailing dot) away from printed rosters and from Google and Constant
+# Contact, where one bad address would fail a whole run (#2389). It is not
+# full RFC 5322 validation.
+_LOCAL_ATOM = r"[a-z0-9!#$%&'*+/=?^_`{|}~-]+"
+_DOMAIN_LABEL = r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?"
+_TOP_LABEL = r"(?:[a-z]{2,}|xn--[a-z0-9-]*[a-z0-9])"
+_PLAIN_EMAIL = re.compile(
+    rf"{_LOCAL_ATOM}(?:\.{_LOCAL_ATOM})*@(?:{_DOMAIN_LABEL}\.)+{_TOP_LABEL}",
+    re.IGNORECASE,
+)
 
 
 def normalize_family_email(family: dict[str, Any]) -> None:
