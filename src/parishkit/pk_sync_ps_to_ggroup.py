@@ -7,7 +7,7 @@ import html
 import logging
 import re
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any
@@ -46,6 +46,7 @@ from parishkit.parishsoft import (
     ParishSoftData,
     load_families_and_members,
     member_email_addresses,
+    member_sync_email_addresses,
 )
 from parishkit.parishsoft_runtime import parishsoft_client_from_config
 
@@ -364,7 +365,7 @@ def _run(
                     ),
                 )
             )
-        for plan in plans:
+        plans = [
             apply_group_plan(
                 admin_service,
                 sync_config,
@@ -372,6 +373,8 @@ def _run(
                 dry_run=common.dry_run,
                 log=log,
             )
+            for plan in plans
+        ]
         if not common.dry_run:
             for plan in plans:
                 send_group_plan_notification(sync_config, plan)
@@ -562,6 +565,7 @@ def plan_group(
         group,
         config.google_mail_domains,
         leader_roles=config.leader_roles,
+        log=log,
     )
     log.info("Computed %s desired member(s) for %s", len(desired), group.group)
     log.debug(
@@ -588,7 +592,26 @@ def plan_group(
             "and static_members in the YAML. To intentionally empty this "
             "group, set sync.groups[].allow_empty to true."
         )
-    actions = compute_actions(desired, current, config.google_mail_domains)
+
+    def find_member(email: str) -> dict[str, Any] | None:
+        """Resolve one unmatched desired address against the live group."""
+        member = find_group_member(admin_service, group.group, email)
+        if member is not None:
+            log.debug(
+                "Google resolves %s to group member %s in %s",
+                email,
+                member.get("email") or member.get("id"),
+                group.group,
+            )
+        return member
+
+    actions = compute_actions(
+        desired,
+        current,
+        config.google_mail_domains,
+        # An empty group has nothing to resolve against, so skip the lookups.
+        find_member=find_member if current else None,
+    )
     validate_large_removal_guard(group, actions, current)
     log.info(
         "Actions for %s: %s",
@@ -631,16 +654,22 @@ def apply_group_plan(
     *,
     dry_run: bool,
     log: logging.Logger,
-) -> None:
-    """Apply a planned Google Group sync after all groups have been validated."""
+) -> GroupSyncPlan:
+    """Apply a planned Google Group sync after all groups have been validated.
+
+    Returns the plan narrowed to the actions that actually changed the group,
+    so the notification leaves out adds Google reported as already satisfied.
+    A dry run returns the plan unchanged.
+    """
     if dry_run:
-        return
-    apply_actions(admin_service, plan.group.group, plan.actions, log=log)
+        return plan
+    applied = apply_actions(admin_service, plan.group.group, plan.actions, log=log)
     log.info(
         "Applied %s Google Group action(s) for %s",
-        len(plan.actions),
+        len(applied),
         plan.group.group,
     )
+    return replace(plan, actions=tuple(applied))
 
 
 def send_group_plan_notification(config: SyncConfig, plan: GroupSyncPlan) -> None:
@@ -812,34 +841,41 @@ def desired_members(
     google_mail_domains: frozenset[str] = frozenset(),
     *,
     leader_roles: frozenset[str] = frozenset(LEADER_ROLES),
+    log: logging.Logger | None = None,
 ) -> list[DesiredMember]:
     """Build the desired Google group member set from data plus static members.
 
-    Each ParishSoft member matching the group is keyed by their primary email
-    (de-duplicated and merged by ``add_desired_member``); members without an
-    email are skipped because Google membership is email-keyed. Static members
-    from config are added last. Returns the merged member list.
+    Every plain email address of each matching ParishSoft member is desired
+    (#2389), de-duplicated and merged by ``add_desired_member``; each one
+    receives group mail. Leadership is decided per address, because
+    ``staff_owner_domains`` looks at each address's own domain. Members
+    without a usable address are skipped because Google membership is
+    email-keyed; invalid fragments are reported through ``log``. Static
+    members from config are added last. Returns the merged member list.
     """
     found: dict[str, DesiredMember] = {}
     for member in data.members.values():
-        is_member, is_leader = member_matches_group(
-            member,
-            group,
-            leader_roles=leader_roles,
-        )
-        if not is_member and not is_leader:
+        # Membership never depends on the address, so check it once before
+        # looking at (and warning about) the member's addresses.
+        is_member, _ = member_matches_group(member, group, leader_roles=leader_roles)
+        if not is_member:
             continue
-        emails = member_email_addresses(member)
-        if not emails:
-            continue
-        # Use only the first (primary) email; a person maps to one group entry.
-        add_desired_member(
-            found,
-            emails[0],
-            is_leader,
-            member.get("py friendly name FL") or member_display_name(member),
-            google_mail_domains=google_mail_domains,
-        )
+        name = member.get("py friendly name FL") or member_display_name(member)
+        emails = member_sync_email_addresses(member, log)
+        for email in emails:
+            _, is_leader = member_matches_group(
+                member,
+                group,
+                leader_roles=leader_roles,
+                email=email,
+            )
+            add_desired_member(
+                found,
+                email,
+                is_leader,
+                name,
+                google_mail_domains=google_mail_domains,
+            )
     for static_member in group.static_members:
         add_desired_member(
             found,
@@ -856,12 +892,14 @@ def member_matches_group(
     group: GroupSync,
     *,
     leader_roles: frozenset[str] = frozenset(LEADER_ROLES),
+    email: str | None = None,
 ) -> tuple[bool, bool]:
     """Return ``(is_member, is_leader)`` for a member against all group sources.
 
     A member qualifies if any of the group's ministries, workgroups, or
     selectors matches; leadership in any source promotes them to leader. The
-    results are OR-combined across every source.
+    results are OR-combined across every source. ``email`` is the address
+    being added; only ``staff_owner_domains`` leadership depends on it.
     """
     is_member = False
     is_leader = False
@@ -878,6 +916,7 @@ def member_matches_group(
             member,
             selector,
             configured_leader_roles=leader_roles,
+            email=email,
         )
         is_member = is_member or selector_member
         is_leader = is_leader or selector_leader
@@ -891,47 +930,58 @@ def compute_actions(
     desired: Sequence[DesiredMember],
     group_members: Sequence[dict[str, Any]],
     google_mail_domains: frozenset[str],
+    *,
+    find_member: Callable[[str], Mapping[str, Any] | None] | None = None,
 ) -> list[SyncAction]:
     """Diff desired members against current members into a list of actions.
 
     Emails are matched with domain-aware normalization (``compare_email``), so
-    Gmail-style dotting/aliasing does not cause spurious churn. Produces:
+    Gmail-style dotting/aliasing does not cause spurious churn. Google lists a
+    member under one canonical address, so an address on the same Google
+    account as a current member never matches by text. ``find_member`` (a
+    live ``members.get`` lookup, ``None`` in pure tests) resolves each desired
+    address that did not match by text; when Google returns a current member,
+    the address counts as matched to it (#2389). Produces:
 
     - ``add`` for desired members with no current match,
-    - ``change_role`` when a matched member's role differs from desired,
+    - ``change_role`` when a matched member's role differs from desired; when
+      several desired addresses resolve to one member, any leader address
+      makes it an owner,
     - ``delete`` for current members no desired member matched.
 
     Returning plain action objects keeps decision making separate from Google
     API writes, which makes dry runs and tests deterministic.
     """
+    # Pass 1: resolve each desired address to a current member index (or None).
+    resolved = [
+        _match_group_member(item, group_members, google_mail_domains, find_member)
+        for item in desired
+    ]
+    by_index: dict[int, list[DesiredMember]] = {}
+    for item, index in zip(desired, resolved, strict=True):
+        if index is not None:
+            by_index.setdefault(index, []).append(item)
+
+    # Pass 2: emit adds and role changes in desired order, one role decision
+    # per matched current member.
     actions: list[SyncAction] = []
-    # Track which current members were matched so the rest can be deleted.
-    matched_group_indexes: set[int] = set()
-    for desired_member in desired:
-        match_index = next(
-            (
-                index
-                for index, group_member in enumerate(group_members)
-                if compare_email(
-                    desired_member.email,
-                    str(group_member["email"]),
-                    google_mail_domains,
-                )
-            ),
-            None,
-        )
-        desired_role = "OWNER" if desired_member.leader else "MEMBER"
+    decided: set[int] = set()
+    for desired_member, match_index in zip(desired, resolved, strict=True):
         if match_index is None:
             actions.append(
                 SyncAction(
                     action="add",
                     email=desired_member.email,
-                    role=desired_role,
+                    role="OWNER" if desired_member.leader else "MEMBER",
                     desired=desired_member,
                 )
             )
             continue
-        matched_group_indexes.add(match_index)
+        if match_index in decided:
+            continue
+        decided.add(match_index)
+        matches = by_index[match_index]
+        desired_role = "OWNER" if any(item.leader for item in matches) else "MEMBER"
         group_member = group_members[match_index]
         current_role = str(group_member.get("role", "")).upper()
         if current_role != desired_role:
@@ -943,11 +993,11 @@ def compute_actions(
                     group_member_id=str(
                         group_member.get("id") or group_member["email"]
                     ),
-                    desired=desired_member,
+                    desired=_merged_desired(matches),
                 )
             )
     for index, group_member in enumerate(group_members):
-        if index not in matched_group_indexes:
+        if index not in by_index:
             actions.append(
                 SyncAction(
                     action="delete",
@@ -960,18 +1010,114 @@ def compute_actions(
     return actions
 
 
+def _match_group_member(
+    desired_member: DesiredMember,
+    group_members: Sequence[Mapping[str, Any]],
+    google_mail_domains: frozenset[str],
+    find_member: Callable[[str], Mapping[str, Any] | None] | None,
+) -> int | None:
+    """Return the index of the current member a desired address belongs to.
+
+    Tries a normalized text match first. Otherwise asks ``find_member`` which
+    member Google resolves the address to and matches that member by its
+    unique id or canonical email. Returns ``None`` when the address is not in
+    the group.
+    """
+    index = _member_index_by_email(
+        desired_member.email, group_members, google_mail_domains
+    )
+    if index is not None or find_member is None:
+        return index
+    found = find_member(desired_member.email)
+    if not found:
+        return None
+    found_id = str(found.get("id") or "")
+    for index, group_member in enumerate(group_members):
+        if found_id and str(group_member.get("id") or "") == found_id:
+            return index
+    return _member_index_by_email(
+        str(found.get("email") or ""), group_members, google_mail_domains
+    )
+
+
+def _member_index_by_email(
+    email: str,
+    group_members: Sequence[Mapping[str, Any]],
+    google_mail_domains: frozenset[str],
+) -> int | None:
+    """Return the index of the current member whose email matches, or None."""
+    if not email:
+        return None
+    return next(
+        (
+            index
+            for index, group_member in enumerate(group_members)
+            if compare_email(email, str(group_member["email"]), google_mail_domains)
+        ),
+        None,
+    )
+
+
+def _merged_desired(matches: Sequence[DesiredMember]) -> DesiredMember:
+    """Combine the desired addresses resolved to one member for notifications."""
+    if len(matches) == 1:
+        return matches[0]
+    names: list[str] = []
+    for item in matches:
+        for name in item.names:
+            if name not in names:
+                names.append(name)
+    return DesiredMember(
+        email=matches[0].email,
+        leader=any(item.leader for item in matches),
+        names=names,
+    )
+
+
+def find_group_member(
+    service: Any,
+    group_key: str,
+    email: str,
+) -> dict[str, Any] | None:
+    """Return the group member Google resolves ``email`` to, or None if absent.
+
+    The Directory API accepts any address of a Google account as the member
+    key and answers with that member's canonical email and unique id. A 404
+    means the address is not in the group; any other failure propagates so
+    planning stops before any group is changed.
+    """
+    try:
+        return get_group_member(service, group_key, email, expected_statuses=(404,))
+    except GoogleAPIError as exc:
+        if exc.status_code == 404:
+            return None
+        raise
+
+
 def apply_actions(
     service: Any,
     group_key: str,
     actions: Sequence[SyncAction],
     *,
     log: logging.Logger | None = None,
-) -> None:
-    """Apply computed Google group changes."""
+) -> list[SyncAction]:
+    """Apply computed Google group changes; return the ones that changed it.
+
+    An add that Google rejects with 409 ("Member already exists") means the
+    address is on the same Google account as a current member (#2389). That
+    is expected for members with several addresses, so it is neither an error
+    nor a warning. Membership and role are handled independently: the member
+    is already there, but an add planned as ``OWNER`` still promotes the
+    existing member (``_resolve_duplicate_add``). A satisfied add is left out
+    of the returned list; a promotion is reported as a ``change_role`` in its
+    place, so the notification shows exactly what changed.
+    """
     # The predecessor automation ran deletes before adds successfully for years.
     # This also lets an address replace an existing Google identity alias that
     # would otherwise make the add fail as a duplicate while the old entry exists.
     ordered_actions = sorted(actions, key=lambda action: action.action != "delete")
+    # id() of each planned action that changed the group -> what to report.
+    applied: dict[int, SyncAction] = {}
     for action in ordered_actions:
         if log:
             log.debug(
@@ -983,24 +1129,23 @@ def apply_actions(
         if action.action == "add":
             try:
                 insert_group_member(
-                    service, group_key, action.email, action.role or "MEMBER"
+                    service,
+                    group_key,
+                    action.email,
+                    action.role or "MEMBER",
+                    expected_statuses=(409,),
                 )
             except GoogleAPIError as exc:
-                duplicate_email = (
-                    _google_duplicate_member_email(service, group_key, action.email)
-                    if exc.status_code == 409
-                    else None
-                )
-                duplicate_detail = _duplicate_member_error_detail(
-                    action.email,
-                    duplicate_email,
-                )
-                raise GoogleAPIError(
-                    exc.status_code,
-                    f"failed to add {action.email!r} to Google Group "
-                    f"{group_key!r}{duplicate_detail}. Google response: "
-                    f"{exc.message}",
-                ) from exc
+                if exc.status_code != 409:
+                    raise GoogleAPIError(
+                        exc.status_code,
+                        f"failed to add {action.email!r} to Google Group "
+                        f"{group_key!r}. Google response: {exc.message}",
+                    ) from exc
+                promoted = _resolve_duplicate_add(service, group_key, action, log)
+                if promoted is not None:
+                    applied[id(action)] = promoted
+                continue
             if log:
                 log.info(
                     "Applied Google Group add for %s in %s",
@@ -1033,37 +1178,78 @@ def apply_actions(
                 )
         else:
             raise ConfigError(f"unknown sync action: {action.action}")
+        applied[id(action)] = action
+    # Report in the planned order, not the deletes-first execution order.
+    return [applied[id(action)] for action in actions if id(action) in applied]
 
 
-def _google_duplicate_member_email(
+def _resolve_duplicate_add(
     service: Any,
     group_key: str,
-    attempted_email: str,
-) -> str | None:
-    """Ask Google which existing member owns an address rejected as duplicate.
+    action: SyncAction,
+    log: logging.Logger | None,
+) -> SyncAction | None:
+    """Finish an add Google rejected because the account is already a member.
 
-    The Directory API accepts aliases as member lookup keys and returns the
-    member's canonical email. Failure to enrich the error must not replace the
-    original, more useful insert failure.
+    Membership is already satisfied, but the planned role must still apply
+    (#2389). Planning makes a Google account an owner when any of its
+    addresses is a leader, so an add planned as ``OWNER`` promotes the
+    existing member (looked up by the attempted address) unless it already is
+    one, and returns the ``change_role`` that was applied. An add planned as
+    ``MEMBER`` never demotes: another address of the same account may be the
+    leader one. When the existing member cannot be looked up, the role cannot
+    be applied, so that case alone is logged as a warning. Returns None when
+    nothing changed.
     """
     try:
-        member = get_group_member(service, group_key, attempted_email)
-    except GoogleAPIError:
+        member = get_group_member(
+            service, group_key, action.email, expected_statuses=(404,)
+        )
+    except GoogleAPIError as exc:
+        if action.role == "OWNER":
+            if log:
+                log.warning(
+                    "Google Group %s already has %s as a member, but Google "
+                    "could not look that member up (HTTP %s), so it could not "
+                    "be made an owner; set its role in Google Groups",
+                    group_key,
+                    action.email,
+                    exc.status_code,
+                )
+            return None
+        member = {}
+    existing = str(member.get("email") or "").strip()
+    alias = (
+        f" (as {existing})"
+        if existing and existing.casefold() != action.email.casefold()
+        else ""
+    )
+    if action.role != "OWNER" or str(member.get("role") or "").upper() == "OWNER":
+        if log:
+            log.info(
+                "Google Group %s already has %s as a member%s; nothing to add",
+                group_key,
+                action.email,
+                alias,
+            )
         return None
-    email = str(member.get("email", "")).strip()
-    return email or None
-
-
-def _duplicate_member_error_detail(
-    attempted_email: str,
-    duplicate_email: str | None,
-) -> str:
-    """Describe the canonical member returned by a duplicate lookup."""
-    if duplicate_email is None:
-        return ""
-    if duplicate_email.casefold() == attempted_email.casefold():
-        return "; Google confirms that address is already a member"
-    return f"; Google resolves that address to existing member {duplicate_email!r}"
+    member_id = str(member.get("id") or existing or action.email)
+    update_group_member_role(service, group_key, member_id, "OWNER")
+    if log:
+        log.info(
+            "Google Group %s already has %s as a member%s; applied role change "
+            "to OWNER",
+            group_key,
+            action.email,
+            alias,
+        )
+    return SyncAction(
+        action="change_role",
+        email=action.email,
+        role="OWNER",
+        group_member_id=member_id,
+        desired=action.desired,
+    )
 
 
 def build_notification_email(
@@ -1266,15 +1452,16 @@ def add_desired_member(
     """Insert or merge a desired member into ``found`` keyed by comparable email.
 
     If the email is already present, leadership is OR-ed in (any leader source
-    wins) and the name, if given, is appended to that member's name list rather
-    than overwriting. Otherwise a new ``DesiredMember`` is created.
+    wins) and the name, if given and not already listed, is appended to that
+    member's name list rather than overwriting. Otherwise a new
+    ``DesiredMember`` is created.
     """
     display_email = email.lower()
     normalized = normalize_email(display_email, google_mail_domains)
     existing = found.get(normalized)
     if existing:
         existing.leader = existing.leader or leader
-        if name:
+        if name and name not in existing.names:
             existing.names.append(name)
     else:
         found[normalized] = DesiredMember(
@@ -1328,13 +1515,15 @@ def selector_matches_member(
     selector: Selector,
     *,
     configured_leader_roles: frozenset[str] = frozenset(LEADER_ROLES),
+    email: str | None = None,
 ) -> tuple[bool, bool]:
     """Return ``(is_member, is_leader)`` for a member against one selector.
 
     Supports three selector types:
 
     - ``all_ministry_chairs``: any matching ministry leader matches; promoted to
-      leader only when their email domain is in ``staff_owner_domains``.
+      leader only when the domain of ``email`` (the address being added;
+      default: the member's first address) is in ``staff_owner_domains``.
     - ``ministry_chair``: a ministry leader whose ministry name starts with
       ``ministry_prefix`` matches as both member and leader.
     - ``ministry_role``: members of ministries matching ``ministry_prefix``
@@ -1348,8 +1537,9 @@ def selector_matches_member(
                 ministry,
                 configured_leader_roles,
             ) and ministry_matches_selector(ministry, selector):
-                emails = member_email_addresses(member)
-                email = emails[0] if emails else ""
+                if email is None:
+                    emails = member_email_addresses(member)
+                    email = emails[0] if emails else ""
                 domain = email.rsplit("@", 1)[-1] if "@" in email else ""
                 return True, domain in selector.staff_owner_domains
         return False, False

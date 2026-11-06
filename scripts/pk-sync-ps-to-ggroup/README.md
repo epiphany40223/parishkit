@@ -30,6 +30,10 @@ ParishSoft ministry leaders (per `leader_roles`) are written as Google Group
 `allow_empty` / `max_removals` / `max_removal_fraction` guardrails that stop a
 run from making surprisingly large deletions.
 
+When a ParishSoft Member has several email addresses (separated by `;`), every
+address is added to the group and receives group email. Addresses that belong
+to the same Google account count as one group member.
+
 ## Run it
 
 Always start with a dry run, which reads ParishSoft and the current Google Group

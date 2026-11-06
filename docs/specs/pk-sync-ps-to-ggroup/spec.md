@@ -95,7 +95,8 @@ Validation rules:
 Scopes requested are computed by the loader, not configured:
 
 - `ADMIN_SCOPE = https://www.googleapis.com/auth/admin.directory.group.member`
-  is always requested (membership reads/writes).
+  is always requested (membership reads/writes, including the plan-time
+  `members.get` lookups from Section 6).
 - `GROUP_SETTINGS_SCOPE = https://www.googleapis.com/auth/apps.groups.settings`
   is appended only when `include_settings_scope=True`.
 
@@ -183,7 +184,7 @@ Allowed keys (exactly): `type`, `ministry_prefix`, `ministry_pattern`,
 | `ministry_pattern` | string (regex) | none | Compiled at parse time; invalid regex → `ConfigError`. Applied with `re.search`. Both prefix and pattern must match when both are set. |
 | `member_roles` | list of strings | `()` | `ministry_role`: these roles → plain `MEMBER`. |
 | `leader_roles` | list of strings | `()` | `ministry_role`: these roles → `OWNER`. (Distinct from the top-level `sync.leader_roles`.) |
-| `staff_owner_domains` | list of strings | `()` | Lower-cased. `all_ministry_chairs`: matched chairs whose primary email domain is in this set become `OWNER`; others stay `MEMBER`. |
+| `staff_owner_domains` | list of strings | `()` | Lower-cased. `all_ministry_chairs`: decided per address — a matched chair's address whose domain is in this set is added as `OWNER`; the chair's other addresses stay `MEMBER`. |
 | `purpose` | string | none | Descriptive metadata only; surfaces in the email subject/rationale, never affects matching. |
 
 See `scripts/pk-sync-ps-to-ggroup/example-config.yaml` for fully commented
@@ -209,17 +210,22 @@ Per-member derived fields this tool consumes:
   raw record. Only *current* memberships are present
   (`ministry_membership_is_current`).
 - `member["py workgroups"]` — mapping keyed by workgroup name.
-- Email addresses from `member_email_addresses(member)` — prefers the pre-split
+- Email addresses from `member_sync_email_addresses(member, log)` — built on
+  `member_email_addresses(member)`, which prefers the pre-split
   `py emailAddresses` list, otherwise splits the semicolon-delimited
-  `emailAddress`; all cleaned, lower-cased, de-duplicated, blanks dropped.
+  `emailAddress`; all cleaned, lower-cased, de-duplicated, blanks dropped, in
+  field order. Fragments that fail the shared plain-address check
+  (`is_plain_email_address`, the same check rosters use) are dropped with a
+  warning naming the member DUID.
 - Display name: `member["py friendly name FL"]` ("First Last"), falling back to
   `member_display_name(member)` ("firstName lastName").
 
-**Email selection precedence**: a qualifying member contributes **only their
-first (primary) email** (`emails[0]`). A member with **no** email is skipped
-entirely, because Google membership is email-keyed. (This is simpler than the
-family-email layering used elsewhere; see `family_workgroup_emails` in the data
-layer for the contrast.)
+**Email selection** (#2389): a qualifying member contributes **every** plain
+address, and each one is an ordinary group member that receives group mail.
+Addresses on the same Google account count as one group member (Section 6.3).
+A member with **no** usable address is skipped entirely, because Google
+membership is email-keyed. (This is simpler than the family-email layering used
+elsewhere; see `family_workgroup_emails` in the data layer for the contrast.)
 
 **Source-name validation** (`validate_configured_parishsoft_sources`, run
 before any planning): every configured `ministries` name must appear in
@@ -242,16 +248,18 @@ for every group **before any writes** (Section 9 preflight), then applied.
    is_leader)` OR-combined across all of the group's ministries, workgroups, and
    selectors. A member that qualifies as a leader through any source is also
    forced to `is_member = True` (a leader is always a member).
-2. Skip non-matching members. For a match, take `member_email_addresses(member)`;
-   skip if empty. Add the primary email via `add_desired_member` with the
-   member's `py friendly name FL`/display name.
+2. Skip non-matching members. For a match, take
+   `member_sync_email_addresses(member, log)`; skip if empty. For each address,
+   re-run `member_matches_group(..., email=address)` for that address's leader
+   flag (only `staff_owner_domains` depends on the address) and add it via
+   `add_desired_member` with the member's `py friendly name FL`/display name.
 3. After all members, append each `static_member` (name `None`).
 4. `add_desired_member` keys `found` by `normalize_email` (Section 6.4) of the
-   lower-cased address. On collision it OR-merges `leader` and *appends* the
-   name to `DesiredMember.names` (so the email lists every person/source behind
-   it); otherwise it creates a new `DesiredMember(email=lowercased, leader,
-   names=[name] if name])`. The stored `email` is the lower-cased display form,
-   not the normalized key.
+   lower-cased address. On collision it OR-merges `leader` and appends the name
+   to `DesiredMember.names` unless already listed (so the email lists every
+   person/source behind it); otherwise it creates a new
+   `DesiredMember(email=lowercased, leader, names=[name] if name)`. The stored
+   `email` is the lower-cased display form, not the normalized key.
 
 #### Source matching detail
 
@@ -265,7 +273,8 @@ for every group **before any writes** (Section 9 preflight), then applied.
   - `all_ministry_chairs`: for any ministry where the member is a ministry
     leader (`is_ministry_leader` against `sync.leader_roles`) and the ministry
     name matches the selector's prefix/pattern → member `True`; leader is `True`
-    only when the member's **primary** email domain is in `staff_owner_domains`.
+    only when the domain of the address being added (the `email` argument;
+    default the member's first address) is in `staff_owner_domains`.
   - `ministry_chair`: a ministry leader in a name-matching ministry →
     `(True, True)` (member and owner).
   - `ministry_role`: across name-matching ministries, if the ministry `role` is
@@ -288,14 +297,29 @@ upper-cased (default MEMBER), id: id or email}`.
 - If `desired` is empty **and** `current` is non-empty **and** not
   `group.allow_empty` → `ConfigError` (refuse to empty a group from a
   zero-resolving source; instructs to check sources or set `allow_empty: true`).
-- `compute_actions(desired, current, google_mail_domains)` produces the diff:
+- `compute_actions(desired, current, google_mail_domains, find_member=…)`
+  produces the diff:
   - For each desired member, find the first current member whose email compares
     equal under `compare_email` (domain-aware normalization).
+  - **Same-account resolution** (#2389). Google lists a member under one
+    canonical address, so an address on the same Google account as a current
+    member never matches by text. Without help, the diff would plan "add B"
+    every run (and Google would reject it as a duplicate every run), and when
+    the canonical address matches no ParishSoft address it would delete that
+    member and re-add them every run. So each desired address with no text match
+    is looked up with `find_member` — in `plan_group`, `find_group_member`
+    (`members.get(group, address)`), skipped when the group is empty. When
+    Google returns a member whose `id` (or, failing that, email) matches a
+    current member, the address counts as matched to it. A 404 means the address
+    is not in the group; any other lookup failure aborts planning before writes.
+  - Then, in desired order:
     - No match → **`add`** with `role = OWNER if leader else MEMBER`, carrying
       the `DesiredMember` for notification names.
-    - Match → record it as matched; if the current upper-cased `role` differs
-      from the desired role → **`change_role`** to the desired role, with
-      `group_member_id = id or email` of the matched current member.
+    - Match → the first desired address matched to a current member decides it:
+      the desired role is `OWNER` if **any** address matched to that member is a
+      leader, else `MEMBER`; if the current upper-cased `role` differs →
+      **`change_role`** to it, with `group_member_id = id or email` of the
+      matched current member and the merged `DesiredMember` for names.
   - Every current member not matched by any desired member → **`delete`**, with
     `group_member_id = id or email`.
 
@@ -343,17 +367,43 @@ helpers. This preserves the predecessor automation's long-running
 delete-before-add behavior and permits an address to replace an existing Google
 identity alias that would otherwise cause an add-first HTTP 409:
 
-- `add` → `insert_group_member(service, group, email, role or "MEMBER")`.
+- `add` → `insert_group_member(service, group, email, role or "MEMBER")`. No
+  per-member delivery setting is sent, so every added address receives group
+  mail under Google's default.
 - `change_role` → `update_group_member_role(service, group,
   group_member_id or email, role or "MEMBER")`.
 - `delete` → `delete_group_member(service, group, group_member_id or email)`.
 - Any other action → `ConfigError("unknown sync action: …")`.
 
-An add failure is re-raised with the attempted member address and group key. On
-HTTP 409, the tool also looks up the attempted address as a member key (which
-may be an alias) and includes Google's canonical existing-member address when
-the lookup succeeds. Failure of this diagnostic lookup does not replace the
-original insert error.
+An add that Google rejects with **HTTP 409** ("Member already exists") means
+the address is on the same Google account as a current member — for example,
+two addresses of one account that were both new to the group (each planning
+lookup answered 404, so both were planned as adds), or a race with the
+plan-time lookup. (An address already in the group under another address of the
+same account is matched at planning instead: a 2026-11-07 check with a personal
+Google account showed `members.get` by its alternate address returns the
+canonical member, and `members.update` by that address changes its role.)
+Membership and role are handled independently (`_resolve_duplicate_add`):
+
+- **Membership** is already satisfied. That is **not** an error and **not** a
+  warning: the 409 is passed as an expected status (logged at `DEBUG` by
+  `execute_google_request`) and the add is left out of the applied actions.
+- **Role**: the attempted address is looked up with `members.get`. For an add
+  planned as `OWNER`, if the existing member is not already an owner, the tool
+  calls `update_group_member_role(…, member id, "OWNER")` and reports a
+  `change_role` in place of the add. An add planned as `MEMBER` never demotes,
+  because another address of the same account may be the leader one (the same
+  any-leader-wins rule as Section 6.3). Otherwise it logs an `INFO` line,
+  naming the canonical member when the lookup found one.
+- If the lookup fails for an add planned as `OWNER`, the role cannot be
+  applied this run, so that case alone logs a **warning** asking for the role
+  to be set in Google Groups. On the next run the planning lookup matches the
+  address to the existing member and plans the role change normally.
+
+`apply_actions` returns what actually changed the group, in planned order (a
+promotion in place of its add), and `apply_group_plan` narrows the plan to it so
+the notification never reports a no-op add. Any other add failure is re-raised
+with the attempted member address and group key.
 
 ## 7. Guardrails and write safety
 
@@ -420,6 +470,8 @@ client before any data is used.
     whether the member can/can-not post (owners can; members "can not");
     Discussion groups omit the posting note. Adds/role-changes/deletes get
     distinct wording.
+  - Rows cover only applied actions; adds Google answered with HTTP 409 are
+    omitted, or shown as the role change they caused (Section 6.6).
 - **Slack**: failures at/above the configured Slack threshold are posted by the
   shared logging Slack handler; healthy runs stay quiet. See
   [`../intro/spec.md#logging-and-notifications`](../intro/spec.md#logging-and-notifications).
@@ -454,10 +506,15 @@ changes — but it still surfaces as exit `2`.
 - **Case-insensitive group dedupe** rejects e.g. `group@…` and `GROUP@…`.
 - **Leader implies member** across all source types; a leader-only selector
   still adds the person as a member.
-- **Primary-email-only**: each person maps to exactly one group entry via their
-  first email; members with no email are silently skipped.
-- **Blank email fragments** are dropped by `split_email_addresses`, so a member
-  whose primary fragment is blank uses the next non-blank address.
+- **Every address** (#2389): each plain address of a person is a group entry
+  that receives group mail, so a person whose addresses are separate mailboxes
+  gets one copy per address. Members with no usable email are silently
+  skipped; invalid fragments are skipped with a warning.
+- **Blank email fragments** are dropped by `split_email_addresses`.
+- **Same Google account**: addresses Google resolves to one current member are
+  matched to it during planning, never added, and never cause a delete; an
+  add answered with HTTP 409 is silently treated as already a member, and an
+  add planned as owner still promotes that member.
 - **Alias merging**: equivalent Gmail-style desired addresses collapse into one
   `DesiredMember`, accumulating all names; role changes/deletes use the matched
   *current* Google member id even when matched by alias normalization.
@@ -465,8 +522,8 @@ changes — but it still surfaces as exit `2`.
   `google_mail_domains`; dots removed only for `gmail.com`/`googlemail.com`.
 - **`ministry_role` leader preservation**: a later non-leader ministry match
   cannot demote an earlier leader match for the same person.
-- **`all_ministry_chairs` owner test uses the primary email domain** (the
-  address that will actually be added), not any secondary address.
+- **`all_ministry_chairs` owner test is per address**: each added address is an
+  owner only if its own domain is in `staff_owner_domains`.
 - **Membership-only syncs** (no `notify`) never call the Groups Settings API and
   never need its scope; the settings service and email provider are built
   lazily, so a no-op live run requires neither (tests assert
@@ -499,11 +556,22 @@ Locked-down behavior asserted:
   dir; `include_settings_scope=False` requests only the member scope.
 - **Desired set**: ministry chair → leader, workgroup member → non-leader, static
   keeps its flag, in source order; configurable `leader_roles` controls owner
-  mapping (e.g. `Coordinator`); blank primary fragment skipped; Gmail aliases
-  merge and accumulate names; `all_ministry_chairs` pattern filtering and
-  primary-domain owner test; `ministry_role` leader preserved across ministries.
+  mapping (e.g. `Coordinator`); blank fragment skipped; Gmail aliases merge and
+  accumulate names; every valid address is desired and invalid fragments are
+  warned; a shared address is one entry naming every member; `all_ministry_chairs`
+  pattern filtering and per-address owner test; `ministry_role` leader preserved
+  across ministries.
 - **`compute_actions`**: add/delete/change_role; role change uses the matched
-  current member id (including alias matches); `normalize_email` examples.
+  current member id (including alias matches); `normalize_email` examples;
+  `find_member` resolution matches a same-account address by id (no add, leader
+  address promotes the member) and keeps a member listed under a canonical
+  address ParishSoft lacks (no delete).
+- **`apply_actions`**: an HTTP 409 member add is satisfied with no exception and
+  no warning, even when the diagnostic lookup fails, and is not returned as
+  applied; with two new addresses on one account, the owner address promotes
+  the account whichever order they run in (reported as `change_role`) and a
+  member address never demotes it; an owner add for an existing owner changes
+  nothing; an owner add whose member cannot be looked up logs one warning.
 - **Guards**: empty-desired with current members raises (mentions `allow_empty`);
   40-of-40 removal trips the large-removal guard.
 - **End to end** (`main`): live run inserts new ministry/workgroup/static
@@ -513,15 +581,19 @@ Locked-down behavior asserted:
   loader called with `{active_only: True, parishioners_only: False}`; success
   message in the log file.
 - **Notification posting**: `ALL_IN_DOMAIN_CAN_POST` → Discussion wording.
-- **Dry run**: only a `list` call, no writes, no email (email section disabled).
+- **Dry run**: only `list` and lookup reads, no writes, no email (email section
+  disabled).
 - **No-op live run**: does not build the email provider or the settings scope.
 - **Ordering/failure**: notification failure still applies all groups' writes
   (and exits 2); missing group → helpful config error, exit 2; preflight makes a
   later 404 prevent earlier writes; missing ParishSoft source aborts before any
   Google call; settings 403 aborts before writes; membership-only sync skips the
-  Settings API; selector matching no ministry aborts before writes; add errors
-  identify the attempted address and group, with canonical duplicate details
-  when Google resolves an HTTP 409 member alias.
+  Settings API; selector matching no ministry aborts before writes; non-409 add
+  errors identify the attempted address and group.
+- **Several addresses end to end** (`main`): a same-account address is not
+  inserted; a new additional address is inserted and listed in the
+  notification; an HTTP 409 add is absent from the notification and the log has
+  no warning.
 
 ## 12. Re-creation task outline
 
@@ -542,12 +614,15 @@ Locked-down behavior asserted:
 5. Desired set: `desired_members`, `member_matches_group`, `member_in_ministries`,
    `member_in_workgroups`, `selector_matches_member`, `ministry_matches_selector`,
    `ministry_name_matches_selector`, `is_ministry_leader`, `add_desired_member`,
-   `member_display_name`.
+   `member_display_name`, and the shared `member_sync_email_addresses`.
 6. Email normalization: `normalize_email`, `compare_email`,
    `normalized_group_members`.
-7. Diff/apply: `compute_actions`, `validate_large_removal_guard`,
-   `removal_guard_tripped`, `apply_actions`, `apply_group_plan`,
-   `list_group_members_or_config_error`.
+7. Diff/apply: `compute_actions` (with `_match_group_member`,
+   `_member_index_by_email`, `_merged_desired`, and `find_group_member` for
+   same-account resolution), `validate_large_removal_guard`,
+   `removal_guard_tripped`, `apply_actions` (409 handling via
+   `_resolve_duplicate_add`, returns applied
+   actions), `apply_group_plan`, `list_group_members_or_config_error`.
 8. Planning: `plan_group` (dry-run early return; lazy provider/settings;
    posting-permission fetch gate), `sync_group` compatibility wrapper,
    notification gates (`group_has_notification_content`,

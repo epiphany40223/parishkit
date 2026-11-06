@@ -91,6 +91,14 @@ class Members:
         self.calls = []
         self.list_error: Exception | None = None
         self.list_errors_by_group: dict[str, Exception] = {}
+        self.roster = [
+            {"email": "old@example.org", "role": "MEMBER", "id": "old-id"},
+            {"email": "leader@example.org", "role": "MEMBER", "id": "lead-id"},
+        ]
+        # Extra addresses Google resolves to a roster member (same account).
+        self.aliases: dict[str, str] = {}
+        # Addresses whose insert Google rejects as an existing member.
+        self.insert_conflicts: set[str] = set()
 
     def list(self, **kwargs):
         """Record the list call and return the current group roster fixture."""
@@ -100,18 +108,13 @@ class Members:
             return Request(exc=self.list_errors_by_group[group_key])
         if self.list_error is not None:
             return Request(exc=self.list_error)
-        return Request(
-            {
-                "members": [
-                    {"email": "old@example.org", "role": "MEMBER", "id": "old-id"},
-                    {"email": "leader@example.org", "role": "MEMBER", "id": "lead-id"},
-                ]
-            }
-        )
+        return Request({"members": list(self.roster)})
 
     def insert(self, **kwargs):
-        """Record an add-member call and return an empty request."""
+        """Record an add-member call; answer 409 for configured conflicts."""
         self.calls.append(("insert", kwargs))
+        if kwargs["body"]["email"] in self.insert_conflicts:
+            return Request(exc=GoogleAPIError(409, "Member already exists."))
         return Request()
 
     def update(self, **kwargs):
@@ -125,9 +128,18 @@ class Members:
         return Request()
 
     def get(self, **kwargs):
-        """Record a member lookup and return no canonical override by default."""
+        """Record a member lookup and answer like Google for the roster.
+
+        A roster email, id, or registered alias returns that roster member;
+        anything else is Google's 404 for a non-member.
+        """
         self.calls.append(("get", kwargs))
-        return Request({"email": kwargs["memberKey"]})
+        key = str(kwargs["memberKey"]).lower()
+        key = self.aliases.get(key, key)
+        for member in self.roster:
+            if key in (member["email"], member["id"]):
+                return Request(dict(member))
+        return Request(exc=GoogleAPIError(404, "Resource Not Found: memberKey"))
 
 
 class Groups:
@@ -180,8 +192,22 @@ class EmailProvider:
         return message
 
 
-def test_duplicate_add_error_identifies_attempted_and_canonical_addresses(caplog):
-    """A duplicate alias error names both sides of Google's identity mapping."""
+def _member_call_names(admin: AdminService, *, reads: bool = True) -> list[str]:
+    """Return the fake members-resource call names, optionally without lookups.
+
+    Plan-time ``get`` lookups resolve unmatched addresses (#2389); tests that
+    only care about roster listing and writes pass ``reads=False``.
+    """
+    return [call[0] for call in admin._members.calls if reads or call[0] != "get"]
+
+
+def test_duplicate_add_is_satisfied_without_error_or_warning(caplog):
+    """Google's "already a member" answer to an add is not a failure (#2389).
+
+    The address is on the same Google account as a current member, so the add
+    is already satisfied: no exception, no warning, and it is not reported as
+    an applied change.
+    """
 
     class DuplicateMembers:
         """Reject an alias insert and resolve it to the existing primary email."""
@@ -201,31 +227,25 @@ def test_duplicate_add_error_identifies_attempted_and_canonical_addresses(caplog
     service = SimpleNamespace(members=lambda: DuplicateMembers())
     log = logging.getLogger("test.duplicate-add")
 
-    with (
-        caplog.at_level(logging.DEBUG, logger=log.name),
-        pytest.raises(GoogleAPIError) as exc_info,
-    ):
-        apply_actions(
+    with caplog.at_level(logging.DEBUG):
+        applied = apply_actions(
             service,
             "ministry@example.org",
             [SyncAction(action="add", email="person@me.com", role="MEMBER")],
             log=log,
         )
 
-    message = str(exc_info.value)
-    assert "failed to add 'person@me.com'" in message
-    assert "Google Group 'ministry@example.org'" in message
-    assert "existing member 'person@gmail.com'" in message
-    assert "Member already exists." in message
+    assert applied == []
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
     assert (
-        "Applying Google Group action for ministry@example.org: "
-        "add person@me.com as MEMBER"
+        "Google Group ministry@example.org already has person@me.com as a member "
+        "(as person@gmail.com); nothing to add"
     ) in caplog.messages
     assert not any("Applied Google Group add" in item for item in caplog.messages)
 
 
-def test_duplicate_add_error_survives_failed_canonical_member_lookup():
-    """The attempted address remains clear when duplicate enrichment fails."""
+def test_duplicate_add_survives_failed_canonical_member_lookup(caplog):
+    """A duplicate add stays satisfied even when the diagnostic lookup fails."""
 
     class DuplicateMembers:
         """Reject both the insert and the subsequent diagnostic lookup."""
@@ -240,18 +260,153 @@ def test_duplicate_add_error_survives_failed_canonical_member_lookup():
 
     service = SimpleNamespace(members=lambda: DuplicateMembers())
 
-    with pytest.raises(GoogleAPIError) as exc_info:
-        apply_actions(
+    with caplog.at_level(logging.DEBUG):
+        applied = apply_actions(
             service,
             "ministry@example.org",
-            [SyncAction(action="add", email="person@me.com", role="MEMBER")],
+            [
+                SyncAction(action="add", email="person@me.com", role="MEMBER"),
+            ],
+            log=logging.getLogger("test.duplicate-add"),
         )
 
-    message = str(exc_info.value)
-    assert "failed to add 'person@me.com'" in message
-    assert "Google Group 'ministry@example.org'" in message
-    assert "Member already exists." in message
-    assert "Member not found." not in message
+    assert applied == []
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+    assert (
+        "Google Group ministry@example.org already has person@me.com as a member; "
+        "nothing to add"
+    ) in caplog.messages
+
+
+class OneAccountMembers:
+    """Stateful fake: two addresses on one Google account, not yet a member.
+
+    The first insert of either address adds the account; any later insert is
+    Google's 409. Lookups by either address find the account once it is a
+    member, and role updates change its role.
+    """
+
+    addresses = {"pat@gmail.com", "pat@example.org"}
+
+    def __init__(self):
+        self.role: str | None = None
+        self.calls = []
+
+    def insert(self, **kwargs):
+        """Add the account, or answer 409 when it is already a member."""
+        self.calls.append(("insert", kwargs["body"]))
+        assert kwargs["body"]["email"] in self.addresses
+        if self.role is not None:
+            return Request(exc=GoogleAPIError(409, "Member already exists."))
+        self.role = kwargs["body"]["role"]
+        return Request()
+
+    def get(self, **kwargs):
+        """Return the account's member record, or 404 before it is added."""
+        self.calls.append(("get", kwargs["memberKey"]))
+        if self.role is None or kwargs["memberKey"] not in self.addresses:
+            return Request(exc=GoogleAPIError(404, "Resource Not Found"))
+        return Request({"id": "pat-id", "email": "pat@gmail.com", "role": self.role})
+
+    def update(self, **kwargs):
+        """Record and apply a role change."""
+        self.calls.append(("update", kwargs["memberKey"], kwargs["body"]))
+        self.role = kwargs["body"]["role"]
+        return Request()
+
+
+@pytest.mark.parametrize("owner_first", [False, True])
+def test_duplicate_add_still_applies_the_owner_role(owner_first, caplog):
+    """Membership and role are independent (#2389): when a leader address
+    lands on an account another address already added, the account is
+    promoted to owner; a member address never demotes it."""
+    members = OneAccountMembers()
+    service = SimpleNamespace(members=lambda: members)
+    adds = [
+        SyncAction(action="add", email="pat@gmail.com", role="MEMBER"),
+        SyncAction(action="add", email="pat@example.org", role="OWNER"),
+    ]
+    if owner_first:
+        adds.reverse()
+
+    with caplog.at_level(logging.DEBUG):
+        applied = apply_actions(
+            service, "chairs@example.org", adds, log=logging.getLogger("test.dup")
+        )
+
+    assert members.role == "OWNER"
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
+    if owner_first:
+        assert [(a.action, a.email) for a in applied] == [("add", "pat@example.org")]
+        assert not [call for call in members.calls if call[0] == "update"]
+    else:
+        assert [(a.action, a.email, a.role, a.group_member_id) for a in applied] == [
+            ("add", "pat@gmail.com", "MEMBER", None),
+            ("change_role", "pat@example.org", "OWNER", "pat-id"),
+        ]
+        assert ("update", "pat-id", {"role": "OWNER"}) in members.calls
+
+
+def test_duplicate_owner_add_warns_when_member_cannot_be_found(caplog):
+    """If Google says "already a member" but cannot look the member up, the
+    owner role cannot be applied, so that one case is a warning."""
+
+    class UnresolvableMembers:
+        """Reject the insert as a duplicate and fail every lookup."""
+
+        def insert(self, **_kwargs):
+            """Return Google's duplicate-member failure."""
+            return Request(exc=GoogleAPIError(409, "Member already exists."))
+
+        def get(self, **_kwargs):
+            """Simulate a lookup that fails after the duplicate add."""
+            return Request(exc=GoogleAPIError(404, "Resource Not Found"))
+
+    service = SimpleNamespace(members=lambda: UnresolvableMembers())
+
+    with caplog.at_level(logging.DEBUG):
+        applied = apply_actions(
+            service,
+            "chairs@example.org",
+            [SyncAction(action="add", email="pat@example.org", role="OWNER")],
+            log=logging.getLogger("test.dup-owner"),
+        )
+
+    assert applied == []
+    warnings = [r.getMessage() for r in caplog.records if r.levelno >= logging.WARNING]
+    assert warnings == [
+        "Google Group chairs@example.org already has pat@example.org as a member, "
+        "but Google could not look that member up (HTTP 404), so it could not be "
+        "made an owner; set its role in Google Groups"
+    ]
+
+
+def test_duplicate_owner_add_for_existing_owner_changes_nothing(caplog):
+    """An owner add for an account that is already an owner is satisfied."""
+
+    class OwnerMembers:
+        """Reject the insert as a duplicate; the account is already an owner."""
+
+        def insert(self, **_kwargs):
+            """Return Google's duplicate-member failure."""
+            return Request(exc=GoogleAPIError(409, "Member already exists."))
+
+        def get(self, **_kwargs):
+            """Return the existing owner record."""
+            return Request({"id": "pat-id", "email": "pat@gmail.com", "role": "OWNER"})
+
+    service = SimpleNamespace(members=lambda: OwnerMembers())
+
+    with caplog.at_level(logging.DEBUG):
+        applied = apply_actions(
+            service,
+            "chairs@example.org",
+            [SyncAction(action="add", email="pat@example.org", role="OWNER")],
+            log=logging.getLogger("test.dup-owner"),
+        )
+
+    assert applied == []
+    assert not [r for r in caplog.records if r.levelno >= logging.WARNING]
 
 
 def test_nonduplicate_add_error_identifies_attempted_address_without_lookup():
@@ -746,7 +901,7 @@ def test_sync_group_plans_without_mutating_google_group():
     )
 
     assert actions
-    assert [call[0] for call in admin._members.calls] == ["list"]
+    assert _member_call_names(admin) == ["list", "get"]
 
 
 def test_all_ministry_chairs_selector_can_filter_ministry_names_by_pattern():
@@ -790,8 +945,8 @@ def test_all_ministry_chairs_selector_can_filter_ministry_names_by_pattern():
     ]
 
 
-def test_all_ministry_chairs_staff_owner_uses_primary_email_domain():
-    """Owner promotion checks the address that will be added to the group."""
+def test_all_ministry_chairs_staff_owner_is_decided_per_address():
+    """Owner promotion checks each added address's own domain (#2389)."""
     data = parishsoft_data()
     data.members[3] = {
         "memberDUID": 3,
@@ -826,7 +981,9 @@ def test_all_ministry_chairs_staff_owner_uses_primary_email_domain():
 
     desired = desired_members(data, config.groups[0])
 
-    assert ("pat@gmail.com", False) in [(item.email, item.leader) for item in desired]
+    assert [
+        (item.email, item.leader) for item in desired if item.names == ["Pat Chair"]
+    ] == [("pat@gmail.com", False), ("staff@example.org", True)]
 
 
 def test_ministry_role_selector_preserves_leader_match_across_ministries():
@@ -1017,6 +1174,169 @@ def test_sync_google_group_main_writes_group_changes_and_notifications(
     assert "Added to group" in (email.sent[0][0].html or "")
 
 
+def test_desired_members_include_every_valid_address(caplog):
+    """Every plain address of a member is desired (#2389).
+
+    A fragment that is not a plain address is skipped with a warning naming
+    the member, instead of being sent to Google.
+    """
+    data = parishsoft_data()
+    data.members[2]["py emailAddresses"] = [
+        "bob.mover+tag@gmail.com",
+        "bob@work.example.net",
+        "bad, address@example.net",
+    ]
+    config = sync_config_from_yaml(
+        {"sync": {"groups": [{"group": "group@example.org", "workgroups": ["Movers"]}]}}
+    )
+    log = logging.getLogger("test.desired-every-address")
+
+    with caplog.at_level(logging.WARNING, logger=log.name):
+        desired = desired_members(data, config.groups[0], log=log)
+
+    assert [(item.email, item.leader) for item in desired] == [
+        ("bob.mover+tag@gmail.com", False),
+        ("bob@work.example.net", False),
+    ]
+    assert caplog.messages == [
+        "Skipping invalid ParishSoft email address(es) for member DUID 2: "
+        "bad, address@example.net"
+    ]
+
+
+def test_desired_members_shared_address_lists_every_member():
+    """An address several members share is one desired entry naming them all."""
+    data = parishsoft_data()
+    data.members[2]["py emailAddresses"] = [
+        "bob.mover+tag@gmail.com",
+        "family@example.net",
+    ]
+    data.members[3] = {
+        "memberDUID": 3,
+        "firstName": "Carol",
+        "lastName": "Mover",
+        "py friendly name FL": "Carol Mover",
+        "py emailAddresses": ["family@example.net"],
+        "py ministries": {},
+        "py workgroups": {"Movers": {"name": "Movers"}},
+    }
+    config = sync_config_from_yaml(
+        {"sync": {"groups": [{"group": "group@example.org", "workgroups": ["Movers"]}]}}
+    )
+
+    desired = desired_members(data, config.groups[0])
+
+    shared = next(item for item in desired if item.email == "family@example.net")
+    assert shared.names == ["Bob Mover", "Carol Mover"]
+
+
+def test_compute_actions_matches_same_account_address_by_lookup():
+    """An address Google resolves to a current member is neither added nor
+    leaves that member to be deleted; any leader address makes it an owner."""
+    lookups = []
+
+    def find_member(email):
+        """Resolve the second address to the current member's id."""
+        lookups.append(email)
+        if email == "ann@home.example.net":
+            return {"email": "leader@example.org", "id": "lead-id"}
+        return None
+
+    actions = compute_actions(
+        [
+            DesiredMember("leader@example.org", False, ["Ann Leader"]),
+            DesiredMember("ann@home.example.net", True, ["Ann Leader"]),
+            DesiredMember("new@example.org", False, ["New Person"]),
+        ],
+        [{"email": "leader@example.org", "role": "MEMBER", "id": "lead-id"}],
+        frozenset(),
+        find_member=find_member,
+    )
+
+    assert lookups == ["ann@home.example.net", "new@example.org"]
+    assert [
+        (item.action, item.email, item.role, item.group_member_id) for item in actions
+    ] == [
+        ("change_role", "leader@example.org", "OWNER", "lead-id"),
+        ("add", "new@example.org", "MEMBER", None),
+    ]
+    assert actions[0].desired is not None
+    assert actions[0].desired.names == ["Ann Leader"]
+
+
+def test_compute_actions_keeps_member_listed_under_another_canonical_address():
+    """When Google lists a member under an address ParishSoft does not have,
+    the lookup keeps the plan from deleting and re-adding that person."""
+
+    def find_member(email):
+        """Resolve both ParishSoft addresses to the canonical Google address."""
+        if email in {"a@example.net", "b@example.net"}:
+            return {"email": "c@gmail.com", "id": "c-id"}
+        return None
+
+    actions = compute_actions(
+        [
+            DesiredMember("a@example.net", False, ["Pat"]),
+            DesiredMember("b@example.net", False, ["Pat"]),
+        ],
+        [{"email": "c@gmail.com", "role": "MEMBER", "id": "c-id"}],
+        frozenset({"gmail.com"}),
+        find_member=find_member,
+    )
+
+    assert actions == []
+
+
+def test_sync_google_group_main_handles_members_with_several_addresses(
+    tmp_path, monkeypatch
+):
+    """End to end: same-account addresses cause no add, a new additional
+    address is added like any other, and an add Google answers "already a
+    member" is silent and left out of the notification (#2389)."""
+    admin = AdminService()
+    admin._members.aliases["ann@home.example.net"] = "lead-id"
+    admin._members.insert_conflicts.add("bob@alt.example.net")
+    settings = SettingsService()
+    email = EmailProvider()
+    log_file = tmp_path / "sync-google-group.log"
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_ggroup.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+    data = parishsoft_data()
+    data.members[1]["py emailAddresses"] = [
+        "leader@example.org",
+        "ann@home.example.net",
+    ]
+    data.members[2]["py emailAddresses"] = [
+        "bob.mover+tag@gmail.com",
+        "bob@work.example.net",
+        "bob@alt.example.net",
+    ]
+
+    assert (
+        sync_google_group_main(
+            ["--config", str(write_config(tmp_path)), "--log-file", str(log_file)],
+            loader=lambda _client, **_kwargs: data,
+            service_factory=lambda _config: (admin, settings),
+            email_provider=email,
+        )
+        == 0
+    )
+
+    inserts = [call[1]["body"] for call in admin._members.calls if call[0] == "insert"]
+    assert {"email": "ann@home.example.net", "role": "OWNER"} not in inserts
+    assert {"email": "bob@work.example.net", "role": "MEMBER"} in inserts
+    assert {"email": "bob@alt.example.net", "role": "MEMBER"} in inserts
+    text = email.sent[0][0].text
+    assert "bob@work.example.net" in text
+    assert "bob@alt.example.net" not in text
+    assert "ann@home.example.net" not in text
+    log_text = log_file.read_text(encoding="utf-8")
+    assert "already has bob@alt.example.net as a member" in log_text
+    assert "WARNING" not in log_text
+
+
 def test_compute_actions_updates_role_by_matched_google_member_id():
     """Alias-matched role changes use the current Google member identifier."""
     actions = compute_actions(
@@ -1084,7 +1404,7 @@ def test_sync_google_group_dry_run_skips_writes_and_email(tmp_path, monkeypatch)
         == 0
     )
 
-    assert [call[0] for call in admin._members.calls] == ["list"]
+    assert _member_call_names(admin, reads=False) == ["list"]
 
 
 def test_sync_google_group_live_noop_does_not_build_email_provider(
@@ -1132,7 +1452,7 @@ def test_sync_google_group_live_noop_does_not_build_email_provider(
         == 0
     )
 
-    assert [call[0] for call in admin._members.calls] == ["list"]
+    assert _member_call_names(admin, reads=False) == ["list"]
 
 
 def test_sync_google_group_live_noop_does_not_build_settings_scope(
@@ -1194,7 +1514,7 @@ def test_sync_google_group_live_noop_does_not_build_settings_scope(
     )
 
     assert scope_calls == [False]
-    assert [call[0] for call in admin._members.calls] == ["list"]
+    assert _member_call_names(admin, reads=False) == ["list"]
 
 
 def test_sync_google_group_notification_failure_does_not_skip_later_writes(
@@ -1273,7 +1593,7 @@ def test_sync_google_group_reports_missing_google_group(
     assert "ERROR pk.pk_sync_ps_to_ggroup" in error
     assert "Configured Google Group was not found" in error
     assert "sync.groups[].group" in error
-    assert [call[0] for call in admin._members.calls] == ["list"]
+    assert _member_call_names(admin, reads=False) == ["list"]
 
 
 def test_sync_google_group_preflights_all_groups_before_writes(
@@ -1312,7 +1632,7 @@ def test_sync_google_group_preflights_all_groups_before_writes(
         == 2
     )
 
-    assert [call[0] for call in admin._members.calls] == ["list", "list"]
+    assert _member_call_names(admin, reads=False) == ["list", "list"]
 
 
 def test_sync_google_group_reports_missing_parishsoft_source(
@@ -1375,7 +1695,7 @@ def test_sync_google_group_checks_posting_permissions_before_writes(
         == 2
     )
 
-    assert [call[0] for call in admin._members.calls] == ["list"]
+    assert _member_call_names(admin, reads=False) == ["list"]
     assert settings._groups.calls == [
         (
             "get",
