@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from pathlib import Path
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -15,6 +16,9 @@ from parishkit.pk_sync_ps_to_cc import (
     CCSyncConfig,
     CCSyncMapping,
     CCUnsubscribedReportConfig,
+    FilteredContact,
+    build_notification_email,
+    build_unsubscribed_report_email,
     cc_sync_config_from_yaml,
     compute_all_actions,
     constant_contact_client,
@@ -556,6 +560,196 @@ def test_desired_state_and_unsubscribed_filtering():
     assert "Bob Jones" in unsubscribed[0][0][1]
 
 
+def _newsletter_config():
+    """Return the one-mapping Newsletter WG -> Newsletter sync config."""
+    return cc_sync_config_from_yaml(
+        {
+            "sync": {
+                "lists": [
+                    {
+                        "source_workgroup": "Newsletter WG",
+                        "target_list": "Newsletter",
+                    }
+                ]
+            }
+        }
+    )
+
+
+def test_desired_state_includes_every_valid_member_address(caplog):
+    """Every plain address of a Member is desired; invalid ones warn (#2389)."""
+    data = parishsoft_data()
+    data.members[1]["py emailAddresses"] = [
+        "ann@example.org",
+        "ann@home.example.net",
+        "bad, address@example.net",
+    ]
+    log = logging.getLogger("test.cc-every-address")
+
+    with caplog.at_level(logging.WARNING, logger=log.name):
+        desired = resolve_desired_state(_newsletter_config(), data, cc_lists(), log=log)
+
+    assert desired == [{"ann@example.org", "ann@home.example.net", "bob@example.org"}]
+    assert caplog.messages == [
+        "Skipping invalid ParishSoft email address(es) for member DUID 1: "
+        "bad, address@example.net"
+    ]
+
+
+def test_unsubscribe_applies_to_every_address_of_the_member():
+    """One unsubscribed address removes all of that Member's addresses; the
+    other address is reported with the address that caused it (#2389)."""
+    data = parishsoft_data()
+    data.members[2]["py emailAddresses"] = ["bob@example.org", "bob@home.example.net"]
+    desired = resolve_desired_state(_newsletter_config(), data, cc_lists())
+
+    unsubscribed = filter_unsubscribed(
+        cc_contacts(),
+        desired,
+        parishsoft_members_by_email(data.members),
+    )
+
+    assert desired == [{"ann@example.org"}]
+    assert unsubscribed[0] == [
+        FilteredContact("bob@example.org", "Bob Jones", "2"),
+        FilteredContact("bob@home.example.net", "Bob Jones", "2", "bob@example.org"),
+    ]
+
+
+def test_unsubscribed_shared_address_applies_to_every_member_who_has_it():
+    """A family-shared address belongs to each Member who has it."""
+    data = parishsoft_data()
+    data.members[1]["py emailAddresses"] = ["ann@example.org", "family@example.net"]
+    data.members[3] = {
+        "memberDUID": 3,
+        "firstName": "Carol",
+        "lastName": "Smith",
+        "py friendly name FL": "Carol Smith",
+        "py emailAddresses": ["carol@example.net", "family@example.net"],
+    }
+    data.member_workgroup_memberships[10]["membership"].append({"py member duid": 3})
+    contacts = [
+        {
+            "contact_id": "contact-family",
+            "email_address": {
+                "address": "family@example.net",
+                "permission_to_send": "unsubscribed",
+            },
+            "list_memberships": [],
+        }
+    ]
+    desired = resolve_desired_state(_newsletter_config(), data, cc_lists())
+
+    filter_unsubscribed(contacts, desired, parishsoft_members_by_email(data.members))
+
+    assert desired == [{"bob@example.org"}]
+
+
+def _family_rows():
+    """Filter a fixture where X unsubscribed x@ and shares family@ with Y.
+
+    Y never unsubscribed but loses family@, the only address Y has (#2389).
+    """
+    data = parishsoft_data()
+    data.members[1]["py emailAddresses"] = ["family@example.net", "x@example.net"]
+    data.members[1]["py friendly name FL"] = "Xavier Smith"
+    data.members[2]["py emailAddresses"] = ["family@example.net"]
+    data.members[2]["py friendly name FL"] = "Yvonne Smith"
+    contacts = [
+        {
+            "contact_id": "contact-x",
+            "email_address": {
+                "address": "x@example.net",
+                "permission_to_send": "unsubscribed",
+            },
+            "list_memberships": [],
+        }
+    ]
+    desired = resolve_desired_state(_newsletter_config(), data, cc_lists())
+    rows = filter_unsubscribed(
+        contacts, desired, parishsoft_members_by_email(data.members)
+    )
+    return desired, rows
+
+
+def test_shared_address_of_unsubscribed_member_is_reported_with_every_member():
+    """The literal Member rule drops a shared address for everyone who has it,
+    and the row names the Member who did not unsubscribe."""
+    desired, rows = _family_rows()
+
+    assert desired == [set()]
+    assert rows[0] == [
+        FilteredContact("x@example.net", "Xavier Smith", "1"),
+        FilteredContact(
+            "family@example.net", "Xavier Smith, Yvonne Smith", "1, 2", "x@example.net"
+        ),
+    ]
+
+
+def test_unsubscribed_report_lists_other_member_addresses_separately():
+    """The weekly report shows addresses dropped by the Member rule in their
+    own section, naming the Members and the address that unsubscribed."""
+    _desired, rows = _family_rows()
+    mapping = _newsletter_config().mappings[0]
+
+    message = build_unsubscribed_report_email(
+        mapping,
+        rows[0],
+        sender="no-reply@example.org",
+        generated_at=dt.datetime(2026, 11, 6, 9, 0, tzinfo=dt.UTC),
+    )
+
+    assert "- Xavier Smith (DUID: 1): x@example.net" in message.text
+    assert (
+        "- Xavier Smith, Yvonne Smith (DUID: 1, 2): family@example.net "
+        "(unsubscribed: x@example.net)"
+    ) in message.text
+    assert "may not have unsubscribed" in message.text
+    assert "Other Addresses of Members Who Unsubscribed" in (message.html or "")
+    assert "Yvonne Smith" in (message.html or "")
+
+    only_others = build_unsubscribed_report_email(
+        mapping,
+        [row for row in rows[0] if row.unsubscribed_via],
+        sender="no-reply@example.org",
+        generated_at=dt.datetime(2026, 11, 6, 9, 0, tzinfo=dt.UTC),
+    )
+    assert "have manually unsubscribed" not in only_others.text
+    assert "family@example.net" in only_others.text
+
+
+def test_sync_email_counts_and_lists_other_member_addresses():
+    """Without the scheduled report, the sync email lists both kinds of rows;
+    with it, the sync email only counts them."""
+    _desired, rows = _family_rows()
+    mapping = _newsletter_config().mappings[0]
+    kwargs = {
+        "sender": "no-reply@example.org",
+        "generated_at": dt.datetime(2026, 11, 6, 9, 0),
+    }
+
+    listed = build_notification_email(mapping, [], rows[0], {}, {}, **kwargs)
+    counted = build_notification_email(
+        mapping,
+        [],
+        [],
+        {},
+        {},
+        suppressed_unsubscribed_count=1,
+        suppressed_member_count=1,
+        **kwargs,
+    )
+
+    assert "- Unsubscribed contacts filtered: 1" in listed.text
+    assert "- Other addresses of unsubscribed Members filtered: 1" in listed.text
+    assert "Yvonne Smith" in listed.text
+    assert (
+        "- Other addresses of unsubscribed Members filtered: "
+        "1 (handled by scheduled report)"
+    ) in counted.text
+    assert "Yvonne Smith" not in counted.text
+
+
 def test_cc_sync_refuses_empty_desired_state_with_current_contacts():
     """A zero-member source cannot unsubscribe a populated list without opt-in."""
     config = cc_sync_config_from_yaml(
@@ -623,6 +817,58 @@ def test_sync_ps_to_cc_all_desired_unsubscribed_does_not_trip_empty_guard(
 
     assert any(
         call[0] == "put" and call[1] == "contacts/contact-old" for call in cc.calls
+    )
+
+
+def test_sync_ps_to_cc_removes_other_addresses_of_unsubscribed_member(
+    tmp_path,
+    monkeypatch,
+):
+    """End to end: Bob unsubscribed one address, so his other address comes
+    off the synced list, while Ann's additional address is added (#2389)."""
+    data = parishsoft_data()
+    data.members[1]["py emailAddresses"] = ["ann@example.org", "ann@home.example.net"]
+    data.members[2]["py emailAddresses"] = ["bob@example.org", "bob@home.example.net"]
+    contacts = cc_contacts() + [
+        {
+            "contact_id": "contact-bob-home",
+            "email_address": {
+                "address": "bob@home.example.net",
+                "permission_to_send": "implicit",
+            },
+            "first_name": "Bob",
+            "last_name": "Jones",
+            "list_memberships": ["list-1"],
+        }
+    ]
+    cc = CCClient(contacts=contacts)
+    log_file = tmp_path / "sync-ps-to-cc.log"
+    monkeypatch.setattr(
+        "parishkit.pk_sync_ps_to_cc.parishsoft_client_from_config",
+        lambda _common, _config: SimpleNamespace(),
+    )
+
+    assert (
+        sync_ps_to_cc_main(
+            ["--config", str(write_config(tmp_path)), "--log-file", str(log_file)],
+            loader=lambda _client, **_kwargs: data,
+            cc_factory=lambda _config: cc,
+            email_provider=EmailProvider(),
+        )
+        == 0
+    )
+
+    bob_home = [
+        call[2]
+        for call in cc.calls
+        if call[0] == "put" and call[1] == "contacts/contact-bob-home"
+    ]
+    assert bob_home and bob_home[0]["list_memberships"] == []
+    posted = [call[2] for call in cc.calls if call[0] == "post"]
+    assert "ann@home.example.net" in str(posted)
+    assert "bob@home.example.net" not in str(posted)
+    assert "Filtered 1 other desired address(es) of Members who unsubscribed" in (
+        log_file.read_text(encoding="utf-8")
     )
 
 
