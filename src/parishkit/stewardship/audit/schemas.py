@@ -273,15 +273,6 @@ class Action(StrEnum):
     # is the organization lookup, its context counts only. Written by the
     # lookup's guard.
     SETUP_PARISHSOFT_ORGANIZATION_CHOSEN = "setup_parishsoft_organization_chosen"
-    # Sign-in through another verified address (#2343): a new match and a
-    # match's end, both written by the match guard
-    # (stewardship_address_match_guard_v1, IDs only), and every other outcome
-    # of a check of a Google account's other verified addresses, written by
-    # the sign-in with the account as actor and ``address_check`` (and, for a
-    # re-check, ``match_id``) as context, never an address.
-    ADMIN_ADDRESS_MATCHED = "admin_address_matched"
-    ADMIN_ADDRESS_CHECKED = "admin_address_checked"
-    ADMIN_ADDRESS_MATCH_ENDED = "admin_address_match_ended"
     # Admin automation sessions (ADM-11): approval, ending (the reason is on
     # the session row), refused use, and an Administrator acknowledging the
     # automation notices on their own dashboard.
@@ -300,9 +291,6 @@ class Action(StrEnum):
     # (#1786, ``report-email confirm``).
     ADMIN_CMD_REPORT_EMAIL_CONFIRM = "admin_cmd_report_email_confirm"
     ADMIN_CMD_USERS_CONFIRM = "admin_cmd_users_confirm"
-    # users end-match: Edit user's End match of a verified-address match
-    # (#2343), beside the match guard's admin_address_match_ended.
-    ADMIN_CMD_USERS_END_MATCH = "admin_cmd_users_end_match"
     # parish confirm: the Parish settings page's Apply (ADM-11 PR 10).
     ADMIN_CMD_PARISH_CONFIRM = "admin_cmd_parish_confirm"
     # artwork remove: Campaign images' Apply of a removal (ADM-11 PR 10).
@@ -664,10 +652,12 @@ FIELDS = {
         "organizations_reached",
         "organizations_without_families",
         "organizations_unknown",
-        # A check of a Google account's other verified addresses (#2343):
-        # its closed outcome word (``ADDRESS_CHECKS``), and the
-        # verified-address match a re-check or a matched sign-in used.
-        # Mirrored in stewardship_safe_context_v1 (frozen migration 0203).
+        # The retired check of a Google account's other verified addresses
+        # (#2343, removed by #2387; nothing writes them now): its closed
+        # outcome word (``ADDRESS_CHECKS``) and match ID. Kept only while
+        # stewardship_safe_context_v1 (frozen migration 0203) still mirrors
+        # them; the forward migration that drops the match schema removes
+        # them from both.
         "address_check",
         "match_id",
     },
@@ -687,10 +677,10 @@ REVIEW_DECISIONS = frozenset({"keep_role", "restore", "remove"})
 # (#1353); mirrored in stewardship_safe_context_v1.
 VOID_REASONS = frozenset({"key_changed", "organization_changed", "reload"})
 VOIDED_TASK_STATES = frozenset({"succeeded", "failed"})
-# The outcomes of a check of a Google account's other verified addresses
-# that record admin_address_checked (#2343; admin-portal spec
-# "Verified-address outcomes"); a new match records admin_address_matched
-# instead. Mirrored in stewardship_safe_context_v1 (frozen migration 0203).
+# The outcomes of the retired check of a Google account's other verified
+# addresses (#2343, removed by #2387). Mirrored in
+# stewardship_safe_context_v1 (frozen migration 0203) until the forward
+# migration that drops the match schema.
 ADDRESS_CHECKS = frozenset(
     {"rechecked", "declined", "none", "several", "own_account_only", "taken"}
 )

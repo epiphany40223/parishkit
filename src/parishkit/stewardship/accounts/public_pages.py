@@ -21,7 +21,6 @@ information pages", "Configured content").
 
 from datetime import date
 
-from django.conf import settings
 from django.db import DatabaseError
 from django.shortcuts import render
 from django.utils.translation import gettext as _
@@ -96,9 +95,6 @@ def campaign_facts(request):
     - ``additional``: whether the form offers a note to the parish;
     - ``publication``: whether the deployment's ``parishsoft_publication``
       setting lets an Administrator copy approved changes into ParishSoft;
-    - ``alternate_sign_in``: whether the web's ``alternate_address_sign_in``
-      setting offers the check of a Google account's other verified
-      addresses (#2343), whatever the campaign;
     - ``general``: True when there is no current campaign to read (before
       setup, during a restore review, on a database error, or before the
       first campaign). Then every module counts as on, so the page
@@ -108,15 +104,7 @@ def campaign_facts(request):
     """
     from parishkit.stewardship.reports.census_publication import enabled
 
-    # Sign-in through another verified address (#2343): a deployment
-    # setting, so it is known with or without a current campaign.
-    facts = {
-        "publication": enabled(),
-        "alternate_sign_in": getattr(
-            settings, "STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN", False
-        )
-        is True,
-    }
+    facts = {"publication": enabled()}
     values = current_campaign_values() if display_parish(request) else None
     if not values:
         return facts | dict.fromkeys(

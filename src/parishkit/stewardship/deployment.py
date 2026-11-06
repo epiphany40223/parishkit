@@ -269,15 +269,11 @@ PARISHSOFT_BASE_URL_VARIABLE = "PARISHKIT_STEWARDSHIP_PARISHSOFT_BASE_URL"
 # deployment sends (``mail_catcher.envelope``). Unset (the default) sends to
 # the routed recipients; any value is refused outside the local profile.
 MAIL_REDIRECT_VARIABLE = "PARISHKIT_STEWARDSHIP_MAIL_REDIRECT"
-# Sign-in through another verified address (#2343; admin-portal spec "Sign-in
-# through another verified address"): off by default, because its Google
-# scope (user.emails.read) is sensitive and Google must verify the OAuth app
-# first. "1" (or ``alternate_address_sign_in: true`` in the deployment YAML)
-# on the web service turns it on; only the web reads it. Do NOT turn it on in
-# Production until #2343's slice 3 has shipped (the address_matched alert
-# fix, the End match controls and the Privacy policy paragraph) AND Google
-# has verified the user.emails.read scope.
-ALTERNATE_ADDRESS_SIGN_IN_VARIABLE = "PARISHKIT_STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN"
+# The retired alternate_address_sign_in setting (#2343, removed by #2387):
+# its YAML key and its PARISHKIT_STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN
+# variable are accepted and ignored, so a document or upgrade environment
+# from an earlier release is not refused.
+RETIRED_KEY = "alternate_address_sign_in"
 
 
 @dataclass(frozen=True)
@@ -313,8 +309,6 @@ class DeploymentConfiguration:
     parishsoft_base_url: str | None = None
     # None sends to the routed recipients; see MAIL_REDIRECT_VARIABLE.
     mail_redirect: str | None = None
-    # See ALTERNATE_ADDRESS_SIGN_IN_VARIABLE.
-    alternate_address_sign_in: bool = False
 
 
 def _mapping(value: object, keys: set[str] | frozenset[str], label: str) -> dict:
@@ -504,7 +498,10 @@ def load_deployment(
             "export_download_window_minutes",
             "parishsoft_base_url",
             "mail_redirect",
-            "alternate_address_sign_in",
+            # Retired (#2387): sign-in through another verified address is
+            # gone. A document an earlier release rendered may still hold it,
+            # so it is accepted and ignored rather than refused.
+            RETIRED_KEY,
         },
         "deployment",
     )
@@ -864,14 +861,8 @@ def load_deployment(
             # Redirecting a real deployment's mail would silently withhold it
             # from every Family; only the laptop environment may redirect.
             raise ConfigError("mail_redirect is admitted only in the local profile")
-    alternate = select("ALTERNATE_ADDRESS_SIGN_IN", None)
-    if alternate in (None, ""):
-        # Empty means unset, as for the switches above.
-        alternate = deployment.get("alternate_address_sign_in", False)
-    elif alternate in {"0", "1"}:
-        alternate = alternate == "1"
-    if type(alternate) is not bool:
-        raise ConfigError("alternate_address_sign_in must be true or false (1 or 0)")
+    # The retired setting's variable is accepted and ignored too (#2387).
+    consumed_keys.add("PARISHKIT_STEWARDSHIP_" + RETIRED_KEY.upper())
     supplied_keys = set(explicit) | {
         key for key in env if key.startswith("PARISHKIT_STEWARDSHIP_")
     }
@@ -905,5 +896,4 @@ def load_deployment(
         window,
         base_url,
         redirect,
-        alternate,
     )

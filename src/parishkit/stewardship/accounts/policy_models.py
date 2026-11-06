@@ -134,9 +134,10 @@ class PortalUser(MutableRecord):
     """Google's stable subject owns identity, never a mutable email address.
 
     ``sign_in_email`` is Google's ``email`` claim from the account's latest
-    verified sign-in; ``email`` is the address the account acts as, which
-    differs from it only while a usable verified-address match of the
-    account names it (#2343; data spec "Administration user and policy").
+    verified sign-in; ``email`` is the address the account acts as. Since
+    sign-in through another verified address was removed (#2387), the
+    sign-in always writes both with the same address (data spec
+    "Administration user and policy").
     """
 
     immutable_fields = MutableRecord.immutable_fields + ("google_subject",)
@@ -161,8 +162,10 @@ class PortalUser(MutableRecord):
         return super().save(*args, **kwargs)
 
 
-# How a verified-address match ended (data spec "Verified-address match
-# records"); the match guard re-derives each from the tables.
+# How a verified-address match ended; the match guard re-derives each from
+# the tables. Sign-in through another verified address was removed (#2387):
+# no code reads or writes matches, and this model, its table and its guard
+# stay only until the forward migration that drops them.
 ADDRESS_MATCH_END_REASONS = (
     "sign_in_address_matches",
     "not_confirmed",
@@ -180,9 +183,10 @@ def _trimmed_lower(field):
 class AddressMatch(MutableRecord):
     """One Google account matched to one user's address that Google verified.
 
-    Runtime identity state made only by the person's own second sign-in step
-    (#2343). The SQL guard ``stewardship_address_match_guard_v1`` decides
-    every insert, re-check and end; this model only declares the shape.
+    Retired (#2343, removed by #2387): no code reads or writes a match. The
+    model only declares the frozen table's shape, which the SQL guard
+    ``stewardship_address_match_guard_v1`` still protects, until the forward
+    migration that drops both.
     """
 
     immutable_fields = MutableRecord.immutable_fields + (
@@ -280,7 +284,9 @@ class PolicySecurityEvent(ImmutableRecord):
     match took the address over from another account, that account's
     sign-in address and last sign-in. An Administrator grant names, in
     ``account_email``, the Google account of a verified-address match of its
-    target standing at activation (#2363), and is null otherwise.
+    target standing at activation (#2363), and is null otherwise. Sign-in
+    through another verified address was removed (#2387), so no match exists
+    and these columns stay null until the forward migration drops them.
     """
 
     activation = models.ForeignKey(

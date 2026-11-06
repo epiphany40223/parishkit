@@ -303,8 +303,6 @@ PAGES = {
     "user_timeline": Page("users", _("Timeline"), "users"),
     # Answers only the table's confirmation dialog, with a change's status.
     "user_delete": Page("users", _("Delete user"), "users", linkable=False),
-    # Answers only Edit user's End match dialog with Edit user (#2343).
-    "user_match_end": Page("users", _("End match"), "users", linkable=False),
     # Answers only the leaders table's Import selected and Import all with
     # the review of the chosen ParishSoft Ministry leaders (#952 slice 6).
     "user_leader_import": Page(
@@ -782,8 +780,6 @@ NON_PAGES = frozenset(
         "information_export",
         "integration_status",
         "login",
-        # The second sign-in step of a verified-address check (#2343).
-        "login_addresses",
         "logout",
         "logs_export",
         "limitations_export",

@@ -148,6 +148,24 @@ def test_the_export_download_window_defaults_and_survives_rendering(tmp_path):
     )
 
 
+@pytest.mark.parametrize("value", [True, False, "anything"])
+def test_the_retired_alternate_address_sign_in_is_accepted_and_ignored(tmp_path, value):
+    """Sign-in through another verified address was removed (#2387): a
+    document an earlier release rendered, or an upgrade environment that
+    still names its variable, loads, and nothing renders the setting again."""
+    from parishkit.stewardship.deployment_documents import deployment_document
+
+    path = config_file(tmp_path, {"alternate_address_sign_in": value})
+    configuration = load_deployment(path, environ={})
+    assert not hasattr(configuration, "alternate_address_sign_in")
+    assert (
+        "alternate_address_sign_in"
+        not in (deployment_document(configuration)["deployment"])
+    )
+    name = "PARISHKIT_STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN"
+    assert load_deployment(path, environ={name: "1"}) == configuration
+
+
 @pytest.mark.parametrize("value", [14, 241, 0, -1, True, 60.5, "sixty", [60]])
 def test_an_export_download_window_out_of_bounds_is_refused(tmp_path, value):
     """Startup refuses a window under 15 or over 240 minutes: the accepted

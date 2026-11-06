@@ -91,8 +91,6 @@ LEDGER = {
     "presence": command("status"),
     "presence_count": command("status"),
     "login": permanent(SESSION_CHROME),
-    # The second sign-in step of a verified-address check (#2343).
-    "login_addresses": permanent(SESSION_CHROME),
     "logout": permanent(SESSION_CHROME),
     "session_status": permanent(SESSION_CHROME),
     "session_renew": permanent(SESSION_CHROME),
@@ -542,8 +540,6 @@ LEDGER = {
     "user_new": command("users preview", "users confirm"),
     "user_edit": command("users list", "users preview", "users confirm"),
     "user_delete": command("users preview", "users confirm"),
-    # Edit user's End match (#2343): ends a verified-address match.
-    "user_match_end": command("users list", "users end-match"),
     "user_name_suggestions": command("users preview"),
     # One user's Timeline (#1866): the same summary and lines.
     "user_timeline": command("users timeline"),

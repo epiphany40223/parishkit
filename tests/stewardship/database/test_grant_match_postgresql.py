@@ -15,11 +15,9 @@ migration's DO block refuses the earlier definitions.
 import json
 from dataclasses import asdict
 from pathlib import Path
-from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
-from django.conf import settings
 from django.db import DatabaseError, IntegrityError, connection, transaction
 
 from parishkit.stewardship.accounts.configuration_installation import (
@@ -30,7 +28,6 @@ from parishkit.stewardship.accounts.configuration_requests import (
     record_request,
 )
 from parishkit.stewardship.accounts.policy_models import PolicySecurityEvent
-from parishkit.stewardship.accounts.security_events import open_events
 from parishkit.stewardship.campaigns.domain import SystemMode
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.security_content import render_security_alert
@@ -93,11 +90,6 @@ def raise_to_administrator(store, actor, email=STAFF):
     return PolicySecurityEvent.objects.get(kind="administrator_granted", target=email)
 
 
-def viewer(actor):
-    """The dashboard viewer of one portal user, as open_events reads it."""
-    return SimpleNamespace(identity=actor)
-
-
 def compiled(event, mode, configuration):
     """Both twins' content for one event: (SQL's, Python's)."""
     with work_transaction():
@@ -114,7 +106,8 @@ def compiled(event, mode, configuration):
 
 
 def test_a_grant_names_the_account_of_a_standing_match(routing):
-    """The event, both alert twins and the Home row name the Google account."""
+    """The event and both alert twins name the Google account (the Home row
+    no longer does: #2387 removed it with the rest of the matching)."""
     store, actor, _, _ = routing
     portal, _ = matched(store)
     event = raise_to_administrator(store, actor)
@@ -125,8 +118,6 @@ def test_a_grant_names_the_account_of_a_standing_match(routing):
         sql, python = compiled(event, mode, configuration)
         assert sql == python
         assert f"Target: {STAFF}\n{ROW}Roles before: Staff\n" in sql["text"]
-    row = next(row for row in open_events(viewer(portal.pk)) if row["id"] == event.pk)
-    assert row["account"] == PERSONAL
 
 
 def test_a_grant_without_a_standing_match_is_unchanged(routing):
@@ -144,8 +135,6 @@ def test_a_grant_without_a_standing_match_is_unchanged(routing):
     assert "Google account" not in sql["text"]
     leader = raise_to_administrator(store, actor, "minister@example.org")
     assert leader.account_email is None
-    row = next(row for row in open_events(viewer(portal.pk)) if row["id"] == event.pk)
-    assert row["account"] is None
 
 
 def test_a_removed_users_standing_match_is_not_named_for_a_new_record(routing):
@@ -169,11 +158,9 @@ def test_a_removed_users_standing_match_is_not_named_for_a_new_record(routing):
 
 
 def test_a_standing_but_unusable_match_is_still_named(routing):
-    """With the setting off and the confirmation lapsed the match cannot sign
-    in now, but it stands and signs in again once the setting is back on or
-    it is re-checked: the grant names it, so the Administrators learn of it."""
+    """With the confirmation lapsed the match could not sign in, but it
+    stands: the trigger (frozen migration 0204) still names it."""
     store, actor, _, _ = routing
-    assert settings.STEWARDSHIP_ALTERNATE_ADDRESS_SIGN_IN is False
     _, made = matched(store)
     confirmed_days_ago(made, 31)
     event = raise_to_administrator(store, actor)

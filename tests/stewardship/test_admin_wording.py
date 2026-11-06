@@ -139,9 +139,6 @@ STAFF_MEMBER = re.compile(r"parish staff members?")
 STAFF_MEMBER_PAGES = {
     "accounts/google_account_help.py",
     "accounts/templates/stewardship/denied.html",
-    # The verified-address check's refusal lines on the sign-in page
-    # (#2343): the same reader, who may hold no role.
-    "web/security.py",
 }
 # Code, not text: a lower-case identifier such as a data key
 # (``source["timezone"]``) or a field name.

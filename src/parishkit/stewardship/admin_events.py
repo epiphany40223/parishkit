@@ -41,7 +41,6 @@ class EventsList(ReadModel):
     ``security`` lists the security events still on the session
     Administrator's dashboard, newest first: ``id``, ``kind``, ``name``
     (the page's words), ``target`` (the address or domain the page names),
-    ``account`` (an Administrator grant's matched Google account, or None),
     ``before`` and ``after`` (role names), ``key_before`` and ``key_after``
     (key IDs, for a replaced backup key only), ``created_at`` and
     ``actor_id``. ``critical`` is the banner: ``count``, ``all_ended``,
@@ -77,9 +76,6 @@ def security_model(row):
         "kind": row["kind"],
         "name": str(row["label"]),
         "target": row["target"],
-        # The Google account an Administrator grant's address signs in
-        # through by a standing match, as the Home line names it (#2363).
-        "account": row["account"],
         # The page's role names are lazily translated; print them as text.
         "before": [str(role) for role in row["before"]],
         "after": [str(role) for role in row["after"]],

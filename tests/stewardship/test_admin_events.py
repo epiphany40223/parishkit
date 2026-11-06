@@ -35,7 +35,6 @@ ALLOWED = {
     "kind",
     "name",
     "target",
-    "account",
     "before",
     "after",
     "key_before",
@@ -62,7 +61,6 @@ def page_row(**values):
         "kind": "administrator_granted",
         "label": "Administrator added to an exact address",
         "target": "new@example.org",
-        "account": None,
         "before": [],
         "after": ["Administrator"],
         "key_ids": None,
@@ -91,7 +89,6 @@ def test_events_list_is_its_golden_projection():
                 "kind": "administrator_granted",
                 "name": "Administrator added to an exact address",
                 "target": "new@example.org",
-                "account": None,
                 "before": [],
                 "after": ["Administrator"],
                 "key_before": None,
@@ -124,13 +121,6 @@ def test_events_list_is_its_golden_projection():
     assert set(members({**result, "token": token})) == ALLOWED
     for name in ALLOWED - PUBLIC:
         assert FORBIDDEN.search(name) is None, name
-
-
-def test_a_grant_prints_its_matched_google_account():
-    """A grant whose address signs in through a match names that account,
-    as the Home line does (#2363)."""
-    row = admin_events.security_model(page_row(account="person@personal.example"))
-    assert row["account"] == "person@personal.example"
 
 
 def test_a_replaced_key_prints_its_key_ids_and_no_actor():

@@ -192,9 +192,6 @@ EVENTS = tuple(sorted({item.value for item in Action} | {item.value for item in 
 #   audit-only groups (``OPERATIONAL_ONLY_ACTIVITIES``).
 ACTIVITY_TYPES = {
     "sign_in": (
-        "admin_address_checked",
-        "admin_address_match_ended",
-        "admin_address_matched",
         "admin_login",
         "admin_login_denied",
         "admin_login_refused",
@@ -222,7 +219,6 @@ ACTIVITY_TYPES = {
         "roles_applied",
         "user_change_requested",
         "admin_cmd_users_confirm",
-        "admin_cmd_users_end_match",
         "admin_cmd_parish_confirm",
         "admin_cmd_artwork_remove",
         "admin_cmd_branding_preview",
