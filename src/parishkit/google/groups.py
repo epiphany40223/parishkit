@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from typing import Any
 
 from parishkit.google.auth import build_service, execute_google_request
@@ -64,10 +65,16 @@ def get_group_member(
     service: Any,
     group_key: str,
     member_key: str,
+    *,
+    expected_statuses: Collection[int] = (),
 ) -> dict[str, Any]:
-    """Return one group member identified by email, alias, or unique ID."""
+    """Return one group member identified by email, alias, or unique ID.
+
+    ``expected_statuses`` (such as 404 for "not a member") is passed to
+    ``execute_google_request`` so a handled outcome is not logged as a warning.
+    """
     request = service.members().get(groupKey=group_key, memberKey=member_key)
-    return execute_google_request(request)
+    return execute_google_request(request, expected_statuses=expected_statuses)
 
 
 def get_group_posting_permissions(service: Any, group_key: str) -> str | None:
@@ -85,17 +92,22 @@ def insert_group_member(
     group_key: str,
     email: str,
     role: str,
+    *,
+    expected_statuses: Collection[int] = (),
 ) -> None:
     """Add ``email`` to the group with the given ``role``.
 
     ``role`` is a Directory API value such as ``MEMBER``, ``MANAGER``, or
-    ``OWNER``.
+    ``OWNER``. ``expected_statuses`` (such as 409 for "already a member") is
+    logged at debug level instead of as a warning.
     """
     request = service.members().insert(
         groupKey=group_key,
         body={"email": email, "role": role},
     )
-    execute_google_request(request, policy=_WRITE_POLICY)
+    execute_google_request(
+        request, policy=_WRITE_POLICY, expected_statuses=expected_statuses
+    )
 
 
 def update_group_member_role(
