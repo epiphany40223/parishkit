@@ -771,6 +771,41 @@ def member_email_addresses(member: Mapping[str, Any]) -> list[str]:
     return []
 
 
+def is_plain_email_address(address: str) -> bool:
+    """Return whether ``address`` looks like one plain email address.
+
+    This is the shared shape check behind rosters and the sync tools: one
+    ``@``, a dotted domain, and no whitespace, commas, semicolons or angle
+    brackets. It is not full RFC validation; it only keeps obvious
+    non-addresses (such as a comma-joined value) away from output and APIs.
+    """
+    return _PLAIN_EMAIL.fullmatch(address) is not None
+
+
+def member_sync_email_addresses(
+    member: Mapping[str, Any],
+    log: logging.Logger | None = None,
+) -> list[str]:
+    """Return every plain email address of a member, for the sync tools.
+
+    Addresses come from ``member_email_addresses`` (lowercased, de-duplicated,
+    in field order, so the first entry is the member's primary address).
+    Fragments that are not a plain address are dropped and, when ``log`` is
+    given, reported as a warning naming the member DUID so the ParishSoft
+    record can be fixed; sending them to Google or Constant Contact would only
+    fail there (#2389).
+    """
+    addresses = member_email_addresses(member)
+    valid = [address for address in addresses if is_plain_email_address(address)]
+    if log is not None and len(valid) != len(addresses):
+        log.warning(
+            "Skipping invalid ParishSoft email address(es) for member DUID %s: %s",
+            member.get("memberDUID"),
+            ", ".join(address for address in addresses if address not in valid),
+        )
+    return valid
+
+
 def split_email_addresses(value: str | Sequence[str]) -> list[str]:
     """Split, lowercase, de-duplicate, and drop blank email fragments.
 
@@ -1990,7 +2025,7 @@ def get_member_public_emails(member: dict[str, Any]) -> list[str]:
     """
     if not member.get("family_PublishEMail"):
         return []
-    return [a for a in member_email_addresses(member) if _PLAIN_EMAIL.fullmatch(a)]
+    return [a for a in member_email_addresses(member) if is_plain_email_address(a)]
 
 
 def get_member_preferred_first(member: dict[str, Any]) -> str:
