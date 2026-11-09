@@ -213,6 +213,114 @@ def test_a_leaders_export_is_the_queue_view_in_their_scope(response_service, goo
         assert export(browser, state="any")[0].status_code == 403
 
 
+def every_stage(browser, *, format):
+    """Every request of the reader's Ministries, whatever its stage (#2406):
+    exactly the fields My review work's download posts (#2405)."""
+    fields = {"stage": "all", "format": format, "browser_timezone": "UTC"}
+    return search(browser, reverse(EXPORT), fields)
+
+
+def workbook(body):
+    """An XLSX download's table rows as dicts by heading, and its Report
+    information labels."""
+    book = load_workbook(io.BytesIO(body))
+    heading, *lines = book["Ministry requests"].iter_rows(values_only=True)
+    details = [row[0] for row in book["Report information"].iter_rows(values_only=True)]
+    return [dict(zip(heading, line, strict=True)) for line in lines], details
+
+
+# The report details only Staff's and Administrators' files keep (#2406).
+AUDIT_DETAILS = {
+    "Display time zone",
+    "Age reference date",
+    "Matching results",
+    "Filters and sort",
+    "Privacy",
+    "Contacts",
+    "Addresses",
+    "Text representation",
+}
+
+
+def test_a_leaders_every_stage_download_is_lean_and_in_scope(
+    response_service, google, monkeypatch
+):
+    """A leader of Choir (4) and Food pantry (9) downloads every request of
+    their Ministries, at every stage, each with its Stage and Decision, and
+    a report information sheet without the audit details Staff keep
+    (Administrator decision, 2026-11-09, #2406); their PDF is drawn from
+    the same lean document. A leader of Food pantry alone gets nothing of
+    Choir's, and Staff who also lead a Ministry get the full file."""
+    from parishkit.stewardship.reports import ministry_followup_exports
+
+    rendered = []
+    render = ministry_followup_exports.render_information
+
+    def recording(document, output, *, format):
+        """Keep each rendered document and its format, then render it."""
+        rendered.append((format, document))
+        return render(document, output, format=format)
+
+    monkeypatch.setattr(ministry_followup_exports, "render_information", recording)
+    harness = setup(response_service)
+    join, leave = requests()
+    decide(harness, actor(harness, {"staff"}, ()), "ignore", leave)
+    pantry, *_ = leader(harness, google)
+    google[0]["sub"] = "synthetic-leader-4-9"
+    both, _ = signed_in_as(
+        harness, google, "leader-4-9@example.org", ["ministry_leader"]
+    )
+    google[0]["sub"] = "synthetic-staff"
+    staff, _ = signed_in_as(harness, google, "staff@example.org", ["staff"])
+    # Staff who also lead Food pantry (9) in ParishSoft.
+    google[0]["sub"] = "synthetic-staff-leader"
+    staff_leader, _ = signed_in_as(
+        harness, google, "head@leaders.example", ["staff", "ministry_leader"]
+    )
+    lean = ["Report", "Parish", "Campaign", "Source as of", "Requested at"]
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = every_stage(both, format="xlsx")
+        assert response.status_code == 200
+        rows, details = workbook(body)
+        assert {(row["Ministry"], row["Stage"], row["Decision"]) for row in rows} == {
+            ("Food pantry", "To review", None),
+            ("Choir", "Ignored", "Ignored: Stayed in the Ministry"),
+        }
+        assert details == lean
+        # The worklist's default Stage, To review, has the join only.
+        fields = {"format": "csv", "browser_timezone": "UTC"}
+        _, body = search(both, reverse(EXPORT), fields | {"stage": "to_review"})
+        assert [row["Ministry"] for row in table(body)] == ["Food pantry"]
+        response, body = every_stage(both, format="pdf")
+        assert response.status_code == 200 and body.startswith(b"%PDF-")
+        fmt, document = rendered[-1]
+        assert fmt == "pdf" and [label for label, _ in document.metadata] == lean
+        assert document.format_note is False
+        assert {line[5] for line in document.rows} == {"Food pantry", "Choir"}
+        # The leader of Food pantry alone: nothing of Choir's.
+        rows, details = workbook(every_stage(pantry, format="xlsx")[1])
+        assert [row["Ministry"] for row in rows] == ["Food pantry"]
+        assert details == lean
+        assert b"Choir" not in every_stage(pantry, format="csv")[1]
+        # Staff's file is unchanged: every detail, to audit it.
+        rows, details = workbook(every_stage(staff, format="xlsx")[1])
+        assert {row["Ministry"] for row in rows} == {"Food pantry", "Choir"}
+        assert set(details) >= AUDIT_DETAILS
+        # Staff who also lead a Ministry: the full file, every detail.
+        rows, details = workbook(every_stage(staff_leader, format="xlsx")[1])
+        assert {row["Ministry"] for row in rows} == {"Food pantry", "Choir"}
+        assert set(details) >= AUDIT_DETAILS
+        every_stage(staff_leader, format="pdf")
+        fmt, document = rendered[-1]
+        assert fmt == "pdf" and document.format_note is True
+        assert AUDIT_DETAILS - {"Text representation"} <= dict(document.metadata).keys()
+    assert [context["ministry_duids"] for context in exported()][:3] == [
+        [4, 9],
+        [9],
+        [4, 9],
+    ]
+
+
 def test_an_added_members_entered_phone_reads_as_a_number(response_service, google):
     """The Administrator's pk-local check (#1623): a Member the Family adds
     on the form with a mobile phone asks to join Food pantry (9). The form

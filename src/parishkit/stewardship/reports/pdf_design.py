@@ -799,13 +799,14 @@ def _count(value):
     )
 
 
-def report_record(metadata, *, values=(), stamp_key=None):
+def report_record(metadata, *, values=(), stamp_key=None, format_note=True):
     """The report-information card: count tiles, then the remaining details.
 
     Leaves out what the page frame already shows (parish, campaign, title,
     capture time, privacy and Testing-mode lines) and the internal fields.
     The text-representation note appears only when ``values`` (every cell
-    of the report) or the details need an escape.
+    of the report) or the details need an escape, and ``format_note``
+    allows it (a Ministry leader's Ministry requests file does not, #2406).
     """
     stamp = stamp_key or _stamp_key(metadata)
     skip = HIDDEN_FIELDS | FRAME_FIELDS | {stamp}
@@ -815,7 +816,7 @@ def report_record(metadata, *, values=(), stamp_key=None):
         for label, value in shown
         if not _count(value)
     ]
-    if needs_escape(chain((value for _, value in metadata), values)):
+    if format_note and needs_escape(chain((value for _, value in metadata), values)):
         from .information_rendering import FORMAT_NOTE
 
         fields.append((FORMAT_LABEL, FORMAT_NOTE))
