@@ -1449,7 +1449,7 @@ The menu is grouped by what an Administrator is doing during a campaign, in
 the order a campaign runs: set it up, send it, review the responses and read
 the reports, then the parish data, users and system pages that change rarely.
 The sidebar starts with Home for Administrators (Staff and Ministry leaders
-have Review one at a time, then My review work, first in Review work instead; see the notes below), then
+have My review work, then Review one at a time, first in Review work instead; see the notes below), then
 these groups, each listing the entries the viewer's role may open:
 
 | Group | Entry | URL | Roles | Unavailable when (the reason shown) |
@@ -1470,8 +1470,8 @@ these groups, each listing the entries the viewer's role may open:
 | Mail and Family portal | Report emails | `/admin/mail/report-emails/` | Administrator, Staff (read-only) | No current campaign |
 | Mail and Family portal | Family portal availability | `/admin/mail/family-portal/` | Administrator | Never |
 | Mail and Family portal | Families on the form now | `/admin/mail/presence/` | Administrator | Never |
-| Review work | Review one at a time | `/admin/reports/review/` | Administrator, Staff, Ministry leader (a stream they may open) | Every stream is unavailable |
 | Review work | My review work | `/admin/` | Staff, Ministry leader (not Administrators) | Never |
+| Review work | Review one at a time | `/admin/reports/review/` | Administrator, Staff, Ministry leader (a stream they may open) | Every stream is unavailable |
 | Review work | Census changes | `/admin/reports/census/` | Administrator, Staff | The campaign does not include the census |
 | Review work | Ministry requests | `/admin/reports/ministries/` | Administrator, Staff, Ministry leader | The campaign has no Ministry module |
 | Review work | Pledges | `/admin/reports/financial/pledges/` | Administrator, Staff | The campaign has no financial module |
@@ -1508,8 +1508,8 @@ Notes on the groups:
   [URL scheme](#url-scheme)), so no address changed.
 - For Staff and Ministry leaders who are not Administrators, `/admin/` is
   [My review work](../review-pipeline/spec.md#role-views), and it is the
-  entry of Review work just after the first, [Review one at a time](../review-pipeline/spec.md#wizard-entry-points), instead of a Home entry above the groups (R39
-  finding 4): their landing sits with the worklists it counts. Their trail's
+  first entry of Review work, ahead of [Review one at a time](../review-pipeline/spec.md#wizard-entry-points), instead of a Home entry above the groups (R39
+  finding 4; the Administrator, #2391): their landing sits with the worklists it counts. Their trail's
   root still names it, as for Home. Administrators keep Home at the top and
   have no My review work entry.
 - **Review work** comes before **Reports and queries** (the Administrator,
@@ -1958,7 +1958,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 
 | Page | Name | Reached from | Roles | Current names | Current URL | New URL | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `index` | Home | Menu: Home | Administrator, Staff, Ministry leader | Campaign administration | `/admin/` | (same) | Heading becomes Home; parish and campaign shown as the data line. For Staff and Ministry leaders who are not Administrators the page is [My review work](../review-pipeline/spec.md#role-views) (#1690): its heading, its menu entry (second in Review work, after Review one at a time), the trail's root and a "Return to" it all say My review work. |
+| `index` | Home | Menu: Home | Administrator, Staff, Ministry leader | Campaign administration | `/admin/` | (same) | Heading becomes Home; parish and campaign shown as the data line. For Staff and Ministry leaders who are not Administrators the page is [My review work](../review-pipeline/spec.md#role-views) (#1690): its heading, its menu entry (first in Review work, ahead of Review one at a time, #2391), the trail's root and a "Return to" it all say My review work. |
 | `configuration_request` | Change status | Settings page the change came from (else Home) | Administrator | Configuration change status; Configuration change | `/admin/changes/<request>/` | (same) |  |
 | `campaign_settings` | Campaign settings | Menu: Campaign settings | Administrator | (same) | `/admin/campaign/settings/` | (same) |  |
 | `campaign_create` | Create the campaign | Home | Administrator | (new, #142) | `/admin/campaign/first/` | (same) | Offered on Home only while the deployment has never had a campaign; refused once one exists. Not linked from a change's status page. |
@@ -2011,7 +2011,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `report_export` | _report page name_ export | The report it came from | Administrator, Staff, Ministry leader | Ministry export / Additional-information export / Family-directory export / Family-directory mail-merge export; Report export (breadcrumb) | `/admin/reports/exports/<request>/` | (same) | Object-named (exception). Every export shares it: a latest-data export too (decision 8). A report's export is named after its report page, for example "Campaign Family directory export" or "Ministry requests export" (#520), and its breadcrumb says the same name as its heading. Exports that are not one report's keep their own names (Campaign archive, Campaign comparison download, Timeline export, Chosen-Family test names export). No Admin page opens it: every export button downloads in place and only reads this address passively for the export's state ([downloads happen in place](../ui-conventions/spec.md#downloads-happen-in-place)); it is still the page for the exports only the command line asks for (latest-data, chosen-Family test names) and for an address opened directly. The export error page reads nothing from the database, so it cannot name the export; its link back says "Return to the export status page", and its sentences say to try again, never to return to the status page. Its actions post to `cancellation/`, `retries/` and `download/`. It is a [point-in-time](../operations/spec.md#point-in-time-exports) preparing step, not a history entry: past the download window it answers the fixed "no longer available" page, and no page lists earlier exports. |
 | `report_exact` | Latest-data export | Response dashboard | Administrator, Staff | Queued participation export; Exact export | `/admin/reports/exports/<request>/` (the shared export page) | (same) | Decision 8: folded into the shared export page; it keeps its own heading, and its trail names it. Its old addresses (`exact-exports/<request>/` and its actions) are gone (#864). Since #1537 it is requested only with `export exact create`: the Response dashboard offers the export of the chart shown. |
 | `financial_report` | Financial stewardship | Menu: Financial stewardship | Administrator, Staff | Financial stewardship detail; Financial report | `/admin/reports/financial/` | (same) |  |
-| `review_wizard` | Review one at a time | Menu: Review one at a time | Administrator, Staff, Ministry leader | (new, [#2123](https://github.com/epiphany40223/parishkit/issues/2123)) | `/admin/reports/review/` | (same) | The [review wizard](../review-pipeline/spec.md#review-wizard)'s start page, the first entry of Review work while any stream's page is offered; Start and Discard post to it. |
+| `review_wizard` | Review one at a time | Menu: Review one at a time | Administrator, Staff, Ministry leader | (new, [#2123](https://github.com/epiphany40223/parishkit/issues/2123)) | `/admin/reports/review/` | (same) | The [review wizard](../review-pipeline/spec.md#review-wizard)'s start page, an entry of Review work while any stream's page is offered (the first for Administrators; for Staff and Ministry leaders the second, after My review work, [#2391](https://github.com/epiphany40223/parishkit/issues/2391)); Start and Discard post to it. |
 | `review_wizard_page` | _stream and progress_ | Review one at a time | Administrator, Staff, Ministry leader | (new, [#2123](https://github.com/epiphany40223/parishkit/issues/2123)) | `/admin/reports/review/<position>/?run=<run>` | (same) | Object-named (exception): its heading is the Family or Member, its title the stream and progress. One page of a [review wizard run](../review-pipeline/spec.md#wizard-pages); Previous, Next and Finish post to it. |
 | `pledges_to_enter` | Pledges | Menu: Pledges | Administrator, Staff | (new, [#1686](https://github.com/epiphany40223/parishkit/issues/1686)) | (none) | `/admin/reports/financial/pledges/` | The financial stream's review worklist and manual report ([Pledges](../reports/spec.md#pledges)); its decisions post to the page itself, and its CSV/XLSX/PDF download (`pledges/exports/`) is a non-page action. |
 | `limitations_report` | Limitations | Menu: Limitations | Administrator, Staff | Talents and limitations | `/admin/reports/limitations/` | (same) | Renamed when talents were retired (#970); the old address is gone. Its CSV/XLSX/PDF download (`limitations/exports/`) is a non-page action. |

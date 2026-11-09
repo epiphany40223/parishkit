@@ -430,6 +430,15 @@ def test_my_review_work_is_the_first_entry_of_review_work():
     assert admin_context._home_in_review(sections, "My review work", False)
     assert sections[0]["current"] is False
     assert sections[0]["items"][0]["current"] is None
+    # It goes ahead of Review one at a time too (the Administrator, #2391).
+    sections = _sections("review")
+    sections[0]["items"] = [{"name": "review_wizard"}, {"name": "ministry_report"}]
+    assert admin_context._home_in_review(sections, "My review work", False)
+    assert [item["name"] for item in sections[0]["items"]] == [
+        "index",
+        "review_wizard",
+        "ministry_report",
+    ]
     # With no Review work group the top entry stays (nothing is placed).
     sections = _sections("reports")
     assert not admin_context._home_in_review(sections, "My review work", True)

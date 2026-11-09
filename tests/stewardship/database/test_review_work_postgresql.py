@@ -362,11 +362,11 @@ def test_staff_land_on_my_review_work_with_linked_counts(response_service, googl
     assert response.status_code == 200
     assert b"<h1>My review work</h1>" in body
     # One name: the menu's entry says what the heading says, and it is the
-    # first entry of Review work after Review one at a time (#2123), with no
+    # first entry of Review work, ahead of Review one at a time (#2391), with no
     # Home entry above the groups (R39 finding 4).
     group = re.search(rb'data-menu-group="review".*?</ul>', body, re.S).group(0)
     first, second = re.findall(rb"<li><a [^>]*>([^<]*)</a>", group)[:2]
-    assert (first, second) == (b"Review one at a time", b"My review work")
+    assert (first, second) == (b"My review work", b"Review one at a time")
     assert b'aria-current="page">My review work</a>' in group
     assert b">Home</a>" not in body
     # Home's own panels are gone (decision 8: nothing else is above it).

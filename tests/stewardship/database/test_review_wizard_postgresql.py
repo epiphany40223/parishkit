@@ -300,11 +300,12 @@ def test_my_review_work_card_leads_to_the_wizard(response_service, google):
         card = page.split("data-review-wizard-card")[1].split("</section>")[0]
         assert f'<a class="button" href="{START}"' in card
         assert ">Review one at a time</a>" in card and "Continue" not in card
-        # The menu lists Review one at a time first in Review work.
+        # For Staff the menu lists My review work, then Review one at a
+        # time, first in Review work (#2391).
         group = re.search(r'data-menu-group="review".*?</ul>', page, re.S).group(0)
         assert re.findall(r"<li><a [^>]*>([^<]*)</a>", group)[:2] == [
-            "Review one at a time",
             "My review work",
+            "Review one at a time",
         ]
 
 

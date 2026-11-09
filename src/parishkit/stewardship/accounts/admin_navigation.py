@@ -542,8 +542,9 @@ MENU = (
     Entry("family_portal", _ADMIN),
     Entry("presence", _ADMIN),
     # Review work, in the Administrator's order (R39 finding 1). Review one
-    # at a time (#2123) comes first, ahead of My review work, offered while
-    # any stream's page is.
+    # at a time (#2123) comes first, offered while any stream's page is; for
+    # Staff and Ministry leaders My review work goes ahead of it (#2391,
+    # ``admin_context._home_in_review``).
     # Its own reason check is only the access gate's first look (no
     # campaign); the menu greys it as its streams are greyed (``menu``).
     Entry("review_wizard", None, _campaign, any_of=REVIEW_STREAMS),

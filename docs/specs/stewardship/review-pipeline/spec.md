@@ -2674,8 +2674,10 @@ earlier unfinished runs in the campaign, and finished ones stay:
 
 ### Wizard entry points
 
-- **Menu.** **Review one at a time** is the **first** entry of the Review
-  work menu group, ahead of My review work and the five streams, shown
+- **Menu.** **Review one at a time** is an entry of the Review work menu
+  group, ahead of the five streams: the first for Administrators, and the
+  second for Staff and Ministry leaders, after their My review work
+  ([#2391](https://github.com/epiphany40223/parishkit/issues/2391)). It is shown
   while at least one stream is offered (a new `Entry` whose availability is any of the five pages'),
   and named in the trail and every "Return to".
 - **From each table.** Each review worklist's selection bar gets
