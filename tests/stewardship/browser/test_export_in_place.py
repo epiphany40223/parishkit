@@ -52,7 +52,7 @@ EXPORTS = [
     ("/census-changes", "Export these changes", "Export CSV", False),
     ("/followup-queue", "Export these requests", "Export XLSX", False),
     # A Ministry leader's My review work, Step 1 (#2405).
-    (LEADER_PATH, "Download the requests", "Export PDF", False),
+    (LEADER_PATH, "Download the requests", "Download PDF", False),
     (PLEDGES, "Export this list", "Export XLSX", False),
     ("/logs", "Export these log entries", "Export CSV", False),
 ]

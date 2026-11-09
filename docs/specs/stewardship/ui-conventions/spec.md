@@ -6239,8 +6239,11 @@ so they read as secondary actions, and they wrap onto a second line on a
 phone rather than widening the page. **A download step** is the one
 exception: on a page whose step is the download itself, the row is drawn
 at the large button size, with one line above it saying what the file
-holds (Administrator, 2026-11-09,
-[#2405](https://github.com/epiphany40223/parishkit/issues/2405); today
+holds, and its buttons say Download rather than Export, as the step's
+heading does: "Download spreadsheet (XLSX)" and "Download PDF" (the shared
+row's `download` option) (Administrator, 2026-11-09,
+[#2405](https://github.com/epiphany40223/parishkit/issues/2405),
+[#2411](https://github.com/epiphany40223/parishkit/issues/2411); today
 [a Ministry leader's My review work](../admin-portal/spec.md#a-ministry-leaders-my-review-work)).
 A format the download cannot
 take right now (Ministry requests' PDF above its row limit) is shown

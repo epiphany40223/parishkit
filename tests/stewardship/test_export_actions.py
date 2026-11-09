@@ -185,6 +185,37 @@ def test_the_row_puts_xlsx_first_and_labels_each_format():
     assert 'id="log-export-buttons"' in html and "data-table-sync" not in html
 
 
+def test_a_download_step_says_download():
+    """``download`` names a download step's buttons as its heading does,
+    "Download spreadsheet (XLSX)" and "Download PDF" (#2411), keeping
+    every other part of the row; any other row still says Export, and a
+    download step offers only those two formats."""
+    html = render('"xlsx" "pdf" name="leader" label="Download" download=True')
+    assert buttons(html) == [
+        ("xlsx", "Download spreadsheet (XLSX)", False),
+        ("pdf", "Download PDF", False),
+    ]
+    assert "Export" not in html
+    plain = render('"xlsx" "pdf" name="leader" label="Download"')
+    assert re.sub(r"Export (XLSX|PDF)", "", plain) == re.sub(
+        r"Download (spreadsheet \(XLSX\)|PDF)", "", html
+    )
+    with pytest.raises(TemplateSyntaxError):
+        render('"csv" "pdf" name="leader" download=True')
+
+
+def test_only_the_leaders_step_says_download():
+    """The download option is a download step's alone (ui-conventions
+    "Downloaded files", Export actions): every other export row says
+    Export."""
+    using = sorted(
+        path.name
+        for path in TEMPLATES.rglob("*.html")
+        if "download=True" in COMMENT.sub("", path.read_text())
+    )
+    assert using == sorted(DOWNLOAD_STEPS)
+
+
 def test_a_document_keeps_its_own_order():
     """The Campaign comparison's PDF summary is a document: PDF stays first."""
     html = render('"pdf" "xlsx" "csv" name="comparison" own_order=True')

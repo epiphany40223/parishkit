@@ -608,14 +608,17 @@ def test_a_leaders_landing_downloads_every_stage_and_stays_live(
         response, body = get(browser, "/admin/")
         assert response.status_code == 200
         assert b'value="pdf" disabled data-server-disabled' in body
-        assert b"The PDF is limited to 0 requests: choose XLSX." in body
+        assert (
+            b"The PDF is limited to 0 requests: choose Download spreadsheet (XLSX)."
+        ) in body
         response, refused = search(
             browser,
             reverse("admin:ministry_followup_export"),
             fields | {"format": "pdf", "browser_timezone": "UTC"},
         )
     assert response.status_code == 400 and not refused.startswith(b"%PDF")
-    assert b"Choose XLSX." in refused and b"narrow the filters" not in refused
+    assert b"Choose Download spreadsheet (XLSX)." in refused
+    assert b"narrow the filters" not in refused
 
 
 def test_a_leader_of_no_ministry_in_the_campaign_is_told_plainly(

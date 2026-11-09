@@ -153,12 +153,12 @@ PDF_TOO_LARGE_FIX = _("Choose CSV or XLSX, or narrow the filters.")
 # Step 1 of a Ministry leader's My review work posts only these (#2405, the
 # #2406 contract), while Review in bulk's form always adds its filters and
 # sort (``WorklistQuery.form_values``). That page offers XLSX and PDF and
-# has no filters, so its refusal names only XLSX, as its own line does
-# (review-leader-steps.html).
+# has no filters, so its refusal names only its spreadsheet button, as its
+# own line does (review-leader-steps.html, #2411).
 LANDING_FIELDS = frozenset(
     {"csrfmiddlewaretoken", "stage", "format", "browser_timezone"}
 )
-LANDING_FIX = _("Choose XLSX.")
+LANDING_FIX = _("Choose Download spreadsheet (XLSX).")
 
 
 class PdfTooLarge(ValueError):

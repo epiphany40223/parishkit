@@ -9,7 +9,7 @@ from django.urls import reverse
 from django.utils.html import conditional_escape, format_html, strip_tags
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
-from django.utils.translation import ngettext
+from django.utils.translation import gettext_lazy, ngettext
 
 from parishkit.stewardship.accounts import admin_navigation, google_account_help, stages
 from parishkit.stewardship.campaigns import single_campaign
@@ -169,6 +169,15 @@ def step_tip_side(number, total):
     )
 
 
+# A download step's button names (ui-conventions "Downloaded files", Export
+# actions, "A download step"; #2411): Download, as the step's heading says,
+# rather than the row's usual "Export XLSX" and "Export PDF".
+DOWNLOAD_LABELS = {
+    "xlsx": gettext_lazy("Download spreadsheet (XLSX)"),
+    "pdf": gettext_lazy("Download PDF"),
+}
+
+
 @register.inclusion_tag("stewardship/components/export-actions.html")
 def export_actions(
     *formats,
@@ -184,6 +193,7 @@ def export_actions(
     zone_value=None,
     sync=False,
     reserve=True,
+    download=False,
 ):
     """One export's row of small "Export XLSX" … buttons (#1679, #1190).
 
@@ -221,12 +231,19 @@ def export_actions(
     drawn with every button unavailable that nothing on the page enables
     again (a Ministry leader's Step 1 while the menu greys Review in bulk
     out, #2405): no export can start, so no note or refusal can come, and
-    the reason that follows sits right under the buttons.
+    the reason that follows sits right under the buttons. ``download``
+    names the buttons for a download step (``DOWNLOAD_LABELS``: "Download
+    spreadsheet (XLSX)", "Download PDF"; a Ministry leader's Step 1, #2411)
+    instead of "Export …"; it offers only the formats named there.
     """
     if not formats or len(set(formats)) != len(formats):
         raise template.TemplateSyntaxError("export_actions: name each format once.")
     if disabled and disabled not in formats:
         raise template.TemplateSyntaxError("export_actions: unknown disabled format.")
+    if download and not set(formats) <= set(DOWNLOAD_LABELS):
+        raise template.TemplateSyntaxError(
+            "export_actions: a download step names only XLSX and PDF."
+        )
     # A format's button label; any other is its value in capitals.
     labels = {"jsonl": _("JSON Lines")}
     ordered = (
@@ -241,6 +258,8 @@ def export_actions(
             {
                 "value": value,
                 "label": labels.get(value, value.upper()),
+                # The button's whole name when it is not "Export <label>".
+                "text": DOWNLOAD_LABELS[value] if download else "",
                 "enabled": bool(enabled) and value != disabled,
             }
             for value in ordered

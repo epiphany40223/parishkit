@@ -12,10 +12,12 @@
     (steps.export_fields: stage=all alone, with the row's format and
     browser_timezone, the #2406 contract), drawn by the shared export row,
     so it downloads in place with the row's reserved status line; ui-v1.css
-    draws its buttons at the large size. Its one line says what the file
-    holds, the ui-conventions exception for a download step ("Downloaded
-    files", Export actions). While the file would hold more requests than
-    one PDF may, Export PDF is unavailable and the line below the row says
+    draws its buttons at the large size, and the row's download option
+    names them "Download spreadsheet (XLSX)" and "Download PDF" (#2411).
+    Its one line says what the file holds, the ui-conventions exception for
+    a download step ("Downloaded files", Export actions). While the file
+    would hold more requests than one PDF may, Download PDF is unavailable
+    and the line below the row says
     why, as on Review in bulk. While the menu greys Review in bulk out,
     both buttons are unavailable and the menu's reason sits right under
     them: no export can start, so the row reserves no status line.
@@ -26,8 +28,8 @@
 <h2 id="leader-step-1-heading" class="leader-step-heading" aria-label="{% blocktranslate with title=step_one %}Step 1: {{ title }}{% endblocktranslate %}"><span class="leader-step-badge">{% translate "Step 1" %}</span> <span class="leader-step-title">{{ step_one }}</span></h2>
 <p class="leader-step-help">{% translate "Download a spreadsheet (XLSX) or a PDF of every request for the Ministries you lead. Both hold the same information." %}</p>
 <form id="leader-export" class="leader-export" method="post" action="{% url 'admin:ministry_followup_export' %}">{% csrf_token %}{% for key, value in steps.export_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
-{% if not steps.bulk.url %}{% export_actions "xlsx" "pdf" name="leader" label=step_one enabled=False describedby="leader-export-reason" reserve=False %}{% elif review.pdf_limit is not None %}{% export_actions "xlsx" "pdf" name="leader" label=step_one disabled="pdf" describedby="leader-export-pdf-limit" %}{% else %}{% export_actions "xlsx" "pdf" name="leader" label=step_one %}{% endif %}</form>
-{% if not steps.bulk.url %}<p class="help" id="leader-export-reason">{{ steps.bulk.reason }}</p>{% elif review.pdf_limit is not None %}<p class="help" id="leader-export-pdf-limit">{% blocktranslate trimmed with limit=review.pdf_limit|number %}The PDF is limited to {{ limit }} requests: choose XLSX.{% endblocktranslate %}</p>{% endif %}
+{% if not steps.bulk.url %}{% export_actions "xlsx" "pdf" name="leader" label=step_one download=True enabled=False describedby="leader-export-reason" reserve=False %}{% elif review.pdf_limit is not None %}{% export_actions "xlsx" "pdf" name="leader" label=step_one download=True disabled="pdf" describedby="leader-export-pdf-limit" %}{% else %}{% export_actions "xlsx" "pdf" name="leader" label=step_one download=True %}{% endif %}</form>
+{% if not steps.bulk.url %}<p class="help" id="leader-export-reason">{{ steps.bulk.reason }}</p>{% elif review.pdf_limit is not None %}<p class="help" id="leader-export-pdf-limit">{% blocktranslate trimmed with limit=review.pdf_limit|number %}The PDF is limited to {{ limit }} requests: choose Download spreadsheet (XLSX).{% endblocktranslate %}</p>{% endif %}
 </section>
 <section class="panel leader-step" aria-labelledby="leader-step-2-heading" data-leader-step="2">
 <h2 id="leader-step-2-heading" class="leader-step-heading" aria-label="{% blocktranslate with title=step_two %}Step 2: {{ title }}{% endblocktranslate %}"><span class="leader-step-badge">{% translate "Step 2" %}</span> <span class="leader-step-title">{{ step_two }}</span></h2>

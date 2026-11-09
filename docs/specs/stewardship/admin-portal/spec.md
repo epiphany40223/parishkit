@@ -1959,8 +1959,11 @@ shows once and the heading reads "Step 1: Download the requests":
 1. **Download the requests.** One line, "Download a spreadsheet (XLSX) or
    a PDF of every request for the Ministries you lead. Both hold the same
    information.", then the shared export row with XLSX and PDF, drawn at
-   the large button size (the download step exception of
-   [export actions](../ui-conventions/spec.md#downloaded-files)). The row
+   the large button size and named **Download spreadsheet (XLSX)** and
+   **Download PDF**, matching the step's heading (the download step
+   exception of
+   [export actions](../ui-conventions/spec.md#downloaded-files);
+   [#2411](https://github.com/epiphany40223/parishkit/issues/2411)). The row
    posts Review in bulk's own download, Export these requests
    (`admin:ministry_followup_export`), posting only the CSRF token,
    `stage=all`, the button's `format` and the browser's time zone (the
@@ -1970,9 +1973,9 @@ shows once and the heading reads "Step 1: Download the requests":
    [#2406](https://github.com/epiphany40223/parishkit/issues/2406)). It
    downloads in place
    ([downloads happen in place](../ui-conventions/spec.md#downloads-happen-in-place)).
-   While the file would hold more requests than one PDF may, Export PDF
+   While the file would hold more requests than one PDF may, Download PDF
    is unavailable and the line below the row says why in this page's
-   words, "The PDF is limited to 1,000 requests: choose XLSX.", as Review
+   words, "The PDF is limited to 1,000 requests: choose Download spreadsheet (XLSX).", as Review
    in bulk does with its own; a PDF asked for anyway (a stale page) is
    refused with the same fix and a way back to My review work. While the
    menu greys Review in bulk out, both buttons are unavailable, with the

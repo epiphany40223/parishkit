@@ -182,10 +182,12 @@ def test_step_one_posts_review_in_bulks_export_at_every_stage():
     ]
     assert '<input type="hidden" name="stage" value="all">' in form
     assert '<input type="hidden" name="browser_timezone" data-browser-zone>' in form
+    # A download step's buttons say Download, as its heading does (#2411).
     assert re.findall(r'name="format" value="(\w+)">([^<]+)<', form) == [
-        ("xlsx", "Export XLSX"),
-        ("pdf", "Export PDF"),
+        ("xlsx", "Download spreadsheet (XLSX)"),
+        ("pdf", "Download PDF"),
     ]
+    assert "Export" not in form
     assert 'role="group" aria-label="Download the requests"' in form
     for fmt in ("xlsx", "pdf"):
         posted = {
@@ -326,7 +328,7 @@ def test_a_file_too_large_for_a_pdf_leaves_only_xlsx():
     assert form.count('aria-describedby="leader-export-pdf-limit"') == 2
     assert (
         '</form>\n<p class="help" id="leader-export-pdf-limit">The PDF is limited '
-        "to 1,000 requests: choose XLSX.</p>"
+        "to 1,000 requests: choose Download spreadsheet (XLSX).</p>"
     ) in body
     assert "reserve-lines-wrap export-status" in form
     plain = page()
@@ -440,7 +442,7 @@ def test_a_pdf_too_large_from_step_one_is_refused_in_its_own_words(monkeypatch):
     refusal = response.stewardship_refusal
     assert response.status_code == 400
     assert str(refusal.message) == "The PDF is limited to 1 requests."
-    assert str(refusal.fix) == "Choose XLSX."
+    assert str(refusal.fix) == "Choose Download spreadsheet (XLSX)."
     assert (refusal.link, str(refusal.link_label)) == (
         "/admin/",
         "Return to My review work",

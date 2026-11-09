@@ -163,7 +163,7 @@ def test_a_leaders_page_is_two_steps(page, component_origin, axe_source, width):
             page.get_by_role("heading", level=2, name=name, exact=True)
         ).to_be_visible()
     downloads = page.get_by_role("group", name="Download the requests")
-    for name in ("Export XLSX", "Export PDF"):
+    for name in ("Download spreadsheet (XLSX)", "Download PDF"):
         button = downloads.get_by_role("button", name=name, exact=True)
         expect(button).to_be_enabled()
         # Large: at least the portal's 44px button height.
@@ -203,7 +203,7 @@ def test_a_leaders_page_does_not_move_on_hover_or_focus(page, component_origin):
     for control in (
         _choice(page, "one").get_by_role("link"),
         _choice(page, "bulk").get_by_role("link"),
-        page.get_by_role("button", name="Export PDF", exact=True),
+        page.get_by_role("button", name="Download PDF", exact=True),
     ):
         control.hover()
         assert page.evaluate(LEADER_BOXES) == before
@@ -253,7 +253,7 @@ def test_greyed_pages_leave_every_button_unavailable_with_a_reason(
         reason = page.locator(f"#leader-choice-{key}-reason")
         expect(reason).not_to_be_empty()
         expect(button).to_have_accessible_description(reason.inner_text())
-    for name in ("Export XLSX", "Export PDF"):
+    for name in ("Download spreadsheet (XLSX)", "Download PDF"):
         expect(page.get_by_role("button", name=name, exact=True)).to_be_disabled()
     expect(page.locator("#leader-export-reason")).not_to_be_empty()
     gap = page.evaluate(GAP)
@@ -268,17 +268,21 @@ def test_greyed_pages_leave_every_button_unavailable_with_a_reason(
 def test_a_file_too_large_for_a_pdf_offers_only_xlsx(
     page, component_origin, axe_source, width
 ):
-    """While Step 1's file would hold more requests than one PDF may, Export
+    """While Step 1's file would hold more requests than one PDF may, Download
     PDF is unavailable, described by the line below the row in this page's
-    words; Export XLSX stays."""
+    words; Download spreadsheet (XLSX) stays (#2411)."""
     page.set_viewport_size({"width": width, "height": 768})
     page.goto(component_origin + LEADER_LIMIT_PATH)
     line = page.locator("#leader-export-pdf-limit")
-    expect(line).to_have_text("The PDF is limited to 1,000 requests: choose XLSX.")
-    pdf = page.get_by_role("button", name="Export PDF", exact=True)
+    expect(line).to_have_text(
+        "The PDF is limited to 1,000 requests: choose Download spreadsheet (XLSX)."
+    )
+    pdf = page.get_by_role("button", name="Download PDF", exact=True)
     expect(pdf).to_be_disabled()
     expect(pdf).to_have_accessible_description(line.inner_text())
-    expect(page.get_by_role("button", name="Export XLSX", exact=True)).to_be_enabled()
+    expect(
+        page.get_by_role("button", name="Download spreadsheet (XLSX)", exact=True)
+    ).to_be_enabled()
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
