@@ -7,7 +7,11 @@
   pledge (review-pledge-section.html), answers
   (review-answers-section.html) or ministry (review-ministry-section.html,
   with Ministry requests' worklist of its rows as the hub's Member tab
-  passes it). Only the run's matched items are drawn;
+  passes it, after the Member's Contact details: their email and phones
+  through the shared contact component, as Ministry requests' Member cell
+  shows them, or a line saying none is available, or, in a run of Members
+  no longer in ParishSoft, that the Member is no longer there, #2398; the
+  hub, which passes no contact, draws none). Only the run's matched items are drawn;
   one quiet line, plain text with no control, then names how many of the
   subject's other items in the stream the run's filters leave out. The
   stream's row dialogs follow (hub-dialogs.html, posting to the stream's
@@ -17,6 +21,8 @@
 {% else %}{% for part in section.parts %}{% if part.kind == "census" %}{% include "stewardship/components/review-census-section.html" with subject=part.subject prefix=part.prefix %}
 {% elif part.kind == "pledge" %}{% include "stewardship/components/review-pledge-section.html" with financial=part.financial pledge=part.financial.pledge prefix=part.prefix %}
 {% elif part.kind == "answers" %}{% include "stewardship/components/review-answers-section.html" with rows=part.rows actions_column=part.actions_column prefix=part.prefix %}
-{% elif part.kind == "ministry" %}{% include "stewardship/components/review-ministry-section.html" with rows=part.rows w=part.worklist prefix=part.prefix %}
+{% elif part.kind == "ministry" %}{% if part.contact is not None %}<section class="review-contact" aria-labelledby="{{ part.prefix }}-contact-heading" data-review-contact><h2 id="{{ part.prefix }}-contact-heading">{% translate "Contact details" %}</h2>
+<p>{% if part.contact %}{% include "stewardship/components/member-contact.html" with contact=part.contact %}{% elif part.gone %}{% translate "This Member is no longer in ParishSoft, so no email or phone number is shown." %}{% else %}{% translate "No email or phone number is available for this Member." %}{% endif %}</p></section>
+{% endif %}{% include "stewardship/components/review-ministry-section.html" with rows=part.rows w=part.worklist prefix=part.prefix %}
 {% endif %}{% endfor %}{% if section.filtered_out %}<p class="help" data-review-filtered-out>{% if member_page %}{% blocktranslate count number=section.filtered_out trimmed %}{{ number }} more in this stream for this Member is filtered out.{% plural %}{{ number }} more in this stream for this Member are filtered out.{% endblocktranslate %}{% else %}{% blocktranslate count number=section.filtered_out trimmed %}{{ number }} more in this stream for this Family is filtered out.{% plural %}{{ number }} more in this stream for this Family are filtered out.{% endblocktranslate %}{% endif %}</p>
 {% endif %}{% for w in section.dialogs %}{% include "stewardship/hub-dialogs.html" %}{% endfor %}{% endif %}

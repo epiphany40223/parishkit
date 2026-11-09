@@ -100,15 +100,33 @@ def test_census_member_and_new_member_pages(response_service, google):
 
 
 # Each Member page's statements on the web login (see the census test). The
-# census page reads its reviewers' Names once (#2259).
-STATEMENTS = {"census": 77, "ministry": 84, "limitations": 75}
+# census page reads its reviewers' Names once (#2259); the Ministry page its
+# Member's email and phones once (#2398).
+STATEMENTS = {"census": 77, "ministry": 85, "limitations": 75}
+# The harness Member 3's Contact details on a Ministry page (#2398): the
+# unpublished email and the published home phone, as mail and call links.
+CONTACT = (
+    '<h2 id="review-ministry-contact-heading">Contact details</h2>\n<p>'
+    '<span class="contact-line contact-email"><span class="contact-kind">Email:'
+    '</span> <a href="mailto:valid@example.org">valid@example.org</a></span>'
+    '<span class="contact-line"><span class="contact-kind">Home:</span> '
+    '<a href="tel:+12025550123"><span class="nowrap">+1 (202) 555-0123</span></a>'
+    "</span></p>"
+)
+
+
+def contact(drawn):
+    """A Ministry page's Contact details block (#2398)."""
+    return drawn.split("data-review-contact>")[1].split("</section>")[0]
 
 
 def test_a_ministry_page_for_staff_and_for_a_leader(response_service, google):
     """Member 3 asked to join Food pantry (9) and leave Ministry 4. Staff
     with a Join run see the join, the leave counted as filtered out; the
     leader of Food pantry sees the join alone, with nothing counted, and
-    Member's names in plain text."""
+    Member's names in plain text. Both see the Member's Contact details
+    above the requests (#2398): on this standing request the leader too
+    gets the unpublished email."""
     from parishkit.stewardship.workflows.models import MinistryRequest
 
     from .test_ministry_exports_postgresql import leader
@@ -148,6 +166,7 @@ def test_a_ministry_page_for_staff_and_for_a_leader(response_service, google):
         assert re.search(
             r'data-review-family>Family: <a href="/admin/reports/families/', markup
         )
+        assert contact(drawn) == CONTACT
     assert statements(browser, run)[1] == STATEMENTS["ministry"]
     browser, *_ = leader(harness, google)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -160,6 +179,71 @@ def test_a_ministry_page_for_staff_and_for_a_leader(response_service, google):
     # A leader cannot open the Timeline: every name is plain text.
     assert "/admin/reports/families/" not in markup
     assert "<a " not in heading(markup)
+    assert contact(drawn) == CONTACT
+
+
+def test_a_ministry_pages_contact_details_follow_the_request_pages_rule(
+    response_service, google
+):
+    """ParishSoft lists Member 3 in Food pantry (9), and the Family then
+    checks the physical-limitations box for them, so they leave 4 and 9.
+    That leave is not consent (#1591): on Review one at a time's page for
+    Member 3, Food pantry's leader gets the email Not published and the
+    published home phone, as Ministry requests' Member cell and the request
+    page show it (#2398); Staff still get the email."""
+    from parishkit.stewardship.workflows.models import MinistryRequest
+
+    from .test_ministry_exports_postgresql import leader
+    from .test_ministry_reports_postgresql import prepare, setup
+    from .test_ministry_responses_postgresql import ministry_source
+    from .test_source_families_postgresql import promote
+
+    harness = setup(response_service)
+    data = ministry_source()
+    data.ministry_type_memberships[9]["membership"] = [
+        {
+            "memberId": 3,
+            "ministryRoleId": 1,
+            "ministryRoleName": "Participant",
+            "startDate": "2026-01-01",
+            "endDate": None,
+        }
+    ]
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    form = revisit(harness)
+    answers = answers_for(form)
+    answers["ministries"]["members"]["3"] = {"join": [], "leave": [4, 9]}
+    answers["service"] = {
+        "members": {"3": {"cannot_serve": True}},
+        "proposed_members": {},
+    }
+    respond(harness, form, answers)
+    stays = MinistryRequest.objects.get(ministry_duid=9, action="leave", state="new")
+    store = harness.service.store
+    rule = address("staff@example.org", roles=("staff",))
+    change(
+        store,
+        store.active(),
+        uuid4(),
+        [{"operation": "add", "section": "login_rules", **rule}],
+    )
+    browser = staff_browser(google)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        run = location(start(browser, stream="ministry", mode="advanced")[0])[1]["run"]
+        drawn = section(page(browser, run, position(run, "member", "3")))
+    assert f'<tr id="review-ministry-row-{stays.pk}"' in drawn
+    block = contact(drawn)
+    assert "mailto:valid@example.org" in block and "Not published" not in block
+    browser, *_ = leader(harness, google)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        run = location(start(browser, stream="ministry")[0])[1]["run"]
+        drawn = section(page(browser, run, position(run, "member", "3")))
+    assert f'<tr id="review-ministry-row-{stays.pk}"' in drawn
+    block = contact(drawn)
+    assert "Email:" in block and "Not published" in block
+    assert "valid@example.org" not in block and "Phones:" not in block
+    assert 'href="tel:+12025550123"' in block
 
 
 def test_a_limitations_member_page(response_service, google):

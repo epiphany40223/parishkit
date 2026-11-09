@@ -165,7 +165,7 @@ def census_tab(campaign_id, family_id, census, chosen, principal):
 
 
 def ministry_worklist(
-    campaign_id, principal, ids, *, prefix, writable, members="current"
+    campaign_id, principal, ids, *, prefix, writable, members="current", contacts=None
 ):
     """The Ministry stream's worklist of the requests ``ids``, for a Member tab.
 
@@ -176,7 +176,9 @@ def ministry_worklist(
     Member ParishSoft no longer lists, which offers nothing) has no row, so
     the hub draws no icon for it either. ``members`` is Ministry requests'
     Members choice: the hub's is the table's default; a review wizard run
-    reads with the choice it was started with (#2123).
+    reads with the choice it was started with (#2123). ``contacts`` True
+    also reads each row's Member email and phones (``row["contact"]``), for
+    Review one at a time's contact block (#2398); the hub shows none.
     """
     query = WorklistQuery(stage=EVERY, size=str(max(PAGE_SIZES)), members=members)
     result = read_rows(campaign_id, query, principal)
@@ -190,6 +192,7 @@ def ministry_worklist(
         mutable=writable,
         action=reverse("admin:ministry_report"),
         prefix=prefix,
+        contacts=contacts,
     )["worklist"]
     worklist.answer_page = False
     return worklist

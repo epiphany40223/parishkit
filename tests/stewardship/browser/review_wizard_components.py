@@ -20,7 +20,11 @@ Previous. ``GREYED_CARD_PATH`` is My review work while the menu greys
 the wizard out, and ``NO_CARD_PATH`` while it has no wizard entry.
 ``PLEDGE_PATH`` is a Pledges page, its pledge To review with the Family
 hub's Pledges row actions, and ``PLEDGE_EDITED_PATH`` the same page once
-the pledge is edited (#2123).
+the pledge is edited (#2123). ``MINISTRY_PATH`` and
+``MINISTRY_LEADER_PATH`` are a Ministry requests Member page for Staff and
+for a leader, with the Member's Contact details above their requests
+(#2398): Staff see the long email and three phones, the leader the email
+Not published.
 """
 
 from types import SimpleNamespace
@@ -32,7 +36,12 @@ from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.reports import review_wizard_views as views
 from parishkit.stewardship.reports.census_change_views import KIND_LABELS, ROUTE_LABELS
 from parishkit.stewardship.reports.census_changes import CensusQuery
-from parishkit.stewardship.reports.hub_actions import census_subject
+from parishkit.stewardship.reports.hub_actions import (
+    attach,
+    census_subject,
+    items_of,
+)
+from parishkit.stewardship.reports.hub_census import FieldRow
 from parishkit.stewardship.reports.hub_census import shape as hub_shape
 from parishkit.stewardship.reports.information import InformationQuery
 from parishkit.stewardship.reports.information_worklist import (
@@ -49,7 +58,7 @@ from parishkit.stewardship.reports.review_sections import Part, Section
 from parishkit.stewardship.reports.review_streams import EVERY, STREAMS
 from parishkit.stewardship.reports.review_wizard import SORTS, WAITING
 
-from ..test_hub_actions import census_worklist, hub_rows, pledge_tab
+from ..test_hub_actions import HOME_ID, census_worklist, hub_rows, pledge_tab
 from ..test_hub_census import ANSWERS, NAMES
 from .review_work_components import CAMPAIGN, COUNTS, chrome
 from .timeline_components import HOME_CHANGE
@@ -70,6 +79,11 @@ PLEDGE_PATH = "/review-wizard-pledge"
 PLEDGE_EDITED_PATH = "/review-wizard-pledge-edited"
 # The edited pledge page with every amount at $99,999.99 (#2258).
 PLEDGE_WIDE_PATH = "/review-wizard-pledge-wide"
+MINISTRY_PATH = "/review-wizard-ministry"
+MINISTRY_LEADER_PATH = "/review-wizard-ministry-leader"
+# The Ministry page's two requests, the ids their worklist items carry.
+MINISTRY_JOIN = "22222222-0000-4000-8000-000000000009"
+MINISTRY_LEAVE = "22222222-0000-4000-8000-000000000004"
 # The hub unit tests' deceased Member 5, its two changes, and the Member the
 # Family added, with the ids their census worklist items carry.
 DECEASED = "11111111-0000-4000-8000-000000000005"
@@ -256,6 +270,50 @@ def pledge_context(fresh, wide=False):
     }
 
 
+def ministry_context(contact):
+    """A Ministry requests Member page (#2398): Member 2's join and leave,
+    drawn as review_sections draws them, after the Member's ``contact``
+    (as ``member_contact`` gives it)."""
+    from .followup_components import CONTACTS, REQUEST
+
+    rows = (
+        FieldRow("Food pantry", "Join", True, item_id=MINISTRY_JOIN),
+        FieldRow("Choir", "Leave", True, item_id=MINISTRY_LEAVE),
+    )
+    worklist = census_worklist(
+        *(
+            {"id": HOME_ID, "shaped": {"id": item}}
+            for item in (
+                MINISTRY_JOIN,
+                MINISTRY_LEAVE,
+            )
+        ),
+        prefix="review-ministry",
+    )
+    items = items_of(worklist)
+    contact = CONTACTS[str(REQUEST)] | (contact or {})
+    return page_context(2) | {
+        "stream": next(stream for stream in STREAMS if stream.key == "ministry"),
+        "progress": "Member 1 of 1",
+        "previous_url": None,
+        "next_url": None,
+        "size": 1,
+        "section": Section(
+            listed=True,
+            parts=(
+                Part(
+                    "ministry",
+                    "review-ministry",
+                    rows=tuple(attach(row, items) for row in rows),
+                    worklist=worklist,
+                    contact=contact,
+                ),
+            ),
+            dialogs=(worklist,),
+        ),
+    }
+
+
 def page_context(position, focus=None, **values):
     """One of the run's three pages: a Family page, a Member page, the last.
 
@@ -381,6 +439,16 @@ def components(context, admin):
             render_to_string(
                 "stewardship/review-wizard-page.html",
                 base | pledge_context(fresh, wide),
+            ),
+        )
+    for path, contact in (
+        (MINISTRY_PATH, None),
+        (MINISTRY_LEADER_PATH, {"email_visibility": "not_published", "emails": []}),
+    ):
+        pages[path] = (
+            "text/html",
+            render_to_string(
+                "stewardship/review-wizard-page.html", base | ministry_context(contact)
             ),
         )
     review = {"campaign": CAMPAIGN, "counts": COUNTS}

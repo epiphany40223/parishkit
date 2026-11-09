@@ -181,6 +181,13 @@
 .review-wizard-page > .review-wizard-body { flex: 1 0 auto; }
 .review-wizard-nav-bottom { position: sticky; bottom: 0; z-index: 3; margin-block-end: 0; padding-block: .5rem; background: var(--page); border-top: 1px solid var(--border); }
 @media print { .review-wizard-nav { display: none; } }
+/* A Ministry requests page's Contact details (#2398): a short block above
+   the Member's requests, its heading no bigger than the text, each email
+   and phone on its own line; a long email breaks rather than widening a
+   phone's page. */
+.review-contact h2 { font-size: 1rem; margin-block: 0 .25rem; }
+.review-contact p { margin-block: 0 .75rem; }
+.review-contact .contact-email { overflow-wrap: anywhere; }
 /* A direct-save step's primary (#1404 PR 4): Continue and Save and continue
    share one grid cell, so the cell is as wide as the longer label and the
    switch between them moves nothing; the one not offered keeps its space

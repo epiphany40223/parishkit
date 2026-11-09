@@ -47,6 +47,7 @@ from .hub_actions import (
 )
 from .hub_census import Subject, read_hub_census
 from .hub_streams import read_hub_financial, read_hub_other, read_member_ministry
+from .ministry_contacts import member_contact
 from .review_wizard import FAMILY
 
 # How many replacements a stored id is followed through: each resubmission
@@ -66,8 +67,11 @@ class Part:
     (``review-pledge-section.html``, ``financial`` a ``HubFinancial``),
     "answers" (``review-answers-section.html``, ``rows`` and
     ``actions_column``) or "ministry" (``review-ministry-section.html``,
-    ``rows`` and ``worklist``, Ministry requests' worklist of them).
-    ``prefix`` is what every id it draws carries.
+    ``rows`` and ``worklist``, Ministry requests' worklist of them, after
+    the Member's ``contact`` block: their email and phones, ``{}`` when
+    none is available, #2398; ``gone`` when the run lists Members no longer
+    in ParishSoft, whose block says so). ``prefix`` is what every id it
+    draws carries.
     """
 
     kind: str
@@ -77,6 +81,8 @@ class Part:
     rows: tuple = ()
     actions_column: bool = False
     worklist: object = None
+    contact: object = None
+    gone: bool = False
 
 
 @dataclass(frozen=True)
@@ -453,7 +459,12 @@ def _ministry_member(campaign, family, member, census, stored, principal, *, fil
     that read lists for this reader can be drawn or counted, so a Ministry
     leader never sees, nor has counted, a request for a Ministry they do not
     lead. The run's Members choice is read as it was started (a leader's is
-    always the default, as the table's).
+    always the default, as the table's). The Member's email and phones come
+    with the worklist's rows, as Ministry requests' Member cell reads them
+    (one read, #2398), and show once, above the requests. A run of Members
+    no longer in ParishSoft (Staff's "No longer in ParishSoft" choice) gets
+    none, since ParishSoft no longer gives them, and its block says why
+    rather than reading as if the Member had no email or phone.
     """
     from parishkit.stewardship.workflows.models import MinistryRequest
 
@@ -471,6 +482,7 @@ def _ministry_member(campaign, family, member, census, stored, principal, *, fil
         prefix="review-ministry",
         writable=mutable(campaign.pk),
         members=members,
+        contacts=True,
     )
     items = items_of(worklist)
     listed = [attach(row, items) for row in rows if row.item_id in items]
@@ -479,9 +491,21 @@ def _ministry_member(campaign, family, member, census, stored, principal, *, fil
     if not matched:
         return Section()
     worklist = shown(worklist, matched)
+    contact = member_contact(
+        row["contact"] for row in worklist.rows if row.get("contact")
+    )
     return Section(
         listed=True,
-        parts=(Part("ministry", "review-ministry", rows=matched, worklist=worklist),),
+        parts=(
+            Part(
+                "ministry",
+                "review-ministry",
+                rows=matched,
+                worklist=worklist,
+                contact=contact or {},
+                gone=members == "gone",
+            ),
+        ),
         dialogs=(worklist,) if worklist.acting else (),
         filtered_out=len(listed) - len(matched),
     )

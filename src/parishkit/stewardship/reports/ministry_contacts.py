@@ -162,6 +162,36 @@ def row_contacts(campaign_id, principal, rows):
     return found
 
 
+def member_contact(contacts):
+    """One Member's contact details from their requests' (``row_contacts``).
+
+    Review one at a time shows a Member's requests on one page with one
+    contact block. Every request reads the same ParishSoft values; only what
+    the reader may see could differ, by each request's own rule. The page
+    lists only requests in force (Every stage leaves out History), whose
+    rule for one Member is the same, so in practice they agree; if they
+    ever differ, the block shows the request that shares the most. None
+    when there is nothing to show: no request with details, or only empty
+    values.
+    """
+    contacts = list(contacts)
+    if not contacts:
+        return None
+    chosen = max(
+        contacts,
+        key=lambda value: (
+            (value["email_visibility"] == "available")
+            + (value["phone_visibility"] == "available")
+        ),
+    )
+    shows = (
+        "not_published" in (chosen["email_visibility"], chosen["phone_visibility"])
+        or chosen["emails"]
+        or any(chosen["phones"].values())
+    )
+    return chosen if shows else None
+
+
 def request_contacts(campaign_id, principal, requests):
     """The contact details of each request in ``requests``, by request id.
 

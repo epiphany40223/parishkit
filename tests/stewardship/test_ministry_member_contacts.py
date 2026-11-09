@@ -16,6 +16,7 @@ from django.urls import reverse
 
 from parishkit.stewardship.reports import ministry_contacts, ministry_worklist
 from parishkit.stewardship.reports.ministry_contacts import (
+    member_contact,
     row_contacts,
 )
 from parishkit.stewardship.reports.ministry_worklist import (
@@ -82,6 +83,16 @@ def test_row_contacts_reads_the_packet_once_for_the_rows_shown(monkeypatch):
     assert found == {JOIN: SHARED, LEAVE: WITHHELD, OLD: SHARED, ADDED: ENTERED}
     assert row_contacts(UUID(int=92), STAFF, []) == {}
     assert calls == [{9, 4}]
+
+
+def test_member_contact_shows_the_request_that_shares_the_most():
+    """A Member's standing request shares more than a withdrawn one, which
+    the wizard's one block then shows; nothing to show is None."""
+    assert member_contact([WITHHELD, SHARED]) is SHARED
+    assert member_contact([WITHHELD]) is WITHHELD
+    assert member_contact([]) is None
+    empty = SHARED | {"emails": [], "phones": {"home": ""}}
+    assert member_contact([empty]) is None
 
 
 def worklist(monkeypatch, principal, rows, *, contacts):

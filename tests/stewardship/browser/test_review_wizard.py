@@ -13,6 +13,8 @@ from .review_wizard_components import (
     GREYED_REASON,
     LEADER_START_PATH,
     MEMBER_ACCEPTED_PATH,
+    MINISTRY_LEADER_PATH,
+    MINISTRY_PATH,
     NO_CARD_PATH,
     PAGE_PATHS,
     PLEDGE_EDITED_PATH,
@@ -304,6 +306,48 @@ def test_phone_rows_stay_one_line(page, component_origin, axe_source):
     assert heights[0] == heights[1] == heights[2]
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
+
+
+# How many of the Contact details' phone numbers (or their extensions,
+# which may go to a line of their own) wrap onto a second line.
+WRAPPED_CALLS = """() => [...document.querySelectorAll(
+  '[data-review-contact] a[href^="tel:"] .nowrap')].filter((link) => new Set(
+    [...link.getClientRects()].map((rect) => Math.round(rect.top))).size > 1).length"""
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_a_ministry_page_shows_the_members_contact_details(
+    page, component_origin, axe_source, width
+):
+    """A Ministry requests page's Contact details (#2398), above the
+    requests: Staff see the email as a mail link and the phones, mobile
+    first, as call links; a leader sees the email Not published. The long
+    email wraps inside a phone's width, no phone number wraps, nothing
+    scrolls sideways and the page passes axe."""
+    page.set_viewport_size({"width": width, "height": 800})
+    for path, first in (
+        (MINISTRY_PATH, "Email: maximilian.bartholomew-fitzgerald@example.org"),
+        (MINISTRY_LEADER_PATH, "Email: Not published"),
+    ):
+        page.goto(component_origin + path)
+        block = page.locator("[data-review-contact]")
+        visible(block.get_by_role("heading", name="Contact details"))
+        lines = block.locator(".contact-line")
+        assert lines.all_inner_texts() == [
+            first,
+            "Mobile: +1 (502) 555-0123",
+            "Home: +1 (502) 555-0100",
+            "Work: +1 (502) 555-0199 ext. 12",
+        ], path
+        assert block.locator("a[href^='mailto:']").count() == (path == MINISTRY_PATH)
+        assert block.locator("a[href^='tel:']").count() == 3
+        # The block comes before the requests' table.
+        table = page.locator("#review-ministry-ministry-caption")
+        assert block.bounding_box()["y"] < table.bounding_box()["y"]
+        assert page.evaluate(WRAPPED_CALLS) == 0, path
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        page.evaluate(axe_source)
+        assert page.evaluate(AXE) == [], path
 
 
 @pytest.mark.parametrize("path", [HOME_PATH, PATH])

@@ -365,12 +365,14 @@ def ministry_page(
     principal=None,
     filters=None,
     entity=("member", "3"),
+    contacts=None,
 ):
     """A Ministry requests page for a Member (``entity``: Member 3 unless
     named), who asked to join Ministry 9 (``JOIN``) and leave Ministry 4
-    (``LEAVE``); Ministry requests' scoped read lists ``visible`` of them.
-    Returns the section, the Members choice the read was made with and the
-    entity the hub's requests were read for."""
+    (``LEAVE``); Ministry requests' scoped read lists ``visible`` of them,
+    each with its Member contact details in ``contacts`` (by request id),
+    if any. Returns the section, the Members choice the read was made with
+    and the entity the hub's requests were read for."""
     from parishkit.stewardship.reports.hub_census import FieldRow
 
     requests = (
@@ -386,13 +388,23 @@ def ministry_page(
 
     monkeypatch.setattr(review_sections, "read_member_ministry", read)
 
-    def worklist(campaign_id, principal, ids, *, prefix, writable, members):
-        """Ministry requests' worklist of the ``visible`` requests."""
+    def worklist(campaign_id, principal, ids, *, prefix, writable, members, contacts):
+        """Ministry requests' worklist of the ``visible`` requests, each
+        with its contact details, which the page always asks for (#2398)."""
+        assert contacts is True
         asked.update(ids=ids, members=members, prefix=prefix)
         return census_worklist(
-            *({"id": HOME_ID, "shaped": {"id": item}} for item in visible),
+            *(
+                {
+                    "id": HOME_ID,
+                    "shaped": {"id": item, "contact": (contacts_by_id or {}).get(item)},
+                }
+                for item in visible
+            ),
             prefix=prefix,
         )
+
+    contacts_by_id = contacts
 
     monkeypatch.setattr(review_sections, "ministry_worklist", worklist)
     section = member_page(
@@ -444,6 +456,88 @@ def test_a_ministry_page_draws_only_what_the_scoped_read_lists(monkeypatch):
         monkeypatch, [LEAVE], visible=[JOIN], principal=LEADER_READER
     )
     assert not section.listed and section.parts == ()
+
+
+# A Member's contact details as row_contacts gives them (#2398): what a
+# standing request shares, and what a withdrawn one leaves a leader.
+SHARED = {
+    "email_visibility": "available",
+    "emails": ["member@example.org"],
+    "phone_visibility": "available",
+    "phones": {"home": "+15025550100", "mobile": "502-555-0123"},
+}
+WITHHELD = {
+    "email_visibility": "not_published",
+    "emails": [],
+    "phone_visibility": "not_published",
+    "phones": {},
+}
+
+
+def contact_block(drawn):
+    """The wizard page's Contact details block, or None."""
+    if "data-review-contact" not in drawn:
+        return None
+    return drawn.split("data-review-contact>")[1].split("</section>")[0]
+
+
+def test_a_ministry_page_shows_the_members_contact_details(monkeypatch):
+    """One Contact details block above the Member's requests (#2398), as
+    Ministry requests' Member cell draws it: mail and call links, the
+    mobile first, each phone labelled; the request that shares the most
+    wins over one that shares nothing; a Member with nothing shown says
+    so; and nothing it reads is ever Not published when a request shares
+    it. Every role gets it (the page reads it for everyone)."""
+    for principal in (None, LEADER_READER):
+        section, *_rest = ministry_page(
+            monkeypatch,
+            [JOIN, LEAVE],
+            visible=[JOIN, LEAVE],
+            principal=principal,
+            contacts={LEAVE: WITHHELD, JOIN: SHARED},
+        )
+        block = contact_block(render(listed=True, member_page=True, section=section))
+        assert '<h2 id="review-ministry-contact-heading">Contact details</h2>' in block
+        assert (
+            '<span class="contact-kind">Email:</span> '
+            '<a href="mailto:member@example.org">member@example.org</a>'
+        ) in block
+        mobile = block.index("Mobile:")
+        assert mobile < block.index("Home:")
+        assert (
+            '<a href="tel:+15025550123"><span class="nowrap">+1 (502) 555-0123'
+            "</span></a>"
+        ) in block
+        assert 'href="tel:+15025550100"' in block and "Not published" not in block
+    # Only Not published: both lines say so.
+    section, *_rest = ministry_page(
+        monkeypatch, [JOIN], visible=[JOIN], contacts={JOIN: WITHHELD}
+    )
+    block = contact_block(render(listed=True, member_page=True, section=section))
+    assert "Email: Not published" in block and "Phones: Not published" in block
+    assert "mailto:" not in block and "tel:" not in block
+    # No details at all (a Ministry the reader does not lead in force).
+    section, *_rest = ministry_page(monkeypatch, [JOIN], visible=[JOIN])
+    block = contact_block(render(listed=True, member_page=True, section=section))
+    assert "No email or phone number is available for this Member." in block
+    # A run of Members no longer in ParishSoft, which gives none of their
+    # values, says so rather than reading as if they had none.
+    section, *_rest = ministry_page(
+        monkeypatch, [JOIN], visible=[JOIN], filters={"members": "gone"}
+    )
+    block = contact_block(render(listed=True, member_page=True, section=section))
+    assert (
+        "This Member is no longer in ParishSoft, so no email or phone number is shown."
+    ) in block
+    assert "is available" not in block
+
+
+def test_the_hub_draws_no_contact_block():
+    """The Family hub's Member tab passes no contact, so the shared
+    section draws none (#2398)."""
+    part = Part("ministry", "hub-ministry", rows=(), worklist=None)
+    drawn = render(listed=True, section=Section(listed=True, parts=(part,)))
+    assert contact_block(drawn) is None
 
 
 def test_ministry_pages_of_a_new_or_untabbed_member(monkeypatch):
