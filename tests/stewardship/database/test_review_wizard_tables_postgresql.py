@@ -166,8 +166,9 @@ def test_a_table_start_never_asks_about_earlier_runs(response_service, google):
 
 
 def test_a_leaders_ministry_run_holds_only_their_ministries(response_service, google):
-    """A leader's table posts its view; the run, read through the leader's
-    own scope, holds only the requests of the Ministry they lead."""
+    """A leader's Review in bulk page has no button (#2407); a start posted
+    for their view, read through the leader's own scope, still holds only the
+    requests of the Ministry they lead."""
     from parishkit.stewardship.workflows.models import MinistryRequest
 
     from .test_ministry_exports_postgresql import leader
@@ -177,9 +178,17 @@ def test_a_leaders_ministry_run_holds_only_their_ministries(response_service, go
     browser, *_ = leader(harness, google)
     mine = MinistryRequest.objects.get(ministry_duid=9)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        _, body = search(browser, "/admin/reports/ministries/", {"stage": "all"})
-        _, fields = entry(body.decode())
-        assert fields["stream"] == "ministry" and fields["stage"] == "all"
+        response, body = search(browser, "/admin/reports/ministries/", {"stage": "all"})
+        assert response.status_code == 200
+        assert "Review these one at a time" not in body.decode()
+        assert "-wizard" not in body.decode()
+        fields = {
+            "stream": "ministry",
+            "mode": "advanced",
+            "sort": "name",
+            "table": "1",
+            "stage": "all",
+        }
         run = run_of(search(browser, START, fields)[0])
         assert [s["items"] for s in run.subjects] == [[str(mine.pk)]]
         # A stream the leader's menu does not offer is refused, and the

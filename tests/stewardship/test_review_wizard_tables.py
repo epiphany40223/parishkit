@@ -194,3 +194,29 @@ def test_the_tag_draws_nothing_without_a_signed_in_reader():
     context = SimpleNamespace(request=SimpleNamespace())
     worklist = FakeWorklist(Stream.CENSUS, {"stage": "all"})
     assert review_wizard_entry(context, worklist, FakeTable()) is None
+
+
+def _tag_for(roles, stream):
+    """The tag's answer for a reader with ``roles`` on ``stream``'s table."""
+    from uuid import UUID
+
+    from parishkit.stewardship.accounts.policy import Principal
+    from parishkit.stewardship.accounts.templatetags.review_work import (
+        review_wizard_entry,
+    )
+
+    principal = Principal(UUID(int=2407), frozenset(roles))
+    context = SimpleNamespace(request=SimpleNamespace(principal=principal))
+    worklist = FakeWorklist(stream, {"stage": "all"})
+    return review_wizard_entry(context, worklist, FakeTable())
+
+
+@pytest.mark.parametrize("roles", [{"staff"}, {"administrator"}])
+def test_staff_and_administrators_keep_the_ministry_button(roles):
+    """Staff and Administrators' Ministry requests table has the button (#2407)."""
+    assert _tag_for(roles, Stream.MINISTRY) is not None
+
+
+def test_a_ministry_leader_has_no_ministry_button():
+    """A Ministry leader's Review in bulk page has no button (#2407)."""
+    assert _tag_for({"ministry_leader"}, Stream.MINISTRY) is None
