@@ -248,14 +248,14 @@ def test_the_navigation_rows_keep_their_place_on_every_page(
     expect(top.get_by_role("button", name="Finish")).to_be_visible()
     expect(top.get_by_role("button", name="Next")).to_be_visible()
     expect(top.locator("[data-review-progress]")).to_have_text("Family 1 of 1")
-    # The header: the Family's line, the Member line's place kept empty.
+    # The header: the Family's line, the second line's place kept empty.
     heading = page.locator("[data-review-heading]")
     expect(heading).to_have_text(
         "Family: Squyres, Jeff and Tracy (DUID 4123, envelope 312)"
     )
     # (The fixture has no signed-in request, so its Family name is plain
     # text; the database tests check the hub link.)
-    expect(page.locator("[data-review-member]")).to_have_text("")
+    expect(page.locator("[data-review-family]")).to_have_text("")
     bottom = page.locator('[data-review-nav="bottom"]').bounding_box()
     assert abs(bottom["y"] + bottom["height"] - 700) <= 1
     page.goto(last)
@@ -267,22 +267,27 @@ def test_the_navigation_rows_keep_their_place_on_every_page(
         top.locator('[data-nav-slot="action"] [data-review-move="finish"]')
     ).to_have_count(1)
     expect(top.locator('[data-nav-slot="next"]')).to_be_empty()
-    member = page.locator("[data-review-member]")
+    # A Member page's heading is the Member (#2397), a New Member with the
+    # hub's badge and no DUID; the Family is the line under it.
+    member = page.locator("[data-review-heading]")
     expect(member).to_contain_text("New Member")
     expect(member).not_to_contain_text("DUID")
+    expect(page.locator("[data-review-family]")).to_have_text(
+        "Family: Squyres, Jeff and Tracy (DUID 4123)"
+    )
     expect(page.locator("#review-section")).to_contain_text("Adding this Member:")
     page.goto(middle)
-    member = page.locator("[data-review-member]")
+    member = page.locator("[data-review-heading]")
     expect(member).to_have_text("Member: Squyres, Jeff (DUID 77001)")
     # No envelope: the parenthetical names the DUID alone.
-    expect(page.locator("[data-review-heading]")).to_have_text(
+    expect(page.locator("[data-review-family]")).to_have_text(
         "Family: Squyres, Jeff and Tracy (DUID 4123)"
     )
     expect(member.get_by_role("link", name="Squyres, Jeff")).to_have_attribute(
         "href",
         "/admin/reports/families/00000000-0000-0000-0000-000000000007/?tab=member-2",
     )
-    expect(page.locator("[data-review-heading]")).to_contain_text("Family: ")
+    expect(page.get_by_role("heading", level=1)).to_contain_text("Member: ")
     # Only the Family's place: no "Member 1 of 2" suffix (R52 Part W).
     expect(page).to_have_title("Review one at a time: Census changes, Family 1 of 1")
 

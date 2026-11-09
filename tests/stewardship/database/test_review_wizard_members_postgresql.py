@@ -29,8 +29,8 @@ from .test_response_http_postgresql import answers_for
 from .test_review_wizard_postgresql import location, start
 from .test_review_wizard_sections_postgresql import (
     heading,
-    member_line,
     page,
+    second_line,
     section,
     statements,
 )
@@ -76,11 +76,11 @@ def test_census_member_and_new_member_pages(response_service, google):
         assert f'<tr id="review-member-census-row-{prefix.pk}"' in drawn
         assert str(first.pk) not in drawn
         assert "1 more in this stream for this Member is filtered out." in drawn
-        # The header: the Family's line, then the Member's, whose name opens
-        # the Member's tab of the Family hub.
-        assert heading(markup).startswith("Family: ")
-        assert "(DUID 3)" in member_line(markup)
-        assert re.search(r'^Member: <a href="[^"]*\?tab=[^"]+">', member_line(markup))
+        # The header: the Member is the heading, the name opening the
+        # Member's tab of the Family hub, then the Family's line (#2397).
+        assert "(DUID 3)" in heading(markup)
+        assert re.search(r'^Member: <a href="[^"]*\?tab=[^"]+">', heading(markup))
+        assert second_line(markup).startswith("Family: ")
         action, _fields = dialog_fields(drawn, "review-member-census-decide")
         assert action == ROUTE
         # The New Member's page: its addition and its answers.
@@ -91,8 +91,8 @@ def test_census_member_and_new_member_pages(response_service, google):
         assert f'id="review-member-census-row-{addition.pk}"' in drawn
         assert "The Family's answers for this Member" in drawn and "Zed" in drawn
         # A New Member: the hub's badge, and no DUID yet.
-        assert "New Member" in member_line(markup)
-        assert "DUID" not in member_line(markup)
+        assert "New Member" in heading(markup)
+        assert "DUID" not in heading(markup)
     # Pinned, as on the Family pages: the census read, Census changes' read
     # narrowed to the Family, one replacement lookup, the heading's names
     # and the view's audit.
@@ -138,11 +138,16 @@ def test_a_ministry_page_for_staff_and_for_a_leader(response_service, google):
         assert "Food pantry" in drawn
         action, _fields = dialog_fields(drawn, "review-ministry-decide")
         assert action == reverse("admin:ministry_report")
-        # Staff: the header's names open the Family hub and the Member's tab.
+        # Staff: the header's names open the Member's tab of the Family hub
+        # (the heading, #2397) and the Family hub (the line under it).
         assert re.search(
-            r'data-review-heading>Family: <a href="/admin/reports/families/', markup
+            r'data-review-heading>Member: <a href="/admin/reports/families/[^"]*'
+            r"\?tab=",
+            markup,
         )
-        assert "?tab=" in member_line(markup)
+        assert re.search(
+            r'data-review-family>Family: <a href="/admin/reports/families/', markup
+        )
     assert statements(browser, run)[1] == STATEMENTS["ministry"]
     browser, *_ = leader(harness, google)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -154,7 +159,7 @@ def test_a_ministry_page_for_staff_and_for_a_leader(response_service, google):
     assert str(leave.pk) not in markup and "filtered out" not in drawn
     # A leader cannot open the Timeline: every name is plain text.
     assert "/admin/reports/families/" not in markup
-    assert "<a " not in member_line(markup)
+    assert "<a " not in heading(markup)
 
 
 def test_a_limitations_member_page(response_service, google):
@@ -187,5 +192,6 @@ def test_a_limitations_member_page(response_service, google):
     assert "Cannot attend Mass" not in drawn and "filtered out" not in drawn
     action, _fields = dialog_fields(drawn, "hub-other-limitations-decide")
     assert action == reverse("admin:limitations_report")
-    assert member_line(markup).startswith("Member: ")
+    assert heading(markup).startswith("Member: ")
+    assert second_line(markup).startswith("Family: ")
     assert statements(browser, run, at)[1] == STATEMENTS["limitations"]

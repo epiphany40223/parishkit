@@ -2483,18 +2483,23 @@ and starts nothing.
 
 Each page has, top to bottom:
 
-- **Header:** one consistent header on every page (R52 Part W). Its
-  first line, the page heading, is "Family: *Family name* (DUID *n*,
+- **Header:** one consistent header on every page (R52 Part W): the page
+  heading names the subject the page decides, and a smaller line under
+  it names the Member's Family (the Administrator, 2026-11-08,
+  [#2397](https://github.com/epiphany40223/parishkit/issues/2397), for
+  every role). The Family line is "Family: *Family name* (DUID *n*,
   envelope *e*)", the Family's name opening the Family hub (for Staff and
-  Administrators, `family_link`), and ", envelope *e*" only when the
-  Family's ParishSoft envelope number is set and not 0. On a Member page
-  only, a second line reads "Member: *Member name* (DUID *n*)", the
-  Member named as the hub's tab names them, the name opening the hub's
-  tab for that Member (for Staff and Administrators; plain text for a
-  Ministry leader); a New Member the Family added has no DUID yet, so the
+  Administrators, `family_link`; plain text for a Ministry leader), and
+  ", envelope *e*" only when the Family's ParishSoft envelope number is
+  set and not 0. On a Family page that line is the heading. On a Member
+  page the heading is "Member: *Member name* (DUID *n*)", the Member
+  named as the hub's tab names them, the name opening the hub's tab for
+  that Member (for Staff and Administrators; plain text for a Ministry
+  leader); a New Member the Family added has no DUID yet, so the
   parenthetical is left out and the hub's New Member badge follows the
-  name. The second line's place is kept, empty, on a Family page, so the
-  navigation row below sits at the same spot on every page. The browser title is
+  name. The Family line follows it as the second line. The second line's
+  place is kept, empty, on a Family page, so the navigation row below
+  sits at the same spot on every page. The browser title is
   "Review one at a time: *stream*, *progress*", without the name, as the
   Timeline's title leaves it out.
   The last breadcrumb says the same, "*stream*, *progress*", so the trail
@@ -2535,7 +2540,7 @@ A page whose subject has nothing left in the stream for this reader (the
 Family withdrew every change, a Member left the Family, a Family left the
 campaign, or the reader lost access to the subject's items, such as a
 Ministry leader who no longer leads the request's Ministry) names nothing:
-its heading reads "No longer listed", the Member line is left empty,
+its heading reads "No longer listed", the second line is left empty,
 and the section says "This Family is no longer listed
 for this stream." or "This Member is no longer listed for this stream.".
 It keeps Previous and Next. The stored ids are never shown, so a run

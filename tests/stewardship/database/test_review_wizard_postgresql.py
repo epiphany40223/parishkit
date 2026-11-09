@@ -103,10 +103,10 @@ def test_a_census_run_starts_moves_and_finishes(response_service, google):
         # No footer links (R52 Part W): the header's Family name opens the hub.
         assert "data-review-links" not in page and "Open Census changes" not in page
         assert "Open this Family" not in page
-        # The header: the Family's line, and an empty Member line.
+        # The header: the Family's line, and an empty second line.
         heading = re.search(r"data-review-heading>(.*?)</h1>", page, re.S)[1]
         assert heading.startswith("Family: <a href=") and "(DUID " in heading
-        assert re.search(r"<p [^>]*data-review-member></p>", page)
+        assert re.search(r"<p [^>]*data-review-family></p>", page)
         response, _ = move(browser, f"{START}2/?run={run.pk}", "next-bottom")
         assert response.status_code == 303
         assert response["Location"] == f"{START}2/?run={run.pk}&from=next-bottom"
@@ -116,11 +116,13 @@ def test_a_census_run_starts_moves_and_finishes(response_service, google):
         page = body.decode()
         # A grouped stream's Member page names only the Family's place.
         assert page.count("Family 1 of 1</p>") == 2 and "Member 1 of" not in page
-        member = re.search(r"data-review-member>(.*?)</p>", page, re.S)[1]
-        assert member.startswith("Member: <a href=") and "?tab=" in member
-        assert "(DUID 3)" in member
+        # A Member page's heading is the Member, its Family the line under
+        # it (#2397).
         heading = re.search(r"data-review-heading>(.*?)</h1>", page, re.S)[1]
-        assert heading.startswith("Family: ")
+        assert heading.startswith("Member: <a href=") and "?tab=" in heading
+        assert "(DUID 3)" in heading
+        family = re.search(r"data-review-family>(.*?)</p>", page, re.S)[1]
+        assert family.startswith("Family: <a href=") and "(DUID " in family
         # The last page: Finish stays in the middle slot, Next's slot is
         # empty; focus is on Finish in the bottom row, where the move's Next
         # was.
