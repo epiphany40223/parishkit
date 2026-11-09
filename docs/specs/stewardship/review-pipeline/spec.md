@@ -2078,9 +2078,8 @@ counts are in the Stage filter's choices and on My review work. A stream's
 statistics stay on its report page. An **Add** button sits in the selection
 bar for readers allowed to add on that stream, and opens the stream's own
 value editor (for a Ministry, a Member and a Ministry picker scoped to the
-reader). **Review these one at a time** sits beside it (except on a
-Ministry leader's Review in bulk) and opens the
-[review wizard](#review-wizard) on the table's view
+reader). The bar has no way into the [review wizard](#review-wizard): it
+starts from the menu or My review work
 ([wizard entry points](#wizard-entry-points)).
 
 Each Stage choice's count is the number of rows that choice lists under
@@ -2264,7 +2263,8 @@ run storage, the start page, the page frame with its navigation, the menu
 entry and the dashboard card (#2123, slice 1 of the
 [delivery plan](#wizard-delivery-plan)), the shared section component and
 the Family pages (slice 2), then the Member pages (slice 3), and the
-tables' entry buttons (slice 4).
+tables' entry buttons (slice 4), since removed from every table
+([#2413](https://github.com/epiphany40223/parishkit/issues/2413)).
 
 The review wizard is a third view of the same review data, beside each
 stream's [review worklist](#review-worklist) (bulk decisions over a table)
@@ -2437,8 +2437,7 @@ Advanced when it is drawn with an Advanced filter set):
   reviewed in the Limitations run, which keeps including it on the
   Family's page ([wizard streams and access](#wizard-streams-and-access)).
   Only the Pledges wizard sequence leaves them out; the Pledges table
-  keeps listing them, and its **Review these one at a time** button
-  starts a run without them (when it lists only those, the start page
+  keeps listing them (when a start would list only those, the start page
   says "Nothing matches these filters." and starts nothing). Without
   Limitations nothing else offers those Families one at a time, so a
   Pledges run keeps them (R52 Part W2; the Administrator, 2026-10-25).
@@ -2623,13 +2622,13 @@ which closes the earlier open point about runs started at History.
 Unfinished runs are not resumed (R52 Part W; the Administrator,
 2026-10-25: staff and leaders start the wizard again). Nothing lists or
 offers a reader's unfinished runs: the start page has no list of them,
-the review tables' button never asks about them, and the dashboard pane
-always opens the start page. The run row stays, because Previous and Next
+and the dashboard pane always opens the start page. The run row stays, because Previous and Next
 move through its stored sequence and position
 ([wizard run storage](#wizard-run-storage)), so a page's address, the
 browser's Back and a reload keep working while the run is open.
 
-**Start** (on the start page or from a table) deletes the reader's
+**Start** (on the start page, the only way in;
+[no table entry](#wizard-entry-points)) deletes the reader's
 earlier unfinished runs in the campaign in the same transaction as the
 new run's insert (two starts at the same moment may each leave a run, which
 nothing lists and the next start deletes); a
@@ -2722,35 +2721,17 @@ earlier unfinished runs in the campaign, and finished ones stay:
   ([#2391](https://github.com/epiphany40223/parishkit/issues/2391)). It is shown
   while at least one stream is offered (a new `Entry` whose availability is any of the five pages'),
   and named in the trail and every "Return to".
-- **From each table.** Each review worklist's selection bar gets
-  **Review these one at a time** (a secondary button, first, beside Add;
-  except on a Ministry leader's Review in bulk, below). It
-  posts the table's current view fields (`Worklist.fields`, the search
-  included, and the table's sort) to the wizard's start, which starts a
-  run with them and opens page 1, skipping the choice steps; it never
-  asks about unfinished runs, which the start replaces
-  ([wizard run lifetime](#wizard-run-lifetime)). The table's
-  sort maps to the wizard's: its name column ascending (or any column other
-  than Submitted) to Last name (A–Z), Submitted ascending to Oldest submitted
-  first, Submitted descending to Newest submitted first. The button is
-  unavailable, with its reason ("Nothing is listed to review one at a
-  time.") on its own line under the bar's buttons, while the table lists
-  nothing
-  ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)).
-  The shared table component draws the button
-  (`components/review-wizard-entry.html`, from
-  `review_wizard_tables.table_entry`) inside the table's region, so every
-  in-place redraw of the table gives it the view the table then shows. It
-  posts the table's Stage, the stream's own closed filters and the search,
-  in Advanced mode, to the start, which parses, checks and reads them as a
-  start from the start page does.
-  A Ministry leader's Ministry requests table (named Review in bulk)
-  has no button: the tag `review_wizard_entry` returns none for the
-  Ministry stream when `ministry_worklist.is_leader` is true, and a
-  leader starts Review one at a time from My review work or the menu
-  ([#2407](https://github.com/epiphany40223/parishkit/issues/2407); the
-  Administrator, 2026-11-09). Staff and Administrators keep it, and the
-  start still accepts a leader's own Ministry run.
+- **No table entry.** No review table has a way into the wizard, for any
+  role: the **Review these one at a time** button that slice 4 put first
+  in each table's selection bar, posting the table's view to the start,
+  is gone, with its template, its tag and the start's `table` field, which
+  the start now refuses (400) like any unknown field (the Administrator,
+  2026-11-09, [#2413](https://github.com/epiphany40223/parishkit/issues/2413),
+  widening [#2407](https://github.com/epiphany40223/parishkit/issues/2407),
+  which had removed it from a leader's Review in bulk). A reader starts a
+  run from the menu's Review one at a time, My review work or the
+  dashboard pane below, and chooses the stream and filters on the start
+  page; the tables are for working in bulk.
 - **Dashboard pane.** My review work (for Staff; a Ministry leader's
   [has two steps instead](../admin-portal/spec.md#a-ministry-leaders-my-review-work)) and
   Administrators' Home Review work panel put the wizard **beside** the
@@ -2971,8 +2952,10 @@ in slices 2 and 3:
    Next, in both rows, keep their screen position across pages of
    different heights and after an in-place action, and that focus
    returns to the control used.
-4. **Table entry buttons** (built): Review these one at a time on the
-   five tables (a Ministry leader's Review in bulk excepted, #2407). Tests: each table's button posts its view and opens page 1
+4. **Table entry buttons** (built, then removed from every table by
+   [#2413](https://github.com/epiphany40223/parishkit/issues/2413), with
+   their tests): Review these one at a time on the
+   five tables. Tests: each table's button posts its view and opens page 1
    with that view's sequence; the sort mapping; the existing-runs dialog (removed again in R52 Part W); the unavailable state on
    an empty table (no label is renamed, so no table test needed a sweep).
    With it, the dashboard card becomes the side-by-side

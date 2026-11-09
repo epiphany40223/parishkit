@@ -195,3 +195,20 @@ def test_a_row_with_no_contacts_and_the_hub_draw_no_lines(monkeypatch):
     context, reads = worklist(monkeypatch, STAFF, rows, contacts=None)
     assert reads == []
     assert all(row["contact"] is None for row in context["worklist"].rows)
+
+
+def test_no_role_gets_a_way_into_the_wizard_from_the_table(monkeypatch):
+    """Ministry requests' table, drawn for a signed-in leader, Staff member
+    or Administrator, has no Review these one at a time and posts nothing
+    to the wizard's start (#2413)."""
+    rows = [request_row(id=JOIN, state="new", outcome=None)]
+    start = reverse("admin:review_wizard")
+    for principal in (LEADER, STAFF, ADMIN):
+        context, _reads = worklist(monkeypatch, principal, rows, contacts=True)
+        html = render_to_string(
+            "stewardship/components/review-worklist.html",
+            context
+            | {"csrf_token": "x", "request": SimpleNamespace(principal=principal)},
+        )
+        assert "one at a time" not in html
+        assert f'action="{start}"' not in html

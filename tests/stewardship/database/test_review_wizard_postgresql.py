@@ -232,6 +232,8 @@ def test_start_refusals(response_service, google, monkeypatch):
             # The wizard offers no History (R52 Part W).
             {"mode": "advanced", "stage": "history"},
             {"route": "any"},
+            # The review tables' retired start field (#2413).
+            {"mode": "advanced", "table": "1"},
         ):
             assert start(browser, **fields)[0].status_code == 400, fields
         monkeypatch.setattr(review_wizard, "MAX_SUBJECTS", 1)
@@ -348,10 +350,50 @@ def test_a_leader_reviews_only_the_ministries_they_lead(response_service, google
         # A leader's header names the Family in plain text: no hub link.
         assert "/admin/reports/families/" not in page
         assert "Open Ministry requests" not in page
+        # An Advanced start at Every stage stays within the Ministry they
+        # lead too, and replaces the Basic run.
+        response, _ = start(browser, stream="ministry", mode="advanced", stage="all")
+        assert response.status_code == 303
+        run = ReviewRun.objects.get()
+        assert run.filters["stage"] == "all"
+        assert [s["items"] for s in run.subjects] == [[str(mine.pk)]]
+
+
+def test_a_search_is_never_stored(response_service, google):
+    """A start with a search that matches stores only that a search was
+    used, never its text."""
+    prepared(response_service)
+    browser = staff_browser(google)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, _ = start(browser, mode="advanced", stage="all", search="a")
+        assert response.status_code == 303
+    run = ReviewRun.objects.get()
+    assert run.subjects
+    assert run.filters["search_used"] is True and "search" not in run.filters
+    assert "a" not in run.filters.values()
+
+
+# The review tables besides Pledges, which needs pledges to draw and is
+# checked in test_a_pledges_run.
+REVIEW_TABLES = (
+    "/admin/reports/census/",
+    "/admin/reports/ministries/",
+    "/admin/reports/information/",
+    "/admin/reports/limitations/",
+)
+
+
+def no_wizard_entry(browser, table):
+    """Assert ``table`` draws, with no way into the wizard (#2413)."""
+    response, body = read(browser, table)
+    assert response.status_code == 200, table
+    assert b"one at a time</button>" not in body, table
+    assert f'action="{START}"'.encode() not in body, table
 
 
 def test_staff_review_every_ministry_request(response_service, google):
-    """Staff's Ministry requests run lists every Ministry's requests."""
+    """Staff's Ministry requests run lists every Ministry's requests. No
+    review table draws a way into the wizard (#2413)."""
     from parishkit.stewardship.workflows.models import MinistryRequest
 
     from .test_ministry_exports_postgresql import leader
@@ -365,6 +407,8 @@ def test_staff_review_every_ministry_request(response_service, google):
         # Staff's Sort is below the filters in either mode (#2397).
         assert b'<div><label for="review-sort">' in body
         assert start(staff, stream="ministry")[0].status_code == 303
+        for table in REVIEW_TABLES:
+            no_wizard_entry(staff, table)
     found = ReviewRun.objects.get()
     assert sorted(item for s in found.subjects for item in s["items"]) == sorted(
         str(pk) for pk in MinistryRequest.objects.values_list("pk", flat=True)
@@ -411,13 +455,15 @@ def test_information_and_limitations_runs(response_service, google):
 
 
 def test_a_pledges_run(response_service, google):
-    """Pledges: one Family page per pledge waiting."""
+    """Pledges: one Family page per pledge waiting. Its table, like the
+    others, has no way into the wizard (#2413)."""
     from .test_pledge_review_postgresql import pledged
     from .test_pledge_review_postgresql import staff_browser as pledge_staff
 
     harness, submission = pledged(response_service)
     browser, _ = pledge_staff(harness, google)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        no_wizard_entry(browser, "/admin/reports/financial/pledges/")
         assert start(browser, stream="pledges")[0].status_code == 303
     run = ReviewRun.objects.get()
     assert [(s["family"], s["kind"]) for s in run.subjects] == [

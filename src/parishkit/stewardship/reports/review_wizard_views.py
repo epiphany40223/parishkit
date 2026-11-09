@@ -7,9 +7,9 @@ work and both for the current campaign:
   choices: the stream (only the streams the reader's menu offers), Basic
   or Advanced filters (the stream table's own), the sort and Start. A POST
   starts a run: the stream's items are read as its table reads them, fixed
-  as the run's sequence of subjects, stored, and page 1 opens (303). A
-  review table's Review these one at a time posts a start too, with the
-  table's view (``table``, ``review_wizard_tables``). Unfinished runs are
+  as the run's sequence of subjects, stored, and page 1 opens (303). The
+  review tables have no way in (#2413): a run starts here, reached from
+  the menu's Review one at a time or My review work. Unfinished runs are
   never listed or offered (R52 Part W): starting a run deletes the
   reader's earlier open runs in the campaign, so a run lives only while
   its pages are in use.
@@ -146,10 +146,10 @@ def parse_start(parameters, offered):
     values = filters(
         parameters,
         allowed={"csrfmiddlewaretoken", "start", "stream", "mode", "sort", "stage"}
-        | {"search", "table"}
+        | {"search"}
         | {name for stream in STREAMS for name, _default in stream.closed},
     )
-    for name in ("csrfmiddlewaretoken", "start", "table"):
+    for name in ("csrfmiddlewaretoken", "start"):
         values.pop(name, None)
     available = {stream.key: stream for stream, item in offered if item.url}
     stream = available.get(values.pop("stream", ""))
