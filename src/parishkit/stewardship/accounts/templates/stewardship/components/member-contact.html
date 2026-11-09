@@ -1,0 +1,21 @@
+{% load i18n stewardship %}{% comment %}
+  A Member's email addresses and phone numbers (#2398), drawn once here so
+  a Ministry request's own page (#1157), Ministry requests' Member cell and
+  Review one at a time's Ministry pages show them alike. Takes contact, as
+  reports/ministry_contacts.py gives it: email_visibility and emails,
+  phone_visibility and phones, already decided by the scoped SQL read
+  (Python never widens or narrows them). Each value is its own line
+  (.contact-line) after its kind (Email:, Mobile:, Home:, Work:;
+  web/presentation.phone_lines): an email as a mail link, a phone as a
+  call link, the number on one line and any extension after it. A labelled
+  line keeps each link inline in its text, so the lines stay one text line
+  tall. A value the reader may not see reads Not published.
+  contact_part chooses "emails" or "phones" alone, for a page that labels each
+  (the request page's dl, whose terms name them, so an email has no
+  label): Not published and contact_blank (the text for nothing to list,
+  such as Unavailable) are then bare text. Without it, both are
+  drawn, Not published as "Email: Not published" and "Phones: Not
+  published", and a kind with nothing to list draws no line. It renders
+  no final newline (none in this file), so an include drops in where the
+  hand-written lines were.
+{% endcomment %}{% if contact_part != "phones" %}{% if contact.email_visibility == "not_published" %}{% if contact_part %}{% translate "Not published" %}{% else %}<span class="contact-line">{% translate "Email:" %} {% translate "Not published" %}</span>{% endif %}{% else %}{% for email in contact.emails %}<span class="contact-line contact-email">{% if not contact_part %}<span class="contact-kind">{% translate "Email:" %}</span> {% endif %}<a href="mailto:{{ email|urlencode:'@' }}">{{ email }}</a></span>{% empty %}{{ contact_blank }}{% endfor %}{% endif %}{% endif %}{% if contact_part != "emails" %}{% if contact.phone_visibility == "not_published" %}{% if contact_part %}{% translate "Not published" %}{% else %}<span class="contact-line">{% translate "Phones:" %} {% translate "Not published" %}</span>{% endif %}{% else %}{% for label, number, extension, target in contact.phones|phone_lines %}<span class="contact-line"><span class="contact-kind">{{ label }}:</span> {% if target %}<a href="{{ target }}"><span class="nowrap">{{ number }}</span>{% if extension %} <span class="nowrap">{{ extension }}</span>{% endif %}</a>{% else %}<span class="nowrap">{{ number }}</span>{% if extension %} <span class="nowrap">{{ extension }}</span>{% endif %}{% endif %}</span>{% empty %}{{ contact_blank }}{% endfor %}{% endif %}{% endif %}

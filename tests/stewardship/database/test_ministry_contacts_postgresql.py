@@ -229,10 +229,15 @@ def test_an_added_members_entered_phone_reads_as_a_number(response_service, goog
     request = MinistryRequest.objects.get(
         entity_kind="proposed_member", entity_key=added, action="join"
     )
+    # The page labels and links it (#2398); the export keeps its own text.
+    called = (
+        '<span class="contact-kind">Mobile:</span> <a href="tel:+15025551212">'
+        '<span class="nowrap">+1 (502) 555-1212</span></a>'
+    )
     shown = "mobile: +1 (502) 555-1212"
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         section = contact(item(browser, request))
-        assert shown in section and "normalized" not in section
+        assert called in section and "normalized" not in section
         response, body = export(browser, state="any")
         assert response.status_code == 200
         (row,) = [row for row in table(body) if row["Member DUID"] == "New Member"]

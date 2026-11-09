@@ -139,6 +139,58 @@ def phone(value):
     return f"{shown} ext. {extension}" if extension else shown
 
 
+# A Member's phone kinds as their contact details label them, in the order
+# they are listed (#2398): the mobile first, the number a reader on a phone
+# most likely taps.
+PHONE_KINDS = {"mobile": "Mobile", "home": "Home", "work": "Work"}
+
+
+def _call_target(value):
+    """A call link's ``tel:`` target for one stored number, or "".
+
+    Only a number phonenumbers reads as possible gets a link, in E.164 with
+    any extension; text that is not a number is shown without one rather
+    than dialled as a guess.
+    """
+    number, extension = _split_extension(str(_stored_phone(value) or "").strip())
+    try:
+        parsed = phonenumbers.parse(number, "US")
+    except phonenumbers.NumberParseException:
+        return ""
+    if not phonenumbers.is_possible_number(parsed):
+        return ""
+    extension = extension or parsed.extension or ""
+    parsed.extension = None
+    target = "tel:" + phonenumbers.format_number(
+        parsed, phonenumbers.PhoneNumberFormat.E164
+    )
+    return f"{target};ext={extension}" if extension else target
+
+
+def phone_lines(phones):
+    """A Member's phones as ``(label, number, extension, call target)``.
+
+    ``phones`` maps a kind ("mobile", "home", "work") to a stored number.
+    Mobile, Home and Work come first, in that order, then any other kind by
+    name; an empty number is skipped. The number is shown as ``phone``
+    shows it, any "ext. 12" apart, so a narrow cell can wrap before the
+    extension and keep the number itself on one line; the target is
+    ``tel:`` in E.164, or "" for text that is not a number (#2398).
+    """
+    phones = phones or {}
+    kinds = [kind for kind in PHONE_KINDS if kind in phones]
+    kinds += sorted(kind for kind in phones if kind not in PHONE_KINDS)
+    lines = []
+    for kind in kinds:
+        shown = phone(phones[kind])
+        if shown:
+            label = _(PHONE_KINDS[kind]) if kind in PHONE_KINDS else kind.capitalize()
+            number, marker, extension = shown.partition(" ext. ")
+            extension = f"ext. {extension}" if marker else ""
+            lines.append((label, number, extension, _call_target(phones[kind])))
+    return lines
+
+
 def parse_us_phone(value):
     """Accept any common way of writing a US number; return canonical E.164.
 

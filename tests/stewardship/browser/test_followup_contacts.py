@@ -60,7 +60,7 @@ def test_a_request_page_shows_its_members_contact_details(
     page.goto(component_origin + "/followup-item-leave")
     assert contact_value(page, "Current Ministry role") == "Chairperson"
     assert contact_value(page, "Email") == "Not published"
-    assert contact_value(page, "Phones").startswith("mobile: ")
+    assert contact_value(page, "Phones").startswith("Mobile: ")
     assert page.locator("#followup-contact dt", has_text="Gender").count() == 0
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []

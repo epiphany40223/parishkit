@@ -15,7 +15,7 @@ from parishkit.stewardship.responses.member_census import (
     validate_member_value,
 )
 from parishkit.stewardship.responses.merge import KnownValue
-from parishkit.stewardship.web.presentation import parse_us_phone, phone
+from parishkit.stewardship.web.presentation import parse_us_phone, phone, phone_lines
 
 TEMPLATES = Path(__file__).parents[2] / "src/parishkit/stewardship"
 PHONE_CONTEXT = re.compile(r"phone", re.IGNORECASE)
@@ -177,3 +177,26 @@ def test_no_template_prints_a_phone_without_the_filter():
                 if is_phone and "|phone" not in expression:
                     offenders.append(f"{path.relative_to(TEMPLATES)}: {expression}")
     assert offenders == []
+
+
+def test_phone_lines_label_order_and_call_links():
+    """A Member's phones for their contact details (#2398): Mobile, Home and
+    Work first, then any other kind; empty ones skipped; each shown as
+    |phone shows it, its extension apart, with a tel: link in E.164 (and
+    its extension) only for a number, never for text that is not one."""
+    assert phone_lines(
+        {
+            "work": "502-555-0103 ext. 12",
+            "home": "",
+            "other": "call the office",
+            "mobile": RECORD,
+        }
+    ) == [
+        ("Mobile", "+1 (502) 555-1212", "", "tel:+15025551212"),
+        ("Work", "+1 (502) 555-0103", "ext. 12", "tel:+15025550103;ext=12"),
+        ("Other", "call the office", "", ""),
+    ]
+    assert phone_lines({}) == phone_lines(None) == []
+    assert phone_lines({"home": "+442071838750"}) == [
+        ("Home", "+44 20 7183 8750", "", "tel:+442071838750")
+    ]

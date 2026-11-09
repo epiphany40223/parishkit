@@ -603,9 +603,10 @@ def test_the_queue_offers_export_these_requests():
 
 
 def test_a_join_request_page_shows_its_members_contact_details():
-    """Email, phones, address, gender and age, with Not published kept."""
+    """Email, phones, address, gender and age, with Not published kept; the
+    email a mail link, through the shared contact component (#2398)."""
     section = contact_section(followup_page(item=item(), contact=join_details()))
-    assert "pat@example.org" in section
+    assert '<a href="mailto:pat@example.org">pat@example.org</a>' in section
     assert "<dt>Phones</dt><dd>Not published</dd>" in section
     assert "1 Example Street<br>Exampleton, IN 46000" in section
     assert "<dt>Gender</dt><dd>Female</dd>" in section
@@ -614,12 +615,17 @@ def test_a_join_request_page_shows_its_members_contact_details():
 
 
 def test_a_leave_request_page_shows_the_role_and_the_published_contacts():
-    """A leave shows the Member's current role, email and phones."""
+    """A leave shows the Member's current role, email and phones: each
+    phone labelled by its kind and a call link (#2398)."""
     html = followup_page(item=item(action="leave"), contact=leave_details())
     section = contact_section(html)
     assert "<dt>Current Ministry role</dt><dd>Member</dd>" in section
     assert "<dt>Email</dt><dd>Not published</dd>" in section
-    assert "mobile: " in section
+    assert (
+        '<span class="contact-line"><span class="contact-kind">Mobile:</span> '
+        '<a href="tel:+13175550100"><span class="nowrap">+1 (317) 555-0100</span>'
+        "</a></span>"
+    ) in section
     assert "Gender" not in section and "Known primary Family address" not in section
 
 

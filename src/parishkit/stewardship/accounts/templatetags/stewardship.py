@@ -32,6 +32,7 @@ for name in (
     "number",
     "duid",
     "phone",
+    "phone_lines",
     "usd",
     "percentage",
     "out_of",
