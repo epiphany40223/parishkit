@@ -5991,7 +5991,10 @@ shared component:
   each (`stack-line`), and the heading names them in the same order:
   - a Family's or Member's name with its **Family DUID** or **Member DUID**
     on the line under it, muted. The heading holds both sort controls, the
-    name's and the DUID's, one above the other, so both still sort;
+    name's and the DUID's, one above the other, so both still sort. A
+    Ministry request's Member has their email and phones on short lines
+    under the DUID
+    ([Ministry requests](../admin-portal/spec.md#follow-up-workflows), #2398);
   - the old and new value in one **Baseline → Family's answer** cell (just
     **Family's answer** for a stream with no Baseline): the Baseline muted
     on the first line, a blank one as a muted "(blank)", and the Family's
@@ -6008,7 +6011,9 @@ shared component:
   text (a Family's answer, including a short answer with its marker such
   as a Ministry request's "Leave (cannot participate)", and a note) wraps
   freely, still at word boundaries first, so the answer takes two lines
-  rather than widening the table. Times never wrap. The Actions cell holds its icons two to a line,
+  rather than widening the table. An email address under a name (one long
+  word) may break anywhere (`overflow-wrap: anywhere`) rather than widen
+  its column; a phone number stays on one line. Times never wrap. The Actions cell holds its icons two to a line,
   so it stays narrow. Every Family, Member and Ministry name wraps
   between words to at most two lines, then is clamped, whole in its tip,
   as the [cut-short values](#table-fit-and-row-height) guideline says; a

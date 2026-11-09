@@ -9233,7 +9233,8 @@ ParishSoft" (the default) or "No longer in ParishSoft" (#1217, below).
 worklist's own: Member (the row header; it sorts; it opens the Family hub
 for Staff and Administrators and is plain text for a Ministry leader, per
 the [worklist link rule](../ui-conventions/spec.md#admin-tables), R38),
-Member DUID ("New Member" for a Member added on the form), Ministry
+Member DUID ("New Member" for a Member added on the form), the Member's
+email addresses and phone numbers (below), Ministry
 (the Family's Ministry, or the one the parish added, linking to the request
 page for every reader; it sorts; a Ministry
 since removed from the campaign carries the "Removed" badge), Last contact,
@@ -9247,6 +9248,50 @@ says. The rows are newest first by default, and the table is laid out as
 the [review work tables](../ui-conventions/spec.md#review-work-tables) are.
 A long Member or Ministry name wraps to two lines, then is cut short, whole
 in its tip (#1136, #2124).
+
+**The Member's contact lines.** Under the Member's name and DUID, in the
+same cell rather than a column of their own, so the table gets no wider,
+every reader (Ministry leaders, Staff and Administrators) sees the
+requesting Member's email addresses and phone numbers, one short line
+each: an email as a mail link, a phone as a call link after its kind
+(Mobile, Home, Work), so a leader on a phone can tap to write or call. An
+empty value has no line; a value the reader may not see reads "Email: Not
+published" or "Phones: Not published". The values and who sees them are
+the request page's [Contact details](#follow-up-workflows), with the same
+rule; a Member the Family added shows what the Family entered, and a
+request with no details (one whose Ministry in force the reader does not
+lead) shows no line (Administrator decision, 2026-11-08,
+[#2398](https://github.com/epiphany40223/parishkit/issues/2398); where they
+are read: [Ministry change summary](../reports/spec.md#ministry-change-summary)).
+An earlier version (History) shows what the Member's request in force
+under the same Ministry shows. That is usually its own request, but when
+Edits carried two of the Member's requests into one Ministry, it can be
+the other one, so the row can follow that request's rule rather than its
+own page's; it never shows a value the reader cannot already see on that
+other row.
+The lines are in the row header (the Member cell), so a screen reader that
+repeats the row header as the reader moves across a row's cells repeats
+them too; they are short, so this is accepted rather than splitting the
+name and the lines into separate cells of the shared worklist.
+The name's two-line clamp is the name's alone; a long email may break
+anywhere rather than widen the column, and a phone number stays on one
+line. Where the table has room (a 1366 px laptop window) the column is
+wide enough for a typical line, kind and value, on one line, and the name
+above may use that width before it wraps; the cell's lines are set a
+little tighter than other text. So a typical Member's first row (one
+email, two phones) still ends inside that window, with room to spare
+([#1950](https://github.com/epiphany40223/parishkit/issues/1950)); a
+Member with more contact lines (more phones, or a longer email) may run
+past the first screen. A narrower table wraps the kind above its value. The request page, this cell and
+[Review one at a time](../review-pipeline/spec.md#wizard-pages) draw these
+lines with one shared component. The page's view audit
+(`ministry_followup_viewed`, on completion) records the sorted Ministry
+DUIDs under which it showed Members' contacts (`ministry_duids`) and
+whether they were operational (`ministry_operational`), as Export these
+requests records its file's (below); never names or contact values.
+Rejected: a Contact column, which widens
+the table or squeezes the others (Administrator, 2026-11-08), and the
+Family hub link, since the hub does not show Members' phones and emails.
 
 **Row actions** (icons, hidden rather than disabled by role, each with the
 shared confirmation dialog and its optional note):

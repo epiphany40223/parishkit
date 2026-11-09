@@ -2710,7 +2710,13 @@ address, and a leave request's current role in the Ministry;
 [removed follow-up packet](#follow-up-packet-removed), gives a leave
 request's email and phones, its scope derived
 in SQL from the signed-in user as an export capture derives it. An earlier
-version of a request takes its Member's current values. A Member the Family
+version of a request takes its Member's current values. Ministry requests'
+[Member cell](../admin-portal/spec.md#follow-up-workflows) and Review one at
+a time's Ministry pages show only email and phones, so they read the packet
+projection alone, once for every request shown, joins and leaves alike
+([#2398](https://github.com/epiphany40223/parishkit/issues/2398)): it applies
+the same rule to both, and a per-Ministry report read would cost one query
+per Ministry and kind on the page. A Member the Family
 added on the form is not in ParishSoft yet, so the details are what the
 Family entered, and the page says so; in a file such a Member reads "New
 Member", and two such Members with one name read "New Member 1", "New
@@ -2831,9 +2837,11 @@ differences (Administrator decision, 2026-11-08,
   page lists requests to join or leave the Ministries they lead; a row's
   Accept, Edit or Ignore decides one, and Accept or Ignore can decide
   several ticked rows at once; a filled icon sends its request back to
-  review, and a greyed one says why it cannot; each request's own page,
-  opened from its Ministry link, records contact; and Review one at a
-  time does the same one request at a time. It leaves out the ParishSoft
+  review, and a greyed one says why it cannot; each Member's email and
+  phone numbers are under their name, and Not published means the Member
+  hasn't agreed to share it ([#2398](https://github.com/epiphany40223/parishkit/issues/2398));
+  each request's own page, opened from its Ministry link, records contact;
+  and Review one at a time does the same one request at a time. It leaves out the ParishSoft
   data date and every rule a leader cannot act on ([page help](../ui-conventions/spec.md#page-help)).
 - **No By Ministry.** The page neither draws By Ministry nor reads its
   counts, so the heading's row holds only About this page. The Stage

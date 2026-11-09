@@ -2524,6 +2524,20 @@ Each page has, top to bottom:
   as the Family's number of Members). A
   slim bar under it shows the run's progress by page, with no labels, so it
   never wraps.
+- **Contact details** (Ministry requests' Member pages only): a short block
+  above the section with the Member's email addresses and phone numbers, a
+  line each, mail and call links, phones labelled by kind, for every
+  reader, as Ministry requests'
+  [Member cell](../admin-portal/spec.md#follow-up-workflows) shows them and
+  under the request page's contact rule, through the same shared component
+  ([#2398](https://github.com/epiphany40223/parishkit/issues/2398)). The
+  page lists only requests in force (Every stage leaves out History), so
+  the Member's requests on it share one rule; if they ever differ, the
+  block shows the request that shares the most. With nothing to show it
+  says "No email or phone number is available for this Member.", or, in a
+  run of Members no longer in ParishSoft (whose values ParishSoft no
+  longer gives), "This Member is no longer in ParishSoft, so no email or
+  phone number is shown." The Family hub's Member tabs show no such block.
 - **The section:** the subject's matched items of the run's stream, drawn by the
   shared section component the hub's tab draws
   ([wizard shared component](#wizard-shared-component)): the Changed

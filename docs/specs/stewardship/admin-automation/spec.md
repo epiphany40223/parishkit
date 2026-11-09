@@ -4123,7 +4123,10 @@ filters) and history (`followup_history`), and its services
   default) and `followup show REQUEST_ID [--page N]` admit passively, so
   any session scope reads, and record the page's
   `ministry_followup_viewed` (started, then succeeded or failed, naming
-  the request's Ministry for `followup show`). A row's `ministry` and
+  the request's Ministry for `followup show`; `followup list`, which
+  prints no email or phone, completes with the page's contact Ministries
+  empty, [#2398](https://github.com/epiphany40223/parishkit/issues/2398)).
+  A row's `ministry` and
   `ministry_name`, and the Ministry `followup show` records, are its
   Ministry in force, the one an Edit carried it into, which `--ministry`
   filters by
