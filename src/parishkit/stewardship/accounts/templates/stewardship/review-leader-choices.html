@@ -1,0 +1,19 @@
+{% load i18n stewardship %}{% comment %}
+  Step 2 of a Ministry leader's My review work (#2405): one line, then the
+  two choices, Review one at a time and Review in bulk, with a small "or"
+  between them (decoration, hidden from screen readers). They are equal
+  alternatives, not steps: one card each, the same structure (its large
+  button, one short line, its count To review), the same width and
+  height side by side, stacked in a narrow panel (ui-v1.css). Each card
+  is its own control group, so the two large green buttons side by side
+  are deliberate: equal alternatives, one primary action each. With
+  nothing To review the line says so instead, and both buttons stay
+  usable, since both pages still list the requests already decided. The
+  whole block is one item of the page's review region (#2174), redrawn in
+  place when its token changes; the view's live read
+  (authentication._review_counts) draws this same template. ``steps`` is
+  review_work.leader_steps.
+{% endcomment %}<div class="leader-choices" data-live-item="{{ "choices"|live_key:"leader" }}" data-live-token="{{ steps|live_token }}">
+<p class="leader-step-help">{% if steps.count == 0 %}{% translate "Nothing is waiting for you to review right now. Either one still shows the requests already decided." %}{% else %}{% translate "Either one is enough for the whole review: both show the same requests and details." %}{% endif %}</p>
+<div class="leader-choice-row">{% translate "One Member per page, with Previous and Next." as one_line %}{% include "stewardship/review-leader-choice.html" with choice=steps.one key="one" line=one_line %}<div class="review-work-or leader-choice-or" aria-hidden="true">{% translate "or" %}</div>{% translate "Every request in one table." as bulk_line %}{% include "stewardship/review-leader-choice.html" with choice=steps.bulk key="bulk" line=bulk_line %}</div>
+</div>

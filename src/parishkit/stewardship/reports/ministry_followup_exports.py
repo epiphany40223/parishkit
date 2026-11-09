@@ -146,19 +146,33 @@ LEADER_LEAVES_OUT = frozenset(
 # queue's export row says the same while its filters select more
 # (ministry-followup.html).
 PDF_TOO_LARGE_FIX = _("Choose CSV or XLSX, or narrow the filters.")
+# Step 1 of a Ministry leader's My review work posts only these (#2405, the
+# #2406 contract), while Review in bulk's form always adds its filters and
+# sort (``WorklistQuery.form_values``). That page offers XLSX and PDF and
+# has no filters, so its refusal names only XLSX, as its own line does
+# (review-leader-steps.html).
+LANDING_FIELDS = frozenset(
+    {"csrfmiddlewaretoken", "stage", "format", "browser_timezone"}
+)
+LANDING_FIX = _("Choose XLSX.")
 
 
 class PdfTooLarge(ValueError):
     """A PDF was asked for more requests than one may hold (EXPORT_PDF_LIMIT)."""
 
 
-def pdf_refusal(principal=None):
+def pdf_refusal(principal=None, *, landing=False):
     """The answer to a PDF above the limit: a typed refusal with a way back.
 
-    The queue page offers no PDF while its filters select more than the
-    limit, so this answers only a stale page or a hand-made form. Its way
-    back names the queue as ``principal`` knows it (#2393).
+    The queue page, and a Ministry leader's My review work, offer no PDF
+    while the file would hold more than the limit, so this answers only a
+    stale page or a hand-made form. Its way back names the queue as
+    ``principal`` knows it (#2393). ``landing`` is a post from My review
+    work's Step 1 (``LANDING_FIELDS``, #2405): its fix names only XLSX and
+    its way back is that page.
     """
+    from parishkit.stewardship.accounts.review_work import home_label
+
     return validation_response(
         [FieldError(ErrorCode.INVALID, "format")],
         refusal=Refusal(
@@ -166,9 +180,12 @@ def pdf_refusal(principal=None):
                 _("The PDF is limited to {limit} requests."),
                 limit=f"{EXPORT_PDF_LIMIT:,}",
             ),
-            fix=PDF_TOO_LARGE_FIX,
-            link=reverse("admin:ministry_report"),
-            link_label=format_lazy(_("Return to {page}"), page=_page_name(principal)),
+            fix=LANDING_FIX if landing else PDF_TOO_LARGE_FIX,
+            link=reverse("admin:index" if landing else "admin:ministry_report"),
+            link_label=format_lazy(
+                _("Return to {page}"),
+                page=home_label(principal) if landing else _page_name(principal),
+            ),
         ),
     )
 
@@ -558,7 +575,7 @@ def export(request, campaign_id):
     except (*SAFE_FAILURES, StorageInvariantError):
         return _error(request, campaign_id, status=503)
     except PdfTooLarge:
-        return pdf_refusal(principal)
+        return pdf_refusal(principal, landing=set(request.POST) <= LANDING_FIELDS)
     except ValueError:
         return _error(request, campaign_id)
     finally:

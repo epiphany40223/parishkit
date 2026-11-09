@@ -28,6 +28,7 @@ from .live_status_components import (
 )
 from .past_campaign_components import PAGE as PAST_CAMPAIGNS
 from .pledges_components import PATH as PLEDGES
+from .review_work_components import LEADER_PATH
 from .test_charts import assert_clean, watch
 from .timeline_components import ADMIN as TIMELINE
 from .waits import visible
@@ -50,6 +51,8 @@ EXPORTS = [
     ("/limitations-report", "Export both tables", "Export XLSX", False),
     ("/census-changes", "Export these changes", "Export CSV", False),
     ("/followup-queue", "Export these requests", "Export XLSX", False),
+    # A Ministry leader's My review work, Step 1 (#2405).
+    (LEADER_PATH, "Download the requests", "Export PDF", False),
     (PLEDGES, "Export this list", "Export XLSX", False),
     ("/logs", "Export these log entries", "Export CSV", False),
 ]

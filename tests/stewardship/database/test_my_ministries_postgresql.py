@@ -56,20 +56,24 @@ def test_counts_are_exact_and_follow_the_leaders_scope(response_service):
 
 def test_a_removed_ministry_leaves_its_leaders_panel(response_service):
     """A Ministry removed from the campaign is no longer its leaders' (#922):
-    they lead it only while the campaign asks about it, so the panel is gone.
-    Administrators and Staff keep its open requests."""
+    they lead it only while the campaign asks about it, so they lead no
+    Ministry here and the list is empty, which My review work says plainly
+    (#2405). Administrators and Staff keep its open requests."""
     harness = setup(response_service)
     requests()
     scoped = actor(harness, ("ministry_leader",), (9,))
     assert counts(summary(harness, scoped)) == [(9, True, 1, 0)]
     assert applied(select(harness, [4]))  # Ministry 9 leaves the campaign.
-    assert summary(harness, scoped) is None
+    assert summary(harness, scoped) == {"ministries": []}
 
 
-def test_home_links_the_queue_by_get_and_the_filter_survives(response_service, google):
-    """The leader's My review work (#1690, which replaced My Ministries) links
-    each Ministry's queue; Back, reload and the request page keep the
-    Ministry; a number outside the scope is refused."""
+def test_a_ministry_link_opens_the_queue_by_get_and_the_filter_survives(
+    response_service, google
+):
+    """A link to one Ministry's queue (``?ministry=<DUID>``, which a leader's
+    My review work cards carried until #2405, whose two steps count only the
+    leader's own Ministry) opens it by GET; Back, reload and the request
+    page keep the Ministry; a number outside the scope is refused."""
     harness = setup(response_service)
     browser, _, _, _ = leader(harness, google)
     join, leave = requests()
@@ -78,24 +82,13 @@ def test_home_links_the_queue_by_get_and_the_filter_survives(response_service, g
         response, body = get(browser, "/admin/")
         assert response.status_code == 200
         assert b"<h1>My review work</h1>" in body and b"data-my-ministries" not in body
-        panel = re.search(
-            rb'<section[^>]*data-review-stream="ministry".*?</section>', body, re.S
+        # Ministry 4's leave request is not counted: one join To review.
+        choices = re.findall(
+            rb'<section class="leader-choice".*?</section>', body, re.S
         )
-        assert panel, "the Ministry requests panel is shown"
-        panel = panel[0]
-        # Named as the leader's menu names the page: Review in bulk (#2393).
-        assert b'-heading">Review in bulk</h' in panel
-        # One card, for the one Ministry this leader leads: Ministry 4's
-        # leave request is neither linked nor counted.
-        assert panel.count(b"data-link-card") == 1
-        assert b"?ministry=4" not in panel
-        link = f'href="{route}?ministry=9"'.encode()
-        assert link in panel
-        assert re.search(
-            rb'<span class="link-card-count">1</span> '
-            rb'<span class="link-card-note">to review</span>',
-            panel,
-        )
+        assert len(choices) == 2 and b"?ministry=" not in body
+        for choice in choices:
+            assert b'<span class="leader-choice-number">1</span> to review' in choice
         # The link is an ordinary GET: reloading it is the same request.
         for _ in range(2):
             response, body = get(browser, route + "?ministry=9")

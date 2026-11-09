@@ -49,3 +49,16 @@ def review_wizard_entry(context, worklist, table):
     if worklist.stream == Stream.MINISTRY and is_leader(principal):
         return None
     return table_entry(worklist, table)
+
+
+@register.simple_tag(takes_context=True)
+def leader_review_steps(context, review):
+    """Return ``review_work.leader_steps`` for this render's viewer (#2405).
+
+    A Ministry leader's two steps on My review work, or None for anyone
+    else. A tag, as the panels are, because the choices follow the viewer's
+    menu, which the chrome's context processor builds at render time.
+    """
+    return review_work.leader_steps(
+        context.get("admin_chrome") or {}, review or {}, context.get("principal")
+    )

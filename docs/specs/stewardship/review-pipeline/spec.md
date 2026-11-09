@@ -1980,13 +1980,16 @@ changes what each role lands on:
     Ministry requests as **Review in bulk**
     ([#2393](https://github.com/epiphany40223/parishkit/issues/2393)):
     their Review work group reads My review work, Review one at a time,
-    Review in bulk, and their Ministry panel is named Review in bulk, as
-    the menu names its page
+    Review in bulk, and their My review work's Step 2 names its two
+    choices the same way, as the menu names its pages
     ([admin portal, menu groups](../admin-portal/spec.md#menu-groups)).
     The review wizard keeps calling the stream Ministry requests.
-  - A leader's Ministry panel has one To review card per Ministry they
-    lead, linking Ministry requests filtered to it (`?ministry=<DUID>`), as
-    My Ministries did. Ministry To enter by hand and Not seen in ParishSoft
+  - A Ministry leader's My review work has no stream panels: it is two
+    large steps, Download the requests and Review the requests (one at a
+    time or in bulk), described in
+    [a Ministry leader's My review work](../admin-portal/spec.md#a-ministry-leaders-my-review-work)
+    ([#2405](https://github.com/epiphany40223/parishkit/issues/2405)).
+    Ministry To enter by hand and Not seen in ParishSoft
     are Staff's and open Ministry requests at that Stage, where Roster
     changes to enter was folded
     ([roster entry](../admin-portal/spec.md#roster-entry-on-ministry-requests)).
@@ -2026,8 +2029,7 @@ changes what each role lands on:
     2026-10-19,
     [#1818](https://github.com/epiphany40223/parishkit/issues/1818);
     Cannot participate since
-    [#2101](https://github.com/epiphany40223/parishkit/issues/2101)). A
-    leader's per-Ministry cards link `?ministry=<DUID>` instead. A stage
+    [#2101](https://github.com/epiphany40223/parishkit/issues/2101)). A stage
     link the page cannot use is refused in plain words, as every
     worklist link is.
   - The counts update themselves while the page is open, card by card
@@ -2749,7 +2751,8 @@ earlier unfinished runs in the campaign, and finished ones stay:
   ([#2407](https://github.com/epiphany40223/parishkit/issues/2407); the
   Administrator, 2026-11-09). Staff and Administrators keep it, and the
   start still accepts a leader's own Ministry run.
-- **Dashboard pane.** My review work (for Staff and Ministry leaders) and
+- **Dashboard pane.** My review work (for Staff; a Ministry leader's
+  [has two steps instead](../admin-portal/spec.md#a-ministry-leaders-my-review-work)) and
   Administrators' Home Review work panel put the wizard **beside** the
   stream groups, so the choice reads plainly: review everything one at a
   time, or open any table to work in bulk (R52 Part W, option B; the

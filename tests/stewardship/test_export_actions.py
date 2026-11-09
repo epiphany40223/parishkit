@@ -35,6 +35,9 @@ EXPORTS = {
     ("logs.html", "admin:logs_export"): "csv xlsx jsonl",
     ("ministry-worklist-export.html", "admin:ministry_followup_export"): "csv xlsx pdf",
     ("response-dashboard.html", "admin:report_export_create"): "csv xlsx pdf",
+    # A Ministry leader's My review work, Step 1 (#2405): Review in bulk's
+    # download at Every stage, in the two formats the Administrator chose.
+    ("review-leader-steps.html", "admin:ministry_followup_export"): "xlsx pdf",
 }
 # The pages that let the reader view times in UTC, so their export keeps a
 # time zone choice (preselected to the page's zone).
@@ -58,8 +61,19 @@ ZONE_MENU = re.compile(r'<select\b[^>]*\bname="(?:browser_)?timezone"')
 # ("The file holds the list these choices show") and its column list.
 EXPLAINS = re.compile(
     r"Exports (?:the|all) |The file holds (?:the|all|both)|has these columns|"
-    r"-export-(?:count|columns)\b"
+    r"-export-(?:count|columns)\b|[Dd]ownload [^.<]*\bof (?:every|all)\b"
 )
+# The ui-conventions exception (Export actions, "a download step"): a page
+# whose step is the download itself may say in one line above the row what
+# the file holds. Each such line is named here, so no other page gains one
+# by accident; today a Ministry leader's My review work, Step 1 (#2405).
+DOWNLOAD_STEPS = {
+    "review-leader-steps.html": (
+        '<p class="leader-step-help">{% translate "Download a spreadsheet (XLSX) '
+        "or a PDF of every request for the Ministries you lead. Both hold the "
+        'same information." %}</p>'
+    ),
+}
 
 
 def template_forms():
@@ -104,9 +118,17 @@ def test_no_template_draws_its_own_format_choice():
 
 
 def test_no_export_row_explains_itself():
-    """No export page draws a count, scope or column-list line (R37)."""
+    """No export page draws a count, scope or column-list line (R37), but
+    for a download step's one named line, which the check would otherwise
+    refuse and which sits above that page's row."""
     for name in sorted({name for name, _ in EXPORTS}):
         text = COMMENT.sub("", (TEMPLATES / name).read_text())
+        line = DOWNLOAD_STEPS.get(name)
+        if line is not None:
+            assert EXPLAINS.search(line), name
+            assert text.count(line) == 1, name
+            assert text.index(line) < text.index("{% export_actions "), name
+            text = text.replace(line, "")
         assert not EXPLAINS.search(text), name
 
 

@@ -1,0 +1,10 @@
+{% load i18n %}{% comment %}
+  A Ministry leader's About this page on My review work (#2405), in the
+  short style of the leader's Review in bulk (#2395) and Review one at a
+  time (#2397) help: what the page is for, what Step 1's file holds, and
+  that either Step 2 choice does the whole review. No Family or stream
+  words: a leader reviews only Members. The two names are the leader's
+  menu entries' own (``steps``, review_work.leader_steps).
+{% endcomment %}<p>{% translate "This page is where you review the requests to join or leave the Ministries you lead." %}</p>
+<p>{% translate "Step 1 downloads all of them as a spreadsheet (XLSX) or a PDF, whatever their stage, with each one's current decision." %}</p>
+<p>{% blocktranslate trimmed with one=steps.one.label bulk=steps.bulk.label %}In Step 2, {{ one }} shows one Member per page and {{ bulk }} shows every request in one table. Both show the same requests and details, so either one is enough for the whole review.{% endblocktranslate %}</p>
