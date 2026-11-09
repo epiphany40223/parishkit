@@ -1976,6 +1976,14 @@ changes what each role lands on:
     counts it, and its card is shown only while some item carries the
     flag, as that Stage choice is
     ([#2101](https://github.com/epiphany40223/parishkit/issues/2101)).
+  - A Ministry leader (neither Staff nor an Administrator) knows
+    Ministry requests as **Review in bulk**
+    ([#2393](https://github.com/epiphany40223/parishkit/issues/2393)):
+    their Review work group reads My review work, Review one at a time,
+    Review in bulk, and their Ministry panel is named Review in bulk, as
+    the menu names its page
+    ([admin portal, menu groups](../admin-portal/spec.md#menu-groups)).
+    The review wizard keeps calling the stream Ministry requests.
   - A leader's Ministry panel has one To review card per Ministry they
     lead, linking Ministry requests filtered to it (`?ministry=<DUID>`), as
     My Ministries did. Ministry To enter by hand and Not seen in ParishSoft

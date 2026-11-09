@@ -17,7 +17,11 @@ import pytest
 from django.db import transaction
 from django.test.utils import CaptureQueriesContext
 
-from parishkit.stewardship.accounts import admin_context, review_work
+from parishkit.stewardship.accounts import (
+    admin_context,
+    admin_navigation,
+    review_work,
+)
 from parishkit.stewardship.accounts.review_work import read_counts
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.pipeline import Stream
@@ -179,8 +183,14 @@ def matches(harness, principal):
     sections = [{"items": [{"name": item.name, "url": item.url} for item in items]}]
     admin_context.attach_counts(sections, menu, request._stewardship_open_stages)
     chrome = {
+        # Each entry with its menu label, which names its panel (#2393).
         "entries": {
-            item.name: SimpleNamespace(name=item.name, url=item.url, reason=None)
+            item.name: SimpleNamespace(
+                name=item.name,
+                url=item.url,
+                reason=None,
+                label=admin_navigation.PAGES[item.name].label,
+            )
             for item in items
         },
         "sections": sections,
@@ -368,6 +378,8 @@ def test_staff_land_on_my_review_work_with_linked_counts(response_service, googl
     first, second = re.findall(rb"<li><a [^>]*>([^<]*)</a>", group)[:2]
     assert (first, second) == (b"My review work", b"Review one at a time")
     assert b'aria-current="page">My review work</a>' in group
+    # Staff see five streams, so the Ministry one keeps its name (#2393).
+    assert b">Ministry requests" in group and b"Review in bulk" not in group
     assert b">Home</a>" not in body
     # Home's own panels are gone (decision 8: nothing else is above it).
     assert b"data-next-steps" not in body and b"Family participation" not in body
@@ -431,6 +443,34 @@ def test_staff_land_on_my_review_work_with_linked_counts(response_service, googl
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             _, page = get(browser, f"{route}?stage={stage}")
         assert f'<a href="{expected}" data-page-address'.encode() in page, stage
+
+
+def menu_group(body, key):
+    """The names of a menu group's entries, in order (counts left out)."""
+    group = re.search(rb'data-menu-group="' + key + rb'".*?</ul>', body, re.S)
+    return [name.strip() for name in re.findall(rb"<li><a [^>]*>([^<]*)", group[0])]
+
+
+def test_a_leaders_review_work_reads_review_in_bulk(response_service, google):
+    """A Ministry leader's Review work group reads My review work, Review one
+    at a time, Review in bulk (the Administrator, #2391 and #2393), and
+    their landing's Ministry panel and the page itself use that name."""
+    harness = setup(response_service)
+    browser, _, _, _ = leader(harness, google)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = get(browser, "/admin/")
+        assert response.status_code == 200
+        assert menu_group(body, b"review") == [
+            b"My review work",
+            b"Review one at a time",
+            b"Review in bulk",
+        ]
+        assert b'-heading">Review in bulk</h' in panel(body, "ministry")
+        response, body = get(browser, "/admin/reports/ministries/")
+    assert response.status_code == 200
+    assert b"<h1>Review in bulk</h1>" in body
+    assert b"<title>Review in bulk" in body
+    assert b'aria-current="page">Review in bulk' in body
 
 
 def test_an_administrator_keeps_home(response_service, google):

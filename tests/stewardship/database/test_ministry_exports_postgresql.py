@@ -291,7 +291,13 @@ def test_native_leader_exports_worker_and_download(
         job_route = reverse("admin:report_export", args=[result.pk])
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             response, body = read(browser, job_route)
-            assert response.status_code == 200 and b"Ministry requests export" in body
+            # Named after its page as the leader knows it (#2393), and its
+            # parent crumb names that page so too.
+            assert response.status_code == 200 and b"Review in bulk export" in body
+            assert b"Ministry requests export" not in body
+            assert (
+                f'<a href="{reverse("admin:ministry_report")}">Review in bulk</a>'
+            ).encode() in body
             # The parent crumb is the way back; no "Return to" repeats it
             # (#1345).
             assert b"Return to " not in body
@@ -316,7 +322,7 @@ def test_native_leader_exports_worker_and_download(
                 assert b"Not published" not in body and b"valid@example.org" in body
                 assert b"1960-01-01" not in body and b"+1 (202) 555-0123" in body
     # Once its window is over, the leader's own export is the fixed 410 page,
-    # linking back to Ministry requests (#1398).
+    # linking back to Ministry requests (#1398), by the leader's name for it.
     from .test_export_cleanup_postgresql import expire_publication
 
     expire_publication(result)
@@ -325,6 +331,7 @@ def test_native_leader_exports_worker_and_download(
     assert response.status_code == 410
     assert b"This export is no longer available." in body
     assert f'href="{reverse("admin:ministry_report")}"'.encode() in body
+    assert f'{reverse("admin:ministry_report")}">Review in bulk</a>'.encode() in body
     # One more export, still queued when the leader loses the Ministry.
     pending = create(harness, actor, format="csv", request_key=uuid4())
     store = harness.service.store

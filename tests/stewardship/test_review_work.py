@@ -323,6 +323,42 @@ def test_a_leaders_ministry_panel_has_one_card_per_ministry():
     ]
 
 
+def test_a_panel_is_named_as_the_viewers_menu_names_its_page():
+    """The Ministry panel's heading is the viewer's menu label: Review in
+    bulk in a Ministry leader's menu (#2393), Ministry requests in Staff's;
+    the panels and the menu never disagree (#2108)."""
+    from parishkit.stewardship.accounts import admin_context
+
+    mine = {
+        "ministries": [
+            {"duid": 9, "name": "Choir", "in_campaign": True, "join": 1, "leave": 0}
+        ]
+    }
+    for roles, review, name in (
+        (
+            {"ministry_leader"},
+            {"campaign": object(), "counts": {"leader": mine}},
+            "Review in bulk",
+        ),
+        ({"staff"}, staff_counts(), "Ministry requests"),
+    ):
+        actor = Principal(uuid4(), frozenset(roles), frozenset({9}))
+        campaign = SimpleNamespace(
+            state="active",
+            active_configuration=SimpleNamespace(values={"modules": ["ministry"]}),
+        )
+        items = admin_context._navigation_items(
+            actor, False, campaign, SimpleNamespace(mode="production"), True
+        )
+        menu = {
+            "entries": {item.name: item for item in items},
+            "sections": [{"items": [{"name": item.name} for item in items]}],
+        }
+        panels = review_work.panels(menu, review)
+        ministry = next(panel for panel in panels if panel.stream == "ministry")
+        assert str(ministry.title) == name, roles
+
+
 def test_every_stream_links_its_stages():
     """The Administrator's decision (#1818): each stream's cards link its
     stage; Limitations' page takes ``?stage=`` too since #2101."""

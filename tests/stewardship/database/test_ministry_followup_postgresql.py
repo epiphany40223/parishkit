@@ -1135,13 +1135,15 @@ def test_menu_shows_open_follow_up_counts_scoped_to_the_viewer(
         assert _menu_count(body, "Ministry requests") == 2
         # This Family wrote no additional information, so nothing is open.
         assert b"Additional information <span" not in body
-        assert _menu_count(get(browser, "/admin/")[1], "Ministry requests") == 1
+        # A leader's menu names the queue Review in bulk (#2393).
+        assert _menu_count(get(browser, "/admin/")[1], "Review in bulk") == 1
     edit(harness, admin, join, state="resolved", outcome="joined")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert _menu_count(get(admin_browser, "/admin/")[1], "Ministry requests") == 1
         body = get(browser, "/admin/")[1]
-        assert b">Ministry requests</a>" in body
-        assert _menu_count(body, "Ministry requests") is None
+        assert b">Review in bulk</a>" in body
+        assert b">Ministry requests</a>" not in body
+        assert _menu_count(body, "Review in bulk") is None
     # Additional information counts the Family's current, uncompleted request;
     # a Ministry leader has no Additional information entry at all.
     form = revisit(harness)
@@ -1199,12 +1201,12 @@ def test_a_leaders_open_count_costs_the_chrome_one_query(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         monkeypatch.setitem(family_maintenance._cache, "at", None)
         body = get(browser, "/admin/")[1]
-        assert _menu_count(body, "Ministry requests") == 1
+        assert _menu_count(body, "Review in bulk") == 1
         with monkeypatch.context() as patched:
             patched.setattr(admin_context, "_open_counts", lambda *args: {})
             patched.setitem(family_maintenance._cache, "at", None)
             body = get(browser, "/admin/")[1]
-            assert _menu_count(body, "Ministry requests") is None
+            assert _menu_count(body, "Review in bulk") is None
     counts, plain = runs
     assert len(counts) == len(plain) + 1, (counts, plain)
     marker = "stewardship_ministry_followup_v2"

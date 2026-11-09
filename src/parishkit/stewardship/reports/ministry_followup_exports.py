@@ -65,7 +65,7 @@ from .ministries import reads_every_ministry
 from .ministry_contacts import current_ministry, request_contacts
 from .ministry_documents import MinistryDocument, new_member_labels
 from .ministry_followup import EXPORT_PDF_LIMIT, STATES, FollowupQuery, followup_page
-from .ministry_followup_views import _error, _principal
+from .ministry_followup_views import _error, _page_name, _principal
 from .ministry_roster_views import family_keys
 from .ministry_worklist import (
     WorklistQuery,
@@ -130,11 +130,12 @@ class PdfTooLarge(ValueError):
     """A PDF was asked for more requests than one may hold (EXPORT_PDF_LIMIT)."""
 
 
-def pdf_refusal():
+def pdf_refusal(principal=None):
     """The answer to a PDF above the limit: a typed refusal with a way back.
 
     The queue page offers no PDF while its filters select more than the
-    limit, so this answers only a stale page or a hand-made form.
+    limit, so this answers only a stale page or a hand-made form. Its way
+    back names the queue as ``principal`` knows it (#2393).
     """
     return validation_response(
         [FieldError(ErrorCode.INVALID, "format")],
@@ -145,7 +146,7 @@ def pdf_refusal():
             ),
             fix=PDF_TOO_LARGE_FIX,
             link=reverse("admin:ministry_report"),
-            link_label=_("Return to Ministry requests"),
+            link_label=format_lazy(_("Return to {page}"), page=_page_name(principal)),
         ),
     )
 
@@ -508,7 +509,7 @@ def export(request, campaign_id):
             content_type=FORMATS[fmt],
         )
         if response.status_code == 503 and not response.streaming:
-            return _error(campaign_id, status=503)
+            return _error(request, campaign_id, status=503)
         handed_off = response.status_code == 200 and response.streaming
         if handed_off:
             for name, value in download_headers(
@@ -520,11 +521,11 @@ def export(request, campaign_id):
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
-        return _error(campaign_id, status=503)
+        return _error(request, campaign_id, status=503)
     except PdfTooLarge:
-        return pdf_refusal()
+        return pdf_refusal(principal)
     except ValueError:
-        return _error(campaign_id)
+        return _error(request, campaign_id)
     finally:
         if finish is not None and not handed_off:
             finish(False)

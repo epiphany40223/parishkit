@@ -2992,6 +2992,9 @@ registry and the rendered pages.
    the same name. The only exceptions are the object-named pages in the Admin portal's
    [page names and placement](../admin-portal/spec.md#page-names-and-placement)
    table.
+   A page whose name depends on the viewer (the registry's per-viewer
+   labels, such as a Ministry leader's Review in bulk) uses the viewer's
+   name in all of these places, and in every "Return to" it.
    A step of a guided page that has its own address is that page, not a
    child of it (the [Go live page](../admin-portal/spec.md#go-live-page)'s
    Prepare step): it has the page's name, marks the page's menu entry

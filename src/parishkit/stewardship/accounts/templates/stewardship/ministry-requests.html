@@ -1,7 +1,7 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
-{% block title %}{% translate "Ministry requests" %}{% endblock %}
+{% block title %}{{ page_name }}{% endblock %}
 {% block content %}
-<div class="heading-row"><h1>{% translate "Ministry requests" %}</h1>
+<div class="heading-row"><h1>{{ page_name }}</h1>
 {% aboutpage "ministry-followup" %}{% comment %}A Ministry leader's help is short and says only what a leader does here (#2395); Staff and Administrators keep the full help below.{% endcomment %}{% if leader %}<p>{% translate "This page lists the requests Families made to join or leave the Ministries you lead. Stage chooses which ones show: To review, the first choice, lists the requests nobody has decided yet." %}</p>
 <p>{% translate "Decide a request with the icons on its row:" %}</p>
 <ul><li>{% translate "Accept: the Member joins or leaves, as the Family asked. Staff then make the change in ParishSoft." %}</li>

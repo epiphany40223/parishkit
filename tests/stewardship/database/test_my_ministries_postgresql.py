@@ -83,6 +83,8 @@ def test_home_links_the_queue_by_get_and_the_filter_survives(response_service, g
         )
         assert panel, "the Ministry requests panel is shown"
         panel = panel[0]
+        # Named as the leader's menu names the page: Review in bulk (#2393).
+        assert b'-heading">Review in bulk</h' in panel
         # One card, for the one Ministry this leader leads: Ministry 4's
         # leave request is neither linked nor counted.
         assert panel.count(b"data-link-card") == 1
@@ -100,8 +102,8 @@ def test_home_links_the_queue_by_get_and_the_filter_survives(response_service, g
             assert response.status_code == 200
             assert str(join.pk).encode() in body and str(leave.pk).encode() not in body
         # The view is remembered like any other (#534): the request page and
-        # its "Return to Ministry requests" carry its token, which keeps the
-        # Ministry.
+        # its "Return to Review in bulk" (a leader's name for Ministry
+        # requests, #2393) carry its token, which keeps the Ministry.
         token = re.search(
             rf"{route}follow-up/{join.pk}/\?queue=([A-Za-z0-9_-]+)".encode(), body
         )
@@ -110,6 +112,12 @@ def test_home_links_the_queue_by_get_and_the_filter_survives(response_service, g
         response, detail = get(browser, f"{route}follow-up/{join.pk}/?queue={token}")
         assert response.status_code == 200
         assert f'href="{route}?queue={token}"'.encode() in detail
+        assert (
+            f'<a href="{route}?queue={token}">Return to Review in bulk</a>'.encode()
+            in detail
+        )
+        assert f'<a href="{route}">Review in bulk</a>'.encode() in detail
+        assert b"Ministry requests" not in detail.split(b"<main", 1)[-1]
         response, back = get(browser, f"{route}?queue={token}")
         assert response.status_code == 200
         assert str(join.pk).encode() in back and str(leave.pk).encode() not in back

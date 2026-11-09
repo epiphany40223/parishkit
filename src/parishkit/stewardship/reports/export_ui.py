@@ -131,13 +131,15 @@ def create(request, campaign_id):
         return _error(request, campaign_id=campaign_id, status=400)
 
 
-def _origin(job):
+def _origin(job, principal=None):
     """Where ``job`` came from: (title, source page, crumb arguments and
     queries, report URL).
 
     The status page uses it for its trail and "Return to", and the "no
     longer available" page for its link back to the report. It reads only
-    the request row, never its capture.
+    the request row, never its capture. A report's export is named after
+    its page as ``principal`` knows it (a Ministry leader's Review in
+    bulk, #2393).
     """
     # The report page the export came from, for the trail (#196),
     # and any route arguments and query that page's crumb needs. A
@@ -215,7 +217,9 @@ def _origin(job):
             timezone=job.browser_timezone,
         ).url()
     if title is None:
-        title = _("%(page)s export") % {"page": admin_navigation.PAGES[source].label}
+        title = _("%(page)s export") % {
+            "page": admin_navigation.page_label(source, principal)
+        }
     return title, source, arguments, queries, report_url
 
 
@@ -249,7 +253,9 @@ def gone_page(request, source, report_url, *, arguments=None, queries=None):
             "stewardship/report-export-gone.html",
             {
                 "report_url": report_url,
-                "report_name": admin_navigation.PAGES[source].label,
+                "report_name": admin_navigation.page_label(
+                    source, getattr(request, "principal", None)
+                ),
             },
             request=request,
         ),
@@ -261,7 +267,9 @@ def gone_page(request, source, report_url, *, arguments=None, queries=None):
 
 def _gone(request, job):
     """``gone_page`` for a report export, from its request row alone."""
-    _, source, arguments, queries, report_url = _origin(job)
+    _, source, arguments, queries, report_url = _origin(
+        job, getattr(request, "principal", None)
+    )
     return gone_page(request, source, report_url, arguments=arguments, queries=queries)
 
 
@@ -357,7 +365,7 @@ def detail(request, request_id):
                 admit_campaign(campaign_id, mutating=True)
             except PermissionError:
                 mutable = False
-            title, source, arguments, queries, report_url = _origin(job)
+            title, source, arguments, queries, report_url = _origin(job, principal)
             admin_navigation.place(
                 request,
                 parent=source,
@@ -385,7 +393,7 @@ def detail(request, request_id):
                 # draws it only when ``report_url`` differs from the parent
                 # crumb's link, that is when it keeps the export's filters
                 # (#1345).
-                "report_name": admin_navigation.PAGES[source].label,
+                "report_name": admin_navigation.page_label(source, principal),
                 "can_cancel": state["state"] in {"queued", "running", "retry_wait"},
                 # Why a still-queued export has not started (#340). Ministry
                 # leaders may open their own exports but not background work,

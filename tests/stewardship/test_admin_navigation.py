@@ -1187,6 +1187,90 @@ def test_a_ministry_leaders_export_names_the_dashboard_without_a_link():
         assert (trail[-2]["url"] == reverse("admin:reports")) is linked
 
 
+# A Ministry leader's name for Ministry requests (#2393; admin-portal spec,
+# "Menu groups"): leaders have one stream, so it pairs with Review one at a
+# time; Staff and Administrators keep the stream's name.
+BULK = "Review in bulk"
+REQUESTS = "Ministry requests"
+
+
+@pytest.mark.parametrize(
+    ("roles", "name"),
+    [
+        ({"ministry_leader"}, BULK),
+        ({"staff"}, REQUESTS),
+        # A Staff member who also leads a Ministry is Staff.
+        ({"staff", "ministry_leader"}, REQUESTS),
+        ({"administrator"}, REQUESTS),
+        ({"administrator", "staff", "ministry_leader"}, REQUESTS),
+    ],
+)
+def test_only_a_ministry_leader_knows_ministry_requests_as_review_in_bulk(roles, name):
+    """The menu entry and ``page_label`` name the page by the viewer's role,
+    and every other entry keeps its registry name; the order is unchanged."""
+    from parishkit.stewardship.accounts.policy import Capability, Principal, allows
+
+    actor = Principal(uuid4(), frozenset(roles), frozenset({9}))
+    assert str(navigation.page_label("ministry_report", actor)) == name
+    items = admin_context._navigation_items(
+        actor,
+        allows(actor, Capability.CONFIGURE),
+        CAMPAIGNS["active"],
+        SimpleNamespace(mode="production"),
+        True,
+    )
+    labels = {item.name: str(item.label) for item in items}
+    assert labels["ministry_report"] == name
+    for entry, label in labels.items():
+        if entry != "ministry_report":
+            assert label == str(navigation.PAGES[entry].label), entry
+
+
+def test_without_an_admin_principal_the_registry_name_stays():
+    """An error page drawn before sign-in, or a Family, gets the usual name."""
+    from parishkit.stewardship.accounts.policy import Principal
+
+    family = Principal(uuid4(), frozenset(), family_id=uuid4())
+    for principal in (None, family):
+        assert navigation.viewer_labels(principal) == {}
+        assert navigation.page_label("ministry_report", principal) == REQUESTS
+    # Pages a leader has no other name for keep theirs.
+    leader = _principal("ministry_leader")
+    assert navigation.page_label("review_wizard", leader) == "Review one at a time"
+
+
+@pytest.mark.parametrize(
+    ("role", "name"), [("ministry_leader", BULK), ("staff", REQUESTS)]
+)
+def test_the_trail_and_return_to_name_ministry_requests_as_the_menu_does(role, name):
+    """The page's last crumb, a Follow-up request's parent crumb and its
+    "Return to" all use the viewer's menu name (navigation rule 4)."""
+    items = _menu(role, CAMPAIGNS["active"], "production")
+    _, trail = navigation.build(_match("ministry_report"), items)
+    assert trail[-1] == {"label": name, "url": None}
+    match = _match("ministry_followup_item", request_id=uuid4())
+    _, trail = navigation.build(match, items)
+    assert trail[-2] == {"label": name, "url": reverse("admin:ministry_report")}
+    assert navigation.back(match, None, items) == trail[-2]
+    # The menu's own entry, too.
+    sections, _ = navigation.build(match, items)
+    review = next(section for section in sections if section["key"] == "review")
+    entry = next(item for item in review["items"] if item["name"] == "ministry_report")
+    assert str(entry["label"]) == name and entry["current"] == "true"
+
+
+@pytest.mark.parametrize(
+    ("role", "name"), [("ministry_leader", BULK), ("staff", REQUESTS)]
+)
+def test_a_greyed_ministry_requests_is_named_as_the_menu_names_it(role, name):
+    """Opened while the campaign has no Ministry module, the page's refusal
+    names it as the viewer's menu does."""
+    items = _menu(role, _campaign("active", modules=("financial",)), "production")
+    greyed = navigation.greyed_entry("ministry_report", items)
+    assert str(greyed.label) == name
+    assert str(greyed.refusal().refusal.title) == f"{name} isn't available right now"
+
+
 def test_open_counts_read_once_per_request_and_only_for_offered_entries(
     monkeypatch,
 ):

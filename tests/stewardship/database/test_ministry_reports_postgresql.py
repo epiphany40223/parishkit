@@ -266,7 +266,13 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
             and b"Choir" not in body
         )
         # The menu offers the leader the Ministry entries only (#522).
-        assert b"Ministry requests" in body and b"Campaign Family directory" not in body
+        assert b"Review in bulk" in body and b"Campaign Family directory" not in body
+        # A leader knows the page as Review in bulk (#2393): its heading,
+        # browser title and the trail's last crumb say so, as the menu does.
+        assert b"<h1>Review in bulk</h1>" in body
+        assert b"<title>Review in bulk" in body
+        assert b'<span aria-current="page">Review in bulk</span>' in body
+        assert b"<h1>Ministry requests</h1>" not in body
         # A leader sees no ParishSoft or campaign mark (#1135), and nobody
         # sees a Ministry activity filter or an Active/Inactive mark (#1267).
         for hidden in (

@@ -23,7 +23,7 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 
 from parishkit.stewardship import pipeline
 from parishkit.stewardship.accounts.actor_names import actor_names, actor_of
-from parishkit.stewardship.accounts.admin_navigation import PAGES
+from parishkit.stewardship.accounts.admin_navigation import page_label
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
@@ -191,12 +191,14 @@ def _linked_ministry(value, principal):
     return value
 
 
-def _error(campaign_id, *, request_id=None, status=400, link=False):
+def _error(request, campaign_id, *, request_id=None, status=400, link=False):
     """No private form/exception values or database-dependent context processors.
 
     ``link`` marks a refused address (a GET with a malformed or out-of-date
     query), which says so instead of asking to reload a form never sent:
-    reloading that address would only repeat the error.
+    reloading that address would only repeat the error. The page names
+    Ministry requests as the signed-in viewer knows it (#2393), from the
+    principal admission left on ``request``, if any; it reads nothing.
     """
     debug_swallowed("report request refused")
     response = HttpResponse(
@@ -207,6 +209,7 @@ def _error(campaign_id, *, request_id=None, status=400, link=False):
                 "request_id": request_id,
                 "status": status,
                 "link": link,
+                "page_name": _page_name(getattr(request, "principal", None)),
             },
         ),
         status=status,
@@ -217,6 +220,11 @@ def _error(campaign_id, *, request_id=None, status=400, link=False):
         response["Retry-After"] = "5"
     # The refusal log's codes for this page of its own (#1403).
     return with_status_code(response, *(["bad_link"] if link else []))
+
+
+def _page_name(principal):
+    """Ministry requests' name for ``principal`` (a leader's Review in bulk, #2393)."""
+    return page_label("ministry_report", principal)
 
 
 def _audit(principal, campaign_id, outcome, ministry=None, *, automatic=False):
@@ -421,7 +429,7 @@ def _page_response(
                 response = render(
                     request,
                     "stewardship/report-empty.html",
-                    {"page_name": PAGES["ministry_report"].label},
+                    {"page_name": _page_name(principal)},
                 )
                 response["Cache-Control"] = "no-store"
                 return response
@@ -586,6 +594,7 @@ def _page_response(
                 mutable=mutable,
                 notice=notice,
                 queue_token=token,
+                page_name=_page_name(principal),
                 # Admin and Staff see the roster link; a leader never does.
                 can_tick=can_tick(principal),
                 # The help about Ministries removed from the campaign is for
@@ -697,6 +706,8 @@ def _page_response(
                 item=item,
                 contact=contact,
                 queue_token=token,
+                # The queue's name in the "Return to" and the help (#2393).
+                page_name=_page_name(principal),
                 next_id=following,
                 history=history,
                 previous_history=history_page - 1 if history_page > 1 else None,
@@ -760,9 +771,11 @@ def _page_response(
         # page keeps its own, which offers to reload that request.
         if request_id is None:
             return report_unavailable()
-        return _error(campaign_id, request_id=request_id, status=503)
+        return _error(request, campaign_id, request_id=request_id, status=503)
     except ValueError:
-        return _error(campaign_id, request_id=request_id, link=request.method == "GET")
+        return _error(
+            request, campaign_id, request_id=request_id, link=request.method == "GET"
+        )
     finally:
         if finish is not None and not handed_off:
             finish(False)
@@ -864,7 +877,7 @@ def queue(request, campaign_id):
     try:
         decision = read_decision(parameters)
     except ValueError:
-        return _error(campaign_id)
+        return _error(request, campaign_id)
     notice = None
     if decision is not None:
         notice = _decide(request, campaign_id, decision)
@@ -906,9 +919,9 @@ def _decide(request, campaign_id, decision):
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
-        return _error(campaign_id, status=503)
+        return _error(request, campaign_id, status=503)
     except ValueError:
-        return _error(campaign_id)
+        return _error(request, campaign_id)
 
 
 @require_GET
@@ -1050,18 +1063,18 @@ def _mutation(request, campaign_id, request_id, work):
         response["Cache-Control"] = "no-store"
         return response
     except StaleRecordError:
-        return _error(campaign_id, request_id=request_id, status=409)
+        return _error(request, campaign_id, request_id=request_id, status=409)
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
-        return _error(campaign_id, request_id=request_id, status=503)
+        return _error(request, campaign_id, request_id=request_id, status=503)
     except FollowupRefusal as refusal:
         # Only work() raises one, so the service and principal are set.
         return _refused(
             request, campaign_id, request_id, refusal, service.store, principal
         )
     except ValueError:
-        return _error(campaign_id, request_id=request_id)
+        return _error(request, campaign_id, request_id=request_id)
 
 
 def _refused(request, campaign_id, request_id, refusal, store, principal):
@@ -1106,9 +1119,9 @@ def _refused(request, campaign_id, request_id, refusal, store, principal):
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except (DatabaseError, *SAFE_FAILURES, StorageInvariantError):
-        return _error(campaign_id, request_id=request_id, status=503)
+        return _error(request, campaign_id, request_id=request_id, status=503)
     if request.POST.get("expected_version") != str(version) or state not in OPEN_STATES:
-        return _error(campaign_id, request_id=request_id, status=409)
+        return _error(request, campaign_id, request_id=request_id, status=409)
     return _page_response(request, campaign_id, request_id=request_id, refusal=refusal)
 
 

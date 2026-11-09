@@ -323,7 +323,9 @@ def _navigation_items(actor, admin, campaign, configuration, parishsoft_data=Non
     state does not allow right now has no URL and carries its reason (the
     admin-portal spec's stable menu shape). Campaign entries follow the
     current campaign. ``admin`` is the caller's CONFIGURE decision, reused.
-    ``parishsoft_data`` is passed on to ``menu_state``.
+    ``parishsoft_data`` is passed on to ``menu_state``. An entry the viewer
+    knows by another name (a Ministry leader's Review in bulk, #2393) is
+    named so here, and the trail and "Return to" follow it.
     """
 
     def may_open(entry):
@@ -339,7 +341,7 @@ def _navigation_items(actor, admin, campaign, configuration, parishsoft_data=Non
         )
 
     state = menu_state(campaign, configuration, parishsoft_data)
-    return admin_navigation.menu(state, may_open)
+    return admin_navigation.menu(state, may_open, admin_navigation.viewer_labels(actor))
 
 
 def greyed_page(request, store):
