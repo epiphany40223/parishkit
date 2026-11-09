@@ -48,6 +48,7 @@ from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, emit_failure
+from parishkit.stewardship.pipeline import Stage
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web import dates
@@ -122,6 +123,9 @@ HEADINGS = (
 )
 # The queue's own words for a request with no recorded contact attempt.
 NO_CONTACT = "None recorded"
+# A request nobody has decided yet: its Decision reads its Stage's words
+# rather than a blank cell (the Administrator, 2026-11-09, #2412).
+UNDECIDED = Stage.TO_REVIEW.label
 UNAVAILABLE = "Unavailable"
 PRIVACY = "Sensitive parish information. Share only with authorized recipients."
 # The report details a Ministry leader's file leaves out, in every format
@@ -228,6 +232,21 @@ def _contact_values(details, action):
     )
 
 
+def _decision(row):
+    """A row's Decision cell: its decision's words, or To review while the
+    request waits for one (#2412).
+
+    Only a request at the To review stage (its ``placement``, from
+    ``ministry_worklist.place``) reads To review, decided by the stage
+    itself rather than its words, which a reader's view may relabel; a
+    History or Confirmed request nobody decided keeps a blank Decision,
+    since none is due.
+    """
+    if row["decision_label"]:
+        return row["decision_label"]
+    return UNDECIDED if row["placement"].stage is Stage.TO_REVIEW else ""
+
+
 def queue_document(
     result,
     contacts,
@@ -289,7 +308,7 @@ def queue_document(
                 # The review pipeline's words (#1684), as the worklist shows
                 # them to this reader.
                 row["stage_label"],
-                row["decision_label"],
+                _decision(row),
                 reviewer_value(row),
                 "Yes" if roster and row.get("latest") is False else "",
                 (actor_text(row["roster_by"]) or "Former portal user")

@@ -2882,7 +2882,8 @@ History's earlier versions, which Every stage leaves out on the page too.
 It reads through the same scoped selection as Review in bulk, so a leader
 gets nothing the page would not show. Each row carries the request's Stage
 (To review, Accepted, Ignored, Confirmed) and its Decision, the columns
-every reader's file already had.
+every reader's file already had (an undecided request's Decision:
+[follow-up workflows](../admin-portal/spec.md#follow-up-workflows)).
 
 Staff and Administrators' files are unchanged: they keep every detail to
 audit a file. A reader who is also Staff or an Administrator gets their

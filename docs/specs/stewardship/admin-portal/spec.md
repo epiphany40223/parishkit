@@ -9210,7 +9210,11 @@ hidden filters follow an in-place Apply, sort or page change. The rows are the f
 own, so a Ministry leader gets only the Ministries they lead, exactly as on
 the worklist. The file's columns are Member, Member DUID, ParishSoft status,
 Family, Family DUID, Ministry, Request, Stage, Decision (with a Ministry
-request's outcome, "Ignored: Stayed in the Ministry"), Reviewer's value,
+request's outcome, "Ignored: Stayed in the Ministry"; "To review" for a
+request nobody has decided yet, the Stage's own words, in every format and
+for every role, `pk-admin followup export` included:
+[#2412](https://github.com/epiphany40223/parishkit/issues/2412), the
+Administrator, 2026-11-09), Reviewer's value,
 Replaced by a later response, Entered by, Entered at and Last contact
 (the roster-entry columns are blank in a Ministry leader's file;
 [roster entry](#roster-entry-on-ministry-requests)), in the

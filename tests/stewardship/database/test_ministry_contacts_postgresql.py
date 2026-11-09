@@ -283,7 +283,7 @@ def test_a_leaders_every_stage_download_is_lean_and_in_scope(
         assert response.status_code == 200
         rows, details = workbook(body)
         assert {(row["Ministry"], row["Stage"], row["Decision"]) for row in rows} == {
-            ("Food pantry", "To review", None),
+            ("Food pantry", "To review", "To review"),
             ("Choir", "Ignored", "Ignored: Stayed in the Ministry"),
         }
         assert details == lean

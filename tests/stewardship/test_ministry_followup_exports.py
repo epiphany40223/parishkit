@@ -24,6 +24,7 @@ from parishkit.stewardship.audit.schemas import (
     Outcome,
     sanitize,
 )
+from parishkit.stewardship.pipeline import Decision, Placement, Stage
 from parishkit.stewardship.reports import ministry_contacts, ministry_followup_exports
 from parishkit.stewardship.reports.information_rendering import (
     information_records,
@@ -61,7 +62,9 @@ def row(request_id, **values):
         "state": "new",
         "state_label": "New",
         "outcome_label": "",
-        # The worklist's words for its stage (ministry_worklist.place).
+        # The worklist's placement and words for its stage
+        # (ministry_worklist.place).
+        "placement": Placement(Stage.TO_REVIEW),
         "stage_label": "To review",
         "decision_label": "",
         "reviewed_ministry_name": None,
@@ -131,6 +134,7 @@ def document(roster=False, lean=False, **changes):
             state="resolved",
             state_label="Resolved",
             outcome_label="Stayed in the Ministry",
+            placement=Placement(Stage.IGNORED, Decision.IGNORED),
             stage_label="Ignored",
             decision_label="Ignored: Stayed in the Ministry",
         ),
@@ -139,6 +143,7 @@ def document(roster=False, lean=False, **changes):
             member_name="Gone, Old",
             member_duid=34567,
             state="resolved",
+            placement=Placement(Stage.TO_ENTER_BY_HAND, Decision.ACCEPTED_EDITED),
             stage_label="To enter by hand",
             decision_label="Accepted (edited)",
             reviewed_ministry_name="Food pantry",
@@ -212,7 +217,8 @@ def test_the_file_holds_the_queue_columns_then_the_contact_details():
         "Ignored: Stayed in the Ministry",
         "",
     )
-    assert (joined["Stage"], joined["Decision"]) == ("To review", "")
+    # Nobody has decided it yet: its Decision says so (#2412).
+    assert (joined["Stage"], joined["Decision"]) == ("To review", "To review")
     # An Edit's Ministry is the Reviewer's value.
     assert (bare["Stage"], bare["Decision"], bare["Reviewer's value"]) == (
         "To enter by hand",
@@ -433,6 +439,52 @@ def test_the_csv_holds_no_report_details_for_either_reader():
     full = csv_bytes(document())
     assert full == csv_bytes(document(lean=True))
     assert not any(label.encode() in full for label in LEFT_OUT - {"Contacts"})
+
+
+@pytest.mark.parametrize("reader", ["leader", "staff"])
+def test_an_undecided_request_reads_to_review_in_every_format(reader):
+    """A request nobody has decided reads To review in its Decision column,
+    as its Stage does, in the CSV, the XLSX and the PDF, for a Ministry
+    leader's file and Staff's alike (the Administrator, 2026-11-09, #2412).
+    A decided request keeps its own words, and a History or Confirmed one
+    nobody decided keeps a blank Decision, since none is due."""
+    from openpyxl import load_workbook
+
+    built = document(roster=reader == "staff", lean=reader == "leader")
+    column = HEADINGS.index("Decision")
+    decisions = [
+        "To review",
+        "Ignored: Stayed in the Ministry",
+        "Accepted (edited)",
+        "To review",
+    ]
+    output = io.BytesIO()
+    render_information(built, output, format="csv")
+    lines = list(csv.reader(io.StringIO(output.getvalue().decode())))
+    assert [line[column] for line in lines[1:]] == decisions
+    output = io.BytesIO()
+    render_information(built, output, format="xlsx")
+    book = load_workbook(io.BytesIO(output.getvalue()))
+    sheet = next(name for name in book.sheetnames if name != "Report information")
+    cells = [row[column].value for row in book[sheet].iter_rows(min_row=2)]
+    assert cells == decisions
+    # The PDF's cards hold the same cells, leaving out only blank ones.
+    cards = list(information_records(built))[1:]
+    assert [dict(card.fields)["Decision"] for card in cards] == decisions
+    rows = [
+        row(str(uuid4()), placement=Placement(stage), stage_label=stage.label)
+        for stage in (Stage.HISTORY, Stage.CONFIRMED)
+    ]
+    undecided = queue_document(
+        result(rows),
+        {},
+        FollowupQuery(),
+        parish_name="P",
+        requested_at=SUBMITTED,
+        zone=CHICAGO,
+        lean=reader == "leader",
+    )
+    assert [line[column] for line in undecided.rows] == ["", ""]
 
 
 def test_an_unreadable_leave_leaves_the_join_cells_blank():
