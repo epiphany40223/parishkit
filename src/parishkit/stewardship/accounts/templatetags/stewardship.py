@@ -182,6 +182,7 @@ def export_actions(
     zone_choice=False,
     zone_value=None,
     sync=False,
+    reserve=True,
 ):
     """One export's row of small "Export XLSX" … buttons (#1679, #1190).
 
@@ -215,6 +216,11 @@ def export_actions(
     adds and selects (``data-browser-timezone``), posted as ``timezone``.
     ``sync`` makes the buttons a ``data-table-sync`` node, redrawn from each
     applied view, for a row whose unavailable format follows the filters.
+    ``reserve=False`` drops the status line's reserved height, for a row
+    drawn with every button unavailable that nothing on the page enables
+    again (a Ministry leader's Step 1 while the menu greys Review in bulk
+    out, #2405): no export can start, so no note or refusal can come, and
+    the reason that follows sits right under the buttons.
     """
     if not formats or len(set(formats)) != len(formats):
         raise template.TemplateSyntaxError("export_actions: name each format once.")
@@ -243,6 +249,7 @@ def export_actions(
         "zone_choice": zone_choice,
         "zone_value": zone_value,
         "sync": sync,
+        "reserve": reserve,
     }
 
 

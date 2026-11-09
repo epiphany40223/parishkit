@@ -1,0 +1,12 @@
+{% load stewardship %}{% comment %}
+  One Step 2 choice of a Ministry leader's My review work (#2405): its own
+  control group with one large primary button, named and linked as the
+  leader's menu entry (``choice``, a review_work.Card), then ``line`` and
+  the count To review. While the menu greys the page out the button is
+  unavailable and the menu's reason takes the count's place, so the card
+  keeps its structure (prerequisite gates). ``key`` names its ids.
+{% endcomment %}{% with button_id="leader-choice-"|add:key reason_id="leader-choice-"|add:key|add:"-reason" %}<section class="leader-choice" aria-labelledby="{{ button_id }}" data-control-group data-leader-choice="{{ key }}">
+{% if choice.url %}{% button href=choice.url variant="large" id=button_id %}{{ choice.label }}{% endbutton %}{% else %}{% button type="button" variant="large" id=button_id enabled=False aria-describedby=reason_id %}{{ choice.label }}{% endbutton %}{% endif %}
+<p class="leader-choice-line">{{ line }}</p>
+{% if not choice.url %}<p class="help" id="{{ reason_id }}">{{ choice.reason }}</p>{% elif choice.count is not None %}<p class="leader-choice-count"><span class="leader-choice-number">{{ choice.count|number }}</span> {{ choice.note }}</p>{% endif %}
+</section>{% endwith %}

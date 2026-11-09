@@ -383,6 +383,8 @@ def test_staff_land_on_my_review_work_with_linked_counts(response_service, googl
     assert b">Home</a>" not in body
     # Home's own panels are gone (decision 8: nothing else is above it).
     assert b"data-next-steps" not in body and b"Family participation" not in body
+    # A leader's two steps are theirs alone (#2405).
+    assert b"leader-step" not in body and b"leader-choice" not in body
     ministry = panel(body, "ministry")
     assert cards(ministry) == [
         (
@@ -454,7 +456,8 @@ def menu_group(body, key):
 def test_a_leaders_review_work_reads_review_in_bulk(response_service, google):
     """A Ministry leader's Review work group reads My review work, Review one
     at a time, Review in bulk (the Administrator, #2391 and #2393), and
-    their landing's Ministry panel and the page itself use that name."""
+    their landing's Step 2 choices (#2405) and the page itself use those
+    names."""
     harness = setup(response_service)
     browser, _, _, _ = leader(harness, google)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -465,7 +468,10 @@ def test_a_leaders_review_work_reads_review_in_bulk(response_service, google):
             b"Review one at a time",
             b"Review in bulk",
         ]
-        assert b'-heading">Review in bulk</h' in panel(body, "ministry")
+        # Their landing names its Step 2 choices the same way (#2405).
+        assert panel(body, "ministry") is None
+        assert b'id="leader-choice-one">Review one at a time</a>' in body
+        assert b'id="leader-choice-bulk">Review in bulk</a>' in body
         response, body = get(browser, "/admin/reports/ministries/")
     assert response.status_code == 200
     assert b"<h1>Review in bulk</h1>" in body
@@ -492,3 +498,139 @@ def test_an_administrator_keeps_home(response_service, google):
         b"0",
         b"changes",
     ) in cards(census)
+
+
+def bulk_badge(body):
+    """The menu's count beside Review in bulk, or None with no badge."""
+    from django.urls import reverse
+
+    found = re.search(
+        rb'<a href="' + reverse("admin:ministry_report").encode() + rb'"[^>]*>'
+        rb'Review in bulk(?: <span class="admin-menu-count"[^>]*>([\d,]+)</span>)?',
+        body,
+    )
+    return found[1] and found[1].decode()
+
+
+def test_a_leaders_landing_downloads_every_stage_and_stays_live(
+    response_service, google, monkeypatch
+):
+    """A Ministry leader's My review work is two steps (#2405). Step 1's
+    form, posted as drawn to Review in bulk's own export, downloads every
+    request in the leader's scope whatever its stage, so a request Staff
+    already accepted is in the file once nothing is left To review. Step
+    2's two choices count To review, the count the menu's Review in bulk
+    badge shows, say plainly when nothing is waiting, and update
+    themselves: the page's live read answers with the choices only when
+    their token changed. Above the PDF limit Step 1 offers only XLSX, and
+    a stale PDF post is refused in the page's own words."""
+    from django.urls import reverse
+
+    from parishkit.stewardship.audit.models import AuditContext, AuditEvent
+    from parishkit.stewardship.web.review_live import item_key
+
+    from .test_information_followup_postgresql import search
+    from .test_ministry_followup_postgresql import requests
+    from .test_ministry_review_postgresql import decide
+
+    harness = setup(response_service)  # A join for Ministry 9, a leave for 4.
+    browser, _, _, _ = leader(harness, google)  # The leader of Ministry 9.
+    join, _leave = requests()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = get(browser, "/admin/")
+    assert response.status_code == 200
+    assert b"<h1>My review work</h1>" in body and b"data-review-stream" not in body
+    for step, title in ((1, b"Download the requests"), (2, b"Review the requests")):
+        assert (
+            b'aria-label="Step %d: %s"><span class="leader-step-badge">Step %d</span> '
+            b'<span class="leader-step-title">%s</span>' % (step, title, step, title)
+        ) in body
+    assert body.count(b'<span class="leader-choice-number">1</span> to review') == 2
+    # The menu's badge and both cards count the same requests.
+    assert bulk_badge(body) == "1"
+    assert b"leader-export-pdf-limit" not in body
+    key = item_key("choices", "leader")
+    token = re.search(
+        rb'data-live-item="' + key.encode() + rb'" data-live-token="(\w+)"', body
+    )[1]
+    form = re.search(rb'<form id="leader-export".*?</form>', body, re.S)[0]
+    assert b'action="' + reverse("admin:ministry_followup_export").encode() in form
+    fields = {
+        name.decode(): value.decode()
+        for name, value in re.findall(
+            rb'<input type="hidden" name="(\w+)" value="([^"]*)"', form
+        )
+        if name != b"csrfmiddlewaretoken"
+    }
+    # The #2406 contract: only the CSRF token, stage=all, the browser's zone
+    # and the button's format are posted.
+    assert fields == {"stage": "all"}
+    assert sorted(re.findall(rb'\bname="(\w+)"', form)) == [
+        b"browser_timezone",
+        b"csrfmiddlewaretoken",
+        b"format",
+        b"format",
+        b"stage",
+    ]
+    # Staff accept the join: nothing is left To review for the leader.
+    decide(harness, actor(harness, ("staff",), ()), "accept", join)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, live = get(browser, f"/admin/?live={key}.{token.decode()}")
+        assert response.status_code == 200
+        assert b"Nothing is waiting for you to review right now." in live
+        assert live.count(b'<span class="leader-choice-number">0</span> to review') == 2
+        fresh = re.search(rb'data-live-token="(\w+)"', live)[1]
+        assert fresh != token
+        response, unchanged = get(browser, f"/admin/?live={key}.{fresh.decode()}")
+        assert (response.status_code, unchanged) == (200, b"")
+        response, body = get(browser, "/admin/")
+        assert b"Nothing is waiting for you to review right now." in body
+        # Nothing To review: no badge, as the cards count none.
+        assert bulk_badge(body) is None
+        response, file = search(
+            browser,
+            reverse("admin:ministry_followup_export"),
+            fields | {"format": "xlsx", "browser_timezone": "UTC"},
+        )
+    assert response.status_code == 200
+    assert response["Content-Disposition"].startswith("attachment;")
+    assert ".xlsx" in response["Content-Disposition"] and file[:2] == b"PK"
+    # The accepted join is in the file; Ministry 4's leave is not the leader's.
+    (event,) = AuditEvent.objects.filter(event_type="ministry_followup_exported")
+    context = AuditContext.objects.get(event=event).context
+    assert (context["count"], context["ministry_duids"]) == (1, [9])
+    # Above the limit (patched to none) Step 1 offers only XLSX, and a PDF
+    # asked for anyway is refused with this page's fix and way back.
+    from parishkit.stewardship.reports import ministry_followup_exports
+
+    monkeypatch.setattr(ministry_followup_exports, "EXPORT_PDF_LIMIT", 0)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = get(browser, "/admin/")
+        assert response.status_code == 200
+        assert b'value="pdf" disabled data-server-disabled' in body
+        assert b"The PDF is limited to 0 requests: choose XLSX." in body
+        response, refused = search(
+            browser,
+            reverse("admin:ministry_followup_export"),
+            fields | {"format": "pdf", "browser_timezone": "UTC"},
+        )
+    assert response.status_code == 400 and not refused.startswith(b"%PDF")
+    assert b"Choose XLSX." in refused and b"narrow the filters" not in refused
+
+
+def test_a_leader_of_no_ministry_in_the_campaign_is_told_plainly(
+    response_service, google
+):
+    """A leader whose Ministries are all outside the campaign leads none of
+    them here (#922): My review work draws no steps, only the plain
+    sentence (#2405)."""
+    from .test_live_ministries_postgresql import applied, select
+
+    harness = setup(response_service)
+    browser, _, _, _ = leader(harness, google)  # The leader of Ministry 9.
+    assert applied(select(harness, [4]))  # Ministry 9 leaves the campaign.
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = get(browser, "/admin/")
+    assert response.status_code == 200
+    assert b"<p>Nothing is waiting for you to review.</p>" in body
+    assert b"leader-step" not in body and b"data-review-stream" not in body

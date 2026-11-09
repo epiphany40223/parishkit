@@ -1,0 +1,35 @@
+{% load i18n stewardship %}{% comment %}
+  A Ministry leader's My review work (#2405; admin portal spec, "A Ministry
+  leader's My review work"): two large steps, each a panel whose heading
+  starts with a "Step N" badge, so the step's number shows once. Its
+  aria-label gives screen readers the same words with a pause, "Step 1:
+  Download the requests" (a visually hidden colon would be read with
+  spaces around it in some engines). ``steps`` is review_work.leader_steps;
+  ``review.pdf_limit`` is review_work.leader_pdf_limit.
+
+  - Step 1 is Review in bulk's own download (Export these requests,
+    admin:ministry_followup_export) with Stage Every stage
+    (steps.export_fields: stage=all alone, with the row's format and
+    browser_timezone, the #2406 contract), drawn by the shared export row,
+    so it downloads in place with the row's reserved status line; ui-v1.css
+    draws its buttons at the large size. Its one line says what the file
+    holds, the ui-conventions exception for a download step ("Downloaded
+    files", Export actions). While the file would hold more requests than
+    one PDF may, Export PDF is unavailable and the line below the row says
+    why, as on Review in bulk. While the menu greys Review in bulk out,
+    both buttons are unavailable and the menu's reason sits right under
+    them: no export can start, so the row reserves no status line.
+  - Step 2 is the two choices (review-leader-choices.html), one item of
+    the page's review region, so their counts update themselves (#2174).
+{% endcomment %}{% translate "Download the requests" as step_one %}{% translate "Review the requests" as step_two %}<div class="leader-steps">
+<section class="panel leader-step" aria-labelledby="leader-step-1-heading" data-leader-step="1">
+<h2 id="leader-step-1-heading" class="leader-step-heading" aria-label="{% blocktranslate with title=step_one %}Step 1: {{ title }}{% endblocktranslate %}"><span class="leader-step-badge">{% translate "Step 1" %}</span> <span class="leader-step-title">{{ step_one }}</span></h2>
+<p class="leader-step-help">{% translate "Download a spreadsheet (XLSX) or a PDF of every request for the Ministries you lead. Both hold the same information." %}</p>
+<form id="leader-export" class="leader-export" method="post" action="{% url 'admin:ministry_followup_export' %}">{% csrf_token %}{% for key, value in steps.export_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+{% if not steps.bulk.url %}{% export_actions "xlsx" "pdf" name="leader" label=step_one enabled=False describedby="leader-export-reason" reserve=False %}{% elif review.pdf_limit is not None %}{% export_actions "xlsx" "pdf" name="leader" label=step_one disabled="pdf" describedby="leader-export-pdf-limit" %}{% else %}{% export_actions "xlsx" "pdf" name="leader" label=step_one %}{% endif %}</form>
+{% if not steps.bulk.url %}<p class="help" id="leader-export-reason">{{ steps.bulk.reason }}</p>{% elif review.pdf_limit is not None %}<p class="help" id="leader-export-pdf-limit">{% blocktranslate trimmed with limit=review.pdf_limit|number %}The PDF is limited to {{ limit }} requests: choose XLSX.{% endblocktranslate %}</p>{% endif %}
+</section>
+<section class="panel leader-step" aria-labelledby="leader-step-2-heading" data-leader-step="2">
+<h2 id="leader-step-2-heading" class="leader-step-heading" aria-label="{% blocktranslate with title=step_two %}Step 2: {{ title }}{% endblocktranslate %}"><span class="leader-step-badge">{% translate "Step 2" %}</span> <span class="leader-step-title">{{ step_two }}</span></h2>
+<div data-live-items="{% url 'admin:index' %}">{% include "stewardship/review-leader-choices.html" %}</div>
+</section></div>

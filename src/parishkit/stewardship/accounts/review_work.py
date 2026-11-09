@@ -53,7 +53,7 @@ from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.pipeline import TERMS, Stage, Stream
 from parishkit.stewardship.web.review_worklist import NOT_SEEN
 
-from .admin_navigation import MENU
+from .admin_navigation import MENU, page_label
 from .policy import Capability, allows
 
 # Streams whose page reads ``?stage=<value>`` and filters by it, so each
@@ -371,12 +371,15 @@ def _json(value):
     return json.loads(value) if isinstance(value, str) else value
 
 
-def observe(principal, store):
+def observe(principal, store, *, page=False):
     """Read My review work in one read-only snapshot, as Home's ``observe`` does.
 
     Returns ``(configuration, review, now)``, or None while a restore is
     under review. ``review`` holds the current campaign (or None) and its
     counts (``read_counts``); there is nothing to count without a campaign.
+    ``page`` is the page's own load (not a live read of its counts), which
+    also reads ``pdf_limit``: whether a Ministry leader's Step 1 file is
+    too large for a PDF (``leader_pdf_limit``).
     """
     from parishkit.stewardship.campaigns.models import Campaign
     from parishkit.stewardship.campaigns.work_locks import read_transaction
@@ -399,8 +402,56 @@ def observe(principal, store):
         review = {
             "campaign": campaign,
             "counts": counts,
+            # None: no limit to show (the PDF is offered).
+            "pdf_limit": None,
         }
+        if page and campaign and is_leader_page(principal):
+            review["pdf_limit"] = leader_pdf_limit(campaign.pk, principal)
         return config, review, database_now()
+
+
+def leader_pdf_limit(campaign_id, principal):
+    """The PDF limit when a leader's Step 1 file would exceed it, else None.
+
+    Step 1 is Review in bulk's own download at Every stage (#2405), so
+    this counts that file's rows exactly as the export reads them
+    (``read_rows`` at ``EVERY``) and compares them with the export's own
+    limit, read from its module at call time so the two always agree.
+    Above it, Step 1 shows Export PDF unavailable with the limit's line,
+    as Review in bulk does (ui-conventions "Downloaded files", Export
+    actions). Read on the page's load only: the live reads redraw Step 2
+    alone. A failed or refused read is None, so the PDF stays offered and
+    the export's own refusal still answers a file that is too large; the
+    read gets a savepoint inside the view's transaction, so only it is
+    rolled back. A leader's scope is a few Ministries' requests, so one
+    whole read per load is cheap.
+    """
+    from django.core.exceptions import ObjectDoesNotExist
+
+    from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
+    from parishkit.stewardship.reports import ministry_followup_exports as exports
+    from parishkit.stewardship.reports.ministry_worklist import (
+        EVERY,
+        WorklistQuery,
+        chosen,
+        read_rows,
+    )
+
+    isolate = (
+        transaction.atomic if connection.in_atomic_block else contextlib.nullcontext
+    )
+    try:
+        with isolate():
+            result = read_rows(campaign_id, WorklistQuery(stage=EVERY), principal)
+    except (DatabaseError, ValueError) as error:
+        _record_failure(error)
+        return None
+    except (PermissionError, ObjectDoesNotExist, ReadUnavailable):
+        # Refused or unavailable as the export itself would be: nothing to
+        # warn about, and the export answers a click in its own words.
+        return None
+    total = len(chosen(result["rows"], EVERY))
+    return exports.EXPORT_PDF_LIMIT if total > exports.EXPORT_PDF_LIMIT else None
 
 
 def wizard_cards(chrome, review):
@@ -435,6 +486,92 @@ class Card:
     count: int | None = None
     note: str | None = None
     other: None = None
+
+
+@dataclass(frozen=True, slots=True)
+class LeaderSteps:
+    """A Ministry leader's My review work (#2405): its two steps' data.
+
+    ``one`` and ``bulk`` are Step 2's choices, Review one at a time and
+    Review in bulk, as ``Card`` rows named, linked and greyed as the
+    leader's menu has them. ``count`` is the leader's requests To review
+    (None when it could not be read), on both cards. ``export_fields`` are
+    Step 1's hidden fields: Review in bulk's own export at Every stage,
+    the Stage alone (the export's contract with #2406: the form posts only
+    the CSRF token, ``stage``, ``format`` and ``browser_timezone``; the
+    worklist's defaults give the rest).
+    ``offered`` is False while the leader leads no Ministry in this
+    campaign (``leader_steps``).
+    """
+
+    one: Card
+    bulk: Card
+    count: int | None
+    export_fields: dict
+    offered: bool = True
+
+
+def is_leader_page(principal):
+    """Whether ``principal`` gets a Ministry leader's My review work (#2405).
+
+    A Ministry leader who is neither Staff nor an Administrator, judged by
+    the leader test Ministry requests uses, as their menu names are. No
+    principal (a render with no viewer) is not one.
+    """
+    from parishkit.stewardship.reports.ministry_worklist import is_leader
+
+    return principal is not None and lands_here(principal) and is_leader(principal)
+
+
+def leader_steps(chrome, review, principal):
+    """A Ministry leader's two steps on My review work, or None (#2405).
+
+    None for anyone else, who keeps the stream panels (``panels``). Each
+    choice is the leader's menu entry, so its name ("Review one at a time",
+    "Review in bulk", #2393), its link and a greyed entry's reason are the
+    menu's own. A leader who leads no Ministry in this campaign gets steps
+    that are not ``offered``: the page then says plainly that nothing is
+    waiting, its help still the leader's. That is a leader whose menu lacks
+    the pages (no Ministry assigned), and one whose Ministries are all
+    outside the campaign, whom ``my_ministries`` reads as no Ministries
+    (#922). The count is the sum of ``my_ministries``' To review counts
+    (``read_counts``' ``leader``), zero for a leader who leads no Ministry
+    here.
+    """
+    from parishkit.stewardship.reports.ministry_worklist import EVERY
+
+    from .admin_dashboard import leads_ministries
+
+    if not is_leader_page(principal):
+        return None
+    entries = chrome.get("entries") or {}
+    mine = ((review or {}).get("counts") or {}).get("leader")
+    if mine is not None:
+        count = sum(item["join"] + item["leave"] for item in mine["ministries"])
+    else:
+        # No read: nothing to count for a leader of no Ministry here, else
+        # the count could not be read and the cards show no number.
+        count = None if leads_ministries(principal) else 0
+    cards = []
+    for name in ("review_wizard", "ministry_report"):
+        item = entries.get(name)
+        if item is None:
+            # Not in this leader's menu: named for the help, never drawn.
+            cards.append(Card(page_label(name, principal), None))
+            continue
+        # A greyed choice shows the menu's reason and no number, as a
+        # greyed link card does.
+        number = count if item.url else None
+        cards.append(Card(item.label, item.url, item.reason, number, _("to review")))
+    # Both pages in the menu, and the leader leads some Ministry here (an
+    # unread count, None, keeps the steps, which still open both pages).
+    listed = all(name in entries for name in ("review_wizard", "ministry_report"))
+    return LeaderSteps(
+        *cards,
+        count,
+        {"stage": EVERY},
+        offered=listed and (mine is None or bool(mine["ministries"])),
+    )
 
 
 @dataclass(frozen=True, slots=True)

@@ -275,7 +275,11 @@ def my_ministries(campaign_id, principal):
     and no count is capped. Returns None when follow-up is off, unavailable
     or outside this person's scope; otherwise, by name, each Ministry of the
     campaign in scope, plus any Ministry since removed from the campaign
-    that still has open requests (marked, as the queue marks it).
+    that still has open requests (marked, as the queue marks it). A leader
+    whose Ministries are all outside the campaign leads none of them here
+    (#922): the selection reads, but authorizes and names no Ministry, so
+    the list is empty and My review work says plainly that nothing is
+    waiting (#2405).
     """
     if not can_follow_up(principal):
         return None
@@ -290,6 +294,16 @@ def my_ministries(campaign_id, principal):
         return result, result["total"]
 
     overall, count = total()
+    if (
+        overall is not None
+        and not overall["authorized"]
+        and not overall["ministries"]
+        and not allows(principal, Capability.MINISTRY_FOLLOWUP)
+    ):
+        # SQL derives this leader's scope and finds no Ministry of the
+        # campaign in it: nothing of theirs to count, and nothing shown.
+        # Campaign-wide readers (Staff, Administrators) keep None.
+        return {"ministries": []}
     if overall is None or not in_scope(
         principal,
         overall["authorized"],

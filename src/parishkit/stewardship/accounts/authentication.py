@@ -683,9 +683,11 @@ def _review_counts(request, caller, principal, store, live):
     ``live`` is the cards a review region drew (``review_live.drawn``). The
     counts are read as My review work reads them (``review_work.observe``),
     in one snapshot, and the panels built from the viewer's menu, as both
-    My review work and Admin Home draw them. With no card changed the answer
-    is empty and nothing is recorded; otherwise it is the panels, and the
-    dashboard view is recorded once, marked automatic (#1620).
+    My review work and Admin Home draw them; a Ministry leader's page draws
+    its Step 2 choices instead, as one item (#2405). With no card changed
+    the answer is empty and nothing is recorded; otherwise it is the panels
+    (or the choices), and the dashboard view is recorded once, marked
+    automatic (#1620).
     """
     from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
     from parishkit.stewardship.audit.services import record_action
@@ -701,20 +703,27 @@ def _review_counts(request, caller, principal, store, live):
     request._stewardship_display_now = now
     request._stewardship_display_configuration = config
     chrome = portal_chrome(request).get("admin_chrome") or {}
-    panels = review_work.panels(chrome, review) if review["campaign"] else []
-    changed = sum(
-        1
-        for panel in panels
-        for card in panel.cards
-        if live.get(item_key(card.label, panel.stream), item_token(card))
-        != item_token(card)
-    )
+    steps = review_work.leader_steps(chrome, review, principal)
+    if steps is not None and steps.offered:
+        # A Ministry leader's page draws its Step 2 choices as one item
+        # (#2405), keyed and tokened as review-leader-choices.html does.
+        token = item_token(steps)
+        changed = live.get(item_key("choices", "leader"), token) != token
+        template, context = "stewardship/review-leader-choices.html", {"steps": steps}
+    else:
+        panels = review_work.panels(chrome, review) if review["campaign"] else []
+        changed = sum(
+            1
+            for panel in panels
+            for card in panel.cards
+            if live.get(item_key(card.label, panel.stream), item_token(card))
+            != item_token(card)
+        )
+        template = "stewardship/review-work-panels.html"
+        context = {"panels": panels, "nested": not review_work.lands_here(principal)}
     body = b""
     if changed:
-        body = render_to_string(
-            "stewardship/review-work-panels.html",
-            {"panels": panels, "nested": not review_work.lands_here(principal)},
-        ).encode()
+        body = render_to_string(template, context).encode()
         with transaction.atomic():
             if authenticated_admin(caller, store=store, read_only=True) != principal:
                 return denial(status=403)
@@ -772,7 +781,7 @@ def index(request):
             return HttpResponseRedirect(sign_in_address(request, ended=True))
         landing = review_work.lands_here(principal)
         if landing:
-            observed = review_work.observe(principal, service.store)
+            observed = review_work.observe(principal, service.store, page=True)
         else:
             observed = observe(principal, service.store, home=True)
         if observed is None:

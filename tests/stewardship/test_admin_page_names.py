@@ -321,7 +321,8 @@ def test_variable_return_links_are_known():
 # Python-built "Return to" link labels: a view's link_label or back_label.
 PYTHON_RETURN = re.compile(r'(?:link_label=|"back_label", )_\("Return to ([^"]+)"\)')
 # A Python-built "Return to {page}" whose page is the name the viewer knows
-# it by (#2393): ``page_label``, or Ministry requests' ``_page_name``.
+# it by (#2393): ``page_label``, Ministry requests' ``_page_name``, or
+# ``home_label`` (``/admin/``: My review work or Home, #2405).
 PYTHON_VARIABLE_RETURN = re.compile(r'_\("Return to \{(\w+)\}"\),\s*(\w+)=(\w+)\(')
 
 
@@ -345,7 +346,7 @@ def test_python_return_links_name_a_page():
     assert variable, variable
     assert all(target in labels for _path, target in found), found
     assert all(
-        placeholder == keyword and helper in {"page_label", "_page_name"}
+        placeholder == keyword and helper in {"page_label", "_page_name", "home_label"}
         for _name, placeholder, keyword, helper in variable
     ), variable
 
