@@ -3132,7 +3132,6 @@ deleted when the export ends, so nothing regenerates it.
 | `review_wizard`, `review_wizard_page` ([#2123](https://github.com/epiphany40223/parishkit/issues/2123)) | Permanent: the [review wizard](../review-pipeline/spec.md#review-wizard) is a browser view of the five review tables one Family or Member at a time; each stream's `report` and `decide` commands already read and decide every item it shows |
 | `information_item`, `information_contacts_status` (its Contact details' passive status, [#1863](https://github.com/epiphany40223/parishkit/issues/1863)) | One Family's submission and its follow-up history: `followup information-show ITEM_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see [users and follow-up](#users-and-follow-up)); it prints only the item's state and history, and the submission's content comes through `export information` (PR 8e) |
 | `ministry_report` | `report ministry`, and `report ministry --ministry DUID --requests join\|leave` for one Ministry's join or leave count (PR 8c); rows only as exports (PR 8e). The Members joining and leaving pages (`ministry_joiners`, `ministry_leavers`) were retired ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)); the commands stay, and `export ministry`, which writes one Ministry's join or leave list, now covers this summary, whose counts it lists. Since [#1133](https://github.com/epiphany40223/parishkit/issues/1133) the page is one Ministry requests page with the follow-up queue: its By Ministry counts are `report ministry`'s summary, and its queue is `followup list` (PR 11a). For Staff and Administrators each summary row also carries the Leaders column's status as `leaders` ([#1594](https://github.com/epiphany40223/parishkit/issues/1594)), read through the page's audited definer under the command's own session; a Ministry leader's rows have none |
-| `ministry_packet` | A packet of Members' contacts, so export only: `export ministry-packet` (PR 8e) |
 | `past_campaign_archive` | `export archive` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) part (a), [archive export](../campaign-history/spec.md#download-campaign-archive)): Past campaigns' Download campaign archive, through the same service (`create_archive_export`), with the page's `campaign_archive_exported` and `admin_cmd_export_archive`; [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `financial_export`, `information_export` | `export financial`, `export information` (PR 8e; `--stage` as the worklist's export pane, [#1735](https://github.com/epiphany40223/parishkit/issues/1735)); `export financial` is [fresh-gated](#fresh-gated-actions-from-the-command-line). `export ministry` still captures one Ministry's join or leave list, whose page form (`ministry_export`) was retired with the lists (#1157) |
 | `family_directory`, `family_directory_export` | Export only: `export directory`, the Family-code directory, for the current campaign only until #145 (PR 8f); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
@@ -3401,7 +3400,7 @@ through the same page functions (`digest_views.retained_document`,
 
 The Family-level export commands (PR 8e) are the export forms of the
 financial report, the information queue and the Ministry report (its
-export and its follow-up packet), through the forms' own services, so each
+export), through the forms' own services, so each
 creates the same export record and `export_requested` event as the page,
 plus `admin_cmd_export_<kind>` when it created one. Each admits as its
 page's form post does, with the page's capability, so it needs a full-scope
@@ -5056,7 +5055,9 @@ exactly the commands that exist.
   `digest weekly-request`, and later `digest list`; replaced by
   `report-email` in #1786). **PR 8e:** the Family-level exports that
   create an export record without the Family keys (`export financial`,
-  `export information`, `export ministry`, `export ministry-packet`).
+  `export information`, `export ministry`, and `export ministry-packet`,
+  removed with the Follow-up packet by
+  [#2394](https://github.com/epiphany40223/parishkit/issues/2394)).
   **PR 8f:** the Campaign Family directory's exports (`export
   directory`, `export postal`). **PR 8g:** the one-Family timeline
   export (`export

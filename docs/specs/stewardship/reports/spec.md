@@ -104,9 +104,7 @@ notes) are in the XLSX "Report information" sheet and the PDF's header,
 footer and report card, never repeated as CSV columns or rows; the CSV's
 timestamps carry their UTC offset. A report whose page has the Families
 counted choice is the exception: its CSV opens with the file's
-[header block](#file-design), then a blank row, then the table. The Ministry follow-up packet's CSV is
-the one multi-section file: its report details and each Ministry's details
-head the sections, as on the packet's XLSX sheets. Cells beginning with
+[header block](#file-design), then a blank row, then the table. Cells beginning with
 formula-significant characters are neutralized, except canonical money
 amounts (below). XLSX uses freeze panes,
 filters, meaningful widths, types, repeated print headings, and no macros.
@@ -175,7 +173,7 @@ repeat the column headings, and a page that starts mid-day repeats that
 day's heading marked "(continued)".
 
 A field/value report (additional information, Ministry, financial, Family
-test names, packets) prints one card per record. Which columns each format
+test names) prints one card per record. Which columns each format
 carries follows the
 [downloaded files rule](../ui-conventions/spec.md#downloaded-files): every
 format the same columns, with internal references left out; a card shows
@@ -188,13 +186,10 @@ every column of its CSV and XLSX row. So that a page is easy to scan:
   The note on escaped characters appears only when the file contains one.
 - Each record card is titled "Name (DUID N)" ("Name (New Member)" for a
   Member added on the form), with its disposition, state or status in a
-  chip on the right. A packet's Ministry details card is titled by the
-  Ministry's name alone, since no download shows a Ministry DUID
-  ([table column order](../ui-conventions/spec.md#table-column-order)).
+  chip on the right.
 - The report card leaves out the digest-resolution note and the display
   and date-filter time zones (the page frame names the display time zone).
-- Blank fields are left out. A packet is completed by hand, so its blank
-  fields print as write-in rules instead.
+- Blank fields are left out.
 - A workflow revision (a row with a Changed at time) nests under its item, headed by when and by whom it
   changed, without the item fields its row repeats; a row that continues a record (long financial share wording)
   joins that record's card.
@@ -203,8 +198,7 @@ every column of its CSV and XLSX row. So that a page is easy to scan:
   next page. Only a card taller than a whole page splits, between lines, and
   each later piece repeats its title's first line marked "(continued)". A
   title too tall to leave room for a body line on a page is cut with an
-  ellipsis. The report card
-  and, in a packet, each Ministry's details card start a new page.
+  ellipsis.
 
 XLSX tables share one style (`reports/xlsx_design.py`): a bold white-on-teal
 heading row as tall as its most-wrapped heading, Arial text, a frozen heading
@@ -216,9 +210,8 @@ heading row), filters, light zebra banding as a
 display rule, widths fitted to the content within limits with long text
 wrapped, and a landscape print setup that fits one page wide, repeats the
 heading row and numbers the pages. Label/value blocks ("Report information"
-sheets and a packet's Ministry details) use one tinted label style; a
-packet's Ministry detail values span the width of the member table below
-them. A sheet about one subject (a packet's Ministry, the
+sheets and a sheet's title rows) use one tinted label style; title-row values
+span the width of the table below them. A sheet about one subject (the
 [Timeline export](#timeline-export)'s Family) opens with title rows: the
 same label/value style above its table, a blank row, then the table, whose
 heading row stays the frozen and printed one, so a printed or forwarded
@@ -2447,7 +2440,9 @@ request pages, the bulk outcome, Export these requests and Roster changes to
 enter keep their addresses under `follow-up/`. The separate summary page is
 retired, along with its Ministry-name search, its paging and sort, its per-row
 Follow-up progress column and bars, and its "Follow up these requests" link.
-Its totals and its follow-up packet move to the one page. Rejected: keeping
+Its totals and its follow-up packet move to the one page (both were
+removed later, #1676 and
+[#2394](#follow-up-packet-removed)). Rejected: keeping
 two pages with links only (step 1 did that, and two pages still listed the
 same requests), making the summary the base, and a separate leader portal
 (rejected in #533). The host `report ministry` command is unchanged.
@@ -2457,8 +2452,8 @@ Ministry requests is the Ministry stream's
 [review worklist](../review-pipeline/spec.md#review-worklist): the shared
 component, its words and its selected-state icons, at the same address. It
 replaces the queue table, its Status and Outcome filters and its bulk
-outcomes; the request pages, the remembered view,
-Export these requests and the packet stay. From the top, the page shows:
+outcomes; the request pages, the remembered view and
+Export these requests stay. From the top, the page shows:
 
 1. The heading, with the page help (About this page, holding the
    ParishSoft data date) and By Ministry's control beside it. (Roster
@@ -2490,8 +2485,6 @@ Export these requests and the packet stay. From the top, the page shows:
    table and **Export these requests**, as
    [follow-up workflows](../admin-portal/spec.md#follow-up-workflows)
    describes.
-4. The [follow-up packet](#multi-ministry-follow-up-packet). The packet's
-   choices are still every Ministry in the reader's scope.
 
 No totals and no chart sit above the table
 ([#1676](https://github.com/epiphany40223/parishkit/issues/1676), folded
@@ -2612,14 +2605,14 @@ Until #2330 they read "Not in ParishSoft data" and "No longer in this campaign"
 ([campaign Families wording](../ui-conventions/spec.md#campaign-families-wording)).
 There is no Ministry activity filter (Active, Inactive) any more
 ([#1267](https://github.com/epiphany40223/parishkit/issues/1267)): the
-page's packet, the export and the command line refuse an `activity` field
+export and the command line refuse an `activity` field
 from anyone, and they always send the neutral `any` that the installed
 selection and the export capture still take. The queue likewise explains its
 "Removed" badge only to Admin/Staff. A leader never meets one, since a
 leader leads only the Ministries the campaign asks about (#922).
 
 The page reads its rows and export through the follow-up selection with its
-cross-check. By Ministry and the packet's choices read the Ministry report
+cross-check. By Ministry reads the Ministry report
 selection with its own cross-check, so a reader needs both scopes, which
 the same roles hold. A request review's Edit carried into another Ministry
 ([follow-up workflows](../admin-portal/spec.md#follow-up-workflows)) belongs
@@ -2708,10 +2701,10 @@ request kind with every version, gives a join request's gender (a
 ParishSoft code read as its census word, as the
 [Family form](../parishioner-portal/spec.md#existing-member-census) reads
 it), age as of the report date, email, phones and known primary Family
-address, and a leave request's current role in the Ministry; the
-[follow-up packet's](#multi-ministry-follow-up-packet)
-`stewardship_ministry_packet_v1` gives a leave request's email and phones
-(the packet's projection, which leaders already receive), its scope derived
+address, and a leave request's current role in the Ministry;
+`stewardship_ministry_packet_v1`, the projection of the
+[removed follow-up packet](#follow-up-packet-removed), gives a leave
+request's email and phones, its scope derived
 in SQL from the signed-in user as an export capture derives it. An earlier
 version of a request takes its Member's current values. A Member the Family
 added on the form is not in ParishSoft yet, so the details are what the
@@ -2725,7 +2718,7 @@ shows no details and says so.
 A request is read under its current Ministry: the one review's Edit carried
 forward ([follow-up workflows](../admin-portal/spec.md#follow-up-workflows)),
 whose leaders decide it from then on, else the Family's. The Ministry report
-selection, the packet and the follow-up selection list, count and scope an
+selection, the packet projection and the follow-up selection list, count and scope an
 edited request, with its details, under that Ministry only, so its leaders
 see the Member's details and a leader of only the Family's Ministry does not
 see the request at all
@@ -2737,7 +2730,7 @@ and shown with the history option, stays under the Family's Ministry, which
 was its Ministry in force, but is not consent there (the rule below): its
 leaders see only published values on it. An edited request no longer keeps
 the Family's Ministry listed: a Ministry the campaign no longer asks about
-stays in By Ministry and the packet's choices only while a current request
+stays in By Ministry only while a current request
 is in force there. Nothing else changes: each selection still reads only
 the reader's SQL-derived scope, and the rule below applies to the current
 Ministry's leaders.
@@ -2784,15 +2777,15 @@ only adds a checked box: each key's requests share again only once neither
 key's current answer is checked, so a link the evidence got wrong can only
 hide more, never share more. An added Member with no link is answered by
 the form's own entry for that person. Both selections read the same answer,
-so the request page, Export these requests and the packet agree.
+so the request page and Export these requests agree.
 Every other Member's standing requests share as above. Nothing else
 widens: a Member with no standing request to the Ministry (so every other
 Member of the Family), a withdrawn request and other Ministries' requests
 keep the publish flags, and
 a leader still reads only the Ministries they lead. The rule is enforced in
 the SQL selections themselves (`stewardship_ministry_report_v3`, which v4
-reads, and `stewardship_ministry_packet_v1`), so the request page, Export
-these requests and the packet agree in every format. Admin/Staff may see
+reads, and `stewardship_ministry_packet_v1`), so the request page and
+Export these requests agree in every format. Admin/Staff may see
 operational source contact. Mailing address/demographics are visible to a
 Ministry's leaders as
 explicitly authorized for this workflow. Birth date itself is not shown when
@@ -2800,14 +2793,13 @@ age suffices.
 
 The per-Ministry counts have no export
 ([#1126](https://github.com/epiphany40223/parishkit/issues/1126)): they hold
-no parishioner data, and the page already shows them. The page's downloads
-are Export these requests and the
-[follow-up packet](#multi-ministry-follow-up-packet). A request for a summary
+no parishioner data, and the page already shows them. The page's download
+is Export these requests. A request for a summary
 export is refused as an invalid selection; an existing summary file stays
 downloadable for the rest of its
 [download window](../operations/spec.md#point-in-time-exports). The page shows
 the ParishSoft data date but not the data load number, an internal counter.
-The packet has no date filter. Every leader view/export is audited with
+Every leader view/export is audited with
 Ministry scope: a follow-up request page's view records its request's
 `ministry_duid`, and **Export these requests** records the sorted Ministry
 DUIDs in its file (`ministry_duids`) and whether its contacts were
@@ -2824,61 +2816,19 @@ The [Admin log owner](../admin-portal/spec.md#logs) includes this set when
 filtering audit events by Ministry; it must not depend on retained export rows.
 This representation does not change current-policy checks or report columns.
 
-## Multi-Ministry follow-up packet
+### Ministry request outcome labels
 
-**Access:** same Ministry scoping as
-[Ministry requests](#ministry-change-summary).
-
-The request offers multi-select plus Select all authorized Ministries: one
-box per Ministry, and no box ticked selects every Ministry the requester is
-authorized for. The form sits at the foot of
-[Ministry requests](#ministry-change-summary). The boxes list every Ministry
-in the requester's scope by name, whatever the page's filters, sort or page
-show, so a leader of many Ministries can choose a subset; filtering, paging
-or sorting the table keeps the ticks
-([#533](https://github.com/epiphany40223/parishkit/issues/533)). At most
-200 Ministries may be ticked for one packet, as the form's help says. While
-more are ticked, Queue is unavailable and its reason line gives the count and
-says to untick some or all
-([#1332](https://github.com/epiphany40223/parishkit/issues/1332)); the server
-still refuses more with a message saying to tick fewer or leave every box
-unticked, which includes them all. A person's request refused that way is
-answered with Ministry requests drawn again (400), refused at the boxes
-([field errors](../ui-conventions/spec.md#field-errors-and-live-checks)):
-the ticks sent among the boxes kept, every box marked, and the message in
-the packet's hint row and in the summary; the queue is the default view.
-A script gets the same refusal as JSON. The list is
-read through the same scoped Ministry report selection as By Ministry, whose
-whole-scope read it reuses. It shows
-only each Ministry's full name (no DUID,
-[#1123](https://github.com/epiphany40223/parishkit/issues/1123)) and no
-request data. For each
-Ministry, output its name (never its DUID), chair names, stewardship period/year, and one row for
-each latest effective `join` or `leave` MinistryRequest in that Ministry,
-including resolved/cancelled history only when the requester selects the
-history option, and never one for a
-[Member no longer in ParishSoft](../admin-portal/spec.md#follow-up-workflows)
-(#1217). Rows contain:
-
-- Member name and DUID, where a Member added on the form reads "New Member"
-  (or "New Member N"), numbered by the same rule as the follow-up queue's
-  [export](#ministry-change-summary) but within each Ministry's packet rows;
-- authorized Member email address(es);
-- recorded email-contact date, blank if none;
-- authorized Member phone number(s);
-- recorded phone-contact date, blank if none; and
-- current outcome using this exact mapping: unresolved workflow state is blank;
-  `joined` is `Joined the Ministry`; `leave_confirmed` is `Left the
-  Ministry`; `declined` is `Declined / no longer interested` on a join request
-  and `Stayed in the Ministry` on a leave request; `no_response` is
-  `No response`; `duplicate` is `Duplicate request`; and `other` is `Other`
-  with its notes/reference.
-
-These are the outcome labels everywhere a Ministry request's outcome shows:
-the follow-up queue, the request page and its history, the queue's Export
-these requests, the retired join and leave lists' stored files, and packets
+A Ministry request's outcome reads the same everywhere it shows: the
+follow-up queue, the request page and its history, the queue's Export these
+requests and the retired join and leave lists' stored files
 ([#1132](https://github.com/epiphany40223/parishkit/issues/1132)). The
-stored code is the same for both kinds, so a leave request someone resolved
+labels, by stored outcome: an unresolved request has none; `joined` is
+`Joined the Ministry`; `leave_confirmed` is `Left the Ministry`; `declined`
+is `Declined / no longer interested` on a join request and `Stayed in the
+Ministry` on a leave request; `no_response` is `No response`; `duplicate` is
+`Duplicate request`; and `other` is `Other` with its notes/reference.
+
+The stored code is the same for both kinds, so a leave request someone resolved
 as `declined` before the labels changed reads `Stayed in the Ministry`: the
 Member did not leave. The follow-up queue's Outcome filter covers both
 kinds, so there `declined` reads `Declined / stayed`. Nobody records
@@ -2887,21 +2837,38 @@ resubmission replaces its request), so neither the request form nor the
 Outcome filter offers it; a request already resolved that way keeps its label
 ([#1131](https://github.com/epiphany40223/parishkit/issues/1131)).
 
-For Ministry leaders, every email and phone value in the packet follows the
-Ministry report selection's leader contact rule
-([Ministry change summary](#ministry-change-summary)): published values, and the
-requesting Member's own on a standing request other than a
-cannot-participate leave; any other renders `Not published`
-instead of the source value. Admin/Staff retain the operational-contact access
-defined by that rule. This privacy policy applies identically to screen, CSV,
-XLSX, and PDF output.
+## Follow-up packet removed
 
-Recorded workflow values are prefilled; empty cells remain printable for human
-completion. Every format carries the report's privacy line. The XLSX is one workbook with a sheet per Ministry. PDF starts each
-Ministry on a new page. CSV is one file with a blank row and repeated headings
-between Ministries. No ZIP/per-Ministry files are required. Its dates and
-capture times use the browser's zone
-([time zones](../ui-conventions/spec.md#downloaded-files)).
+The multi-Ministry Follow-up packet was removed from the Admin portal for
+every role (Administrator decision, 2026-11-08,
+[#2394](https://github.com/epiphany40223/parishkit/issues/2394)). It was a
+printable PDF, XLSX or CSV working sheet: for each chosen Ministry, its
+chairs and one row per latest join or leave request, with recorded contact
+dates and outcome and blank cells to complete by hand. Ministry leaders
+work from the [Ministry requests](#ministry-change-summary) worklist and
+its Export these requests, Review one at a time, and each request's own
+page. The form at the foot of Ministry requests, its address and the
+command line's `export ministry-packet` are gone, with no redirect
+([action inventory](../admin-automation/spec.md#action-inventory)).
+Rejected: hiding it from Ministry leaders only; code nobody uses still
+costs maintenance and test time.
+
+Packet files made before the removal stay downloadable for the rest of
+their [download window](../operations/spec.md#point-in-time-exports). A
+packet export still queued or running at the upgrade cannot finish: the
+worker no longer renders a packet capture, so each attempt ends in an
+error, and the export is retried with backoff up to five attempts and then
+marked failed, with errors logged, as a summary capture is (#1126). The
+deploy therefore checks first that no packet export is queued or running.
+A new packet request is rejected when it is made. Past System log entries of
+`admin_cmd_export_ministry_packet` keep their description. The packet's
+projection, `stewardship_ministry_packet_v1`, stays: the request page and
+Export these requests read a leave request's email and phones from it
+([Ministry change summary](#ministry-change-summary)). Its frozen export
+capture, which still accepts a `packet` action that nothing sends, stays
+until a forward migration changes it
+([post-launch schema policy](../operations/spec.md#post-launch-schema-policy);
+tracked in [#2399](https://github.com/epiphany40223/parishkit/issues/2399)).
 
 ## Pending census changes
 

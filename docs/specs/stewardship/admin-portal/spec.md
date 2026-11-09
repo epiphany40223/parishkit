@@ -2020,7 +2020,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `information_queue` | Additional information | Menu: Additional information | Administrator, Staff | Additional information and follow-up | `/admin/reports/information/` | (same) |  |
 | `information_item` | Information request | Additional information | Administrator, Staff | Additional information and follow-up (one request); Information item | `/admin/reports/information/<item>/` | (same) | Its link back opens the worklist. |
 | `ministry_reports` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry reports | `/admin/ministry-reports/` | (retired; 404) | Replaced by Ministry requests, which shows the "no campaign" page when there is nothing for the viewer to report. |
-| `ministry_report` | Ministry requests | Menu: Ministry requests | Administrator, Staff, Ministry leader | Ministry report; Ministry follow-up | `/admin/reports/ministries/` | (same) | One page with the follow-up queue since [#1133](https://github.com/epiphany40223/parishkit/issues/1133): totals, By Ministry, the queue, Export these requests and the follow-up packet ([Ministry change summary](../reports/spec.md#ministry-change-summary)). No assignee column, filter or bulk assignment (#552). Its Export these requests download (`follow-up/exports/`, #1157) and bulk outcome (`follow-up/bulk/`, #1131) are non-page actions. |
+| `ministry_report` | Ministry requests | Menu: Ministry requests | Administrator, Staff, Ministry leader | Ministry report; Ministry follow-up | `/admin/reports/ministries/` | (same) | One page with the follow-up queue since [#1133](https://github.com/epiphany40223/parishkit/issues/1133): By Ministry, the queue and Export these requests ([Ministry change summary](../reports/spec.md#ministry-change-summary)). No assignee column, filter or bulk assignment (#552). Its Export these requests download (`follow-up/exports/`, #1157) and bulk outcome (`follow-up/bulk/`, #1131) are non-page actions. |
 | `ministry_joiners` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry requests — Prospective joiners; Joining; Members joining | `/admin/reports/ministries/joining/` | (retired; 404) | Retired with no redirect ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)): each request's contact details are on its Follow-up request page, and its export is Ministry requests' Export these requests. |
 | `ministry_leavers` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry requests — Requested leavers; Leaving; Members leaving | `/admin/reports/ministries/leaving/` | (retired; 404) | Retired with no redirect (#1157), as Members joining. |
 | `ministry_followup` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry follow-up; Follow-up | `/admin/reports/ministries/follow-up/` | (retired; 404) | Retired with no redirect ([#1133](https://github.com/epiphany40223/parishkit/issues/1133)): the queue is now Ministry requests, at `/admin/reports/ministries/`. |
@@ -3487,8 +3487,7 @@ campaign's selections never change.
 - **Remove** takes a DUID out of the selections. Answers already given are
   never deleted or rewritten: submissions keep their recorded inputs, join and
   stop requests stay in the follow-up queue until staff close them, and
-  Ministry requests (its By Ministry counts and queue) and follow-up packets
-  keep showing them,
+  Ministry requests (its By Ministry counts and queue) keeps showing them,
   marked "Removed from this campaign" (in the follow-up queue, a "Removed"
   badge; see [follow-up workflows](#follow-up-workflows)), while it has a
   request that was not later withdrawn or replaced. A request for a
@@ -9378,9 +9377,7 @@ form is never one. One SQL function decides this
 - A Ministry leader never sees, counts or acts on such a request: the
   worklist, its Stage counts and the By Ministry counts on
   [Ministry requests](../reports/spec.md#ministry-change-summary), Home's My
-  Ministries panel, the menu count and the
-  [packets](../reports/spec.md#multi-ministry-follow-up-packet) leave it
-  out. Its request page reads as an unknown request.
+  Ministries panel and the menu count leave it out. Its request page reads as an unknown request.
 - Staff and Administrators see the same by default, so their counts match.
   Their worklist's Members filter has a second choice, "No longer in
   ParishSoft", which lists only these requests, at the chosen stage. Each is
@@ -9435,7 +9432,7 @@ Stayed in the Ministry, which is the stored `declined` on a leave request (the
 Member did not leave), beside the outcomes both kinds share. The queue's
 Outcome filter, which covers both kinds, shows declined as Declined / stayed.
 Every outcome label follows the
-[packet's mapping](../reports/spec.md#multi-ministry-follow-up-packet). If the server still refuses a save (for example a contact time in the
+[outcome labels](../reports/spec.md#ministry-request-outcome-labels). If the server still refuses a save (for example a contact time in the
 future), it shows the same request page again in place, with the submitted
 values kept, a summary naming the one problem, and that problem shown
 [at its fields](#bootstrap-and-first-admin-wizard): a missing or unsuitable

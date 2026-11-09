@@ -1,10 +1,16 @@
 # Multi-Ministry follow-up packet
 
+> **Removed.** The Follow-up packet was removed from the Admin portal for
+> every role on 2026-11-08
+> ([#2394](https://github.com/epiphany40223/parishkit/issues/2394);
+> [reports spec](../specs/stewardship/reports/spec.md#follow-up-packet-removed)).
+> This page is kept as the record of its delivery.
+
 This Phase 5 increment begins at verified main `bd5522f6` after PR #72's
 [protected delivery](stewardship-ministry-followup.md#protected-delivery). It
 implements [RPT-07](../plans/stewardship/reports.md#rpt-07-multi-ministry-follow-up-packet),
 the printable packet that Staff and Ministry leaders work from. The
-[packet specification](../specs/stewardship/reports/spec.md#multi-ministry-follow-up-packet)
+[packet specification](../specs/stewardship/reports/spec.md#follow-up-packet-removed)
 controls behavior. It reads the recorded contact dates, notes and outcomes of
 the Ministry follow-up workflow, which is why that increment landed first.
 

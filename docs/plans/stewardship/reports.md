@@ -127,7 +127,7 @@ The interactive report and complete package validation finish in Phase 5.
    stewardship year, and rows derived from latest join/leave requests plus
    existing follow-up state.
 3. Implement the exact outcome mapping defined by the
-   [follow-up-packet specification](../../specs/stewardship/reports/spec.md#multi-ministry-follow-up-packet),
+   [follow-up-packet specification](../../specs/stewardship/reports/spec.md#follow-up-packet-removed),
    and leave human email/phone date columns blank where specified.
 4. Implement PDF page breaks, XLSX sheets/sections, and CSV blank-row/repeated-
    header boundaries.
