@@ -2274,7 +2274,11 @@ code the other two views already run
    last; the Review work menu and tables keep the menu's order), offering
    only the streams the reader may open
    ([wizard streams and access](#wizard-streams-and-access)). With exactly
-   one (a Ministry leader: Ministry requests) the choice is not shown.
+   one the choice is not shown: a Staff member or Administrator offered one
+   stream sees it named in one line, "Stream: *name*", and a Ministry
+   leader, who can review only Ministry requests, sees no stream line at
+   all (the Administrator, 2026-11-08,
+   [#2397](https://github.com/epiphany40223/parishkit/issues/2397)).
 2. **Filter and sort.** Default: everything waiting, sorted by name
    ([wizard filters and sort](#wizard-filters-and-sort)).
 3. **Pages.** **Start** fixes the run's sequence and opens page 1. Each page
@@ -2293,6 +2297,10 @@ page opens with the reader's last stream chosen, else the first offered.
 The page heading is **Review one at a time**; its help says, in one
 paragraph, that the pages show one Family or Member at a time, that acting
 is optional, and that the Review work tables remain for bulk decisions.
+A Ministry leader's help is shorter and names only their work (#2397):
+"Review the join and leave requests for the Ministries you lead, one
+Member at a time, with Previous and Next. Acting on a request is
+optional, and you can finish at any time."
 
 A started run is one stream, its filters and sort, the fixed sequence of
 subjects and the reader's position in it
@@ -2404,7 +2412,11 @@ Advanced when it is drawn with an Advanced filter set):
   subject and for grouped streams, the Member's for Ministry requests),
   then the secondary name, then the DUID, then the subject's campaign
   record id. A subject's submitted time is the newest submitted time among
-  its matched items; equal times fall back to Last name (A–Z).
+  its matched items; equal times fall back to Last name (A–Z). For Staff
+  and Administrators the Sort is below the filters in either mode. For a
+  Ministry leader it is part of **Advanced**, drawn under the Advanced
+  filters and shown only while Advanced is chosen; Basic starts with Last
+  name (A–Z) (the Administrator, 2026-11-08, #2397).
 
 - **Pledges leave out Cannot contribute:** while the reader is offered
   Limitations (it needs Ministry stewardship), in Basic and Advanced
@@ -2471,18 +2483,23 @@ and starts nothing.
 
 Each page has, top to bottom:
 
-- **Header:** one consistent header on every page (R52 Part W). Its
-  first line, the page heading, is "Family: *Family name* (DUID *n*,
+- **Header:** one consistent header on every page (R52 Part W): the page
+  heading names the subject the page decides, and a smaller line under
+  it names the Member's Family (the Administrator, 2026-11-08,
+  [#2397](https://github.com/epiphany40223/parishkit/issues/2397), for
+  every role). The Family line is "Family: *Family name* (DUID *n*,
   envelope *e*)", the Family's name opening the Family hub (for Staff and
-  Administrators, `family_link`), and ", envelope *e*" only when the
-  Family's ParishSoft envelope number is set and not 0. On a Member page
-  only, a second line reads "Member: *Member name* (DUID *n*)", the
-  Member named as the hub's tab names them, the name opening the hub's
-  tab for that Member (for Staff and Administrators; plain text for a
-  Ministry leader); a New Member the Family added has no DUID yet, so the
+  Administrators, `family_link`; plain text for a Ministry leader), and
+  ", envelope *e*" only when the Family's ParishSoft envelope number is
+  set and not 0. On a Family page that line is the heading. On a Member
+  page the heading is "Member: *Member name* (DUID *n*)", the Member
+  named as the hub's tab names them, the name opening the hub's tab for
+  that Member (for Staff and Administrators; plain text for a Ministry
+  leader); a New Member the Family added has no DUID yet, so the
   parenthetical is left out and the hub's New Member badge follows the
-  name. The second line's place is kept, empty, on a Family page, so the
-  navigation row below sits at the same spot on every page. The browser title is
+  name. The Family line follows it as the second line. The second line's
+  place is kept, empty, on a Family page, so the navigation row below
+  sits at the same spot on every page. The browser title is
   "Review one at a time: *stream*, *progress*", without the name, as the
   Timeline's title leaves it out.
   The last breadcrumb says the same, "*stream*, *progress*", so the trail
@@ -2523,7 +2540,7 @@ A page whose subject has nothing left in the stream for this reader (the
 Family withdrew every change, a Member left the Family, a Family left the
 campaign, or the reader lost access to the subject's items, such as a
 Ministry leader who no longer leads the request's Ministry) names nothing:
-its heading reads "No longer listed", the Member line is left empty,
+its heading reads "No longer listed", the second line is left empty,
 and the section says "This Family is no longer listed
 for this stream." or "This Member is no longer listed for this stream.".
 It keeps Previous and Next. The stored ids are never shown, so a run

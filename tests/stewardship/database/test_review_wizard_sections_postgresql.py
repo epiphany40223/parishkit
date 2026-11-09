@@ -68,13 +68,15 @@ def section(markup):
 
 
 def heading(markup):
-    """The page's heading text: its "Family: ..." line."""
+    """The page's heading: "Family: ..." on a Family page, "Member: ..." on a
+    Member page (#2397)."""
     return re.search(r"data-review-heading>(.*?)</h1>", markup, re.S)[1]
 
 
-def member_line(markup):
-    """The header's Member line ("Member: ...", empty on a Family page)."""
-    return re.search(r"data-review-member>(.*?)</p>", markup, re.S)[1]
+def second_line(markup):
+    """The line under the heading: a Member's "Family: ..." line, empty on a
+    Family page."""
+    return re.search(r"data-review-family>(.*?)</p>", markup, re.S)[1]
 
 
 def test_a_census_family_page_shows_its_matched_changes(response_service, google):
@@ -110,7 +112,7 @@ def test_a_census_family_page_shows_its_matched_changes(response_service, google
         # The region redraws from the page's own address.
         assert f'data-refresh-url="{START}1/?run={run}"' in markup
         assert heading(markup).startswith("Family: ") and "(DUID " in heading(markup)
-        assert member_line(markup) == ""
+        assert second_line(markup) == ""
         action, fields = dialog_fields(drawn, "review-family-census-decide")
         assert action == ROUTE
         row = drawn.split(f'id="{row_id}"')[1].split("</tr>")[0]
@@ -243,11 +245,13 @@ def test_a_leader_who_loses_the_ministry_sees_no_name(response_service, google):
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         run = location(start(browser, stream="ministry")[0])[1]["run"]
         markup = page(browser, run)
-    name = heading(markup).strip()
-    member = member_line(markup)
-    assert "data-review-unlisted" not in markup and name
-    # A leader's header names the Member in plain text (no Timeline).
+    member = heading(markup).strip()
+    family = second_line(markup)
+    assert "data-review-unlisted" not in markup and member
+    # A leader's header names the Member, then the Family, in plain text
+    # (no Timeline).
     assert member.startswith("Member: ") and "<a " not in member
+    assert family.startswith("Family: ") and "<a " not in family
     # ParishSoft now lists them as Ministry 4's leader only.
     snapshot, claim = prepare(ministry_source(), LEADERS | {"leader@example.org": [4]})
     promote(snapshot, claim, harness.campaign, harness.rings)
@@ -255,8 +259,8 @@ def test_a_leader_who_loses_the_ministry_sees_no_name(response_service, google):
         markup = page(browser, run)
     assert "This Member is no longer listed for this stream." in markup
     assert heading(markup) == "No longer listed"
-    assert name not in markup and member not in markup
-    assert member_line(markup) == ""
+    assert member not in markup and family not in markup
+    assert second_line(markup) == ""
     assert markup.count('data-review-move="finish"') == 2
 
 

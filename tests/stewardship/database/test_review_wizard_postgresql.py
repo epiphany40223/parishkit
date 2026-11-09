@@ -103,10 +103,10 @@ def test_a_census_run_starts_moves_and_finishes(response_service, google):
         # No footer links (R52 Part W): the header's Family name opens the hub.
         assert "data-review-links" not in page and "Open Census changes" not in page
         assert "Open this Family" not in page
-        # The header: the Family's line, and an empty Member line.
+        # The header: the Family's line, and an empty second line.
         heading = re.search(r"data-review-heading>(.*?)</h1>", page, re.S)[1]
         assert heading.startswith("Family: <a href=") and "(DUID " in heading
-        assert re.search(r"<p [^>]*data-review-member></p>", page)
+        assert re.search(r"<p [^>]*data-review-family></p>", page)
         response, _ = move(browser, f"{START}2/?run={run.pk}", "next-bottom")
         assert response.status_code == 303
         assert response["Location"] == f"{START}2/?run={run.pk}&from=next-bottom"
@@ -116,11 +116,13 @@ def test_a_census_run_starts_moves_and_finishes(response_service, google):
         page = body.decode()
         # A grouped stream's Member page names only the Family's place.
         assert page.count("Family 1 of 1</p>") == 2 and "Member 1 of" not in page
-        member = re.search(r"data-review-member>(.*?)</p>", page, re.S)[1]
-        assert member.startswith("Member: <a href=") and "?tab=" in member
-        assert "(DUID 3)" in member
+        # A Member page's heading is the Member, its Family the line under
+        # it (#2397).
         heading = re.search(r"data-review-heading>(.*?)</h1>", page, re.S)[1]
-        assert heading.startswith("Family: ")
+        assert heading.startswith("Member: <a href=") and "?tab=" in heading
+        assert "(DUID 3)" in heading
+        family = re.search(r"data-review-family>(.*?)</p>", page, re.S)[1]
+        assert family.startswith("Family: <a href=") and "(DUID " in family
         # The last page: Finish stays in the middle slot, Next's slot is
         # empty; focus is on Finish in the bottom row, where the move's Next
         # was.
@@ -311,8 +313,9 @@ def test_my_review_work_card_leads_to_the_wizard(response_service, google):
 
 def test_a_leader_reviews_only_the_ministries_they_lead(response_service, google):
     """A Ministry leader is offered Ministry requests alone, with no stream
-    choice; a run lists only their Ministry's requests, one Member a page,
-    and their pages draw no Timeline link. Staff get every request."""
+    choice or stream line and the Sort under Advanced (#2397); a run lists
+    only their Ministry's requests, one Member a page, and their pages draw
+    no Timeline link. Staff get every request."""
     from parishkit.stewardship.workflows.models import MinistryRequest
 
     from .test_ministry_exports_postgresql import leader
@@ -327,6 +330,11 @@ def test_a_leader_reviews_only_the_ministries_they_lead(response_service, google
         assert '<input type="hidden" name="stream" value="ministry">' in page
         assert 'id="review-stream-census"' not in page
         assert page.count("data-review-filters=") == 1
+        # One stream, so no "Stream:" line; the Sort is part of Advanced,
+        # and the help names the leader's work (#2397).
+        assert "Stream:" not in page
+        assert '<div data-show-when="mode=advanced"><label for="review-sort">' in page
+        assert "Review the join and leave requests for the Ministries you lead" in page
         # A stream the leader's menu does not offer is refused.
         assert start(browser)[0].status_code == 400
         response, _ = start(browser, stream="ministry")
@@ -354,6 +362,8 @@ def test_staff_review_every_ministry_request(response_service, google):
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         _, body = read(staff, START)
         assert b'id="review-stream-ministry"' in body
+        # Staff's Sort is below the filters in either mode (#2397).
+        assert b'<div><label for="review-sort">' in body
         assert start(staff, stream="ministry")[0].status_code == 303
     found = ReviewRun.objects.get()
     assert sorted(item for s in found.subjects for item in s["items"]) == sorted(
