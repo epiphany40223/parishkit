@@ -828,6 +828,51 @@ def test_a_member_added_on_the_form_says_so():
     assert "added this Member on the form" in section
 
 
+@pytest.mark.parametrize("action", ["join", "leave"])
+def test_a_member_with_no_email_or_phone_says_so(action):
+    """A Member the Family added with no email or phone: one muted line, "No
+    email or phone given", in place of the Email and Phones entries, as the
+    table and Review one at a time say it (#2414); the rest of the details
+    stay."""
+    details = join_details if action == "join" else leave_details
+    contact = details(
+        proposed=True,
+        proposed_id="p-1",
+        member_duid=None,
+        email_visibility="available",
+        emails=[],
+        phone_visibility="available",
+        phones={},
+    )
+    section = contact_section(followup_page(item=item(action=action), contact=contact))
+    assert (
+        '<p><span class="contact-line contact-none">No email or phone given'
+        "</span></p><dl>"
+    ) in section
+    assert "<dt>Email</dt>" not in section and "<dt>Phones</dt>" not in section
+    assert "Unavailable" not in section and "Not published" not in section
+    kept = "Gender" if action == "join" else "Current Ministry role"
+    assert f"<dt>{kept}</dt>" in section
+    # Not published is a value the reader may not see, not a missing one.
+    hidden = contact | {"email_visibility": "not_published"}
+    section = contact_section(followup_page(item=item(action=action), contact=hidden))
+    assert "No email or phone given" not in section
+    assert "<dt>Email</dt><dd>Not published</dd>" in section
+
+
+def test_an_unread_leave_keeps_its_unavailable_entries():
+    """A leave whose email and phones could not be read (no visibility, the
+    packet held none for it) keeps Email and Phones Unavailable, never "No
+    email or phone given" (#2414)."""
+    contact = leave_details(
+        email_visibility=None, emails=[], phone_visibility=None, phones={}
+    )
+    section = contact_section(followup_page(item=item(action="leave"), contact=contact))
+    assert "<dt>Email</dt><dd>Unavailable</dd>" in section
+    assert "<dt>Phones</dt><dd>Unavailable</dd>" in section
+    assert "No email or phone given" not in section
+
+
 def test_no_details_say_so():
     """A request whose details cannot be read says so plainly."""
     section = contact_section(followup_page(item=item(), contact=None))

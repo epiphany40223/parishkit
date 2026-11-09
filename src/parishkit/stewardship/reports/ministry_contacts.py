@@ -53,6 +53,7 @@ import json
 from django.db import connection
 
 from parishkit.stewardship.accounts.policy import Capability
+from parishkit.stewardship.web.presentation import contact_read
 
 from .ministries import MinistryQuery, ministry_page, within_principal
 
@@ -170,9 +171,10 @@ def member_contact(contacts):
     the reader may see could differ, by each request's own rule. The page
     lists only requests in force (Every stage leaves out History), whose
     rule for one Member is the same, so in practice they agree; if they
-    ever differ, the block shows the request that shares the most. None
-    when there is nothing to show: no request with details, or only empty
-    values.
+    ever differ, the block shows the request that shares the most, which
+    may be read and empty (the shared component then says "No email or
+    phone given", #2414). None when no request has details that were read
+    (``presentation.contact_read``).
     """
     contacts = list(contacts)
     if not contacts:
@@ -184,12 +186,7 @@ def member_contact(contacts):
             + (value["phone_visibility"] == "available")
         ),
     )
-    shows = (
-        "not_published" in (chosen["email_visibility"], chosen["phone_visibility"])
-        or chosen["emails"]
-        or any(chosen["phones"].values())
-    )
-    return chosen if shows else None
+    return chosen if contact_read(chosen) else None
 
 
 def request_contacts(campaign_id, principal, requests):

@@ -191,6 +191,46 @@ def phone_lines(phones):
     return lines
 
 
+def contact_read(contact):
+    """Whether a Member's contact details (``ministry_contacts``) were read.
+
+    The scoped report and packet reads give each value they read a
+    visibility (available or not_published); details nobody could read (a
+    leave whose packet values were not found, or no details at all) have
+    none, and say nothing about whether the Member has an email or phone.
+    """
+    return bool(contact) and (
+        contact.get("email_visibility") is not None
+        or contact.get("phone_visibility") is not None
+    )
+
+
+def contact_shows(contact):
+    """Whether a Member's contact details draw a line of their own.
+
+    True when either value reads Not published, or there is an email or a
+    phone ``phone_lines`` would draw.
+    """
+    if not contact:
+        return False
+    hidden = "not_published" in (
+        contact.get("email_visibility"),
+        contact.get("phone_visibility"),
+    )
+    return bool(hidden or contact.get("emails") or phone_lines(contact.get("phones")))
+
+
+def contact_none_given(contact):
+    """Whether details were read and hold no email and no phone (#2414).
+
+    The shared contact component then says so in one muted line, "No email
+    or phone given". Details not read are not that case: the Member may
+    have values this reader could not read, so the places keep their
+    neutral words for them (``contact_read``).
+    """
+    return contact_read(contact) and not contact_shows(contact)
+
+
 def parse_us_phone(value):
     """Accept any common way of writing a US number; return canonical E.164.
 

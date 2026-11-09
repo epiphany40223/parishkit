@@ -9184,7 +9184,10 @@ published" for the others; Administrators and Staff see operational
 contact. The exact rule is the
 [Ministry change summary's](../reports/spec.md#ministry-change-summary).
 A Member the Family added on the form says so, since the details
-are what the Family entered. Where the details come from, and the rule for a
+are what the Family entered. The Member cell's "No email or phone given"
+line (below) replaces the Email and Phones entries here; details that could
+not be read keep "Unavailable" there.
+Where the details come from, and the rule for a
 request the report cannot read, are in the
 [Ministry change summary](../reports/spec.md#ministry-change-summary). The
 request page's view audit (`ministry_followup_viewed`) records the request's
@@ -9339,7 +9342,16 @@ requesting Member's email addresses and phone numbers, one short line
 each: an email as a mail link, a phone as a call link after its kind
 (Mobile, Home, Work), so a leader on a phone can tap to write or call. An
 empty value has no line; a value the reader may not see reads "Email: Not
-published" or "Phones: Not published". The values and who sees them are
+published" or "Phones: Not published". A Member whose details were read
+and hold no email and no phone (none on record in ParishSoft, or a Member
+the Family added without them) gets one muted line, "No email or phone
+given", so an empty cell never looks like a hidden one; "Not published"
+stays its own case, a value that exists but the reader may not see, and
+details nobody could read are not this case either (the Administrator,
+2026-11-09, [#2414](https://github.com/epiphany40223/parishkit/issues/2414)).
+A value is read when the scoped read gives it a visibility
+(`presentation.contact_read`).
+The values and who sees them are
 the request page's [Contact details](#follow-up-workflows), with the same
 rule; a Member the Family added shows what the Family entered, and a
 request with no details (one whose Ministry in force the reader does not

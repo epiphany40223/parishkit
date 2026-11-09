@@ -207,6 +207,11 @@ TYPICAL = {
     "phone_visibility": "available",
     "phones": {"home": "+15025550100", "mobile": "+15025550123"},
 }
+# A Member with neither an email nor a phone (#2414): the cell's one muted
+# "No email or phone given" line; the second row's Member keeps an email
+# Not published, which stays its own case.
+NO_CONTACTS = "/ministry-requests-no-contacts"
+NONE_GIVEN = TYPICAL | {"emails": [], "phones": {}}
 
 
 def _worklist(
@@ -639,6 +644,14 @@ def components(context, admin):
         # requests at every stage.
         COUNTED: requests_page | _worklist([row], query=counted),
         CONTACT_LINES: requests_page | _worklist([row, proposed], contacts=CONTACTS),
+        NO_CONTACTS: requests_page
+        | _worklist(
+            [row, proposed],
+            contacts={
+                str(REQUEST): NONE_GIVEN,
+                str(UUID(int=100)): LEADER_CONTACTS[str(REQUEST)],
+            },
+        ),
         SORTED: requests_page | _worklist([proposed, row], query=sorted_query),
         SEARCHED: requests_page | _worklist([row], query=query),
         NOTHING: requests_page | _worklist([], query=nothing_query),

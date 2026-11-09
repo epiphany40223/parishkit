@@ -2535,11 +2535,14 @@ Each page has, top to bottom:
   ([#2398](https://github.com/epiphany40223/parishkit/issues/2398)). The
   page lists only requests in force (Every stage leaves out History), so
   the Member's requests on it share one rule; if they ever differ, the
-  block shows the request that shares the most. With nothing to show it
-  says "No email or phone number is available for this Member.", or, in a
-  run of Members no longer in ParishSoft (whose values ParishSoft no
-  longer gives), "This Member is no longer in ParishSoft, so no email or
-  phone number is shown." The Family hub's Member tabs show no such block.
+  block shows the request that shares the most. Details read with no
+  email and no phone draw the Member cell's "No email or phone given"
+  line ([#2414](https://github.com/epiphany40223/parishkit/issues/2414)).
+  With no details read it says "No email or phone number is available for
+  this Member.", or, in a run of Members no longer in ParishSoft (whose
+  values ParishSoft no longer gives), "This Member is no longer in
+  ParishSoft, so no email or phone number is shown." The Family hub's
+  Member tabs show no such block.
 - **The section:** the subject's matched items of the run's stream, drawn by the
   shared section component the hub's tab draws
   ([wizard shared component](#wizard-shared-component)): the Changed

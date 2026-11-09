@@ -1252,9 +1252,10 @@ table td.numeric :is(.help, .toggletip-bubble) { white-space: normal; }
 .num { white-space: nowrap; }
 .data-table .cell-line { display: block; }
 /* A Member's contact details (components/member-contact.html, #2398): one
-   email or phone to a line, the phone's kind muted before its number. */
+   email or phone to a line, the phone's kind muted before its number, and
+   a muted "No email or phone given" when there are none (#2414). */
 .contact-line { display: block; }
-.contact-kind { color: var(--muted); }
+.contact-kind, .contact-none { color: var(--muted); }
 .data-table .cell-detail { display: block; color: var(--muted); font-size: .875rem; font-weight: 400; }
 .data-table dl.cell-pairs { display: grid; grid-template-columns: auto max-content; gap: .1rem .6rem; margin: 0; }
 .data-table dl.cell-pairs dt { grid-column: 1; color: var(--muted); font-weight: 400; }

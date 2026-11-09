@@ -29,7 +29,7 @@ from parishkit.stewardship.reports.ministry_worklist import (
 from .test_roster import LEADER, STAFF, request_row
 
 ADMIN = STAFF.__class__(UUID(int=96), frozenset({"administrator"}))
-JOIN, LEAVE, OLD, ADDED, ELSEWHERE = (str(UUID(int=n)) for n in range(1, 6))
+JOIN, LEAVE, OLD, ADDED, ELSEWHERE, BLANK = (str(UUID(int=n)) for n in range(1, 7))
 SHARED = {
     "email_visibility": "available",
     "emails": ["pat.sample@example.org"],
@@ -43,6 +43,18 @@ WITHHELD = {
     "phones": {"home": "+15025550100"},
 }
 ENTERED = SHARED | {"emails": ["new@example.org"], "phones": {"mobile": "5025551212"}}
+# A Member with neither an email nor a phone: a Member the Family added
+# without them, or one ParishSoft has none on record for (#2414).
+NONE_GIVEN = SHARED | {"emails": [], "phones": {"home": ""}}
+# Details nobody could read (no visibility): not a Member with none.
+UNREAD = {
+    "email_visibility": None,
+    "emails": [],
+    "phone_visibility": None,
+    "phones": {},
+}
+# The shared component's line for them, muted (#2414).
+NONE_LINE = '<span class="contact-line contact-none">No email or phone given</span>'
 
 
 def packet(monkeypatch, *, by_id=None, by_member=None):
@@ -91,8 +103,12 @@ def test_member_contact_shows_the_request_that_shares_the_most():
     assert member_contact([WITHHELD, SHARED]) is SHARED
     assert member_contact([WITHHELD]) is WITHHELD
     assert member_contact([]) is None
+    # Read and empty is still shown (No email or phone given, #2414); only
+    # details nobody could read are None.
     empty = SHARED | {"emails": [], "phones": {"home": ""}}
-    assert member_contact([empty]) is None
+    assert member_contact([empty]) is empty
+    unread = SHARED | {"email_visibility": None, "phone_visibility": None}
+    assert member_contact([unread]) is None
 
 
 def worklist(monkeypatch, principal, rows, *, contacts):
@@ -106,7 +122,7 @@ def worklist(monkeypatch, principal, rows, *, contacts):
         reads.append([row["id"] for row in shown])
         return {row["id"]: by_id[row["id"]] for row in shown if row["id"] in by_id}
 
-    by_id = {JOIN: SHARED, LEAVE: WITHHELD}
+    by_id = {JOIN: SHARED, LEAVE: WITHHELD, ADDED: NONE_GIVEN, BLANK: UNREAD}
     monkeypatch.setattr(ministry_worklist, "row_contacts", read)
     result = {
         "rows": rows,
@@ -181,6 +197,38 @@ def test_every_role_sees_the_members_contact_lines_under_the_name(monkeypatch):
         assert "Home:" in withheld and "mailto:" not in withheld
         # The view's audit names the Ministry they were read under.
         assert contact_ministries(context["table"].rows) == [9]
+
+
+def test_a_member_with_no_email_or_phone_says_so(monkeypatch):
+    """A Member the Family added with no email or phone gets one muted line,
+    "No email or phone given", for every role (the Administrator,
+    2026-11-09, #2414); Not published is unchanged, and stays distinct."""
+    rows = [
+        request_row(
+            id=ADDED,
+            state="new",
+            outcome=None,
+            member_duid=None,
+            proposed_id=str(UUID(int=77)),
+        ),
+        request_row(id=LEAVE, action="leave", state="new", outcome=None),
+    ]
+    for principal in (LEADER, STAFF, ADMIN):
+        context, _reads = worklist(monkeypatch, principal, rows, contacts=True)
+        added, withheld = member_cells(context, principal)
+        assert added.split('<span class="member-contact">')[1] == NONE_LINE + "</span>"
+        assert "No email or phone given" not in withheld
+        assert "Not published" in withheld and "Not published" not in added
+
+
+def test_details_nobody_could_read_draw_no_line(monkeypatch):
+    """A row whose details have no visibility (not read) draws no line, not
+    "No email or phone given" (#2414)."""
+    rows = [request_row(id=BLANK, state="new", outcome=None)]
+    context, _reads = worklist(monkeypatch, STAFF, rows, contacts=True)
+    (cell,) = member_cells(context, STAFF)
+    assert '<span class="member-contact"></span>' in cell
+    assert "No email or phone given" not in cell and "contact-line" not in cell
 
 
 def test_a_row_with_no_contacts_and_the_hub_draw_no_lines(monkeypatch):

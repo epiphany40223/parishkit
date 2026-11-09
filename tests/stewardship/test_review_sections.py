@@ -520,10 +520,24 @@ def test_a_ministry_page_shows_the_members_contact_details(monkeypatch):
             "Not published</span>"
         ) in block
     assert "mailto:" not in block and "tel:" not in block
-    # No details at all (a Ministry the reader does not lead in force).
-    section, *_rest = ministry_page(monkeypatch, [JOIN], visible=[JOIN])
+    # Details read with no email and no phone: the shared component's one
+    # muted line, as the table and request page say it (#2414).
+    empty = {JOIN: SHARED | {"emails": [], "phones": {}}}
+    section, *_rest = ministry_page(monkeypatch, [JOIN], visible=[JOIN], contacts=empty)
     block = contact_block(render(listed=True, member_page=True, section=section))
-    assert "No email or phone number is available for this Member." in block
+    assert (
+        '<p><span class="contact-line contact-none">No email or phone given</span></p>'
+    ) in block
+    # No details read (a Ministry the reader does not lead in force): the
+    # neutral sentence, never a claim that the Member has none.
+    unread = {JOIN: {**SHARED, "email_visibility": None, "phone_visibility": None}}
+    for contacts in ({}, unread):
+        section, *_rest = ministry_page(
+            monkeypatch, [JOIN], visible=[JOIN], contacts=contacts
+        )
+        block = contact_block(render(listed=True, member_page=True, section=section))
+        assert "No email or phone number is available for this Member." in block
+        assert "No email or phone given" not in block
     # A run of Members no longer in ParishSoft, which gives none of their
     # values, says so rather than reading as if they had none.
     section, *_rest = ministry_page(
@@ -533,7 +547,7 @@ def test_a_ministry_page_shows_the_members_contact_details(monkeypatch):
     assert (
         "This Member is no longer in ParishSoft, so no email or phone number is shown."
     ) in block
-    assert "is available" not in block
+    assert "No email or phone given" not in block
 
 
 def test_the_hub_draws_no_contact_block():

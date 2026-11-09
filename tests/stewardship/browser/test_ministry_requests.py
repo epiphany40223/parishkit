@@ -11,6 +11,7 @@ from .followup_components import (
     GATED_REQUESTS,
     HUB,
     LEADER,
+    NO_CONTACTS,
     REQUESTS,
     SEARCHED,
 )
@@ -132,6 +133,32 @@ def test_the_member_cell_lists_the_members_contacts(page, component_origin, widt
             assert line["right"] <= cell["cell"]["right"] + 0.5, (path, width, line)
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         assert cell["box"], (path, width)
+
+
+@pytest.mark.parametrize("width", [320, 1366])
+def test_a_member_with_no_email_or_phone_says_so(
+    page, component_origin, axe_source, width
+):
+    """A Member with neither an email nor a phone gets one muted line, "No
+    email or phone given", under the DUID, in the muted colour of a line's
+    kind (the Administrator, #2414); the next Member's Email: Not published
+    is unchanged. Nothing scrolls sideways, and axe passes."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + NO_CONTACTS)
+    cell = page.evaluate(MEMBER_CELL)
+    assert [line["text"] for line in cell["lines"]] == ["No email or phone given"]
+    assert cell["links"] == []
+    assert cell["lines"][0]["top"] >= cell["duid"]["bottom"] - 0.5
+    assert cell["lines"][0]["right"] <= cell["cell"]["right"] + 0.5
+    none = page.locator("#table tbody tr").first.locator(".contact-none")
+    kind = page.locator("#table tbody tr").nth(1).locator(".contact-kind").first
+    assert kind.inner_text() == "Email:"
+    assert "Not published" in page.locator("#table tbody tr").nth(1).inner_text()
+    colour = "node => getComputedStyle(node).color"
+    assert none.evaluate(colour) == kind.evaluate(colour)
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    page.evaluate(axe_source)
+    assert page.evaluate(AXE) == []
 
 
 def test_by_ministry_marks_for_staff_and_none_for_a_leader(page, component_origin):

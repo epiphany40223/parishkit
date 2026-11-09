@@ -33,6 +33,7 @@ for name in (
     "duid",
     "phone",
     "phone_lines",
+    "contact_none_given",
     "usd",
     "percentage",
     "out_of",
