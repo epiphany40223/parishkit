@@ -23,6 +23,9 @@ class MinistryDocument:
     headings: tuple[str, ...]
     title: str
     sheet_name: str = "Ministry requests"
+    # Whether the XLSX and PDF add the note on escaped characters; a
+    # Ministry leader's Ministry requests file has none (#2406).
+    format_note: bool = True
 
 
 def new_member_labels(items):

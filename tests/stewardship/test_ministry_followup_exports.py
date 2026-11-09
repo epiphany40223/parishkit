@@ -17,6 +17,7 @@ import pytest
 from django.template.loader import render_to_string
 from django.test import RequestFactory
 
+from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.audit.schemas import (
     Action,
     ContextKind,
@@ -24,14 +25,19 @@ from parishkit.stewardship.audit.schemas import (
     sanitize,
 )
 from parishkit.stewardship.reports import ministry_contacts, ministry_followup_exports
-from parishkit.stewardship.reports.information_rendering import render_information
+from parishkit.stewardship.reports.information_rendering import (
+    information_records,
+    render_information,
+)
 from parishkit.stewardship.reports.ministry_followup import SORTING, FollowupQuery
 from parishkit.stewardship.reports.ministry_followup_exports import (
     HEADINGS,
+    LEADER_LEAVES_OUT,
     _choices,
     queue_document,
 )
 from parishkit.stewardship.reports.ministry_worklist import WorklistQuery
+from parishkit.stewardship.reports.pdf_design import PdfFrame
 from parishkit.stewardship.web.tables import report_table
 
 from .test_ministry_table_columns import ministry_page
@@ -109,10 +115,11 @@ def result(rows):
     }
 
 
-def document(roster=False, **changes):
+def document(roster=False, lean=False, **changes):
     """A queue export with a join, a leave, a request without details and a
     Member the Family added on the form; ``roster`` is a Staff reader's file
-    (the roster-entry columns), ``changes`` override the third row."""
+    (the roster-entry columns), ``lean`` a Ministry leader's report details
+    (#2406), ``changes`` override the third row."""
     rows = [
         row(JOIN, last_contact_at=CONTACTED),
         row(
@@ -152,6 +159,7 @@ def document(roster=False, **changes):
         requested_at=SUBMITTED,
         zone=CHICAGO,
         roster=roster,
+        lean=lean,
     )
 
 
@@ -293,6 +301,138 @@ def test_the_file_names_its_scope_and_privacy_but_no_internal_reference():
     text = str(built.rows)
     assert all(request_id not in text for request_id in (JOIN, LEAVE, PROPOSED))
     assert "p-1" not in text
+
+
+# The eight report details a Ministry leader's file leaves out (#2406).
+LEFT_OUT = {
+    "Display time zone",
+    "Age reference date",
+    "Matching results",
+    "Filters and sort",
+    "Privacy",
+    "Contacts",
+    "Addresses",
+    "Text representation",
+}
+
+
+def details_sheet(built):
+    """The XLSX file's Report information labels, top to bottom."""
+    from openpyxl import load_workbook
+
+    output = io.BytesIO()
+    render_information(built, output, format="xlsx")
+    book = load_workbook(io.BytesIO(output.getvalue()))
+    return [row[0].value for row in book["Report information"].iter_rows()]
+
+
+def test_a_leaders_file_leaves_out_the_audit_details():
+    """A Ministry leader's file keeps only the report, parish, campaign and
+    times (Administrator decision, 2026-11-09, #2406); Staff's file keeps
+    every detail, unchanged, to audit it. The rows and columns are the same
+    as a leader's file had before. A leader's file is never a roster file
+    (``export_body`` sets ``lean`` exactly when ``roster`` is off)."""
+    assert LEADER_LEAVES_OUT == LEFT_OUT
+    staff, lean = document(roster=True), document(lean=True)
+    assert set(dict(staff.metadata)) >= LEFT_OUT - {"Text representation"}
+    assert [label for label, _ in lean.metadata] == [
+        "Report",
+        "Parish",
+        "Campaign",
+        "Source as of",
+        "Requested at",
+    ]
+    before = document()
+    assert (lean.headings, lean.rows) == (before.headings, before.rows)
+    # XLSX: the Report information sheet.
+    assert set(details_sheet(staff)) >= LEFT_OUT
+    assert details_sheet(lean) == [label for label, _ in lean.metadata]
+    # PDF: the page frame names no zone and draws no privacy line, and the
+    # About this report card has no count tile and no left-out detail. Its
+    # times keep the zone's abbreviation, so they are never ambiguous.
+    frame = PdfFrame.for_document(lean)
+    assert frame.notice == "" and "America/Chicago" not in frame.stamp
+    assert frame.stamp.endswith(" CDT"), frame.stamp
+    assert "America/Chicago" in PdfFrame.for_document(staff).stamp
+    assert "Sensitive parish" in PdfFrame.for_document(staff).notice
+    card = next(iter(information_records(lean)))
+    assert card.stats == ()
+    assert not LEFT_OUT & {label for label, _ in card.fields}
+    staff_card = next(iter(information_records(staff)))
+    assert dict(staff_card.stats) == {"Matching results": "4"}
+    output = io.BytesIO()
+    render_information(lean, output, format="pdf")
+    assert output.getvalue().startswith(b"%PDF-")
+
+
+@pytest.mark.parametrize(
+    ("roles", "lean"),
+    [
+        ({"ministry_leader"}, True),
+        # Staff or an Administrator who also leads a Ministry gets the full
+        # file: ``is_leader`` means a Ministry leader only (#2406).
+        ({"staff", "ministry_leader"}, False),
+        ({"administrator", "ministry_leader"}, False),
+        ({"staff"}, False),
+    ],
+)
+def test_only_a_leader_only_reader_gets_the_lean_file(monkeypatch, roles, lean):
+    """``export_body`` builds the lean document, for every format, exactly
+    for a reader who is a Ministry leader and neither Staff nor an
+    Administrator, and the roster file exactly for the others."""
+    built = []
+
+    def capture(*args, **options):
+        """Record the document's options and stop the export there."""
+        built.append(options)
+        raise LookupError("stop here")
+
+    patch = monkeypatch.setattr
+    patch(ministry_followup_exports, "read_rows", lambda *args: result([]))
+    patch(ministry_followup_exports, "request_contacts", lambda *args: {})
+    patch(ministry_followup_exports, "family_keys", lambda rows: None)
+    patch(ministry_followup_exports, "SystemConfiguration", Mock())
+    patch(ministry_followup_exports, "database_now", lambda: SUBMITTED)
+    patch(ministry_followup_exports, "queue_document", capture)
+    principal = Principal(uuid4(), frozenset(roles), frozenset({9}))
+    for fmt in ("csv", "xlsx", "pdf"):
+        with pytest.raises(LookupError):
+            ministry_followup_exports.export_body(
+                uuid4(), WorklistQuery(stage="all"), principal, fmt, CHICAGO, {}
+            )
+    assert [(options["lean"], options["roster"]) for options in built] == [
+        (lean, not lean)
+    ] * 3
+
+
+def test_a_leaders_file_has_no_note_on_escaped_characters():
+    """A value with a character the formats escape gives Staff's XLSX and
+    PDF the Text representation note; a leader's file leaves it out."""
+    odd = {"ministry_name": "Odd\x07Name"}
+    staff, lean = document(**odd), document(lean=True, **odd)
+    assert "Text representation" in details_sheet(staff)
+    assert "Text representation" not in details_sheet(lean)
+    labels = [
+        {label for label, _ in next(iter(information_records(built))).fields}
+        for built in (staff, lean)
+    ]
+    assert "Text representation" in labels[0]
+    assert "Text representation" not in labels[1]
+
+
+def test_the_csv_holds_no_report_details_for_either_reader():
+    """The CSV is exactly the table for every reader (#966), so a leader's
+    lean CSV is byte for byte Staff's for the same rows (#2406)."""
+
+    def csv_bytes(built):
+        """The rendered CSV."""
+        output = io.BytesIO()
+        render_information(built, output, format="csv")
+        return output.getvalue()
+
+    full = csv_bytes(document())
+    assert full == csv_bytes(document(lean=True))
+    assert not any(label.encode() in full for label in LEFT_OUT - {"Contacts"})
 
 
 def test_an_unreadable_leave_leaves_the_join_cells_blank():

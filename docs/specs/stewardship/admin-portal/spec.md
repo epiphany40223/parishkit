@@ -9151,8 +9151,12 @@ column (Administrator decision, 2026-10-13, on
 page still shows when a request was submitted. Its Report information sheet
 and PDF card
 hold the parish, campaign, data date, request time, display time zone, age
-reference date, count, filters and the privacy line. It carries the
-retired export's sensitivity notice, and its times are in the browser's
+reference date, count, filters and the privacy line, the retired export's
+sensitivity notice. A Ministry leader's file leaves most of them out, the
+privacy line and time zone included, and is also My review work's download
+of every stage ([#2406](https://github.com/epiphany40223/parishkit/issues/2406);
+[a Ministry leader's downloads](../reports/spec.md#a-ministry-leaders-downloads)).
+Its times are in the browser's
 zone ([time zones](../ui-conventions/spec.md#downloaded-files)). The file is
 rendered on request, as Census changes is, rather than queued as a
 stored export: a stored capture would need a schema change, because the

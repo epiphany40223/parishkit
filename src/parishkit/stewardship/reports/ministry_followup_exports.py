@@ -14,12 +14,15 @@ or a packet. The rows come from the queue's
 own selection read whole (``followup_page``) and the details from
 ``ministry_contacts``, all inside one guarded read; the file uses the same
 document and writers as the retired lists' exports, so its Report
-information sheet, PDF report card and privacy line are theirs.
+information sheet, PDF report card and privacy line are theirs. A
+Ministry leader's file is leaner: it leaves out the report details in
+``LEADER_LEAVES_OUT`` (Administrator decision, 2026-11-09, #2406).
 
 Like those exports it is not privileged (only the directory, postal,
 financial and timeline files are, #547). It holds exact times (Last
 contact), so it asks for no time zone: it writes them in the browser's zone
-and states that zone in the file (#1679). Each download is audited with its
+and, in a Staff or Administrator's file, states that zone (#1679). Each
+download is audited with its
 count, the sorted Ministry DUIDs in the file and whether the
 contacts were operational or publish-restricted; never names, contact
 values, filters or search text.
@@ -75,6 +78,7 @@ from .ministry_worklist import (
     read_rows,
     reviewer_value,
 )
+from .pdf_design import FORMAT_LABEL
 from .read_admission import admit_report_read
 
 FORMATS = {
@@ -120,6 +124,24 @@ HEADINGS = (
 NO_CONTACT = "None recorded"
 UNAVAILABLE = "Unavailable"
 PRIVACY = "Sensitive parish information. Share only with authorized recipients."
+# The report details a Ministry leader's file leaves out, in every format
+# (Administrator decision, 2026-11-09, #2406): a leader's file holds only
+# what a leader needs, while Staff and Administrators keep them to audit a
+# file. "Text representation" is the renderers' own note on escaped
+# characters (``information_rendering.FORMAT_NOTE``), which the document's
+# ``format_note`` turns off.
+LEADER_LEAVES_OUT = frozenset(
+    {
+        "Display time zone",
+        "Age reference date",
+        "Matching results",
+        "Filters and sort",
+        "Privacy",
+        "Contacts",
+        "Addresses",
+        FORMAT_LABEL,
+    }
+)
 # The fix for a PDF above EXPORT_PDF_LIMIT requests; the line below the
 # queue's export row says the same while its filters select more
 # (ministry-followup.html).
@@ -190,7 +212,15 @@ def _contact_values(details, action):
 
 
 def queue_document(
-    result, contacts, query, *, parish_name, requested_at, zone, roster=False
+    result,
+    contacts,
+    query,
+    *,
+    parish_name,
+    requested_at,
+    zone,
+    roster=False,
+    lean=False,
 ):
     """The file's one detached document: report details and one row a request.
 
@@ -198,9 +228,10 @@ def queue_document(
     ``contacts`` the details by request id (``request_contacts``) and
     ``zone`` the chosen display ``ZoneInfo``. ``roster`` fills the
     roster-entry columns (Staff and Administrators; the rows then carry
-    their Family keys, ``family_keys``). Every value is text or an aware
-    time placed in ``zone``, so the CSV, XLSX and PDF writers render the
-    same cells.
+    their Family keys, ``family_keys``). ``lean`` is a Ministry leader's
+    file, whose report details leave out ``LEADER_LEAVES_OUT`` (#2406).
+    Every value is text or an aware time placed in ``zone``, so the CSV,
+    XLSX and PDF writers render the same cells.
     """
 
     def instant(value):
@@ -305,14 +336,16 @@ def queue_document(
             else ()
         ),
     )
+    leaves_out = LEADER_LEAVES_OUT if lean else frozenset()
     return MinistryDocument(
-        metadata,
+        tuple((label, value) for label, value in metadata if label not in leaves_out),
         tuple(lines),
         len(lines),
         requested_at,
         HEADINGS,
         TITLE,
         sheet_name="Ministry requests",
+        format_note=FORMAT_LABEL not in leaves_out,
     )
 
 
@@ -439,6 +472,8 @@ def export_body(campaign_id, query, principal, fmt, zone, progress):
         requested_at=database_now(),
         zone=zone,
         roster=roster,
+        # A Ministry leader's file is the lean one (#2406).
+        lean=not roster,
     )
     output = io.BytesIO()
     # The PDF dates itself in the parish's date format, lent explicitly, as

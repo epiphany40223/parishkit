@@ -224,9 +224,14 @@ def information_xlsx(document, output):
                 span=len(document.headings),
             )
         metadata = book.create_sheet("Report information")
-        for index, (key, value) in enumerate(
-            chain(document.metadata, (("Text representation", FORMAT_NOTE),)), 1
-        ):
+        # The note on escaped characters ends the details, unless the
+        # document leaves it out (a Ministry leader's file, #2406).
+        note = (
+            (("Text representation", FORMAT_NOTE),)
+            if getattr(document, "format_note", True)
+            else ()
+        )
+        for index, (key, value) in enumerate(chain(document.metadata, note), 1):
             xlsx_cell(metadata, index, 1, key)
             xlsx_cell(metadata, index, 2, value)
         style_information(metadata, title=document.title)
@@ -246,7 +251,13 @@ def information_records(document):
     from .pdf_design import report_record, row_records
 
     return chain(
-        (report_record(document.metadata, values=chain.from_iterable(document.rows)),),
+        (
+            report_record(
+                document.metadata,
+                values=chain.from_iterable(document.rows),
+                format_note=getattr(document, "format_note", True),
+            ),
+        ),
         row_records(document.headings, document.rows),
     )
 
