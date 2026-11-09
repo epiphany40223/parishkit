@@ -325,10 +325,13 @@ def test_queue_filters_stay_put_when_applied_in_place(page, component_origin):
 def test_queue_help_explains_removed_to_staff_only(page, component_origin):
     """The page help explains the Removed badge to Staff and Administrators;
     a Ministry leader, who leads only Ministries in the campaign (#922),
-    reads nothing about Ministries leaving it (#1135)."""
+    reads nothing about Ministries leaving it (#1135): their page help is
+    the short one (#2395)."""
     page.goto(component_origin + PAGE)
-    assert "Removed beside a Ministry" in page.locator("main").text_content()
+    text = page.locator("main").text_content()
+    assert "Removed beside a Ministry" in text
+    assert "Leave (cannot participate) marks" in text
     page.goto(component_origin + "/followup-leader")
     text = page.locator("main").text_content()
-    assert "Leave (cannot participate) marks" in text
+    assert "This page lists the requests Families made to join" in text
     assert "Removed beside a Ministry" not in text

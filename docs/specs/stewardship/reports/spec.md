@@ -2461,11 +2461,15 @@ outcomes; the request pages, the remembered view,
 Export these requests and the packet stay. From the top, the page shows:
 
 1. The heading, with the page help (About this page, holding the
-   ParishSoft data date) and By Ministry's control beside it. (Roster
+   ParishSoft data date; [a leader's](#a-ministry-leaders-view) is short)
+   and, for Staff and Administrators, By Ministry's control beside it.
+   (Roster
    changes to enter, once linked here, is this page's To enter by hand
    Stage since R39;
    [roster entry](../admin-portal/spec.md#roster-entry-on-ministry-requests).)
-2. **By Ministry**, a compact table described below. It stays above the
+2. **By Ministry**, a compact table described below, for Staff and
+   Administrators only ([a leader's view](#a-ministry-leaders-view)
+   has none). It stays above the
    worklist's filters, not between them and the table: its counts apply
    filters in place and the table's height changes with them, so anything
    below the table would move under the pointer
@@ -2519,8 +2523,7 @@ list holds: accepted requests with
 [roster entry](../admin-portal/spec.md#roster-entry-on-ministry-requests)
 for a Member no longer in ParishSoft, or that a later Family response
 replaced. Each count then equals the list it opens
-([#2331](https://github.com/epiphany40223/parishkit/issues/2331)). A
-Ministry leader has no roster rows, so their counts are unchanged.
+([#2331](https://github.com/epiphany40223/parishkit/issues/2331)).
 
 Each count that is not zero applies that Ministry and request type to the
 worklist below in place, when the reader may follow up that Ministry. It does
@@ -2531,10 +2534,9 @@ Join or leave and Stage to To review. Each count also clears the search. A count
 ordinary link carrying only the worklist's closed link filters
 (`?ministry=<DUID>&kind=join&stage=all` and the like; see
 [follow-up workflows](../admin-portal/spec.md#follow-up-workflows)), so
-opening it in a new tab shows the same view. A Ministry leader gets links only
-for the Ministries they lead. A zero count is plain text, and each link's
-accessible name names its Ministry ("3 join requests for Choir"), as
-[count links](../ui-conventions/spec.md#admin-tables) ask.
+opening it in a new tab shows the same view. A zero count is plain
+text, and each link's accessible name names its Ministry ("3 join
+requests for Choir"), as [count links](../ui-conventions/spec.md#admin-tables) ask.
 
 A reader whose scope holds one Ministry sees a single line instead of a
 table. A long list scrolls inside a bounded box. By Ministry is redrawn with
@@ -2619,9 +2621,11 @@ selection and the export capture still take. The queue likewise explains its
 leader leads only the Ministries the campaign asks about (#922).
 
 The page reads its rows and export through the follow-up selection with its
-cross-check. By Ministry and the packet's choices read the Ministry report
-selection with its own cross-check, so a reader needs both scopes, which
-the same roles hold. A request review's Edit carried into another Ministry
+cross-check. For Staff and Administrators, By Ministry and the packet's
+choices read the Ministry report selection with its own cross-check, so a
+reader needs both scopes, which the same roles hold; a leader's page skips
+that read ([a leader's view](#a-ministry-leaders-view)). A request
+review's Edit carried into another Ministry
 ([follow-up workflows](../admin-portal/spec.md#follow-up-workflows)) belongs
 to that Ministry alone, its Ministry in force, the way Pledges and
 Financial stewardship read the Edit in force (Administrator decision,
@@ -2823,6 +2827,30 @@ the audit event and contain no names, contacts, filters or Member values.
 The [Admin log owner](../admin-portal/spec.md#logs) includes this set when
 filtering audit events by Ministry; it must not depend on retained export rows.
 This representation does not change current-policy checks or report columns.
+
+### A Ministry leader's view
+
+A Ministry leader, often an occasional user, sees the same page with two
+differences (Administrator decision, 2026-11-08,
+[#2395](https://github.com/epiphany40223/parishkit/issues/2395)):
+
+- **A short page help.** About this page holds a few plain sentences
+  about what a leader does here, in place of the long help Staff read: the
+  page lists requests to join or leave the Ministries they lead; a row's
+  Accept, Edit or Ignore decides one, and Accept or Ignore can decide
+  several ticked rows at once; a filled icon sends its request back to
+  review, and a greyed one says why it cannot; each request's own page,
+  opened from its Ministry link, records contact; and Review one at a
+  time does the same one request at a time. It leaves out the ParishSoft
+  data date and every rule a leader cannot act on ([page help](../ui-conventions/spec.md#page-help)).
+- **No By Ministry.** The page neither draws By Ministry nor reads its
+  counts, so the heading's row holds only About this page. The Stage
+  filter and the table are unchanged, and the
+  [follow-up packet](#multi-ministry-follow-up-packet)'s choices are the
+  Ministries the worklist's own read lists for its Ministry filter.
+
+Staff and Administrators keep the full help and By Ministry. Rejected:
+shortening the help for everyone now, since Staff use its detail.
 
 ## Multi-Ministry follow-up packet
 

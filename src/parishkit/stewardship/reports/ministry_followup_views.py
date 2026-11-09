@@ -623,8 +623,13 @@ def _page_response(
                 extra = roster_counts(every["rows"])
             context = dict(
                 listed,
-                **_overview(campaign_id, principal, coverage, extra),
+                **_overview(
+                    campaign_id, principal, coverage, extra, listed["ministries"]
+                ),
                 campaign_id=campaign_id,
+                # A Ministry leader gets a short page help and no By
+                # Ministry (#2395).
+                leader=is_leader(principal),
                 mutable=mutable,
                 notice=notice,
                 queue_token=token,
@@ -850,7 +855,7 @@ def count_links(principal, summary):
     }
 
 
-def _overview(campaign_id, principal, coverage, extra=None):
+def _overview(campaign_id, principal, coverage, extra=None, ministries=()):
     """Ministry requests' parts below the worklist (#1133).
 
     By Ministry and the packet's choices are every Ministry in the reader's
@@ -866,10 +871,19 @@ def _overview(campaign_id, principal, coverage, extra=None):
     rows by Ministry and request (``roster_counts``), added to the Join and
     Leave counts so each equals the list it opens (#2331); None for a
     Ministry leader, who has no roster rows.
+
+    A Ministry leader's page has no By Ministry (#2395), so its counts are
+    not read at all; the packet then offers ``ministries``, the leader's
+    Ministries the worklist's own read lists for its Ministry filter.
     """
-    summaries = ministry_page(campaign_id, MinistryQuery(), principal, every=True)[
-        "summaries"
-    ]
+    leader = is_leader(principal)
+    summaries = (
+        []
+        if leader
+        else ministry_page(campaign_id, MinistryQuery(), principal, every=True)[
+            "summaries"
+        ]
+    )
     show_leaders = coverage is not None and reads_every_ministry(principal)
     for summary in summaries:
         if extra:
@@ -887,7 +901,10 @@ def _overview(campaign_id, principal, coverage, extra=None):
         "show_marks": reads_every_ministry(principal),
         # Every Ministry the packet may include, by name (#533).
         "packet_choices": sorted(
-            ({"duid": row["duid"], "name": row["name"]} for row in summaries),
+            (
+                {"duid": row["duid"], "name": row["name"]}
+                for row in (ministries if leader else summaries)
+            ),
             key=lambda row: (row["name"].lower(), row["duid"]),
         ),
         "packet_limit": MAX_PACKET_MINISTRIES,

@@ -4,8 +4,9 @@ counts and By Ministry counts, under the real web role and SQL scope.
 Each By Ministry count links to the same page with its Ministry and the
 worklist's own closed Request and Stage values, so the view it opens lists
 exactly the requests counted; only Ministries the reader may follow up get
-links, and a zero count is plain text. A leader of one Ministry gets one
-line, a leader of several and Staff and Administrators a table. The Stage
+links, and a zero count is plain text. Staff and Administrators get a
+table; a Ministry leader's page has no By Ministry and a short page help
+(#2395), and the same addresses still filter its table. The Stage
 choices count what the other filters select, within the reader's scope,
 and never a request for a Member no longer in ParishSoft.
 """
@@ -50,6 +51,10 @@ ITEMS = "/admin/reports/ministries/follow-up/"
 # checks and holds).
 EXTRA = 6
 JOIN_9 = f"{PAGE}?ministry=9&kind=join&stage=all"
+# One sentence of each page help (#2395): a Ministry leader's short one,
+# and Staff's full one.
+LEADER_HELP = "the Ministries you lead. Stage chooses which ones show"
+STAFF_HELP = "Live join and leave requests for the Ministries you may follow up"
 LEAVE_4 = f"{PAGE}?ministry=4&kind=leave&stage=all"
 
 
@@ -107,27 +112,22 @@ def signed_in_as(harness, google, email, roles):
     return browser, PortalUser.objects.get(google_subject=google[0]["sub"]).pk
 
 
-def test_a_leader_of_one_ministry_gets_one_line_whose_counts_filter_the_table(
+def test_a_leaders_page_has_no_by_ministry_and_its_addresses_filter_the_table(
     response_service, google
 ):
-    """A leader of Food pantry (9) gets one line, linked for it alone; each
-    count opens the table with its filters shown and lists exactly the
-    requests counted, resolved requests included in the join count; a zero
-    count is text, and only closed filter values in scope may travel."""
+    """A leader of Food pantry (9) gets a short page help and no By Ministry
+    (#2395); a count's address, which My review work's card and a passed-on
+    link still carry, opens the table with its filters shown and lists
+    exactly the requests counted, resolved requests included in the join
+    list; only closed filter values in scope may travel."""
     harness = setup(response_service)
     browser, head, _, _ = leader(harness, google)
     join, leave = requests()  # A join for Ministry 9, a leave for Ministry 4.
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         body = page(browser, PAGE)
-        section = by_ministry(body)
-        assert "<table" not in section and 'class="by-ministry-line"' in section
-        assert href(JOIN_9) in section and href(f"{PAGE}?ministry=9") in section
-        # Every link's accessible name names its Ministry.
-        assert 'aria-label="1 join request for Food pantry"' in section
-        assert 'aria-label="1 request to review for Food pantry"' in section
-        # Food pantry has no leave request: the zero is plain text, and
+        assert 'id="by-ministry"' not in body and "remember-open-v1.js" not in body
+        assert LEADER_HELP in body and STAFF_HELP not in body
         # Ministry 4 is not this leader's.
-        assert "0 leave requests" in section and "kind=leave" not in section
         assert "ministry=4" not in body
         # The default view lists the open join, and the leader's packet
         # offers Food pantry alone.
@@ -143,11 +143,11 @@ def test_a_leader_of_one_ministry_gets_one_line_whose_counts_filter_the_table(
         assert selected(queue, "requests-stage") == "all"
         assert listed(page(browser, f"{PAGE}?ministry=9")) == {join.pk}
 
-    # Resolved, the request still counts as joining but no longer unresolved.
+    # Resolved, the request is still listed as joining but no longer to
+    # review.
     edit(harness, head, join, state="resolved", outcome="joined")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        section = by_ministry(page(browser, PAGE))
-        assert href(JOIN_9) in section and href(f"{PAGE}?ministry=9") not in section
+        assert listed(page(browser, f"{PAGE}?ministry=9")) == set()
         assert listed(page(browser, JOIN_9)) == {join.pk}
         for refused, status in (
             (LEAVE_4, 403),
@@ -160,9 +160,10 @@ def test_a_leader_of_one_ministry_gets_one_line_whose_counts_filter_the_table(
     assert leave.pk not in listed(queue)
 
 
-def test_a_leader_of_several_ministries_gets_a_table_of_them(response_service, google):
-    """A leader of Choir (4) and Food pantry (9) gets a By Ministry table
-    with a row and links for each, and no Admin/Staff marks (#1135)."""
+def test_a_leader_of_several_ministries_gets_no_by_ministry(response_service, google):
+    """A leader of Choir (4) and Food pantry (9) gets no By Ministry either
+    (#2395), and no Admin/Staff marks (#1135); the packet offers both
+    Ministries, and each one's address filters the table."""
     harness = setup(response_service)
     browser, _ = signed_in_as(
         harness, google, "leader-4-9@example.org", ["ministry_leader"]
@@ -170,10 +171,12 @@ def test_a_leader_of_several_ministries_gets_a_table_of_them(response_service, g
     join, leave = requests()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         body = page(browser, PAGE)
-        section = by_ministry(body)
-        assert section.count('<th scope="row">') == 2
-        assert href(JOIN_9) in section and href(LEAVE_4) in section
-        assert "Not in ParishSoft" not in section
+        assert 'id="by-ministry"' not in body and LEADER_HELP in body
+        assert "Not in ParishSoft" not in body
+        packet = body.split('id="ministry-packet-choices"', 1)[1].split("</fieldset>")[
+            0
+        ]
+        assert 'value="4"> Choir' in packet and 'value="9"> Food pantry' in packet
         assert listed(body) == {join.pk, leave.pk}
         assert listed(page(browser, LEAVE_4)) == {leave.pk}
         assert stages(body)[:2] == ["To review (2)", "Accepted (0)"]
@@ -182,12 +185,17 @@ def test_a_leader_of_several_ministries_gets_a_table_of_them(response_service, g
 @pytest.mark.parametrize("role", ["staff", "administrator"])
 def test_staff_and_administrators_count_every_ministry(response_service, google, role):
     """Staff and Administrators follow up every Ministry, so each count that
-    is not zero links; the old queue address is gone, with no redirect."""
+    is not zero links; they keep the full page help (#2395); the old queue
+    address is gone, with no redirect."""
     harness = setup(response_service)
     browser, _, _, _ = leader(harness, google, roles=(role,))
     join, leave = requests()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        section = by_ministry(page(browser, PAGE))
+        body = page(browser, PAGE)
+        assert STAFF_HELP in body and LEADER_HELP not in body
+        section = by_ministry(body)
+        # Every link's accessible name names its Ministry.
+        assert 'aria-label="1 join request for Food pantry"' in section
         assert href(JOIN_9) in section and href(LEAVE_4) in section
         assert href(f"{PAGE}?ministry=4") in section
         assert listed(page(browser, LEAVE_4)) == {leave.pk}

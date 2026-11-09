@@ -282,6 +282,7 @@ sections:
     "Response filters": [RPT-05, RPT-03]
     "Mailing columns": [RPT-05]
     "Ministry change summary": [RPT-06]
+    "A Ministry leader's view": [RPT-06]
     "Multi-Ministry follow-up packet": [RPT-07]
     "Pending census changes": [RPT-08]
     "Census change rows": [RPT-08]

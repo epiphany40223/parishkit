@@ -51,6 +51,7 @@ from parishkit.stewardship.reports.ministry_followup_views import (
 )
 from parishkit.stewardship.reports.ministry_worklist import (
     WorklistQuery,
+    is_leader,
     place,
     row_name,
     worklist_context,
@@ -229,6 +230,8 @@ def _worklist(rows, *, query=None, principal=STAFF, mutable=True, marks=None):
         "query": query,
         "mutable": mutable,
         "can_tick": "staff" in principal.roles,
+        # A Ministry leader's page: short help, no By Ministry (#2395).
+        "leader": is_leader(principal),
         "export_fields": query.form_values(),
         "notice": None,
     }
@@ -634,11 +637,12 @@ def components(context, admin):
             marks={ENTRY_IDS[0]: mark, ENTRY_IDS[2]: mark},
         )
         | dict(notice=ENTRY_BULK_NOTICE),
-        # A leader of one Ministry: one line, no marks or campaign help.
+        # A leader of one Ministry: no By Ministry (#2395), no marks or
+        # campaign help.
         LEADER: requests_page
         | _worklist([row], principal=LEADS)
         | dict(
-            by_ministry=by_ministry[:1],
+            by_ministry=[],
             packet_choices=[dict(duid=9, name="Example <Ministry>")],
             show_marks=False,
             show_leaders=False,

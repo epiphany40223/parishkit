@@ -396,8 +396,10 @@ def test_packet_choices_list_every_ministry_in_scope_beyond_the_table(
     table's rows, and never a Ministry outside their scope (#533).
 
     A leader of Choir (4) and Food pantry (9) searches Ministry requests
-    down to Food pantry; By Ministry and the packet still offer both, so a
-    subset can be chosen whatever the table shows (#1133). A leader of Food
+    down to Food pantry; the packet still offers both, so a subset can be
+    chosen whatever the table shows (#1133), from the worklist's own read
+    of the leader's Ministries: a leader's page has no By Ministry (#2395).
+    A leader of Food
     pantry alone is never offered Choir, and a packet POST naming Choir
     anyway is refused. Ticking more Ministries than one packet may hold is
     refused with a message saying what to do.
@@ -421,8 +423,7 @@ def test_packet_choices_list_every_ministry_in_scope_beyond_the_table(
         table = body.decode().split("<caption>Ministry requests to review", 1)[1]
         table = table.split("</table>", 1)[0]
         assert "Food pantry" in table and "Choir" not in table
-        counts = body.decode().split('<section id="by-ministry"', 1)[1]
-        assert "Choir" in counts.split("</section>", 1)[0]
+        assert 'id="by-ministry"' not in body.decode()
         boxes = packet_boxes(body)
         assert boxes.count('name="ministries"') == 2
         assert boxes.index('value="4"> Choir') < boxes.index('value="9"> Food pantry')

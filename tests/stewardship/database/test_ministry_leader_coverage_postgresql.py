@@ -238,11 +238,12 @@ def test_staff_and_administrators_see_the_leaders_column(deployment, google):
 
 
 def test_a_ministry_leader_never_sees_the_column(deployment, google):
-    """A leader's page has no Leaders column or help and reads no coverage."""
+    """A leader's page has no Leaders column or help and reads no coverage;
+    it has no By Ministry at all (#2395)."""
     leader = sign_in_as(google, "ann@example.org")
     body, calls = counted_page(leader)
     assert calls == 0
-    assert "Leaders" not in by_ministry(body) and "leader-status" not in body
+    assert 'id="by-ministry"' not in body and "leader-status" not in body
     assert "Leaders says whether" not in body
     assert viewed().count() == 0
 
