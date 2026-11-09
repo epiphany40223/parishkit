@@ -80,6 +80,8 @@ def ministry_page(rows=(), *, summaries=(), roles=None, **extra):
         "export_fields": query.form_values(),
         "export_pdf_limit": 1000,
         "by_ministry": list(summaries),
+        # A Ministry leader's page: short help, no By Ministry (#2395).
+        "leader": "staff" not in roles,
         # As Staff or an Administrator sees it: with the ParishSoft and
         # campaign marks (#1135).
         "show_marks": True,

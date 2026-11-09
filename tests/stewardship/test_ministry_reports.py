@@ -1,5 +1,6 @@
 """Private report filters and capability scope without database startup."""
 
+import re
 from uuid import uuid4
 
 import pytest
@@ -176,3 +177,74 @@ def test_one_ministry_reads_as_one_line():
         '<p class="by-ministry-line">Choir: 1 join request · 2 leave requests'
         " · 3 to review"
     ) in " ".join(section.split())
+
+
+# One sentence of each help, to tell them apart (#2395).
+LEADER_HELP = "the Ministries you lead. Stage chooses which ones show"
+STAFF_HELP = "Live join and leave requests for the Ministries you may follow up"
+
+
+def about(html):
+    """The About this page panel's text, tags and spacing dropped."""
+    start = html.index('<details class="about-page"')
+    panel = html[start : html.index("</details>", start)]
+    return " ".join(re.sub(r"<[^>]+>", " ", panel).split())
+
+
+def test_a_leader_gets_a_short_help_and_no_by_ministry():
+    """A Ministry leader's page (#2395): a short About this page, at most a
+    quarter of Staff's, and no By Ministry disclosure or its script. Staff
+    keep the full help and By Ministry."""
+    rows = [counts(9, "Choir", 1, 2, 3)]
+    leader = render_report(
+        [],
+        summaries=rows,
+        roles=frozenset({"ministry_leader"}),
+        show_marks=False,
+        campaign_marks=False,
+    )
+    staff = render_report([], summaries=rows)
+    short, full = about(leader), about(staff)
+    assert LEADER_HELP in short and STAFF_HELP not in short
+    for words in ("Accept:", "Edit:", "Ignore:", "Review one at a time"):
+        assert words in short, words
+    assert len(short.split()) * 4 <= len(full.split())
+    assert 'id="by-ministry"' not in leader and "by-ministry" not in leader
+    assert "remember-open-v1.js" not in leader
+    # The worklist itself is unchanged.
+    assert 'id="table-filters"' in leader and "data-table-region" in leader
+    assert STAFF_HELP in full and LEADER_HELP not in full
+    assert 'id="by-ministry"' in staff and "remember-open-v1.js" in staff
+
+
+def test_a_leaders_page_skips_the_by_ministry_read(monkeypatch):
+    """The view reads no By Ministry counts for a Ministry leader (#2395):
+    the packet offers the worklist's own Ministries, by name. Staff still
+    read them, with their count links."""
+    from parishkit.stewardship.reports import ministry_followup_views as views
+
+    reads = []
+
+    def summaries(campaign_id, query, principal, **options):
+        """The Ministry report's summary, recorded."""
+        reads.append(principal)
+        return {"summaries": [counts(9, "Choir", 1)]}
+
+    monkeypatch.setattr(views, "ministry_page", summaries)
+    ministries = [
+        {"duid": 9, "name": "Food pantry", "in_campaign": True},
+        {"duid": 4, "name": "choir", "in_campaign": True},
+    ]
+    leader = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({4, 9}))
+    overview = views._overview(uuid4(), leader, None, None, ministries)
+    assert reads == [] and overview["by_ministry"] == []
+    assert overview["packet_choices"] == [
+        {"duid": 4, "name": "choir"},
+        {"duid": 9, "name": "Food pantry"},
+    ]
+    staff = Principal(uuid4(), frozenset({"staff"}))
+    overview = views._overview(uuid4(), staff, None, None, ministries)
+    assert reads == [staff]
+    assert [row["name"] for row in overview["by_ministry"]] == ["Choir"]
+    assert overview["by_ministry"][0]["count_links"]
+    assert overview["packet_choices"] == [{"duid": 9, "name": "Choir"}]

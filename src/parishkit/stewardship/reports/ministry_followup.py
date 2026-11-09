@@ -349,7 +349,10 @@ def _admit(result, principal, *, empty=False):
     they may inspect). The selection names no operational flag, so the
     caller must also read the Ministry report's selection, whose own
     cross-check refuses a principal SQL does not treat as operational:
-    Ministry requests does, through its By Ministry read (#1133).
+    Ministry requests does, through its By Ministry read (#1133). A
+    Ministry leader's page skips that read (#2395): Python claims no
+    operational scope for a leader, so there is no such claim to refuse,
+    and SQL scope wider than the leader's Ministries is still refused here.
     """
     if result is None:
         raise ReadUnavailable("Ministry follow-up inputs are unavailable.")

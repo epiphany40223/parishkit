@@ -580,6 +580,9 @@ def _page_response(
                 listed,
                 **_overview(campaign_id, principal, coverage, extra),
                 campaign_id=campaign_id,
+                # A Ministry leader gets a short page help and no By
+                # Ministry (#2395).
+                leader=is_leader(principal),
                 mutable=mutable,
                 notice=notice,
                 queue_token=token,
@@ -815,10 +818,18 @@ def _overview(campaign_id, principal, coverage, extra=None):
     rows by Ministry and request (``roster_counts``), added to the Join and
     Leave counts so each equals the list it opens (#2331); None for a
     Ministry leader, who has no roster rows.
+
+    A Ministry leader's page has no By Ministry (#2395), so its counts are
+    not read at all.
     """
-    summaries = ministry_page(campaign_id, MinistryQuery(), principal, every=True)[
-        "summaries"
-    ]
+    leader = is_leader(principal)
+    summaries = (
+        []
+        if leader
+        else ministry_page(campaign_id, MinistryQuery(), principal, every=True)[
+            "summaries"
+        ]
+    )
     show_leaders = coverage is not None and reads_every_ministry(principal)
     for summary in summaries:
         if extra:

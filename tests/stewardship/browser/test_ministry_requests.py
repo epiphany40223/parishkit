@@ -1,5 +1,6 @@
 """Ministry requests (#1133): the review worklist (#1684) with its By Ministry
-counts, across engines and widths."""
+counts, across engines and widths. A Ministry leader's page has a short help
+and no By Ministry (#2395)."""
 
 import pytest
 from django.urls import reverse
@@ -48,10 +49,11 @@ def test_ministry_requests_fit_the_window_and_pass_axe(
         assert page.evaluate(AXE) == [], path
 
 
-def test_by_ministry_marks_and_one_line_for_one_ministry(page, component_origin):
+def test_by_ministry_marks_for_staff_and_none_for_a_leader(page, component_origin):
     """Staff see a By Ministry table with each Ministry's ParishSoft and
-    campaign marks; a leader of one Ministry sees one line with no marks
-    (#1133, #1135). A zero count is plain text."""
+    campaign marks (#1133, #1135); a zero count is plain text. A Ministry
+    leader's page has no By Ministry and a short help, with neither mark
+    (#2395); its About this page control still sits on the heading's line."""
     page.goto(component_origin + REQUESTS)
     open_by_ministry(page)
     section = page.locator("#by-ministry")
@@ -65,19 +67,22 @@ def test_by_ministry_marks_and_one_line_for_one_ministry(page, component_origin)
     assert section.get_by_role("link", name="0 leave requests for").count() == 0
     assert section.get_by_role("link").count() == 4
     page.goto(component_origin + LEADER)
-    open_by_ministry(page)
-    section = page.locator("#by-ministry")
-    assert section.locator("table").count() == 0
-    line = section.locator(".by-ministry-line")
-    assert " ".join(line.inner_text().split()) == (
-        "Example <Ministry>: 51 join requests · 0 leave requests · 40 to review"
-    )
-    visible(line.get_by_role("link", name=JOINS))
+    assert page.locator("details.by-ministry, #by-ministry").count() == 0
+    summary = page.locator("details.about-page > summary")
+    summary.click()
+    about = page.locator(".about-page-body")
+    visible(about)
+    text = " ".join(about.inner_text().split())
+    assert text.startswith("This page lists the requests Families made to join")
+    assert "Review one at a time does the same work" in text
+    assert "Live join and leave requests" not in text
     # Neither the marks nor the help about them (the queue's own rows keep
     # their Removed badge).
-    text = section.text_content() + page.locator(".about-page").text_content()
     for hidden in ("Not in ParishSoft", "Removed from this campaign"):
         assert hidden not in text
+    heading = page.locator("h1").bounding_box()
+    control = summary.bounding_box()
+    assert control["y"] < heading["y"] + heading["height"]
 
 
 def test_leaders_column_shows_each_ministrys_status_to_staff_only(
@@ -121,9 +126,7 @@ def test_leaders_column_shows_each_ministrys_status_to_staff_only(
     about = page.locator(".about-page").text_content()
     assert "Leaders says whether anyone besides Staff" in about
     page.goto(component_origin + LEADER)
-    section = page.locator("#by-ministry")
-    assert section.locator(".leader-status").count() == 0
-    assert "Leaders" not in section.inner_text()
+    assert page.locator("#by-ministry, .leader-status").count() == 0
     assert "Leaders says whether" not in page.locator(".about-page").text_content()
 
 

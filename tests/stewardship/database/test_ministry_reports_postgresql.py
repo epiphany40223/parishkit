@@ -381,22 +381,24 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
         assert read(browser, root)[0].status_code == 403
 
 
-def by_ministry(body):
-    """Ministry requests' By Ministry section, as text."""
-    return body.decode().split('<section id="by-ministry"', 1)[1].split("</section>")[0]
+def ministry_filter(body):
+    """Ministry requests' Ministry filter choices, as text."""
+    text = body.decode().split('<select id="filter-ministry"', 1)[1]
+    return text.split("</select>", 1)[0]
 
 
-def test_by_ministry_lists_the_scope_beyond_the_table_and_no_packet(
+def test_a_leaders_filter_lists_the_scope_beyond_the_table_and_no_packet(
     response_service, google
 ):
-    """By Ministry lists every Ministry the reader leads, not just the
+    """A leader's page offers every Ministry they lead, not just the
     table's rows, and never a Ministry outside their scope (#1133).
 
     A leader of Choir (4) and Food pantry (9) searches Ministry requests
-    down to Food pantry; By Ministry still lists both. A leader of Food
-    pantry alone is never shown Choir. The Follow-up packet was removed for
-    every role (#2394): no page shows it, and a POST to its old address is
-    not found, with nothing queued.
+    down to Food pantry; the worklist's Ministry filter still offers both.
+    A leader's page has no By Ministry (#2395). A leader of Food pantry
+    alone is never shown Choir. The Follow-up packet was removed for every
+    role (#2394): no page shows it, and a POST to its old address is not
+    found, with nothing queued.
     """
     harness = setup(response_service)
     store = harness.service.store
@@ -417,8 +419,9 @@ def test_by_ministry_lists_the_scope_beyond_the_table_and_no_packet(
         table = body.decode().split("<caption>Ministry requests to review", 1)[1]
         table = table.split("</table>", 1)[0]
         assert "Food pantry" in table and "Choir" not in table
-        counts = by_ministry(body)
-        assert counts.index("Choir") < counts.index("Food pantry")
+        choices = ministry_filter(body)
+        assert choices.index("Choir") < choices.index("Food pantry")
+        assert 'id="by-ministry"' not in body.decode()
         assert "ministry-packet" not in body.decode()
         assert "Follow-up packet" not in body.decode()
     google[0]["email"] = "leader@example.org"
@@ -426,7 +429,9 @@ def test_by_ministry_lists_the_scope_beyond_the_table_and_no_packet(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = search(browser, root, {"search": "Nothing matches"})
         assert response.status_code == 200
-        assert "Food pantry" in by_ministry(body) and "Choir" not in body.decode()
+        assert "Food pantry" in ministry_filter(body)
+        assert "Choir" not in body.decode()
+        assert 'id="by-ministry"' not in body.decode()
         assert "ministry-packet" not in body.decode()
         form = {
             "format": "pdf",
