@@ -2423,7 +2423,7 @@ Ministries is a pre-check and a cross-check. If the database's scope is wider,
 the page is refused. If it is narrower, the narrower scope applies
 ([#389](https://github.com/epiphany40223/parishkit/issues/389) L3). A user the
 application treats as Admin or Staff but the database gives no scope is refused
-rather than shown an empty report. A leader's My review work cards and the
+rather than shown an empty report. A leader's My review work count and the
 follow-up menu count read through the same function and cross-check, so neither
 shows more than the queue would.
 

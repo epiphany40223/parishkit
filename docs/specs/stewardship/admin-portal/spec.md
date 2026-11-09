@@ -1826,8 +1826,9 @@ Home is the Administrator's. Staff and Ministry leaders who are not
 Administrators sign in to **My review work** instead
 ([review pipeline, role views](../review-pipeline/spec.md#role-views),
 [#1690](https://github.com/epiphany40223/parishkit/issues/1690)), which
-replaces Home for them, a leader's open requests per Ministry included;
-Home's Review work panel shows an Administrator the same counts. Home's
+replaces Home for them (a leader's is simpler,
+[a Ministry leader's My review work](#a-ministry-leaders-my-review-work));
+Home's Review work panel shows an Administrator Staff's counts. Home's
 Staff and Ministry leader forms (their Next steps, and a leader's My
 Ministries panel and Today line) were removed in
 [#1726](https://github.com/epiphany40223/parishkit/issues/1726).
@@ -1943,6 +1944,78 @@ defines it, and the [System health](#system-health) problems such as an
 overdue backup or a halted mail sender) are counted in the Needs attention
 row above everything else and link the page that resolves them.
 
+#### A Ministry leader's My review work
+
+A Ministry leader who is neither Staff nor an Administrator (the leader
+test Ministry requests uses, `ministry_worklist.is_leader`) signs in to a
+simpler [My review work](../review-pipeline/spec.md#role-views) than Staff:
+simplicity first, in two large steps (Administrator, 2026-11-09,
+[#2405](https://github.com/epiphany40223/parishkit/issues/2405)). Staff
+keep the stream panels the role views describe, unchanged. Under the
+heading and About this page, each step is a panel whose heading starts
+with a "Step 1" or "Step 2" badge, then the step's name, so the number
+shows once and the heading reads "Step 1: Download the requests":
+
+1. **Download the requests.** One line, "Download a spreadsheet (XLSX) or
+   a PDF of every request for the Ministries you lead. Both hold the same
+   information.", then the shared export row with XLSX and PDF, drawn at
+   the large button size (the download step exception of
+   [export actions](../ui-conventions/spec.md#downloaded-files)). The row
+   posts Review in bulk's own download, Export these requests
+   (`admin:ministry_followup_export`), posting only the CSRF token,
+   `stage=all`, the button's `format` and the browser's time zone (the
+   worklist's defaults give the rest), so the file lists every request in the
+   leader's scope, whatever its stage, with its current decision
+   ([a Ministry leader's view](../reports/spec.md#a-ministry-leaders-view),
+   [#2406](https://github.com/epiphany40223/parishkit/issues/2406)). It
+   downloads in place
+   ([downloads happen in place](../ui-conventions/spec.md#downloads-happen-in-place)).
+   While the file would hold more requests than one PDF may, Export PDF
+   is unavailable and the line below the row says why in this page's
+   words, "The PDF is limited to 1,000 requests: choose XLSX.", as Review
+   in bulk does with its own; a PDF asked for anyway (a stale page) is
+   refused with the same fix and a way back to My review work. While the
+   menu greys Review in bulk out, both buttons are unavailable, with the
+   menu's reason right under them: no download can start, so the row
+   keeps no status line.
+2. **Review the requests.** One line saying that either choice does the
+   whole review, because both show the same requests and details, then
+   the two choices, with a small "or" between them: **Review one at a
+   time** ("One Member per page, with Previous and Next.") and **Review
+   in bulk** ("Every request in one table."). Each choice is the same
+   card: a large primary button that opens the page, the short line, and
+   the count To review (the leader's open join and leave requests in
+   their scope, the number Review in bulk lists at To review; both cards
+   show it). The names are the leader's menu entries' own
+   ([menu groups](#menu-groups)), so the buttons, the menu and the page
+   titles always agree. With nothing To review the step's line says so
+   plainly instead ("Nothing is waiting for you to review right now.
+   Either one still shows the requests already decided."), and both
+   buttons stay usable. A choice the menu greys out keeps its card, with its
+   button unavailable and the menu's reason under it
+   ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)).
+   The step is a review region's item, so its counts update themselves
+   while the page is open
+   ([concurrency](../review-pipeline/spec.md#concurrency)).
+
+The two choices are equal alternatives, not steps: the same width,
+height, structure and weight, side by side when Step 2's panel has room
+(34rem) and stacked, with a horizontal "or", in less. Each choice is its
+own control group, so the two large green buttons side by side are
+deliberate, not two primary actions competing in one group
+([button emphasis](../ui-conventions/spec.md#button-emphasis)). Nothing scrolls
+sideways at 320 px and nothing moves on hover, focus or a click
+([no layout shift](../ui-conventions/spec.md#no-layout-shift)); the
+colours and sizes are the theme's tokens, so dark mode follows. The page
+has no Family or stream words, since a leader reviews only Members, and
+its About this page is four short sentences: what the page is for, what
+Step 1's file holds, what each Step 2 choice shows, and that either one
+does the whole review. With no current campaign the page says so, as
+Staff's does. A leader who leads no Ministry in this campaign, whether
+none is assigned or all of theirs are outside it
+([#922](https://github.com/epiphany40223/parishkit/issues/922)), gets no
+steps, only the plain sentence "Nothing is waiting for you to review."
+
 #### Page names and placement
 
 Every Admin page has one name
@@ -2030,7 +2103,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `information_queue` | Additional information | Menu: Additional information | Administrator, Staff | Additional information and follow-up | `/admin/reports/information/` | (same) |  |
 | `information_item` | Information request | Additional information | Administrator, Staff | Additional information and follow-up (one request); Information item | `/admin/reports/information/<item>/` | (same) | Its link back opens the worklist. |
 | `ministry_reports` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry reports | `/admin/ministry-reports/` | (retired; 404) | Replaced by Ministry requests, which shows the "no campaign" page when there is nothing for the viewer to report. |
-| `ministry_report` | Ministry requests | Menu: Ministry requests | Administrator, Staff, Ministry leader | Ministry report; Ministry follow-up | `/admin/reports/ministries/` | (same) | For a Ministry leader who is neither Staff nor an Administrator its name is Review in bulk ([#2393](https://github.com/epiphany40223/parishkit/issues/2393); [menu groups](#menu-groups)): the menu entry, the heading, the browser title, the trail, every "Return to" it (from a Follow-up request, its error page and an export's status page), the empty-campaign page, the greyed-entry page and My review work's Ministry panel. The registry's `LEADER_LABELS` holds the name and `admin_navigation.page_label` applies it, using the leader test the page uses (`ministry_worklist.is_leader`). A leader's export of it is "Review in bulk export", named after the page as every report's export is. The review wizard's stream keeps the name Ministry requests: it names the stream, not this page. One page with the follow-up queue since [#1133](https://github.com/epiphany40223/parishkit/issues/1133): By Ministry (Staff and Administrators only, [#2395](https://github.com/epiphany40223/parishkit/issues/2395)), the queue and Export these requests ([Ministry change summary](../reports/spec.md#ministry-change-summary)). No assignee column, filter or bulk assignment (#552). Its Export these requests download (`follow-up/exports/`, #1157) and bulk outcome (`follow-up/bulk/`, #1131) are non-page actions. |
+| `ministry_report` | Ministry requests | Menu: Ministry requests | Administrator, Staff, Ministry leader | Ministry report; Ministry follow-up | `/admin/reports/ministries/` | (same) | For a Ministry leader who is neither Staff nor an Administrator its name is Review in bulk ([#2393](https://github.com/epiphany40223/parishkit/issues/2393); [menu groups](#menu-groups)): the menu entry, the heading, the browser title, the trail, every "Return to" it (from a Follow-up request, its error page and an export's status page), the empty-campaign page, the greyed-entry page and the Step 2 choice of a leader's [My review work](#a-ministry-leaders-my-review-work) (#2405). The registry's `LEADER_LABELS` holds the name and `admin_navigation.page_label` applies it, using the leader test the page uses (`ministry_worklist.is_leader`). A leader's export of it is "Review in bulk export", named after the page as every report's export is. The review wizard's stream keeps the name Ministry requests: it names the stream, not this page. One page with the follow-up queue since [#1133](https://github.com/epiphany40223/parishkit/issues/1133): By Ministry (Staff and Administrators only, [#2395](https://github.com/epiphany40223/parishkit/issues/2395)), the queue and Export these requests ([Ministry change summary](../reports/spec.md#ministry-change-summary)). No assignee column, filter or bulk assignment (#552). Its Export these requests download (`follow-up/exports/`, #1157) and bulk outcome (`follow-up/bulk/`, #1131) are non-page actions. |
 | `ministry_joiners` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry requests — Prospective joiners; Joining; Members joining | `/admin/reports/ministries/joining/` | (retired; 404) | Retired with no redirect ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)): each request's contact details are on its Follow-up request page, and its export is Ministry requests' Export these requests. |
 | `ministry_leavers` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry requests — Requested leavers; Leaving; Members leaving | `/admin/reports/ministries/leaving/` | (retired; 404) | Retired with no redirect (#1157), as Members joining. |
 | `ministry_followup` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry follow-up; Follow-up | `/admin/reports/ministries/follow-up/` | (retired; 404) | Retired with no redirect ([#1133](https://github.com/epiphany40223/parishkit/issues/1133)): the queue is now Ministry requests, at `/admin/reports/ministries/`. |
@@ -8666,8 +8739,8 @@ signs in with, the one the email was sent to, followed by the shared
 [Google Account guidance](#login-and-denial-behavior)'s which-address line
 ([#1593](https://github.com/epiphany40223/parishkit/issues/1593)). It lists each of the leader's Ministries with its
 requests to join and to leave still To review, or "None to review", counted
-as the leader's [My review work](../review-pipeline/spec.md#role-views)
-counts them, and names that stage rather than calling them open
+as the follow-up queue's To review counts them in the leader's scope, and
+names that stage rather than calling them open
 ([#2331](https://github.com/epiphany40223/parishkit/issues/2331)), then links
 [Ministry requests](../reports/spec.md#ministry-change-summary), and it
 ends with the guidance's line on whom to ask when sign-in still fails. It
@@ -9048,9 +9121,11 @@ session (never in the URL), as a change's origin is remembered (navigation
 rule 5). Links carry only an opaque token, and the session keeps the last 20
 views. The one exception is a link that opens the queue on
 [Ministry requests](../reports/spec.md#ministry-change-summary)
-(`/admin/reports/ministries/`) for one Ministry by GET: the To review card
-of a leader's [My review work](../review-pipeline/spec.md#role-views)
-carries only the Ministry number (`?ministry=<DUID>`), and the By Ministry
+(`/admin/reports/ministries/`) for one Ministry by GET: the Ministry number
+alone (`?ministry=<DUID>`, which a leader's per-Ministry cards on
+[My review work](../review-pipeline/spec.md#role-views) carried until
+[#2405](https://github.com/epiphany40223/parishkit/issues/2405); such a
+link still works), and the By Ministry
 counts on the same page add the worklist's own closed Request and Stage
 values (`?ministry=<DUID>&kind=join&stage=all`,
 `?ministry=<DUID>&kind=leave&stage=all`, or the Ministry alone for

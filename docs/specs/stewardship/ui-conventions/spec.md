@@ -6233,15 +6233,25 @@ Lines"). Each button posts its own format; there is no format menu and no
 separate Download, Queue or Generate button. The buttons are outlined, with
 a smaller font, padding and height than the portal's primary green buttons,
 so they read as secondary actions, and they wrap onto a second line on a
-phone rather than widening the page. A format the download cannot
+phone rather than widening the page. **A download step** is the one
+exception: on a page whose step is the download itself, the row is drawn
+at the large button size, with one line above it saying what the file
+holds (Administrator, 2026-11-09,
+[#2405](https://github.com/epiphany40223/parishkit/issues/2405); today
+[a Ministry leader's My review work](../admin-portal/spec.md#a-ministry-leaders-my-review-work)).
+A format the download cannot
 take right now (Ministry requests' PDF above its row limit) is shown
 unavailable, named by a line below the row that says why; while other campaign work
 holds exports, every button is unavailable with its reason (#563). The
 clicked button shows it is busy, the row's other buttons wait with it, and
 the file downloads in place, with any waiting note or refusal in the row's
-reserved status line ([downloads happen in place](#downloads-happen-in-place)). On a page
+reserved status line ([downloads happen in place](#downloads-happen-in-place)). A row
+drawn with every button unavailable for a reason nothing on the page can
+lift reserves no status line, since no download can start, so that reason
+sits right under the buttons. On a page
 with a table the row sits below the table, so the page's data starts higher.
-**No explanatory line.** Export buttons carry no explanatory line: no
+**No explanatory line.** Except a download step's one line (above),
+export buttons carry no explanatory line: no
 count ("Exports all 7 estimated matching Families, every page."), no scope
 ("The file holds the list these choices show") and no list of the file's
 columns, above, beside or under the row, nor in a toggletip, because the
@@ -6251,7 +6261,8 @@ a line saying why a button is unavailable, and a toggletip for what a reader
 could not guess (what the file leaves out, such as a Family link's private
 email-link part, or holds beyond the page) remain; the file's own Report
 information keeps its count and filters. `test_export_actions.py` fails when
-an export page draws a count, scope or column-list line.
+an export page draws a count, scope or column-list line other than a
+download step's line it names.
 
 Not covered: a ready file's own Download button on its export status page,
 the campaign archive download, and hosted files, which are one file each,
