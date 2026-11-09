@@ -727,10 +727,6 @@ fieldset.choice-group:has(> label > input:is([type=checkbox], [type=radio])[aria
    outcome panel draws no card of its own. */
 .outcome-panel fieldset.choice-question { border: 0; background: none; padding: 0; margin-block: .75rem; }
 .choice-question > .choice-options { display: flex; flex-wrap: wrap; gap: .25rem 1.5rem; }
-/* The Ministry packet lists every Ministry in the reader's scope (#533), which
-   for an Administrator can be many, so the boxes flow into columns. */
-.packet-choices { columns: 18rem auto; column-gap: 1.5rem; }
-.packet-choices > label { break-inside: avoid; }
 
 /* Field sizing. A field is only as wide as its content needs: dates, times
    and numbers are short, dropdowns medium, free text wider, and long text
@@ -771,9 +767,9 @@ input[data-time-entry=list] { max-width: 24rem; }
 .log-filter-messages > * { grid-area: 1 / 1; margin: 0; }
 .log-filter-messages > .field-error-line { min-height: 0; }
 .log-filter-messages:has(> .field-error-line > .errorlist:not([hidden])) > [data-complete-hint] { visibility: hidden; }
-/* The same for a form's own hint row (#1332: the Follow-up packet's limit,
-   an Additional information item's confirmation): the server's message
-   and the gate's hint share one cell. The row takes the hint's paragraph
+/* The same for a form's own hint row (#1332, first made for the Follow-up
+   packet's limit, removed by #2394; the filter bars below use it too): the
+   server's message and the gate's hint share one cell. The row takes the hint's paragraph
    margin, and only while the hint shows or on a refused page, where the
    message's invisible copy keeps the row's height once it clears (No
    layout shift), so the margin collapses as the hint's alone did and an

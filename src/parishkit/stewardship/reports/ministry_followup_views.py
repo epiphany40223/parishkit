@@ -48,7 +48,6 @@ from parishkit.stewardship.web.contracts import (
     validation_response,
 )
 from parishkit.stewardship.web.dates import UnknownZone, browser_instant
-from parishkit.stewardship.web.filter_errors import error_context, refused
 from parishkit.stewardship.web.refusals import Refusal, with_codes, with_status_code
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
@@ -99,7 +98,6 @@ from .ministries import (
     unscoped,
 )
 from .ministry_contacts import current_ministry, request_contacts
-from .ministry_exports import MAX_PACKET_MINISTRIES
 from .ministry_followup import (
     CHANNELS,
     EXPORT_PDF_LIMIT,
@@ -358,43 +356,6 @@ def _refusal_error(refusal, submitted):
     }
 
 
-# The Follow-up packet's limit refusal (#1332) is described by the message
-# line in the packet's hint row (ministry-packet.html).
-PACKET_LINES = {"ministries": "ministry-packet"}
-
-
-def packet_context(error, choices):
-    """Ministry requests' context for a packet refused at its boxes (#1332).
-
-    ``error`` is the ``FilterError`` whose query is the submitted selection;
-    ``choices`` the packet's boxes. The boxes keep the ticks sent among
-    them (a value no box offers is never echoed), every box is marked, so
-    the first edit of any clears the mark, and the error summary links to
-    the first box (the packet's heading, when the reader may include no
-    Ministry). The hint row is sized to the message, so its clearing moves
-    nothing.
-    """
-    first = (
-        f"ministry-packet-{choices[0]['duid']}"
-        if choices
-        else "ministry-packet-heading"
-    )
-    return error_context(error, {"ministries": first}, PACKET_LINES) | {
-        "packet_ticked": set(error.query),
-        "packet_sizes": {PACKET_LINES["ministries"]: error.message},
-    }
-
-
-def queue_response(request, campaign_id, *, packet):
-    """Ministry requests drawn again for a refused Follow-up packet (#1332).
-
-    ``packet`` is the ``FilterError`` for the packet's boxes. The worklist
-    is the default view (the packet's form carries no worklist filters), and
-    the page answers 400 with the refusal's code.
-    """
-    return _page_response(request, campaign_id, packet=packet)
-
-
 def _queue_query(request, principal, parameters):
     """The worklist view a queue request asks for (#534, #1133, #1684).
 
@@ -435,7 +396,6 @@ def _page_response(
     *,
     request_id=None,
     refusal=None,
-    packet=None,
     parameters=None,
     notice=None,
 ):
@@ -445,9 +405,7 @@ def _page_response(
     body's view fields and ``notice`` the answer to a decision just
     recorded (``queue``). With a refusal, the request page is shown again in
     place (status 400) with an error summary and the submitted values,
-    instead of an error page. With a refused Follow-up packet (``packet``),
-    the worklist's default view is shown again (status 400) with the error
-    at the packet's boxes.
+    instead of an error page.
     """
     finish, handed_off = None, False
     try:
@@ -490,9 +448,6 @@ def _page_response(
                     ),
                     principal,
                 )
-            elif packet is not None:
-                # The packet's POST body is not a worklist view: the default.
-                query = WorklistQuery()
             elif request.GET and set(request.GET) == {"queue"}:
                 query = _recalled(
                     request,
@@ -584,7 +539,7 @@ def _page_response(
             return True
 
         def queue_content():
-            """The worklist page, its By Ministry counts and its packet.
+            """The worklist page and its By Ministry counts.
 
             A review region's check (#2174) keeps only the drawn requests
             that changed, and answers nothing when none did.
@@ -639,8 +594,6 @@ def _page_response(
                 export_fields=query.form_values(),
                 export_pdf_limit=EXPORT_PDF_LIMIT,
             )
-            if packet is not None:
-                context |= packet_context(packet, context["packet_choices"])
             return iter(
                 (render_to_string(QUEUE_TEMPLATE, context, request=request).encode(),)
             )
@@ -795,10 +748,6 @@ def _page_response(
             response.stewardship_safe_error = True
             # The refusal log's codes for this refusal (#1444).
             with_status_code(response, refusal.code)
-        elif handed_off and packet is not None:
-            # Known before the response was made, so its status and code
-            # are set before any byte is sent.
-            refused(response)
         return response
     except (PermissionError, ObjectDoesNotExist):
         return denial()
@@ -853,9 +802,9 @@ def count_links(principal, summary):
 def _overview(campaign_id, principal, coverage, extra=None):
     """Ministry requests' parts below the worklist (#1133).
 
-    By Ministry and the packet's choices are every Ministry in the reader's
-    scope, read once through the Ministry report's own scoped selection and
-    cross-check (``ministry_page``), whatever the filters show: By Ministry
+    By Ministry is every Ministry in the reader's scope, read once through
+    the Ministry report's own scoped selection and cross-check
+    (``ministry_page``), whatever the filters show: By Ministry
     is how a reader picks one. Each By Ministry count is a link that applies
     its Ministry and request to the worklist. The totals and the Follow-up
     progress chart are gone (#1676): a review worklist has none (#1684).
@@ -885,13 +834,6 @@ def _overview(campaign_id, principal, coverage, extra=None):
         # The "Not in ParishSoft data" and campaign marks, for Staff and
         # Administrators only (#1135).
         "show_marks": reads_every_ministry(principal),
-        # Every Ministry the packet may include, by name (#533).
-        "packet_choices": sorted(
-            ({"duid": row["duid"], "name": row["name"]} for row in summaries),
-            key=lambda row: (row["name"].lower(), row["duid"]),
-        ),
-        "packet_limit": MAX_PACKET_MINISTRIES,
-        "packet_key": uuid4(),
     }
 
 

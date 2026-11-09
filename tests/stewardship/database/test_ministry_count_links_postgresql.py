@@ -129,13 +129,8 @@ def test_a_leader_of_one_ministry_gets_one_line_whose_counts_filter_the_table(
         # Ministry 4 is not this leader's.
         assert "0 leave requests" in section and "kind=leave" not in section
         assert "ministry=4" not in body
-        # The default view lists the open join, and the leader's packet
-        # offers Food pantry alone.
+        # The default view lists the open join.
         assert listed(body) == {join.pk}
-        packet = body.split('id="ministry-packet-choices"', 1)[1].split("</fieldset>")[
-            0
-        ]
-        assert packet.count('name="ministries"') == 1 and 'value="9"' in packet
         queue = page(browser, JOIN_9)
         assert listed(queue) == {join.pk}
         assert selected(queue, "filter-ministry") == "9"

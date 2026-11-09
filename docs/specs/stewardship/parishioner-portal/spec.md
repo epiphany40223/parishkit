@@ -582,8 +582,8 @@ earlier entries. The server rejects a pledge, frequency or share method
 submitted with this answer.
 
 The `campaign_year` placeholder consistently means the configured campaign year
-label in Admin previews, page content, emails, share labels and Ministry
-packets. When no label is supplied it is the start year of the campaign's
+label in Admin previews, page content, emails and share labels. When no
+label is supplied it is the start year of the campaign's
 commitment period, or the campaign start year when the campaign has no
 commitment period. Use `financial_period`, `financial_start` and
 `financial_end` for the commitment period's exact dates (the placeholders

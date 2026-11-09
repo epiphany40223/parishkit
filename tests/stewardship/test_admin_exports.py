@@ -166,7 +166,6 @@ def test_every_export_command_has_a_golden_document():
         "export financial",
         "export information",
         "export ministry",
-        "export ministry-packet",
         "export directory",
         "export postal",
         "export exact create",

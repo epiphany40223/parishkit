@@ -54,8 +54,9 @@ def new_member_labels(items):
 def ministry_document(payload, parameters, *, parish_name, requested_at, timezone):
     """One Ministry's join or leave list from its captured, ordered results.
 
-    The campaign-wide summary export was removed (#1126); a summary capture
-    is refused rather than rendered.
+    The campaign-wide summary export was removed (#1126), and so was the
+    multi-Ministry Follow-up packet (#2394); a capture of either is refused
+    rather than rendered.
     """
     zone = ZoneInfo(timezone)
 

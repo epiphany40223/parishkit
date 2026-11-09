@@ -34,7 +34,6 @@ EXPORTS = {
     ("limitations-worklist-export.html", "admin:limitations_export"): "csv xlsx pdf",
     ("logs.html", "admin:logs_export"): "csv xlsx jsonl",
     ("ministry-worklist-export.html", "admin:ministry_followup_export"): "csv xlsx pdf",
-    ("ministry-packet.html", "admin:ministry_packet"): "pdf xlsx csv",
     ("response-dashboard.html", "admin:report_export_create"): "csv xlsx pdf",
 }
 # The pages that let the reader view times in UTC, so their export keeps a
@@ -165,8 +164,8 @@ def test_the_row_puts_xlsx_first_and_labels_each_format():
 
 
 def test_a_document_keeps_its_own_order():
-    """The PDF summary and the packet are documents: PDF stays first."""
-    html = render('"pdf" "xlsx" "csv" name="packet" own_order=True')
+    """The Campaign comparison's PDF summary is a document: PDF stays first."""
+    html = render('"pdf" "xlsx" "csv" name="comparison" own_order=True')
     assert [value for value, _label, _off in buttons(html)] == ["pdf", "xlsx", "csv"]
 
 

@@ -1524,8 +1524,8 @@
   // Controls and text outside the regions that follow a table's page, size,
   // sort or filters (or any in-place refresh) are marked data-table-sync
   // with a stable id. A form keeps its element, and so every script bound to
-  // it and every visible choice (an export's format or timezone, a packet's
-  // history tick, the filters just typed), and takes from the fetched page
+  // it and every visible choice (an export's format or timezone, the
+  // filters just typed), and takes from the fetched page
   // only its hidden fields, which carry the table state: a filter form's
   // size and sort, an export's query and one-time request key. A filter can
   // add or drop a hidden field (an export carries only the filters in use),
@@ -4633,26 +4633,6 @@
   document.addEventListener("change", reachRequireOne);
   document.addEventListener("focusout", reachRequireOne);
   window.addEventListener("pageshow", sayRequireOnes);
-  // data-max-ticked="N" on a group of checkboxes allows at most N ticked
-  // (the Ministry requests packet's Ministries, #1332). Past that each
-  // ticked box is invalid with the group's data-max-ticked-hint, its
-  // "{count}" the number ticked, which the gate below shows as its hint.
-  // Only a mark this check made is cleared. The server refuses more too.
-  const maxTicked = (form) => {
-    form.querySelectorAll("[data-max-ticked]").forEach((group) => {
-      const boxes = [...group.querySelectorAll("input[type=checkbox]")];
-      const ticked = boxes.filter((box) => box.checked && !box.disabled);
-      const over = !group.closest("[hidden]")
-        && ticked.length > Number(group.dataset.maxTicked);
-      const hint = (group.dataset.maxTickedHint || "").replace("{count}",
-        ticked.length.toLocaleString("en-US"));
-      boxes.forEach((box) => {
-        const mark = over && ticked.includes(box);
-        if (mark || box.hasAttribute("data-max-ticked-over")) box.setCustomValidity(mark ? hint : "");
-        box.toggleAttribute("data-max-ticked-over", mark);
-      });
-    });
-  };
   // Fields that must change on their own (data-change-alone="<name> ..." on
   // a data-require-change form, with its words in data-change-alone-hint):
   // a live campaign's Ministries, whose review is applied by itself, or a
@@ -4684,7 +4664,6 @@
     if (!form || !form.hasAttribute("data-require-complete")) return;
     requiredWhen(form);
     requireOne(form);
-    maxTicked(form);
     changeAlone(form);
     // A required text field holding only spaces is still empty: the server
     // strips it (notes for the outcome Other, a Slack token being set up),
@@ -4739,7 +4718,6 @@
           || (missing.matches("[data-send-window][aria-invalid=true]")
             && missing.validity.customError && missing.validationMessage)
           || (empty && missing.dataset.emptyHint)
-          || (missing.hasAttribute("data-max-ticked-over") && missing.validationMessage)
           || missing.closest("[data-missing-hint]")?.dataset.missingHint
           || "Fill in the required fields to save.")
         : "";

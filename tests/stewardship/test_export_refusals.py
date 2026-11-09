@@ -16,7 +16,6 @@ from parishkit.stewardship.reports import (
     export_ui,
     financial_export_views,
     information_export_views,
-    ministry_export_views,
 )
 from parishkit.stewardship.reports.export_services import (
     ExportExpired,
@@ -30,7 +29,6 @@ CREATE_VIEWS = {
     "directory": (directory_export_views, directory_export_views.create),
     "financial": (financial_export_views, financial_export_views.create),
     "information": (information_export_views, information_export_views.create),
-    "ministry-packet": (ministry_export_views, ministry_export_views.create_packet),
 }
 
 

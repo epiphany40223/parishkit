@@ -3014,8 +3014,7 @@ The exports whose rows name Families and Members are requested like
 `export create`, then followed and fetched the same way. Each needs a
 full-scope session, does what the page's export form does and records the
 same events, plus `admin_cmd_export_financial`,
-`admin_cmd_export_information`, `admin_cmd_export_ministry` or
-`admin_cmd_export_ministry_packet`. Each prints `created`, `request_key`
+`admin_cmd_export_information` or `admin_cmd_export_ministry`. Each prints `created`, `request_key`
 and `export`, the export's `export status` fields; the rows themselves
 are only in the file `export fetch` saves.
 
@@ -3026,8 +3025,6 @@ pk-admin export information --format xlsx --timezone America/New_York \
   --history
 pk-admin export ministry --format pdf --timezone America/New_York \
   --ministry 9 --requests join
-pk-admin export ministry-packet --format pdf --timezone America/New_York \
-  --ministry 9 --ministry 12
 pk-admin export fetch EXPORT_ID
 ```
 
@@ -3041,10 +3038,9 @@ pk-admin export fetch EXPORT_ID
   needed); `export ministry` the
   Ministry requests page's, for one Ministry's list
   (`--ministry DUID --requests join|leave`, both required; the summary
-  export was removed, #1126);
-  `export ministry-packet` its follow-up packet, for the
-  Ministries `--ministry` names (repeat it; none means every Ministry you
-  may report on) and `--history` for earlier versions.
+  export was removed, #1126). The follow-up packet's
+  `export ministry-packet` was removed with the packet (#2394); Ministry
+  requests' Export these requests is `followup export`.
 - `export financial` is a privileged action, so it asks at the
   [confirmation prompt](#confirmations) (or takes `--yes`), and System logs
   show
@@ -3946,7 +3942,8 @@ Each change is recorded in System logs as on the page
   `digest weekly` and `digest weekly-request`, which prompts (or takes
   `--yes`).
 - `pk-admin/1` (ADM-11 PR 8e): additive. `export financial`,
-  `export information`, `export ministry` and `export ministry-packet`.
+  `export information`, `export ministry` and `export ministry-packet`
+  (removed by #2394).
 - `pk-admin/1` (ADM-11 PR 8f): additive. `export directory` and
   `export postal`.
 - `pk-admin/1` (#817): additive. `test families-preview --names` with
@@ -4174,7 +4171,7 @@ Each change is recorded in System logs as on the page
   missing Family's `Family` cell is now blank; it read "Unavailable
   Family" (financial, limitations) or "Family" (information). A Family or
   Member with no usable name in these files and in `export ministry` and
-  `export ministry-packet` reads "Name not recorded in ParishSoft" (it
+  `export ministry-packet` (removed since, #2394) reads "Name not recorded in ParishSoft" (it
   read "Family" or "Unavailable Member"). The commands' options and
   documents are unchanged, and the only readers are Administrator-run
   assistants; a script that reads these files by position must change.
@@ -4484,3 +4481,9 @@ Each change is recorded in System logs as on the page
   true, false or null and ignore it. A commitment period start on or
   before the campaign end date, or a changed campaign end date on or after
   the commitment period start, is `invalid` at the field.
+- `pk-admin/1` (#2394): a removal, kept on version 1. The Follow-up packet
+  was removed from the Admin portal, so `export ministry-packet` is gone
+  (an unknown command, exit 2 `usage`), and
+  `admin_cmd_export_ministry_packet` is no longer recorded; earlier events
+  keep it. Use `followup export` (Ministry requests' Export these requests)
+  or `export ministry` (one Ministry's join or leave list) instead.

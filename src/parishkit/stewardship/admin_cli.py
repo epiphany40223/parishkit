@@ -2559,22 +2559,6 @@ def export_ministry(args, preamble, runtime, context):
     )
 
 
-def export_ministry_packet(args, preamble, runtime, context):
-    """Request a Ministry follow-up packet, as its packet form does (PR 8e)."""
-    from .admin_family_exports import export_ministry_packet as request
-
-    return request(
-        context["caller"],
-        runtime,
-        ministries=args.ministry,
-        history=args.history,
-        fmt=args.format,
-        zone=args.timezone,
-        request_key=_request_key(args, context),
-        context=context,
-    )
-
-
 def export_directory(args, preamble, runtime, context):
     """Request a Family-code directory export, as its form does (PR 8f).
 
@@ -4521,21 +4505,6 @@ def _export_ministry_options(parser):
         "--requests",
         choices=("join", "leave"),
         help="export its join or leave requests",
-    )
-
-
-def _export_ministry_packet_options(parser):
-    """Options of ``export ministry-packet``: the Ministries and history."""
-    _family_export_options(parser, filters=False)
-    parser.add_argument(
-        "--ministry",
-        type=_ministry_duid,
-        action="append",
-        help="a Ministry to include, by its DUID; repeat for more (default: "
-        "every Ministry you may report on)",
-    )
-    parser.add_argument(
-        "--history", action="store_true", help="include earlier request versions"
     )
 
 
@@ -7032,17 +7001,6 @@ def _report_specs():
             ExportChange.field_names(),
             8,
             options=(_export_ministry_options,),
-            request_key=True,
-        ),
-        CommandSpec(
-            "export ministry-packet",
-            "Request a Ministry follow-up packet, as its packet form does.",
-            export_ministry_packet,
-            "full",
-            True,
-            ExportChange.field_names(),
-            8,
-            options=(_export_ministry_packet_options,),
             request_key=True,
         ),
         # The Family directory's exports (PR 8f): the code MAC keyring loads

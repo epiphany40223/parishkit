@@ -20,7 +20,7 @@ specifications control behavior.
 
 ## Why this precedes the packet
 
-The [multi-Ministry follow-up packet](../specs/stewardship/reports/spec.md#multi-ministry-follow-up-packet)
+The [multi-Ministry follow-up packet](../specs/stewardship/reports/spec.md#follow-up-packet-removed)
 prefills recorded email/phone contact dates and `Other` outcome notes. Before
 this increment a `MinistryRequest` retained only state and outcome, with no
 assignee, note or contact-attempt storage. Delivering RPT-07 first would either

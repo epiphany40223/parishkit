@@ -20,7 +20,7 @@ pytestmark = pytest.mark.parametrize(
 
 # Representative pages: a direct download with a zone choice (System logs),
 # queued report exports below their tables, a direct download below two
-# tables, the queue beside the packet's own row, and a document download.
+# tables, the follow-up queue's own row, and a document download.
 PAGES = {
     "/logs": "Export these log entries",
     "/financial-report": "Export complete results",

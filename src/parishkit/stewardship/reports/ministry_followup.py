@@ -427,7 +427,7 @@ def followup_page(
         # those withdrawn before keep this word.
         if row["state"] == "cancelled" and row.get("parish_added"):
             row["state_label"] = WITHDRAWN
-        # The packet's exact labels, by the row's kind of request (#1132).
+        # The exact outcome labels, by the row's kind of request (#1132).
         row["outcome_label"] = outcome_label(row["outcome"], row["action"])
         # A Member ParishSoft no longer lists here (#1217): marked with the
         # shared badge ({% source_status row.member_status %}), and nothing

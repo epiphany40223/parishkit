@@ -230,10 +230,7 @@ SITES = {
     "reports/ministry_exports.py::create_ministry_export": site(
         "report_export",
         WEB,
-        {
-            "admin_family_exports.py",
-            "reports/ministry_export_views.py",
-        },
+        {"admin_family_exports.py"},
     ),
     "reports/timeline_exports.py::create_timeline_export": site(
         # The Timeline page's export form and

@@ -24,11 +24,11 @@ from parishkit.stewardship.source.leases import release_source
 from parishkit.stewardship.workflows.models import MinistryRequest
 
 from ..census_factory import member
+from .packet_projection import packet, sections
 from .test_background_grants_postgresql import task_login
 from .test_census_resolution_postgresql import resolve
 from .test_hide_gone_members_postgresql import SCHEMA_FILES, definition
 from .test_ministry_exports_postgresql import leader
-from .test_ministry_packets_postgresql import packet, sections
 from .test_ministry_reports_postgresql import page, prepare, setup
 from .test_ministry_responses_postgresql import ministry_source, respond, revisit
 from .test_policy_postgresql import user

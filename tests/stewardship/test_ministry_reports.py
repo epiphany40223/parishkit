@@ -8,12 +8,6 @@ from django.http import QueryDict
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.audit.schemas import ContextKind, sanitize
 from parishkit.stewardship.reports.ministries import MinistryQuery, can_report
-from parishkit.stewardship.reports.ministry_export_views import (
-    TOO_MANY,
-    TOO_MANY_FIX,
-    TooManyMinistries,
-    packet_selection,
-)
 
 from .test_ministry_table_columns import ministry_page as render_report
 
@@ -116,51 +110,6 @@ def test_audit_scope_is_only_a_canonical_ministry_duid():
     for value in (True, 0, -1, 2**31, "9", "private@example.org", [9]):
         with pytest.raises(ValueError):
             sanitize(ContextKind.ACTION, {"ministry_duid": value})
-
-
-def test_packet_boxes_list_the_choices_not_the_table_rows():
-    """The packet's boxes are its choices, and they do not follow the table.
-
-    By Ministry shows one Ministry; the packet offers both. Its choices are
-    not marked data-table-sync, so filtering, paging or re-sorting the
-    table in place keeps the reader's ticks (#533).
-    """
-    shown = {
-        "name": "Food pantry",
-        "duid": 9,
-        "active": True,
-        "in_campaign": True,
-        "joining": 1,
-        "leaving": 0,
-        "unresolved": 1,
-    }
-    choices = [{"duid": 4, "name": "Choir"}, {"duid": 9, "name": "Food pantry"}]
-    html = render_report([], summaries=[shown], packet_choices=choices)
-    start = html.index('<div id="ministry-packet-choices">')
-    packet = html[start : html.index("</fieldset>", start)]
-    assert packet.count('name="ministries"') == 2
-    assert 'value="4"> Choir' in packet and 'value="9"> Food pantry' in packet
-    assert "data-table-sync" not in packet
-    # The form states the packet limit the server enforces.
-    assert "at most 200 ticked Ministries" in packet
-
-
-def test_packet_limit_is_refused_with_its_own_message():
-    """Ticking more than 200 Ministries gets a refusal saying what to do."""
-    form = {"format": "pdf", "browser_timezone": "UTC", "request_key": "k"}
-
-    def chosen(count):
-        """The packet form with ``count`` Ministries ticked."""
-        values = QueryDict(mutable=True)
-        values.update(form)
-        values.setlist("ministries", [str(duid) for duid in range(1, count + 1)])
-        return values
-
-    assert len(packet_selection(chosen(200))) == 200
-    with pytest.raises(TooManyMinistries):
-        packet_selection(chosen(201))
-    assert "at most 200 ticked Ministries" in str(TOO_MANY)
-    assert "leave every box unticked" in str(TOO_MANY_FIX)
 
 
 def test_the_worklist_has_no_totals_or_chart_above_its_table():

@@ -178,8 +178,8 @@ def information_xlsx(document, output):
 
     A document about one subject may have ``title_rows`` (label, value pairs,
     the Family timeline's Family, code, campaign and time): they open the
-    table's sheet, then a blank row, then the table, as a packet's Ministry
-    details do (reports spec, "File design"; #1841). A document's
+    table's sheet, then a blank row, then the table (reports spec, "File
+    design"; #1841). A document's
     ``header_rows`` (its CSV's header block, R59 on #2324) open it the same
     way.
     """

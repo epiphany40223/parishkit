@@ -16,7 +16,7 @@ is Staff's Members choice for Members no longer in ParishSoft (#1217), and
 ``GONE_ITEM`` one of its request pages.
 
 Ministry requests (#1133) is the Ministry stream's review worklist (#1684),
-with By Ministry counts and the Follow-up packet below it, served at its
+with By Ministry counts, served at its
 real address (``REQUESTS``) so a By Ministry count, a GET to that same
 address with its link filters (``COUNTED``), is followed in place. Its pages
 are drawn by the real ``ministry_worklist`` from detached rows
@@ -35,7 +35,6 @@ from django.urls import reverse
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.reports.leader_coverage import leader_status
 from parishkit.stewardship.reports.ministries import outcome_label
-from parishkit.stewardship.reports.ministry_export_views import PACKET_MESSAGE
 from parishkit.stewardship.reports.ministry_followup import (
     CHANNELS,
     HISTORY_STATES,
@@ -46,7 +45,6 @@ from parishkit.stewardship.reports.ministry_followup_views import (
     REFUSALS,
     _refusal_error,
     count_links,
-    packet_context,
     undo_words,
 )
 from parishkit.stewardship.reports.ministry_worklist import (
@@ -55,7 +53,6 @@ from parishkit.stewardship.reports.ministry_worklist import (
     row_name,
     worklist_context,
 )
-from parishkit.stewardship.web.filter_errors import FilterError
 from parishkit.stewardship.workflows.followup import FollowupRefusal, outcomes_for
 from parishkit.stewardship.workflows.models import STAFF_STATES
 from parishkit.stewardship.workflows.review import placement
@@ -147,12 +144,6 @@ ENTRY, ENTRY_MARKED, ENTRY_BULKED = (
 ENTRY_IDS = tuple(str(UUID(int=number)) for number in (130, 131, 132))
 ENTRY_NOTICE = "Accepted <Member> — Example <Ministry> marked entered by hand."
 ENTRY_BULK_NOTICE = "2 requests marked entered by hand."
-# A packet limit of one Ministry, so ticking both choices passes it (#1332).
-PACKET_LIMIT = "/ministry-requests-packet-limit"
-# A packet the server refused for ticking too many (#1332), under the same
-# limit of one: both choices ticked again (and a value no box offers, never
-# echoed), every box marked, the message in the hint row.
-PACKET_REFUSED = "/ministry-requests-packet-refused"
 # The fixture server's answers to a Save (status, Location, body).
 POSTS = {
     UPDATE: (303, SAVED, ""),
@@ -352,17 +343,11 @@ def components(context, admin):
         # Export these requests (#1157): the applied view and zone choices.
         export_fields=query.form_values(),
         export_pdf_limit=1000,
-        # Ministry requests' overview (#1133): By Ministry and the packet's
-        # choices, every Ministry in scope.
+        # Ministry requests' overview (#1133): By Ministry, every Ministry
+        # in scope.
         by_ministry=by_ministry,
         show_marks=True,
         show_leaders=True,
-        packet_choices=[
-            dict(duid=12, name="Another Ministry"),
-            dict(duid=9, name="Example <Ministry>"),
-        ],
-        packet_limit=200,
-        packet_key=UUID(int=109),
         # The Member's contact details on a request page (#1157), as
         # request_contacts returns them for a join: a leader's view, with
         # the unpublished phone withheld.
@@ -639,7 +624,6 @@ def components(context, admin):
         | _worklist([row], principal=LEADS)
         | dict(
             by_ministry=by_ministry[:1],
-            packet_choices=[dict(duid=9, name="Example <Ministry>")],
             show_marks=False,
             show_leaders=False,
             campaign_marks=False,
@@ -648,13 +632,6 @@ def components(context, admin):
         | _worklist(staged, query=every, principal=LEADS, marks=ticked)
         | dict(show_marks=False, campaign_marks=False),
         GATED_REQUESTS: requests_page | _worklist([row, proposed], mutable=False),
-        PACKET_LIMIT: requests_page | dict(packet_limit=1),
-        PACKET_REFUSED: requests_page
-        | dict(packet_limit=1)
-        | packet_context(
-            FilterError("ministries", PACKET_MESSAGE, ("9", "12", "77")),
-            requests_page["packet_choices"],
-        ),
         "/followup-queue": values | _worklist([row], query=query),
         "/followup-all": values | _worklist([row, proposed], query=unfiltered),
         "/followup-page": values | _worklist(full_page, query=every),

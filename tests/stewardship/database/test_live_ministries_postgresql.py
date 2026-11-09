@@ -18,16 +18,17 @@ from parishkit.stewardship.campaigns import admission, configuration, live_minis
 from parishkit.stewardship.campaigns.lifecycle import Action
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.ministries import campaign_ids
+from parishkit.stewardship.reports.ministry_exports import offered_ministries
 from parishkit.stewardship.reports.ministry_followup import FollowupQuery, followup_page
 from parishkit.stewardship.source.version_models import SourceMinistry
 from parishkit.stewardship.workflows.models import MinistryRequest
 
 from .auth_builders import signed_in
 from .campaign_builders import campaign_clock, change, close_campaign, command
+from .packet_projection import packet, sections
 from .test_background_grants_postgresql import task_login
 from .test_ministry_followup_postgresql import member_gone
 from .test_ministry_followup_postgresql import read as followup
-from .test_ministry_packets_postgresql import packet, sections
 from .test_ministry_reports_postgresql import actor, page, setup
 from .test_ministry_responses_postgresql import respond, revisit, start
 from .test_parish_views_postgresql import digest
@@ -108,7 +109,7 @@ def test_removal_keeps_answers_marks_reports_and_readding_restores(
         4: True,
     }
     assert {row["duid"]: row["in_campaign"] for row in queue["ministries"]}[9] is False
-    # The packet still offers the removed Ministry, marked.
+    # The packet projection still offers the removed Ministry, marked.
     _, captured = sections(packet(harness, admin.pk, (9,)))
     assert captured[9]["in_campaign"] is False and len(captured[9]["rows"]) == 1
     # The Family no longer sees it; resubmitting does not withdraw the request.
@@ -636,12 +637,13 @@ def test_removed_ministry_without_current_requests_leaves_reports(response_servi
     assert applied(select(harness, [4]))
     assert 9 not in summaries(harness)
     # Python admission agrees with SQL: the leader cannot choose the campaign,
-    # and a stale packet form naming the Ministry is a bad selection.
+    # ``export ministry`` no longer offers the Ministry, and the packet
+    # projection asked for it has no section for it.
     leader = actor(harness, ("ministry_leader",), (9,))
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert harness.campaign.pk not in campaign_ids(leader)
-    with pytest.raises(ValueError, match="not in this campaign"):
-        packet(harness, user("admin@example.org").pk, (9,))
+    assert 9 not in offered_ministries(harness.campaign.pk)
+    assert 9 not in sections(packet(harness, user("admin@example.org").pk, (9,)))[1]
 
 
 @pytest.mark.parametrize("case", ["moved", "inactive"])
@@ -669,8 +671,8 @@ def test_removed_ministry_kept_only_by_gone_members_leaves_reports(
     assert listed() == (False, False, False)
     # Ministry 4 is still selected, so it stays, now empty.
     assert summaries(harness)[4]["requests"] == 0
-    with pytest.raises(ValueError, match="not in this campaign"):
-        packet(harness, admin.pk, (9,))
+    assert 9 not in offered_ministries(harness.campaign.pk)
+    assert 9 not in sections(packet(harness, admin.pk, (9,)))[1]
     # Staff's own views of those requests keep it: the Status choice, the
     # roster list's "any" and the request page by id.
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):

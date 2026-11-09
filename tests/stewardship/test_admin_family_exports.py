@@ -17,7 +17,6 @@ FAMILY_EXPORTS = (
     "export financial",
     "export information",
     "export ministry",
-    "export ministry-packet",
     "export directory",
     "export postal",
     "export family-timeline",
@@ -61,16 +60,8 @@ def test_filters_are_the_pages_fields_once_and_never_a_search():
             "--ministry",
             "09",
         ],
-        [
-            "export",
-            "ministry-packet",
-            "--format",
-            "csv",
-            "--timezone",
-            "UTC",
-            "--filter",
-            "history=all",
-        ],
+        # Removed with the Follow-up packet (#2394): no such command.
+        ["export", "ministry-packet", "--format", "csv", "--timezone", "UTC"],
     ],
 )
 def test_options_outside_the_forms_are_usage_errors(argv):

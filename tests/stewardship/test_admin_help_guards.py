@@ -516,7 +516,6 @@ HELP_LINE_ALLOWED = {
     ("admin-banners.html", "Acknowledging hides the problems"),
     ("integration-settings.html", "Test access is not"),
     ("integrations.html", "A new key is"),
-    ("ministry-packet.html", "Ministry leaders receive the"),
     ("production-progress.html", "Items processed counts work"),
     ("refresh-schedule-preview.html", "Times skipped around Family"),
     ("schedule-review.html", "A schedule that already"),

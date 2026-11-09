@@ -350,6 +350,9 @@ class Action(StrEnum):
     ADMIN_CMD_EXPORT_FINANCIAL = "admin_cmd_export_financial"
     ADMIN_CMD_EXPORT_INFORMATION = "admin_cmd_export_information"
     ADMIN_CMD_EXPORT_MINISTRY = "admin_cmd_export_ministry"
+    # No longer recorded: ``export ministry-packet`` was removed with the
+    # Follow-up packet (#2394); it stays so any past row still validates
+    # and reads.
     ADMIN_CMD_EXPORT_MINISTRY_PACKET = "admin_cmd_export_ministry_packet"
     ADMIN_CMD_EXPORT_DIRECTORY = "admin_cmd_export_directory"
     ADMIN_CMD_EXPORT_POSTAL = "admin_cmd_export_postal"

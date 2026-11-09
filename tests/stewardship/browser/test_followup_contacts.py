@@ -30,7 +30,7 @@ def contact_value(page, label):
 
 
 def export_row(page):
-    """The queue's Export these requests row (#1679), apart from the packet's."""
+    """The queue's Export these requests row (#1679)."""
     row = page.get_by_role("group", name="Export these requests")
     visible(row)
     return row

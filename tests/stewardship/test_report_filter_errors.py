@@ -1,16 +1,14 @@
 """Report filters refused at their field, not on an error page (#1332)."""
 
-import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
 import pytest
-from django.http import HttpResponse, QueryDict
+from django.http import HttpResponse
 from django.template import Context, Template
 from django.template.loader import render_to_string
-from django.test import RequestFactory
 
 from parishkit.stewardship.audit.log_rows import (
     AUDIT_ONLY_MESSAGE,
@@ -23,7 +21,6 @@ from parishkit.stewardship.audit.log_rows import FIELD_MESSAGES as LOG_MESSAGES
 from parishkit.stewardship.audit.log_views import FIELD_IDS as LOG_IDS
 from parishkit.stewardship.audit.log_views import FIELD_LINES as LOG_LINES
 from parishkit.stewardship.audit.log_views import field_ids, refusal_sizes
-from parishkit.stewardship.reports import ministry_export_views
 from parishkit.stewardship.reports.directories import (
     CODE_MESSAGE,
     DIRECTORY_SORTING,
@@ -45,15 +42,6 @@ from parishkit.stewardship.reports.information import (
     FIELD_MESSAGES as INFORMATION_MESSAGES,
 )
 from parishkit.stewardship.reports.information import InformationQuery
-from parishkit.stewardship.reports.ministry_export_views import (
-    PACKET_MESSAGE,
-    TOO_MANY,
-    TOO_MANY_FIX,
-    TooManyMinistries,
-    packet_selection,
-)
-from parishkit.stewardship.reports.ministry_exports import MAX_PACKET_MINISTRIES
-from parishkit.stewardship.reports.ministry_followup_views import packet_context
 from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.filter_errors import (
     FilterError,
@@ -475,135 +463,6 @@ def test_log_nothing_ticked_under_an_audit_only_activity_says_tick_audit():
             LogQuery.parse({"applied": "yes", "activity": activity})
         assert caught.value.message == message
         assert refusal_sizes(caught.value) == {"log-filters": message}
-
-
-# Ministry requests' Follow-up packet limit (#1332, fourth slice): a form,
-# not a filter, refused at its field with the same pieces.
-PACKET = (
-    Path(__file__).parents[2]
-    / "src/parishkit/stewardship/accounts/templates/stewardship/ministry-packet.html"
-).read_text()
-CHOICES = [{"duid": 4, "name": "Choir"}, {"duid": 9, "name": "Food pantry"}]
-
-
-def packet_form(count):
-    """The packet form's POST body with ``count`` Ministries ticked."""
-    values = QueryDict(mutable=True)
-    values.update({"format": "pdf", "browser_timezone": "UTC", "request_key": "k"})
-    values.setlist("ministries", [str(duid) for duid in range(1, count + 1)])
-    return values
-
-
-def boxes(html):
-    """The packet's checkbox tags, in order."""
-    return re.findall(r'<input type="checkbox" id="ministry-packet-[^>]*>', html)
-
-
-def test_packet_limit_keeps_the_selection_sent():
-    """Past the limit the refusal carries the selection, and is a ValueError."""
-    with pytest.raises(TooManyMinistries) as caught:
-        packet_selection(packet_form(MAX_PACKET_MINISTRIES + 1))
-    assert caught.value.chosen == tuple(
-        str(duid) for duid in range(1, MAX_PACKET_MINISTRIES + 2)
-    )
-    assert isinstance(caught.value, ValueError)
-    assert str(PACKET_MESSAGE) == f"{TOO_MANY} {TOO_MANY_FIX}"
-
-
-def test_packet_context_marks_every_box_and_links_the_first():
-    """The summary links to the first box; the row is sized to the message."""
-    error = FilterError("ministries", PACKET_MESSAGE, ("9", "77"))
-    context = packet_context(error, CHOICES)
-    assert context["filter_error"] == {
-        "fields": ("ministries",),
-        "line": "ministry-packet",
-        "message": PACKET_MESSAGE,
-    }
-    assert context["errors"] == [
-        {"field_id": "ministry-packet-4", "message": PACKET_MESSAGE}
-    ]
-    assert context["packet_ticked"] == {"9", "77"}
-    assert context["packet_sizes"] == {"ministry-packet": PACKET_MESSAGE}
-    # A reader who may include no Ministry has no box: the heading.
-    assert packet_context(error, [])["errors"][0]["field_id"] == (
-        "ministry-packet-heading"
-    )
-
-
-def test_refused_packet_keeps_offered_ticks_with_the_message_in_the_hint_row():
-    """Only offered boxes are ticked again; each is marked and described by
-    the one message line, which shares the hint row with the gate's hint."""
-    error = FilterError("ministries", "Tick <b>fewer</b>.", ("9", "77", '"><x'))
-    html = render_to_string(
-        "stewardship/ministry-packet.html",
-        {"packet_choices": CHOICES, "packet_limit": 200, "mutable": True}
-        | packet_context(error, CHOICES),
-    )
-    choir, pantry = boxes(html)
-    assert "checked" not in choir and " checked" in pantry
-    for tag in (choir, pantry):
-        assert 'aria-invalid="true"' in tag
-        assert 'aria-describedby="ministry-packet_error"' in tag
-    assert "77" not in html and "&quot;&gt;&lt;x" not in html
-    row = html[html.index('<div class="hint-row-messages">') :]
-    assert row.startswith(
-        '<div class="hint-row-messages"><p class="help" id="ministry-packet-hint"'
-        ' data-complete-hint="reserve"></p><div class="field-error-line">'
-    )
-    assert html.count("Tick &lt;b&gt;fewer&lt;/b&gt;.") == 2  # message and size
-    assert '<ul class="errorlist" id="ministry-packet_error"><li>' in html
-
-
-def test_unrefused_packet_draws_no_mark_and_an_empty_line():
-    """An ordinary page has no mark and a line that takes no room."""
-    html = render_to_string(
-        "stewardship/ministry-packet.html",
-        {"packet_choices": CHOICES, "packet_limit": 200, "mutable": True},
-    )
-    for tag in boxes(html):
-        assert "aria-invalid" not in tag and "aria-describedby" not in tag
-        assert "checked" not in tag
-    assert (
-        '<div class="field-error-line"><span class="field-error-size"'
-        ' aria-hidden="true"></span><ul class="errorlist" id="ministry-packet_error"'
-        " hidden><li></li></ul></div></div></form>"
-    ) in html
-
-
-class Stub:
-    """A stand-in runtime and principal for the views below."""
-
-    store = None
-    identity = UUID(int=5)
-
-
-@pytest.mark.parametrize("accept", ["text/html", "application/json"])
-def test_packet_limit_draws_the_queue_for_a_person_json_for_a_script(
-    monkeypatch, accept
-):
-    """A person gets Ministry requests again; a script, the typed refusal."""
-    drawn = []
-    monkeypatch.setattr(ministry_export_views, "runtime", Stub)
-    monkeypatch.setattr(ministry_export_views, "_principal", lambda *_: Stub)
-    monkeypatch.setattr(
-        ministry_export_views,
-        "queue_response",
-        lambda request, campaign, *, packet: (
-            drawn.append((campaign, packet)) or HttpResponse("queue", status=400)
-        ),
-    )
-    campaign = UUID(int=7)
-    body = dict(packet_form(MAX_PACKET_MINISTRIES + 1).lists())
-    request = RequestFactory().post("/packet", body, HTTP_ACCEPT=accept)
-    response = ministry_export_views.create_packet.__wrapped__(request, campaign)
-    assert response.status_code == 400
-    if accept == "text/html":
-        ((shown, error),) = drawn
-        assert shown == campaign and error.field == "ministries"
-        assert error.message == PACKET_MESSAGE and len(error.query) == 201
-    else:
-        assert not drawn
-        assert "at most 200" in json.loads(response.content)["refusal"]["message"]
 
 
 DIRECTORY = (

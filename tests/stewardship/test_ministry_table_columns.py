@@ -6,7 +6,6 @@ name, and no Ministry DUID (#1123).
 """
 
 from datetime import UTC, datetime
-from uuid import UUID
 
 from django.template.loader import render_to_string
 
@@ -25,12 +24,12 @@ from parishkit.stewardship.web.tables import report_table
 SUBMITTED = datetime(2054, 10, 5, 14, 30, tzinfo=UTC)
 
 
-def ministry_page(rows=(), *, summaries=(), packet_choices=(), roles=None, **extra):
+def ministry_page(rows=(), *, summaries=(), roles=None, **extra):
     """Render Ministry requests (#1133) as its worklist view does (#1684),
     from detached values: the worklist's decorated ``rows`` (as
     ``ministry_worklist.decorate`` gives them), the By Ministry
-    ``summaries`` and the packet's choices, for a Staff reader unless
-    ``roles`` says otherwise; ``extra`` overrides any other context value.
+    ``summaries``, for a Staff reader unless ``roles`` says otherwise;
+    ``extra`` overrides any other context value.
     """
     query = WorklistQuery()
     rows = list(rows)
@@ -85,9 +84,6 @@ def ministry_page(rows=(), *, summaries=(), packet_choices=(), roles=None, **ext
         # campaign marks (#1135).
         "show_marks": True,
         "campaign_marks": True,
-        "packet_choices": list(packet_choices),
-        "packet_limit": 200,
-        "packet_key": UUID(int=2),
     }
     return render_to_string("stewardship/ministry-requests.html", context | extra)
 
@@ -143,13 +139,3 @@ def test_campaign_ministries_review_names_ministries_without_duids():
     )
     assert row in html
     assert "DUID" not in html
-
-
-def test_packet_choices_are_labelled_by_full_name_only():
-    """Each packet box names its Ministry in full, with no DUID (#1123)."""
-    name = "Saint Vincent de Paul Society Home Visit and Food Delivery Team"
-    html = ministry_page([], packet_choices=[{"duid": 9, "name": name}])
-    choices = html[html.index('class="packet-choices"') :]
-    label = choices[: choices.index("</label>")]
-    assert label.endswith(f'value="9"> {name}')
-    assert "DUID" not in label

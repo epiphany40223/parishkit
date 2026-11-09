@@ -1699,20 +1699,19 @@ the form reserves so that a refusal shown in place moves nothing. Where
 that line is apart from the complete gate's hint row (Financial
 stewardship's dates and amounts), the gate's hint, in the same words,
 is held hidden in its row while the message shows, so the form says it
-once. A form whose complete gate already has a hint row (System logs, the
-Follow-up packet) shows the message
+once. A form whose complete gate already has a hint row (System logs)
+shows the message
 in that row instead, over the gate's hint, which it hides while shown, so
 the page is no taller for a refusal only a request built by hand gets and
 says it once. The same holds for a report's own forms that a field can
-fix (the Follow-up packet's limit): the page is drawn again, 400, with
-the values sent. An
+fix: the page is drawn again, 400, with the values sent. An
 in-place Apply keeps the filter form and what was typed, and takes the
 marks and message from the answer. The server's mark clears, with its
 message and summary item, on the first edit of a field it marks (either
 end of a range), or when an in-place Apply is answered without it.
 **Shared code.** `web/filter_errors.py` (`FilterError`), the `filter_mark`
 and `filter_line` template tags; used by Financial stewardship, System
-logs, the Follow-up packet
+logs
 and the Family directory's Exact Family code (shown in its gate's hint
 row).
 
@@ -5557,8 +5556,8 @@ of ParishSoft DUID:
   search and match Families by it.
 - **Member DUID:** only where staff act on a specific Member in ParishSoft:
   Census changes, Update ParishSoft, the follow-up queue on Ministry
-  requests and its Export these requests, the host's join and leave lists
-  and the packets, the Limitations report, Families the form cannot open, and the
+  requests and its Export these requests, the host's join and leave lists,
+  the Limitations report, Families the form cannot open, and the
   Users page's ParishSoft Ministry leaders table and its import review
   (Administrator, 2026-10-12, so staff can find each leader in ParishSoft).
   Elsewhere a Member is named without it.
@@ -5838,7 +5837,7 @@ mark a Family the data no longer has (no longer "Unavailable Family"), and
 the Financial and Additional information reports an inactive one, with a
 ParishSoft status column in their downloads; and the Family codes
 directory, the information reports and the report emails no longer stand
-"Family" in for a blank name. Packets and Ministry requests list only
+"Family" in for a blank name. Ministry requests lists only
 current Members (#1217), so they have nothing to mark. A report email's open
 additional information requests block is an email with no badge, so it names a Family the data no longer has "Not
 in ParishSoft".
@@ -6297,8 +6296,8 @@ export commands that take it).
 formats it offers (CSV, PDF, and a page's own such as JSON Lines) follow, so
 CSV stays available wherever it was. A download or `pk-admin` command posted
 or run without a format produces XLSX too. Document downloads keep their own
-first choice: the Campaign comparison's PDF summary and the Ministry follow-up
-packet, which are read rather than sorted, put Export PDF first. **Why.** Most
+first choice: the Campaign comparison's PDF summary, which is read rather
+than sorted, puts Export PDF first. **Why.** Most
 readers open the file in a spreadsheet, and one rule for every form means no
 page picks its own default (Administrator request, 2026-10-12). **Shared
 code.** `web.exports.DEFAULT_EXPORT_FORMAT`, the `export_actions` template tag
@@ -6331,7 +6330,7 @@ buttons wait with it, and the file downloads from the same page; no export
 opens a separate "prepare, then download" page. This holds for both kinds:
 
 - **Queued exports** (Response dashboard, Campaign comparison, Financial
-  stewardship, Additional information, the Ministry follow-up packet,
+  stewardship, Additional information,
   Family directory, a Family's Timeline and the campaign archive) freeze
   their data and build the file in the background, as before. The page
   posts the request in place and checks the export's status passively,

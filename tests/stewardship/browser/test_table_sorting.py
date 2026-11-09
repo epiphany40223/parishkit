@@ -10,7 +10,6 @@ the GET fixture the view would have rendered.
 
 import pytest
 
-from .followup_components import REQUESTS, SORTED
 from .limitations_components import PATH as LIMITATIONS
 from .waits import eventually, focused, has_attribute, has_text, recorded, visible
 
@@ -306,37 +305,6 @@ def test_export_choices_survive_a_sort_and_its_hidden_fields_follow(
     has_attribute(sort_heading(page, "family"), "aria-sort", "descending")
     assert export.locator("input[name=sort]").input_value() == "name_desc"
     assert zone.input_value() == chosen
-
-
-def test_packet_choices_keep_their_ticks_while_the_queue_is_resorted(
-    page, component_origin
-):
-    """Ministry requests' packet lists every Ministry in scope, not the
-    queue's rows (#533, #1133), so an in-place re-sort keeps the list and
-    its ticks; the packet's own options (its browser timezone and a ticked
-    history box) are untouched."""
-    page.goto(component_origin + REQUESTS)
-    choices = page.locator("#ministry-packet-choices input[name=ministries]")
-    assert choices.count() == 2
-    other = page.get_by_role("checkbox", name="Another Ministry")
-    other.check()
-    history = page.get_by_role("checkbox", name="Also include Done and withdrawn")
-    history.check()
-    # The packet asks for no zone (#1127): its hidden field holds the browser's.
-    packet_zone = page.locator("form[action$='/packets/'] input[name=browser_timezone]")
-    assert packet_zone.input_value() != "UTC"
-    fulfil_post_with(
-        page, "**/reports/ministries/", component_origin, lambda request: SORTED
-    )
-    page.get_by_role("button", name="Ministry (sort ascending)").click()
-    has_attribute(sort_heading(page, "ministry"), "aria-sort", "ascending")
-    assert choices.count() == 2 and other.is_checked()
-    assert (
-        page.locator("#table-filters input[type=hidden][name=sort]").input_value()
-        == "ministry"
-    )
-    assert history.is_checked()
-    assert packet_zone.input_value() != "UTC"
 
 
 def test_a_response_without_the_region_is_shown_without_resending(

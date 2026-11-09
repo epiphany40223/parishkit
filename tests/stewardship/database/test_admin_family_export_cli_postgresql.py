@@ -214,7 +214,7 @@ def test_ministry_and_information_exports(
     cli,  # noqa: F811
     reports_root,
 ):
-    """A Ministry list, a packet and the information queue."""
+    """A Ministry list and the information queue."""
     from parishkit.stewardship.reports.information import InformationQuery
     from parishkit.stewardship.reports.information_worklist import WorklistQuery
 
@@ -234,7 +234,6 @@ def test_ministry_and_information_exports(
             "--filter",
             "history=all",
         ),
-        "packet": ("export", "ministry-packet", *base, "--ministry", "9"),
         "information": ("export", "information", *base, "--history"),
     }
     made = {}
@@ -244,7 +243,7 @@ def test_ministry_and_information_exports(
         assert document["result"]["created"], name
         made[name] = ExportRequest.objects.get(pk=document["result"]["export"]["id"])
         assert made[name].campaign_id == harness.campaign.pk
-    assert len(requested()) == 3
+    assert len(requested()) == 2
     # The pages' forms for the same selections make the same records: the
     # same parameters, and the same export_requested context members.
     # (One Ministry's join list has no page form since #1157.)
@@ -265,9 +264,8 @@ def test_ministry_and_information_exports(
             assert getattr(page, field) == getattr(made[name], field), (name, field)
         contexts = requested()
         assert contexts[-1] == contexts[list(cases).index(name)], name
-    assert len(requested()) == 4
+    assert len(requested()) == 3
     assert count("admin_cmd_export_ministry") == 1
-    assert count("admin_cmd_export_ministry_packet") == 1
     assert count("admin_cmd_export_information") == 1
 
     # The worklist's Stage (#1735) is the export pane's follow-up filters:
@@ -289,19 +287,19 @@ def test_ministry_and_information_exports(
         )
     page = ExportRequest.objects.get(request_key=fields["request_key"])
     assert page.parameters == staged.parameters
-    assert len(requested()) == 6
+    assert len(requested()) == 5
 
-    # The packet's file: rendered and streamed, never printed.
-    render(run.service, reports_root, made["packet"].pk)
-    code, document = run("export", "status", str(made["packet"].pk))
+    # The join list's file: rendered and streamed, never printed.
+    render(run.service, reports_root, made["join"].pk)
+    code, document = run("export", "status", str(made["join"].pk))
     assert code == 0 and document["result"]["state"] == "ready", document
     assert "Example" not in str(document) and "@" not in str(document)
-    code, body, streamed = download(made["packet"].pk, run.secret)
+    code, body, streamed = download(made["join"].pk, run.secret)
     assert code == 0 and len(body) == streamed["result"]["size"] > 0
 
     # The pages' refusals: the removed summary export (no Ministry, #1126),
     # a lone --requests or --ministry, a Ministry outside the page's range,
-    # a duplicate in a packet, a search.
+    # a search.
     for argv in (
         ("export", "ministry", *base),
         ("export", "ministry", *base, "--requests", "join"),
@@ -318,7 +316,6 @@ def test_ministry_and_information_exports(
             "--filter",
             "size=25",
         ),
-        ("export", "ministry-packet", *base, "--ministry", "9", "--ministry", "9"),
         ("export", "information", *base, "--filter", "search=Example"),
         # A worklist Stage stands for the follow-up filters (#1735).
         (
@@ -333,13 +330,13 @@ def test_ministry_and_information_exports(
     ):
         code, document = run(*argv)
         assert code == 1 and document["error"]["code"] == "invalid", argv
-    # A Ministry the campaign does not offer: a bad selection, as the packet
-    # form's check says, and nothing is created.
+    # A Ministry the campaign does not offer: a bad selection, and nothing
+    # is created.
     code, document = run(
         "export", "ministry", *base, "--ministry", "123", "--requests", "join"
     )
     assert code == 1 and document["error"]["code"] == "invalid"
-    assert len(requested()) == 6
+    assert len(requested()) == 5
 
 
 @pytest.fixture
