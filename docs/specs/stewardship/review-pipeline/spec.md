@@ -2274,7 +2274,11 @@ code the other two views already run
    last; the Review work menu and tables keep the menu's order), offering
    only the streams the reader may open
    ([wizard streams and access](#wizard-streams-and-access)). With exactly
-   one (a Ministry leader: Ministry requests) the choice is not shown.
+   one the choice is not shown: a Staff member or Administrator offered one
+   stream sees it named in one line, "Stream: *name*", and a Ministry
+   leader, who can review only Ministry requests, sees no stream line at
+   all (the Administrator, 2026-11-08,
+   [#2397](https://github.com/epiphany40223/parishkit/issues/2397)).
 2. **Filter and sort.** Default: everything waiting, sorted by name
    ([wizard filters and sort](#wizard-filters-and-sort)).
 3. **Pages.** **Start** fixes the run's sequence and opens page 1. Each page
@@ -2293,6 +2297,10 @@ page opens with the reader's last stream chosen, else the first offered.
 The page heading is **Review one at a time**; its help says, in one
 paragraph, that the pages show one Family or Member at a time, that acting
 is optional, and that the Review work tables remain for bulk decisions.
+A Ministry leader's help is shorter and names only their work (#2397):
+"Review the join and leave requests for the Ministries you lead, one
+Member at a time, with Previous and Next. Acting on a request is
+optional, and you can finish at any time."
 
 A started run is one stream, its filters and sort, the fixed sequence of
 subjects and the reader's position in it
@@ -2404,7 +2412,11 @@ Advanced when it is drawn with an Advanced filter set):
   subject and for grouped streams, the Member's for Ministry requests),
   then the secondary name, then the DUID, then the subject's campaign
   record id. A subject's submitted time is the newest submitted time among
-  its matched items; equal times fall back to Last name (A–Z).
+  its matched items; equal times fall back to Last name (A–Z). For Staff
+  and Administrators the Sort is below the filters in either mode. For a
+  Ministry leader it is part of **Advanced**, drawn under the Advanced
+  filters and shown only while Advanced is chosen; Basic starts with Last
+  name (A–Z) (the Administrator, 2026-11-08, #2397).
 
 - **Pledges leave out Cannot contribute:** while the reader is offered
   Limitations (it needs Ministry stewardship), in Basic and Advanced

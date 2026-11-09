@@ -310,8 +310,9 @@ def test_my_review_work_card_leads_to_the_wizard(response_service, google):
 
 def test_a_leader_reviews_only_the_ministries_they_lead(response_service, google):
     """A Ministry leader is offered Ministry requests alone, with no stream
-    choice; a run lists only their Ministry's requests, one Member a page,
-    and their pages draw no Timeline link. Staff get every request."""
+    choice or stream line and the Sort under Advanced (#2397); a run lists
+    only their Ministry's requests, one Member a page, and their pages draw
+    no Timeline link. Staff get every request."""
     from parishkit.stewardship.workflows.models import MinistryRequest
 
     from .test_ministry_exports_postgresql import leader
@@ -326,6 +327,11 @@ def test_a_leader_reviews_only_the_ministries_they_lead(response_service, google
         assert '<input type="hidden" name="stream" value="ministry">' in page
         assert 'id="review-stream-census"' not in page
         assert page.count("data-review-filters=") == 1
+        # One stream, so no "Stream:" line; the Sort is part of Advanced,
+        # and the help names the leader's work (#2397).
+        assert "Stream:" not in page
+        assert '<div data-show-when="mode=advanced"><label for="review-sort">' in page
+        assert "Review the join and leave requests for the Ministries you lead" in page
         # A stream the leader's menu does not offer is refused.
         assert start(browser)[0].status_code == 400
         response, _ = start(browser, stream="ministry")
@@ -353,6 +359,8 @@ def test_staff_review_every_ministry_request(response_service, google):
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         _, body = read(staff, START)
         assert b'id="review-stream-ministry"' in body
+        # Staff's Sort is below the filters in either mode (#2397).
+        assert b'<div><label for="review-sort">' in body
         assert start(staff, stream="ministry")[0].status_code == 303
     found = ReviewRun.objects.get()
     assert sorted(item for s in found.subjects for item in s["items"]) == sorted(

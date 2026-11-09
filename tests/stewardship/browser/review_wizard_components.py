@@ -2,6 +2,9 @@
 
 ``START_PATH`` is a Staff member's start page, every stream offered and
 Pledges greyed out with the menu's reason (it lists no runs, R52 Part W).
+``LEADER_START_PATH`` is a Ministry leader's, Ministry requests alone, and
+``SINGLE_START_PATH`` a Staff member's offered Ministry requests alone
+(#2397: only the leader's has no stream line and the Sort under Advanced).
 ``PAGE_PATHS`` are one run's three pages, each of a different height, so
 the navigation rows can be compared across pages: a Family page first, a
 Member page and the last page, a New Member's. Each draws its census
@@ -52,6 +55,8 @@ from .review_work_components import CAMPAIGN, COUNTS, chrome
 from .timeline_components import HOME_CHANGE
 
 START_PATH = "/review-wizard"
+LEADER_START_PATH = "/review-wizard-leader"
+SINGLE_START_PATH = "/review-wizard-single"
 PAGE_PATHS = ("/review-wizard-1", "/review-wizard-2", "/review-wizard-3")
 GREYED_CARD_PATH = "/review-wizard-card-greyed"
 NO_CARD_PATH = "/review-wizard-card-none"
@@ -94,6 +99,7 @@ MEMBER_CHANGES = {
 }
 RUN = UUID(int=2123)
 STAFF = Principal(UUID(int=2123), frozenset({"staff"}))
+LEADER = Principal(UUID(int=2397), frozenset({"ministry_leader"}), frozenset({9}))
 CONTEXTS = {
     "census": {
         "query": CensusQuery(),
@@ -116,11 +122,22 @@ CONTEXTS = {
 }
 
 
-def start_context():
-    """The start page's context as ``review_wizard_views._start_context`` builds it."""
+def start_context(reader=STAFF, only=None):
+    """The start page's context as ``review_wizard_views._start_context`` builds it.
+
+    ``reader`` is the signed-in principal; ``only`` names the one stream
+    offered (Ministry requests for a leader), else every stream is.
+    """
+    leader = reader is LEADER
     streams = []
     for stream in STREAMS:
+        if only and stream.key != only:
+            continue
         available = stream.key != "pledges"
+        drawn = CONTEXTS[stream.key] if available else {}
+        if leader:
+            # A leader's Ministry filters have no Members choice (Staff's).
+            drawn = drawn | {"members_choices": None}
         streams.append(
             {
                 "stream": stream,
@@ -131,18 +148,19 @@ def start_context():
                 "available": available,
                 "stages": [
                     (WAITING, "Waiting"),
-                    *stream.stages(STAFF),
+                    *stream.stages(reader),
                     (EVERY, "Every stage except History"),
                 ],
                 "stage": WAITING,
                 "search": "",
-                "context": CONTEXTS[stream.key] if available else {},
+                "context": drawn,
             }
         )
     return {
         "streams": streams,
-        "chosen": "census",
-        "single": False,
+        "chosen": only or "census",
+        "single": len(streams) == 1,
+        "leader": leader,
         "mode": "basic",
         "sorts": SORTS,
         "sort": "name",
@@ -304,8 +322,26 @@ def components(context, admin):
             render_to_string(
                 "stewardship/review-wizard-start.html", base | start_context()
             ),
-        )
+        ),
+        SINGLE_START_PATH: (
+            "text/html",
+            render_to_string(
+                "stewardship/review-wizard-start.html",
+                base | start_context(only="ministry"),
+            ),
+        ),
     }
+    # A leader's start page has the leader's own menu.
+    _configuration, leader_chrome = chrome(admin, LEADER, {})
+    pages[LEADER_START_PATH] = (
+        "text/html",
+        render_to_string(
+            "stewardship/review-wizard-start.html",
+            base
+            | {"admin_chrome": leader_chrome, "principal": LEADER}
+            | start_context(LEADER, only="ministry"),
+        ),
+    )
     for position, path in enumerate(PAGE_PATHS, 1):
         pages[path] = (
             "text/html",

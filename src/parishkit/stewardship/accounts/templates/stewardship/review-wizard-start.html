@@ -19,15 +19,19 @@
     until a stream is chosen (the complete gate, data-require-complete).
   - A refused start (nothing matches, or more than 5,000 pages) is drawn
     again as posted, with its words in the reserved line above Start.
+  - A Ministry leader's page (``leader``, #2397) is simpler: its help names
+    only their work, it has no "Stream:" line (they review one stream),
+    and the Sort is part of Advanced, shown only while Advanced is chosen
+    (in Basic it is not sent, so the run starts with Last name A–Z).
 {% endcomment %}
 {% block title %}{% translate "Review one at a time" %}{% endblock %}
 {% block content %}
 <h1>{% translate "Review one at a time" %}</h1>
-{% aboutpage "review-wizard" %}<p>{% translate "Review one Family or Member at a time, with Previous and Next. Each page shows what that Family or Member sent for the stream you choose, with the same actions as the Family's Timeline; acting is optional, and you can finish at any time. The Review work tables remain for deciding many items at once." %}</p>{% endaboutpage %}
+{% aboutpage "review-wizard" %}<p>{% if leader %}{% translate "Review the join and leave requests for the Ministries you lead, one Member at a time, with Previous and Next. Acting on a request is optional, and you can finish at any time." %}{% else %}{% translate "Review one Family or Member at a time, with Previous and Next. Each page shows what that Family or Member sent for the stream you choose, with the same actions as the Family's Timeline; acting is optional, and you can finish at any time. The Review work tables remain for deciding many items at once." %}{% endif %}</p>{% endaboutpage %}
 <section class="panel" aria-labelledby="review-start-heading">
 <h2 id="review-start-heading">{% translate "Start a review" %}</h2>
 <form method="post" action="{{ start_url }}" id="review-wizard-start" class="flow" data-review-start data-require-complete data-missing-hint="{% translate 'Choose a stream to start.' %}">{% csrf_token %}
-{% if single %}{% with only=streams.0 %}<input type="hidden" name="stream" value="{{ only.stream.key }}"><p>{% blocktranslate with stream=only.label %}Stream: {{ stream }}{% endblocktranslate %}</p>{% endwith %}
+{% if single %}{% with only=streams.0 %}<input type="hidden" name="stream" value="{{ only.stream.key }}">{% if not leader %}<p>{% blocktranslate with stream=only.label %}Stream: {{ stream }}{% endblocktranslate %}</p>{% endif %}{% endwith %}
 {% else %}<fieldset class="choice-pair" id="review-stream" aria-labelledby="review-stream-legend"><legend id="review-stream-legend">{% translate "Stream" %}</legend>
 <span class="choice-pair-options">{% for item in streams %}<label for="review-stream-{{ item.stream.key }}"><input type="radio" id="review-stream-{{ item.stream.key }}" name="stream" value="{{ item.stream.key }}"{% if item.stream.key == chosen %} checked{% endif %} required{% if not item.available %} disabled aria-describedby="review-stream-{{ item.stream.key }}-reason"{% endif %}>{{ item.label }}</label>{% endfor %}</span>
 {% for item in streams %}{% if not item.available %}<p class="help" id="review-stream-{{ item.stream.key }}-reason">{{ item.label }}: {{ item.reason }}</p>{% endif %}{% endfor %}
@@ -38,7 +42,7 @@
 <div data-show-when="mode=advanced"><div><label for="{{ item.stream.key }}-stage">{% translate "Stage" %}</label><select id="{{ item.stream.key }}-stage" name="stage">{% for value, label in item.stages %}<option value="{{ value }}"{% if item.stage == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
 {% with drawn=item.context %}{% include item.stream.filters_template with query=drawn.query search=drawn.search route_choices=drawn.route_choices kind_choices=drawn.kind_choices ministries=drawn.ministries members_choices=drawn.members_choices %}{% endwith %}</div>
 </div>{% endif %}{% endfor %}
-<div><label for="review-sort">{% translate "Sort" %}</label><select id="review-sort" name="sort">{% for value, label in sorts %}<option value="{{ value }}"{% if sort == value %} selected{% endif %}>{% translate label %}</option>{% endfor %}</select></div>
+<div{% if leader %} data-show-when="mode=advanced"{% endif %}><label for="review-sort">{% translate "Sort" %}</label><select id="review-sort" name="sort">{% for value, label in sorts %}<option value="{{ value }}"{% if sort == value %} selected{% endif %}>{% translate label %}</option>{% endfor %}</select></div>
 <p class="action-status" id="review-start-notice" data-review-notice{% if refused %} role="alert"{% endif %}>{{ notice|default:"" }}</p>
 {% button type="submit" name="start" value="1" aria-describedby="review-start-hint" %}{% translate "Start" %}{% endbutton %}
 <p class="help" id="review-start-hint" data-complete-hint="reserve"></p>

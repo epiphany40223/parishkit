@@ -182,7 +182,11 @@ def _start_context(principal, campaign_id, offered, *, chosen=None, mode="basic"
     ``chosen`` is ``(stream key, values, sort)`` of a refused start, drawn
     again as it was posted; else the page opens on the reader's last
     stream, else the first one offered, in Basic with the default sort.
+    ``leader`` marks a Ministry leader's page (#2397): no stream line,
+    shorter help and the Sort under Advanced.
     """
+    from .ministry_worklist import is_leader
+
     last = (
         ReviewRun.objects.filter(user_id=principal.identity, campaign_id=campaign_id)
         .order_by("-updated_at")
@@ -223,6 +227,8 @@ def _start_context(principal, campaign_id, offered, *, chosen=None, mode="basic"
         "streams": streams,
         "chosen": key,
         "single": len(streams) == 1,
+        # The same leader test as Ministry requests (the bulk page).
+        "leader": is_leader(principal),
         "mode": mode,
         "sorts": SORTS,
         "sort": sort,

@@ -11,12 +11,14 @@ from .review_wizard_components import (
     FOCUS_PATH,
     GREYED_CARD_PATH,
     GREYED_REASON,
+    LEADER_START_PATH,
     MEMBER_ACCEPTED_PATH,
     NO_CARD_PATH,
     PAGE_PATHS,
     PLEDGE_EDITED_PATH,
     PLEDGE_PATH,
     RUN,
+    SINGLE_START_PATH,
     START_PATH,
 )
 from .review_work_components import HOME_PATH, PATH
@@ -159,6 +161,31 @@ def test_start_page_choices_show_only_the_chosen_streams_filters(
         "Member's name or the Ministry. Leave blank for every waiting request."
     )
     expect(page.locator("#census-basic-search-help")).to_be_hidden()
+
+
+def test_a_leaders_start_page_names_no_stream_and_sorts_under_advanced(
+    page, component_origin, axe_source
+):
+    """A Ministry leader's start page has no stream line and its Sort shows
+    (and is sent) only under Advanced; Staff offered one stream still see
+    it named and the Sort in Basic (#2397)."""
+    page.set_viewport_size({"width": 1366, "height": 800})
+    page.goto(component_origin + LEADER_START_PATH)
+    page.evaluate(axe_source)
+    assert page.evaluate(AXE) == []
+    expect(page.get_by_text("Stream:")).to_have_count(0)
+    expect(page.locator("#review-sort")).to_be_hidden()
+    assert sorted(set(visible_names(page))) == ["mode", "search", "start"]
+    page.get_by_role("radio", name="Advanced").check()
+    expect(page.locator("#review-sort")).to_be_visible()
+    assert "sort" in visible_names(page)
+    # The leader's Ministry filters: no Members choice (Staff's).
+    assert "members" not in visible_names(page)
+    page.get_by_role("radio", name="Basic").check()
+    expect(page.locator("#review-sort")).to_be_hidden()
+    page.goto(component_origin + SINGLE_START_PATH)
+    expect(page.get_by_text("Stream: Ministry requests")).to_be_visible()
+    expect(page.locator("#review-sort")).to_be_visible()
 
 
 @pytest.mark.parametrize("width", [320, 1366])
