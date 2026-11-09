@@ -514,7 +514,11 @@ def test_a_ministry_page_shows_the_members_contact_details(monkeypatch):
         monkeypatch, [JOIN], visible=[JOIN], contacts={JOIN: WITHHELD}
     )
     block = contact_block(render(listed=True, member_page=True, section=section))
-    assert "Email: Not published" in block and "Phones: Not published" in block
+    for kind in ("Email:", "Phones:"):
+        assert (
+            f'<span class="contact-line"><span class="contact-kind">{kind}</span> '
+            "Not published</span>"
+        ) in block
     assert "mailto:" not in block and "tel:" not in block
     # No details at all (a Ministry the reader does not lead in force).
     section, *_rest = ministry_page(monkeypatch, [JOIN], visible=[JOIN])

@@ -174,7 +174,10 @@ def test_every_role_sees_the_members_contact_lines_under_the_name(monkeypatch):
             "</span></a></span>"
             "</span>"
         )
-        assert '<span class="contact-line">Email: Not published</span>' in withheld
+        assert (
+            '<span class="contact-line"><span class="contact-kind">Email:</span> '
+            "Not published</span>"
+        ) in withheld
         assert "Home:" in withheld and "mailto:" not in withheld
         # The view's audit names the Ministry they were read under.
         assert contact_ministries(context["table"].rows) == [9]

@@ -610,7 +610,10 @@ CALL = (
     '<span class="contact-kind">Home:</span> '
     f'<a href="tel:+12025550123"><span class="nowrap">{PHONE}</span></a>'
 )
-HIDDEN = '<span class="contact-line">Email: Not published</span>'
+HIDDEN = (
+    '<span class="contact-line"><span class="contact-kind">Email:</span> '
+    "Not published</span>"
+)
 
 
 def test_every_role_sees_the_contact_lines_under_the_request_pages_rule(
