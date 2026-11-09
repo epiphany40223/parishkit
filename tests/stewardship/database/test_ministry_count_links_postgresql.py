@@ -157,8 +157,9 @@ def test_a_leaders_page_has_no_by_ministry_and_its_addresses_filter_the_table(
 
 def test_a_leader_of_several_ministries_gets_no_by_ministry(response_service, google):
     """A leader of Choir (4) and Food pantry (9) gets no By Ministry either
-    (#2395), and no Admin/Staff marks (#1135); the packet offers both
-    Ministries, and each one's address filters the table."""
+    (#2395), no Admin/Staff marks (#1135) and no Follow-up packet (#2394);
+    the Ministry filter offers both Ministries, and each one's address
+    filters the table."""
     harness = setup(response_service)
     browser, _ = signed_in_as(
         harness, google, "leader-4-9@example.org", ["ministry_leader"]
@@ -168,10 +169,10 @@ def test_a_leader_of_several_ministries_gets_no_by_ministry(response_service, go
         body = page(browser, PAGE)
         assert 'id="by-ministry"' not in body and LEADER_HELP in body
         assert "Not in ParishSoft" not in body
-        packet = body.split('id="ministry-packet-choices"', 1)[1].split("</fieldset>")[
-            0
-        ]
-        assert 'value="4"> Choir' in packet and 'value="9"> Food pantry' in packet
+        assert "ministry-packet" not in body
+        choices = body.split('<select id="filter-ministry"', 1)[1].split("</select>")[0]
+        assert '<option value="4">Choir' in choices
+        assert '<option value="9">Food pantry' in choices
         assert listed(body) == {join.pk, leave.pk}
         assert listed(page(browser, LEAVE_4)) == {leave.pk}
         assert stages(body)[:2] == ["To review (2)", "Accepted (0)"]

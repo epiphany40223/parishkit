@@ -218,9 +218,8 @@ def test_a_leader_gets_a_short_help_and_no_by_ministry():
 
 
 def test_a_leaders_page_skips_the_by_ministry_read(monkeypatch):
-    """The view reads no By Ministry counts for a Ministry leader (#2395):
-    the packet offers the worklist's own Ministries, by name. Staff still
-    read them, with their count links."""
+    """The view reads no By Ministry counts for a Ministry leader (#2395).
+    Staff still read them, with their count links."""
     from parishkit.stewardship.reports import ministry_followup_views as views
 
     reads = []
@@ -231,20 +230,12 @@ def test_a_leaders_page_skips_the_by_ministry_read(monkeypatch):
         return {"summaries": [counts(9, "Choir", 1)]}
 
     monkeypatch.setattr(views, "ministry_page", summaries)
-    ministries = [
-        {"duid": 9, "name": "Food pantry", "in_campaign": True},
-        {"duid": 4, "name": "choir", "in_campaign": True},
-    ]
     leader = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({4, 9}))
-    overview = views._overview(uuid4(), leader, None, None, ministries)
+    overview = views._overview(uuid4(), leader, None, None)
     assert reads == [] and overview["by_ministry"] == []
-    assert overview["packet_choices"] == [
-        {"duid": 4, "name": "choir"},
-        {"duid": 9, "name": "Food pantry"},
-    ]
+    assert "packet_choices" not in overview
     staff = Principal(uuid4(), frozenset({"staff"}))
-    overview = views._overview(uuid4(), staff, None, None, ministries)
+    overview = views._overview(uuid4(), staff, None, None)
     assert reads == [staff]
     assert [row["name"] for row in overview["by_ministry"]] == ["Choir"]
     assert overview["by_ministry"][0]["count_links"]
-    assert overview["packet_choices"] == [{"duid": 9, "name": "Choir"}]
