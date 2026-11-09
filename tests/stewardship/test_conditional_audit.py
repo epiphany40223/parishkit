@@ -97,10 +97,6 @@ def test_delivery_confirms_never_wait_for_a_sign_in():
     [
         ("report-export.html", "export-locked", 2, 1),
         ("report-exact.html", "export-locked", 2, 1),
-        # Only Ministry requests' packet is held: one Ministry's lists and
-        # their export were retired (#1157), and the packet moved from the
-        # summary page to its own include (#1133).
-        ("ministry-packet.html", "ministry-export-locked", 1, 1),
         # The Response dashboard's export button (#1537), and its unavailable
         # stand-in without a chart, which then names both reasons.
         ("response-dashboard.html", "participation-export-locked", 2, 1),

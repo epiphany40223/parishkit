@@ -400,8 +400,6 @@ LEDGER = {
         "export roster",
         "followup roster-bulk",
     ),
-    # A packet of the chosen Ministries' Members and contacts: an export.
-    "ministry_packet": command("export ministry-packet"),
     # The Response dashboard shows the funnel and, since #1537, the
     # statistics and daily table that were Participation's.
     "response_dashboard": command("report responses", "report participation"),

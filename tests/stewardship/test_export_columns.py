@@ -5,7 +5,7 @@ same columns, and none of them carries internal references (row versions,
 reference UUIDs, generations). This guard renders every registered export
 in each of its formats from one document and compares the columns:
 
-- CSV: its header row (a Ministry packet repeats it per Ministry);
+- CSV: its header row;
 - XLSX: the table sheet's header row;
 - PDF: the table's headings, or, for a card report, the fields its cards
   show plus the fields a card puts in its title (name, DUID, status).
@@ -62,7 +62,6 @@ from parishkit.stewardship.reports.information_rendering import (
     INTERNAL_FIELDS,
     render_information,
 )
-from parishkit.stewardship.reports.ministry_packets import render_packet
 from parishkit.stewardship.reports.participation import participation_csv
 from parishkit.stewardship.reports.spreadsheets import participation_xlsx
 from parishkit.stewardship.web.exports import PAGE_DOWNLOADS
@@ -79,8 +78,6 @@ from .test_information_rendering import document as information
 from .test_limitations_report import result as limitations_result
 from .test_ministry_exports import document as ministry
 from .test_ministry_followup_exports import document as followup_requests
-from .test_ministry_packets import item as member
-from .test_ministry_packets import packet
 from .test_participation_rendering import document as participation
 from .test_participation_rendering import summary as participation_summary
 from .test_pledge_review import pledge_row
@@ -88,13 +85,13 @@ from .test_roster import roster_row
 from .test_timeline_exports import document as timeline
 
 # The export worker's report kinds, each with the cases below that render
-# it. "ministry" covers both lists and the multi-Ministry packet.
+# it. "ministry" is one Ministry's join or leave list.
 WORKER_CASES = {
     "participation": ("participation",),
     "additional_information": ("additional_information",),
     "family_directory": ("family_directory",),
     "postal_outreach": ("postal_outreach",),
-    "ministry": ("ministry_join", "ministry_leave", "packet"),
+    "ministry": ("ministry_join", "ministry_leave"),
     "financial": ("financial",),
     "family_test_names": ("family_test_names",),
     "family_timeline": ("family_timeline",),
@@ -203,26 +200,22 @@ def render(renderer, document, format):
     return output.getvalue()
 
 
-def csv_headers(body, first=None):
+def csv_headers(body):
     """Every header row of a CSV: its first row, plus any later row equal
-    to it. A packet's report details come first and it repeats the headings
-    for each Ministry, so its header rows are those starting with ``first``.
-    """
+    to it."""
     rows = list(csv.reader(io.StringIO(body.decode())))
     # A report with the Families counted choice opens with its header block
     # (R59 on #2324): label/value rows, then a blank row, then the table.
     if rows and rows[0][:1] == ["Report"] and [] in rows:
         rows = rows[rows.index([]) + 1 :]
-    if first is not None:
-        return [row for row in rows if row[:1] == [first]]
     return [row for row in rows if row == rows[0]] if rows else []
 
 
 def xlsx_headers(body):
     """Each table sheet's header row: its first row with every cell filled.
 
-    A packet's Ministry details sit above its table in two columns, so they
-    are skipped; the "Report information" sheet is not a table.
+    Details above a table (a header block or title rows) are skipped; the
+    "Report information" sheet is not a table.
     """
     book = load_workbook(io.BytesIO(body))
     try:
@@ -368,49 +361,6 @@ def case_ministry_join(monkeypatch):
 def case_ministry_leave(monkeypatch):
     """Requested Ministry leavers."""
     return shared_case(monkeypatch, ministry(action="leave", count=1))
-
-
-NEW_MEMBER = dict(
-    member_duid=None,
-    proposed_id="00000000-0000-4000-8000-000000000099",
-    entity_kind="proposed_member",
-)
-
-
-def xlsx_values(body):
-    """Every cell value of a workbook, as one string, for absence checks."""
-    book = load_workbook(io.BytesIO(body))
-    try:
-        return str([list(sheet.iter_rows(values_only=True)) for sheet in book])
-    finally:
-        book.close()
-
-
-def case_packet(monkeypatch):
-    """The multi-Ministry follow-up packet: one table per Ministry."""
-    sections = [
-        dict(duid=9, name="Choir", chairs=["Pat Lee"], rows=[member()]),
-        dict(duid=10, name="Ushers", chairs=[], rows=[member(member_duid=7)]),
-        # A Member added on the form: "New Member", never its proposed id.
-        dict(duid=11, name="Greeters", chairs=[], rows=[member(**NEW_MEMBER)]),
-    ]
-    document = packet(sections)
-    body = render(render_packet, document, "csv")
-    headers = csv_headers(body, first=document.headings[0])
-    assert len(headers) == len(sections)
-    xlsx = render(render_packet, document, "xlsx")
-    sheets, labels = xlsx_headers(xlsx)
-    seen = pdf_capture(monkeypatch, lambda: render(render_packet, document, "pdf"))
-    proposed = NEW_MEMBER["proposed_id"]
-    assert ",New Member," in body.decode() and proposed not in body.decode()
-    assert proposed not in xlsx_values(xlsx)
-    assert "=Example Member (New Member)" in [card.title for card in seen["cards"]]
-    assert proposed not in str(seen["cards"])
-    # A packet prints blank fields as write-in lines, so every column shows.
-    pdf, extra = card_columns(seen["cards"], list(document.headings))
-    assert not extra, extra
-    labels = [*labels, *(label for label, _ in document.metadata)]
-    return list(document.headings), headers, sheets, pdf, labels
 
 
 def case_financial(monkeypatch):

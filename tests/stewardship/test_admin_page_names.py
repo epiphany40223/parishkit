@@ -322,10 +322,10 @@ def test_python_return_links_name_a_page():
         for path in sorted(PACKAGE.rglob("*.py"))
         for target in PYTHON_RETURN.findall(path.read_text("utf-8"))
     ]
-    # The guard sees the known labels (Ministry follow-up, Ministry requests;
-    # setup_content_views' "Return to Pages and emails" was removed by #1269),
-    # so its pattern still matches.
-    assert len(found) >= 2, found
+    # The guard sees the known label (the Ministry requests export's; the
+    # Follow-up packet's was removed by #2394, and setup_content_views'
+    # "Return to Pages and emails" by #1269), so its pattern still matches.
+    assert found, found
     assert all(target in labels for _path, target in found), found
 
 

@@ -612,7 +612,7 @@ def _draw_row(canvas, table, y, cells, fill, *, heading=False):
 # --- Record cards ---------------------------------------------------------
 #
 # Field/value reports (additional information, financial, Ministry, Family
-# test names, packets) print one card per record. A card shows the same
+# test names) print one card per record. A card shows the same
 # columns as the CSV and XLSX (#966; none of them carries internal
 # references): it titles itself with the record's name, DUID and status,
 # leaves out blank fields, and nests workflow history under its item
@@ -659,7 +659,6 @@ BODY_PAD = 5.0
 FIELD_GAP = 3.0
 CARD_SPACING = 10.0
 SUB_LEAD = 7.0
-WRITE_LEAD = 5.0
 STAT_COLUMNS = 4
 STAT_GAP = 8.0
 STATS_HEIGHT = 46.0
@@ -675,8 +674,6 @@ class Record:
     tiles; ``fields`` are (label, value) pairs; ``children`` are nested
     (title, fields) blocks such as workflow revisions. ``style`` is
     ``"info"`` for a report-information or Ministry-details card.
-    ``new_page`` starts the card on a fresh page; ``keep_blank`` prints a
-    blank field as a write-in line (packets are completed by hand).
     """
 
     title: str = ""
@@ -685,20 +682,17 @@ class Record:
     children: tuple = ()
     stats: tuple = ()
     style: str = "card"
-    new_page: bool = False
-    keep_blank: bool = False
 
 
 class RecordLine(NamedTuple):
     """One drawn line of a card body.
 
-    ``kind`` is ``"field"`` (label and value text), ``"write"`` (a label
-    over a write-in rule), ``"sub"`` (a nested block's heading) or
-    ``"stats"`` (a row of count tiles in ``text``). ``label`` is blank on a
-    field's continuation lines. ``lead`` is space above the text and
-    ``height`` the whole line, so pagination and drawing agree exactly.
-    ``right`` is a second (kind, label, text) field set beside this one in
-    the card's right half.
+    ``kind`` is ``"field"`` (label and value text), ``"sub"`` (a nested
+    block's heading) or ``"stats"`` (a row of count tiles in ``text``).
+    ``label`` is blank on a field's continuation lines. ``lead`` is space
+    above the text and ``height`` the whole line, so pagination and drawing
+    agree exactly. ``right`` is a second (label, text) field set beside this
+    one in the card's right half.
     """
 
     kind: str
@@ -851,7 +845,7 @@ def _identity(values):
     return name_field, duid_field, tag_field
 
 
-def detail_record(pairs, *, style="card", new_page=False, keep_blank=False):
+def detail_record(pairs, *, style="card"):
     """One card from (label, value) pairs, titled by its name, DUID and status."""
     values = dict(pairs)
     name_field, duid_field, tag_field = _identity(values)
@@ -867,8 +861,6 @@ def detail_record(pairs, *, style="card", new_page=False, keep_blank=False):
         tag=str(values.get(tag_field) or "") if tag_field else "",
         fields=tuple((label, value) for label, value in pairs if label not in used),
         style=style,
-        new_page=new_page,
-        keep_blank=keep_blank,
     )
 
 
@@ -888,7 +880,7 @@ def _revision(pairs, used):
     return heading, tuple(pair for pair in pairs if pair[0] not in skip)
 
 
-def row_records(headings, rows, *, keep_blank=False):
+def row_records(headings, rows):
     """One card per record row, built lazily (one record held at a time).
 
     A row with a ``Changed at`` time (an earlier workflow; an item row
@@ -903,7 +895,7 @@ def row_records(headings, rows, *, keep_blank=False):
     for row in rows:
         pairs = tuple(zip(headings, row, strict=True))
         values = dict(pairs)
-        record = detail_record(pairs, keep_blank=keep_blank)
+        record = detail_record(pairs)
         if current is not None and values.get("Changed at"):
             used = set(_identity(values))
             current = replace(
@@ -927,64 +919,48 @@ def row_records(headings, rows, *, keep_blank=False):
         yield current
 
 
-def _field_lines(fields, depth, keep_blank):
+def _field_lines(fields, depth):
     """Wrap each field's label and value into card lines, losslessly.
 
-    Two neighboring fields that each fit on one line share a line, side by
-    side, so short values (dates, Yes/No, amounts) do not leave most of the
-    card empty; a longer field takes the full width.
+    A blank field is left out. Two neighboring fields that each fit on one
+    line share a line, side by side, so short values (dates, Yes/No,
+    amounts) do not leave most of the card empty; a longer field takes the
+    full width.
     """
     from .information_rendering import plain
 
     label_width = LABEL_WIDTH - 8 - depth * INDENT
     cells = []
     for label, value in fields:
-        blank = _blank(value)
-        # Packets print a blank field as a rule to write on; other reports
-        # leave it out.
-        if blank and not keep_blank:
+        if _blank(value):
             continue
         labels = wrap_text(safe(label), label_width, LABEL_SIZE, "bold")
-        text = "" if blank else safe(plain(value))
+        text = safe(plain(value))
         # One line in half the width: a single label line and a value with
         # no line break (checked first: a newline has no glyph to measure).
-        half = len(labels) == 1 and (
-            blank
-            or "\n" not in text
+        half = (
+            len(labels) == 1
+            and "\n" not in text
             and text_width(text, BODY_SIZE) <= HALF_VALUE_WIDTH
         )
-        cells.append((labels, text, blank, half))
+        cells.append((labels, text, half))
     index = 0
     while index < len(cells):
-        labels, text, blank, half = cells[index]
-        if half and index + 1 < len(cells) and cells[index + 1][3]:
-            right_labels, right_text, right_blank, _ = cells[index + 1]
-            lead = WRITE_LEAD if blank or right_blank else 0.0
+        labels, text, half = cells[index]
+        if half and index + 1 < len(cells) and cells[index + 1][2]:
+            right_labels, right_text, _ = cells[index + 1]
             yield RecordLine(
-                "write" if blank else "field",
+                "field",
                 labels[0],
                 text,
                 depth,
-                lead,
-                lead + LINE_PITCH + FIELD_GAP,
-                ("write" if right_blank else "field", right_labels[0], right_text),
+                0.0,
+                LINE_PITCH + FIELD_GAP,
+                (right_labels[0], right_text),
             )
             index += 2
             continue
         index += 1
-        if blank:
-            for number, name in enumerate(labels):
-                lead = WRITE_LEAD if number == 0 else 0.0
-                last = number == len(labels) - 1
-                yield RecordLine(
-                    "write" if last else "field",
-                    name,
-                    "",
-                    depth,
-                    lead,
-                    lead + LINE_PITCH + (FIELD_GAP if last else 0.0),
-                )
-            continue
         values = wrap_text(text, VALUE_WIDTH, BODY_SIZE)
         total = max(len(labels), len(values))
         for number, (name, line) in enumerate(
@@ -1007,7 +983,7 @@ def record_body(record):
         )
         for start in range(0, len(record.stats), STAT_COLUMNS)
     ]
-    lines.extend(_field_lines(record.fields, 0, record.keep_blank))
+    lines.extend(_field_lines(record.fields, 0))
     width = BODY_WIDTH - 2 * CARD_INSET - INDENT
     for heading, fields in record.children:
         for number, text in enumerate(
@@ -1015,7 +991,7 @@ def record_body(record):
         ):
             lead = SUB_LEAD if not number else 0.0
             lines.append(RecordLine("sub", "", text, 1, lead, lead + LINE_PITCH))
-        lines.extend(_field_lines(fields, 1, record.keep_blank))
+        lines.extend(_field_lines(fields, 1))
     return tuple(lines)
 
 
@@ -1096,9 +1072,6 @@ def record_pages(records, frame):
     room = frame.body_height
     page, used, yielded = [], 0.0, False
     for record in records:
-        if record.new_page and page:
-            yield page
-            page, used, yielded = [], 0.0, True
         lines = record_body(record)
         chip = _chip(record)
         most = _title_room(lines, room)
@@ -1193,23 +1166,16 @@ def _draw_line(canvas, line, top):
         canvas.rect(MARGIN + CARD_INSET, baseline - 7, 4, 4, ACCENT)
         canvas.text(x, baseline, line.text, LABEL_SIZE, "bold", ACCENT_STRONG)
     else:
-        end = PAGE_WIDTH - MARGIN - CARD_INSET
         if line.right:
-            kind, label, text = line.right
-            _draw_field(
-                canvas, kind, label, text, RIGHT_LABEL_X, RIGHT_VALUE_X, end, baseline
-            )
-            end = RIGHT_LABEL_X - CARD_INSET
-        _draw_field(canvas, line.kind, line.label, line.text, x, VALUE_X, end, baseline)
+            label, text = line.right
+            _draw_field(canvas, label, text, RIGHT_LABEL_X, RIGHT_VALUE_X, baseline)
+        _draw_field(canvas, line.label, line.text, x, VALUE_X, baseline)
 
 
-def _draw_field(canvas, kind, label, text, label_x, value_x, end, baseline):
-    """One label and its value, or its write-in rule ending at ``end``."""
+def _draw_field(canvas, label, text, label_x, value_x, baseline):
+    """One label and its value."""
     canvas.text(label_x, baseline, label, LABEL_SIZE, "bold", MUTED)
-    if kind == "write":
-        canvas.hline(value_x, end, baseline + 2, MUTED, 0.6)
-    else:
-        canvas.text(value_x, baseline, text, BODY_SIZE, "regular", INK)
+    canvas.text(value_x, baseline, text, BODY_SIZE, "regular", INK)
 
 
 def fit_size(text, size, width, face):

@@ -24,34 +24,6 @@ from .export_services import (
 )
 from .ministries import MinistryQuery, can_report
 
-MAX_PACKET_MINISTRIES = 200
-
-
-def packet_parameters(ministries, *, history):
-    """The packet's only choices: its Ministries and the history option.
-
-    `None` means every Ministry the requester may see when SQL captures it.
-    An explicit selection is canonical: distinct, ascending, positive DUIDs.
-    Every other report filter holds its neutral value, as SQL also requires.
-    """
-    if type(history) is not bool or not (
-        ministries is None
-        or (
-            type(ministries) is tuple
-            and 1 <= len(ministries) <= MAX_PACKET_MINISTRIES
-            and all(type(value) is int and 0 < value < 2**31 for value in ministries)
-            and ministries == tuple(sorted(set(ministries)))
-        )
-    ):
-        raise ValueError("Ministry packet requires a canonical selection.")
-    query = MinistryQuery(history="all" if history else "current")
-    return {
-        "filters": query.selection_filters(),
-        "ministry": None,
-        "action": "packet",
-        "ministries": None if ministries is None else list(ministries),
-    }
-
 
 def scope_authorized(principal, scope):
     """Retained operational columns cannot pass through a later role downgrade."""
@@ -70,14 +42,13 @@ def offered_ministries(campaign_id):
 
     The campaign's configured Ministries, and a Ministry removed from a live
     campaign that keeps current (not withdrawn) requests, which the report
-    offers like any other, as the packet SQL does (#342). A request is kept
-    by its Ministry in force: the one an Edit carried it into, else the
-    Family's (#2331), as the packet and report SQL read it. A request for a
-    Member no longer in ParishSoft (#1217) does not keep one offered
-    (#1219): the packet and report SQL leave it out, so this asks the same
-    installed standing function, and only for the removed Ministries'
-    requests. The packet form and the command line's ``export ministry``
-    check a selection against it.
+    offers like any other (#342). A request is kept by its Ministry in
+    force: the one an Edit carried it into, else the Family's (#2331), as
+    the report SQL reads it. A request for a Member no longer in ParishSoft
+    (#1217) does not keep one offered (#1219): the report SQL leaves it
+    out, so this asks the same installed standing function, and only for
+    the removed Ministries' requests. The command line's ``export
+    ministry`` checks its Ministry against it.
     """
     offered = Campaign.objects.select_related("active_configuration").get(
         pk=campaign_id
@@ -117,17 +88,16 @@ def create_ministry_export(
     query=None,
     ministry_id=None,
     action=None,
-    ministries=None,
-    history=False,
 ):
     """Capture complete results atomically.
 
     SQL derives the source, privacy projection and exact authorized Ministry set.
     Neither HTTP fields nor a caller-supplied document choose those authorities.
 
-    ``action`` is ``join`` or ``leave`` (one Ministry's list) or ``packet``.
-    The campaign-wide summary export was removed (#1126): its file held only
-    the counts the page shows, so a new request for it is not accepted.
+    ``action`` is ``join`` or ``leave`` (one Ministry's list). The
+    campaign-wide summary export was removed (#1126): its file held only
+    the counts the page shows, so a new request for it is not accepted. The
+    multi-Ministry Follow-up packet was removed too (#2394).
     """
     if any(
         not isinstance(value, UUID) for value in (user_id, campaign_id, request_key)
@@ -137,44 +107,28 @@ def create_ministry_export(
         raise ValueError("Unsupported Ministry export format.")
     if type(browser_timezone) is not str or browser_timezone not in timezone_names():
         raise ValueError("Export timezone must be an IANA name.")
-    if action == "packet":
-        if query is not None or ministry_id is not None:
-            raise ValueError("A Ministry packet has no report filters.")
-        parameters = packet_parameters(ministries, history=history)
-    else:
-        if ministries is not None or history:
-            raise ValueError("Only a Ministry packet selects several Ministries.")
-        if (
-            not isinstance(query, MinistryQuery)
-            or action not in {"join", "leave"}
-            or type(ministry_id) is not int
-            or not 0 < ministry_id < 2**31
-        ):
-            raise ValueError("Ministry export requires typed selection.")
-        query = MinistryQuery.parse(query.form_values(), detail=True)
-        parameters = {
-            "filters": query.selection_filters(),
-            "ministry": ministry_id,
-            "action": action,
-        }
+    if (
+        not isinstance(query, MinistryQuery)
+        or action not in {"join", "leave"}
+        or type(ministry_id) is not int
+        or not 0 < ministry_id < 2**31
+    ):
+        raise ValueError("Ministry export requires typed selection.")
+    query = MinistryQuery.parse(query.form_values(), detail=True)
+    parameters = {
+        "filters": query.selection_filters(),
+        "ministry": ministry_id,
+        "action": action,
+    }
 
     def admit(*args):
         """Reload coherent policy and gates under the owning work transaction."""
         actor = current_principal(store, user_id)
-        if not can_report(actor) or any(
-            not allows(actor, Capability.MINISTRY_REPORT, ministry_id=value)
-            for value in (
-                *(() if ministry_id is None else (ministry_id,)),
-                *(ministries or ()),
-            )
+        if not can_report(actor) or not allows(
+            actor, Capability.MINISTRY_REPORT, ministry_id=ministry_id
         ):
             raise PermissionError("Ministry export is unavailable.")
         admit_campaign(campaign_id, mutating=True)
-        # SQL refuses a selection it cannot resolve exactly. Say so here as a
-        # bad selection, so a stale or crafted form is not reported as an
-        # outage to retry. The form offers only this campaign's Ministries.
-        if ministries and set(ministries) - offered_ministries(campaign_id):
-            raise ValueError("A selected Ministry is not in this campaign.")
         return True
 
     with export_transaction(campaign_id):

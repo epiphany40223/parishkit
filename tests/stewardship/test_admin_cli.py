@@ -213,7 +213,6 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "export financial",
         "export information",
         "export ministry",
-        "export ministry-packet",
         "export directory",
         "export postal",
         "export exact create",
@@ -839,7 +838,6 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "export financial",
         "export information",
         "export ministry",
-        "export ministry-packet",
         "export directory",
         "export postal",
     ):
@@ -1058,7 +1056,6 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_export_financial",
         "admin_cmd_export_information",
         "admin_cmd_export_ministry",
-        "admin_cmd_export_ministry_packet",
         "admin_cmd_export_directory",
         "admin_cmd_export_postal",
         "admin_cmd_export_exact_create",

@@ -9,8 +9,10 @@ already installed, so #1157 needed no schema change:
   Ministry and request kind at a time: a join request's gender, age, email,
   phones and known primary Family address, and a leave request's current
   Ministry role; and
-- ``stewardship_ministry_packet_v1``, the follow-up packet's projection, for
-  a leave request's email and phones, which the report gives only for joins.
+- ``stewardship_ministry_packet_v1``, the projection the multi-Ministry
+  follow-up packet read (the packet was removed, #2394; its projection
+  stays for this), for a leave request's email and phones, which the report
+  gives only for joins.
 
 Each derives the reader's scope in SQL from the signed-in user, applies the
 leader contact rule there, and is

@@ -123,11 +123,13 @@ def test_capture_scope_and_revocation(response_service, google):
     store = harness.service.store
     admin = user("admin@example.org").pk
     leaving = create(harness, admin, ministry_id=4, action="leave")
-    # The campaign-wide summary export was removed (#1126): neither a
-    # summary action nor a missing Ministry is accepted.
+    # The campaign-wide summary export was removed (#1126), and the
+    # Follow-up packet (#2394): neither action nor a missing Ministry is
+    # accepted.
     for removed in (
         {"action": "summary", "ministry_id": None},
         {"action": "summary"},
+        {"action": "packet"},
         {"ministry_id": None},
     ):
         with pytest.raises(ValueError):

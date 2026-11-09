@@ -4,7 +4,8 @@ The Administrator decided (2026-10-17, "show own contacts") that a Member's
 standing request to a Ministry is consent to be contacted about it, so that
 Ministry's leaders see the requesting Member's own email and phones even when
 ParishSoft does not publish them. Frozen migration 0119 puts the rule in the
-two selections the request page, Export these requests and the packet read.
+two selections the request page and Export these requests read: the report's
+and the packet projection (the Follow-up packet itself was removed, #2394).
 
 The first tests check 0119's closing check against 0094's bodies, as the
 earlier selection migrations' tests do; each statement there runs in a
@@ -19,7 +20,6 @@ another Ministry and a reader who leads nothing keep the publish flags or
 read nothing, while Staff keep operational contact.
 """
 
-import io
 import json
 import re
 from uuid import uuid4
@@ -27,17 +27,13 @@ from uuid import uuid4
 import pytest
 from django.db import DatabaseError, connection, transaction
 
-from parishkit.stewardship.deployment import ServiceRole
-from parishkit.stewardship.reports.export_tasks import load_document
-from parishkit.stewardship.reports.ministry_packets import render_packet
 from parishkit.stewardship.workflows.models import MinistryRequest
 
 from ..census_factory import member
+from .packet_projection import packet, sections
 from .response_builders import activate_response_service
-from .test_background_grants_postgresql import task_login
 from .test_hide_gone_members_postgresql import SCHEMA_FILES, definition
 from .test_ministry_followup_postgresql import edit, requests
-from .test_ministry_packets_postgresql import packet, sections
 from .test_ministry_reports_postgresql import actor, page, prepare, setup
 from .test_ministry_responses_postgresql import (
     configure,
@@ -296,54 +292,42 @@ def family(harness, *, cannot_serve=False):
     return harness, added
 
 
-def packet_text(harness, request):
-    """The CSV the worker renders from one packet's retained capture."""
-    request.refresh_from_db()
-    with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
-        output = io.BytesIO()
-        render_packet(load_document(request), output, format="csv")
-    return output.getvalue().decode()
-
-
 def test_each_leader_sees_only_their_own_ministrys_requesters(response_service):
     """Food pantry's leader sees the added Member's entered email, never Member
     3's; Choir's leader sees Member 3's unpublished email on the leave request,
     never the added Member's; Staff see both; a reader who leads nothing and a
     leader asking for another Ministry read nothing."""
     harness, added = family(response_service)
-    # Food pantry (9): the join request page's selection and the packet.
+    # Food pantry (9): the join request page's selection and the packet
+    # projection.
     rows = page(harness, ministry=9, **LEADER_9)["rows"]
     assert [(row["proposed_id"], row["emails"]) for row in rows] == [
         (added, [PROPOSED])
     ]
     assert EMAIL not in json.dumps(rows, default=str)
-    request = packet(harness, actor(harness, **LEADER_9).identity)
-    snapshot, found = sections(request)
+    snapshot, found = sections(packet(harness, actor(harness, **LEADER_9).identity))
     assert sorted(found) == [9]
-    assert snapshot.authorization_scope["operational"] is False
-    assert EMAIL not in json.dumps(snapshot.document)
-    assert PROPOSED in packet_text(harness, request)
+    assert snapshot["authorization_scope"]["operational"] is False
+    assert EMAIL not in json.dumps(snapshot)
+    assert PROPOSED in json.dumps(found[9]["rows"])
     # Choir (4): Member 3 asked to leave, so its leader sees the email too.
-    request = packet(harness, actor(harness, **LEADER_4).identity)
-    snapshot, found = sections(request)
+    snapshot, found = sections(packet(harness, actor(harness, **LEADER_4).identity))
     (row,) = found[4]["rows"]
     assert (row["action"], row["email_visibility"]) == ("leave", "available")
+    assert row["phone_visibility"] == "available"
     assert EMAIL in json.dumps(row["emails"]) and PHONE in json.dumps(row["phones"])
-    assert PROPOSED not in json.dumps(snapshot.document)
-    text = packet_text(harness, request)
-    assert EMAIL in text and "Not published" not in text
+    assert PROPOSED not in json.dumps(snapshot)
     # Neither leader reads the other's Ministry, and leading nothing reads
     # nothing.
     with pytest.raises(PermissionError):
         page(harness, ministry=4, action="leave", **LEADER_9)
-    with pytest.raises(PermissionError):
-        packet(harness, actor(harness, **LEADER_4).identity, (9,))
+    assert sections(packet(harness, actor(harness, **LEADER_4).identity, (9,)))[1] == {}
     with pytest.raises(PermissionError):
         page(harness, ministry=9, roles=("ministry_leader",), scope=(123,))
     # Staff are unchanged: operational contact for every Ministry.
     staff = actor(harness, ("staff",), ())
     snapshot, found = sections(packet(harness, staff.identity))
-    assert snapshot.authorization_scope["operational"] is True
+    assert snapshot["authorization_scope"]["operational"] is True
     assert EMAIL in json.dumps(found[4]["rows"]) and PROPOSED in json.dumps(
         found[9]["rows"]
     )
@@ -352,24 +336,22 @@ def test_each_leader_sees_only_their_own_ministrys_requesters(response_service):
 def test_a_withdrawn_request_keeps_the_publish_flags(response_service):
     """Once the Family withdraws Member 3's leave request, Choir's leader sees
     its history with the email Not published again (the published phone
-    stays), in the packet and its file; Staff still see the email."""
+    stays), in the packet projection; Staff still see the email."""
     harness, _ = family(response_service)
     form = revisit(harness)
     answers = answers_for(form)
     answers["ministries"]["members"]["3"] = {"join": [], "leave": []}
     respond(harness, form, answers)
     leader = actor(harness, **LEADER_4).identity
-    # By default a packet lists unresolved requests only, so nothing shows.
+    # By default the projection lists unresolved requests only, so nothing
+    # shows.
     assert sections(packet(harness, leader))[1][4]["rows"] == []
-    request = packet(harness, leader, history=True)
-    snapshot, found = sections(request)
+    snapshot, found = sections(packet(harness, leader, history=True))
     (row,) = found[4]["rows"]
     assert row["state"] == "cancelled"
     assert row["email_visibility"] == "not_published" and row["emails"] is None
     assert row["phone_visibility"] == "available"
-    assert EMAIL not in json.dumps(snapshot.document)
-    text = packet_text(harness, request)
-    assert "Not published" in text and EMAIL not in text
+    assert EMAIL not in json.dumps(snapshot)
     staff = actor(harness, ("staff",), ()).identity
     found = sections(packet(harness, staff, history=True))[1]
     assert EMAIL in json.dumps(found[4]["rows"])
@@ -378,18 +360,15 @@ def test_a_withdrawn_request_keeps_the_publish_flags(response_service):
 def test_a_cannot_participate_leave_keeps_the_publish_flags(response_service):
     """Member 3's leave because they cannot participate in any ministries
     shows Choir's leader the email Not published (the published phone stays),
-    in the packet and its file, while the added Member's ordinary join still
+    in the packet projection, while the added Member's ordinary join still
     shows Food pantry's leader the entered email; Staff still see both."""
     harness, added = family(response_service, cannot_serve=True)
-    request = packet(harness, actor(harness, **LEADER_4).identity)
-    snapshot, found = sections(request)
+    snapshot, found = sections(packet(harness, actor(harness, **LEADER_4).identity))
     (row,) = found[4]["rows"]
     assert (row["action"], row["state"]) == ("leave", "new")
     assert row["email_visibility"] == "not_published" and row["emails"] is None
     assert row["phone_visibility"] == "available"
-    assert EMAIL not in json.dumps(snapshot.document)
-    text = packet_text(harness, request)
-    assert "Not published" in text and EMAIL not in text
+    assert EMAIL not in json.dumps(snapshot)
     rows = page(harness, ministry=9, **LEADER_9)["rows"]
     assert [(row["proposed_id"], row["emails"]) for row in rows] == [
         (added, [PROPOSED])
@@ -413,7 +392,8 @@ def answer(harness, *, leave, cannot_serve):
 
 
 def history_rows(harness, scope, ministry):
-    """A leader's history packet rows and Staff's for one Ministry."""
+    """A leader's history packet projection rows and Staff's for one
+    Ministry."""
     leader = actor(harness, roles=("ministry_leader",), scope=scope).identity
     staff = actor(harness, ("staff",), ()).identity
     return (

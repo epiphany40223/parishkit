@@ -34,15 +34,12 @@ from parishkit.stewardship.reports.information_rendering import (
     information_xlsx,
 )
 from parishkit.stewardship.reports.limitations import limitations_xlsx, shape_result
-from parishkit.stewardship.reports.ministry_packets import packet_records, render_packet
 from parishkit.stewardship.reports.spreadsheets import participation_xlsx
 
 from .test_directory_rendering import document as directory
 from .test_directory_rendering import item as family
 from .test_information_rendering import document as information
 from .test_limitations_report import result as limitations_result
-from .test_ministry_packets import item as member
-from .test_ministry_packets import packet
 from .test_participation_rendering import document as participation
 from .test_participation_rendering import summary
 
@@ -148,37 +145,19 @@ def test_information_and_directory_workbooks_share_the_style():
     assert_information_sheet(book["Report information"])
 
 
-def test_packet_workbook_labels_ministry_details_above_its_table():
-    """The details block uses the label style; the table header is frozen."""
-    sections = [dict(duid=9, name="Choir", chairs=["Pat Lee"], rows=[member()])]
-    output = io.BytesIO()
-    render_packet(packet(sections), output, format="xlsx")
-    book = load_workbook(output)
-    sheet = book["Choir"]
-    head = next(
-        row
-        for row in range(1, sheet.max_row + 1)
-        if sheet.cell(row, 1).value == "Member"
-    )
-    assert_styled_table(sheet, head)
+def test_detail_values_span_their_table_and_stop_at_excels_tallest_row():
+    """Details above a table use the label style; each value spans the
+    table's width rather than wrapping in column B, and a very long one is
+    clamped to Excel's 409-point row limit."""
+    book = Workbook()
+    sheet = book.active
+    sheet["A1"], sheet["B1"] = "Ministry", "Choir"
+    sheet["A2"], sheet["B2"] = "Chairs", "Q" * 30000
+    xlsx_design.style_details(sheet, range(1, 3), widths=False, span=5)
     assert sheet["A1"].fill.fgColor.rgb.endswith("E4F0EE") and sheet["A1"].font.b
-    # Each detail value spans the table's width instead of wrapping in
-    # column B, which the table sized for Member DUIDs.
-    last = sheet.cell(head, sheet.max_column).column_letter
     merged = {str(cells) for cells in sheet.merged_cells.ranges}
-    assert merged == {f"B{row}:{last}{row}" for row in range(1, head - 1)}
-    assert sheet["B1"].value == "Choir"
-    assert_information_sheet(book["Report information"])
-
-
-def test_packet_detail_rows_stop_at_excels_tallest_row():
-    """A very long Ministry detail is clamped to Excel's 409-point row limit."""
-    sections = [dict(duid=9, name="Choir", chairs=["Q" * 30000], rows=[member()])]
-    output = io.BytesIO()
-    render_packet(packet(sections), output, format="xlsx")
-    sheet = load_workbook(output)["Choir"]
-    heights = [sheet.row_dimensions[row].height or 0 for row in range(1, 6)]
-    assert max(heights) == xlsx_design.MAX_ROW_HEIGHT
+    assert merged == {"B1:E1", "B2:E2"}
+    assert sheet.row_dimensions[2].height == xlsx_design.MAX_ROW_HEIGHT
 
 
 def census(result):
@@ -248,12 +227,9 @@ def test_every_workbook_names_its_report_in_its_properties():
     """
     output = io.BytesIO()
     render_directory(directory([family()]), output, format="xlsx")
-    packet_output = io.BytesIO()
-    render_packet(packet([]), packet_output, format="xlsx")
     for document, body in (
         (information(count=1), saved(information_xlsx, information(count=1))),
         (directory([family()]), load_workbook(output)),
-        (packet([]), load_workbook(packet_output)),
     ):
         properties = body.properties
         assert properties.title == document.title
@@ -378,7 +354,7 @@ def test_directory_pdfs_frame_every_page(monkeypatch, postal):
 
 
 def test_record_pdfs_frame_every_page(monkeypatch):
-    """Information and packet PDFs draw cards inside the same frame."""
+    """Information PDFs draw cards inside the frame."""
     report = information(count=4)
     pages = frames(monkeypatch, lambda output: information_pdf(report, output))
     assert len(pages) > 1
@@ -387,16 +363,6 @@ def test_record_pdfs_frame_every_page(monkeypatch):
         report.title,
         "Sensitive parish information. Share only with authorized recipients.",
     )
-    sections = [
-        dict(duid=4, name="Altar Servers", chairs=[], rows=[member()] * 30),
-        dict(duid=9, name="Choir", chairs=[], rows=[member()]),
-    ]
-    document = packet(sections)
-    pages = frames(
-        monkeypatch, lambda output: render_packet(document, output, format="pdf")
-    )
-    assert len(pages) >= 3
-    assert_framed(pages, document.title)
 
 
 def test_frame_escapes_glyphs_the_fonts_cannot_draw():
@@ -474,28 +440,13 @@ def test_every_body_stays_between_the_header_and_the_footer():
         body_extents(frame, pages, lambda c, p: pdf_design.draw_cards(c, p, frame)),
     )
 
-    for document, records in (
-        (information(count=5), information_records),
-        (
-            packet(
-                [
-                    dict(
-                        duid=4,
-                        name="Altar Servers",
-                        chairs=["Q" * 9000],
-                        rows=[member()] * 9,
-                    )
-                ]
-            ),
-            packet_records,
-        ),
-    ):
-        frame = pdf_design.PdfFrame.for_document(document)
-        pages = list(pdf_design.record_pages(records(document), frame))
-        assert_inside(
-            frame,
-            body_extents(frame, pages, partial(draw_record_page, frame=frame)),
-        )
+    document = information(count=5)
+    frame = pdf_design.PdfFrame.for_document(document)
+    pages = list(pdf_design.record_pages(information_records(document), frame))
+    assert_inside(
+        frame,
+        body_extents(frame, pages, partial(draw_record_page, frame=frame)),
+    )
 
 
 @pytest.mark.parametrize("split", [False, True])

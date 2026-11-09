@@ -192,8 +192,8 @@ def export_actions(
     ``formats`` are the download's offered values. The default
     (``DEFAULT_EXPORT_FORMAT``, XLSX) comes first and the rest keep the
     given order, so no form picks its own default; ``own_order`` keeps the
-    given order for a document (the Campaign comparison's PDF summary, the
-    follow-up packet). ``name`` prefixes the row's element ids; ``label``
+    given order for a document (the Campaign comparison's PDF summary).
+    ``name`` prefixes the row's element ids; ``label``
     is the row's group name, telling apart two rows on one page.
     ``disabled`` names one offered format shown but unavailable (Ministry
     requests' PDF above its row limit); ``enabled=False`` makes every button

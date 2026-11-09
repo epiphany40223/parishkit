@@ -33,13 +33,13 @@ from parishkit.stewardship.reports.ministry_followup import FollowupQuery
 from parishkit.stewardship.workflows.models import MinistryRequest
 
 from ..census_factory import member
+from .packet_projection import packet, sections
 from .test_background_grants_postgresql import task_login
 from .test_export_views_postgresql import post
 from .test_information_followup_postgresql import search
 from .test_live_ministries_postgresql import installed
 from .test_ministry_exports_postgresql import create, leader
 from .test_ministry_followup_postgresql import requests
-from .test_ministry_packets_postgresql import packet, sections
 from .test_ministry_reports_postgresql import actor, drop_leader, page, prepare, setup
 from .test_ministry_responses_postgresql import ministry_source, respond, revisit
 from .test_ministry_review_postgresql import decide, view, withdraw_leave
@@ -558,7 +558,7 @@ def test_a_leaves_contacts_follow_its_edit(response_service):
     assert {(row["duid"], row["in_campaign"]) for row in by_ministry} == {
         (9, True),
     }
-    # The packet form and ``export ministry`` offer what the SQL holds.
+    # ``export ministry`` offers what the packet projection holds.
     assert offered_ministries(harness.campaign.pk) == {9}
     _, captured = sections(packet(harness, staff.identity, (9,), history=True))
     assert set(captured) == {9}

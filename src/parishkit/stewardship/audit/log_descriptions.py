@@ -457,9 +457,10 @@ DESCRIPTIONS = {
         "An automation session requested a Ministry report export, as the "
         "Ministry requests page's export form does."
     ),
+    # Past rows only: the Follow-up packet was removed (#2394).
     "admin_cmd_export_ministry_packet": _(
         "An automation session requested a Ministry follow-up packet, as the "
-        "Ministry requests page's packet form does."
+        "Ministry requests page's packet form did before it was removed."
     ),
     "admin_cmd_export_directory": _(
         "An automation session requested a Family-code directory export, as "

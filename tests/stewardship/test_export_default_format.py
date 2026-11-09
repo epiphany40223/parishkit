@@ -13,9 +13,8 @@ TEMPLATES = Path(accounts.__file__).parent / "templates"
 # Each export row's name and arguments (the export_actions tag, #1679).
 ROW = re.compile(r'{% export_actions [^%]*?name="([^"]+)"([^%]*)%}')
 # Rows that keep their own first choice, with why:
-# - comparison, ministry-packet: documents (a PDF summary and a printable
-#   packet), not data, so PDF stays first.
-OWN_DEFAULT = {"comparison", "ministry-packet"}
+# - comparison: a document (a PDF summary), not data, so PDF stays first.
+OWN_DEFAULT = {"comparison"}
 
 
 def test_the_default_is_xlsx_and_pk_admin_spells_out_the_same():

@@ -10,10 +10,9 @@ Members, through the export forms' own services:
 - ``export information`` is the information queue's export form
   (``information_exports.create_information_export``);
 - ``export ministry`` is the Ministry report's export form, for one
-  Ministry's join or leave list (the summary export was removed, #1126)
-  (``ministry_exports.create_ministry_export``);
-- ``export ministry-packet`` is its follow-up packet form (the same service
-  with ``action="packet"``).
+  Ministry's join or leave list (``ministry_exports.create_ministry_export``).
+  The summary export was removed (#1126), and ``export ministry-packet``
+  went with the Follow-up packet (#2394).
 
 Each creates the same durable export record as the page, so its rows reach
 nothing but the file: the command prints the ``export status`` document,
@@ -357,8 +356,8 @@ def export_ministry(
     def create(actor, campaign_id, query):
         """The page's service, for a Ministry this campaign offers.
 
-        As the packet form's check: a Ministry the campaign does not offer
-        is a bad selection (``invalid``), not an outage to retry.
+        A Ministry the campaign does not offer is a bad selection
+        (``invalid``), not an outage to retry.
         """
         if ministry not in offered_ministries(campaign_id):
             raise ValueError("That Ministry is not in this campaign.")
@@ -379,54 +378,6 @@ def export_ministry(
         service,
         principal=_principal,
         action=Action.ADMIN_CMD_EXPORT_MINISTRY,
-        parse=parse,
-        create=create,
-        request_key=request_key,
-        context=context,
-    )
-
-
-def export_ministry_packet(
-    caller, service, *, ministries, history, fmt, zone, request_key, context
-):
-    """``export ministry-packet``: the Ministry report's follow-up packet form.
-
-    ``ministries`` are the ticked Ministries (none: every authorized one),
-    at most the page's limit, each once; ``history`` the form's history
-    choice. The page's admission and the service's scope check apply.
-    """
-    from .audit.schemas import Action
-    from .reports.ministry_exports import MAX_PACKET_MINISTRIES, create_ministry_export
-    from .reports.ministry_views import _principal
-
-    def parse(actor, campaign_id):
-        """The packet form's selection checks, once the reader is admitted."""
-        chosen = tuple(ministries or ())
-        if len(chosen) > MAX_PACKET_MINISTRIES or len(set(chosen)) != len(chosen):
-            raise ValueError("Choose each Ministry once, up to the page's limit.")
-        for value in chosen:
-            _ministry_duid(value)
-        return tuple(sorted(chosen)) or None
-
-    def create(actor, campaign_id, selected):
-        """The page's service, as the packet form calls it."""
-        return create_ministry_export(
-            service.store,
-            actor.identity,
-            campaign_id=campaign_id,
-            action="packet",
-            ministries=selected,
-            history=history,
-            format=fmt,
-            browser_timezone=zone,
-            request_key=request_key,
-        )
-
-    return _create(
-        caller,
-        service,
-        principal=_principal,
-        action=Action.ADMIN_CMD_EXPORT_MINISTRY_PACKET,
         parse=parse,
         create=create,
         request_key=request_key,

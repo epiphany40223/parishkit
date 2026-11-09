@@ -237,7 +237,7 @@ class MinistryWorkflowRevision(ImmutableRecord):
                     | models.Q(state="resolved", outcome__in=list(RESOLVED_OUTCOMES))
                     | models.Q(state="closed_no_response", outcome="no_response")
                 )
-                # "Other" is meaningless in a packet without its explanation.
+                # "Other" is meaningless without its explanation.
                 & (~models.Q(outcome="other") | ~models.Q(notes="")),
                 name="ministry_revision_outcome",
             ),

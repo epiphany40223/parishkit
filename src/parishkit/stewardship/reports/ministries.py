@@ -67,7 +67,7 @@ STATES = {
 }
 # Row labels. Follow-up has no assignee (#552); a request still stored as
 # `assigned` from before then reads as Not contacted, because that state only ever
-# meant "has an assignee". Screens, exports and packets share these labels.
+# meant "has an assignee". Screens and exports share these labels.
 # The frozen report selection (stewardship_ministry_report_v3) still returns each
 # row's assignee email; nothing renders it any more.
 STATE_LABELS = STATES | {"assigned": STATES["new"]}
@@ -81,8 +81,8 @@ ZONE_MESSAGE = (
 # A Ministry an Administrator removed from a live campaign whose requests are
 # kept (#342); SQL marks it in_campaign false.
 NOT_IN_CAMPAIGN = "Removed from this campaign"
-# Outcome labels by request kind (#1132), shared by every screen, export and
-# packet, so they always agree. The stored code never changes: a leave
+# Outcome labels by request kind (#1132), shared by every screen and export,
+# so they always agree. The stored code never changes: a leave
 # request's `declined` means the Member did not leave, so it reads "Stayed in
 # the Ministry", while a join request's reads as a decline. Read them only
 # through outcome_label() and outcome_choices(), never by indexing these.
@@ -336,7 +336,7 @@ def ministry_page(
     renderer. No credential or financial columns are selected.
 
     ``every`` reads the whole selection rather than one page of it: the
-    whole Ministry summary (the packet's choices, #533), or every request
+    whole Ministry summary (By Ministry, #1133), or every request
     row of one Ministry and kind, which the follow-up request page and the
     queue's export read their contact details from (#1157).
     """

@@ -36,7 +36,6 @@ from ..reports import (
     information_export_views,
     information_views,
     limitation_views,
-    ministry_export_views,
     ministry_followup_exports,
     ministry_followup_views,
     pledge_review_views,
@@ -158,17 +157,13 @@ patterns = [
     # export form (exports/) were retired, with no redirect (#1157): a
     # request's contact details are on its follow-up page, and the export is
     # the follow-up queue's Export these requests.
-    # Ministry requests (#1133): the follow-up queue, with the totals, the
-    # By Ministry counts and the follow-up packet, is the one page for
-    # Ministry requests. The queue's own address (follow-up/) was retired
-    # with no redirect; its request pages, bulk outcomes, export and Roster
-    # changes to enter keep their addresses under it.
+    # Ministry requests (#1133): the follow-up queue, with the By Ministry
+    # counts, is the one page for Ministry requests. The queue's own address
+    # (follow-up/) was retired with no redirect; its request pages, bulk
+    # outcomes, export and Roster changes to enter keep their addresses
+    # under it. The Follow-up packet (packets/) was removed, with no
+    # redirect (#2394).
     _page("reports/ministries/", ministry_followup_views.queue, "ministry_report"),
-    _page(
-        "reports/ministries/packets/",
-        ministry_export_views.create_packet,
-        "ministry_packet",
-    ),
     # Export these requests (#1157): the queue's filtered set as a file,
     # rendered on request. A request is a UUID, so "exports" is never one.
     _page(

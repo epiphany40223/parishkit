@@ -51,7 +51,7 @@ def card_text(records):
                 continue
             yield line.label, line.text
             if line.right:
-                yield line.right[1], line.right[2]
+                yield line.right
 
 
 def document_metadata():

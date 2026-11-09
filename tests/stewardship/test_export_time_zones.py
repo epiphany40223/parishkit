@@ -25,7 +25,6 @@ from parishkit.stewardship.reports import (
     export_ui,
     financial_export_views,
     information_export_views,
-    ministry_export_views,
     ministry_followup_exports,
     timeline_views,
 )
@@ -93,21 +92,6 @@ def _queued(monkeypatch, module, service):
     )
     monkeypatch.setattr(module, "_redirect", lambda *args: HttpResponse(status=303))
     return calls
-
-
-@pytest.mark.parametrize(
-    "zone, expected",
-    [(None, PARISH), ("", PARISH), ("Etc/Unknown", PARISH), ("America/Detroit", None)],
-)
-def test_the_packet_takes_the_browsers_zone_unasked(monkeypatch, zone, expected):
-    """The follow-up packet has no action times: no zone is required."""
-    calls = _queued(monkeypatch, ministry_export_views, "create_ministry_export")
-    values = {"format": "pdf", "request_key": str(uuid4())}
-    if zone is not None:
-        values["browser_timezone"] = zone
-    response = ministry_export_views.create_packet(_post(values), uuid4())
-    assert response.status_code == 303
-    assert calls[0]["browser_timezone"] == (expected or zone)
 
 
 def _directory(monkeypatch, *, responses, zone):

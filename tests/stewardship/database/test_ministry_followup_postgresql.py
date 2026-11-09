@@ -393,7 +393,7 @@ def test_legacy_assignment_reads_as_new_and_next_edit_clears_it(
     # does not match it until its next edit (recorded on #552).
     assert read(harness, staff, ministry="9", state="any")["total"] == 1
     assert read(harness, staff, ministry="9", state="new")["total"] == 0
-    # The Ministry report, its exports and packets share the same label.
+    # The Ministry report and its exports share the same label.
     assert report_page(harness, ministry=9)["rows"][0]["state_label"] == "Not contacted"
     edit(harness, head, join, state="new", notes="Old hand-off")
     join.refresh_from_db()

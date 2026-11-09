@@ -29,5 +29,4 @@
 {# The remembered view's address, which ui-v1.js puts in the address bar after an in-place filter, sort or page change (#534). #}
 {% if queue_token %}<span hidden data-queue-address="{% url 'admin:ministry_report' %}?queue={{ queue_token }}"></span>{% endif %}
 {% include "stewardship/components/review-worklist.html" %}
-{% include "stewardship/ministry-packet.html" %}
 {% endblock %}

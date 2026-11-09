@@ -20,7 +20,6 @@ import pytest
 from django.urls import reverse
 
 from .comparison_components import PAGE as COMPARISON
-from .followup_components import REQUESTS
 from .live_status_components import (
     EXPORT,
     EXPORT_PENDING,
@@ -45,7 +44,6 @@ EXPORTS = [
     ("/campaign-comparison", "Download", "Export PDF", True),
     ("/financial-report", "Export complete results", "Export CSV", True),
     ("/information", "Export complete results", "Export XLSX", True),
-    (REQUESTS, "Export the follow-up packet", "Export PDF", True),
     ("/family-directory", "Export complete results", "Export XLSX", True),
     (TIMELINE, "Export this timeline", "Export XLSX", True),
     (PAST_CAMPAIGNS, None, "Download campaign archive", True),
@@ -300,15 +298,15 @@ def test_a_passing_failure_is_tried_again(page, component_origin, states, busy):
 
 
 def test_a_typed_refusal_is_said_in_place(page, component_origin):
-    """A script's typed JSON refusal (the follow-up packet's limit, a
-    denial) is said with its message and fix, in the row's line."""
-    page.goto(component_origin + REQUESTS)
-    button = _button(page, "Export the follow-up packet", "Export PDF")
+    """A script's typed JSON refusal (a bad selection, a denial) is said
+    with its message and fix, in the row's line."""
+    page.goto(component_origin + "/financial-report")
+    button = _button(page, "Export complete results", "Export CSV")
     visible(button)
     refusal = (
-        '{"errors": [{"code": "invalid", "field_id": "ministries"}], '
-        '"refusal": {"message": "Too many Ministries for one packet.", '
-        '"fix": "Choose fewer Ministries."}}'
+        '{"errors": [{"code": "invalid", "field_id": "amount"}], '
+        '"refusal": {"message": "That amount filter is not offered.", '
+        '"fix": "Choose another amount."}}'
     )
     _answer_export(
         page,
@@ -320,11 +318,11 @@ def test_a_typed_refusal_is_said_in_place(page, component_origin):
         kind="application/json",
     )
     button.click()
-    line = page.locator("#ministry-packet-export-status")
+    line = page.locator("#financial-export-status")
     from playwright.sync_api import expect
 
     expect(line).to_have_text(
-        "Too many Ministries for one packet. Choose fewer Ministries."
+        "That amount filter is not offered. Choose another amount."
     )
     assert button.get_attribute("aria-disabled") is None
 
