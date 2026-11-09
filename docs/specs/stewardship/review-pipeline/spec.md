@@ -2076,7 +2076,8 @@ counts are in the Stage filter's choices and on My review work. A stream's
 statistics stay on its report page. An **Add** button sits in the selection
 bar for readers allowed to add on that stream, and opens the stream's own
 value editor (for a Ministry, a Member and a Ministry picker scoped to the
-reader). **Review these one at a time** sits beside it and opens the
+reader). **Review these one at a time** sits beside it (except on a
+Ministry leader's Review in bulk) and opens the
 [review wizard](#review-wizard) on the table's view
 ([wizard entry points](#wizard-entry-points)).
 
@@ -2720,7 +2721,8 @@ earlier unfinished runs in the campaign, and finished ones stay:
   while at least one stream is offered (a new `Entry` whose availability is any of the five pages'),
   and named in the trail and every "Return to".
 - **From each table.** Each review worklist's selection bar gets
-  **Review these one at a time** (a secondary button, first, beside Add). It
+  **Review these one at a time** (a secondary button, first, beside Add;
+  except on a Ministry leader's Review in bulk, below). It
   posts the table's current view fields (`Worklist.fields`, the search
   included, and the table's sort) to the wizard's start, which starts a
   run with them and opens page 1, skipping the choice steps; it never
@@ -2740,6 +2742,13 @@ earlier unfinished runs in the campaign, and finished ones stay:
   posts the table's Stage, the stream's own closed filters and the search,
   in Advanced mode, to the start, which parses, checks and reads them as a
   start from the start page does.
+  A Ministry leader's Ministry requests table (named Review in bulk)
+  has no button: the tag `review_wizard_entry` returns none for the
+  Ministry stream when `ministry_worklist.is_leader` is true, and a
+  leader starts Review one at a time from My review work or the menu
+  ([#2407](https://github.com/epiphany40223/parishkit/issues/2407); the
+  Administrator, 2026-11-09). Staff and Administrators keep it, and the
+  start still accepts a leader's own Ministry run.
 - **Dashboard pane.** My review work (for Staff and Ministry leaders) and
   Administrators' Home Review work panel put the wizard **beside** the
   stream groups, so the choice reads plainly: review everything one at a
@@ -2960,7 +2969,7 @@ in slices 2 and 3:
    different heights and after an in-place action, and that focus
    returns to the control used.
 4. **Table entry buttons** (built): Review these one at a time on the
-   five tables. Tests: each table's button posts its view and opens page 1
+   five tables (a Ministry leader's Review in bulk excepted, #2407). Tests: each table's button posts its view and opens page 1
    with that view's sequence; the sort mapping; the existing-runs dialog (removed again in R52 Part W); the unavailable state on
    an empty table (no label is renamed, so no table test needed a sweep).
    With it, the dashboard card becomes the side-by-side

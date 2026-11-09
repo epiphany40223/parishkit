@@ -34,11 +34,18 @@ def review_wizard_entry(context, worklist, table):
     the shared table component draws it on every render of every review
     table, in-place redraws included, with no page passing it along.
     """
+    from parishkit.stewardship.pipeline import Stream
+    from parishkit.stewardship.reports.ministry_worklist import is_leader
     from parishkit.stewardship.reports.review_wizard_tables import table_entry
 
     # Only a signed-in reader gets the button (a unit render of the table,
     # with no principal, draws none); the entry itself needs no reader.
     principal = getattr(getattr(context, "request", None), "principal", None)
     if principal is None:
+        return None
+    # A Ministry leader reviews in bulk here and chooses Review one at a
+    # time on My review work or the menu, so their Ministry requests
+    # table has no button (#2407); Staff and Administrators keep it.
+    if worklist.stream == Stream.MINISTRY and is_leader(principal):
         return None
     return table_entry(worklist, table)
