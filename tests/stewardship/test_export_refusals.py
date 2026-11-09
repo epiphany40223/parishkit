@@ -158,3 +158,29 @@ def test_an_ended_exports_link_back_comes_from_its_row(report, parameters, sourc
     assert origin == source
     if url is not None:
         assert report_url.endswith(url) or report_url == url, report_url
+
+
+@pytest.mark.parametrize(
+    ("roles", "name"),
+    [(("ministry_leader",), "Review in bulk"), (("staff",), "Ministry requests")],
+)
+def test_a_ministry_export_is_named_after_its_page_as_the_viewer_knows_it(
+    monkeypatch, roles, name
+):
+    """A Ministry requests export and its "no longer available" page name
+    the report page as the viewer's menu does: Review in bulk for a Ministry
+    leader (#2393)."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts.policy import Principal
+
+    viewer = Principal(uuid4(), frozenset(roles), frozenset({9}))
+    job = SimpleNamespace(report="ministry", parameters={}, browser_timezone="UTC")
+    title, *_ = export_ui._origin(job, viewer)
+    assert str(title) == f"{name} export"
+    monkeypatch.setattr(export_ui.admin_navigation, "place", Mock())
+    request = RequestFactory().get("/")
+    request.principal = viewer
+    response = export_ui._gone(request, job)
+    assert response.status_code == 410
+    assert f">{name}</a>" in response.content.decode()

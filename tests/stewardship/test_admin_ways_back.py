@@ -26,6 +26,8 @@ EXTRA = {
     ("daily_digest_snapshot", "daily-digest.html"),
     ("schedule_settings", "schedule-reconcile.html"),
     ("reports", "report-empty.html"),
+    # Named by the view for its viewer (#2393).
+    ("ministry_report", "ministry-requests.html"),
 }
 
 # "Return to" links that name a page in the trail but keep the reader's place
@@ -33,7 +35,6 @@ EXTRA = {
 # opened from. Each is (template, target label).
 KEPT = {
     ("information.html", "Additional information"),
-    ("ministry-followup.html", "Ministry requests"),
 }
 
 # A "Return to" link: its href (often a reversed Admin URL name, sometimes a
@@ -86,12 +87,18 @@ PAIRS = sorted(set(TEMPLATES.items()) | EXTRA)
 # only where it carries a report's filters (the directory and participation
 # exports). The other names a page outside the trail: Preview and test
 # email's opener, which its view offers only when the trail does not lead
-# there.
-PARENT, ELSEWHERE = "parent", "elsewhere"
+# there. A KEPT_PLACE link names the parent crumb but keeps the reader's
+# place in it, as ``KEPT``'s do: a Follow-up request's way back to Ministry
+# requests, named as the viewer knows it (#2393). Ministry requests' error
+# page is drawn with no trail, and rule 3 lets an error page offer a way
+# back, so its link is ELSEWHERE.
+PARENT, ELSEWHERE, KEPT_PLACE = "parent", "elsewhere", "kept"
 VARIABLE_TARGETS = {
     ("campaign-mail.html", "return_link.label"): ELSEWHERE,
     ("configuration-request.html", "admin_chrome.back.label"): PARENT,
     ("report-export.html", "report_name"): PARENT,
+    ("ministry-followup.html", "page_name"): KEPT_PLACE,
+    ("ministry-followup-error.html", "page_name"): ELSEWHERE,
 }
 # Parent-crumb links drawn from the trail itself (``admin_chrome.back``), at
 # the end of a change's flow, so they cannot drift from it. Whether they stay
@@ -173,3 +180,22 @@ def test_variable_return_link_never_repeats_the_parent_crumb(template, variable)
         before = source[: link.start()]
         assert guard in before, (template, link["href"])
         assert "{%" not in before[before.rindex(guard) + len(guard) :]
+
+
+@pytest.mark.parametrize(
+    ("template", "variable"),
+    sorted(key for key, target in VARIABLE_TARGETS.items() if target == KEPT_PLACE),
+)
+def test_a_kept_place_link_keeps_the_readers_place(template, variable):
+    """A "Return to {{ … }}" link to the parent crumb is kept only because it
+    carries the reader's place in the list (the queue token), as ``KEPT``'s
+    literal ones do (#2393)."""
+    source = (TEMPLATE_DIR / template).read_text()
+    links = [
+        link
+        for link in VARIABLE_LINK.finditer(source)
+        if (link["value"] if link["alias"] == link["used"] else link["used"])
+        == variable
+    ]
+    assert links, (template, variable)
+    assert all("?queue={{ queue_token }}" in link["href"] for link in links)

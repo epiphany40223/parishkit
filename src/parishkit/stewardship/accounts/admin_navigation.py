@@ -331,6 +331,35 @@ PAGES = {
     "logs": Page("system", _("System logs")),
 }
 
+# The pages a Ministry leader who is neither Staff nor an Administrator
+# knows by another name (the Administrator, #2393). A leader has one
+# stream, so their Ministry requests is Review in bulk, beside Review one at
+# a time; Staff and Administrators see five streams and keep the stream's
+# name. ``page_label`` applies it, and the menu (``menu``'s ``labels``)
+# carries it into the trail, "Return to" and the greyed-entry page.
+LEADER_LABELS = {"ministry_report": _("Review in bulk")}
+
+
+def viewer_labels(principal):
+    """``{page: name}`` of the pages ``principal`` knows by another name.
+
+    Empty for anyone but a Ministry leader who is neither Staff nor an
+    Administrator, judged by the leader test Ministry requests itself uses
+    (``ministry_worklist.is_leader``). A missing principal, or one with no
+    Admin role (an error page drawn before sign-in), gets the usual names.
+    """
+    # Imported here: the reports package imports this module.
+    from parishkit.stewardship.reports.ministry_worklist import is_leader
+
+    if not getattr(principal, "roles", None) or not is_leader(principal):
+        return {}
+    return LEADER_LABELS
+
+
+def page_label(name, principal=None):
+    """Page ``name``'s name for ``principal``: its own, or the viewer's (#2393)."""
+    return viewer_labels(principal).get(name, PAGES[name].label)
+
 
 class MenuState(NamedTuple):
     """What a menu entry's reason check may read: campaign, mode and source data.
@@ -668,9 +697,10 @@ def greyed_page(name, reason, items):
     access check, so its refusal reads as the menu's would (#1242).
     """
     offered = {entry.name: entry.url for entry in items if entry.url}
+    names = _names(items)
     target = next((page for known, page in FORWARD if known is reason), None)
-    forward = (PAGES[target].label, offered[target]) if target in offered else None
-    return Greyed(PAGES[name].label, reason, forward)
+    forward = (_labelled(target, names), offered[target]) if target in offered else None
+    return Greyed(_labelled(name, names), reason, forward)
 
 
 def refuse_greyed(name, configuration, campaign):
@@ -693,14 +723,17 @@ def refuse_greyed(name, configuration, campaign):
         raise Greyed(PAGES[name].label, reason, None).refusal()
 
 
-def menu(state, may_open):
+def menu(state, may_open, labels=None):
     """The menu entries the viewer's role may open, available or greyed out.
 
     ``may_open(entry)`` is the caller's capability decision for the entry,
     the same one its page makes. Only it hides an entry; the mode and the
     campaign's state only grey one out, so a role's menu keeps one shape.
-    Returns ``MenuItem`` rows in menu order.
+    ``labels`` (``viewer_labels``) renames an entry for this viewer; the
+    trail, "Return to" and the greyed-entry page read the name from the
+    item, so they follow. Returns ``MenuItem`` rows in menu order.
     """
+    labels = labels or {}
     items = []
     for entry in MENU:
         if entry.any_of:
@@ -722,7 +755,8 @@ def menu(state, may_open):
         if reason is None:
             url = reverse(f"{NAMESPACE}:{entry.name}")
         page = PAGES[entry.name]
-        items.append(MenuItem(page.section, entry.name, page.label, url, reason))
+        label = labels.get(entry.name, page.label)
+        items.append(MenuItem(page.section, entry.name, label, url, reason))
     return items
 
 
@@ -1090,13 +1124,13 @@ def back(match, placed=None, items=None):
     sidebar entries, as for ``build``.
     """
     _name, chain, arguments = _resolved(match, placed)
-    labels = placed.labels if placed else {}
+    labels = _names(items) | (placed.labels if placed else {})
     queries = placed.queries if placed else {}
     offered = _offered(items)
     for ancestor in reversed(chain[:-1]):
         url = _with_query(_link(ancestor, arguments, offered), queries.get(ancestor))
         if url:
-            return {"label": labels.get(ancestor, PAGES[ancestor].label), "url": url}
+            return {"label": _labelled(ancestor, labels), "url": url}
     return {"label": PAGES["index"].label, "url": reverse(f"{NAMESPACE}:index")}
 
 
@@ -1151,7 +1185,7 @@ def build(match, items, placed=None):
                     "items": entries,
                 }
             )
-    labels = placed.labels if placed else {}
+    labels = _names(items) | (placed.labels if placed else {})
     queries = placed.queries if placed else {}
     return sections, _breadcrumbs(
         name, chain, arguments, sections, labels, _offered(items), queries
@@ -1166,6 +1200,21 @@ def _with_query(url, query):
 def _item(entry):
     """A ``MenuItem`` from a menu row, accepting a plain tuple as well."""
     return entry if isinstance(entry, MenuItem) else MenuItem(*entry)
+
+
+def _names(items):
+    """``{entry name: label}`` of the viewer's menu entries (empty if not given).
+
+    A menu page's name in the trail, "Return to" and its greyed-entry page
+    is the one the viewer's menu shows, so a per-viewer name
+    (``viewer_labels``) reaches all of them.
+    """
+    return {item.name: item.label for item in map(_item, items or ())}
+
+
+def _labelled(name, labels):
+    """Page ``name``'s label from ``labels``, else the registry's."""
+    return labels.get(name, PAGES[name].label)
 
 
 def _offered(items):
@@ -1200,11 +1249,11 @@ def _breadcrumbs(name, chain, arguments, sections, labels, offered=None, queries
     for ancestor in chain[:-1]:
         trail.append(
             {
-                "label": labels.get(ancestor, PAGES[ancestor].label),
+                "label": _labelled(ancestor, labels),
                 "url": _with_query(
                     _link(ancestor, arguments, offered), (queries or {}).get(ancestor)
                 ),
             }
         )
-    trail.append({"label": PAGES[name].label, "url": None})
+    trail.append({"label": _labelled(name, labels), "url": None})
     return trail

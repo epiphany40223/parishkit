@@ -12,6 +12,8 @@ and Reports and queries).
 import ast
 import re
 from pathlib import Path
+from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from django.template import Context, Template
@@ -99,8 +101,8 @@ TEMPLATES = {
     "information_item": "information.html",
     "weekly_digest_snapshot": "weekly-digest.html",
     "weekly_digest_item": "weekly-digest.html",
-    # Ministry requests is the follow-up queue's page (#1133).
-    "ministry_report": "ministry-requests.html",
+    # Ministry requests (the follow-up queue's page, #1133) names itself
+    # by the view's ``page_name`` (#2393): see VIEW_NAMED.
     "ministry_followup_item": "ministry-followup.html",
     "family_directory": "directory.html",
     "report_emails": "report-emails.html",
@@ -127,9 +129,11 @@ OBJECT_NAMED = {
     "report_email_edit",
 }
 # Pages whose heading the view supplies. The reports root renders the "no
-# campaign" page named after the report opened (checked below), and a daily
-# report takes the title saved with the emailed report.
-VIEW_NAMED = {"reports", "daily_digest_snapshot"}
+# campaign" page named after the report opened (checked below), a daily
+# report takes the title saved with the emailed report, and Ministry
+# requests is named as its viewer knows it, Review in bulk for a Ministry
+# leader (#2393; checked below).
+VIEW_NAMED = {"reports", "daily_digest_snapshot", "ministry_report"}
 # Delete scheduled emails and Delete user answer their list's dialog with a
 # change's status page, as does Delete email templates for Pages and emails'
 # tables, and Delete hosted files the library's dialog with a redirect or a
@@ -270,6 +274,10 @@ VARIABLE_RETURNS = {
     ("campaign-mail.html", "return_link.label"),
     ("configuration-request.html", "admin_chrome.back.label"),
     ("report-export.html", "report_name"),
+    # Ministry requests as the viewer knows it (``page_label``, #2393), from
+    # a Follow-up request and from its error page.
+    ("ministry-followup.html", "page_name"),
+    ("ministry-followup-error.html", "page_name"),
 }
 VARIABLE_RETURN = re.compile(
     r"{% blocktranslate(?: with (\w+)=([\w.]+))? %}Return to {{ (\w+) }}"
@@ -312,21 +320,34 @@ def test_variable_return_links_are_known():
 
 # Python-built "Return to" link labels: a view's link_label or back_label.
 PYTHON_RETURN = re.compile(r'(?:link_label=|"back_label", )_\("Return to ([^"]+)"\)')
+# A Python-built "Return to {page}" whose page is the name the viewer knows
+# it by (#2393): ``page_label``, or Ministry requests' ``_page_name``.
+PYTHON_VARIABLE_RETURN = re.compile(r'_\("Return to \{(\w+)\}"\),\s*(\w+)=(\w+)\(')
 
 
 def test_python_return_links_name_a_page():
-    """A "Return to" link label built in a view names a page by its label."""
+    """A "Return to" link label built in a view names a page by its label,
+    or by the viewer's name for it (``page_label``)."""
     labels = {str(page.label) for page in navigation.PAGES.values()}
+    sources = [(path.name, path.read_text("utf-8")) for path in PACKAGE.rglob("*.py")]
     found = [
-        (path.name, target)
-        for path in sorted(PACKAGE.rglob("*.py"))
-        for target in PYTHON_RETURN.findall(path.read_text("utf-8"))
+        (name, target)
+        for name, text in sources
+        for target in PYTHON_RETURN.findall(text)
     ]
-    # The guard sees the known labels (Ministry follow-up, Ministry requests;
-    # setup_content_views' "Return to Pages and emails" was removed by #1269),
-    # so its pattern still matches.
-    assert len(found) >= 2, found
+    variable = [
+        (name, *match)
+        for name, text in sources
+        for match in PYTHON_VARIABLE_RETURN.findall(text)
+    ]
+    # The Ministry requests PDF limit's way back names the queue as the
+    # viewer knows it, so the variable pattern still matches.
+    assert variable, variable
     assert all(target in labels for _path, target in found), found
+    assert all(
+        placeholder == keyword and helper in {"page_label", "_page_name"}
+        for _name, placeholder, keyword, helper in variable
+    ), variable
 
 
 # A link whose whole text is one translated string, to an Admin page.
@@ -700,9 +721,10 @@ def test_pending_names_match_the_spec_later():
     ],
 )
 def test_empty_report_page_is_named_after_its_report(view, name):
-    """The "no campaign" page takes the name of the report that shows it."""
+    """The "no campaign" page takes the name of the report that shows it,
+    as the viewer knows it (``_page_name``, #2393)."""
     source = Path(__import__(view, fromlist=["_"]).__file__).read_text(encoding="utf-8")
-    assert f'{{"page_name": PAGES["{name}"].label}}' in source
+    assert '{"page_name": _page_name(principal)}' in source
     html = render_to_string(
         "stewardship/report-empty.html",
         {"admin_chrome": None, "page_name": navigation.PAGES[name].label},
@@ -718,12 +740,61 @@ def _title(template, context):
     return Template("{% load i18n %}" + block.group(1)).render(Context(context))
 
 
+def _viewer(*roles):
+    """An Admin principal holding ``roles``, leading one Ministry."""
+    from parishkit.stewardship.accounts.policy import Principal
+
+    return Principal(uuid4(), frozenset(roles), frozenset({9}))
+
+
+@pytest.mark.parametrize(
+    ("roles", "name"),
+    [
+        (("ministry_leader",), "Review in bulk"),
+        (("staff",), "Ministry requests"),
+        (("staff", "ministry_leader"), "Ministry requests"),
+        (("administrator",), "Ministry requests"),
+    ],
+)
+def test_ministry_requests_is_named_for_its_viewer(roles, name):
+    """Ministry requests' browser title, heading, error page and every
+    "Return to" it use the viewer's name: Review in bulk for a Ministry
+    leader who is neither Staff nor an Administrator (#2393)."""
+    from parishkit.stewardship.reports import ministry_followup_views as views
+
+    page = views._page_name(_viewer(*roles))
+    assert (
+        str(page)
+        == name
+        == str(navigation.page_label("ministry_report", _viewer(*roles)))
+    )
+    # Its own page: the view gives both of its contexts (the queue and a
+    # request's page) the name, and the title and heading draw it.
+    source = Path(views.__file__).read_text(encoding="utf-8")
+    assert source.count("page_name=_page_name(principal),") == 2
+    template = _source("ministry-requests.html")
+    assert "<h1>{{ page_name }}</h1>" in template
+    assert _title("ministry-requests.html", {"page_name": page}) == name
+    # A Follow-up request's "Return to" and its help.
+    item = render_to_string(
+        "stewardship/ministry-followup.html",
+        {"admin_chrome": None, "item": {"pk": 1}, "page_name": page},
+    )
+    assert f"Return to {name}</a>" in item
+    # The request pages' error page, which reads nothing but the principal
+    # admission left on the request.
+    request = SimpleNamespace(principal=_viewer(*roles))
+    error = views._error(request, uuid4()).content.decode()
+    assert f"<h1>{name} unavailable</h1>" in error
+    assert f"<title>{name} unavailable" in error
+    assert f"Return to {name}</a>" in error
+
+
 @pytest.mark.parametrize(
     ("name", "context"),
     [
         ("information_queue", {}),
         ("information_item", {"item": {"pk": 1}}),
-        ("ministry_report", {}),
         ("ministry_followup_item", {"item": {"pk": 1}}),
         ("weekly_digest_snapshot", {}),
         ("weekly_digest_item", {"detail": True}),

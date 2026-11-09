@@ -117,7 +117,8 @@ def test_a_leader_sees_only_their_ministries(page, component_origin, axe_source,
     assert page.locator("[data-review-stream]").evaluate_all(
         "panels => panels.map(p => p.dataset.reviewStream)"
     ) == ["ministry"]
-    panel = page.get_by_role("region", name="Ministry requests")
+    # Named as the leader's menu names the page (#2393).
+    panel = page.get_by_role("region", name="Review in bulk")
     expect(
         panel.get_by_role(
             "link", name="Extraordinary Ministers of Holy Communion 3 to review"

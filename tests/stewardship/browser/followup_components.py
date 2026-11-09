@@ -32,6 +32,7 @@ from uuid import UUID
 from django.template.loader import render_to_string
 from django.urls import reverse
 
+from parishkit.stewardship.accounts.admin_navigation import page_label
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.reports.leader_coverage import leader_status
 from parishkit.stewardship.reports.ministries import outcome_label
@@ -231,6 +232,9 @@ def _worklist(rows, *, query=None, principal=STAFF, mutable=True, marks=None):
         "can_tick": "staff" in principal.roles,
         "export_fields": query.form_values(),
         "notice": None,
+        # The page's name as its viewer knows it: Review in bulk for a
+        # leader (#2393), as the view gives it.
+        "page_name": page_label("ministry_report", principal),
     }
 
 
@@ -334,6 +338,7 @@ def components(context, admin):
         # Staff or an Administrator: the help explains the Removed badge
         # (#1135).
         campaign_marks=True,
+        page_name=page_label("ministry_report", STAFF),
         campaign_id=campaign,
         mutable=True,
         item=None,
@@ -867,7 +872,12 @@ def components(context, admin):
                 "stewardship/ministry-followup-error.html",
                 context
                 | {"admin_chrome": admin}
-                | dict(campaign_id=campaign, request_id=request, status=status),
+                | dict(
+                    campaign_id=campaign,
+                    request_id=request,
+                    status=status,
+                    page_name=page_label("ministry_report", STAFF),
+                ),
             ),
         )
     return result

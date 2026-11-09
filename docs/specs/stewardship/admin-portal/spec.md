@@ -1473,7 +1473,7 @@ these groups, each listing the entries the viewer's role may open:
 | Review work | My review work | `/admin/` | Staff, Ministry leader (not Administrators) | Never |
 | Review work | Review one at a time | `/admin/reports/review/` | Administrator, Staff, Ministry leader (a stream they may open) | Every stream is unavailable |
 | Review work | Census changes | `/admin/reports/census/` | Administrator, Staff | The campaign does not include the census |
-| Review work | Ministry requests | `/admin/reports/ministries/` | Administrator, Staff, Ministry leader | The campaign has no Ministry module |
+| Review work | Ministry requests (a Ministry leader: Review in bulk) | `/admin/reports/ministries/` | Administrator, Staff, Ministry leader | The campaign has no Ministry module |
 | Review work | Pledges | `/admin/reports/financial/pledges/` | Administrator, Staff | The campaign has no financial module |
 | Review work | Additional information | `/admin/reports/information/` | Administrator, Staff | No current campaign, or ParishSoft data has not been downloaded yet |
 | Review work | Limitations | `/admin/reports/limitations/` | Administrator, Staff | The campaign has no Ministry module |
@@ -1512,6 +1512,14 @@ Notes on the groups:
   finding 4; the Administrator, #2391): their landing sits with the worklists it counts. Their trail's
   root still names it, as for Home. Administrators keep Home at the top and
   have no My review work entry.
+- A Ministry leader who is neither Staff nor an Administrator knows
+  Ministry requests as **Review in bulk** (the Administrator,
+  [#2393](https://github.com/epiphany40223/parishkit/issues/2393)): with
+  one stream, their Review work group reads My review work, Review one at
+  a time, Review in bulk, and the last pairs with the one before it.
+  Staff and Administrators, who see five streams, keep Ministry requests,
+  which says which stream it is. The name follows the viewer everywhere
+  the page is named ([page names and placement](#page-names-and-placement)).
 - **Review work** comes before **Reports and queries** (the Administrator,
   R39 findings 1 and 4, 2026-10-19): one group holds the
   [review pipeline](../review-pipeline/spec.md)'s worklists, the daily work
@@ -1940,7 +1948,9 @@ row above everything else and link the page that resolves them.
 Every Admin page has one name
 ([navigation rule 4](../ui-conventions/spec.md#navigation-rules)). The menu entry, the breadcrumb, the page
 heading, the browser title and every link or message that names the page use
-it; link text may add a verb ("Return to Pages and emails"). A page that shows
+it; link text may add a verb ("Return to Pages and emails"). Where the name
+depends on the viewer (My review work, a Ministry leader's Review in bulk),
+each of those uses the viewer's name. A page that shows
 one object (an email, an integration, an export, an error) is named after that
 object in both its heading and its breadcrumb; those pages are the listed
 exceptions in the table ("Object-named"). Setup wizard headings use the
@@ -2020,7 +2030,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `information_queue` | Additional information | Menu: Additional information | Administrator, Staff | Additional information and follow-up | `/admin/reports/information/` | (same) |  |
 | `information_item` | Information request | Additional information | Administrator, Staff | Additional information and follow-up (one request); Information item | `/admin/reports/information/<item>/` | (same) | Its link back opens the worklist. |
 | `ministry_reports` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry reports | `/admin/ministry-reports/` | (retired; 404) | Replaced by Ministry requests, which shows the "no campaign" page when there is nothing for the viewer to report. |
-| `ministry_report` | Ministry requests | Menu: Ministry requests | Administrator, Staff, Ministry leader | Ministry report; Ministry follow-up | `/admin/reports/ministries/` | (same) | One page with the follow-up queue since [#1133](https://github.com/epiphany40223/parishkit/issues/1133): totals, By Ministry, the queue, Export these requests and the follow-up packet ([Ministry change summary](../reports/spec.md#ministry-change-summary)). No assignee column, filter or bulk assignment (#552). Its Export these requests download (`follow-up/exports/`, #1157) and bulk outcome (`follow-up/bulk/`, #1131) are non-page actions. |
+| `ministry_report` | Ministry requests | Menu: Ministry requests | Administrator, Staff, Ministry leader | Ministry report; Ministry follow-up | `/admin/reports/ministries/` | (same) | For a Ministry leader who is neither Staff nor an Administrator its name is Review in bulk ([#2393](https://github.com/epiphany40223/parishkit/issues/2393); [menu groups](#menu-groups)): the menu entry, the heading, the browser title, the trail, every "Return to" it (from a Follow-up request, its error page and an export's status page), the empty-campaign page, the greyed-entry page and My review work's Ministry panel. The registry's `LEADER_LABELS` holds the name and `admin_navigation.page_label` applies it, using the leader test the page uses (`ministry_worklist.is_leader`). A leader's export of it is "Review in bulk export", named after the page as every report's export is. The review wizard's stream keeps the name Ministry requests: it names the stream, not this page. One page with the follow-up queue since [#1133](https://github.com/epiphany40223/parishkit/issues/1133): totals, By Ministry, the queue, Export these requests and the follow-up packet ([Ministry change summary](../reports/spec.md#ministry-change-summary)). No assignee column, filter or bulk assignment (#552). Its Export these requests download (`follow-up/exports/`, #1157) and bulk outcome (`follow-up/bulk/`, #1131) are non-page actions. |
 | `ministry_joiners` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry requests — Prospective joiners; Joining; Members joining | `/admin/reports/ministries/joining/` | (retired; 404) | Retired with no redirect ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)): each request's contact details are on its Follow-up request page, and its export is Ministry requests' Export these requests. |
 | `ministry_leavers` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry requests — Requested leavers; Leaving; Members leaving | `/admin/reports/ministries/leaving/` | (retired; 404) | Retired with no redirect (#1157), as Members joining. |
 | `ministry_followup` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry follow-up; Follow-up | `/admin/reports/ministries/follow-up/` | (retired; 404) | Retired with no redirect ([#1133](https://github.com/epiphany40223/parishkit/issues/1133)): the queue is now Ministry requests, at `/admin/reports/ministries/`. |

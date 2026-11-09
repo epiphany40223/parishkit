@@ -53,7 +53,7 @@ from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.pipeline import TERMS, Stage, Stream
 from parishkit.stewardship.web.review_worklist import NOT_SEEN
 
-from .admin_navigation import MENU, PAGES
+from .admin_navigation import MENU
 from .policy import Capability, allows
 
 # Streams whose page reads ``?stage=<value>`` and filters by it, so each
@@ -450,8 +450,9 @@ class Panel:
 class StreamView:
     """How one stream is shown: its menu page, its words and its stages.
 
-    Its title is its menu entry's label (``title``), so a panel is named as
-    the Review work menu names its page (Administrator, #2108).
+    Its panel is named by the viewer's menu entry for ``entry``
+    (``panels``), so a panel is named as the Review work menu names its
+    page (Administrator, #2108).
 
     ``stages`` are the cards' Stage choice values, in order (Not seen in
     ParishSoft is ``NOT_SEEN``, a flag counted beside its stage). ``menu``
@@ -468,11 +469,6 @@ class StreamView:
     stages: tuple
     menu: frozenset = frozenset()
     own: frozenset = frozenset()
-
-    @property
-    def title(self):
-        """The panel's heading: the menu entry's own label."""
-        return PAGES[self.entry].label
 
 
 def _values(*stages):
@@ -616,7 +612,9 @@ def panels(chrome, review):
         else:
             continue
         if cards:
-            shown.append(Panel(view.stream.value, view.title, tuple(cards)))
+            # Named as the viewer's menu names the page (#2108), a Ministry
+            # leader's Review in bulk included (#2393).
+            shown.append(Panel(view.stream.value, item.label, tuple(cards)))
     return shown
 
 
