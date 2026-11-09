@@ -6156,7 +6156,10 @@ link's private email-link part is not included) stays as plain help with
 the export, in its row's toggletip
 ([export actions](#downloaded-files)). The privacy line inside each downloaded file stays: it travels
 with the file to readers who never saw the page
-([file design](../reports/spec.md#file-design)). **Why.** The banner was a
+([file design](../reports/spec.md#file-design)). The one exception is a
+Ministry leader's Ministry requests file, which leaves it out by
+Administrator decision
+([a Ministry leader's downloads](../reports/spec.md#a-ministry-leaders-downloads)). **Why.** The banner was a
 reminder that gated nothing; the protections are role checks, `no-store`,
 download windows and audit records.
 
@@ -6270,7 +6273,9 @@ its own format menu or buttons. **Precedent.**
 in its rows and in its frame (Downloaded at, Captured at, Requested at,
 Source as of), is in the browser's zone, which the export row posts in a
 hidden `browser_timezone` field (`data-browser-zone`, filled by `ui-v1.js`),
-and the file names that zone. The Response dashboard's row posts the page's
+and the file names that zone (except a Ministry leader's Ministry requests
+file, whose XLSX leaves it out and whose PDF shows only the zone's
+abbreviation; [a Ministry leader's downloads](../reports/spec.md#a-ministry-leaders-downloads)). The Response dashboard's row posts the page's
 own `query.timezone`, the zone the page was drawn in, which `report-v1.js`
 fills with the browser's (the
 [participation graph](../reports/spec.md#participation-graph)). The reader

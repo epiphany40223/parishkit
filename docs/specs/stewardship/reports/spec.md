@@ -139,7 +139,8 @@ PDF pages share one frame (`reports/pdf_design.py`): the parish and
 campaign above the report title, and the capture time with its display time
 zone on the right. Directory PDFs add
 short count and filter lines under the title. The footer holds the privacy line, any Testing-mode note and "Page N
-of M". Text is set in proportional DejaVu Sans with a DejaVu Serif title,
+of M". ([A Ministry leader's downloads](#a-ministry-leaders-downloads)
+leave out the privacy line and the display time zone's name.) Text is set in proportional DejaVu Sans with a DejaVu Serif title,
 fonts matplotlib already bundles. Wrapping measures the fonts' glyph widths
 and never drops a character of a value it draws, and characters the fonts
 cannot draw become visible escapes. Inside the frame, the Family-code
@@ -2849,6 +2850,44 @@ differences (Administrator decision, 2026-11-08,
 
 Staff and Administrators keep the full help and By Ministry. Rejected:
 shortening the help for everyone now, since Staff use its detail.
+
+### A Ministry leader's downloads
+
+A Ministry leader's download of Ministry requests (Export these requests on
+Review in bulk, and My review work's download of every request) holds only
+what a leader needs (Administrator decision, 2026-11-09,
+[#2406](https://github.com/epiphany40223/parishkit/issues/2406)). Its rows
+and columns are the ones
+[follow-up workflows](../admin-portal/spec.md#follow-up-workflows) lists,
+but its report details leave out the display time zone, the age reference
+date, the matching results count, the filters and sort, the privacy line,
+the contacts and addresses notes and the note on escaped characters
+(Text representation). What remains is the report, parish, campaign,
+ParishSoft data time and request time, with Request history when the file
+holds earlier versions. So the XLSX's Report information sheet holds only
+those, and the PDF draws no count tile, no privacy line in its footer and
+no display time zone name beside its request time. Its times keep the
+zone's abbreviation (such as CDT), the CSV's times keep their offset, and
+the XLSX's times are unlabeled. The CSV holds no report details for
+anyone ([file design](#file-design)), so a leader's CSV is the same as
+before. The list of details is one constant,
+`ministry_followup_exports.LEADER_LEAVES_OUT`, applied to the leader's
+document, not a check in each writer.
+
+**Every stage.** My review work's download
+([#2405](https://github.com/epiphany40223/parishkit/issues/2405)) is the
+same export with the Stage filter set to Every stage (`stage=all`): every
+request of the Ministries the leader leads, whatever its stage, except
+History's earlier versions, which Every stage leaves out on the page too.
+It reads through the same scoped selection as Review in bulk, so a leader
+gets nothing the page would not show. Each row carries the request's Stage
+(To review, Accepted, Ignored, Confirmed) and its Decision, the columns
+every reader's file already had.
+
+Staff and Administrators' files are unchanged: they keep every detail to
+audit a file. A reader who is also Staff or an Administrator gets their
+full file, whatever Ministries they lead. Rejected: leaving the details out
+for every role.
 
 ### Ministry request outcome labels
 
