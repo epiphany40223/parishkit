@@ -14,6 +14,10 @@ already installed, so #1157 needed no schema change:
   stays for this), for a leave request's email and phones, which the report
   gives only for joins.
 
+Ministry requests' Member cell and Review one at a time's Ministry pages
+show only each request's email and phones (#2398), so they read just the
+packet projection, once for all their rows (``row_contacts``).
+
 Each derives the reader's scope in SQL from the signed-in user, applies the
 leader contact rule there, and is
 cross-checked against Python's view of the same user, so neither can show
@@ -118,6 +122,44 @@ def packet_contacts(campaign_id, principal, ministries):
             by_id[row["id"]] = contacts
             by_member[(section["duid"], _member_key(row))] = contacts
     return by_id, by_member
+
+
+def row_contacts(campaign_id, principal, rows):
+    """The email and phones of each follow-up row in ``rows``, by request id.
+
+    Ministry requests' Member cell and Review one at a time's Ministry pages
+    show them (#2398). ``rows`` are follow-up selection rows the reader
+    already sees (``id``, ``ministry_duid``, any ``reviewed_ministry_duid``,
+    ``member_duid`` and, for a Member the Family added, ``proposed_id``).
+    One read of the packet projection for their current Ministries
+    (``packet_contacts``), whatever their number or kind, rather than
+    ``request_contacts``' report read per Ministry and kind: the projection
+    applies the same leader contact rule (module note) to joins and leaves
+    alike, and these places show only email and phones. A row takes its own
+    request's values, else, for an earlier version, its Member's under the
+    same Ministry, as a leave's request page does. Each value holds
+    ``email_visibility``, ``emails``, ``phone_visibility`` and ``phones``;
+    a row with none (a Ministry the reader does not lead in force, a Member
+    no longer in ParishSoft) is left out. No read without rows.
+    """
+    if not rows:
+        return {}
+    by_id, by_member = packet_contacts(
+        campaign_id, principal, {int(current_ministry(row)) for row in rows}
+    )
+    found = {}
+    for row in rows:
+        key = (
+            ("member", row["member_duid"])
+            if row.get("member_duid")
+            else ("proposed", row.get("proposed_id"))
+        )
+        contacts = by_id.get(str(row["id"])) or by_member.get(
+            (int(current_ministry(row)), key)
+        )
+        if contacts:
+            found[str(row["id"])] = contacts
+    return found
 
 
 def request_contacts(campaign_id, principal, requests):

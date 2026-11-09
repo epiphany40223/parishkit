@@ -6,6 +6,7 @@ import pytest
 from django.urls import reverse
 
 from .followup_components import (
+    CONTACT_LINES,
     COUNTED,
     GATED_REQUESTS,
     HUB,
@@ -47,6 +48,90 @@ def test_ministry_requests_fit_the_window_and_pass_axe(
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         page.evaluate(axe_source)
         assert page.evaluate(AXE) == [], path
+
+
+# The first row's Member cell (#2398): the cell's box, the DUID line's and
+# each contact line's, its links, and how many phone numbers (or their
+# extensions, which may go to a line of their own) wrap.
+MEMBER_CELL = """() => {
+  const cell = document.querySelector('#table tbody tr th[scope=row]');
+  const box = (node) => node.getBoundingClientRect();
+  const duid = cell.querySelector('.cell-detail');
+  const block = cell.querySelector('.member-contact');
+  const lines = [...cell.querySelectorAll('.contact-line')];
+  return {
+    cell: box(cell).toJSON(), duid: box(duid).toJSON(),
+    block: block && box(block).width,
+    lines: lines.map((line) => ({text: line.textContent, ...box(line).toJSON()})),
+    links: [...cell.querySelectorAll('.member-contact a')].map((link) =>
+      [link.textContent, link.getAttribute('href')]),
+    clamped: cell.querySelector('.name-clamp').textContent,
+    wrapped: [...cell.querySelectorAll('a[href^="tel:"] .nowrap')].filter((link) =>
+      new Set([...link.getClientRects()].map((rect) => Math.round(rect.top))).size > 1)
+      .length,
+    box: (() => {
+      const scroll = document.querySelector('.worklist-table .table-scroll');
+      return scroll.scrollWidth <= scroll.clientWidth + 1;
+    })(),
+  };
+}"""
+
+
+@pytest.mark.parametrize("width", [320, 390, 1280, 1366])
+def test_the_member_cell_lists_the_members_contacts(page, component_origin, width):
+    """Under the Member's name and DUID, in the same cell (#2398): Staff see
+    the email as a mail link and the phones, mobile first, each labelled
+    and a call link on one line; a leader sees the email Not published.
+    The lines stay inside the cell, no wider than 12.5rem (the width they
+    take where a laptop's table has room, so a typical line fits on one
+    line), the name's clamp holds the name alone, and nothing scrolls
+    sideways, neither the page nor the table's box."""
+    page.set_viewport_size({"width": width, "height": 900})
+    for path, links in (
+        (
+            CONTACT_LINES,
+            [
+                [
+                    "maximilian.bartholomew-fitzgerald@example.org",
+                    "mailto:maximilian.bartholomew-fitzgerald@example.org",
+                ],
+                ["+1 (502) 555-0123", "tel:+15025550123"],
+                ["+1 (502) 555-0100", "tel:+15025550100"],
+                ["+1 (502) 555-0199 ext. 12", "tel:+15025550199;ext=12"],
+            ],
+        ),
+        (
+            LEADER,
+            [
+                ["+1 (502) 555-0123", "tel:+15025550123"],
+                ["+1 (502) 555-0100", "tel:+15025550100"],
+                ["+1 (502) 555-0199 ext. 12", "tel:+15025550199;ext=12"],
+            ],
+        ),
+    ):
+        page.goto(component_origin + path)
+        page.evaluate("document.fonts.ready")
+        cell = page.evaluate(MEMBER_CELL)
+        assert cell["links"] == links, (path, width)
+        texts = [line["text"] for line in cell["lines"]]
+        assert texts[1:] == [
+            "Mobile: +1 (502) 555-0123",
+            "Home: +1 (502) 555-0100",
+            "Work: +1 (502) 555-0199 ext. 12",
+        ], (path, width)
+        assert texts[0] == (
+            "Email: Not published"
+            if path == LEADER
+            else "Email: maximilian.bartholomew-fitzgerald@example.org"
+        )
+        assert cell["clamped"] == "Example <Member>"
+        assert cell["wrapped"] == 0, (path, width)
+        assert cell["block"] <= 12.5 * 16 + 0.5 or width < 900, (path, width, cell)
+        assert cell["lines"][0]["top"] >= cell["duid"]["bottom"] - 0.5
+        for line in cell["lines"]:
+            assert line["right"] <= cell["cell"]["right"] + 0.5, (path, width, line)
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        assert cell["box"], (path, width)
 
 
 def test_by_ministry_marks_for_staff_and_none_for_a_leader(page, component_origin):
@@ -242,13 +327,16 @@ def test_member_opens_the_hub_and_ministry_the_request(
 ):
     """A Member's name opens the Family hub for Staff and plain text for a
     Ministry leader; the Ministry opens the request's page for both (R38
-    finding 13)."""
+    finding 13). The cell's other links are the Member's mail and call
+    links (#2398)."""
     page.goto(component_origin + path)
     first = page.locator("#table tbody tr").first
-    name = first.locator("th[scope=row]")
+    name = first.locator("th[scope=row]").locator(
+        "a:not([href^='mailto:']):not([href^='tel:'])"
+    )
     if hub:
-        assert name.locator("a").get_attribute("href") == HUB
+        assert name.get_attribute("href") == HUB
     else:
-        assert name.locator("a").count() == 0
+        assert name.count() == 0
     ministry = first.locator("td a[href*='/follow-up/']")
     assert ministry.count() == 1

@@ -136,11 +136,13 @@ def _principal():
     return admission
 
 
-def _audit(actor, campaign_id, outcome, ministry):
-    """The page's view event, with the request's Ministry on a request page."""
+def _audit(actor, campaign_id, outcome, ministry, *, ministries=None):
+    """The page's view event, with the request's Ministry on a request page
+    and, on the queue's completion, the Ministries whose Members' contacts
+    it showed (``ministries``, #2398)."""
     from .reports.ministry_followup_views import _audit as audit
 
-    audit(actor, campaign_id, outcome, ministry)
+    audit(actor, campaign_id, outcome, ministry, ministries=ministries)
 
 
 def _parsed(caller, service, actor, values):
@@ -207,8 +209,13 @@ def read_followup_list(caller, service, filters):
         return model, None
 
     def audit(actor, campaign_id, outcome, values):
-        """The queue page's view event."""
-        _audit(actor, campaign_id, outcome, None)
+        """The queue page's view event. Its completion names the Ministries
+        whose Members' contacts it showed, as the page's does (#2398): none,
+        since the command prints no email or phone."""
+        from .audit.schemas import Outcome
+
+        shown = None if outcome == Outcome.STARTED else []
+        _audit(actor, campaign_id, outcome, None, ministries=shown)
 
     return _report(
         caller,

@@ -28,6 +28,10 @@ pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "webkit"], indirect=True
 )
 PAGES = (CENSUS, INFORMATION, PLEDGES, REQUESTS, ENTRY)
+# The pages whose first row holds a typical Member's contact lines (one
+# email, two phones, #2398) keep this much room under the window's edge, so
+# a font or engine update that adds a pixel or two does not push it out.
+CONTACT_MARGIN = {REQUESTS: 4, ENTRY: 4}
 HINT = "#table-filters > [data-complete-hint]"
 NOTICE = "#worklist-notice"
 # The form's own reason while a filter is refused, and the hint emptied.
@@ -96,12 +100,15 @@ def test_the_first_row_ends_inside_a_laptop_window(page, component_origin):
     """At 1366×768 each worklist's whole first row is inside the window
     before any scroll, and its bulk bar keeps its buttons, Select all and
     the selected count on one line; Pledges' four decision toggles sit two
-    to a line, which leaves its Family's answer the room it needs."""
+    to a line, which leaves its Family's answer the room it needs. Ministry
+    requests' first row, with a typical Member's contact lines, ends with
+    room to spare (``CONTACT_MARGIN``)."""
     page.set_viewport_size({"width": 1366, "height": 768})
     for path in PAGES:
         page.goto(component_origin + path)
         page.evaluate("document.fonts.ready")
-        assert first_row_bottom(page) <= 768, (path, first_row_bottom(page))
+        limit = 768 - CONTACT_MARGIN.get(path, 0)
+        assert first_row_bottom(page) <= limit, (path, first_row_bottom(page))
         centres = page.evaluate(BAR)
         assert len(centres) >= 3, path
         assert max(centres) - min(centres) <= 2, (path, centres)

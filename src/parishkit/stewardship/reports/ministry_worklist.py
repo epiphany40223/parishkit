@@ -78,7 +78,7 @@ from parishkit.stewardship.workflows.roster import eligible, mark, roster_marks
 
 from .information import parse_page
 from .ministries import NOT_IN_CAMPAIGN, outcome_label
-from .ministry_contacts import current_ministry
+from .ministry_contacts import current_ministry, row_contacts
 from .ministry_followup import (
     NOT_IN_SOURCE,
     PAGE_SIZE,
@@ -116,7 +116,9 @@ MEMBERS = {"current": "In ParishSoft", "gone": "No longer in ParishSoft"}
 PREFIX = "requests"
 # The Member's name opens the Family hub for the viewers who may open it
 # (plain for a Ministry leader), and the Ministry opens the request's own
-# page for every viewer (an Administrator decision, R38 finding 13).
+# page for every viewer (an Administrator decision, R38 finding 13). The
+# Member's email and phones follow the DUID in the same cell, for every
+# role, so the table gets no wider (Administrator decision, #2398).
 COLUMNS = (
     Column(
         "member_cell",
@@ -125,6 +127,7 @@ COLUMNS = (
         family=True,
         detail="duid_cell",
         detail_heading="Member DUID",
+        contact=True,
     ),
     Column("ministry_cell", "Ministry", sort="ministry", link="item_url"),
     Column("contact_cell", "Last contact", dated=True),
@@ -892,7 +895,16 @@ def _ministry_choices(result, row=None):
 
 
 def decorate(
-    rows, result, principal, *, token, every, decisions=None, asked=None, families=None
+    rows,
+    result,
+    principal,
+    *,
+    token,
+    every,
+    decisions=None,
+    asked=None,
+    families=None,
+    contacts=None,
 ):
     """Give each shown row what the worklist component reads.
 
@@ -901,7 +913,9 @@ def decorate(
     ``asked`` are the rows' last decisions and Family asked again times,
     read here unless given (a detached page), as are ``families``, the
     shown requests' Family record ids (read only for a viewer who may open
-    the Family hub).
+    the Family hub). ``contacts`` are the shown rows' Member email and
+    phones by request id (``row_contacts``, #2398), or None where the page
+    shows none.
     """
     leader = is_leader(principal)
     # Only a viewer who may open the Family hub needs the Families.
@@ -910,6 +924,7 @@ def decorate(
         families = _family_ids(rows) if hub else {}
     decisions = _last_decisions(rows) if decisions is None else decisions
     asked = _asked_again(rows) if asked is None else asked
+    contacts = contacts or {}
     replacements = {}
     for other in every:
         # A request in History is no longer in an ignored one's place.
@@ -936,6 +951,11 @@ def decorate(
                 # A roster row keeps its Entered by hand (``_withhold``).
                 "leads": reader_leads and (entry or not row["source_mark"]),
                 "member_cell": _member_cell(row),
+                # The Member's email and phones, under the name (#2398),
+                # and the Ministry they were read under, for the page's
+                # audit (``contact_ministries``).
+                "contact": contacts.get(key),
+                "contact_ministry": int(current) if key in contacts else None,
                 "family_id": families.get(key),
                 "item_url": _item_url(row, token),
                 "duid_cell": str(row["member_duid"])
@@ -980,6 +1000,19 @@ def decorate(
             }
         )
     return decorated
+
+
+def contact_ministries(rows):
+    """The sorted Ministry DUIDs whose Members' contacts ``rows`` show.
+
+    ``rows`` are the decorated rows a page draws. Ministry requests' view
+    audit records them, as a request page records its Ministry and Export
+    these requests its file's (#2398), so the Admin log's Ministry filter
+    finds who saw a Ministry's Members' email and phones; never the values.
+    """
+    return sorted(
+        {row["contact_ministry"] for row in rows if row.get("contact_ministry")}
+    )
 
 
 def _withhold(row, actionable):
@@ -1030,6 +1063,7 @@ def worklist_context(
     decisions=None,
     asked=None,
     families=None,
+    contacts=None,
     prefix=PREFIX,
     live=None,
 ):
@@ -1039,10 +1073,15 @@ def worklist_context(
     page (not ``mutable``), every row is drawn with no actions and the
     selection bar and Add are gone; the page's notice says why.
     ``decisions`` and ``asked`` are given only to a detached page
-    (``decorate``). ``prefix`` keeps the element ids apart where another
-    page draws these rows (the Family hub's Member tabs, #2064). ``live`` is
-    a review region's drawn items (#2174): only those are shown, still
-    decorated against every row, as the page drew them.
+    (``decorate``). ``contacts`` is True on a page that shows the Members'
+    email and phones (Ministry requests, Review one at a time), which reads
+    them for the shown rows (``row_contacts``, one read, #2398); a detached
+    page gives them by request id; None (the Family hub's Member tabs,
+    which draw no Member cell) reads none. ``prefix`` keeps the element ids
+    apart where another page draws these rows (the Family hub's Member
+    tabs, #2064). ``live`` is a review region's drawn items (#2174): only
+    those are shown, still decorated against every row, as the page drew
+    them.
     """
     leader = is_leader(principal)
     rows = result["rows"]
@@ -1053,6 +1092,8 @@ def worklist_context(
     start = (number - 1) * query.page_size
     page_rows = shown[start : start + query.page_size]
     roles = reader_roles(principal) if mutable else frozenset()
+    if contacts is True:
+        contacts = row_contacts(campaign_id, principal, page_rows)
     decorated = decorate(
         page_rows,
         result,
@@ -1062,6 +1103,7 @@ def worklist_context(
         decisions=decisions,
         asked=asked,
         families=families,
+        contacts=contacts,
     )
     table = report_table(
         decorated,

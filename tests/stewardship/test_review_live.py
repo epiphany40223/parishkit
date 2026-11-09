@@ -302,6 +302,31 @@ def test_the_seen_token_follows_what_the_reader_sees_not_what_is_offered():
         assert review_live.item_token(row) != review_live.item_token(first), name
 
 
+def test_a_members_contact_lines_are_compared():
+    """A Ministry request's Member contact lines (#2398) are what the
+    reader sees: a ParishSoft refresh that changes only a Member's email,
+    or only whether it is published, changes both tokens, so the row is
+    redrawn with the "Changed by someone else" tag."""
+    shared = {
+        "email_visibility": "available",
+        "emails": ["pat@example.org"],
+        "phone_visibility": "available",
+        "phones": {"mobile": "+15025550123"},
+    }
+    first = dict(decorated()[0], contact=shared)
+    for contact in (
+        shared | {"emails": ["pat.new@example.org"]},
+        shared | {"email_visibility": "not_published", "emails": []},
+        None,
+    ):
+        row = dict(first, contact=contact)
+        assert review_live.seen_token(row) != review_live.seen_token(first), contact
+        assert review_live.item_token(row) != review_live.item_token(first), contact
+    assert review_live.item_token(dict(first, contact=dict(shared))) == (
+        review_live.item_token(first)
+    )
+
+
 def test_an_identity_cells_link_is_not_compared():
     """An item page's link carries the remembered view (``queue``), which a
     check may hold differently while the cell shows the same name."""

@@ -50,7 +50,9 @@ BROKEN = """(selectors) => {
   for (const cell of document.querySelectorAll(cells)) {
     const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      if (node.parentElement.closest('.visually-hidden')) continue;
+      // An email in a Member's contact lines (#2398) is one long word that
+      // may break anywhere rather than widen the Member column.
+      if (node.parentElement.closest('.visually-hidden, .contact-email')) continue;
       for (const match of node.textContent.matchAll(/\\S+/g)) {
         const range = document.createRange();
         range.setStart(node, match.index);

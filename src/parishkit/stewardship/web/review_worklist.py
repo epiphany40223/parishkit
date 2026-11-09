@@ -624,6 +624,9 @@ class Column:
     and Last decision cell as a labelled line instead of a column of its
     own (a Ministry request's Last contact). Both keep the review work
     tables narrow (UX conventions, "Review work tables", #2124).
+    ``contact`` draws the row's ``contact`` (a Member's email and phones,
+    ``components/member-contact.html``) on the lines after the name and its
+    detail, in the same cell, so it takes no column (#2398).
     """
 
     key: str
@@ -636,6 +639,7 @@ class Column:
     detail_heading: str = ""
     detail_sort: str = ""
     dated: bool = False
+    contact: bool = False
 
 
 HELD = "Earlier: {decision}, not in force."

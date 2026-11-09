@@ -2470,6 +2470,31 @@ td > .live-changed:not([hidden]) + br { display: none; }
 .review-table .value-label { color: var(--muted); }
 .review-table .cell-detail { font-size: .875rem; font-variant-numeric: tabular-nums; }
 .review-table .value-label { display: block; font-size: .8125rem; line-height: 1.3; margin-block-start: .25rem; }
+/* A Ministry request's Member contact lines (#2398), under the name and
+   its DUID in the Member cell: each email and phone on its own small line.
+   An email, one long word, may break anywhere rather than widen the
+   column; a phone number stays on one line (its kind wraps above it, and
+   an extension under it, where the column is narrow), so the narrowest
+   column only grows to the number's width, which the small type keeps
+   short enough for Ministry requests to keep its table at a 1280 px window
+   beside the Admin menu. Where the table has room (a box of 62rem, a
+   1366 px laptop window), the lines take 12.5rem, enough for a typical
+   "Mobile: +1 (502) 555-0123" with its kind on one line, and the name
+   above them may use that width too, the column being that wide already:
+   wrapped at the name's 10rem, each would take another line and push a
+   laptop's first row out of its window (#1950). The lines, and the
+   name and DUID above them in that cell, are set tighter than other
+   text: that is the room that keeps a typical Member's first row (one
+   email, which wraps once with its label, and two phones) well inside a
+   laptop's window in every engine. Each line keeps its visible kind, so
+   its link stays inline in text (axe target-size). */
+.review-table .member-contact { display: block; max-width: 12.5rem; font-size: .8125rem; line-height: 1.15; font-weight: 400; }
+.review-table th:has(> .member-contact) { line-height: 1.3; }
+.review-table .member-contact .contact-email { overflow-wrap: anywhere; }
+@container review-worklist (width >= 62rem) {
+  .review-table .member-contact { min-width: 12.5rem; }
+  .review-table th:has(> .member-contact) .cell-clamp.name-clamp { max-width: 12.5rem; }
+}
 /* The two sort controls of a stacked heading keep 24px targets
    (WCAG 2.2 target size). */
 .review-table .stacked-heading .sort-link { display: inline-flex; align-items: center; min-height: 24px; }
@@ -2516,6 +2541,7 @@ td > .live-changed:not([hidden]) + br { display: none; }
   .review-table > tbody > tr > [data-label]::before { content: attr(data-label); display: block; color: var(--muted); font-size: .8125rem; font-weight: 400; line-height: 1.3; }
   .review-table .review-actions { width: calc(2 * var(--button-min-height) + .5rem); }
   .review-table .cell-clamp.name-clamp { max-width: 100%; }
+  .review-table .member-contact { max-width: 100%; }
 }
 /* Ministry requests' By Ministry counts (#1133, #1653): a closed
    disclosure whose control sits on the heading's line after About this

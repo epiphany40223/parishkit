@@ -51,14 +51,16 @@ TOKEN_CHARS = 6
 _PIECE = re.compile(r"[A-Za-z0-9_-]+")
 # What a review row draws (``review_worklist._decorate`` and the stream
 # pages' own additions), so a change to any of it changes the token. SEEN is
-# what the reader sees: its identity cells (a Family's or Member's name),
-# values, stage and last decision. OFFERED is what the row offers: its
+# what the reader sees: its identity cells (a Family's or Member's name, and
+# a Ministry request's Member contact lines, #2398), values, stage and last
+# decision. OFFERED is what the row offers: its
 # version (which its forms post) and its actions, whose icons are compared
 # less each one's request key, which every draw makes anew. A row redrawn
 # because only OFFERED changed (the campaign was held, say) shows no
 # "Changed by someone else" tag: ``seen_token`` tells the two apart.
 SEEN = (
     "identity",
+    "contact",
     "dated",
     "family_name",
     "placement",

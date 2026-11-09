@@ -171,12 +171,53 @@ FAMILY = UUID(int=81)
 HUB = f"/admin/reports/families/{FAMILY}/"
 
 
-def _worklist(rows, *, query=None, principal=STAFF, mutable=True, marks=None):
+# Each sample request's Member email and phones (#2398), as row_contacts
+# gives them. CONTACTS is the widest a Member's lines get: a long email and
+# three phones, one with an extension, on the Member cell's own page
+# (CONTACT_LINES) and, with the email unpublished, on a leader's (LEADER);
+# with a Member the Family added and the mobile the Family entered.
+# TYPICAL, one email and two phones, is what Ministry requests' other pages
+# show, as most Members have.
+CONTACT_LINES = "/ministry-requests-contacts"
+CONTACTS = {
+    str(REQUEST): {
+        "email_visibility": "available",
+        "emails": ["maximilian.bartholomew-fitzgerald@example.org"],
+        "phone_visibility": "available",
+        "phones": {
+            "home": "+15025550100",
+            "mobile": "+15025550123",
+            "work": "502-555-0199 ext. 12",
+        },
+    },
+    str(UUID(int=100)): {
+        "email_visibility": "available",
+        "emails": ["proposed@example.org"],
+        "phone_visibility": "available",
+        "phones": {"mobile": {"display": "5025551212", "normalized": "+15025551212"}},
+    },
+}
+LEADER_CONTACTS = {
+    str(REQUEST): CONTACTS[str(REQUEST)]
+    | {"email_visibility": "not_published", "emails": []},
+}
+TYPICAL = {
+    "email_visibility": "available",
+    "emails": ["pat.sample@example.org"],
+    "phone_visibility": "available",
+    "phones": {"home": "+15025550100", "mobile": "+15025550123"},
+}
+
+
+def _worklist(
+    rows, *, query=None, principal=STAFF, mutable=True, marks=None, contacts=None
+):
     """The worklist page's context for detached selection ``rows`` (#1684).
 
     The real ``ministry_worklist`` places and decorates them, with no last
     decision and no Family asked again (no database); ``marks`` are the
-    roster ticks, by request id.
+    roster ticks, by request id; ``contacts`` the Members' email and phones
+    the Member cell lists (#2398), by request id.
     """
     query = query or WorklistQuery()
     shaped = []
@@ -216,6 +257,7 @@ def _worklist(rows, *, query=None, principal=STAFF, mutable=True, marks=None):
         asked={},
         # Every shown request's Family, for the Member name's hub link.
         families={str(row["id"]): FAMILY for row in shaped},
+        contacts=contacts,
     ) | {
         # The page's viewer, whose role decides the Family hub link.
         "request": SimpleNamespace(principal=principal),
@@ -584,12 +626,19 @@ def components(context, admin):
     counted = WorklistQuery(ministry="9", kind="join", stage="all")
     sorted_query = WorklistQuery(sort="ministry")
     nothing_query = WorklistQuery(search="No such Member")
-    requests_page = values | _worklist([row, proposed])
+    requests_page = values | _worklist(
+        [row, proposed],
+        contacts={
+            str(REQUEST): TYPICAL,
+            str(UUID(int=100)): CONTACTS[str(UUID(int=100))],
+        },
+    )
     pages = {
         REQUESTS: requests_page,
         # The "51 join requests" count's answer: that Ministry's join
         # requests at every stage.
         COUNTED: requests_page | _worklist([row], query=counted),
+        CONTACT_LINES: requests_page | _worklist([row, proposed], contacts=CONTACTS),
         SORTED: requests_page | _worklist([proposed, row], query=sorted_query),
         SEARCHED: requests_page | _worklist([row], query=query),
         NOTHING: requests_page | _worklist([], query=nothing_query),
@@ -616,7 +665,12 @@ def components(context, admin):
                 (ADDED_IGNORED, dict(outcome="declined", version=4)),
             )
         },
-        ENTRY: requests_page | _worklist(entry_rows, query=entry_query),
+        ENTRY: requests_page
+        | _worklist(
+            entry_rows,
+            query=entry_query,
+            contacts=dict.fromkeys(ENTRY_IDS, TYPICAL),
+        ),
         ENTRY_MARKED: requests_page
         | _worklist(entry_rows, query=entry_query, marks={ENTRY_IDS[0]: mark})
         | dict(notice=ENTRY_NOTICE),
@@ -630,7 +684,7 @@ def components(context, admin):
         # A leader of one Ministry: no By Ministry (#2395), no marks or
         # campaign help.
         LEADER: requests_page
-        | _worklist([row], principal=LEADS)
+        | _worklist([row], principal=LEADS, contacts=LEADER_CONTACTS)
         | dict(
             by_ministry=[],
             show_marks=False,

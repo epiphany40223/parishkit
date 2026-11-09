@@ -112,6 +112,7 @@ from .ministry_followup import (
 from .ministry_worklist import (
     EVERY,
     WorklistQuery,
+    contact_ministries,
     for_reader,
     is_leader,
     plain_view,
@@ -227,18 +228,26 @@ def _page_name(principal):
     return page_label("ministry_report", principal)
 
 
-def _audit(principal, campaign_id, outcome, ministry=None, *, automatic=False):
+def _audit(
+    principal, campaign_id, outcome, ministry=None, *, ministries=None, automatic=False
+):
     """Retain parish-owned access evidence, not private search or displayed values.
 
     A request page names its Ministry (``ministry``): the page shows that
     Member's contact details, so its view is audited with Ministry scope, as
-    the retired Members joining and leaving lists were (#1157). ``automatic``
-    marks a review region's check that brought changed rows in (#2174), as a
+    the retired Members joining and leaving lists were (#1157). Ministry
+    requests' worklist names the sorted Ministry DUIDs under which it showed
+    Members' email and phones (``ministries``, #2398), with whether they
+    were operational, as Export these requests does. ``automatic`` marks a
+    review region's check that brought changed rows in (#2174), as a
     report's automatic view is marked (#1620).
     """
     context = {"outcome": outcome}
     if ministry is not None:
         context["ministry_duid"] = ministry
+    if ministries is not None:
+        context["ministry_duids"] = ministries
+        context["ministry_operational"] = reads_every_ministry(principal)
     if automatic:
         context["automatic"] = True
     # An audit append takes no row locks, so it need not join the
@@ -507,8 +516,9 @@ def _page_response(
         )
         if live is None:
             _audit(principal, campaign_id, Outcome.STARTED)
-        # The request's Ministry, once read, for the completion event.
-        finalized, shown_ministry, changed = False, None, 0
+        # The request's Ministry, or the Ministries whose Members' contacts
+        # the worklist showed (#2398), once read, for the completion event.
+        finalized, shown_ministry, shown_ministries, changed = False, None, None, 0
 
         def finish(completed):
             """Read-only guards close before writing permanent access evidence."""
@@ -524,6 +534,7 @@ def _page_response(
                     campaign_id,
                     Outcome.SUCCEEDED if completed else Outcome.FAILED,
                     shown_ministry,
+                    ministries=shown_ministries,
                     automatic=live is not None,
                 )
             except (DatabaseError, StorageInvariantError) as error:
@@ -552,7 +563,7 @@ def _page_response(
             A review region's check (#2174) keeps only the drawn requests
             that changed, and answers nothing when none did.
             """
-            nonlocal changed
+            nonlocal changed, shown_ministries
             mutable = mutable_now()
             # The worklist reads an empty campaign as empty for Staff and
             # Administrators; its By Ministry read cross-checks that (#1133).
@@ -566,6 +577,8 @@ def _page_response(
                 mutable=mutable,
                 action=reverse("admin:ministry_report"),
                 live=live,
+                # Each Member's email and phones under their name (#2398).
+                contacts=True,
             )
             if live is not None:
                 listed["worklist"], listed["table"], changed = review_live.narrow(
@@ -573,6 +586,9 @@ def _page_response(
                 )
                 if not changed:
                     return iter((b"",))
+            # The rows drawn (a check's changed ones alone) name the
+            # Ministries whose Members' contacts this answer shows.
+            shown_ministries = contact_ministries(listed["table"].rows)
             extra = None
             if not is_leader(principal):
                 # Staff's roster rows, which a Join or Leave count's list

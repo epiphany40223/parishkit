@@ -318,24 +318,27 @@ def my_ministries(campaign_id, principal):
 
 
 def member_duids(rows):
-    """Add each row's ``member_duid``: the Member's DUID, or None.
+    """Add each row's ``member_duid`` (the Member's DUID, or None) and
+    ``proposed_id`` (a Member the Family added: their form reference).
 
     The installed selection returns each request's id and entity kind but
     not its Member key, so the keys of the rows shown are read in one
     primary-key query (#932); a schema change was not needed for a column.
     The ids come from the scoped selection, so nothing outside the reader's
     scope is read. A Member added on the form (``proposed_member``) has no
-    DUID yet, so the page shows "New Member" instead.
+    DUID yet, so the page shows "New Member" instead; their reference is
+    never shown, only matched to their contact details (#2398).
     """
     keys = {
-        str(pk): key
-        for pk, key in MinistryRequest.objects.filter(
-            pk__in=[row["id"] for row in rows], entity_kind="member"
-        ).values_list("pk", "entity_key")
+        str(pk): (kind, key)
+        for pk, kind, key in MinistryRequest.objects.filter(
+            pk__in=[row["id"] for row in rows]
+        ).values_list("pk", "entity_kind", "entity_key")
     }
     for row in rows:
-        key = keys.get(row["id"])
-        row["member_duid"] = int(key) if key else None
+        kind, key = keys.get(row["id"], (None, None))
+        row["member_duid"] = int(key) if kind == "member" and key else None
+        row["proposed_id"] = key if kind == "proposed_member" else None
 
 
 def _admit(result, principal, *, empty=False):

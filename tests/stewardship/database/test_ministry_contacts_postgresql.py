@@ -11,6 +11,7 @@ leaving pages, and their export form, answer 404 with no redirect.
 import csv
 import io
 import json
+import re
 from uuid import uuid4
 
 import pytest
@@ -38,6 +39,7 @@ from .test_background_grants_postgresql import task_login
 from .test_export_views_postgresql import post
 from .test_information_followup_postgresql import search
 from .test_live_ministries_postgresql import installed
+from .test_ministry_count_links_postgresql import signed_in_as
 from .test_ministry_exports_postgresql import create, leader
 from .test_ministry_followup_postgresql import requests
 from .test_ministry_reports_postgresql import actor, drop_leader, page, prepare, setup
@@ -570,3 +572,142 @@ def test_a_leaves_contacts_follow_its_edit(response_service):
     # Food pantry's section holds the edited leave (and, with the history
     # option, the withdrawn join).
     assert str(leave.pk) in {row["id"] for row in captured[9]["rows"]}
+
+
+# Ministry requests (#2398): the worklist page and each request's own page.
+REQUESTS = reverse("admin:ministry_report")
+ITEMS = "/admin/reports/ministries/follow-up/"
+
+
+def member_cell(body, request):
+    """The Member cell of ``request``'s row on Ministry requests, or None."""
+    for row in re.findall(r"<tr\b.*?</tr>", body, flags=re.S):
+        if f"{ITEMS}{request.pk}/" in row:
+            return re.search(r'<th scope="row">(.*?)</th>', row, flags=re.S)[1]
+    return None
+
+
+def worklist(browser, stage="all"):
+    """Ministry requests at ``stage``, as text."""
+    response, body = read(browser, f"{REQUESTS}?stage={stage}")
+    assert response.status_code == 200
+    return body.decode()
+
+
+def last_view():
+    """The latest completed Ministry requests view's audit context."""
+    for row in AuditEvent.objects.filter(
+        event_type="ministry_followup_viewed"
+    ).order_by("-created_at"):
+        context = AuditContext.objects.get(event=row).context
+        if context.get("outcome") == "succeeded":
+            return context
+    raise AssertionError("No completed view was audited.")
+
+
+MAIL = f'<a href="mailto:{EMAIL}">{EMAIL}</a>'
+CALL = (
+    '<span class="contact-kind">Home:</span> '
+    f'<a href="tel:+12025550123"><span class="nowrap">{PHONE}</span></a>'
+)
+HIDDEN = '<span class="contact-line">Email: Not published</span>'
+
+
+def test_every_role_sees_the_contact_lines_under_the_request_pages_rule(
+    response_service, google
+):
+    """Ministry requests' Member cell (#2398) for a leader of Food pantry
+    (9), Staff and an Administrator: the requester's email and phone, as
+    mail and call links, from the request page's rule; each view's audit
+    names the Ministries whose contacts it showed. Then the Family
+    withdraws the join and adds a Member who asks to join Food pantry: the
+    leader sees the email Not published on the withdrawn join (History),
+    the published phone still shown, and the added Member's Family-entered
+    email and mobile. Once ParishSoft lists Member 3 in Food pantry, the
+    Family checks the physical-limitations box for them (leaving 4 and 9):
+    the standing leave of 9 shows the email Not published to the leader
+    too; Staff still see it."""
+    harness = setup(response_service)
+    join, leave = requests()
+    lead, *_ = leader(harness, google)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        body = worklist(lead)
+        cell = member_cell(body, join)
+        assert MAIL in cell and CALL in cell and HIDDEN not in cell
+        # The contact lines follow the name and its DUID, outside the name.
+        assert cell.index("Member DUID") < cell.index('class="member-contact"')
+        assert member_cell(body, leave) is None
+        # The view's audit names the Ministry whose Members' contacts it
+        # showed, and that they were the leader's, never a value.
+        view = last_view()
+        assert view["ministry_duids"] == [9] and view["ministry_operational"] is False
+        # The same values the request page shows.
+        assert EMAIL in contact(item(lead, join)) and PHONE in contact(item(lead, join))
+    readers = []
+    for role in ("staff", "administrator"):
+        # Each reader is their own Google account, so the leader's session
+        # keeps the leader's roles.
+        google[0]["sub"] = f"synthetic-{role}"
+        readers.append(signed_in_as(harness, google, f"{role}@example.org", [role])[0])
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        for browser in readers:
+            body = worklist(browser)
+            for request in (join, leave):
+                cell = member_cell(body, request)
+                assert MAIL in cell and CALL in cell, request.action
+            view = last_view()
+            assert view["ministry_duids"] == [4, 9] and view["ministry_operational"]
+    form = revisit(harness)
+    answers = answers_for(form)
+    added = str(uuid4())
+    answers["ministries"]["members"]["3"] = {"join": [], "leave": [4]}
+    answers["proposed_members"][added] = member(
+        first_name="New",
+        last_name="Person",
+        email="new.person@example.org",
+        mobile_phone="5025551212",
+    )
+    answers["ministries"]["proposed_members"][added] = {"join": [9]}
+    respond(harness, form, answers)
+    join.refresh_from_db()
+    assert join.state == "cancelled"
+    proposed = MinistryRequest.objects.get(entity_key=added, action="join")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        cell = member_cell(worklist(lead), proposed)
+        assert '<a href="mailto:new.person@example.org">' in cell
+        assert 'href="tel:+15025551212"><span class="nowrap">+1 (502) 555-1212' in cell
+        assert "Not published" not in cell
+        cell = member_cell(worklist(lead, "history"), join)
+        assert HIDDEN in cell and EMAIL not in cell and CALL in cell
+        # The request page agrees.
+        assert "<dt>Email</dt><dd>Not published</dd>" in contact(item(lead, join))
+    # ParishSoft lists Member 3 in Food pantry, so a leave of it is offered.
+    data = ministry_source()
+    data.ministry_type_memberships[9]["membership"] = [
+        {
+            "memberId": 3,
+            "ministryRoleId": 1,
+            "ministryRoleName": "Participant",
+            "startDate": "2026-01-01",
+            "endDate": None,
+        }
+    ]
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    form = revisit(harness)
+    answers = answers_for(form)
+    answers["ministries"]["members"]["3"] = {"join": [], "leave": [4, 9]}
+    answers["service"] = {
+        "members": {"3": {"cannot_serve": True}},
+        "proposed_members": {},
+    }
+    respond(harness, form, answers)
+    stays = MinistryRequest.objects.get(ministry_duid=9, action="leave", state="new")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        cell = member_cell(worklist(lead), stays)
+        assert HIDDEN in cell and EMAIL not in cell and CALL in cell
+        cell = member_cell(worklist(readers[0]), stays)
+        assert MAIL in cell and HIDDEN not in cell
+    # No contact value reaches the audit.
+    contexts = list(AuditContext.objects.values_list("context", flat=True))
+    assert contexts and EMAIL not in json.dumps(contexts, default=str)
