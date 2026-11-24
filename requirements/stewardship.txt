@@ -120,7 +120,7 @@ packaging==26.3
     #   pytest
 phonenumbers==9.0.39
     # via parishkit (pyproject.toml)
-pillow==12.3.0
+pillow==13.0.0
     # via
     #   parishkit (pyproject.toml)
     #   matplotlib

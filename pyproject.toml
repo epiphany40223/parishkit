@@ -35,7 +35,7 @@ stewardship = [
   "PyNaCl>=1.6.2,<1.7",
   "tzdata>=2026.2",
   "django-allauth[socialaccount]==65.19.2",
-  "Pillow>=12.3.0,<13",
+  "Pillow>=13.0.0,<14",
   "matplotlib>=3.11.2,<3.12",
   "vl-convert-python>=1.9.0,<2",
   "nh3>=0.3.7,<0.4",
