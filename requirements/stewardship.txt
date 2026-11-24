@@ -16,7 +16,7 @@ build==1.6.0
     # via parishkit (pyproject.toml)
 celery==5.6.3
     # via parishkit (pyproject.toml)
-certifi==2026.7.22
+certifi==2026.11.20
     # via requests
 cffi==2.1.1 ; platform_python_implementation != 'PyPy'
     # via
@@ -110,7 +110,7 @@ oauthlib==3.3.1
     #   requests-oauthlib
 openpyxl==3.1.5
     # via parishkit (pyproject.toml)
-opentelemetry-api==1.44.0
+opentelemetry-api==1.45.2
     # via google-api-core
 packaging==26.3
     # via
@@ -147,7 +147,7 @@ py-walk==0.3.3
     # via
     #   application-file-scanner
     #   pymarkdownlnt
-pyasn1==0.6.4
+pyasn1==0.6.5
     # via pyasn1-modules
 pyasn1-modules==0.4.2
     # via google-auth
@@ -159,7 +159,7 @@ pygments==2.21.0
     # via pytest
 pyjson5==2.0.1
     # via application-properties
-pyjwt==2.13.0
+pyjwt==2.15.1
     # via django-allauth
 pymarkdownlnt==0.9.39
     # via parishkit (pyproject.toml)
@@ -231,7 +231,7 @@ tzlocal==5.4.4
     # via celery
 uritemplate==4.2.0
     # via google-api-python-client
-urllib3==2.7.0
+urllib3==2.8.0
     # via
     #   parishkit (pyproject.toml)
     #   requests
