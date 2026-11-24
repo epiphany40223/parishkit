@@ -345,7 +345,8 @@ identity alias that would otherwise cause an add-first HTTP 409:
 
 - `add` → `insert_group_member(service, group, email, role or "MEMBER")`.
 - `change_role` → `update_group_member_role(service, group,
-  group_member_id or email, role or "MEMBER")`.
+  group_member_id or email, role or "MEMBER")`, which sends a role-only
+  Directory API `members.patch`.
 - `delete` → `delete_group_member(service, group, group_member_id or email)`.
 - Any other action → `ConfigError("unknown sync action: …")`.
 

@@ -106,10 +106,15 @@ def update_group_member_role(
 ) -> None:
     """Change an existing member's role within the group.
 
-    ``member_key`` identifies the member to update; ``role`` is the new
-    Directory API role (e.g. ``MEMBER``, ``MANAGER``, ``OWNER``).
+    ``member_key`` identifies the member to update (email or Google member
+    ID); ``role`` is the new Directory API role (e.g. ``MEMBER``, ``MANAGER``,
+    ``OWNER``).
+
+    This must be ``members.patch``, not ``members.update``: update is a full
+    replacement (PUT) that rejects a role-only body with HTTP 400 "Missing
+    required field: memberKey", while patch changes only the fields sent.
     """
-    request = service.members().update(
+    request = service.members().patch(
         groupKey=group_key,
         memberKey=member_key,
         body={"role": role},
