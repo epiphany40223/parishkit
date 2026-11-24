@@ -441,9 +441,9 @@ def test_group_write_helpers_use_directory_api():
             self.calls.append(("get", kwargs))
             return Request({"email": "primary@example.org"})
 
-        def update(self, **kwargs):
-            """Record an update call and return an empty request."""
-            self.calls.append(("update", kwargs))
+        def patch(self, **kwargs):
+            """Record a patch call and return an empty request."""
+            self.calls.append(("patch", kwargs))
             return Request()
 
         def delete(self, **kwargs):
@@ -502,7 +502,7 @@ def test_group_write_helpers_use_directory_api():
             },
         ),
         (
-            "update",
+            "patch",
             {
                 "groupKey": "group@example.org",
                 "memberKey": "a@example.org",

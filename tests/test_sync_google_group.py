@@ -114,9 +114,9 @@ class Members:
         self.calls.append(("insert", kwargs))
         return Request()
 
-    def update(self, **kwargs):
-        """Record a member-update call and return an empty request."""
-        self.calls.append(("update", kwargs))
+    def patch(self, **kwargs):
+        """Record a member-patch (role change) call and return an empty request."""
+        self.calls.append(("patch", kwargs))
         return Request()
 
     def delete(self, **kwargs):
@@ -310,7 +310,7 @@ def test_apply_actions_runs_all_deletes_before_other_actions():
         "delete",
         "delete",
         "insert",
-        "update",
+        "patch",
         "insert",
     ]
     assert [
@@ -982,7 +982,7 @@ def test_sync_google_group_main_writes_group_changes_and_notifications(
         },
     ) in admin._members.calls
     assert (
-        "update",
+        "patch",
         {
             "groupKey": "group@example.org",
             "memberKey": "lead-id",
@@ -1239,7 +1239,7 @@ def test_sync_google_group_notification_failure_does_not_skip_later_writes(
     )
 
     assert any(
-        call[0] in {"insert", "delete", "update"}
+        call[0] in {"insert", "delete", "patch"}
         and call[1]["groupKey"] == "second@example.org"
         for call in admin._members.calls
     )
