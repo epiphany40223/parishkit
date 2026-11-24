@@ -175,11 +175,17 @@ Desired membership derivation (`resolve_desired_state`):
   indexed by workgroup `name`). Family workgroups are not used.
 - For each mapping, the matching workgroup's `membership` list is walked. Each
   membership row's `"py member duid"` is resolved to a member in `data.members`.
-- For each resolved member, **only the primary (first) email address** is used:
-  the first item returned by `member_email_addresses(...)` (lowercased,
-  de-duplicated; prefers the pre-split `"py emailAddresses"` list, else splits
-  the raw semicolon-delimited `emailAddress`). Members with no email contribute
+- For each resolved member, **every** plain email address is used (#2389):
+  `member_sync_email_addresses(member, log)`, built on
+  `member_email_addresses(...)` (lowercased, de-duplicated; prefers the
+  pre-split `"py emailAddresses"` list, else splits the raw semicolon-delimited
+  `emailAddress`). Fragments that fail the shared plain-address check
+  (`is_plain_email_address`, the same check rosters use) are dropped with a
+  warning naming the member DUID. Members with no usable email contribute
   nothing.
+- A Constant Contact v3 contact holds exactly one email address, so each of a
+  member's addresses is its own contact; the existing create/subscribe/remove
+  steps work per address.
 - Result: one lowercased `set[str]` of desired emails per mapping, in mapping
   order.
 
@@ -224,9 +230,11 @@ names.
    available list names) or a workgroup is missing.
 10. **Empty-source guard** (`validate_non_empty_desired_state`) — evaluated on
     the *pre-unsubscribe* desired sets (see [§8](#8-guardrails-and-write-safety)).
-11. **Unsubscribe filter** (`filter_unsubscribed`) — removes opted-out addresses
-    from the desired sets *in place* and returns per-mapping report tuples
-    ([§7](#7-unsubscribe--opt-out-handling)).
+11. **Unsubscribe filter** (`filter_unsubscribed`) — removes opted-out Members'
+    addresses from the desired sets *in place* and returns per-mapping report
+    tuples ([§7](#7-unsubscribe--opt-out-handling)). Logs the filtered
+    unsubscribed count and, separately, the count of other addresses dropped
+    because their Member unsubscribed elsewhere.
 12. **Report schedule decision** (`unsubscribed_report_decision`, using the
     local `now`).
 13. **Index contacts by email** — `contacts_by_email = {address.lower():
@@ -313,12 +321,35 @@ desired sets:
   *filtered* desired sets) — so an opted-out person without a contact is never
   created either.
 
-For each removed address the function records a `(email, names, duids)` tuple in
-that mapping's slot of the returned per-mapping list, where `names` is the
-comma-joined `"py friendly name FL"` of the ParishSoft members at that address
-and `duids` the comma-joined `memberDUID`s. `desired_emails` is mutated in
+For each removed address the function records a `FilteredContact(email, names,
+duids, unsubscribed_via)` row in that mapping's slot of the returned
+per-mapping list, where `names` is the comma-joined `"py friendly name FL"` of
+the ParishSoft members at that address and `duids` the comma-joined
+`memberDUID`s. `unsubscribed_via` is empty for an address that unsubscribed
+itself. `desired_emails` is mutated in
 place, so all later steps (name-update scoping, action computation) see the
 filtered sets.
+
+**Member-level opt-out** (#2389). An unsubscribe applies to the whole
+ParishSoft Member: `member_unsubscribe_addresses` maps every address of each
+Member who has an unsubscribed address (via `ps_members_by_email`, which
+indexes all of a Member's addresses) to the unsubscribed address(es) that
+caused it, and those addresses are removed from every desired set too (and, if
+currently on a target list, taken off it by the normal diff). The rule is
+applied literally to shared addresses, in both directions: unsubscribing a
+shared address drops every address of each Member who has it, and when one
+Member unsubscribes a personal address, a family address they share is dropped
+for every other Member who has it, even one who never unsubscribed. Each such
+address gets its own row, after the self-unsubscribed rows, with
+`unsubscribed_via` naming the triggering address(es); the reports show these
+rows in a separate section so the office can see a Member who lost an address
+without unsubscribing.
+This changes only the synced lists: the tool never marks other contacts
+unsubscribed in Constant Contact, so it reverses itself if the person signs up
+again. (Rejected: marking the other contacts unsubscribed. It would stick —
+re-subscribing one address would leave the other unsubscribed, which keeps the
+Member-level rule dropping all of them — and the API generally cannot
+re-subscribe a contact without the person's consent.)
 
 **Important nuance — list cleanup still happens.** Opting out blocks *adds*, not
 *removals*. If an opted-out contact is currently a member of a target list
@@ -381,7 +412,7 @@ report counts (configured mappings, members/families loaded, lists/contacts
 loaded, desired emails per mapping, filtered-unsubscribed count, report-schedule
 reason, actions computed, completion). `log_extra(...)` attaches structured
 payloads to the JSONL log file: the mapping list, per-mapping desired emails,
-the filtered-unsubscribed tuples, and — in dry run — the would-be POST/PUT
+the filtered-unsubscribed `FilteredContact` rows, and — in dry run — the would-be POST/PUT
 bodies per contact. See
 [Logging and notifications](../intro/spec.md#logging-and-notifications).
 
@@ -398,7 +429,12 @@ provider, no `sender`, or the mapping has no recipients. Content:
   contacts filtered". When the scheduled report is enabled and there were
   filtered contacts, that count reads `N (handled by scheduled report)` and the
   per-row table is suppressed (details move to the report); otherwise it is the
-  visible filtered count with a "Filtered Unsubscribed Contacts" table.
+  visible filtered count with a "Filtered Unsubscribed Contacts" table. When
+  the Member-level rule filtered other addresses, a second count, "Other
+  addresses of unsubscribed Members filtered", follows the same rule, with an
+  "Other Addresses of Members Who Unsubscribed" section (an explanation and a
+  PS Member Name(s) / PS Member DUID(s) / Email / Unsubscribed Address table)
+  when shown.
 - An "Actions Performed" striped HTML table (Action / Contact Name(s) / PS Member
   DUID(s) / Email), actions sorted by type
   (`create, subscribe, unsubscribe, update_name`) then email; and, when shown,
@@ -411,7 +447,9 @@ and below for scheduling. One email per mapping that has filtered unsubscribes,
 subject `Constant Contact unsubscribed contacts report: <target_list>`,
 explaining the members are in the workgroup but opted out and should be removed
 from the workgroup in ParishSoft, with a striped table (PS Member Name(s) / PS
-Member DUID(s) / Email). Sends are recorded in the JSON state file under an
+Member DUID(s) / Email), followed by the same "Other Addresses of Members Who
+Unsubscribed" section as the sync email when the Member-level rule filtered
+other addresses. A mapping with only such rows gets only that section. Sends are recorded in the JSON state file under an
 exclusive `fcntl` lock, per-mapping and per-local-day.
 
 **Slack** alerting on failure is handled by the shared logging Slack sink
@@ -471,9 +509,11 @@ run resends only the unsent mappings.
 ## 11. Edge cases and nuances
 
 - **Verbose dry run.** Dry run forces verbose logging (`verbose or dry_run`).
-- **Primary-email-only.** Only each member's first email is desired; secondary
-  addresses are ignored for membership (but `parishsoft_members_by_email` and
-  `link_contacts_to_ps_members` index *all* of a member's addresses for naming).
+- **Every address** (#2389). All of a member's plain addresses are desired, each
+  as its own contact; `parishsoft_members_by_email` and
+  `link_contacts_to_ps_members` index all of them, so every contact gets the
+  member's name. A Member with any unsubscribed address has all addresses
+  filtered ([§7](#7-unsubscribe--opt-out-handling)).
 - **Soft-deleted contacts** (`deleted_at`) are excluded from both the contact
   set and every list's `CONTACTS` index.
 - **Contact created once.** A desired email on several mappings yields a single
@@ -517,7 +557,15 @@ run resends only the unsent mappings.
 - **`load_cc_data`** filters `deleted_at` contacts and excludes them from
   `CONTACTS`.
 - **Desired state + filtering** — `resolve_desired_state` maps both members; the
-  unsubscribed member is dropped from desired and reported with friendly name.
+  unsubscribed member is dropped from desired and reported with friendly name;
+  every valid address of a member is desired and invalid fragments are warned;
+  one unsubscribed address drops all of that Member's addresses, the others
+  reported with `unsubscribed_via`; an unsubscribed shared address drops every
+  address of each Member who has it; a personal unsubscribe drops a shared
+  family address for the other Member too, and both the weekly report and the
+  sync email show that row in their separate section; end to end, a Member's
+  other address already on the list is removed while another Member's
+  additional address is created.
 - **Guards** — empty-source abort (`allow_empty`), large-removal abort
   (`would remove 40 of 40`), and the all-opted-out-source case still issuing the
   stale-member PUT.
@@ -557,7 +605,8 @@ records `get_all`/`post`/`put`; the fake `EmailProvider` captures sent messages.
 4. `load_cc_data` (read lists/contacts, drop deleted, `link_cc_data`).
 5. `resolve_desired_state`, `parishsoft_members_by_email`, and
    `validate_configured_parishsoft_workgroups`.
-6. `filter_unsubscribed` (in-place desired mutation + report tuples).
+6. `FilteredContact`, `filter_unsubscribed` (in-place desired mutation +
+   report rows) and `member_unsubscribe_addresses` (Member-level opt-out).
 7. Guards: `validate_non_empty_desired_state`, `removal_guard_tripped` /
    `validate_large_removal_guard`.
 8. Action computation: `compute_create_actions`,

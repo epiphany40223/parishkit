@@ -52,9 +52,9 @@ the reference for what a sync adds, removes, preserves and reports.
   - **ministry sources:** a member whose role is in `leader_roles` is an
     owner;
   - **`ministry_chair`:** selects ministry leaders, who are owners;
-  - **`all_ministry_chairs`:** selects ministry leaders, who are owners
-    **only when** their email domain is in the selector's
-    `staff_owner_domains`; otherwise they are plain members;
+  - **`all_ministry_chairs`:** selects ministry leaders; each of a
+    leader's addresses is an owner **only when** that address's domain is
+    in the selector's `staff_owner_domains`; otherwise it is a plain member;
   - **`ministry_role`:** a matched member whose role is in `leader_roles` is
     an owner (as above).
 - **IDs, not names:** ministries, workgroups and groups are bound by durable

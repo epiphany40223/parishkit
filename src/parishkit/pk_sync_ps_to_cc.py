@@ -14,7 +14,7 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from importlib.metadata import version
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 from zoneinfo import ZoneInfo
 
 from parishkit.cli import (
@@ -49,6 +49,7 @@ from parishkit.parishsoft import (
     ParishSoftData,
     load_families_and_members,
     member_email_addresses,
+    member_sync_email_addresses,
 )
 from parishkit.parishsoft_runtime import parishsoft_client_from_config
 
@@ -158,6 +159,23 @@ class CCAction:
     new_last: str | None = None
 
 
+class FilteredContact(NamedTuple):
+    """One desired address the sync left off a list because of an unsubscribe.
+
+    ``names`` and ``duids`` are the comma-joined ParishSoft Members who have
+    the address. ``unsubscribed_via`` is empty when this address itself
+    unsubscribed in Constant Contact. Otherwise it names the unsubscribed
+    address(es) of a Member who also has this address: an unsubscribe applies
+    to every address of that Member (#2389), and a shared address can drop a
+    Member who never unsubscribed, so reports list these rows separately.
+    """
+
+    email: str
+    names: str
+    duids: str
+    unsubscribed_via: str = ""
+
+
 Loader = Callable[..., ParishSoftData]
 CCFactory = Callable[[ConfigData], ConstantContactClient]
 
@@ -173,15 +191,11 @@ def _mapping_summary(mapping: CCSyncMapping) -> str:
 
 
 def _unsubscribed_summary(
-    unsubscribed: Sequence[Sequence[tuple[str, str, str]]],
+    unsubscribed: Sequence[Sequence[FilteredContact]],
 ) -> str:
     """Return readable unsubscribed addresses grouped across mappings."""
     return _text_list(
-        [
-            email
-            for mapping_items in unsubscribed
-            for email, _names, _duids in mapping_items
-        ]
+        [email for mapping_items in unsubscribed for email, *_rest in mapping_items]
     )
 
 
@@ -290,7 +304,7 @@ def _run(
         )
         ps_members_by_email = parishsoft_members_by_email(data.members)
         link_contacts_to_ps_members(cc_contacts, data.members)
-        desired_emails = resolve_desired_state(sync_config, data, cc_lists)
+        desired_emails = resolve_desired_state(sync_config, data, cc_lists, log=log)
         for mapping, emails in zip(sync_config.mappings, desired_emails, strict=True):
             log.info(
                 "Resolved %s desired email(s) from %s to %s",
@@ -310,13 +324,26 @@ def _run(
             desired_emails,
             ps_members_by_email,
         )
-        filtered_count = sum(len(items) for items in unsubscribed)
+        filtered_count = sum(
+            not row.unsubscribed_via for items in unsubscribed for row in items
+        )
         if filtered_count:
             log.info("Filtered %s unsubscribed desired address(es)", filtered_count)
             log.debug(
                 "Filtered unsubscribed addresses: %s",
                 _unsubscribed_summary(unsubscribed),
                 extra=log_extra(unsubscribed),
+            )
+        # Addresses dropped only because another address of the same Member
+        # unsubscribed (#2389); counted per mapping like filtered_count.
+        member_count = sum(
+            bool(row.unsubscribed_via) for items in unsubscribed for row in items
+        )
+        if member_count:
+            log.info(
+                "Filtered %s other desired address(es) of Members who "
+                "unsubscribed in Constant Contact",
+                member_count,
             )
         report_decision = unsubscribed_report_decision(
             sync_config.unsubscribed_report,
@@ -583,12 +610,16 @@ def resolve_desired_state(
     config: CCSyncConfig,
     data: ParishSoftData,
     cc_lists: Sequence[Mapping[str, Any]],
+    log: logging.Logger | None = None,
 ) -> list[set[str]]:
     """Compute the target email set for each configured mapping.
 
     Returns one lowercased email set per mapping, in mapping order, drawn from
-    the members of the mapped ParishSoft workgroup. Raises ``ConfigError`` if a
-    referenced workgroup or Constant Contact list does not exist.
+    every plain email address of each member of the mapped ParishSoft
+    workgroup (#2389); each address is its own Constant Contact contact.
+    Invalid fragments are skipped and reported through ``log``. Raises
+    ``ConfigError`` if a referenced workgroup or Constant Contact list does not
+    exist.
     """
     desired = []
     list_by_name = {item["name"]: item for item in cc_lists}
@@ -612,12 +643,9 @@ def resolve_desired_state(
         for item in workgroup.get("membership", []):
             member_id = item.get("py member duid")
             member = data.members.get(member_id)
-            # Use only the member's primary (first) email; members without any
-            # email simply contribute nothing to the desired set.
+            # Members without any usable email contribute nothing.
             if member:
-                addresses = member_email_addresses(member)
-                if addresses:
-                    emails.add(addresses[0])
+                emails.update(member_sync_email_addresses(member, log))
         desired.append(emails)
     return desired
 
@@ -626,31 +654,81 @@ def filter_unsubscribed(
     contacts: Sequence[Mapping[str, Any]],
     desired_emails: list[set[str]],
     ps_members_by_email: Mapping[str, list[dict[str, Any]]],
-) -> list[list[tuple[str, str, str]]]:
-    """Drop unsubscribed addresses from the desired sets and report them.
+) -> list[list[FilteredContact]]:
+    """Drop unsubscribed Members from the desired sets and report them.
 
     Mutates each set in ``desired_emails`` in place to remove any address whose
     Constant Contact contact is marked ``unsubscribed``, so the sync never tries
-    to re-add someone who opted out. Returns, per mapping, the filtered
-    ``(email, names, duids)`` tuples for inclusion in notifications.
+    to re-add someone who opted out. An unsubscribe applies to the whole
+    ParishSoft Member (#2389): every address of each Member who has an
+    unsubscribed address is removed too, including a family-shared address,
+    which drops every other Member who has it as well. This only changes the
+    synced lists; other contacts are never marked unsubscribed in Constant
+    Contact, so it reverses itself if the person signs up again.
+
+    Returns, per mapping, a ``FilteredContact`` for every removed address:
+    first those that unsubscribed themselves (in contact order), then the
+    other Member addresses (sorted, with ``unsubscribed_via`` set), for
+    notifications and the unsubscribed report.
     """
-    unsubscribed = [[] for _ in desired_emails]
+    unsubscribed: list[list[FilteredContact]] = [[] for _ in desired_emails]
+    unsubscribed_emails: set[str] = set()
     for contact in contacts:
         email_address = contact.get("email_address", {})
         if email_address.get("permission_to_send") != "unsubscribed":
             continue
         email = str(email_address.get("address", "")).lower()
+        unsubscribed_emails.add(email)
         for index, desired in enumerate(desired_emails):
             if email not in desired:
                 continue
             desired.discard(email)
-            members = ps_members_by_email.get(email, [])
-            names = ", ".join(
-                str(member.get("py friendly name FL", "")) for member in members
+            unsubscribed[index].append(
+                _filtered_contact(email, ps_members_by_email.get(email, []))
             )
-            duids = ", ".join(str(member.get("memberDUID", "")) for member in members)
-            unsubscribed[index].append((email, names, duids))
+    triggers = member_unsubscribe_addresses(unsubscribed_emails, ps_members_by_email)
+    for index, desired in enumerate(desired_emails):
+        for email in sorted(desired & triggers.keys()):
+            desired.discard(email)
+            unsubscribed[index].append(
+                _filtered_contact(
+                    email,
+                    ps_members_by_email.get(email, []),
+                    unsubscribed_via=", ".join(sorted(triggers[email])),
+                )
+            )
     return unsubscribed
+
+
+def _filtered_contact(
+    email: str,
+    members: Sequence[Mapping[str, Any]],
+    *,
+    unsubscribed_via: str = "",
+) -> FilteredContact:
+    """Build a report row naming every ParishSoft Member at ``email``."""
+    names = ", ".join(str(member.get("py friendly name FL", "")) for member in members)
+    duids = ", ".join(str(member.get("memberDUID", "")) for member in members)
+    return FilteredContact(email, names, duids, unsubscribed_via)
+
+
+def member_unsubscribe_addresses(
+    unsubscribed_emails: Collection[str],
+    ps_members_by_email: Mapping[str, list[dict[str, Any]]],
+) -> dict[str, set[str]]:
+    """Map each address of a Member who unsubscribed to the triggering address.
+
+    For every unsubscribed address, each ParishSoft Member who has it (several,
+    for a shared address) contributes all of their addresses; the value is the
+    set of unsubscribed addresses that caused the address to be dropped.
+    ``ps_members_by_email`` indexes each Member under all of their addresses.
+    """
+    triggers: dict[str, set[str]] = {}
+    for email in unsubscribed_emails:
+        for member in ps_members_by_email.get(email, []):
+            for address in member_email_addresses(member):
+                triggers.setdefault(address, set()).add(email)
+    return triggers
 
 
 def validate_non_empty_desired_state(
@@ -1032,7 +1110,7 @@ def send_notifications(
     provider: EmailProvider | None,
     config: CCSyncConfig,
     actions: Sequence[CCAction],
-    unsubscribed: Sequence[Sequence[tuple[str, str, str]]],
+    unsubscribed: Sequence[Sequence[FilteredContact]],
     contacts_by_email: Mapping[str, Mapping[str, Any]],
     ps_members_by_email: Mapping[str, list[dict[str, Any]]],
     *,
@@ -1051,11 +1129,16 @@ def send_notifications(
     for index, mapping in enumerate(config.mappings):
         list_actions = [action for action in actions if action.sync_index == index]
         suppressed_count = None
+        suppressed_member_count = None
         reported_unsubscribed = (
             [] if config.unsubscribed_report.enabled else unsubscribed[index]
         )
         if config.unsubscribed_report.enabled and unsubscribed[index]:
-            suppressed_count = len(unsubscribed[index])
+            # The scheduled report lists these rows; the sync email only counts
+            # them, separately for the two kinds of filtered address (#2389).
+            others = [row for row in unsubscribed[index] if row.unsubscribed_via]
+            suppressed_count = (len(unsubscribed[index]) - len(others)) or None
+            suppressed_member_count = len(others) or None
         if not list_actions and not reported_unsubscribed:
             continue
         if not mapping.notifications:
@@ -1070,6 +1153,7 @@ def send_notifications(
                 sender=config.sender,
                 generated_at=notification_time,
                 suppressed_unsubscribed_count=suppressed_count,
+                suppressed_member_count=suppressed_member_count,
             ),
             dry_run=dry_run,
         )
@@ -1078,7 +1162,7 @@ def send_notifications(
 def sync_notifications_will_send(
     config: CCSyncConfig,
     actions: Sequence[CCAction],
-    unsubscribed: Sequence[Sequence[tuple[str, str, str]]],
+    unsubscribed: Sequence[Sequence[FilteredContact]],
 ) -> bool:
     """Return whether normal sync notification email has content to send."""
     if not config.sender:
@@ -1097,7 +1181,7 @@ def sync_notifications_will_send(
 
 def unsubscribed_report_will_send(
     config: CCSyncConfig,
-    unsubscribed: Sequence[Sequence[tuple[str, str, str]]],
+    unsubscribed: Sequence[Sequence[FilteredContact]],
     decision: ReportScheduleDecision,
     *,
     dry_run: bool,
@@ -1114,20 +1198,25 @@ def unsubscribed_report_will_send(
 def build_notification_email(
     mapping: CCSyncMapping,
     actions: Sequence[CCAction],
-    unsubscribed: Sequence[tuple[str, str, str]],
+    unsubscribed: Sequence[FilteredContact],
     contacts_by_email: Mapping[str, Mapping[str, Any]],
     ps_members_by_email: Mapping[str, list[dict[str, Any]]],
     *,
     sender: str,
     generated_at: dt.datetime,
     suppressed_unsubscribed_count: int | None = None,
+    suppressed_member_count: int | None = None,
 ) -> Email:
     """Build the styled Constant Contact sync update notification.
 
     This mirrors the old Epiphany report's operator-focused structure: a
     generated timestamp, source/target context, summary counts, and striped
-    tables of actions and filtered unsubscribed contacts.
+    tables of actions and filtered unsubscribed contacts. Addresses dropped
+    only because another address of the same Member unsubscribed (#2389) get
+    their own summary line and table, shown only when there are any.
     """
+    direct = [row for row in unsubscribed if not row.unsubscribed_via]
+    others = [row for row in unsubscribed if row.unsubscribed_via]
     subject = f"Constant Contact sync update: {mapping.target_list}"
     created = [action for action in actions if action.type == "create"]
     subscribed = [action for action in actions if action.type == "subscribe"]
@@ -1135,8 +1224,16 @@ def build_notification_email(
         action for action in actions if action.type == "unsubscribe"
     ]
     unsubscribed_summary = _unsubscribed_count_summary(
-        len(unsubscribed),
+        len(direct),
         suppressed_unsubscribed_count=suppressed_unsubscribed_count,
+    )
+    member_summary = (
+        _unsubscribed_count_summary(
+            len(others),
+            suppressed_unsubscribed_count=suppressed_member_count,
+        )
+        if others or suppressed_member_count
+        else None
     )
     text_lines = [
         subject,
@@ -1149,11 +1246,14 @@ def build_notification_email(
         f"- Contacts subscribed: {len(subscribed)}",
         f"- Contacts unsubscribed: {len(unsubscribed_actions)}",
         f"- Unsubscribed contacts filtered: {unsubscribed_summary}",
-        "",
     ]
+    if member_summary is not None:
+        text_lines.append(f"- {_MEMBER_UNSUBSCRIBE_LABEL}: {member_summary}")
+    text_lines.append("")
     text_lines.extend(action.detail for action in actions)
-    for email, names, duids in unsubscribed:
+    for email, names, duids, _via in direct:
         text_lines.append(f"Unsubscribed contact filtered: {names} ({duids}) {email}")
+    text_lines.extend(_member_unsubscribe_text(others, mapping))
 
     html_parts = [
         '<html><body style="font-family: Arial, sans-serif; font-size: 14px;">',
@@ -1170,8 +1270,12 @@ def build_notification_email(
         f"<li>Contacts subscribed: {len(subscribed)}</li>",
         f"<li>Contacts unsubscribed: {len(unsubscribed_actions)}</li>",
         f"<li>Unsubscribed contacts filtered: {html.escape(unsubscribed_summary)}</li>",
-        "</ul>",
     ]
+    if member_summary is not None:
+        html_parts.append(
+            f"<li>{_MEMBER_UNSUBSCRIBE_LABEL}: {html.escape(member_summary)}</li>"
+        )
+    html_parts.append("</ul>")
     if actions:
         html_parts.extend(
             [
@@ -1199,7 +1303,7 @@ def build_notification_email(
                 "</tr>"
             )
         html_parts.append("</table>")
-    if unsubscribed:
+    if direct:
         html_parts.extend(
             [
                 '<h3 style="color: #cc0000;">Filtered Unsubscribed Contacts</h3>',
@@ -1209,8 +1313,8 @@ def build_notification_email(
                 f'<th style="{_EMAIL_HEADER_STYLE}">Email</th></tr>',
             ]
         )
-        for row, (email, names, duids) in enumerate(
-            sorted(unsubscribed, key=_unsubscribed_sort_key)
+        for row, (email, names, duids, _via) in enumerate(
+            sorted(direct, key=_unsubscribed_sort_key)
         ):
             html_parts.append(
                 "<tr>"
@@ -1220,6 +1324,7 @@ def build_notification_email(
                 "</tr>"
             )
         html_parts.append("</table>")
+    html_parts.append(_member_unsubscribe_html(others, mapping))
     html_parts.extend(
         [
             '<hr style="border: 1px solid #dddddd; margin-top: 30px;">',
@@ -1294,9 +1399,69 @@ def _cc_contact_names_and_duids(
     return name, ""
 
 
+_MEMBER_UNSUBSCRIBE_LABEL = "Other addresses of unsubscribed Members filtered"
+
+
+def _member_unsubscribe_explanation(mapping: CCSyncMapping) -> str:
+    """Explain why addresses that did not unsubscribe were filtered (#2389)."""
+    return (
+        f"These addresses were also left off the '{mapping.target_list}' list "
+        "because a ParishSoft Member who has them unsubscribed another address "
+        "from Constant Contact, and an unsubscribe applies to all of that "
+        "Member's addresses. A shared address (such as a family address) is "
+        "left off for every Member who has it, so a Member listed here may not "
+        "have unsubscribed and may no longer receive these emails."
+    )
+
+
+def _member_unsubscribe_text(
+    rows: Sequence[FilteredContact],
+    mapping: CCSyncMapping,
+) -> list[str]:
+    """Return plain-text report lines for Member-level filtered addresses."""
+    if not rows:
+        return []
+    lines = ["", _member_unsubscribe_explanation(mapping), ""]
+    for email, names, duids, via in sorted(rows, key=_unsubscribed_sort_key):
+        lines.append(f"- {names} (DUID: {duids}): {email} (unsubscribed: {via})")
+    return lines
+
+
+def _member_unsubscribe_html(
+    rows: Sequence[FilteredContact],
+    mapping: CCSyncMapping,
+) -> str:
+    """Return the HTML section for Member-level filtered addresses, or ""."""
+    if not rows:
+        return ""
+    parts = [
+        '<h3 style="color: #cc0000;">Other Addresses of Members Who Unsubscribed</h3>',
+        f"<p>{html.escape(_member_unsubscribe_explanation(mapping))}</p>",
+        f'<table style="{_EMAIL_TABLE_STYLE}"><tr>',
+        f'<th style="{_EMAIL_HEADER_STYLE}">PS Member Name(s)</th>',
+        f'<th style="{_EMAIL_HEADER_STYLE}">PS Member DUID(s)</th>',
+        f'<th style="{_EMAIL_HEADER_STYLE}">Email</th>',
+        f'<th style="{_EMAIL_HEADER_STYLE}">Unsubscribed Address</th></tr>',
+    ]
+    for row, (email, names, duids, via) in enumerate(
+        sorted(rows, key=_unsubscribed_sort_key)
+    ):
+        cells = (names, duids, email, via)
+        parts.append(
+            "<tr>"
+            + "".join(
+                f'<td style="{_email_cell_style(row)}">{html.escape(value)}</td>'
+                for value in cells
+            )
+            + "</tr>"
+        )
+    parts.append("</table>")
+    return "".join(parts)
+
+
 def build_unsubscribed_report_email(
     mapping: CCSyncMapping,
-    unsubscribed: Sequence[tuple[str, str, str]],
+    unsubscribed: Sequence[FilteredContact],
     *,
     sender: str,
     generated_at: dt.datetime,
@@ -1306,27 +1471,36 @@ def build_unsubscribed_report_email(
     The content mirrors the old Epiphany report: it explains that the listed
     ParishSoft members are still in the source workgroup but have manually
     unsubscribed in Constant Contact, and should therefore be reviewed in
-    ParishSoft.
+    ParishSoft. Addresses left off only because another address of the same
+    Member unsubscribed (#2389) follow in their own section, so the office can
+    see Members who lost a shared address without unsubscribing themselves.
     """
-    sorted_unsubscribed = sorted(unsubscribed, key=_unsubscribed_sort_key)
+    sorted_unsubscribed = sorted(
+        (row for row in unsubscribed if not row.unsubscribed_via),
+        key=_unsubscribed_sort_key,
+    )
+    others = [row for row in unsubscribed if row.unsubscribed_via]
     subject = f"Constant Contact unsubscribed contacts report: {mapping.target_list}"
-    text_lines = [
-        subject,
-        f"Generated: {generated_at:%Y-%m-%d %H:%M:%S %Z}",
-        "",
-        "The following ParishSoft Members are in the "
-        f"'{mapping.source_workgroup}' workgroup but have manually unsubscribed "
-        "from Constant Contact.",
-        "",
-        "These ParishSoft Members should be removed from the "
-        f"'{mapping.source_workgroup}' workgroup in ParishSoft.",
-        "",
-    ]
-    for email, names, duids in sorted_unsubscribed:
+    text_lines = [subject, f"Generated: {generated_at:%Y-%m-%d %H:%M:%S %Z}"]
+    if sorted_unsubscribed:
+        text_lines.extend(
+            [
+                "",
+                "The following ParishSoft Members are in the "
+                f"'{mapping.source_workgroup}' workgroup but have manually "
+                "unsubscribed from Constant Contact.",
+                "",
+                "These ParishSoft Members should be removed from the "
+                f"'{mapping.source_workgroup}' workgroup in ParishSoft.",
+                "",
+            ]
+        )
+    for email, names, duids, _via in sorted_unsubscribed:
         text_lines.append(f"- {names} (DUID: {duids}): {email}")
+    text_lines.extend(_member_unsubscribe_text(others, mapping))
 
     table_rows = []
-    for row, (email, names, duids) in enumerate(sorted_unsubscribed):
+    for row, (email, names, duids, _via) in enumerate(sorted_unsubscribed):
         background = "#f2f2f2" if row % 2 == 0 else "#ffffff"
         cell = (
             "border: 1px solid #dddddd; padding: 8px; "
@@ -1344,12 +1518,7 @@ def build_unsubscribed_report_email(
         "border: 1px solid #dddddd; padding: 8px; text-align: center; "
         "background-color: #4472C4; color: white; white-space: nowrap;"
     )
-    report_html = (
-        '<html><body style="font-family: Arial, sans-serif; font-size: 14px;">'
-        '<h2 style="color: #333333;">Constant Contact Unsubscribed '
-        f"Contacts Report: {html.escape(mapping.target_list)}</h2>"
-        f'<p style="color: #666666;">Generated: '
-        f"{html.escape(generated_at.strftime('%Y-%m-%d %H:%M:%S %Z'))}</p>"
+    direct_html = (
         "<p>The following ParishSoft Members are in the "
         f"'{html.escape(mapping.source_workgroup)}' workgroup but have manually "
         "unsubscribed from Constant Contact.</p>"
@@ -1363,6 +1532,15 @@ def build_unsubscribed_report_email(
         f'<th style="{header_cell}">Email</th>'
         "</tr>"
         f"{''.join(table_rows)}</table>"
+    )
+    report_html = (
+        '<html><body style="font-family: Arial, sans-serif; font-size: 14px;">'
+        '<h2 style="color: #333333;">Constant Contact Unsubscribed '
+        f"Contacts Report: {html.escape(mapping.target_list)}</h2>"
+        f'<p style="color: #666666;">Generated: '
+        f"{html.escape(generated_at.strftime('%Y-%m-%d %H:%M:%S %Z'))}</p>"
+        f"{direct_html if sorted_unsubscribed else ''}"
+        f"{_member_unsubscribe_html(others, mapping)}"
         '<hr style="border: 1px solid #dddddd; margin-top: 30px;">'
         '<p style="color: #999999; font-size: 12px;">'
         "This is an automated message from the ParishSoft to Constant Contact "
@@ -1381,7 +1559,7 @@ def build_unsubscribed_report_email(
 def send_unsubscribed_report(
     provider: EmailProvider | None,
     config: CCSyncConfig,
-    unsubscribed: Sequence[Sequence[tuple[str, str, str]]],
+    unsubscribed: Sequence[Sequence[FilteredContact]],
     decision: ReportScheduleDecision,
     *,
     dry_run: bool,
@@ -1408,8 +1586,13 @@ def send_unsubscribed_report(
             log.info("Unsubscribed report subject: %s", mapping.target_list)
             log.info("CC List: %s", mapping.target_list)
             log.info("PS Workgroup: %s", mapping.source_workgroup)
-            for email, names, duids in unsubscribed[index]:
-                log.info("  %s (DUID: %s): %s", names, duids, email)
+            for row in unsubscribed[index]:
+                via = (
+                    f" (dropped because {row.unsubscribed_via} unsubscribed)"
+                    if row.unsubscribed_via
+                    else ""
+                )
+                log.info("  %s (DUID: %s): %s%s", row.names, row.duids, row.email, via)
         return 0
     validate_unsubscribed_report_config(config, unsubscribed, decision, dry_run=dry_run)
     validate_unsubscribed_report_provider(
@@ -1466,7 +1649,7 @@ def send_unsubscribed_report(
 
 def validate_unsubscribed_report_config(
     config: CCSyncConfig,
-    unsubscribed: Sequence[Sequence[tuple[str, str, str]]],
+    unsubscribed: Sequence[Sequence[FilteredContact]],
     decision: ReportScheduleDecision,
     *,
     dry_run: bool,
@@ -1501,7 +1684,7 @@ def validate_unsubscribed_report_config(
 def validate_unsubscribed_report_provider(
     provider: EmailProvider | None,
     config: CCSyncConfig,
-    unsubscribed: Sequence[Sequence[tuple[str, str, str]]],
+    unsubscribed: Sequence[Sequence[FilteredContact]],
     decision: ReportScheduleDecision,
     *,
     dry_run: bool,
@@ -1784,7 +1967,7 @@ def _report_mapping_key(mapping: CCSyncMapping) -> str:
     )
 
 
-def _unsubscribed_sort_key(row: tuple[str, str, str]) -> tuple[str, str]:
+def _unsubscribed_sort_key(row: FilteredContact) -> tuple[str, str]:
     """Sort report rows by the first listed member's apparent last/first name."""
     parts = row[1].split(",")[0].strip().split()
     last = parts[-1].lower() if parts else ""

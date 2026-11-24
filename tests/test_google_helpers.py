@@ -330,6 +330,43 @@ def test_execute_google_request_logs_warning_on_http_failure(monkeypatch, caplog
     assert "HTTP 403" in caplog.text
 
 
+def test_execute_google_request_logs_expected_status_at_debug(monkeypatch, caplog):
+    """A status the caller handles (such as 404 on a lookup) is not a warning."""
+
+    class FakeHttpError(Exception):
+        """Stand-in for googleapiclient HttpError carrying a status code."""
+
+        def __init__(self, status):
+            """Build an error exposing ``resp.status`` like the real HttpError."""
+            self.resp = type("Response", (), {"status": status})()
+            super().__init__(f"HTTP {status}")
+
+    class FakeRequest:
+        """Request that always fails with Google's not-found answer."""
+
+        uri = "https://google.example/request"
+
+        def execute(self):
+            """Raise a 404 HTTP error."""
+            raise FakeHttpError(404)
+
+    monkeypatch.setattr(
+        "parishkit.google.auth._import_google_http_error", lambda: FakeHttpError
+    )
+    caplog.set_level(logging.DEBUG, logger="parishkit.google.auth")
+
+    with pytest.raises(GoogleAPIError) as exc_info:
+        execute_google_request(
+            FakeRequest(),
+            policy=RetryPolicy(attempts=1),
+            expected_statuses=(404,),
+        )
+
+    assert exc_info.value.status_code == 404
+    assert [record.levelno for record in caplog.records] == [logging.DEBUG]
+    assert "HTTP 404" in caplog.text
+
+
 def test_execute_google_request_exhausts_transient_http_error(monkeypatch):
     """A retryable 429 still raises GoogleAPIError once attempts are exhausted."""
 

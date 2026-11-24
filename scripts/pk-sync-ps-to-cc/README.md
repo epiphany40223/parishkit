@@ -29,6 +29,15 @@ effect. The comments in `example-config.yaml` explain every field, including the
 optional `unsubscribed_report` that summarizes still-subscribed-in-ParishSoft
 but unsubscribed-in-Constant-Contact members on a schedule.
 
+When a ParishSoft Member has several email addresses (separated by `;`), each
+address becomes its own Constant Contact contact on the list. If any one of a
+Member's addresses unsubscribes in Constant Contact, the tool takes all of that
+Member's addresses off the synced lists. That includes an address the Member
+shares with others, such as a family address, so another family member can
+stop getting these emails without unsubscribing. The unsubscribed report (or
+the sync email, when the report is off) lists those addresses in their own
+section so the office can follow up.
+
 ## Run it
 
 Always start with a dry run. It still reads ParishSoft and Constant Contact and
