@@ -161,7 +161,7 @@ docker run --detach --name parishkit-storage-tests \
   --env POSTGRES_DB=stewardship_tests \
   --env POSTGRES_PASSWORD=disposable-test-only \
   --tmpfs /var/lib/postgresql \
-  postgres:18.6-trixie@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+  postgres:18.7-trixie@sha256:c699303802144847d238196173655dbbecf7a96aeca1565f2b02eb671a1f0b6b
 docker exec parishkit-storage-tests pg_isready -U stewardship_tests
 ```
 
