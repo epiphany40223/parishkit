@@ -1,0 +1,191 @@
+name: Security scan
+
+# Check the committed dependency locks and the container images Stewardship
+# runs for published vulnerabilities (#2427). The images are pinned by digest
+# and the locks pin exact versions, so nothing changes until someone bumps a
+# pin, but new advisories against those pins are published all the time: the
+# weekly run is what notices them. A pull request that changes a lock, the
+# Dockerfile or its build context, the production image pins or this workflow
+# runs the same checks, so a bump shows its effect before it merges. Every
+# job runs on such a pull request, so a red job may be a finding that was
+# already there rather than one the pull request added.
+#
+# This workflow is separate from CI on purpose: an advisory published today
+# says nothing about whether a pull request is correct, so it never blocks
+# CI's required checks or release evidence. A failed scheduled run is the
+# alert; GitHub emails it to whoever last changed the schedule below.
+#
+# Dependabot cannot do this job here: the repository's dependency graph lists
+# no manifests, so its alerts stay empty (#2427).
+
+on:
+  schedule:
+    # Mondays 11:17 UTC: early-morning US Eastern, off the hour.
+    - cron: "17 11 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/security-scan.yml"
+      - ".dockerignore"
+      - "deploy/stewardship/Dockerfile"
+      - "deploy/stewardship/Dockerfile.dockerignore"
+      - "pyproject.toml"
+      - "requirements.txt"
+      - "requirements/*.txt"
+      - "src/parishkit/stewardship/runtime_topology.py"
+      - "tests/stewardship/browser/package-lock.json"
+      - "tools/ci-docker-mirror.sh"
+      - "tools/ci-pip-install.sh"
+
+permissions:
+  contents: read
+
+# A newer push supersedes a pull request's run; a scheduled or manual run is
+# never cancelled by another.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PIP_AUDIT_VERSION: "2.10.1"
+  # grype is downloaded as a pinned release and checked against this
+  # checksum, rather than through a third-party action or install script.
+  GRYPE_VERSION: "0.122.1"
+  GRYPE_SHA256: "f1ba7e2917ee1395618de20a98da0aa7c0fb1788927797651047c50502a37538"
+
+jobs:
+  # Every committed Python lock, plus the browser tests' npm lock. Any
+  # published advisory fails the job: each one so far has had a fixed version
+  # to move to (#2428, #2429, #2430).
+  locks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pip-audit
+        run: tools/ci-pip-install.sh "pip-audit==${PIP_AUDIT_VERSION}"
+
+      - name: Audit the Python locks
+        # requirements.txt only constrains to requirements/stewardship.txt
+        # and installs the project, so the locks under requirements/ cover
+        # it. --no-deps audits exactly the pinned set, without resolving
+        # anything.
+        run: |
+          status=0
+          for lock in requirements/*.txt; do
+            echo "::group::${lock}"
+            pip-audit --disable-pip --no-deps --progress-spinner off \
+              --requirement "${lock}" || status=1
+            echo "::endgroup::"
+          done
+          exit "${status}"
+
+      - name: Audit the browser tests' npm lock
+        working-directory: tests/stewardship/browser
+        run: npm audit --package-lock-only
+
+  # The application image as the Dockerfile builds it, and the PostgreSQL,
+  # Valkey and Caddy images exactly as production pins them in
+  # runtime_topology.py (deploy/stewardship/compose.yaml is the development
+  # and CI file, not the rendered deployment). The job fails on a High
+  # or Critical vulnerability that already has a fixed package: that is
+  # actionable, by moving the pinned base or service image to a newer digest
+  # or bumping a lock. Unfixed findings are listed in the run summary but do
+  # not fail, since no pin can clear them yet.
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [application, postgres, valkey, caddy]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install grype
+        run: |
+          archive="grype_${GRYPE_VERSION}_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 \
+            --output "${RUNNER_TEMP}/${archive}" \
+            "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/${archive}"
+          echo "${GRYPE_SHA256}  ${RUNNER_TEMP}/${archive}" | sha256sum --check --strict
+          mkdir -p "${RUNNER_TEMP}/grype"
+          tar -xzf "${RUNNER_TEMP}/${archive}" -C "${RUNNER_TEMP}/grype" grype
+          echo "${RUNNER_TEMP}/grype" >> "$GITHUB_PATH"
+
+      - name: Pull Docker Hub images through a mirror
+        # Anonymous Docker Hub pulls hit its rate limit (#892).
+        run: tools/ci-docker-mirror.sh
+
+      - name: Build or pull the image
+        id: image
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          if [ "${IMAGE}" = application ]; then
+            docker build --file deploy/stewardship/Dockerfile \
+              --tag parishkit-stewardship:scan .
+            reference=parishkit-stewardship:scan
+          else
+            # Read the <NAME>_IMAGE constant from the module that renders
+            # production's Compose file, without importing it (that would
+            # need the whole application installed).
+            reference="$(python3 - "${IMAGE}" <<'EOF'
+          import ast
+          import sys
+
+          name = sys.argv[1].upper() + "_IMAGE"
+          path = "src/parishkit/stewardship/runtime_topology.py"
+          with open(path) as source:
+              tree = ast.parse(source.read())
+          for node in tree.body:
+              if isinstance(node, ast.Assign) and any(
+                  getattr(target, "id", None) == name for target in node.targets
+              ):
+                  print(ast.literal_eval(node.value))
+                  break
+          EOF
+            )"
+            case "${reference}" in
+              *@sha256:*) ;;
+              *)
+                echo "::error::No digest-pinned ${IMAGE} image in runtime_topology.py"
+                exit 1
+                ;;
+            esac
+            docker pull "${reference}"
+          fi
+          echo "reference=${reference}" >> "$GITHUB_OUTPUT"
+
+      - name: Scan the image
+        env:
+          REFERENCE: ${{ steps.image.outputs.reference }}
+          IMAGE: ${{ matrix.image }}
+        run: |
+          grype db update
+          # Both scans use the database just downloaded, so the summary and
+          # the gate agree.
+          export GRYPE_DB_AUTO_UPDATE=false
+          # One full report for the summary, then the gate on fixable High
+          # and Critical findings only.
+          grype "docker:${REFERENCE}" --output table > "${RUNNER_TEMP}/all.txt"
+          {
+            echo "### ${IMAGE}: \`${REFERENCE}\`"
+            echo
+            echo '```text'
+            cat "${RUNNER_TEMP}/all.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          grype "docker:${REFERENCE}" --only-fixed --fail-on high --output table
