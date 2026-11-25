@@ -60,7 +60,7 @@ checkout installation below for reproducible local/CI validation.
 | Django | 5.2 LTS / 5.2.17 | [Maintained releases](https://www.djangoproject.com/download/) |
 | PostgreSQL | 18 / 18.6 | [PostgreSQL downloads](https://www.postgresql.org/download/) |
 | Celery | 5.6 / 5.6.3 | [Celery changes](https://docs.celeryq.dev/en/stable/changelog.html) |
-| Valkey | 9.1 / 9.1.2 | [Valkey releases](https://valkey.io/download/releases/) |
+| Valkey | 9.1 / 9.1.4 | [Valkey releases](https://valkey.io/download/releases/) |
 | Caddy | 2.11 / 2.11.9 | [Caddy releases](https://github.com/caddyserver/caddy/releases) |
 | Gunicorn | 26 / lockfile patch | [Gunicorn releases](https://gunicorn.org/news/) |
 | Psycopg | 3.3 / 3.3.5 | [Psycopg downloads](https://www.psycopg.org/download/) |

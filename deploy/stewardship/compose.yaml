@@ -175,7 +175,7 @@ services:
   valkey:
     # Infrastructure capability/UID hardening is owned by OPS-02 before Gate 1,
     # including validation of the vendor entrypoint's volume initialization.
-    image: valkey/valkey:9.1.2@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
+    image: valkey/valkey:9.1.4@sha256:3ab0eca823ebbf0fe352476ebac330ac9e5f14b592b9a954eab296d341e81b0e
     # No application broker clients exist yet. Keep protected mode enabled;
     # authenticated role-specific access/queues arrive with ARC-06 and OPS-02.
     command: [valkey-server, --appendonly, "yes", --protected-mode, "yes"]

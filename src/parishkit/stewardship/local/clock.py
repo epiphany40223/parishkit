@@ -82,7 +82,7 @@ def faketime_image(base):
         return base
     if "@sha256:" in base:
         # A pinned store image: "postgres:18.6-trixie@sha256:<hex>" or
-        # "valkey/valkey:9.1.2@sha256:<hex>" becomes "…-faketime-postgres:<hex>"
+        # "valkey/valkey:9.1.4@sha256:<hex>" becomes "…-faketime-postgres:<hex>"
         # or "…-faketime-valkey:<hex>" (a 64-hex tag is within Docker's 128).
         name, digest = base.split("@sha256:", 1)
         repository = name.split(":", 1)[0].rsplit("/", 1)[-1]

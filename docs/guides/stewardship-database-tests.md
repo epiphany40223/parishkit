@@ -179,7 +179,7 @@ Do not substitute a real deployment or stop an unrelated service using a port.
 ```sh
 docker run --detach --name parishkit-auth-tests \
   --publish 127.0.0.1:56379:6379 --tmpfs /data \
-  valkey/valkey:9.1.2@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
+  valkey/valkey:9.1.4@sha256:3ab0eca823ebbf0fe352476ebac330ac9e5f14b592b9a954eab296d341e81b0e
 docker exec parishkit-auth-tests valkey-cli ping
 ```
 

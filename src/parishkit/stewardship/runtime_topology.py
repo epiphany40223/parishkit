@@ -38,8 +38,8 @@ POSTGRES_IMAGE = (
     "4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280"
 )
 VALKEY_IMAGE = (
-    "valkey/valkey:9.1.2@sha256:"
-    "c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d"
+    "valkey/valkey:9.1.4@sha256:"
+    "3ab0eca823ebbf0fe352476ebac330ac9e5f14b592b9a954eab296d341e81b0e"
 )
 CADDY_IMAGE = (
     "caddy:2.11.9-alpine@sha256:"
