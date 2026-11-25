@@ -52,10 +52,12 @@ publishes no release (#392). The release helper and the upgrade runbook
 verify that attestation with `gh attestation verify` before the digest is
 deployed. It preserves existing Python sdist/wheel and GitHub
 Release behavior. A human still explicitly authorizes release-tag push. For
-v1 the image is `linux/amd64` only; the `linux/arm64` image, SBOM and
-vulnerability scanning are
+v1 the image is `linux/amd64` only; the `linux/arm64` image and SBOM are
 [deferred](../../../plans/stewardship/v1-launch.md#cut-from-v1) past the
-launch. The
+launch. A weekly Security scan workflow, separate from CI and release
+evidence, checks the images and dependency locks for published
+vulnerabilities (#2427; see
+[Supported dependency lines](../../../development/stewardship.md#supported-dependency-lines)). The
 [release image guide](../../../guides/stewardship-release-image.md#the-pushed-digest-is-smoke-tested-and-attested)
 holds the details.
 

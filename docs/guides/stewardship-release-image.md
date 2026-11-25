@@ -30,8 +30,12 @@ Multi-architecture images, SBOM and provenance attestations (OPS-09.03's
 release extras) and key rotation are cut from v1 by the launch scope.
 Provenance attestation was added after the launch (#392), with a smoke run
 of the pushed image; see
-[below](#the-pushed-digest-is-smoke-tested-and-attested). The
-deployment runbook is the next slice.
+[below](#the-pushed-digest-is-smoke-tested-and-attested). The weekly
+Security scan workflow checks the application image, the pinned PostgreSQL,
+Valkey and Caddy images and the dependency locks for published vulnerabilities
+(#2427; see
+[Supported dependency lines](../development/stewardship.md#supported-dependency-lines)).
+The deployment runbook is the next slice.
 
 ## Design
 

@@ -92,6 +92,25 @@ uv pip compile pyproject.toml --all-extras --universal --python-version 3.12 --o
 uv pip compile requirements/stewardship-build.in --universal --python-version 3.12 --output-file requirements/stewardship-build.txt
 ```
 
+The Security scan workflow (`.github/workflows/security-scan.yml`, #2427)
+checks these pins for published vulnerabilities every Monday, on demand, and
+on pull requests that change a lock, the Dockerfile or the production image
+pins. It
+runs `pip-audit` on every `requirements/*.txt` lock and `npm audit` on the
+browser tests' lock, and fails on any advisory. It runs grype on the
+application image and on the PostgreSQL, Valkey and Caddy images exactly as
+production pins them in `src/parishkit/stewardship/runtime_topology.py`, and
+fails on a High or Critical finding that already has a fixed package;
+unfixed findings are listed in the run summary only. It is not part of CI,
+so a new advisory never blocks unrelated pull requests or release evidence.
+A pull request that triggers it runs every check, so a red job there may be
+a finding that predates the pull request. To clear a failure, move the
+named lock entry to a fixed version (`uv pip compile … -P <package>`), or
+move the pinned base or service image to a newer digest of the same line,
+then rerun the workflow from the pull request. Dependabot alerts stay empty
+because the repository's dependency graph lists no manifests, so this
+workflow is the alert.
+
 ## Checkout installation
 
 In a Python 3.12 virtual environment, install from the checkout in this order:

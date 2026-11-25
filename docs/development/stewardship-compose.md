@@ -160,9 +160,12 @@ PostgreSQL 18 persists at `/var/lib/postgresql`, following its
 Build tools are pinned in `requirements/stewardship-build.txt`; app and test
 dependencies use `requirements/stewardship.txt`. Phase 0 includes test tools
 in the one image for parity. The application image is single-architecture
-(`linux/amd64`) for v1; release scanning, provenance, SBOM and
-multi-architecture publication are
-[cut from v1](../plans/stewardship/v1-launch.md#cut-from-v1).
+(`linux/amd64`) for v1; provenance, SBOM and multi-architecture
+publication were
+[cut from v1](../plans/stewardship/v1-launch.md#cut-from-v1). Provenance
+was added after launch (#392), and the weekly Security scan workflow checks
+the images and locks for published vulnerabilities (#2427; see
+[Supported dependency lines](stewardship.md#supported-dependency-lines)).
 
 ## Validation
 
