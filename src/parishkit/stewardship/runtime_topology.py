@@ -42,8 +42,8 @@ VALKEY_IMAGE = (
     "c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d"
 )
 CADDY_IMAGE = (
-    "caddy:2.11.4-alpine@sha256:"
-    "5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648"
+    "caddy:2.11.9-alpine@sha256:"
+    "003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0"
 )
 # The LOCAL mail catcher (#476), pinned by its multi-arch index digest like the
 # other third-party images. Never rendered for any other profile.
