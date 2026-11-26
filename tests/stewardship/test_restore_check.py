@@ -178,7 +178,8 @@ def test_a_set_from_before_the_check_needs_its_dump(files):
 
 # pg_restore 18.6's own output for a dump of a database holding these two
 # rows and another table (captured from postgres:18.6-trixie, the image the
-# deployment pins; the restrict key is a fixed stand-in for its random one).
+# deployment pinned then; the restrict key is a fixed stand-in for its random
+# one).
 REAL_OUTPUT = """--
 -- PostgreSQL database dump
 --

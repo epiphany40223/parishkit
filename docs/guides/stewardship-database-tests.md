@@ -161,7 +161,7 @@ docker run --detach --name parishkit-storage-tests \
   --env POSTGRES_DB=stewardship_tests \
   --env POSTGRES_PASSWORD=disposable-test-only \
   --tmpfs /var/lib/postgresql \
-  postgres:18.6-trixie@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+  postgres:18.7-trixie@sha256:c699303802144847d238196173655dbbecf7a96aeca1565f2b02eb671a1f0b6b
 docker exec parishkit-storage-tests pg_isready -U stewardship_tests
 ```
 
@@ -179,7 +179,7 @@ Do not substitute a real deployment or stop an unrelated service using a port.
 ```sh
 docker run --detach --name parishkit-auth-tests \
   --publish 127.0.0.1:56379:6379 --tmpfs /data \
-  valkey/valkey:9.1.2@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
+  valkey/valkey:9.1.4@sha256:3ab0eca823ebbf0fe352476ebac330ac9e5f14b592b9a954eab296d341e81b0e
 docker exec parishkit-auth-tests valkey-cli ping
 ```
 

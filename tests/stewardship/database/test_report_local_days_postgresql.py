@@ -48,9 +48,12 @@ EAST, WEST = "Pacific/Kiritimati", "Pacific/Pago_Pago"
         (date(2026, 7, 1), "Asia/Kathmandu"),  # +05:45
         (date(2026, 9, 27), "Pacific/Auckland"),  # east of UTC, 23-hour day
         (date(2026, 1, 1), "US/Eastern"),  # a catalog alias PostgreSQL lacks
-        (date(2026, 11, 1), "America/Havana"),  # 00:00 happens twice
-        (date(2026, 10, 31), "America/Havana"),  # ends at the first 00:00
-        (date(2026, 3, 8), "America/Havana"),  # no 00:00 that day
+        # Havana's changes are at midnight. These are 2025's: tzdata 2026f
+        # (Cuba kept daylight time in November 2026) changed later ones, and
+        # PostgreSQL's zone data need not match the Python runtime's.
+        (date(2025, 11, 2), "America/Havana"),  # 00:00 happens twice
+        (date(2025, 11, 1), "America/Havana"),  # ends at the first 00:00
+        (date(2025, 3, 9), "America/Havana"),  # no 00:00 that day
         (date(2026, 4, 5), "Australia/Lord_Howe"),  # a 30-minute change
     ],
 )

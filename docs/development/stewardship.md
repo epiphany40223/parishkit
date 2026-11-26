@@ -58,10 +58,10 @@ checkout installation below for reproducible local/CI validation.
 | --- | --- | --- |
 | Python | 3.12 baseline; package minimum 3.12 | [Python lifecycle](https://devguide.python.org/versions/) |
 | Django | 5.2 LTS / 5.2.17 | [Maintained releases](https://www.djangoproject.com/download/) |
-| PostgreSQL | 18 / 18.6 | [PostgreSQL downloads](https://www.postgresql.org/download/) |
+| PostgreSQL | 18 / 18.7 | [PostgreSQL downloads](https://www.postgresql.org/download/) |
 | Celery | 5.6 / 5.6.3 | [Celery changes](https://docs.celeryq.dev/en/stable/changelog.html) |
-| Valkey | 9.1 / 9.1.2 | [Valkey releases](https://valkey.io/download/releases/) |
-| Caddy | 2.11 / 2.11.4 | [Caddy releases](https://github.com/caddyserver/caddy/releases) |
+| Valkey | 9.1 / 9.1.4 | [Valkey releases](https://valkey.io/download/releases/) |
+| Caddy | 2.11 / 2.11.9 | [Caddy releases](https://github.com/caddyserver/caddy/releases) |
 | Gunicorn | 26 / lockfile patch | [Gunicorn releases](https://gunicorn.org/news/) |
 | Psycopg | 3.3 / 3.3.5 | [Psycopg downloads](https://www.psycopg.org/download/) |
 | Cryptography | 50 / 50.0.1 | [Cryptography documentation](https://cryptography.io/en/stable/) |

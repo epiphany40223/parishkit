@@ -407,7 +407,7 @@
     "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
     "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
    },
-   "image": "parishkit-stewardship-local-faketime-postgres:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280",
+   "image": "parishkit-stewardship-local-faketime-postgres:c699303802144847d238196173655dbbecf7a96aeca1565f2b02eb671a1f0b6b",
    "volumes": [
     {
      "bind": {
@@ -447,7 +447,7 @@
     "FAKETIME_TIMESTAMP_FILE": "/run/parishkit-clock/offset",
     "LD_PRELOAD": "/usr/local/lib/parishkit-faketime/libfaketime.so.1"
    },
-   "image": "parishkit-stewardship-local-faketime-valkey:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d",
+   "image": "parishkit-stewardship-local-faketime-valkey:3ab0eca823ebbf0fe352476ebac330ac9e5f14b592b9a954eab296d341e81b0e",
    "volumes": [
     {
      "bind": {

@@ -34,16 +34,16 @@ from .service_boundaries import ALLOWED_SECRETS, rotating_directories
 from .source.loading import DROP_OVERRIDE_VARIABLE
 
 POSTGRES_IMAGE = (
-    "postgres:18.6-trixie@sha256:"
-    "4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280"
+    "postgres:18.7-trixie@sha256:"
+    "c699303802144847d238196173655dbbecf7a96aeca1565f2b02eb671a1f0b6b"
 )
 VALKEY_IMAGE = (
-    "valkey/valkey:9.1.2@sha256:"
-    "c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d"
+    "valkey/valkey:9.1.4@sha256:"
+    "3ab0eca823ebbf0fe352476ebac330ac9e5f14b592b9a954eab296d341e81b0e"
 )
 CADDY_IMAGE = (
-    "caddy:2.11.4-alpine@sha256:"
-    "5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648"
+    "caddy:2.11.9-alpine@sha256:"
+    "003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0"
 )
 # The LOCAL mail catcher (#476), pinned by its multi-arch index digest like the
 # other third-party images. Never rendered for any other profile.

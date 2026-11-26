@@ -1,4 +1,4 @@
-FROM python:3.12.13-slim-trixie@sha256:229a2c5bfa27522db7815ea81f9bed70af17ccb9de9fc7ad142b1877b5830d36
+FROM python:3.12.16-slim-trixie@sha256:191083cdf6c7bda8c76158983163ead5d5cf7b77cf3033e805bb0f5296f51b4b
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -8,7 +8,7 @@ WORKDIR /app
 # which Debian trixie does not carry: take it from the PostgreSQL project's
 # repository, pinned by version, with the signing key checked by digest. That
 # repository keeps only the newest build per major version, so this pin and
-# the postgres:18.6 server digest in runtime_topology.py move together when a
+# the postgres:18.7 server digest in runtime_topology.py move together when a
 # new build is published; until then the build fails with "version not found".
 # CI runners occasionally fail to resolve www.postgresql.org or reach the pgdg
 # mirror, so the key download and the pgdg apt calls retry transient errors;
@@ -20,7 +20,7 @@ RUN apt-get update \
     && echo "0144068502a1eddd2a0280ede10ef607d1ec592ce819940991203941564e8e76  /usr/share/keyrings/pgdg.asc" | sha256sum -c - \
     && echo "deb [signed-by=/usr/share/keyrings/pgdg.asc] https://apt.postgresql.org/pub/repos/apt trixie-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
     && apt-get -o Acquire::Retries=5 update \
-    && apt-get -o Acquire::Retries=5 install -y --no-install-recommends postgresql-client-18=18.6-1.pgdg13+2 \
+    && apt-get -o Acquire::Retries=5 install -y --no-install-recommends postgresql-client-18=18.7-1.pgdg13+5 \
     && apt-get purge -y --auto-remove curl \
     && rm -rf /var/lib/apt/lists/*
 COPY requirements/stewardship.txt requirements/stewardship-build.txt requirements/

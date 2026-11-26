@@ -497,13 +497,13 @@ jobs:
     # postgres and valkey images in compose.yaml and runtime_topology.py.
     services:
       valkey-1:
-        image: mirror.gcr.io/valkey/valkey:9.1.2@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
+        image: mirror.gcr.io/valkey/valkey:9.1.4@sha256:3ab0eca823ebbf0fe352476ebac330ac9e5f14b592b9a954eab296d341e81b0e
         ports: ["26379:6379"]
         options: >-
           --health-cmd "valkey-cli ping"
           --health-interval 2s --health-timeout 5s --health-retries 30
       postgres-1:
-        image: mirror.gcr.io/library/postgres:18.6-trixie@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+        image: mirror.gcr.io/library/postgres:18.7-trixie@sha256:c699303802144847d238196173655dbbecf7a96aeca1565f2b02eb671a1f0b6b
         env:
           POSTGRES_USER: stewardship_tests
           POSTGRES_DB: stewardship_tests
@@ -516,13 +516,13 @@ jobs:
           --health-cmd "pg_isready -U stewardship_tests"
           --health-interval 2s --health-timeout 5s --health-retries 30
       valkey-2:
-        image: mirror.gcr.io/valkey/valkey:9.1.2@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
+        image: mirror.gcr.io/valkey/valkey:9.1.4@sha256:3ab0eca823ebbf0fe352476ebac330ac9e5f14b592b9a954eab296d341e81b0e
         ports: ["26380:6379"]
         options: >-
           --health-cmd "valkey-cli ping"
           --health-interval 2s --health-timeout 5s --health-retries 30
       postgres-2:
-        image: mirror.gcr.io/library/postgres:18.6-trixie@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+        image: mirror.gcr.io/library/postgres:18.7-trixie@sha256:c699303802144847d238196173655dbbecf7a96aeca1565f2b02eb671a1f0b6b
         env:
           POSTGRES_USER: stewardship_tests
           POSTGRES_DB: stewardship_tests
@@ -535,13 +535,13 @@ jobs:
           --health-cmd "pg_isready -U stewardship_tests"
           --health-interval 2s --health-timeout 5s --health-retries 30
       valkey-3:
-        image: mirror.gcr.io/valkey/valkey:9.1.2@sha256:c123e3715db63d06d4ad6964884037aa0d5d4d703939b9929954112889708e1d
+        image: mirror.gcr.io/valkey/valkey:9.1.4@sha256:3ab0eca823ebbf0fe352476ebac330ac9e5f14b592b9a954eab296d341e81b0e
         ports: ["26381:6379"]
         options: >-
           --health-cmd "valkey-cli ping"
           --health-interval 2s --health-timeout 5s --health-retries 30
       postgres-3:
-        image: mirror.gcr.io/library/postgres:18.6-trixie@sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280
+        image: mirror.gcr.io/library/postgres:18.7-trixie@sha256:c699303802144847d238196173655dbbecf7a96aeca1565f2b02eb671a1f0b6b
         env:
           POSTGRES_USER: stewardship_tests
           POSTGRES_DB: stewardship_tests
